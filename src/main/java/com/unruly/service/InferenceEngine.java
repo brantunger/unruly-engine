@@ -28,10 +28,10 @@ public abstract class InferenceEngine<I, O> {
         }
 
         //STEP 1 (MATCH) : Match the facts and data against the set of rules.
-        List<Rule> conflictSet = match(listOfRules, inputData);
+        List<Rule> ruleList = match(listOfRules, inputData);
 
         //STEP 2 (RESOLVE) : Resolve the conflict and give the selected one rule.
-        Rule resolvedRule = resolve(conflictSet);
+        Rule resolvedRule = resolve(ruleList);
         if (null == resolvedRule) {
             return null;
         }
@@ -69,11 +69,11 @@ public abstract class InferenceEngine<I, O> {
      * <p>
      * Here we are using find first rule logic.
      * </p>
-     * @param conflictSet
+     * @param ruleList
      * @return
      */
-    protected Rule resolve(List<Rule> conflictSet) {
-        return conflictSet.stream().findFirst().orElse(null);
+    protected Rule resolve(List<Rule> ruleList) {
+        return ruleList.stream().findFirst().orElse(null);
     }
 
     /**
