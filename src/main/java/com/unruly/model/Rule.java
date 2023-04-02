@@ -10,7 +10,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Rule {
-    RuleNamespace ruleNamespace;
     String ruleId;
     String condition;
     String action;

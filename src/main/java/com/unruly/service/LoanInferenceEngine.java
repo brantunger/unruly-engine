@@ -1,7 +1,6 @@
 package com.unruly.service;
 
 import com.unruly.model.LoanDetails;
-import com.unruly.model.RuleNamespace;
 import com.unruly.model.UserDetails;
 import org.springframework.stereotype.Service;
 
@@ -10,11 +9,6 @@ public class LoanInferenceEngine extends InferenceEngine<UserDetails, LoanDetail
 
     public LoanInferenceEngine(RuleParser<UserDetails, LoanDetails> ruleParser) {
         super(ruleParser);
-    }
-
-    @Override
-    public RuleNamespace getRuleNamespace() {
-        return RuleNamespace.LOAN;
     }
 
     @Override

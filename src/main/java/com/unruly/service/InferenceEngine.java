@@ -1,7 +1,6 @@
 package com.unruly.service;
 
 import com.unruly.model.Rule;
-import com.unruly.model.RuleNamespace;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -88,6 +87,4 @@ public abstract class InferenceEngine<I, O> {
     }
 
     protected abstract O initializeOutputResult();
-
-    public abstract RuleNamespace getRuleNamespace();
 }
