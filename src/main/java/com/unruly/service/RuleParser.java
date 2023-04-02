@@ -11,12 +11,10 @@ public class RuleParser<I, O> {
     private static final String INPUT_KEYWORD = "input";
     private static final String OUTPUT_KEYWORD = "output";
 
-    private final DslParser dslParser;
     private final MvelParser mvelParser;
 
 
-    public RuleParser(DslParser dslParser, MvelParser mvelParser) {
-        this.dslParser = dslParser;
+    public RuleParser(MvelParser mvelParser) {
         this.mvelParser = mvelParser;
     }
 
@@ -30,10 +28,9 @@ public class RuleParser<I, O> {
      * @param inputData
      */
     public boolean parseCondition(String expression, I inputData) {
-        String resolvedDslExpression = dslParser.resolveDomainSpecificKeywords(expression);
         Map<String, Object> input = new HashMap<>();
         input.put(INPUT_KEYWORD, inputData);
-        return mvelParser.parseMvelExpression(resolvedDslExpression, input);
+        return mvelParser.parseMvelExpression(expression, input);
     }
 
     /**
@@ -48,11 +45,10 @@ public class RuleParser<I, O> {
      * @return
      */
     public O parseAction(String expression, I inputData, O outputResult) {
-        String resolvedDslExpression = dslParser.resolveDomainSpecificKeywords(expression);
         Map<String, Object> input = new HashMap<>();
         input.put(INPUT_KEYWORD, inputData);
         input.put(OUTPUT_KEYWORD, outputResult);
-        mvelParser.evalMvelExpression(resolvedDslExpression, input);
+        mvelParser.evalMvelExpression(expression, input);
         return outputResult;
     }
 }

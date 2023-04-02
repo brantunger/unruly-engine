@@ -16,8 +16,8 @@ public class RuleEngine<I, O> {
 
     public O run(InferenceEngine<I, O> inferenceEngine, I inputData) {
         // TODO: Here for each call, we are fetching all rules from db. It should be cache.
-        List<Rule> allRulesByNamespace = knowledgeBase.getAllRules();
-        return inferenceEngine.run(allRulesByNamespace, inputData);
+        List<Rule> allRules = knowledgeBase.getAllRules();
+        return inferenceEngine.run(allRules, inputData);
     }
 
 }
