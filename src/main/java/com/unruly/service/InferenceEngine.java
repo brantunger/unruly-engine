@@ -1,18 +1,19 @@
 package com.unruly.service;
 
 import com.unruly.model.Rule;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Service
-public abstract class InferenceEngine<I, O> {
+public class InferenceEngine<I, O> {
 
     private final RuleParser<I, O> ruleParser;
+    private final Factory<O> outputFactory;
 
-    public InferenceEngine(RuleParser<I, O> ruleParser) {
+    public InferenceEngine(RuleParser<I, O> ruleParser,
+                           Factory<O> outputFactory) {
         this.ruleParser = ruleParser;
+        this.outputFactory = outputFactory;
     }
 
     /**
@@ -82,9 +83,7 @@ public abstract class InferenceEngine<I, O> {
      * @return
      */
     protected O executeRule(Rule rule, I inputData) {
-        O outputResult = initializeOutputResult();
+        O outputResult = outputFactory.create();
         return ruleParser.parseAction(rule.getAction(), inputData, outputResult);
     }
-
-    protected abstract O initializeOutputResult();
 }
