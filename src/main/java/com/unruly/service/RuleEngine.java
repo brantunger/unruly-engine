@@ -43,7 +43,7 @@ public class RuleEngine<I, O> {
 
     /**
      * <p>
-     * We can use here any pattern matching algo:
+     * We can use here any pattern matching algorithm:
      * 1. Rete
      * 2. Linear
      * 3. Treat
