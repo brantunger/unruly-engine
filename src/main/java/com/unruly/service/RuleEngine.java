@@ -17,7 +17,7 @@ public class RuleEngine<I, O> {
     }
 
     /**
-     * Run inference engine on set of rules for given data.
+     * Run engine on set of rules for given data.
      *
      * @param listOfRules
      * @param inputData

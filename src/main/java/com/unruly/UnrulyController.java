@@ -32,7 +32,7 @@ public class UnrulyController {
 
     @PostMapping(value = "/loan")
     public ResponseEntity<?> postLoan(@RequestBody UserDetails userDetails) {
-        // TODO: Here we use a DB to get rules, it should be a cache
+        // TODO: Here we use a DB to get rules, it might need to be a cache
         List<Rule> allRules = knowledgeBase.getAllRules();
         LoanDetails result = ruleEngine.run(allRules, userDetails);
         return ResponseEntity.ok(result);
