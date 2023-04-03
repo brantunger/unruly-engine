@@ -3,7 +3,6 @@ package com.unruly;
 import com.unruly.model.LoanDetails;
 import com.unruly.model.Rule;
 import com.unruly.model.UserDetails;
-import com.unruly.service.InferenceEngine;
 import com.unruly.service.KnowledgeBase;
 import com.unruly.service.RuleEngine;
 import com.unruly.service.RuleParser;
@@ -18,14 +17,11 @@ public class UnrulyController {
 
     private final KnowledgeBase knowledgeBase;
     private final RuleEngine<UserDetails, LoanDetails> ruleEngine;
-    private final InferenceEngine<UserDetails, LoanDetails> inferenceEngine;
 
     public UnrulyController(KnowledgeBase knowledgeBase,
-                            RuleEngine<UserDetails, LoanDetails> ruleEngine,
                             RuleParser<UserDetails, LoanDetails> ruleParser) {
         this.knowledgeBase = knowledgeBase;
-        this.ruleEngine = ruleEngine;
-        this.inferenceEngine = new InferenceEngine<>(ruleParser, LoanDetails::new);
+        this.ruleEngine = new RuleEngine<>(ruleParser, LoanDetails::new);
     }
 
     @GetMapping(value = "/rules")
@@ -36,7 +32,9 @@ public class UnrulyController {
 
     @PostMapping(value = "/loan")
     public ResponseEntity<?> postLoan(@RequestBody UserDetails userDetails) {
-        LoanDetails result = ruleEngine.run(inferenceEngine, userDetails);
+        // TODO: Here we use a DB to get rules, it should be a cache
+        List<Rule> allRules = knowledgeBase.getAllRules();
+        LoanDetails result = ruleEngine.run(allRules, userDetails);
         return ResponseEntity.ok(result);
     }
 }
