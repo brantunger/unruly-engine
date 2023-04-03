@@ -42,12 +42,12 @@ public class RuleEngine<I, O> {
     }
 
     /**
+     * <p>
      * We can use here any pattern matching algo:
      * 1. Rete
      * 2. Linear
      * 3. Treat
      * 4. Leaps
-     * <p>
      * Here we are using Linear matching algorithm for pattern matching.
      * </p>
      *
@@ -62,13 +62,13 @@ public class RuleEngine<I, O> {
     }
 
     /**
+     * <p>
      * We can use here any resolving techniques:
      * 1. Lex
      * 2. Recency
      * 3. MEA
      * 4. Refactor
      * 5. Priority wise
-     * <p>
      * Here we are using find first rule logic.
      * </p>
      *
