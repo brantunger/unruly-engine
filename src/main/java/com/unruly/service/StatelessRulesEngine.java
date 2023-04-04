@@ -4,22 +4,25 @@ import com.unruly.model.Rule;
 
 import java.util.List;
 
-public class StatelessRuleEngine<I, O> extends AbstractRulesEngine<I, O> {
+public class StatelessRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
 
     private final Factory<O> outputFactory;
 
-    public StatelessRuleEngine(RuleParser<I, O> ruleParser,
-                               Factory<O> outputFactory) {
+    public StatelessRulesEngine(RuleParser<I, O> ruleParser,
+                                Factory<O> outputFactory) {
         super(ruleParser);
         this.outputFactory = outputFactory;
     }
 
     /**
-     * Run engine on set of rules for given data.
-     *
-     * @param ruleList
-     * @param inputData
-     * @return
+     * Run all the rules through a <b>STATELESS</b> rules engine and fire the action of a single rule. All condition
+     * fields within the ruleList are evaluated in the stateless rule engine. However, only a single action is fired.
+     * During conflict resolution the {@link Rule} with the highest priority value is found first. The action field of
+     * the rule found first will be the only action triggered. The output object is therefore generated based on only
+     * one rule. The rule with the highest priority value.
+     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
+     * @param inputData The set of input data to fire the rules engine against
+     * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
     @Override
     public O run(List<Rule> ruleList, I inputData) {
@@ -52,9 +55,8 @@ public class StatelessRuleEngine<I, O> extends AbstractRulesEngine<I, O> {
      * 5. Priority wise
      * Here we are using find first rule logic.
      * </p>
-     *
-     * @param ruleList
-     * @return
+     * @param ruleList The rule list to resolve the conflicts against
+     * @return The {@link Rule} object found first (the rule with the highest priority value)
      */
     private Rule resolve(List<Rule> ruleList) {
         return ruleList.stream().findFirst().orElse(null);

@@ -19,28 +19,29 @@ public class RuleParser<I, O> {
     }
 
     /**
-     * Parsing in given priority/steps.
-     * @param expression
-     * @param inputData
+     * Parse the condition field within a {@link com.unruly.model.Rule}
+     * @param expression The MVEL expression to evaluate
+     * @param inputData The input data to run the condition against
+     * @return A boolean value that the condition resolves to
      */
     public boolean parseCondition(String expression, I inputData) {
         Map<String, Object> input = new HashMap<>();
         input.put(INPUT_KEYWORD, inputData);
-        return mvelParser.parseMvelExpression(expression, input);
+        return mvelParser.evaluateToBoolean(expression, input);
     }
 
     /**
-     * Parsing in given priority/steps.
-     * @param expression
-     * @param inputData
-     * @param outputResult
-     * @return
+     * Parse the action field within a {@link com.unruly.model.Rule}
+     * @param expression The MVEL expression to evaluate
+     * @param inputData The input data to run the action against
+     * @param outputResult The output object to assign values to
+     * @return The outputResult of parsing the action
      */
     public O parseAction(String expression, I inputData, O outputResult) {
         Map<String, Object> input = new HashMap<>();
         input.put(INPUT_KEYWORD, inputData);
         input.put(OUTPUT_KEYWORD, outputResult);
-        mvelParser.evalMvelExpression(expression, input);
+        mvelParser.evaluateExpression(expression, input);
         return outputResult;
     }
 }

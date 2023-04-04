@@ -3,7 +3,8 @@ package com.unruly;
 import com.unruly.model.LoanDetails;
 import com.unruly.model.Rule;
 import com.unruly.model.UserDetails;
-import com.unruly.service.*;
+import com.unruly.service.KnowledgeBase;
+import com.unruly.service.RulesEngine;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,14 +15,12 @@ import java.util.List;
 public class UnrulyController {
 
     private final KnowledgeBase knowledgeBase;
-    private final RulesEngine<UserDetails, LoanDetails> statelessRuleEngine;
     private final RulesEngine<UserDetails, LoanDetails> statefulRulesEngine;
 
     public UnrulyController(KnowledgeBase knowledgeBase,
-                            RuleParser<UserDetails, LoanDetails> ruleParser) {
+                            RulesEngine<UserDetails, LoanDetails> statefulRulesEngine) {
         this.knowledgeBase = knowledgeBase;
-        this.statelessRuleEngine = new StatelessRuleEngine<>(ruleParser, LoanDetails::new);
-        this.statefulRulesEngine = new StatefulRulesEngine<>(ruleParser, LoanDetails::new);
+        this.statefulRulesEngine = statefulRulesEngine;
     }
 
     @GetMapping(value = "/rules")
@@ -32,7 +31,6 @@ public class UnrulyController {
 
     @PostMapping(value = "/loan")
     public ResponseEntity<?> postLoan(@RequestBody UserDetails userDetails) {
-        // TODO: Here we use a DB to get rules, it might need to be a cache
         List<Rule> allRules = knowledgeBase.getAllRules();
         LoanDetails result = statefulRulesEngine.run(allRules, userDetails);
         return ResponseEntity.ok(result);
