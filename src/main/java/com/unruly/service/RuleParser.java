@@ -20,8 +20,9 @@ public class RuleParser<I, O> {
 
     /**
      * Parse the condition field within a {@link com.unruly.model.Rule}
+     *
      * @param expression The MVEL expression to evaluate
-     * @param inputData The input data to run the condition against
+     * @param inputData  The input data to run the condition against
      * @return A boolean value that the condition resolves to
      */
     public boolean parseCondition(String expression, I inputData) {
@@ -32,8 +33,9 @@ public class RuleParser<I, O> {
 
     /**
      * Parse the action field within a {@link com.unruly.model.Rule}
-     * @param expression The MVEL expression to evaluate
-     * @param inputData The input data to run the action against
+     *
+     * @param expression   The MVEL expression to evaluate
+     * @param inputData    The input data to run the action against
      * @param outputResult The output object to assign values to
      * @return The outputResult of parsing the action
      */

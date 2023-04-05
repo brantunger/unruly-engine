@@ -12,7 +12,8 @@ public class MvelParser {
 
     /**
      * Evaluate the MVEL expression to a boolean value
-     * @param expression The MVEL expression to evaluate
+     *
+     * @param expression   The MVEL expression to evaluate
      * @param inputObjects The variables to be injected as a {@link Map}
      * @return Boolean value of the evaluated expression
      */
@@ -27,7 +28,8 @@ public class MvelParser {
 
     /**
      * Evaluate the MVEL expression on the given inputs
-     * @param expression The MVEL expression to evaluate
+     *
+     * @param expression   The MVEL expression to evaluate
      * @param inputObjects The variables to be injected as a {@link Map}
      */
     public void evaluateExpression(String expression, Map<String, Object> inputObjects) {

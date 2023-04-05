@@ -20,7 +20,8 @@ public class StatelessRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
      * During conflict resolution the {@link Rule} with the highest priority value is found first. The action field of
      * the rule found first will be the only action triggered. The output object is therefore generated based on only
      * one rule. The rule with the highest priority value.
-     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
+     *
+     * @param ruleList  This is a list of {@link Rule} objects to run through the rules engine
      * @param inputData The set of input data to fire the rules engine against
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
@@ -55,6 +56,7 @@ public class StatelessRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
      * 5. Priority wise
      * Here we are using find first rule logic.
      * </p>
+     *
      * @param ruleList The rule list to resolve the conflicts against
      * @return The {@link Rule} object found first (the rule with the highest priority value)
      */

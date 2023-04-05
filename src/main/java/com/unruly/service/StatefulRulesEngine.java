@@ -19,7 +19,8 @@ public class StatefulRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
      * field of the {@link Rule} where the condition returns true. In the stateful rules engine the rules are sorted by
      * priority. The highest priority wins. The output object saves state in between each rule, so rules with lower
      * priority may override the fields in the output object.
-     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
+     *
+     * @param ruleList  This is a list of {@link Rule} objects to run through the rules engine
      * @param inputData The set of input data to fire the rules engine against
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
