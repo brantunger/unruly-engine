@@ -1,8 +1,6 @@
 package com.unruly;
 
-import com.unruly.model.LoanDetails;
-import com.unruly.model.Rule;
-import com.unruly.model.UserDetails;
+import com.unruly.model.*;
 import com.unruly.service.KnowledgeBase;
 import com.unruly.service.RulesEngine;
 import org.springframework.http.ResponseEntity;
@@ -15,10 +13,10 @@ import java.util.List;
 public class UnrulyController {
 
     private final KnowledgeBase knowledgeBase;
-    private final RulesEngine<UserDetails, LoanDetails> statefulRulesEngine;
+    private final RulesEngine<LoanDetails> statefulRulesEngine;
 
     public UnrulyController(KnowledgeBase knowledgeBase,
-                            RulesEngine<UserDetails, LoanDetails> statefulRulesEngine) {
+                            RulesEngine<LoanDetails> statefulRulesEngine) {
         this.knowledgeBase = knowledgeBase;
         this.statefulRulesEngine = statefulRulesEngine;
     }
@@ -32,7 +30,10 @@ public class UnrulyController {
     @PostMapping(value = "/loan")
     public ResponseEntity<?> postLoan(@RequestBody UserDetails userDetails) {
         List<Rule> allRules = knowledgeBase.getAllRules();
-        LoanDetails result = statefulRulesEngine.run(allRules, userDetails);
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("input", userDetails);
+
+        LoanDetails result = statefulRulesEngine.run(allRules, facts);
         return ResponseEntity.ok(result);
     }
 }

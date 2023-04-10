@@ -1,14 +1,15 @@
 package com.unruly.service;
 
+import com.unruly.model.FactStore;
 import com.unruly.model.Rule;
 
 import java.util.List;
 
-public class StatelessRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
+public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
     private final Factory<O> outputFactory;
 
-    public StatelessRulesEngine(RuleParser<I, O> ruleParser,
+    public StatelessRulesEngine(RuleParser<O> ruleParser,
                                 Factory<O> outputFactory) {
         super(ruleParser);
         this.outputFactory = outputFactory;
@@ -21,19 +22,18 @@ public class StatelessRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
      * the rule found first will be the only action triggered. The output object is therefore generated based on only
      * one rule. The rule with the highest priority value.
      *
-     * @param ruleList  This is a list of {@link Rule} objects to run through the rules engine
-     * @param inputData The set of input data to fire the rules engine against
+     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
     @Override
-    public O run(List<Rule> ruleList, I inputData) {
+    public O run(List<Rule> ruleList, FactStore<Object> facts) {
         if (null == ruleList || ruleList.isEmpty()) {
             return null;
         }
 
         // Match the facts and data against the set of rules with highest priority first.
         this.prioritySort(ruleList);
-        List<Rule> matchedRuleList = this.match(ruleList, inputData);
+        List<Rule> matchedRuleList = this.match(ruleList, facts);
 
         // Resolve any conflicts and give the selected one rule.
         Rule resolvedRule = resolve(matchedRuleList);
@@ -42,7 +42,7 @@ public class StatelessRulesEngine<I, O> extends AbstractRulesEngine<I, O> {
         }
 
         // Run the action of the selected rule on given data and return the output.
-        return this.executeRule(resolvedRule, inputData, outputFactory.create());
+        return this.executeRule(resolvedRule, outputFactory.create());
     }
 
 

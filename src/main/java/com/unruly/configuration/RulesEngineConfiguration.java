@@ -1,7 +1,6 @@
 package com.unruly.configuration;
 
 import com.unruly.model.LoanDetails;
-import com.unruly.model.UserDetails;
 import com.unruly.service.RuleParser;
 import com.unruly.service.RulesEngine;
 import com.unruly.service.StatefulRulesEngine;
@@ -13,12 +12,12 @@ import org.springframework.context.annotation.Configuration;
 public class RulesEngineConfiguration {
 
     @Bean
-    public RulesEngine<UserDetails, LoanDetails> statelessRulesEngine(RuleParser<UserDetails, LoanDetails> ruleParser) {
+    public RulesEngine<LoanDetails> statelessRulesEngine(RuleParser<LoanDetails> ruleParser) {
         return new StatelessRulesEngine<>(ruleParser, LoanDetails::new);
     }
 
     @Bean
-    public RulesEngine<UserDetails, LoanDetails> statefulRulesEngine(RuleParser<UserDetails, LoanDetails> ruleParser) {
+    public RulesEngine<LoanDetails> statefulRulesEngine(RuleParser<LoanDetails> ruleParser) {
         return new StatefulRulesEngine<>(ruleParser, LoanDetails::new);
     }
 }

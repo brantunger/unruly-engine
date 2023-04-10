@@ -1,16 +1,17 @@
 package com.unruly.service;
 
+import com.unruly.model.FactStore;
 import com.unruly.model.Rule;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public abstract class AbstractRulesEngine<I, O> implements RulesEngine<I, O> {
+public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
-    private final RuleParser<I, O> ruleParser;
+    private final RuleParser<O> ruleParser;
 
-    protected AbstractRulesEngine(RuleParser<I, O> ruleParser) {
+    protected AbstractRulesEngine(RuleParser<O> ruleParser) {
         this.ruleParser = ruleParser;
     }
 
@@ -33,14 +34,13 @@ public abstract class AbstractRulesEngine<I, O> implements RulesEngine<I, O> {
      * Here we are using Linear matching algorithm for pattern matching.
      * </p>
      *
-     * @param ruleList  This is a list of {@link Rule} objects to filter based on when condition expression parses to
-     *                  true
-     * @param inputData The input data to match condition logic against
+     * @param ruleList This is a list of {@link Rule} objects to filter based on when condition expression parses to
+     *                 true
      * @return List of {@link Rule} objects where their condition evaluated to <b>true</b>
      */
-    protected List<Rule> match(List<Rule> ruleList, I inputData) {
+    protected List<Rule> match(List<Rule> ruleList, FactStore<Object> facts) {
         return ruleList.stream()
-                .filter(rule -> ruleParser.parseCondition(rule.getCondition(), inputData))
+                .filter(rule -> ruleParser.parseCondition(rule.getCondition(), facts))
                 .collect(Collectors.toList());
     }
 
@@ -49,20 +49,18 @@ public abstract class AbstractRulesEngine<I, O> implements RulesEngine<I, O> {
      * Execute a single {@link Rule} object's action field against the input data
      *
      * @param rule         The rule object to obtain the action expression to fire the rule for
-     * @param inputData    The input data to execute the rule against
      * @param outputObject an empty output object to set output data into
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
-    protected O executeRule(Rule rule, I inputData, O outputObject) {
-        return ruleParser.parseAction(rule.getAction(), inputData, outputObject);
+    protected O executeRule(Rule rule, O outputObject) {
+        return ruleParser.parseAction(rule.getAction(), outputObject);
     }
 
     /**
      * The method to implement to tell the concrete rules engine how to fire rules against the input data object
      *
-     * @param ruleList  This is a list of {@link Rule} objects to run through the rules engine
-     * @param inputData The set of input data to fire the rules engine against
+     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
-    public abstract O run(List<Rule> ruleList, I inputData);
+    public abstract O run(List<Rule> ruleList, FactStore<Object> facts);
 }
