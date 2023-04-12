@@ -9,9 +9,9 @@ import java.util.stream.Collectors;
 
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
-    private final RuleParser<O> ruleParser;
+    private final Parser<O> ruleParser;
 
-    protected AbstractRulesEngine(RuleParser<O> ruleParser) {
+    protected AbstractRulesEngine(Parser<O> ruleParser) {
         this.ruleParser = ruleParser;
     }
 

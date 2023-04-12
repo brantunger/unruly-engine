@@ -9,7 +9,7 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
     private final Factory<O> outputFactory;
 
-    public StatefulRulesEngine(RuleParser<O> ruleParser,
+    public StatefulRulesEngine(Parser<O> ruleParser,
                                Factory<O> outputFactory) {
         super(ruleParser);
         this.outputFactory = outputFactory;

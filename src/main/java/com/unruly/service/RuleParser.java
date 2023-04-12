@@ -1,23 +1,17 @@
 package com.unruly.service;
 
 import com.unruly.model.FactStore;
-import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
+import org.mvel2.MVEL;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Service
-public class RuleParser<O> {
+@Slf4j
+public class RuleParser<O> implements Parser<O> {
 
     private static final String OUTPUT_KEYWORD = "output";
-
-    private final MvelParser mvelParser;
-
-
-    public RuleParser(MvelParser mvelParser) {
-        this.mvelParser = mvelParser;
-    }
 
     /**
      * Parse the condition field within a {@link com.unruly.model.Rule}
@@ -29,7 +23,12 @@ public class RuleParser<O> {
         Map<String, Object> entryMap = facts.entrySet()
                 .stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getValue()));
-        return mvelParser.evaluateToBoolean(expression, entryMap);
+        try {
+            return MVEL.evalToBoolean(expression, entryMap);
+        } catch (Exception e) {
+            log.error("Can not parse MVEL Expression : {} Error: {}", expression, e.getMessage());
+            throw e;
+        }
     }
 
     /**
@@ -42,7 +41,12 @@ public class RuleParser<O> {
     public O parseAction(String expression, O outputResult) {
         Map<String, Object> input = new HashMap<>();
         input.put(OUTPUT_KEYWORD, outputResult);
-        mvelParser.evaluateExpression(expression, input);
-        return outputResult;
+        try {
+            MVEL.eval(expression, input);
+            return outputResult;
+        } catch (Exception e) {
+            log.error("Can not parse MVEL Expression : {} Error: {}", expression, e.getMessage());
+            throw e;
+        }
     }
 }
