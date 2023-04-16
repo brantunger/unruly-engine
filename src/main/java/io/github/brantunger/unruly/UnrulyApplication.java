@@ -1,4 +1,4 @@
-package com.unruly;
+package io.github.brantunger.unruly;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

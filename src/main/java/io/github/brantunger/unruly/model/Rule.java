@@ -1,4 +1,4 @@
-package com.unruly.model;
+package io.github.brantunger.unruly.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

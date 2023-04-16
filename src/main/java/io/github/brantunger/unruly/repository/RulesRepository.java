@@ -1,6 +1,6 @@
-package com.unruly.repository;
+package io.github.brantunger.unruly.repository;
 
-import com.unruly.model.RuleDbModel;
+import io.github.brantunger.unruly.model.RuleDbModel;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

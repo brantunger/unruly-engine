@@ -1,8 +1,8 @@
-package com.unruly.service;
+package io.github.brantunger.unruly.service;
 
-import com.unruly.model.Rule;
-import com.unruly.model.RuleDbModel;
-import com.unruly.repository.RulesRepository;
+import io.github.brantunger.unruly.model.Rule;
+import io.github.brantunger.unruly.model.RuleDbModel;
+import io.github.brantunger.unruly.repository.RulesRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

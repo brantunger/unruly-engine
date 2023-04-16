@@ -1,6 +1,7 @@
-package com.unruly.service;
+package io.github.brantunger.unruly.service;
 
-import com.unruly.model.FactStore;
+import io.github.brantunger.unruly.model.FactStore;
+import io.github.brantunger.unruly.model.Rule;
 import lombok.extern.slf4j.Slf4j;
 import org.mvel2.MVEL;
 
@@ -14,7 +15,7 @@ public class RuleParser<O> implements Parser<O> {
     private static final String OUTPUT_KEYWORD = "output";
 
     /**
-     * Parse the condition field within a {@link com.unruly.model.Rule}
+     * Parse the condition field within a {@link Rule}
      *
      * @param expression The MVEL expression to evaluate
      * @return A boolean value that the condition resolves to
@@ -32,7 +33,7 @@ public class RuleParser<O> implements Parser<O> {
     }
 
     /**
-     * Parse the action field within a {@link com.unruly.model.Rule}
+     * Parse the action field within a {@link Rule}
      *
      * @param expression   The MVEL expression to evaluate
      * @param outputResult The output object to assign values to

@@ -1,4 +1,4 @@
-package com.unruly.model;
+package io.github.brantunger.unruly.model;
 
 public interface FactReference<T> {
 

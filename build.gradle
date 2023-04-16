@@ -1,12 +1,15 @@
 plugins {
 	id 'java'
 	id 'jacoco'
+	id 'signing'
 	id 'maven-publish'
 	id 'org.springframework.boot' version '3.0.5'
 	id 'io.spring.dependency-management' version '1.1.0'
+	id 'io.github.gradle-nexus.publish-plugin' version '1.3.0'
 }
 
-group = 'com.unruly'
+group = 'io.github.brantunger'
+archivesBaseName = 'unruly-engine'
 version = '1.0.0'
 sourceCompatibility = '17'
 
@@ -18,6 +21,53 @@ configurations {
 
 repositories {
 	mavenCentral()
+}
+
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from(components['java'])
+
+			pom {
+				name.set('unruly-engine')
+				description.set('Unruly is a pure Java rule engine that parses and evaluates using MVEL based rules')
+				url.set('https://github.com/brantunger/unruly-engine')
+				licenses {
+					license {
+						name.set('GNU GENERAL PUBLIC LICENSE v3.0')
+						url.set('https://www.gnu.org/licenses/gpl-3.0.en.html')
+					}
+				}
+				developers {
+					developer {
+						id.set('brantunger')
+						name.set('Brant Unger')
+						email.set('brantunger@gmail.com')
+					}
+				}
+				scm {
+					connection.set('scm:git:git://github.com/brantunger/unruly-engine.git')
+					developerConnection.set('scm:git:ssh://github.com/brantunger/unruly-engine.git')
+					url.set('https://github.com/brantunger/unruly-engine')
+				}
+			}
+		}
+	}
+}
+
+nexusPublishing {
+	repositories {
+		sonatype {
+			nexusUrl.set(uri('https://s01.oss.sonatype.org/service/local/'))
+			snapshotRepositoryUrl.set(uri('https://s01.oss.sonatype.org/content/repositories/snapshots/'))
+			username.set(System.getenv('MAVEN_USERNAME'))
+			password.set(System.getenv('MAVEN_PASSWORD'))
+		}
+	}
+}
+
+signing {
+	sign(publishing.publications['mavenJava'])
 }
 
 dependencies {
@@ -32,6 +82,26 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
-tasks.named('test') {
-	useJUnitPlatform()
+test {
+	useJUnitPlatform {
+		includeEngines 'junit-jupiter'
+	}
+	systemProperties = [
+			'junit.jupiter.extensions.autodetection.enabled': 'true',
+	]
+	jacoco {
+		destinationFile = file("$buildDir/jacoco/test.exec")
+	}
+}
+
+ext {
+	jacocoDestinationFile = "$buildDir/jacoco/test.exec"
+}
+
+jacocoTestReport {
+	reports {
+		html.enabled true
+		xml.enabled true
+		xml.destination file("${buildDir}/reports/jacoco/report.xml")
+	}
 }

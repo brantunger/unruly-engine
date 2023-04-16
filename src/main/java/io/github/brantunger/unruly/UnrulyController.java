@@ -1,8 +1,9 @@
-package com.unruly;
+package io.github.brantunger.unruly;
 
 import com.unruly.model.*;
-import com.unruly.service.KnowledgeBase;
-import com.unruly.service.RulesEngine;
+import io.github.brantunger.unruly.model.*;
+import io.github.brantunger.unruly.service.KnowledgeBase;
+import io.github.brantunger.unruly.service.RulesEngine;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

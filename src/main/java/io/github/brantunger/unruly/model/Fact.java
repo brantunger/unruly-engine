@@ -1,4 +1,4 @@
-package com.unruly.model;
+package io.github.brantunger.unruly.model;
 
 public class Fact<T> implements FactReference<T> {
     private String name;
