@@ -67,10 +67,6 @@ nexusPublishing {
 }
 
 signing {
-	def singingKeyId = System.getenv('GPG_KEY_ID')
-	def signingKey = System.getenv('GPG_KEY')
-	def signingPassword = System.getenv('GPG_PASSWORD')
-	useInMemoryPgpKeys(singingKeyId, signingKey, signingPassword)
 	sign publishing.publications.mavenJava
 }
 
