@@ -28,7 +28,8 @@ jobs:
       run: |
         export GPG_TTY=$(tty)
         echo "$GPG_KEY" > key.asc
-        gpg --batch --import key.asc
+#        gpg --batch --import key.asc
+        gpg --allow-secret-key-import --import key.asc
         shred --remove key.asc
     - name: Build & Deploy
       id: deploy
@@ -37,5 +38,4 @@ jobs:
         MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
         GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
-      run: |
-        ./gradlew clean build publishToSonatype closeAndReleaseSonatypeStagingRepository -Psigning.keyId="${GPG_KEY_ID}" -Psigning.password="${GPG_PASSWORD}"
+      run: ./gradlew clean build publishToSonatype closeAndReleaseSonatypeStagingRepository -Psigning.keyId="${GPG_KEY_ID}" -Psigning.password="${GPG_PASSWORD}"
