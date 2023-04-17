@@ -67,26 +67,8 @@ nexusPublishing {
 }
 
 signing {
-	def key = """
------BEGIN PGP PRIVATE KEY BLOCK-----
-
-lIYEZDx/YxYJKwYBBAHaRw8BAQdAoF4H92X9toAmi0QL3rtRisAoeYQFkgM4Rkq9
-RmGgtjr+BwMCNZcNL3QnLzj0EHZoS9QyHxA8Gg2auIh67xqokamkJfgvEYr72MPv
-KEXcrUdl49ITTNUbQQ1y3TLrIWkT5x7pMf21h1SXY154c9i4d3GeeLQiQnJhbnQg
-VW5nZXIgPGJyYW50dW5nZXJAZ21haWwuY29tPoiZBBMWCgBBFiEEw2MK60AIw0Hq
-x+yl40lFpPO6WOwFAmQ8f2MCGwMFCQPCZwAFCwkIBwICIgIGFQoJCAsCBBYCAwEC
-HgcCF4AACgkQ40lFpPO6WOwn9AD/dTGJ5VA1H8Cwp72/6+TQhx1AFh2W9n4peWFn
-yNPZCEEA/1jJRB5INUt8w5yzGC4J2siPpveUgWxQfWnayg/Ne24GnIsEZDx/YxIK
-KwYBBAGXVQEFAQEHQDsn96ZGnkpLHK3xl74U+hppjsYZyF7tBpilXAS6pzxgAwEI
-B/4HAwJn59ZTTJboxfRM6A8shcOAQGyi7sqH1DNgAmWG+/CjktbVdZjEbhdazK3x
-3MctmDKX9nBe/Y2PM7Mb/4Lh7mlQClPZHXxfLg3SOqApI6pAiH4EGBYKACYWIQTD
-YwrrQAjDQerH7KXjSUWk87pY7AUCZDx/YwIbDAUJA8JnAAAKCRDjSUWk87pY7MhE
-AQD5ZhXQedvwq5sR8hbqJLtu4zZ92YZX8eVwNr0IYEC26QD/YkAW7Bbn3+I7gc9w
-TvrL5Sg9/CJ+M+PYr+R3C74bPQw=
-=CrB2
------END PGP PRIVATE KEY BLOCK-----
-"""
-	def pass = findProperty('signing.password').toString()
+	def key = System.getenv('GPG_KEY')
+	def pass = System.getenv('GPG_PASSWORD')
 	useInMemoryPgpKeys(key, pass)
 	sign publishing.publications.mavenJava
 }
