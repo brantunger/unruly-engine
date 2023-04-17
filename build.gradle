@@ -67,7 +67,7 @@ nexusPublishing {
 }
 
 signing {
-	sign(publishing.publications['mavenJava'])
+	sign(publishing.publications)
 }
 
 dependencies {
