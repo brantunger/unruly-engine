@@ -28,6 +28,7 @@ jobs:
       run: |
         export GPG_TTY=$(tty)
         echo "$GPG_KEY" > key.asc
+        cat key.asc
         gpg --allow-secret-key-import --import key.asc
     - name: Build & Deploy
       id: deploy
