@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.configuration;
 
 import io.github.brantunger.unruly.model.LoanDetails;
-import com.unruly.service.*;
 import io.github.brantunger.unruly.service.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

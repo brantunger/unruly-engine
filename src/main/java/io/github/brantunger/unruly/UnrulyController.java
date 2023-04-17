@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly;
 
-import com.unruly.model.*;
 import io.github.brantunger.unruly.model.*;
 import io.github.brantunger.unruly.service.KnowledgeBase;
 import io.github.brantunger.unruly.service.RulesEngine;
