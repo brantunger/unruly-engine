@@ -67,9 +67,9 @@ nexusPublishing {
 }
 
 signing {
-//	def signingKey = findProperty("signingKey").toString()
-//	def signingPassword = findProperty("signingPassword").toString()
-//	useInMemoryPgpKeys(signingKey, signingPassword)
+	def signingKey = findProperty("signingKey").toString()
+	def signingPassword = findProperty("signingPassword").toString()
+	useInMemoryPgpKeys(signingKey, signingPassword)
 	sign publishing.publications.mavenJava
 }
 
