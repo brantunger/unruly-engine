@@ -1,6 +1,6 @@
-package io.github.brantunger.unruly.service;
+package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.model.FactStore;
+import io.github.brantunger.unruly.api.FactStore;
 
 public interface Parser<O> {
 

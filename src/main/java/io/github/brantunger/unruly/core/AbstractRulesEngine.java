@@ -1,7 +1,7 @@
-package io.github.brantunger.unruly.service;
+package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.model.FactStore;
-import io.github.brantunger.unruly.model.Rule;
+import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.Rule;
 
 import java.util.Comparator;
 import java.util.List;

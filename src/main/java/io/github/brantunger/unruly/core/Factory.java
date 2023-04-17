@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.service;
+package io.github.brantunger.unruly.core;
 
 public interface Factory<O> {
 
