@@ -31,7 +31,6 @@ jobs:
         echo "$GPG_KEY" > key.asc
         gpg --batch --import key.asc
         gpg --keyserver keyserver.ubuntu.com --send-keys "$GPG_KEY_ID"
-        gpg --export-secret-key E34945A4F3BA58EC > secring.gpg
     - name: Build & Deploy
       id: deploy
       env:
