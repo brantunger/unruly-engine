@@ -39,4 +39,4 @@ jobs:
         GPG_KEY: ${{ secrets.GPG_KEY }}
         GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
-      run: ./gradlew clean build publishToSonatype closeAndReleaseSonatypeStagingRepository -Psigning.keyId="${GPG_KEY_ID}" -Psigning.password="${GPG_PASSWORD}"
+      run: ./gradlew clean build publishToSonatype releaseSonatypeStagingRepository -Psigning.keyId="${GPG_KEY_ID}" -Psigning.password="${GPG_PASSWORD}"
