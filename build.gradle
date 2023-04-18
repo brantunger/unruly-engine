@@ -11,12 +11,8 @@ archivesBaseName = 'unruly-engine'
 version = '1.0.4'
 sourceCompatibility = '17'
 
-tasks.register('javadocJar', Jar) {
-	from javadoc
-}
-
-tasks.register('sourcesJar', Jar) {
-	from sourceSets.main.allSource
+java {
+	withSourcesJar()
 }
 
 configurations {
@@ -33,8 +29,6 @@ publishing {
 	publications {
 		mavenJava(MavenPublication) {
 			from(components['java'])
-			javadocJar
-			sourcesJar
 
 			pom {
 				name.set('unruly-engine')
