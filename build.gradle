@@ -103,3 +103,17 @@ jacocoTestReport {
 		xml.destination file("${buildDir}/reports/jacoco/report.xml")
 	}
 }
+
+tasks.register('javadocJar', Jar) {
+	classifier = 'javadoc'
+	from javadoc
+}
+
+tasks.register('sourcesJar', Jar) {
+	classifier = 'sources'
+	from sourceSets.main.allSource
+}
+
+artifacts {
+	archives javadocJar, sourcesJar
+}
