@@ -11,8 +11,13 @@ archivesBaseName = 'unruly-engine'
 version = '1.0.4'
 sourceCompatibility = '17'
 
-java {
-    withSourcesJar()
+//java {
+//    withSourcesJar()
+//}
+
+tasks.register('sourceJar', Jar) {
+	from sourceSets.main.allJava
+	archiveClassifier = "sources"
 }
 
 configurations {
@@ -28,8 +33,8 @@ repositories {
 publishing {
     publications {
         mavenJava(MavenPublication) {
-
             from(components['java'])
+			artifact sourceJar
 
             pom {
                 name.set('unruly-engine')
