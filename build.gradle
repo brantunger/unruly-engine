@@ -15,9 +15,19 @@ sourceCompatibility = '17'
 //    withSourcesJar()
 //}
 
-tasks.register('sourceJar', Jar) {
-	from sourceSets.main.allJava
-	archiveClassifier = "sources"
+//tasks.register('sourceJar', Jar) {
+//	from sourceSets.main.allJava
+//	archiveClassifier = "sources"
+//}
+
+tasks.register('javadocJar', Jar) {
+	archiveClassifier = 'javadoc'
+	from javadoc
+}
+
+tasks.register('sourcesJar', Jar) {
+	archiveClassifier = 'sources'
+	from sourceSets.main.allSource
 }
 
 configurations {
@@ -34,7 +44,9 @@ publishing {
     publications {
         mavenJava(MavenPublication) {
             from(components['java'])
-			artifact sourceJar
+//			artifact sourceJar
+			artifact sourcesJar
+			artifact javadocJar
 
             pom {
                 name.set('unruly-engine')
