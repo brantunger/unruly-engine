@@ -11,23 +11,14 @@ archivesBaseName = 'unruly-engine'
 version = '1.0.4'
 sourceCompatibility = '17'
 
-//java {
-//    withSourcesJar()
-//}
-
-//tasks.register('sourceJar', Jar) {
-//	from sourceSets.main.allJava
-//	archiveClassifier = "sources"
-//}
-
 tasks.register('javadocJar', Jar) {
-	archiveClassifier = 'javadoc'
-	from javadoc
+    archiveClassifier = 'javadoc'
+    from javadoc
 }
 
 tasks.register('sourcesJar', Jar) {
-	archiveClassifier = 'sources'
-	from sourceSets.main.allSource
+    archiveClassifier = 'sources'
+    from sourceSets.main.allSource
 }
 
 configurations {
@@ -44,9 +35,8 @@ publishing {
     publications {
         mavenJava(MavenPublication) {
             from(components['java'])
-//			artifact sourceJar
-			artifact sourcesJar
-			artifact javadocJar
+            artifact sourcesJar
+            artifact javadocJar
 
             pom {
                 name.set('unruly-engine')
