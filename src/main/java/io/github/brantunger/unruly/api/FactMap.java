@@ -6,16 +6,24 @@ import java.util.*;
  * FactMap is an implementation of {@link FactStore}. It's a Key/Value store where the key is a {@link String}
  * representing the fact's name, and the value is a {@link FactReference} itself.
  *
- * @param <T>
+ * @param <T> The object/value type of the facts
  */
 public class FactMap<T> implements FactStore<T> {
 
     private final Map<String, FactReference<T>> facts;
 
+    /**
+     * Construct a new FactMap from a map of facts.
+     * @param facts The fact map to construct the facts from
+     */
     public FactMap(Map<String, FactReference<T>> facts) {
         this.facts = facts;
     }
 
+    /**
+     * Construct a new FactMap from an array of existing FactReference objects
+     * @param facts
+     */
     @SafeVarargs
     public FactMap(FactReference<T>... facts) {
         this();
@@ -25,6 +33,9 @@ public class FactMap<T> implements FactStore<T> {
         }
     }
 
+    /**
+     * Construct a new empty FactMap.
+     */
     public FactMap() {
         facts = new HashMap<>();
     }

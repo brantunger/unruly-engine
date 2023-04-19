@@ -17,16 +17,29 @@ public class Fact<T> implements FactReference<T> {
     private String name;
     private T value;
 
+    /**
+     * Instantiate a Fact from the name and value.
+     * @param name The name of the fact
+     * @param value The value of the fact
+     */
     public Fact(String name, T value) {
         this.name = name;
         this.value = value;
     }
 
+    /**
+     * Instantiate a Fact from the value of the Fact itself.
+     * @param obj The object to obtain the value from
+     */
     public Fact(T obj) {
         this.name = obj.toString();
         this.value = obj;
     }
 
+    /**
+     * Instantiate a Fact from another Fact object.
+     * @param fact The existing Fact object to get the value and name from
+     */
     public Fact(FactReference<T> fact) {
         this.name = fact.getName();
         this.value = fact.getValue();

@@ -19,6 +19,11 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
     private final Factory<O> outputFactory;
 
+    /**
+     * Construct a StatelessRulesEngine
+     * @param ruleParser The {@link Parser} implementation to use in the rules engine.
+     * @param outputFactory The {@link Factory} to use to instantiate the output object with
+     */
     public StatelessRulesEngine(Parser<O> ruleParser,
                                 Factory<O> outputFactory) {
         super(ruleParser);

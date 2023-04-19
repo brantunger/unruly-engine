@@ -25,6 +25,7 @@ public interface FactReference<T> {
      * Sets the name of the fact.
      *
      * @param name the name
+     * @return The FactReference object itself
      */
     FactReference<T> setName(String name);
 
@@ -39,6 +40,7 @@ public interface FactReference<T> {
      * Sets the value of the fact.
      *
      * @param obj the value object reference
+     * @return The FactReference object itself
      */
     FactReference<T> setValue(T obj);
 }
