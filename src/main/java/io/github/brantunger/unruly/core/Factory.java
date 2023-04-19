@@ -1,5 +1,10 @@
 package io.github.brantunger.unruly.core;
 
+/**
+ * A Factory that instantiates an object of the output object type.
+ *
+ * @param <O> The object type to instantiate
+ */
 public interface Factory<O> {
 
     /**

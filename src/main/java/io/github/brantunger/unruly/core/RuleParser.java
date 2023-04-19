@@ -9,6 +9,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * RuleParser is an MVEL based rule parser implementation. The Parser parses and evaluates conditional expressions and
+ * action expressions. When the condition expression evaluates to <strong>true</strong> the action expression can be
+ * executed by the {@link RulesEngine}.
+ *
+ * @param <O> The output object type to instantiate
+ */
 @Slf4j
 public class RuleParser<O> implements Parser<O> {
 

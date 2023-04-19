@@ -5,6 +5,15 @@ import io.github.brantunger.unruly.api.Rule;
 
 import java.util.List;
 
+/**
+ * A StatefulRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
+ * <strong>STATEFUL</strong> implementation the rules engine fires all the actions of the rules when the condition
+ * field of the {@link Rule} condition returns true. In the stateful rules engine the rules are sorted by priority.
+ * The highest priority wins. The output object saves state in between each rule, so rules with lower priority may
+ * override the fields in the output object.
+ *
+ * @param <O> The output object type to instantiate when the rule's action expression is fired.
+ */
 public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
     private final Factory<O> outputFactory;
@@ -17,9 +26,9 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
     /**
      * Run all the rules through a <b>STATEFUL</b> rules engine and fire all the actions of the rules when the condition
-     * field of the {@link Rule} where the condition returns true. In the stateful rules engine the rules are sorted by
-     * priority. The highest priority wins. The output object saves state in between each rule, so rules with lower
-     * priority may override the fields in the output object.
+     * field of the {@link Rule} condition returns true. In the stateful rules engine the rules are sorted by priority.
+     * The highest priority wins. The output object saves state in between each rule, so rules with lower priority may
+     * override the fields in the output object.
      *
      * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
      * @return The object that is the result of the action getting fired against the given {@link Rule}

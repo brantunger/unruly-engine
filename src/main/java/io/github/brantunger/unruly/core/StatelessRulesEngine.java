@@ -5,6 +5,16 @@ import io.github.brantunger.unruly.api.Rule;
 
 import java.util.List;
 
+/**
+ * A StatelessRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
+ * <strong>STATELESS</strong> the {@link RulesEngine} fires the action of a single rule. All condition fields within the
+ * ruleList are evaluated in the stateless rule engine. However, only a single action is fired. During conflict
+ * resolution the {@link Rule} with the highest priority value is found first. The action field of the rule found first
+ * will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the
+ * highest priority value.
+ *
+ * @param <O> The output object type to instantiate when the rule's action expression is fired.
+ */
 public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
     private final Factory<O> outputFactory;
@@ -47,7 +57,7 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
 
     /**
-     * <p>
+     * <pre>
      * We can use here any resolving techniques:
      * 1. Lex
      * 2. Recency
@@ -55,7 +65,7 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * 4. Refactor
      * 5. Priority wise
      * Here we are using find first rule logic.
-     * </p>
+     * </pre>
      *
      * @param ruleList The rule list to resolve the conflicts against
      * @return The {@link Rule} object found first (the rule with the highest priority value)

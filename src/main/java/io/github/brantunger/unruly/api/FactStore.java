@@ -2,6 +2,12 @@ package io.github.brantunger.unruly.api;
 
 import java.util.Map;
 
+/**
+ * FactStore is an extension of a {@link Map}. It's a Key/Value store where the key is a {@link String} representing
+ * the fact's name, and the value is a {@link FactReference} itself.
+ *
+ * @param <T> The object/value type of the fact.
+ */
 public interface FactStore<T> extends Map<String, FactReference<T>> {
 
     /**

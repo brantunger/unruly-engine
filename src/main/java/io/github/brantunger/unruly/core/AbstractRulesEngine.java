@@ -7,6 +7,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * The AbstractRulesEngine is an abstract implementation of the {@link RulesEngine} interface. The RulesEngine fires the
+ * action expression from a list of {@link Rule} objects when their conditions evaluate to <strong>true</strong>.
+ *
+ * @param <O> The output object to instantiate
+ */
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private final Parser<O> ruleParser;

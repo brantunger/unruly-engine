@@ -2,6 +2,12 @@ package io.github.brantunger.unruly.api;
 
 import java.util.*;
 
+/**
+ * FactMap is an implementation of {@link FactStore}. It's a Key/Value store where the key is a {@link String}
+ * representing the fact's name, and the value is a {@link FactReference} itself.
+ *
+ * @param <T>
+ */
 public class FactMap<T> implements FactStore<T> {
 
     private final Map<String, FactReference<T>> facts;
