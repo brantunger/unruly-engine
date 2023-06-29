@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import lombok.extern.slf4j.Slf4j;
 import org.mvel2.MVEL;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -21,39 +22,42 @@ public class RuleParser<O> implements Parser<O> {
 
     private static final String OUTPUT_KEYWORD = "output";
 
+
     /**
-     * Parse the condition field within a {@link Rule}
+     * Parse the condition field within a {@link Rule} from a pre-compiled expression.
      *
-     * @param expression The MVEL expression to evaluate
+     * @param expression The serialized MVEL expression to evaluate
+     * @param facts      The input object store representing facts
      * @return A boolean value that the condition resolves to
      */
-    public boolean parseCondition(String expression, FactStore<Object> facts) {
-        Map<String, Object> entryMap = facts.entrySet()
-                .stream()
+    @Override
+    public boolean parseCondition(Serializable expression, FactStore<Object> facts) {
+        Map<String, Object> entryMap = facts.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getValue()));
         try {
-            return MVEL.evalToBoolean(expression, entryMap);
+            return (Boolean) MVEL.executeExpression(expression, entryMap);
         } catch (Exception e) {
-            log.error("Can not parse MVEL Expression : {} Error: {}", expression, e.getMessage());
+            log.error("Can not parse MVEL Expression Error: {}", e.getMessage());
             throw e;
         }
     }
 
     /**
-     * Parse the action field within a {@link Rule}
+     * Parse the action field within a {@link Rule} from a pre-compiled rule
      *
-     * @param expression   The MVEL expression to evaluate
-     * @param outputResult The output object to assign values to
+     * @param compiledExpression The serialized MVEL expression to evaluate
+     * @param outputResult       The output object to assign values to
      * @return The outputResult of parsing the action
      */
-    public O parseAction(String expression, O outputResult) {
+    @Override
+    public O parseAction(Serializable compiledExpression, O outputResult) {
         Map<String, Object> input = new HashMap<>();
         input.put(OUTPUT_KEYWORD, outputResult);
         try {
-            MVEL.eval(expression, input);
+            MVEL.executeExpression(compiledExpression, input);
             return outputResult;
         } catch (Exception e) {
-            log.error("Can not parse MVEL Expression : {} Error: {}", expression, e.getMessage());
+            log.error("Can not parse MVEL Expression Error: {}", e.getMessage());
             throw e;
         }
     }

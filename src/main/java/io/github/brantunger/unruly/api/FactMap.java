@@ -14,6 +14,7 @@ public class FactMap<T> implements FactStore<T> {
 
     /**
      * Construct a new FactMap from a map of facts.
+     *
      * @param facts The fact map to construct the facts from
      */
     public FactMap(Map<String, FactReference<T>> facts) {
@@ -22,6 +23,7 @@ public class FactMap<T> implements FactStore<T> {
 
     /**
      * Construct a new FactMap from an array of existing FactReference objects
+     *
      * @param facts
      */
     @SafeVarargs

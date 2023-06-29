@@ -42,12 +42,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param ruleList This is a list of {@link Rule} objects to filter based on when condition expression parses to
      *                 true
-     * @param facts The key/value fact store to run the rule engine against.
+     * @param facts    The key/value fact store to run the rule engine against.
      * @return List of {@link Rule} objects where their condition evaluated to <b>true</b>
      */
     protected List<Rule> match(List<Rule> ruleList, FactStore<Object> facts) {
         return ruleList.stream()
-                .filter(rule -> ruleParser.parseCondition(rule.getCondition(), facts))
+                .filter(rule -> ruleParser.parseCondition(rule.getSerializedCondition(), facts))
                 .collect(Collectors.toList());
     }
 
@@ -60,7 +60,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
     protected O executeRule(Rule rule, O outputObject) {
-        return ruleParser.parseAction(rule.getAction(), outputObject);
+        return ruleParser.parseAction(rule.getSerializedAction(), outputObject);
     }
 
     /**

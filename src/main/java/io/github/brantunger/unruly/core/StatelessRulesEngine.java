@@ -21,7 +21,8 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
     /**
      * Construct a StatelessRulesEngine
-     * @param ruleParser The {@link Parser} implementation to use in the rules engine.
+     *
+     * @param ruleParser    The {@link Parser} implementation to use in the rules engine.
      * @param outputFactory The {@link Factory} to use to instantiate the output object with
      */
     public StatelessRulesEngine(Parser<O> ruleParser,
@@ -59,7 +60,6 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
         // Run the action of the selected rule on given data and return the output.
         return this.executeRule(resolvedRule, outputFactory.create());
     }
-
 
     /**
      * <pre>

@@ -20,7 +20,8 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
     /**
      * Construct a StatefulRulesEngine.
-     * @param ruleParser The {@link Parser} implementation to use in the rules engine.
+     *
+     * @param ruleParser    The {@link Parser} implementation to use in the rules engine.
      * @param outputFactory The {@link Factory} to use to instantiate the output object with
      */
     public StatefulRulesEngine(Parser<O> ruleParser,
@@ -36,6 +37,7 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * override the fields in the output object.
      *
      * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
+     * @param facts    The input fact store to run rules against
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
     @Override
