@@ -41,6 +41,32 @@ public class RulesEngineConfiguration {
 }
 ```
 
+If your rules require external package imports to function it is recommended that you add them before executing the rules engine by configuring the parser. You can use either the `addImport(String package)` or `addImports(Set<String> packages)` methods.
+
+Example:
+
+```java
+@Configuration
+public class RulesEngineConfiguration {
+
+    @Bean
+    public Parser<LoanDetails> ruleParser() {
+        return new RuleParser<>()
+                .addImport("java.util.Set");
+    }
+
+    @Bean
+    public RulesEngine<LoanDetails> statelessRulesEngine(Parser<LoanDetails> ruleParser) {
+        return new StatelessRulesEngine<>(ruleParser, LoanDetails::new);
+    }
+
+    @Bean
+    public RulesEngine<LoanDetails> statefulRulesEngine(Parser<LoanDetails> ruleParser) {
+        return new StatefulRulesEngine<>(ruleParser, LoanDetails::new);
+    }
+}
+```
+
 ### Use the rules engine bean
 You might then use one of the rules engine like this practical example:
 
