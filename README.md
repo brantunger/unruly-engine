@@ -23,46 +23,15 @@ Creating the main beans to use is simple. Let's say you want to create two rules
 ```java
 @Configuration
 public class RulesEngineConfiguration {
-
+    
     @Bean
-    public Parser<LoanDetails> ruleParser() {
-        return new RuleParser<>();
+    public RulesEngine<LoanDetails> statelessRulesEngine() {
+        return new StatelessRulesEngine<>(LoanDetails::new);
     }
 
     @Bean
-    public RulesEngine<LoanDetails> statelessRulesEngine(Parser<LoanDetails> ruleParser) {
-        return new StatelessRulesEngine<>(ruleParser, LoanDetails::new);
-    }
-
-    @Bean
-    public RulesEngine<LoanDetails> statefulRulesEngine(Parser<LoanDetails> ruleParser) {
-        return new StatefulRulesEngine<>(ruleParser, LoanDetails::new);
-    }
-}
-```
-
-If your rules require external package imports to function it is recommended that you add them before executing the rules engine by configuring the parser. You can use either the `addImport(String package)` or `addImports(Set<String> packages)` methods.
-
-Example:
-
-```java
-@Configuration
-public class RulesEngineConfiguration {
-
-    @Bean
-    public Parser<LoanDetails> ruleParser() {
-        return new RuleParser<>()
-                .addImport("java.util.Set");
-    }
-
-    @Bean
-    public RulesEngine<LoanDetails> statelessRulesEngine(Parser<LoanDetails> ruleParser) {
-        return new StatelessRulesEngine<>(ruleParser, LoanDetails::new);
-    }
-
-    @Bean
-    public RulesEngine<LoanDetails> statefulRulesEngine(Parser<LoanDetails> ruleParser) {
-        return new StatefulRulesEngine<>(ruleParser, LoanDetails::new);
+    public RulesEngine<LoanDetails> statefulRulesEngine() {
+        return new StatefulRulesEngine<>(LoanDetails::new);
     }
 }
 ```
@@ -90,7 +59,8 @@ public class UnrulyController {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("input", userDetails);
 
-        LoanDetails result = statefulRulesEngine.run(allRules, facts);
+        statefulRulesEngine.setRuleList(allRules);
+        LoanDetails result = statefulRulesEngine.run(facts);
         return ResponseEntity.ok(result);
     }
 }

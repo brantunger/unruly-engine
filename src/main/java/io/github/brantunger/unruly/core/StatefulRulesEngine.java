@@ -21,12 +21,9 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
     /**
      * Construct a StatefulRulesEngine.
      *
-     * @param ruleParser    The {@link Parser} implementation to use in the rules engine.
      * @param outputFactory The {@link Factory} to use to instantiate the output object with
      */
-    public StatefulRulesEngine(Parser<O> ruleParser,
-                               Factory<O> outputFactory) {
-        super(ruleParser);
+    public StatefulRulesEngine(Factory<O> outputFactory) {
         this.outputFactory = outputFactory;
     }
 
@@ -36,18 +33,16 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * The highest priority wins. The output object saves state in between each rule, so rules with lower priority may
      * override the fields in the output object.
      *
-     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
-     * @param facts    The input fact store to run rules against
+     * @param facts The input fact store to run rules against
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
     @Override
-    public O run(List<Rule> ruleList, FactStore<Object> facts) {
-        if (null == ruleList || ruleList.isEmpty()) {
+    public O run(FactStore<Object> facts) {
+        if (null == this.ruleList || ruleList.isEmpty()) {
             return null;
         }
 
         // Match the facts and data against the set of rules with highest priority first.
-        this.prioritySort(ruleList);
         List<Rule> matchedRuleList = this.match(ruleList, facts);
 
         O outputObject = outputFactory.create();

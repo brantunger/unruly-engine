@@ -2,9 +2,13 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import lombok.extern.slf4j.Slf4j;
+import org.mvel2.MVEL;
+import org.mvel2.ParserConfiguration;
+import org.mvel2.ParserContext;
 
-import java.util.Comparator;
-import java.util.List;
+import java.io.Serializable;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -13,12 +17,68 @@ import java.util.stream.Collectors;
  *
  * @param <O> The output object to instantiate
  */
+@Slf4j
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
-    private final Parser<O> ruleParser;
+    private static final String OUTPUT_KEYWORD = "output";
+    protected List<Rule> ruleList;
+    private ParserContext parserContext;
 
-    protected AbstractRulesEngine(Parser<O> ruleParser) {
-        this.ruleParser = ruleParser;
+    /**
+     * Set the list of rules used for processing in the Rules Engine
+     *
+     * @param ruleList The List of #{@link Rule} objects to compile.
+     */
+    @Override
+    public void setRuleList(List<Rule> ruleList) {
+        this.ruleList = new ArrayList<>(ruleList.stream()
+                .peek(rule -> {
+                    if (parserContext != null) {
+                        rule.setSerializedCondition(MVEL.compileExpression(rule.getCondition(), parserContext));
+                        rule.setSerializedAction(MVEL.compileExpression(rule.getAction(), parserContext));
+                    } else {
+                        rule.setSerializedCondition(MVEL.compileExpression(rule.getCondition()));
+                        rule.setSerializedAction(MVEL.compileExpression(rule.getAction()));
+                    }
+                }).toList());
+
+        prioritySort(ruleList);
+    }
+
+    /**
+     * This method adds package imports to the #{@link org.mvel2.ParserContext} in order to speed up the execution of
+     * rules and simplify the rule expression. You may want to use this if many of your rules require the same packages.
+     *
+     * @param packages A set of packages to import
+     * @return A reference to this #{@link RulesEngine}
+     */
+    @Override
+    public RulesEngine<O> addImports(Set<String> packages) {
+        ParserConfiguration parserConfiguration = new ParserConfiguration();
+        parserConfiguration.setPackageImports(new HashSet<>(packages));
+        parserContext = new ParserContext(parserConfiguration);
+        return this;
+    }
+
+    /**
+     * This adds a single package to the #{@link org.mvel2.ParserContext} in order to speed up the execution of
+     * rules and simplify the rule expression. Add the fully qualified name of the package as a string. You may want to
+     * use this if many of your rules require the same packages.
+     *
+     * @param packageString The package to import. Example: "java.util.Set"
+     * @return A reference to this #{@link RulesEngine}
+     */
+    @Override
+    public RulesEngine<O> addImport(String packageString) {
+        if (parserContext != null) {
+            parserContext.getParserConfiguration().addPackageImport(packageString);
+        } else {
+            ParserConfiguration parserConfiguration = new ParserConfiguration();
+            parserConfiguration.addPackageImport(packageString);
+            parserContext = new ParserContext(parserConfiguration);
+        }
+
+        return this;
     }
 
     /**
@@ -47,7 +107,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     protected List<Rule> match(List<Rule> ruleList, FactStore<Object> facts) {
         return ruleList.stream()
-                .filter(rule -> ruleParser.parseCondition(rule.getSerializedCondition(), facts))
+                .filter(rule -> parseCondition(rule.getSerializedCondition(), facts))
                 .collect(Collectors.toList());
     }
 
@@ -60,14 +120,41 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
     protected O executeRule(Rule rule, O outputObject) {
-        return ruleParser.parseAction(rule.getSerializedAction(), outputObject);
+        return parseAction(rule.getSerializedAction(), outputObject);
     }
 
     /**
      * The method to implement to tell the concrete rules engine how to fire rules against the input data object
      *
-     * @param ruleList This is a list of {@link Rule} objects to run through the rules engine
      * @return The object that is the result of the action getting fired against the given {@link Rule}
      */
-    public abstract O run(List<Rule> ruleList, FactStore<Object> facts);
+    public abstract O run(FactStore<Object> facts);
+
+    private boolean parseCondition(Serializable expression, FactStore<Object> facts) {
+        Map<String, Object> entryMap = facts.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getValue()));
+        try {
+            if (parserContext != null)
+                return MVEL.executeExpression(expression, parserContext, entryMap, Boolean.class);
+            else return MVEL.executeExpression(expression, entryMap, Boolean.class);
+        } catch (Exception e) {
+            log.error("Can not parse MVEL Expression Error: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    private O parseAction(Serializable compiledExpression, O outputResult) {
+        Map<String, Object> input = new HashMap<>();
+        input.put(OUTPUT_KEYWORD, outputResult);
+        try {
+            if (parserContext != null) MVEL.executeExpression(compiledExpression, parserContext, input);
+            else MVEL.executeExpression(compiledExpression, input);
+            return outputResult;
+        } catch (Exception e) {
+            log.error("Can not parse MVEL Expression Error: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+
 }
