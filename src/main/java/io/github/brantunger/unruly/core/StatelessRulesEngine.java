@@ -48,7 +48,7 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
         List<Rule> matchedRuleList = this.match(ruleList, facts);
 
         // Resolve any conflicts and give the selected one rule.
-        Rule resolvedRule = resolve(matchedRuleList);
+        Rule resolvedRule = this.resolve(matchedRuleList);
         if (null == resolvedRule) {
             return null;
         }

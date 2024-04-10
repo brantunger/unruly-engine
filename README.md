@@ -36,6 +36,37 @@ public class RulesEngineConfiguration {
 }
 ```
 
+### Create MVEL Rules
+The rules parsing language is written using MVEL. MVEL has largely been inspired by Java syntax, but has some fundamental differences aimed at making it more efficient as an expression language, such as operators that directly support collection, array and string matching, as well as regular expressions. MVEL is used to evaluate expressions written using Java syntax. 
+
+You can view how MVEL works here: http://mvel.documentnode.com/
+
+This is an example usage of MVEL defining a rule, where **"claim"** is the input FactStore object.
+
+```java
+Objects.nonNull(claim.getMDDB_MULTSRC_CD())
+&& Objects.nonNull(claim.getBRND_NM_TYP_CD())
+&& ((claim.getMDDB_MULTSRC_CD().equalsIgnoreCase("M")
+   && claim.getBRND_NM_TYP_CD().toUpperCase().matches("TRDMK"))
+   || (claim.getMDDB_MULTSRC_CD().equalsIgnoreCase("N")
+      && claim.getBRND_NM_TYP_CD().toUpperCase().matches("BRNDGNRC|TRDMK"))
+   || (claim.getMDDB_MULTSRC_CD().equalsIgnoreCase("O")
+      && claim.getBRND_NM_TYP_CD().toUpperCase().matches("BRNDGNRC|TRDMK")
+      && CrsObjects.matches(claim.getPROD_SLCTN_CD(), "0|1|2|7|8|9")))
+```
+
+You can call methods upon the **"claim"** object to create boolean logic. This logic is stored in the **"condition"** field of the Rule. If the condition evaluates to _TRUE_ then the action of the rule will be executed.
+
+### Facts
+Facts are the input objects for the rules engine. If you need to process a **"claim"**, then the model must be defined and input into the Rules Engine. You do that by creating a **FactStore**. One implementation of the FactStore is a **FactMap**. Here's an example:
+
+```java
+FactStore<Object> facts = new FactMap<>();
+facts.setValue("claim", userDetails);
+```
+
+Now "claim" can be used in the MVEL rule, you can access methods of that object, and send data through the Rules Engine.
+
 ### Use the rules engine bean
 You might then use one of the rules engine like this practical example:
 
@@ -57,7 +88,7 @@ public class UnrulyController {
     public ResponseEntity<?> postLoan(@RequestBody UserDetails userDetails) {
         List<Rule> allRules = knowledgeBase.getAllRules();
         FactStore<Object> facts = new FactMap<>();
-        facts.setValue("input", userDetails);
+        facts.setValue("claim", userDetails);
 
         statefulRulesEngine.setRuleList(allRules);
         LoanDetails result = statefulRulesEngine.run(facts);

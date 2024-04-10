@@ -13,6 +13,13 @@ public class FactMap<T> implements FactStore<T> {
     private final Map<String, FactReference<T>> facts;
 
     /**
+     * Construct a new empty FactMap.
+     */
+    public FactMap() {
+        facts = new HashMap<>();
+    }
+
+    /**
      * Construct a new FactMap from a map of facts.
      *
      * @param facts The fact map to construct the facts from
@@ -24,7 +31,7 @@ public class FactMap<T> implements FactStore<T> {
     /**
      * Construct a new FactMap from an array of existing FactReference objects
      *
-     * @param facts
+     * @param facts The facts to construct a new FactMap with
      */
     @SafeVarargs
     public FactMap(FactReference<T>... facts) {
@@ -35,12 +42,6 @@ public class FactMap<T> implements FactStore<T> {
         }
     }
 
-    /**
-     * Construct a new empty FactMap.
-     */
-    public FactMap() {
-        facts = new HashMap<>();
-    }
 
     @Override
     public T getValue(String name) {

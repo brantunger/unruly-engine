@@ -25,9 +25,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private ParserContext parserContext;
 
     /**
+     * The method to implement to tell the concrete rules engine how to fire rules against the input data object
+     *
+     * @return The object that is the result of the action getting fired against the given {@link Rule}
+     */
+    public abstract O run(FactStore<Object> facts);
+
+    /**
      * Set the list of rules used for processing in the Rules Engine
      *
-     * @param ruleList The List of #{@link Rule} objects to compile.
+     * @param ruleList The List of {@link Rule} objects to compile.
      */
     @Override
     public void setRuleList(List<Rule> ruleList) {
@@ -46,11 +53,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * This method adds package imports to the #{@link org.mvel2.ParserContext} in order to speed up the execution of
+     * This method adds package imports to the {@link org.mvel2.ParserContext} in order to speed up the execution of
      * rules and simplify the rule expression. You may want to use this if many of your rules require the same packages.
      *
      * @param packages A set of packages to import
-     * @return A reference to this #{@link RulesEngine}
+     * @return A reference to this {@link RulesEngine}
      */
     @Override
     public RulesEngine<O> addImports(Set<String> packages) {
@@ -61,12 +68,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * This adds a single package to the #{@link org.mvel2.ParserContext} in order to speed up the execution of
+     * This adds a single package to the {@link org.mvel2.ParserContext} in order to speed up the execution of
      * rules and simplify the rule expression. Add the fully qualified name of the package as a string. You may want to
      * use this if many of your rules require the same packages.
      *
      * @param packageString The package to import. Example: "java.util.Set"
-     * @return A reference to this #{@link RulesEngine}
+     * @return A reference to this {@link RulesEngine}
      */
     @Override
     public RulesEngine<O> addImport(String packageString) {
@@ -123,13 +130,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return parseAction(rule.getSerializedAction(), outputObject);
     }
 
-    /**
-     * The method to implement to tell the concrete rules engine how to fire rules against the input data object
-     *
-     * @return The object that is the result of the action getting fired against the given {@link Rule}
-     */
-    public abstract O run(FactStore<Object> facts);
-
     private boolean parseCondition(Serializable expression, FactStore<Object> facts) {
         Map<String, Object> entryMap = facts.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getValue()));
@@ -155,6 +155,4 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw e;
         }
     }
-
-
 }

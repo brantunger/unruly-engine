@@ -14,6 +14,10 @@ import java.util.Set;
  */
 public interface RulesEngine<O> {
 
+    /**
+     * Set the rule list for use in processing rules through the rules engine
+     * @param ruleList The list of {@link Rule} objects
+     */
     void setRuleList(List<Rule> ruleList);
 
     /**
@@ -25,7 +29,7 @@ public interface RulesEngine<O> {
     O run(FactStore<Object> facts);
 
     /**
-     * This method adds package imports to the #{@link org.mvel2.ParserContext} in order to speed up the execution of
+     * This method adds package imports to the {@link org.mvel2.ParserContext} in order to speed up the execution of
      * rules and simplify the rule expression. You may want to use this if many of your rules require the same packages.
      *
      * @param packages A set of packages to import
@@ -34,7 +38,7 @@ public interface RulesEngine<O> {
     RulesEngine<O> addImports(Set<String> packages);
 
     /**
-     * This adds a single package to the #{@link org.mvel2.ParserContext} in order to speed up the execution of
+     * This adds a single package to the {@link org.mvel2.ParserContext} in order to speed up the execution of
      * rules and simplify the rule expression. Add the fully qualified name of the package as a string. You may want to
      * use this if many of your rules require the same packages.
      *
