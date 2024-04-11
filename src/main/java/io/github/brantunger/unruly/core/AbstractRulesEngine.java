@@ -20,8 +20,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
-    private static final String OUTPUT_KEYWORD = "output";
+    /**
+     * List of rules to execute
+     */
     protected List<Rule> ruleList;
+    private static final String OUTPUT_KEYWORD = "output";
     private ParserContext parserContext;
 
     /**
