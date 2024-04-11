@@ -11,9 +11,7 @@ permissions:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
     - name: Set up JDK 17
@@ -27,6 +25,8 @@ jobs:
         GPG_KEY: ${{ secrets.GPG_KEY }}
         GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
       run: |
+        echo "ECHOING VERSION!!!! ****************"
+        echo "$env.VERSION"
         export GPG_TTY=$(tty)
         echo "$GPG_KEY" > key.asc
         gpg --batch --import key.asc
