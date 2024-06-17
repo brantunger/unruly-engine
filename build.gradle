@@ -8,7 +8,7 @@ plugins {
 
 group = 'io.github.brantunger'
 archivesBaseName = 'unruly-engine'
-version = '1.0.14'
+version = '1.0.15'
 sourceCompatibility = '17'
 
 tasks.register('javadocJar', Jar) {
@@ -84,12 +84,12 @@ signing {
 }
 
 dependencies {
-    implementation 'org.mvel:mvel2:2.4.15.Final'
-    implementation 'org.slf4j:slf4j-api:2.0.7'
+    implementation 'org.mvel:mvel2:2.5.2.Final'
+    implementation 'org.slf4j:slf4j-api:2.0.12'
 
-    compileOnly 'org.projectlombok:lombok:1.18.26'
+    compileOnly 'org.projectlombok:lombok:1.18.32'
 
-    annotationProcessor 'org.projectlombok:lombok:1.18.26'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
 }
 
 test {
