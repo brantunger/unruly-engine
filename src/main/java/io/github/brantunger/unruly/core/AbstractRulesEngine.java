@@ -20,12 +20,13 @@ import java.util.stream.Collectors;
 @Slf4j
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
+    private static final String OUTPUT_KEYWORD = "output";
+    private ParserContext parserContext;
+
     /**
      * List of rules to execute
      */
     protected List<Rule> ruleList;
-    private static final String OUTPUT_KEYWORD = "output";
-    private ParserContext parserContext;
 
     /**
      * The method to implement to tell the concrete rules engine how to fire rules against the input data object
@@ -41,18 +42,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public void setRuleList(List<Rule> ruleList) {
-        this.ruleList = new ArrayList<>(ruleList.stream()
-                .peek(rule -> {
-                    if (parserContext != null) {
-                        rule.setSerializedCondition(MVEL.compileExpression(rule.getCondition(), parserContext));
-                        rule.setSerializedAction(MVEL.compileExpression(rule.getAction(), parserContext));
-                    } else {
-                        rule.setSerializedCondition(MVEL.compileExpression(rule.getCondition()));
-                        rule.setSerializedAction(MVEL.compileExpression(rule.getAction()));
-                    }
-                }).toList());
-
-        prioritySort(ruleList);
+        this.ruleList = ruleList.stream()
+                .sorted(Comparator.comparing(Rule::getPriority).reversed())
+                .peek(this::compileRule)
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     /**
@@ -80,24 +73,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public RulesEngine<O> addImport(String packageString) {
-        if (parserContext != null) {
-            parserContext.getParserConfiguration().addPackageImport(packageString);
-        } else {
-            ParserConfiguration parserConfiguration = new ParserConfiguration();
-            parserConfiguration.addPackageImport(packageString);
-            parserContext = new ParserContext(parserConfiguration);
+        if (parserContext == null) {
+            parserContext = new ParserContext(new ParserConfiguration());
         }
-
+        parserContext.getParserConfiguration().addPackageImport(packageString);
         return this;
-    }
-
-    /**
-     * Sort rules by priority descending. Highest priority wins
-     *
-     * @param ruleList This is a list of {@link Rule} objects to sort
-     */
-    protected void prioritySort(List<Rule> ruleList) {
-        ruleList.sort(Comparator.comparing(Rule::getPriority).reversed());
     }
 
     /**
@@ -121,7 +101,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 .collect(Collectors.toList());
     }
 
-
     /**
      * Execute a single {@link Rule} object's action field against the input data
      *
@@ -133,15 +112,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return parseAction(rule.getSerializedAction(), outputObject);
     }
 
-    private boolean parseCondition(Serializable expression, FactStore<Object> facts) {
+    private boolean parseCondition(Serializable compiledExpression, FactStore<Object> facts) {
         Map<String, Object> entryMap = facts.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getValue()));
         try {
-            if (parserContext != null)
-                return MVEL.executeExpression(expression, parserContext, entryMap, Boolean.class);
-            else return MVEL.executeExpression(expression, entryMap, Boolean.class);
+            if (parserContext != null) {
+                return MVEL.executeExpression(compiledExpression, parserContext, entryMap, Boolean.class);
+            } else {
+                return MVEL.executeExpression(compiledExpression, entryMap, Boolean.class);
+            }
         } catch (Exception e) {
-            log.error("Can not parse MVEL Expression Error: {}", e.getMessage());
+            log.error("Can not parseCondition Error: {}", e.getMessage());
             throw e;
         }
     }
@@ -150,11 +131,24 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Map<String, Object> input = new HashMap<>();
         input.put(OUTPUT_KEYWORD, outputResult);
         try {
-            if (parserContext != null) MVEL.executeExpression(compiledExpression, parserContext, input);
-            else MVEL.executeExpression(compiledExpression, input);
+            if (parserContext != null) {
+                MVEL.executeExpression(compiledExpression, parserContext, input);
+            } else {
+                MVEL.executeExpression(compiledExpression, input);
+            }
             return outputResult;
         } catch (Exception e) {
-            log.error("Can not parse MVEL Expression Error: {}", e.getMessage());
+            log.error("Can not parseAction. Error: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    private void compileRule(Rule rule) {
+        try {
+            rule.setSerializedCondition(MVEL.compileExpression(rule.getCondition(), parserContext));
+            rule.setSerializedAction(MVEL.compileExpression(rule.getAction(), parserContext));
+        } catch (Exception e) {
+            log.error("Can not compile rule. Error: {}", e.getMessage());
             throw e;
         }
     }
