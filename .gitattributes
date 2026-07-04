@@ -1,0 +1,36 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Standard text files (Java, XML, Properties, Markdown, etc.)
+*.java text diff=java
+*.xml text
+*.properties text
+*.md text
+*.gradle text
+*.yml text
+*.yaml text
+*.txt text
+*.json text
+*.sql text
+*.html text
+*.css text
+*.js text
+
+# Shell scripts and Gradle wrapper (always LF)
+*.sh text eol=lf
+gradlew text eol=lf
+
+# Windows batch files (always CRLF)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew.bat text eol=crlf
+
+# Binary files (Jar, Class, Images)
+*.jar binary
+*.class binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

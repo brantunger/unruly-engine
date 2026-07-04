@@ -4,6 +4,9 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * A StatefulRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
@@ -16,14 +19,14 @@ import java.util.List;
  */
 public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
-    private final Factory<O> outputFactory;
+    private final Supplier<O> outputFactory;
 
     /**
      * Construct a StatefulRulesEngine.
      *
-     * @param outputFactory The {@link Factory} to use to instantiate the output object with
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      */
-    public StatefulRulesEngine(Factory<O> outputFactory) {
+    public StatefulRulesEngine(Supplier<O> outputFactory) {
         this.outputFactory = outputFactory;
     }
 
@@ -34,22 +37,29 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * override the fields in the output object.
      *
      * @param facts The input fact store to run rules against
-     * @return The object that is the result of the action getting fired against the given {@link Rule}
+     * @return The accumulated output object resulting from firing the actions of all matching rules
      */
     @Override
     public O run(FactStore<Object> facts) {
-        if (null == this.ruleList || ruleList.isEmpty()) {
+        Objects.requireNonNull(facts, "facts must not be null");
+        List<CompiledRule> rules = getCompiledRules();
+        if (null == rules || rules.isEmpty()) {
             return null;
         }
 
-        // Match the facts and data against the set of rules with the highest priority first.
-        List<Rule> matchedRuleList = this.match(ruleList, facts);
+        Map<String, Object> entryMap = this.unwrapFacts(facts);
 
-        O outputObject = outputFactory.create();
+        // Match the facts and data against the set of rules with the highest priority first.
+        List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
+        if (matchedRuleList.isEmpty()) {
+            return null;
+        }
+
+        O outputObject = outputFactory.get();
 
         // Run the action of every rule on given data, saving state each time
-        for (Rule rule : matchedRuleList) {
-            outputObject = this.executeRule(rule, outputObject);
+        for (CompiledRule rule : matchedRuleList) {
+            outputObject = this.executeRule(rule, outputObject, entryMap);
         }
 
         return outputObject;

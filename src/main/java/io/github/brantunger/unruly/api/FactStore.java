@@ -14,7 +14,7 @@ public interface FactStore<T> extends Map<String, FactReference<T>> {
      * Gets the value of the {@link FactReference} object associated with the specified name.
      *
      * @param name the name of the {@link FactReference} object
-     * @return the {@link FactReference} object associated with the name
+     * @return the value of type {@code T} associated with the name, or {@code null} if not found
      */
     T getValue(String name);
 

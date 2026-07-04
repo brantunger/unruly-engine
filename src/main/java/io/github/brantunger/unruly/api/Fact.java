@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import java.util.Objects;
+
 /**
  * A Fact is an implementation of {@link FactReference}. Facts are objects that are used by the rules engine in
  * conditional statements. The name field of the fact is used in the conditional expression of the rule and is
@@ -34,6 +36,7 @@ public class Fact<T> implements FactReference<T> {
      * @param obj The object to obtain the value from
      */
     public Fact(T obj) {
+        Objects.requireNonNull(obj, "Fact value must not be null");
         this.name = obj.toString();
         this.value = obj;
     }
@@ -44,6 +47,7 @@ public class Fact<T> implements FactReference<T> {
      * @param fact The existing Fact object to get the value and name from
      */
     public Fact(FactReference<T> fact) {
+        Objects.requireNonNull(fact, "fact must not be null");
         this.name = fact.getName();
         this.value = fact.getValue();
     }
@@ -68,5 +72,26 @@ public class Fact<T> implements FactReference<T> {
     public FactReference<T> setValue(T obj) {
         this.value = obj;
         return this;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Fact<?> fact)) {
+            return false;
+        }
+        return Objects.equals(name, fact.name) && Objects.equals(value, fact.value);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, value);
+    }
+
+    @Override
+    public String toString() {
+        return "Fact{name='" + name + "', value=" + value + "}";
     }
 }

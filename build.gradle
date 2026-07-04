@@ -3,13 +3,47 @@ plugins {
     id 'jacoco'
     id 'signing'
     id 'maven-publish'
-    id 'io.github.gradle-nexus.publish-plugin' version '1.3.0'
+    id 'io.github.gradle-nexus.publish-plugin' version '2.0.0'
+    id 'checkstyle'
+    id 'pmd'
 }
 
 group = 'io.github.brantunger'
-archivesBaseName = 'unruly-engine'
 version = '1.0.15'
-sourceCompatibility = '17'
+
+base {
+    archivesName = 'unruly-engine'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+checkstyle {
+    toolVersion = '10.20.1'
+    ignoreFailures = false
+    maxWarnings = 0
+}
+
+pmd {
+    toolVersion = '7.5.0'
+    ignoreFailures = false
+    sourceSets = [sourceSets.main]
+    ruleSets = []
+    ruleSetConfig = resources.text.fromString('''<?xml version="1.0"?>
+<ruleset name="Unruly PMD Ruleset"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>Unruly PMD Ruleset</description>
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="GuardLogStatement"/>
+    </rule>
+    <rule ref="category/java/errorprone.xml"/>
+</ruleset>''')
+}
 
 tasks.register('javadocJar', Jar) {
     archiveClassifier = 'javadoc'
@@ -85,11 +119,16 @@ signing {
 
 dependencies {
     implementation 'org.mvel:mvel2:2.5.2.Final'
-    implementation 'org.slf4j:slf4j-api:2.0.12'
+    implementation 'org.slf4j:slf4j-api:2.0.18'
 
-    compileOnly 'org.projectlombok:lombok:1.18.32'
+    compileOnly 'org.projectlombok:lombok:1.18.46'
 
-    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.46'
+
+    testImplementation platform('org.junit:junit-bom:6.1.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.18'
 }
 
 test {
@@ -100,18 +139,26 @@ test {
             'junit.jupiter.extensions.autodetection.enabled': 'true',
     ]
     jacoco {
-        destinationFile = file("$buildDir/jacoco/test.exec")
+        destinationFile = layout.buildDirectory.file('jacoco/test.exec').get().asFile
     }
-}
-
-ext {
-    jacocoDestinationFile = "$buildDir/jacoco/test.exec"
 }
 
 jacocoTestReport {
     reports {
-        html.enabled true
-        xml.enabled true
-        xml.destination file("${buildDir}/reports/jacoco/report.xml")
+        html.required = true
+        xml.required = true
+        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/report.xml')
     }
 }
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 1.00
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification

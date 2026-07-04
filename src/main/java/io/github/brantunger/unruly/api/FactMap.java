@@ -1,6 +1,9 @@
 package io.github.brantunger.unruly.api;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * FactMap is an implementation of {@link FactStore}. It's a Key/Value store where the key is a {@link String}
@@ -21,11 +24,12 @@ public class FactMap<T> implements FactStore<T> {
 
     /**
      * Construct a new FactMap from a map of facts.
+     * A defensive copy of the input map is created.
      *
      * @param facts The fact map to construct the facts from
      */
     public FactMap(Map<String, FactReference<T>> facts) {
-        this.facts = facts;
+        this.facts = new HashMap<>(facts);
     }
 
     /**
@@ -38,14 +42,18 @@ public class FactMap<T> implements FactStore<T> {
         this();
 
         for (FactReference<T> fact : facts) {
-            this.put(fact);
+            if (fact.getName() == null) {
+                throw new IllegalArgumentException("fact name must not be null");
+            }
+            this.facts.put(fact.getName(), fact);
         }
     }
 
 
     @Override
     public T getValue(String name) {
-        return Optional.ofNullable(facts.get(name)).map(FactReference::getValue).orElse(null);
+        FactReference<T> ref = facts.get(name);
+        return ref != null ? ref.getValue() : null;
     }
 
     @Override
@@ -61,6 +69,9 @@ public class FactMap<T> implements FactStore<T> {
 
     @Override
     public FactReference<T> put(FactReference<T> fact) {
+        if (fact.getName() == null) {
+            throw new IllegalArgumentException("fact name must not be null");
+        }
         return put(fact.getName(), fact);
     }
 
@@ -86,32 +97,17 @@ public class FactMap<T> implements FactStore<T> {
 
     @Override
     public FactReference<T> get(Object key) {
-        FactReference<T> obj = facts.get(key);
-        if (obj == null) {
-            return null;
-        }
-        if (obj instanceof Fact) {
-            return obj;
-        }
-        return new Fact<>(obj);
+        return facts.get(key);
     }
 
     @Override
     public FactReference<T> put(String key, FactReference<T> fact) {
-        Optional<FactReference<T>> prev = Optional.ofNullable(facts.put(key, fact));
-        return prev.map(obj -> obj instanceof Fact ? (Fact<T>) obj : new Fact<>(obj)).orElse(null);
+        return facts.put(key, fact);
     }
 
     @Override
     public FactReference<T> remove(Object key) {
-        FactReference<T> obj = facts.remove(key);
-        if (obj == null) {
-            return null;
-        }
-        if (obj instanceof Fact) {
-            return obj;
-        }
-        return new Fact<>(obj);
+        return facts.remove(key);
     }
 
     @Override

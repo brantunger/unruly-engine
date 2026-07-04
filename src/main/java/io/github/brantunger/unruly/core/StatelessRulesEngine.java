@@ -4,10 +4,13 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * A StatelessRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
- * <strong>STATELESS</strong> the {@link RulesEngine} fires the action of a single rule. All condition fields within the
+ * <strong>STATELESS</strong> implementation, the {@link RulesEngine} fires the action of a single rule. All condition fields within the
  * ruleList are evaluated in the stateless rule engine. However, only a single action is fired. During conflict
  * resolution the {@link Rule} with the highest priority value is found first. The action field of the rule found first
  * will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the
@@ -17,14 +20,14 @@ import java.util.List;
  */
 public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
-    private final Factory<O> outputFactory;
+    private final Supplier<O> outputFactory;
 
     /**
      * Construct a StatelessRulesEngine
      *
-     * @param outputFactory The {@link Factory} to use to instantiate the output object with
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      */
-    public StatelessRulesEngine(Factory<O> outputFactory) {
+    public StatelessRulesEngine(Supplier<O> outputFactory) {
         this.outputFactory = outputFactory;
     }
 
@@ -40,21 +43,25 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      */
     @Override
     public O run(FactStore<Object> facts) {
-        if (null == ruleList || ruleList.isEmpty()) {
+        Objects.requireNonNull(facts, "facts must not be null");
+        List<CompiledRule> rules = getCompiledRules();
+        if (null == rules || rules.isEmpty()) {
             return null;
         }
 
+        Map<String, Object> entryMap = this.unwrapFacts(facts);
+
         // Match the facts and data against the set of rules with highest priority first.
-        List<Rule> matchedRuleList = this.match(ruleList, facts);
+        List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
 
         // Resolve any conflicts and give the selected one rule.
-        Rule resolvedRule = this.resolve(matchedRuleList);
+        CompiledRule resolvedRule = this.resolve(matchedRuleList);
         if (null == resolvedRule) {
             return null;
         }
 
         // Run the action of the selected rule on given data and return the output.
-        return this.executeRule(resolvedRule, outputFactory.create());
+        return this.executeRule(resolvedRule, outputFactory.get(), entryMap);
     }
 
     /**
@@ -69,9 +76,10 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * </pre>
      *
      * @param ruleList The rule list to resolve the conflicts against
-     * @return The {@link Rule} object found first (the rule with the highest priority value)
+     * @return The {@link CompiledRule} object found first (the rule with the highest priority value)
      */
-    private Rule resolve(List<Rule> ruleList) {
+    private CompiledRule resolve(List<CompiledRule> ruleList) {
         return ruleList.stream().findFirst().orElse(null);
     }
 }
+
