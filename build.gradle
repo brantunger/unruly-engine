@@ -118,7 +118,7 @@ signing {
 }
 
 dependencies {
-    implementation 'org.mvel:mvel2:2.5.2.Final'
+    implementation 'org.mvel:mvel2:2.5.4.Final'
     implementation 'org.slf4j:slf4j-api:2.0.18'
 
     compileOnly 'org.projectlombok:lombok:1.18.46'
