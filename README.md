@@ -1,6 +1,8 @@
 # unruly-engine
 
-[![Build](https://github.com/brantunger/unruly-engine/actions/workflows/build.yml/badge.svg)](https://github.com/brantunger/unruly-engine/actions/workflows/build.yml)
+[![CI](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.brantunger/unruly-engine)](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Unruly is a pure Java rule engine that parses and evaluates using MVEL based rules
 
@@ -10,12 +12,15 @@ Add the dependency to your project:
 
 ### Gradle
 
+<!-- x-release-please-start-version -->
 ```groovy
 implementation 'io.github.brantunger:unruly-engine:1.0.15'
 ```
+<!-- x-release-please-end -->
 
 ### Maven
 
+<!-- x-release-please-start-version -->
 ```xml
 <dependency>
     <groupId>io.github.brantunger</groupId>
@@ -23,6 +28,7 @@ implementation 'io.github.brantunger:unruly-engine:1.0.15'
     <version>1.0.15</version>
 </dependency>
 ```
+<!-- x-release-please-end -->
 
 ## Introduction
 

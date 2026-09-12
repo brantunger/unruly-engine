@@ -29,10 +29,37 @@ We use Gradle. To build and run tests:
 ./gradlew check
 ```
 
+## Commit and PR titles
+
+PRs are squash-merged using **the PR title as the commit message**, and that message is
+the only input to our release automation. Titles must follow
+[Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>: <lowercase description with no trailing period>
+```
+
+The type decides the next version:
+
+| Title | Effect on `1.2.3` |
+| --- | --- |
+| `fix: guard against a null rule condition` | `1.2.4` — patch |
+| `feat: add RuleListener hooks` | `1.3.0` — minor |
+| `feat!: remove the Factory interface` | `2.0.0` — major |
+| `deps: bump mvel2 to 2.5.4` | no release; listed under Dependencies |
+| `docs: clarify stateless semantics` | no release |
+
+Other accepted types: `perf`, `refactor`, `test`, `build`, `ci`, `chore`, `revert`.
+A CI check enforces the format, so a malformed title blocks the merge rather than
+silently skipping a release.
+
 ## Submitting a Pull Request
 
 - Ensure your code passes all checks (`./gradlew check`).
-- Provide a clear and descriptive PR title and description.
+- Give the PR a Conventional Commit title (see above) and a descriptive body.
 - Link the PR to the relevant issue.
+
+Once merged, you do nothing further — see [RELEASING.md](RELEASING.md) for how the
+version bump, changelog, tag, GitHub Release and Maven Central publish happen.
 
 By contributing, you agree that your contributions will be licensed under its GNU General Public License v3.0.

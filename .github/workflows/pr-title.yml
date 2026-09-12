@@ -1,0 +1,45 @@
+name: PR Title
+
+# PRs are squash-merged with the PR title as the commit subject, and that subject is
+# the only thing release-please reads to decide the next version. A malformed title
+# silently produces no release, so it is checked like any other build gate.
+
+on:
+  pull_request_target:
+    types: [ opened, edited, reopened, synchronize ]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Only `feat`, `fix` and a `!` breaking marker bump the version.
+          # Everything else lands in the changelog without cutting a release.
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            deps
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+[^.]$
+          subjectPatternError: |
+            The subject "{subject}" is invalid for the "{type}" type.
+            It should start with a lowercase letter and not end with a period.
