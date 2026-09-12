@@ -9,6 +9,13 @@ import java.util.Set;
  * FactMap is an implementation of {@link FactStore}. It's a Key/Value store where the key is a {@link String}
  * representing the fact's name, and the value is a {@link FactReference} itself.
  *
+ * <p>
+ * Every way of adding a fact rejects a {@code null} name, and rejects a key that differs from the
+ * {@link FactReference#getName() name} of the fact stored under it, with {@link IllegalArgumentException}.
+ * The varargs constructor also rejects two facts with the same name. Rules see a fact by its map key, so renaming a
+ * {@code FactReference} after it has been added does not change the name rules use.
+ * </p>
+ *
  * @param <T> The object/value type of the facts
  */
 public class FactMap<T> implements FactStore<T> {
@@ -31,6 +38,7 @@ public class FactMap<T> implements FactStore<T> {
      * @param facts The fact map to construct the facts from
      */
     public FactMap(Map<String, FactReference<T>> facts) {
+        facts.forEach(FactMap::checkEntry);
         this.facts = new HashMap<>(facts);
     }
 
@@ -47,7 +55,25 @@ public class FactMap<T> implements FactStore<T> {
             if (fact.getName() == null) {
                 throw new IllegalArgumentException("fact name must not be null");
             }
+            // Only the last of two same-named facts would survive, silently dropping the first.
+            if (this.facts.containsKey(fact.getName())) {
+                throw new IllegalArgumentException("duplicate fact name '" + fact.getName() + "'");
+            }
             this.facts.put(fact.getName(), fact);
+        }
+    }
+
+    /**
+     * Rules see a fact by its map key, so a key that differs from the fact's own name would make the fact
+     * unreachable under the name the caller gave it.
+     */
+    private static void checkEntry(String key, FactReference<?> fact) {
+        if (key == null) {
+            throw new IllegalArgumentException("fact name must not be null");
+        }
+        if (fact != null && !key.equals(fact.getName())) {
+            throw new IllegalArgumentException("key '" + key + "' does not match the fact's name '"
+                    + fact.getName() + "'");
         }
     }
 
@@ -69,6 +95,7 @@ public class FactMap<T> implements FactStore<T> {
      */
     @Override
     public void setValue(String name, T obj) {
+        checkEntry(name, null);
         facts.put(name, new Fact<>(name, obj));
     }
 
@@ -107,6 +134,7 @@ public class FactMap<T> implements FactStore<T> {
 
     @Override
     public FactReference<T> put(String key, FactReference<T> fact) {
+        checkEntry(key, fact);
         return facts.put(key, fact);
     }
 
@@ -117,6 +145,8 @@ public class FactMap<T> implements FactStore<T> {
 
     @Override
     public void putAll(Map<? extends String, ? extends FactReference<T>> map) {
+        // Checked before copying so an invalid entry leaves this map unchanged.
+        map.forEach((key, fact) -> checkEntry(key, fact));
         facts.putAll(map);
     }
 
