@@ -336,13 +336,21 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     "Rule '" + ruleName + "' has a null or blank action expression");
         }
         try {
-            Serializable compiledCondition = MVEL.compileExpression(rule.getCondition(), parserContext);
-            Serializable compiledAction = MVEL.compileExpression(rule.getAction(), parserContext);
+            Serializable compiledCondition = compileExpression(rule.getCondition());
+            Serializable compiledAction = compileExpression(rule.getAction());
             return new CompiledRule(rule, compiledCondition, compiledAction);
         } catch (Exception e) {
             String msg = "Can not compile rule '" + ruleName + "'. Error: " + e.getMessage();
             log.error(msg);
             throw new RuleCompilationException(msg, e);
         }
+    }
+
+    private Serializable compileExpression(String expression) {
+        // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
+        // run(). The analysis pass catches more of it up front. It gets its own ParserContext because
+        // analysis records variables on the context, but it shares the configuration so imports resolve.
+        MVEL.analysisCompile(expression, new ParserContext(parserContext.getParserConfiguration()));
+        return MVEL.compileExpression(expression, parserContext);
     }
 }
