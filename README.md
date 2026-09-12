@@ -14,7 +14,7 @@ Add the dependency to your project:
 
 <!-- x-release-please-start-version -->
 ```groovy
-implementation 'io.github.brantunger:unruly-engine:1.0.17'
+implementation 'io.github.brantunger:unruly-engine:1.0.18'
 ```
 <!-- x-release-please-end -->
 
@@ -25,7 +25,7 @@ implementation 'io.github.brantunger:unruly-engine:1.0.17'
 <dependency>
     <groupId>io.github.brantunger</groupId>
     <artifactId>unruly-engine</artifactId>
-    <version>1.0.17</version>
+    <version>1.0.18</version>
 </dependency>
 ```
 <!-- x-release-please-end -->
