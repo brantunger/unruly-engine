@@ -213,9 +213,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
         }
 
-        Boolean evaluated;
+        // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
+        // condition like `status` (a non-empty string) would silently match instead of failing.
+        Object evaluated;
         try {
-            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, entryMap, Boolean.class);
+            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, entryMap);
         } catch (Exception e) {
             String msg = "Failed to evaluate condition for rule '" + rule.rule().getRuleName() + "': " + e.getMessage();
             log.error(msg);
@@ -231,7 +233,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw new RuleExecutionException(msg);
         }
 
-        boolean result = evaluated;
+        if (!(evaluated instanceof Boolean result)) {
+            String msg = "Condition for rule '" + rule.rule().getRuleName() + "' evaluated to a "
+                    + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.";
+            log.error(msg);
+            throw new RuleExecutionException(msg);
+        }
 
         for (RuleListener listener : listeners) {
             try {
