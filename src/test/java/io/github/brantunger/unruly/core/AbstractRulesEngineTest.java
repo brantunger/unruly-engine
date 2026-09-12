@@ -430,6 +430,27 @@ class AbstractRulesEngineTest {
             NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.setRuleList(null));
             assertTrue(ex.getMessage().contains("ruleList must not be null"));
         }
+
+        @Test
+        @DisplayName("a null rule in the list throws RuleCompilationException naming its index")
+        void nullRuleElementThrows() {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            Rule good = Rule.builder().ruleName("good").condition("true").action("output.put('k', 1)").build();
+
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                    () -> engine.setRuleList(Arrays.asList(good, null)));
+            assertTrue(ex.getMessage().contains("index 1"));
+        }
+
+        @Test
+        @DisplayName("validation errors can be caught as UnrulyException")
+        void validationErrorsAreUnrulyExceptions() {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            Rule blank = Rule.builder().ruleName("blank").condition(" ").action("output.put('k', 1)").build();
+
+            assertThrows(io.github.brantunger.unruly.api.exception.UnrulyException.class,
+                    () -> engine.setRuleList(List.of(blank)));
+        }
     }
 
     @Nested
@@ -437,39 +458,39 @@ class AbstractRulesEngineTest {
     class RuleConditionValidation {
 
         @Test
-        @DisplayName("null condition throws IllegalArgumentException naming the rule")
+        @DisplayName("null condition throws RuleCompilationException naming the rule")
         void nullConditionThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition(null)
                     .action("output.put(\"k\",1)").build();
 
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                     () -> engine.setRuleList(List.of(rule)));
             assertTrue(ex.getMessage().contains("my-rule"), "error should name the offending rule");
             assertTrue(ex.getMessage().contains("condition"));
         }
 
         @Test
-        @DisplayName("blank condition throws IllegalArgumentException naming the rule")
+        @DisplayName("blank condition throws RuleCompilationException naming the rule")
         void blankConditionThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("   ")
                     .action("output.put(\"k\",1)").build();
 
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                     () -> engine.setRuleList(List.of(rule)));
             assertTrue(ex.getMessage().contains("my-rule"));
             assertTrue(ex.getMessage().contains("condition"));
         }
 
         @Test
-        @DisplayName("empty string condition throws IllegalArgumentException")
+        @DisplayName("empty string condition throws RuleCompilationException")
         void emptyConditionThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("")
                     .action("output.put(\"k\",1)").build();
 
-            assertThrows(IllegalArgumentException.class, () -> engine.setRuleList(List.of(rule)));
+            assertThrows(RuleCompilationException.class, () -> engine.setRuleList(List.of(rule)));
         }
 
         @Test
@@ -478,7 +499,7 @@ class AbstractRulesEngineTest {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
             Rule rule = Rule.builder().condition(null).action("output.put(\"k\",1)").build();
 
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                     () -> engine.setRuleList(List.of(rule)));
             assertTrue(ex.getMessage().contains("(unnamed)"));
         }
@@ -489,24 +510,24 @@ class AbstractRulesEngineTest {
     class RuleActionValidation {
 
         @Test
-        @DisplayName("null action throws IllegalArgumentException naming the rule")
+        @DisplayName("null action throws RuleCompilationException naming the rule")
         void nullActionThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("true").action(null).build();
 
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                     () -> engine.setRuleList(List.of(rule)));
             assertTrue(ex.getMessage().contains("my-rule"));
             assertTrue(ex.getMessage().contains("action"));
         }
 
         @Test
-        @DisplayName("blank action throws IllegalArgumentException naming the rule")
+        @DisplayName("blank action throws RuleCompilationException naming the rule")
         void blankActionThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("true").action("  ").build();
 
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                     () -> engine.setRuleList(List.of(rule)));
             assertTrue(ex.getMessage().contains("my-rule"));
             assertTrue(ex.getMessage().contains("action"));

@@ -192,7 +192,7 @@ With the JIT on, facts whose runtime class varies must not be run concurrently.
 The Unruly Engine provides a specific exception hierarchy to help you handle errors gracefully:
 
 - **`UnrulyException`**: The base runtime exception for the engine.
-- **`RuleCompilationException`**: Thrown during `setRuleList()` if a rule has a syntax error in its MVEL condition or action expression. MVEL's parser is lenient, so not every mistake is caught at this point. For example, `true)` and `output.put("k" 1)` compile without error and only fail with a `RuleExecutionException` when that rule is evaluated. Test each rule against sample facts rather than relying on `setRuleList()` alone.
+- **`RuleCompilationException`**: Thrown during `setRuleList()` if a rule has a syntax error in its MVEL condition or action expression, has a null or blank condition or action, or if the rule list contains a `null` rule. MVEL's parser is lenient, so not every mistake is caught at this point. For example, `true)` and `output.put("k" 1)` compile without error and only fail with a `RuleExecutionException` when that rule is evaluated. Test each rule against sample facts rather than relying on `setRuleList()` alone.
 - **`RuleExecutionException`**: Thrown during `run()` if a runtime error occurs while evaluating a rule's condition or action (e.g. attempting to invoke a non-existent method), or if a condition evaluates to anything other than a boolean. A condition such as `claim.status` is rejected rather than coerced; write `claim.status == "APPROVED"`.
 
 All exceptions include the name of the offending rule in the message to aid in debugging.

@@ -132,6 +132,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @Override
     public void setRuleList(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
+        // Checked before sorting, which would otherwise fail with a bare NPE from Rule::getPriority.
+        for (int i = 0; i < ruleList.size(); i++) {
+            if (ruleList.get(i) == null) {
+                throw new RuleCompilationException("Rule at index " + i + " of the rule list is null");
+            }
+        }
         this.compiledRules = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
@@ -341,11 +347,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private CompiledRule compileRule(Rule rule) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
-            throw new IllegalArgumentException(
+            throw new RuleCompilationException(
                     "Rule '" + ruleName + "' has a null or blank condition expression");
         }
         if (rule.getAction() == null || rule.getAction().isBlank()) {
-            throw new IllegalArgumentException(
+            throw new RuleCompilationException(
                     "Rule '" + ruleName + "' has a null or blank action expression");
         }
         try {
