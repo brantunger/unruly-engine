@@ -49,6 +49,8 @@ A run is **not atomic**. If an action throws, the actions that already ran keep 
 
 In the **stateless** implementation, the rules engine fires the action of a single rule. All condition fields within the rule list are evaluated in the stateless rule engine. However, only a single action is fired. During conflict resolution the rule with the highest priority value is found first. The action field of the rule found first will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the highest priority value.
 
+**Equal priorities:** rules with the same priority keep the order they had in the list passed to `setRuleList()`. If several matching rules share the highest priority, the stateless engine fires the one listed first, and the stateful engine fires them in list order. Rules with a `null` priority come last.
+
 ## Using Unruly Engine
 
 The recommended way to use the Unruly Engine is through some mechanism of dependency injection framework like Spring.

@@ -16,6 +16,11 @@ import java.util.function.Supplier;
  * will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the
  * highest priority value.
  *
+ * <p>
+ * <b>Ties:</b> if several matching rules share the highest priority, the one that appears first in the list
+ * passed to {@link #setRuleList(java.util.List)} is fired.
+ * </p>
+ *
  * @param <O> The output object type to instantiate when the rule's action expression is fired.
  */
 public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {

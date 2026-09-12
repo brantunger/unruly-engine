@@ -141,6 +141,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Set the list of rules used for processing in the Rules Engine.
      * Rules are sorted by priority in descending order (highest priority first).
      * Rules with a {@code null} priority are treated as lowest priority.
+     * Rules with equal priority keep their relative order from {@code ruleList}.
      *
      * <p>
      * <b>Note:</b> Any package imports configured via {@link #addImport(String)} or
