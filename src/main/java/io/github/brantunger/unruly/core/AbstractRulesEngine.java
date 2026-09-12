@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import io.github.brantunger.unruly.api.FactReference;
@@ -37,7 +38,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private static final String OUTPUT_KEYWORD = "output";
     private final ParserContext parserContext = new ParserContext(new ParserConfiguration());
-    private final List<RuleListener> listeners = new ArrayList<>();
+    // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
+    // or from inside a callback can't throw ConcurrentModificationException out of run().
+    private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
     private List<CompiledRule> compiledRules;
 
     /**

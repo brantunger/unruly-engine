@@ -171,6 +171,7 @@ The rules engine is designed to be configured once and then used concurrently:
 - **`setRuleList()`** should be called once during initialization (e.g. in a constructor or `@PostConstruct` method). This method compiles the MVEL expressions and stores the compiled rules internally. It is **not thread-safe** to call concurrently with `run()`.
 - **`run()`** is safe to call from multiple threads after `setRuleList()` has completed, as it only reads the compiled rules and creates a fresh output object per invocation.
 - **`addImport()` / `addImports()`** must be called before `setRuleList()`. They are not thread-safe.
+- **`registerListener()` / `registerListeners()`** are thread-safe and may be called at any time, even from inside a listener callback. A listener registered during a run may start receiving callbacks partway through that run. A registered listener is called from every thread running the engine, so **listener implementations must be thread-safe**.
 
 ## Exception Handling
 

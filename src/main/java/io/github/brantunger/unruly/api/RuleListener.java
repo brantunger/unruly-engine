@@ -5,8 +5,16 @@ import java.util.Map;
 /**
  * A listener interface to hook into the lifecycle of rule evaluation and execution.
  * Implement this interface to receive callbacks before and after rules are evaluated and executed.
- * Any exceptions thrown by a listener will be caught and logged by the engine, 
+ * Any exceptions thrown by a listener will be caught and logged by the engine,
  * ensuring the core execution is not interrupted.
+ *
+ * <p>
+ * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every
+ * thread calling {@code run()}, possibly at the same time, so implementations must be
+ * thread-safe. Listeners may be registered at any time, including from inside a callback.
+ * A listener registered while a run is in progress may start receiving callbacks partway
+ * through that run.
+ * </p>
  */
 public interface RuleListener {
 
