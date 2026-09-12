@@ -1,9 +1,11 @@
+import com.vanniktech.maven.publish.JavaLibrary
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
+
 plugins {
     id 'java'
     id 'jacoco'
-    id 'signing'
-    id 'maven-publish'
-    id 'io.github.gradle-nexus.publish-plugin' version '2.0.0'
+    id 'com.vanniktech.maven.publish' version '0.37.0'
     id 'checkstyle'
     id 'pmd'
 }
@@ -45,16 +47,6 @@ pmd {
 </ruleset>''')
 }
 
-tasks.register('javadocJar', Jar) {
-    archiveClassifier = 'javadoc'
-    from javadoc
-}
-
-tasks.register('sourcesJar', Jar) {
-    archiveClassifier = 'sources'
-    from sourceSets.main.allSource
-}
-
 configurations {
     compileOnly {
         extendsFrom annotationProcessor
@@ -65,56 +57,39 @@ repositories {
     mavenCentral()
 }
 
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from(components['java'])
-            artifact sourcesJar
-            artifact javadocJar
+// Publishes to the Maven Central Portal (central.sonatype.com).
+// Credentials are a Portal user token supplied via the mavenCentralUsername/mavenCentralPassword
+// properties; signing uses signingInMemoryKey/signingInMemoryKeyId/signingInMemoryKeyPassword.
+mavenPublishing {
+    configure(new JavaLibrary(new JavadocJar.Javadoc(), new SourcesJar.Sources()))
+    coordinates(project.group.toString(), 'unruly-engine', project.version.toString())
 
-            pom {
-                name.set('unruly-engine')
-                description.set('Unruly is a pure Java rule engine that parses and evaluates using MVEL based rules')
-                url.set('https://github.com/brantunger/unruly-engine')
-                licenses {
-                    license {
-                        name.set('GNU GENERAL PUBLIC LICENSE v3.0')
-                        url.set('https://www.gnu.org/licenses/gpl-3.0.en.html')
-                    }
-                }
-                developers {
-                    developer {
-                        id.set('brantunger')
-                        name.set('Brant Unger')
-                        email.set('brantunger@gmail.com')
-                    }
-                }
-                scm {
-                    connection.set('scm:git:git://github.com/brantunger/unruly-engine.git')
-                    developerConnection.set('scm:git:ssh://github.com/brantunger/unruly-engine.git')
-                    url.set('https://github.com/brantunger/unruly-engine')
-                }
+    publishToMavenCentral()
+    signAllPublications()
+
+    pom {
+        name = 'unruly-engine'
+        description = 'Unruly is a pure Java rule engine that parses and evaluates using MVEL based rules'
+        url = 'https://github.com/brantunger/unruly-engine'
+        licenses {
+            license {
+                name = 'GNU GENERAL PUBLIC LICENSE v3.0'
+                url = 'https://www.gnu.org/licenses/gpl-3.0.en.html'
             }
         }
-    }
-}
-
-nexusPublishing {
-    repositories {
-        sonatype {
-            nexusUrl.set(uri('https://s01.oss.sonatype.org/service/local/'))
-            snapshotRepositoryUrl.set(uri('https://s01.oss.sonatype.org/content/repositories/snapshots/'))
-            username.set(System.getenv('MAVEN_USERNAME'))
-            password.set(System.getenv('MAVEN_PASSWORD'))
+        developers {
+            developer {
+                id = 'brantunger'
+                name = 'Brant Unger'
+                email = 'brant.unger@gmail.com'
+            }
+        }
+        scm {
+            connection = 'scm:git:git://github.com/brantunger/unruly-engine.git'
+            developerConnection = 'scm:git:ssh://github.com/brantunger/unruly-engine.git'
+            url = 'https://github.com/brantunger/unruly-engine'
         }
     }
-}
-
-signing {
-    def key = System.getenv('GPG_KEY')
-    def pass = System.getenv('GPG_PASSWORD')
-    useInMemoryPgpKeys(key, pass)
-    sign publishing.publications.mavenJava
 }
 
 dependencies {

@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 
 /**
  * A StatelessRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
- * <strong>STATELESS</strong> implementation, the {@link RulesEngine} fires the action of a single rule. All condition fields within the
+ * <strong>STATELESS</strong> implementation, the {@link io.github.brantunger.unruly.api.RulesEngine} fires the action of a single rule. All condition fields within the
  * ruleList are evaluated in the stateless rule engine. However, only a single action is fired. During conflict
  * resolution the {@link Rule} with the highest priority value is found first. The action field of the rule found first
  * will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the
