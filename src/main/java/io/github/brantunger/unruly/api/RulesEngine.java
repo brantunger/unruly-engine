@@ -16,7 +16,9 @@ public interface RulesEngine<O> {
     /**
      * Set the rule list for use in processing rules through the rules engine
      * @param ruleList The list of {@link Rule} objects
-     * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if a rule fails to compile
+     * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if a rule fails to compile, has a
+     *         null or blank condition or action, or if the list contains a {@code null} rule
+     * @throws NullPointerException if {@code ruleList} itself is {@code null}
      */
     void setRuleList(List<Rule> ruleList);
 
