@@ -41,6 +41,10 @@ The Unruly Engine has two rules engine implementations.
 
 In the **stateful** implementation, the rules engine fires all the actions of the rules when the condition field of the Rule returns true. In the stateful rules engine the rules are sorted by priority. The highest priority wins. The output object saves state in between each rule, so rules with lower priority may override the fields in the output object.
 
+The stateful engine **evaluates every condition first, then fires the matched actions** in priority order. An action never causes another rule's condition to be re-checked. If a high-priority action sets `claim.status = "DENIED"`, a lower-priority rule whose condition `claim.status == "PENDING"` was already true still fires.
+
+A run is **not atomic**. If an action throws, the actions that already ran keep their changes to the output object and to any fact objects they modified. Listeners have already received their callbacks, and `run()` throws a `RuleExecutionException` naming only the rule that failed.
+
 ### Stateless Rules Engine
 
 In the **stateless** implementation, the rules engine fires the action of a single rule. All condition fields within the rule list are evaluated in the stateless rule engine. However, only a single action is fired. During conflict resolution the rule with the highest priority value is found first. The action field of the rule found first will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the highest priority value.

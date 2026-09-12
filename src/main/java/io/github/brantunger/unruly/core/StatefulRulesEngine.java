@@ -15,6 +15,18 @@ import java.util.function.Supplier;
  * The highest priority wins. The output object saves state in between each rule, so rules with lower priority may
  * override the fields in the output object.
  *
+ * <p>
+ * <b>Match, then fire:</b> every condition is evaluated before any action runs, and actions never cause
+ * conditions to be re-checked. A rule whose condition matched still fires even if a higher-priority action
+ * changed the facts it depended on.
+ * </p>
+ *
+ * <p>
+ * <b>Not atomic:</b> if an action throws, the actions that already ran keep their effects on the output object
+ * and on any fact objects they changed, and {@link #run(FactStore)} throws a
+ * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} for the failing rule only.
+ * </p>
+ *
  * @param <O> The output object type to instantiate when the rule's action expression is fired.
  */
 public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
