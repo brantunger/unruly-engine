@@ -169,9 +169,23 @@ public class UnrulyController {
 The rules engine is designed to be configured once and then used concurrently:
 
 - **`setRuleList()`** should be called once during initialization (e.g. in a constructor or `@PostConstruct` method). This method compiles the MVEL expressions and stores the compiled rules internally. It is **not thread-safe** to call concurrently with `run()`.
-- **`run()`** is safe to call from multiple threads after `setRuleList()` has completed, as it only reads the compiled rules and creates a fresh output object per invocation.
+- **`run()`** is safe to call from multiple threads after `setRuleList()` has completed. Each invocation creates a fresh output object. The compiled rules are shared, and MVEL updates them internally as they are evaluated, which is why the engine configures MVEL as described below.
 - **`addImport()` / `addImports()`** must be called before `setRuleList()`. They are not thread-safe.
 - **`registerListener()` / `registerListeners()`** are thread-safe and may be called at any time, even from inside a listener callback. A listener registered during a run may start receiving callbacks partway through that run. A registered listener is called from every thread running the engine, so **listener implementations must be thread-safe**.
+
+### MVEL optimizer (JVM-wide)
+
+MVEL's default JIT optimizer generates an accessor for the class it first sees. When the same fact name is later bound to a different class (for example `claim` typed as an interface with several implementations), MVEL falls back to a slower accessor. That fallback is not thread-safe, so concurrent `run()` calls intermittently failed with a `RuleExecutionException` caused by a `ClassCastException`.
+
+To make concurrent use safe by default, **loading the engine switches MVEL's default optimizer to its reflective optimizer for the whole JVM**. MVEL reads this from one global setting, so the choice can't be limited to this engine. It also applies to any other library in the same JVM that uses MVEL.
+
+The reflective optimizer is somewhat slower. A rough single-threaded measurement with three rules went from about 280 ns to 370 ns per `run()`. To keep MVEL's own setting (JIT on, unless you pass `-Dmvel2.disable.jit=true`), start the JVM with:
+
+```
+-Dunruly.mvel.jit=true
+```
+
+With the JIT on, facts whose runtime class varies must not be run concurrently.
 
 ## Exception Handling
 
