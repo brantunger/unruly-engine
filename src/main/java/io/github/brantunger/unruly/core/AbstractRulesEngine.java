@@ -111,9 +111,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public RulesEngine<O> registerListener(RuleListener listener) {
-        if (listener != null) {
-            this.listeners.add(listener);
-        }
+        Objects.requireNonNull(listener, "listener must not be null");
+        this.listeners.add(listener);
         return this;
     }
 
@@ -125,9 +124,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public RulesEngine<O> registerListeners(List<RuleListener> listeners) {
-        if (listeners != null) {
-            this.listeners.addAll(listeners);
+        Objects.requireNonNull(listeners, "listeners must not be null");
+        // Checked up front so a list with a null registers nothing. A stored null would otherwise throw
+        // inside every callback, logged as a misleading "Listener threw exception" warning on every run.
+        for (RuleListener listener : listeners) {
+            Objects.requireNonNull(listener, "listener element must not be null");
         }
+        this.listeners.addAll(listeners);
         return this;
     }
 

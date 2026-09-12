@@ -58,6 +58,7 @@ public interface RulesEngine<O> {
      *
      * @param listener The listener to register.
      * @return A reference to this rules engine.
+     * @throws NullPointerException if {@code listener} is {@code null}
      */
     RulesEngine<O> registerListener(RuleListener listener);
 
@@ -66,6 +67,7 @@ public interface RulesEngine<O> {
      *
      * @param listeners The list of listeners to register.
      * @return A reference to this rules engine.
+     * @throws NullPointerException if {@code listeners} or any element is {@code null}; nothing is registered
      */
     RulesEngine<O> registerListeners(List<RuleListener> listeners);
 }
