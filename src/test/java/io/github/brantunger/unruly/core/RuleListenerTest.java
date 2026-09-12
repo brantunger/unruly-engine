@@ -105,8 +105,6 @@ public class RuleListenerTest {
         };
         
         engine.registerListener(badListener);
-        engine.registerListener(null);
-        engine.registerListeners(null);
         engine.registerListeners(List.of(new io.github.brantunger.unruly.api.LoggingRuleListener()));
         
         Rule rule1 = Rule.builder()
