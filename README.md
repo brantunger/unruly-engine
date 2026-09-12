@@ -213,3 +213,24 @@ engine.registerListener(new RuleListener() {
 // Or use the out-of-the-box LoggingRuleListener (logs all events at DEBUG level via SLF4J)
 engine.registerListener(new LoggingRuleListener());
 ```
+
+Every `beforeEvaluate` / `beforeExecute` callback is followed by exactly one closing call. That's the matching `afterEvaluate` / `afterExecute` when the rule succeeds, or `onError` when its condition or action fails. `onError` receives the `RuleExecutionException` that `run()` then throws. Anything you open in a `before*` callback, such as a timer or tracing span, can therefore always be closed:
+
+```java
+engine.registerListener(new RuleListener() {
+    @Override
+    public void beforeExecute(Rule rule, Object output) {
+        startSpan(rule);
+    }
+
+    @Override
+    public void afterExecute(Rule rule, Object output) {
+        endSpan(rule);
+    }
+
+    @Override
+    public void onError(Rule rule, RuleExecutionException error) {
+        endSpan(rule, error);
+    }
+});
+```

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,5 +32,10 @@ public class LoggingRuleListener implements RuleListener {
     @Override
     public void afterExecute(Rule rule, Object output) {
         log.debug("Executed action for rule: {}", rule.getRuleName());
+    }
+
+    @Override
+    public void onError(Rule rule, RuleExecutionException error) {
+        log.debug("Failed rule: {} | Error: {}", rule.getRuleName(), error.getMessage());
     }
 }

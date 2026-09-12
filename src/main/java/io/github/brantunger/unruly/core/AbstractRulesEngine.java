@@ -262,25 +262,20 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, readOnlyFacts);
         } catch (Exception e) {
-            String msg = "Failed to evaluate condition for rule '" + rule.rule().getRuleName() + "': " + e.getMessage();
-            log.error(msg);
-            throw new RuleExecutionException(msg, e);
+            throw failure(rule, "Failed to evaluate condition for rule '" + rule.rule().getRuleName() + "': "
+                    + e.getMessage(), e);
         }
 
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule.
         if (evaluated == null) {
-            String msg = "Condition for rule '" + rule.rule().getRuleName()
-                    + "' evaluated to null. A condition expression must evaluate to a boolean.";
-            log.error(msg);
-            throw new RuleExecutionException(msg);
+            throw failure(rule, "Condition for rule '" + rule.rule().getRuleName()
+                    + "' evaluated to null. A condition expression must evaluate to a boolean.", null);
         }
 
         if (!(evaluated instanceof Boolean result)) {
-            String msg = "Condition for rule '" + rule.rule().getRuleName() + "' evaluated to a "
-                    + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.";
-            log.error(msg);
-            throw new RuleExecutionException(msg);
+            throw failure(rule, "Condition for rule '" + rule.rule().getRuleName() + "' evaluated to a "
+                    + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
         for (RuleListener listener : listeners) {
@@ -309,9 +304,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
         } catch (Exception e) {
-            String msg = "Failed to execute action for rule '" + rule.rule().getRuleName() + "': " + e.getMessage();
-            log.error(msg);
-            throw new RuleExecutionException(msg, e);
+            throw failure(rule, "Failed to execute action for rule '" + rule.rule().getRuleName() + "': "
+                    + e.getMessage(), e);
         }
 
         for (RuleListener listener : listeners) {
@@ -323,6 +317,25 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
 
         return outputResult;
+    }
+
+    /**
+     * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
+     * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw.
+     */
+    private RuleExecutionException failure(CompiledRule rule, String msg, Exception cause) {
+        log.error(msg);
+        RuleExecutionException error = cause == null
+                ? new RuleExecutionException(msg)
+                : new RuleExecutionException(msg, cause);
+        for (RuleListener listener : listeners) {
+            try {
+                listener.onError(rule.rule(), error);
+            } catch (Exception e) {
+                log.warn("Listener threw exception in onError", e);
+            }
+        }
+        return error;
     }
 
     private CompiledRule compileRule(Rule rule) {

@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+
 import java.util.Map;
 
 /**
@@ -56,6 +58,24 @@ public interface RuleListener {
      * @param output The output object after execution.
      */
     default void afterExecute(Rule rule, Object output) {
+        // default empty implementation
+    }
+
+    /**
+     * Called when evaluating a rule's condition or executing its action fails, in place of
+     * {@link #afterEvaluate} or {@link #afterExecute}. Every {@code before*} callback is followed by
+     * exactly one call to the matching {@code after*} method or to this method, so resources opened
+     * in {@code before*} (timers, tracing spans, logging context) can always be closed.
+     *
+     * <p>
+     * {@code error} is the exception that {@code run()} throws once all listeners have been notified.
+     * Errors found while compiling rules in {@code setRuleList()} are not reported here.
+     * </p>
+     *
+     * @param rule  The rule whose condition or action failed.
+     * @param error The exception about to be thrown from {@code run()}.
+     */
+    default void onError(Rule rule, RuleExecutionException error) {
         // default empty implementation
     }
 }
