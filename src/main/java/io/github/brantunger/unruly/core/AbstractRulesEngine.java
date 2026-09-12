@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,7 +61,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private static final String OUTPUT_KEYWORD = "output";
-    private final ParserContext parserContext = new ParserContext(new ParserConfiguration());
+    // Package imports from addImport(s). Rules never compile against a shared MVEL context; see compileExpression.
+    private final Set<String> packageImports = new LinkedHashSet<>();
     // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
@@ -146,9 +148,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * <p>
      * <b>Note:</b> Any package imports configured via {@link #addImport(String)} or
      * {@link #addImports(Set)} must be set <em>before</em> calling this method, as
-     * rules are
-     * compiled against the current {@link org.mvel2.ParserContext} at the time of
-     * this call.
+     * rules are compiled with the imports registered at the time of this call.
+     * </p>
+     *
+     * <p>
+     * Every condition and action is compiled in isolation. Variables, their types and inline
+     * {@code import} statements in one expression don't affect any other rule, in this list or a later one.
      * </p>
      *
      * @param ruleList The List of {@link Rule} objects to compile.
@@ -168,16 +173,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new RuleCompilationException("Duplicate rule name '" + rule.getRuleName() + "'");
             }
         }
+        Set<String> imports = Set.copyOf(packageImports);
         this.compiledRules = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
                         Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                .map(this::compileRule)
+                .map(rule -> compileRule(rule, imports))
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
     /**
-     * This method adds package imports to the {@link org.mvel2.ParserContext} in
+     * This method adds package imports that rules are compiled with, in
      * order to speed up the execution of rules and simplify the rule expression.
      * You may want to use this if many of your rules require the same packages.
      *
@@ -194,13 +200,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Objects.requireNonNull(packages, "packages must not be null");
         for (String pkg : packages) {
             Objects.requireNonNull(pkg, "package element must not be null");
-            parserContext.getParserConfiguration().addPackageImport(pkg);
+            packageImports.add(pkg);
         }
         return this;
     }
 
     /**
-     * This adds a single package to the {@link org.mvel2.ParserContext} in order to
+     * This adds a single package that rules are compiled with, in order to
      * speed up the execution of rules and simplify the rule expression. Add the
      * fully qualified name of the package as a string. You may want to use this if
      * many of your rules require the same packages.
@@ -216,7 +222,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @Override
     public RulesEngine<O> addImport(String packageString) {
         Objects.requireNonNull(packageString, "packageString must not be null");
-        parserContext.getParserConfiguration().addPackageImport(packageString);
+        packageImports.add(packageString);
         return this;
     }
 
@@ -411,7 +417,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return e.getMessage() != null ? e.getMessage() : e.getClass().getName();
     }
 
-    private CompiledRule compileRule(Rule rule) {
+    private CompiledRule compileRule(Rule rule, Set<String> imports) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
             throw new RuleCompilationException(
@@ -422,8 +428,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     "Rule '" + ruleName + "' has a null or blank action expression");
         }
         try {
-            Serializable compiledCondition = compileExpression(rule.getCondition());
-            Serializable compiledAction = compileExpression(rule.getAction());
+            Serializable compiledCondition = compileExpression(rule.getCondition(), imports);
+            Serializable compiledAction = compileExpression(rule.getAction(), imports);
             // Rule is mutable and owned by the caller. Keeping their instance would let a later edit change what
             // listeners and error messages report while the compiled expressions kept running the old rule.
             Rule snapshot = Rule.builder()
@@ -441,11 +447,22 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
-    private Serializable compileExpression(String expression) {
+    private static Serializable compileExpression(String expression, Set<String> imports) {
         // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
-        // run(). The analysis pass catches more of it up front. It gets its own ParserContext because
-        // analysis records variables on the context, but it shares the configuration so imports resolve.
-        MVEL.analysisCompile(expression, new ParserContext(parserContext.getParserConfiguration()));
-        return MVEL.compileExpression(expression, parserContext);
+        // run(). The analysis pass catches more of it up front.
+        MVEL.analysisCompile(expression, newParserContext(imports));
+        return MVEL.compileExpression(expression, newParserContext(imports));
+    }
+
+    /**
+     * Creates a context used by exactly one compilation. MVEL records variables, their types and inline
+     * {@code import} statements on the context and its configuration, and a compiled expression goes on using
+     * its context when it first runs. A context shared across rules let one rule change how another compiled,
+     * and let {@link #setRuleList(List)} modify it while a concurrent {@code run()} was still reading it.
+     */
+    private static ParserContext newParserContext(Set<String> imports) {
+        ParserConfiguration configuration = new ParserConfiguration();
+        imports.forEach(configuration::addPackageImport);
+        return new ParserContext(configuration);
     }
 }
