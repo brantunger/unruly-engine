@@ -135,6 +135,8 @@ facts.setValue("claim", userDetails);
 
 Now "claim" can be used in the MVEL rule, you can access methods of that object, and send data through the Rules Engine.
 
+`FactMap.setValue` always stores a new `Fact`, so a `FactMap` copied from another (`new FactMap<>(other)`) can be changed without affecting the original. The copy is shallow: the fact values themselves (e.g. the `userDetails` object) are shared, so build a fresh `FactStore` per request rather than sharing one across threads.
+
 ### Use the rules engine bean
 
 You might then use one of the rules engine like this practical example:

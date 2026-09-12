@@ -223,6 +223,45 @@ class FactMapTest {
             assertEquals("value", factMap.getValue("key"));
             assertNull(factMap.getValue("extra"));
         }
+
+        @Test
+        @DisplayName("setValue on a copy does not write through to the source")
+        void setValueOnCopyDoesNotWriteThrough() {
+            FactMap<Object> source = new FactMap<>();
+            source.setValue("claim", "original");
+
+            FactMap<Object> copy = new FactMap<>(source);
+            copy.setValue("claim", "changed");
+
+            assertEquals("original", source.getValue("claim"));
+            assertEquals("changed", copy.getValue("claim"));
+        }
+
+        @Test
+        @DisplayName("maps built from the same Fact do not change each other through setValue")
+        void mapsSharingAFactAreIndependent() {
+            Fact<Object> shared = new Fact<>("claim", "original");
+            FactMap<Object> first = new FactMap<>(shared);
+            FactMap<Object> second = new FactMap<>(shared);
+
+            first.setValue("claim", "changed");
+
+            assertEquals("original", second.getValue("claim"));
+            assertEquals("original", shared.getValue());
+        }
+
+        @Test
+        @DisplayName("setValue replaces the stored reference rather than updating it")
+        void setValueReplacesReference() {
+            factMap.setValue("claim", "original");
+            FactReference<Object> before = factMap.get("claim");
+
+            factMap.setValue("claim", "updated");
+
+            assertNotSame(before, factMap.get("claim"));
+            assertEquals("original", before.getValue());
+            assertEquals("claim", factMap.get("claim").getName());
+        }
     }
 
     @Nested
