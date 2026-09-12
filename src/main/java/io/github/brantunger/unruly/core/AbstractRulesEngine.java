@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import io.github.brantunger.unruly.api.FactReference;
@@ -250,6 +251,32 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     protected O executeRule(CompiledRule rule, O outputObject, Map<String, Object> entryMap) {
         return parseAction(rule, outputObject, entryMap);
+    }
+
+    /**
+     * Creates a fresh output object from the engine's factory. Without this, a factory that throws
+     * escaped {@code run()} unwrapped, and one that returned {@code null} surfaced later as an action
+     * failure blamed on whichever rule ran first.
+     *
+     * @param outputFactory The factory supplied to the engine's constructor
+     * @return The new output object, never {@code null}
+     * @throws RuleExecutionException if the factory throws or returns {@code null}
+     */
+    protected O createOutput(Supplier<O> outputFactory) {
+        O output;
+        try {
+            output = outputFactory.get();
+        } catch (Exception e) {
+            String msg = "Output factory threw " + e;
+            log.error(msg);
+            throw new RuleExecutionException(msg, e);
+        }
+        if (output == null) {
+            String msg = "Output factory returned null. It must return a new output object on every call.";
+            log.error(msg);
+            throw new RuleExecutionException(msg);
+        }
+        return output;
     }
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {

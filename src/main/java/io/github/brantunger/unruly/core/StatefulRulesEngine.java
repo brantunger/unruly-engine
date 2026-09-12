@@ -24,10 +24,12 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
     /**
      * Construct a StatefulRulesEngine.
      *
-     * @param outputFactory The {@link Supplier} to use to instantiate the output object with
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
+     *                      per run that matches a rule and must return a new, non-null object each time.
+     * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public StatefulRulesEngine(Supplier<O> outputFactory) {
-        this.outputFactory = outputFactory;
+        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }
 
     /**
@@ -55,7 +57,7 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
             return null;
         }
 
-        O outputObject = outputFactory.get();
+        O outputObject = createOutput(outputFactory);
 
         // Run the action of every rule on given data, saving state each time
         for (CompiledRule rule : matchedRuleList) {
