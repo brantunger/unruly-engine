@@ -24,7 +24,9 @@ public class FactMap<T> implements FactStore<T> {
 
     /**
      * Construct a new FactMap from a map of facts.
-     * A defensive copy of the input map is created.
+     * The map itself is copied, but the {@link FactReference} objects are shared with it. Changing a
+     * value through {@link #setValue} affects only this map. Calling {@code setValue} on a shared
+     * {@code FactReference} directly changes it everywhere it is held.
      *
      * @param facts The fact map to construct the facts from
      */
@@ -56,15 +58,18 @@ public class FactMap<T> implements FactStore<T> {
         return ref != null ? ref.getValue() : null;
     }
 
+    /**
+     * Sets the value of the named fact by storing a new {@link Fact}. An existing {@link FactReference} is
+     * replaced, never updated in place, so a {@code FactMap} copied from another, or built from the same
+     * {@code Fact} objects, is not changed by this call. A reference previously obtained from {@link #get}
+     * keeps its old value.
+     *
+     * @param name The name of the fact
+     * @param obj  The new value
+     */
     @Override
     public void setValue(String name, T obj) {
-        FactReference<T> fact = facts.get(name);
-        if (fact == null) {
-            fact = new Fact<>(name, obj);
-            facts.put(name, fact);
-            return;
-        }
-        fact.setValue(obj);
+        facts.put(name, new Fact<>(name, obj));
     }
 
     @Override
