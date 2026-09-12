@@ -121,4 +121,52 @@ public class RuleListenerTest {
         Map<String, Object> result = engine.run(facts);
         assertEquals(1, result.get("result"));
     }
+
+    @Test
+    @DisplayName("Registering a listener from inside a callback does not break the run")
+    void registeringListenerDuringRunDoesNotThrow() {
+        List<String> events = new ArrayList<>();
+        RuleListener late = new RuleListener() {
+            @Override
+            public void afterExecute(Rule rule, Object output) {
+                events.add("late afterExecute: " + rule.getRuleName());
+            }
+        };
+        // Every callback registers another listener, so each listener loop in the engine
+        // sees the list grow while it is iterating.
+        RuleListener registering = new RuleListener() {
+            @Override
+            public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+                engine.registerListener(late);
+            }
+
+            @Override
+            public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
+                engine.registerListener(late);
+            }
+
+            @Override
+            public void beforeExecute(Rule rule, Object output) {
+                engine.registerListeners(List.of(late));
+            }
+
+            @Override
+            public void afterExecute(Rule rule, Object output) {
+                engine.registerListener(late);
+            }
+        };
+        engine.registerListener(registering);
+        engine.setRuleList(List.of(Rule.builder()
+                .ruleName("Rule1")
+                .condition("input == 10")
+                .action("output.put('result', 1)")
+                .build()));
+
+        Map<String, Object> result = engine.run(facts);
+
+        assertEquals(1, result.get("result"));
+        // Listeners registered before afterExecute ran are called for it within the same run.
+        assertFalse(events.isEmpty());
+        assertTrue(events.stream().allMatch("late afterExecute: Rule1"::equals));
+    }
 }
