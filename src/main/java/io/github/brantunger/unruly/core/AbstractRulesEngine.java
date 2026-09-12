@@ -88,6 +88,22 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Returns an unmodifiable view of the compiled rules for {@code run()}. A missing call to
+     * {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run return
+     * {@code null}, indistinguishable from "no rule matched", so it is reported instead.
+     *
+     * @return An unmodifiable list of compiled rules, possibly empty
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
+     */
+    protected List<CompiledRule> requireCompiledRules() {
+        List<CompiledRule> rules = getCompiledRules();
+        if (rules == null) {
+            throw new IllegalStateException("setRuleList() must be called before run()");
+        }
+        return rules;
+    }
+
+    /**
      * Registers a single {@link RuleListener} to monitor rule evaluation and execution.
      *
      * @param listener The listener to register.

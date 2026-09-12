@@ -31,12 +31,13 @@ class StatelessRulesEngineTest {
     class Run {
 
         @Test
-        @DisplayName("returns null when no rules are set")
-        void returnsNullWhenNoRulesSet() {
+        @DisplayName("throws IllegalStateException when setRuleList() was never called")
+        void throwsWhenNoRulesSet() {
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 10);
 
-            assertNull(engine.run(facts));
+            IllegalStateException ex = assertThrows(IllegalStateException.class, () -> engine.run(facts));
+            assertTrue(ex.getMessage().contains("setRuleList() must be called before run()"));
         }
 
         @Test

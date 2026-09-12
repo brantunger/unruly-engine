@@ -41,13 +41,15 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * one rule. The rule with the highest priority value.
      *
      * @param facts The key/value fact store to run the rule engine against.
-     * @return The object that is the result of the action getting fired against the given {@link Rule}
+     * @return The object that is the result of the action getting fired against the given {@link Rule}, or
+     *         {@code null} if the rule list is empty or no rule matched
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      */
     @Override
     public O run(FactStore<Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
-        List<CompiledRule> rules = getCompiledRules();
-        if (null == rules || rules.isEmpty()) {
+        List<CompiledRule> rules = requireCompiledRules();
+        if (rules.isEmpty()) {
             return null;
         }
 

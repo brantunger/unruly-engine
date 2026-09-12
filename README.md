@@ -139,6 +139,8 @@ Now "claim" can be used in the MVEL rule, you can access methods of that object,
 
 ### Use the rules engine bean
 
+`run()` returns the output object when at least one rule matched. It returns **`null`** when no rule matched or the rule list is empty, so check for it. Calling `run()` before `setRuleList()` throws an `IllegalStateException`.
+
 You might then use one of the rules engine like this practical example:
 
 ```java
@@ -161,7 +163,8 @@ public class UnrulyController {
         facts.setValue("claim", userDetails);
 
         LoanDetails result = statefulRulesEngine.run(facts);
-        return ResponseEntity.ok(result);
+        // run() returns null when no rule matched
+        return result != null ? ResponseEntity.ok(result) : ResponseEntity.noContent().build();
     }
 }
 ```

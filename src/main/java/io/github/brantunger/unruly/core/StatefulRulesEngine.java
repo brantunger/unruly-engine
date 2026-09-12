@@ -39,13 +39,15 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * override the fields in the output object.
      *
      * @param facts The input fact store to run rules against
-     * @return The accumulated output object resulting from firing the actions of all matching rules
+     * @return The accumulated output object resulting from firing the actions of all matching rules, or
+     *         {@code null} if the rule list is empty or no rule matched
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      */
     @Override
     public O run(FactStore<Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
-        List<CompiledRule> rules = getCompiledRules();
-        if (null == rules || rules.isEmpty()) {
+        List<CompiledRule> rules = requireCompiledRules();
+        if (rules.isEmpty()) {
             return null;
         }
 
