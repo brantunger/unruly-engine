@@ -171,7 +171,7 @@ The Unruly Engine provides a specific exception hierarchy to help you handle err
 
 - **`UnrulyException`**: The base runtime exception for the engine.
 - **`RuleCompilationException`**: Thrown during `setRuleList()` if a rule has a syntax error in its MVEL condition or action expression.
-- **`RuleExecutionException`**: Thrown during `run()` if a runtime error occurs while evaluating a rule's condition or action (e.g. attempting to invoke a non-existent method).
+- **`RuleExecutionException`**: Thrown during `run()` if a runtime error occurs while evaluating a rule's condition or action (e.g. attempting to invoke a non-existent method), or if a condition evaluates to anything other than a boolean. A condition such as `claim.status` is rejected rather than coerced; write `claim.status == "APPROVED"`.
 
 All exceptions include the name of the offending rule in the message to aid in debugging.
 

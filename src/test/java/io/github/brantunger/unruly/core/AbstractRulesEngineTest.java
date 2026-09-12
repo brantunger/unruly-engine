@@ -8,6 +8,8 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -254,6 +256,65 @@ class AbstractRulesEngineTest {
             assertTrue(ex.getMessage().contains("null-condition"));
             assertTrue(ex.getMessage().contains("must evaluate to a boolean"));
             assertNull(ex.getCause());
+        }
+    }
+
+    @Nested
+    @DisplayName("non-boolean condition results")
+    class NonBooleanConditions {
+
+        private Map<String, Object> runCondition(String condition, FactStore<Object> facts) {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            engine.setRuleList(List.of(Rule.builder()
+                    .ruleName("non-boolean")
+                    .condition(condition)
+                    .action("output.put(\"fired\", true)")
+                    .priority(1)
+                    .build()));
+            return engine.run(facts);
+        }
+
+        @ParameterizedTest(name = "condition {0} throws instead of being coerced")
+        @ValueSource(strings = {"status", "\"APPROVED\"", "\"false\"", "amount", "0", "5"})
+        void nonBooleanResultThrows(String condition) {
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("status", "DENIED");
+            facts.setValue("amount", 5);
+
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class,
+                    () -> runCondition(condition, facts));
+            assertTrue(ex.getMessage().contains("non-boolean"));
+            assertTrue(ex.getMessage().contains("must evaluate to a boolean"));
+            assertNull(ex.getCause());
+        }
+
+        @Test
+        @DisplayName("message names the type the condition produced")
+        void messageNamesResultType() {
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("status", "DENIED");
+
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class,
+                    () -> runCondition("status", facts));
+            assertTrue(ex.getMessage().contains("java.lang.String"));
+        }
+
+        @Test
+        @DisplayName("a Boolean-valued fact is still a valid condition")
+        void booleanFactIsValidCondition() {
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("approved", Boolean.TRUE);
+
+            assertEquals(true, runCondition("approved", facts).get("fired"));
+        }
+
+        @Test
+        @DisplayName("a false condition still does not match")
+        void falseConditionDoesNotMatch() {
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("approved", Boolean.FALSE);
+
+            assertNull(runCondition("approved", facts));
         }
     }
 
