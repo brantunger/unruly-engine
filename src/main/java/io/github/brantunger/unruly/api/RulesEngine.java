@@ -26,8 +26,11 @@ public interface RulesEngine<O> {
      * Fire rules engine against the rules supplied by the rules list.
      *
      * @param facts The key/value fact store to run the rule engine against.
-     * @return The output of firing the actions of each {@link Rule} object
+     * @return The output of firing the actions of the matching {@link Rule} objects, or {@code null} if the rule
+     *         list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if a rule fails during evaluation
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
+     * @throws NullPointerException if {@code facts} is {@code null}
      */
     O run(FactStore<Object> facts);
 
