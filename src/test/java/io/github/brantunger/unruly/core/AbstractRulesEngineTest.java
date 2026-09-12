@@ -233,6 +233,28 @@ class AbstractRulesEngineTest {
             RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
             assertTrue(ex.getMessage().contains("bad-action"));
         }
+
+        @Test
+        @DisplayName("condition evaluating to null reports the rule, not an internal NPE")
+        void nullConditionResultReportsRule() {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+
+            Rule rule = Rule.builder()
+                    .ruleName("null-condition")
+                    .condition("null")
+                    .action("output.put(\"k\", \"v\")")
+                    .priority(1)
+                    .build();
+
+            engine.setRuleList(List.of(rule));
+
+            FactStore<Object> facts = new FactMap<>();
+
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
+            assertTrue(ex.getMessage().contains("null-condition"));
+            assertTrue(ex.getMessage().contains("must evaluate to a boolean"));
+            assertNull(ex.getCause());
+        }
     }
 
     @Nested

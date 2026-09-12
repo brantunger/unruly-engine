@@ -213,14 +213,25 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
         }
 
-        boolean result;
+        Boolean evaluated;
         try {
-            result = MVEL.executeExpression(rule.compiledCondition(), (Object) null, entryMap, Boolean.class);
+            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, entryMap, Boolean.class);
         } catch (Exception e) {
             String msg = "Failed to evaluate condition for rule '" + rule.rule().getRuleName() + "': " + e.getMessage();
             log.error(msg);
             throw new RuleExecutionException(msg, e);
         }
+
+        // Unboxing a null here would surface as an internal NPE naming MVEL's own
+        // signature, which tells the caller nothing about their rule.
+        if (evaluated == null) {
+            String msg = "Condition for rule '" + rule.rule().getRuleName()
+                    + "' evaluated to null. A condition expression must evaluate to a boolean.";
+            log.error(msg);
+            throw new RuleExecutionException(msg);
+        }
+
+        boolean result = evaluated;
 
         for (RuleListener listener : listeners) {
             try {
