@@ -25,10 +25,12 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     /**
      * Construct a StatelessRulesEngine
      *
-     * @param outputFactory The {@link Supplier} to use to instantiate the output object with
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
+     *                      per run that matches a rule and must return a new, non-null object each time.
+     * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public StatelessRulesEngine(Supplier<O> outputFactory) {
-        this.outputFactory = outputFactory;
+        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }
 
     /**
@@ -61,7 +63,7 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
         }
 
         // Run the action of the selected rule on given data and return the output.
-        return this.executeRule(resolvedRule, outputFactory.get(), entryMap);
+        return this.executeRule(resolvedRule, createOutput(outputFactory), entryMap);
     }
 
     /**
