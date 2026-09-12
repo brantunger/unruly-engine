@@ -1,10 +1,26 @@
 version: 2
 updates:
+  # `deps` is its own conventional-commit type: release-please shows it under
+  # "Dependencies" in the changelog but never bumps a version for it, so weekly
+  # bumps accumulate instead of each cutting a release to Maven Central.
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      gradle-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
