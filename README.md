@@ -102,6 +102,13 @@ Rule rule = Rule.builder()
     .build();
 ```
 
+**Facts are read-only to rules:**
+- A **condition** cannot assign variables. `claim.approved = true` (a typo for `==`) or a local such as `x = 5; x > 1` throws a `RuleExecutionException` instead of changing the fact for every later rule.
+- An **action** may assign local variables (`score = 10; output.put("score", score)`), but the assignment is visible only within that action. Other rules still see the original facts. Pass results between rules through `output`.
+- `output` is reserved. A fact with that name is rejected with an `IllegalArgumentException` at `run()`.
+
+The engine does not deep-copy fact objects, so a method that mutates one (e.g. `claim.setAmount(0)`) is still seen by later rules.
+
 ### Package Imports
 
 If your MVEL rule expressions reference classes from specific packages (e.g. `Objects.nonNull()`), you can register package imports with the engine. Imports must be configured **before** calling `setRuleList()`, since rules are compiled at that point.

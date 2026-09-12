@@ -319,6 +319,80 @@ class AbstractRulesEngineTest {
     }
 
     @Nested
+    @DisplayName("fact isolation between rules")
+    class FactIsolation {
+
+        private Rule rule(String name, int priority, String condition, String action) {
+            return Rule.builder()
+                    .ruleName(name)
+                    .condition(condition)
+                    .action(action)
+                    .priority(priority)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("assigning a fact in a condition throws and does not leak to later rules")
+        void conditionAssignmentToFactThrows() {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            // `approved = true` is a typo for `==`; it evaluates to a Boolean, so only the
+            // read-only facts catch it.
+            engine.setRuleList(List.of(
+                    rule("typo", 2, "approved = true", "output.put(\"typo\", true)"),
+                    rule("check", 1, "approved == true", "output.put(\"check\", true)")));
+
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("approved", Boolean.FALSE);
+
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
+            assertTrue(ex.getMessage().contains("'typo'"));
+            assertTrue(ex.getMessage().contains("Cannot assign 'approved'"));
+            assertEquals(Boolean.FALSE, facts.getValue("approved"));
+        }
+
+        @Test
+        @DisplayName("creating a new variable in a condition throws")
+        void conditionNewVariableThrows() {
+            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            engine.setRuleList(List.of(rule("new-var", 1, "(flag = true) == true", "output.put(\"k\", 1)")));
+
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class,
+                    () -> engine.run(new FactMap<>()));
+            assertTrue(ex.getMessage().contains("Cannot assign 'flag'"));
+        }
+
+        @Test
+        @DisplayName("assignments in an action are local to that action")
+        void actionAssignmentIsLocal() {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            engine.setRuleList(List.of(
+                    rule("assigns", 2, "true", "score = 10; output.put(\"first\", score)"),
+                    rule("reads", 1, "score == 1", "output.put(\"second\", score)")));
+
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("score", 1);
+
+            Map<String, Object> result = engine.run(facts);
+            assertEquals(10, result.get("first"));
+            assertEquals(1, result.get("second"));
+            assertEquals(1, facts.getValue("score"));
+        }
+
+        @Test
+        @DisplayName("a fact named 'output' is rejected")
+        void outputFactNameRejected() {
+            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            engine.setRuleList(List.of(rule("any", 1, "true", "output.put(\"k\", 1)")));
+
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("output", "shadowed");
+
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(facts));
+            assertTrue(ex.getMessage().contains("'output' is reserved"));
+        }
+    }
+
+    @Nested
     @DisplayName("null fact values")
     class NullFactValues {
 

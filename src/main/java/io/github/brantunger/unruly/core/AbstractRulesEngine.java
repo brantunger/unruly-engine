@@ -154,10 +154,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param facts The key/value fact store
      * @return A map of variable names to their values
+     * @throws IllegalArgumentException if a fact is named {@code output}, which actions reserve
+     *                                  for the output object
      */
     protected Map<String, Object> unwrapFacts(FactStore<Object> facts) {
         Map<String, Object> entryMap = new HashMap<>();
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
+            // Actions bind the output object to this name, silently hiding a fact of the same name.
+            if (OUTPUT_KEYWORD.equals(entry.getKey())) {
+                throw new IllegalArgumentException("'" + OUTPUT_KEYWORD
+                        + "' is reserved for the output object and cannot be used as a fact name");
+            }
             if (entry.getValue() != null) {
                 entryMap.put(entry.getKey(), entry.getValue().getValue());
             }
@@ -204,10 +211,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
-        Map<String, Object> unmodifiableMap = Collections.unmodifiableMap(entryMap);
+        Map<String, Object> readOnlyFacts = new ReadOnlyFacts(entryMap);
         for (RuleListener listener : listeners) {
             try {
-                listener.beforeEvaluate(rule.rule(), unmodifiableMap);
+                listener.beforeEvaluate(rule.rule(), readOnlyFacts);
             } catch (Exception e) {
                 log.warn("Listener threw exception in beforeEvaluate", e);
             }
@@ -217,7 +224,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, entryMap);
+            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, readOnlyFacts);
         } catch (Exception e) {
             String msg = "Failed to evaluate condition for rule '" + rule.rule().getRuleName() + "': " + e.getMessage();
             log.error(msg);
@@ -242,7 +249,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
         for (RuleListener listener : listeners) {
             try {
-                listener.afterEvaluate(rule.rule(), unmodifiableMap, result);
+                listener.afterEvaluate(rule.rule(), readOnlyFacts, result);
             } catch (Exception e) {
                 log.warn("Listener threw exception in afterEvaluate", e);
             }
