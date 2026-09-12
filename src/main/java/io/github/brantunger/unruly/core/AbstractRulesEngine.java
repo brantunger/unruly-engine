@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.mvel2.MVEL;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
+import org.mvel2.optimizers.OptimizerFactory;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -31,10 +32,30 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
  * action expression from a list of {@link Rule} objects when their conditions
  * evaluate to <strong>true</strong>.
  *
+ * <p>
+ * <b>MVEL optimizer:</b> loading this class switches MVEL's default accessor optimizer to
+ * {@link OptimizerFactory#SAFE_REFLECTIVE} for the whole JVM. MVEL's JIT optimizer rewrites
+ * compiled expressions during evaluation and, when the same fact name is bound to different
+ * classes, races between concurrent {@code run()} calls. MVEL selects the optimizer from a
+ * single global setting, so it cannot be scoped to this engine. Set the system property
+ * {@value #JIT_PROPERTY}{@code =true} to leave MVEL's setting untouched; with the JIT on, facts
+ * whose runtime class varies must not be run concurrently.
+ * </p>
+ *
  * @param <O> The output object to instantiate
  */
 @Slf4j
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
+
+    /**
+     * System property that, when {@code true}, keeps MVEL's JIT optimizer instead of switching to
+     * the reflective one.
+     */
+    public static final String JIT_PROPERTY = "unruly.mvel.jit";
+
+    static {
+        configureMvel(System.getProperty(JIT_PROPERTY));
+    }
 
     private static final String OUTPUT_KEYWORD = "output";
     private final ParserContext parserContext = new ParserContext(new ParserConfiguration());
@@ -42,6 +63,18 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
     private List<CompiledRule> compiledRules;
+
+    /**
+     * Selects MVEL's reflective optimizer unless the JIT has been opted into. A separate method so both
+     * outcomes can be tested; the static initializer only ever sees one value of the property.
+     *
+     * @param jitProperty The value of {@value #JIT_PROPERTY}, or {@code null} if unset
+     */
+    static void configureMvel(String jitProperty) {
+        if (!Boolean.parseBoolean(jitProperty)) {
+            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.SAFE_REFLECTIVE);
+        }
+    }
 
     /**
      * Returns an unmodifiable view of the compiled rules list.
