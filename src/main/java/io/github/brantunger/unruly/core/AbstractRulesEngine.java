@@ -400,7 +400,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             Serializable compiledCondition = compileExpression(rule.getCondition());
             Serializable compiledAction = compileExpression(rule.getAction());
-            return new CompiledRule(rule, compiledCondition, compiledAction);
+            // Rule is mutable and owned by the caller. Keeping their instance would let a later edit change what
+            // listeners and error messages report while the compiled expressions kept running the old rule.
+            Rule snapshot = Rule.builder()
+                    .ruleName(rule.getRuleName())
+                    .condition(rule.getCondition())
+                    .action(rule.getAction())
+                    .priority(rule.getPriority())
+                    .description(rule.getDescription())
+                    .build();
+            return new CompiledRule(snapshot, compiledCondition, compiledAction);
         } catch (Exception e) {
             String msg = "Can not compile rule '" + ruleName + "'. Error: " + e.getMessage();
             log.error(msg);

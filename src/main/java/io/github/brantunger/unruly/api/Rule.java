@@ -15,6 +15,12 @@ import lombok.Data;
  *     <li>{@code ruleName}: An identifier used for error reporting and debugging.</li>
  *     <li>{@code priority}: Evaluated in descending order (highest priority executes first or wins).</li>
  * </ul>
+ *
+ * <p>
+ * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} takes a copy of each rule.
+ * Changing a {@code Rule} afterwards has no effect on the engine, including on what listeners and error
+ * messages report, until {@code setRuleList} is called again.
+ * </p>
  */
 @Data
 @Builder
