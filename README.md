@@ -139,6 +139,10 @@ facts.setValue("claim", userDetails);
 
 Now "claim" can be used in the MVEL rule, you can access methods of that object, and send data through the Rules Engine.
 
+A fact's name is its map key, and that key is what rules use. `FactMap` rejects a `null` name, a key that differs from the `Fact`'s own name (`put("claim", new Fact<>("other", 1))`), and two facts with the same name in its constructor, each with an `IllegalArgumentException`. Renaming a `Fact` after adding it does not change the name rules see.
+
+Rule names must be unique. `setRuleList()` throws a `RuleCompilationException` for a duplicate name, while rules without a name are allowed.
+
 `FactMap.setValue` always stores a new `Fact`, so a `FactMap` copied from another (`new FactMap<>(other)`) can be changed without affecting the original. The copy is shallow: the fact values themselves (e.g. the `userDetails` object) are shared, so build a fresh `FactStore` per request rather than sharing one across threads.
 
 ### Use the rules engine bean

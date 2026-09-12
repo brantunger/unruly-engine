@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -155,9 +156,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     public void setRuleList(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
         // Checked before sorting, which would otherwise fail with a bare NPE from Rule::getPriority.
+        Set<String> ruleNames = new HashSet<>();
         for (int i = 0; i < ruleList.size(); i++) {
-            if (ruleList.get(i) == null) {
+            Rule rule = ruleList.get(i);
+            if (rule == null) {
                 throw new RuleCompilationException("Rule at index " + i + " of the rule list is null");
+            }
+            // Duplicate names would make error messages and listener logs ambiguous. Unnamed rules are allowed.
+            if (rule.getRuleName() != null && !ruleNames.add(rule.getRuleName())) {
+                throw new RuleCompilationException("Duplicate rule name '" + rule.getRuleName() + "'");
             }
         }
         this.compiledRules = ruleList.stream()
