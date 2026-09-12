@@ -63,7 +63,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
-    private List<CompiledRule> compiledRules;
+    // Volatile so a setRuleList() call on one thread is seen by run() on others. The list is fully built
+    // before it is assigned and never modified afterwards, so a single volatile write is enough.
+    private volatile List<CompiledRule> compiledRules;
 
     /**
      * Selects MVEL's reflective optimizer unless the JIT has been opted into. A separate method so both

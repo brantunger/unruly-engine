@@ -177,7 +177,7 @@ public class UnrulyController {
 
 The rules engine is designed to be configured once and then used concurrently:
 
-- **`setRuleList()`** should be called once during initialization (e.g. in a constructor or `@PostConstruct` method). This method compiles the MVEL expressions and stores the compiled rules internally. It is **not thread-safe** to call concurrently with `run()`.
+- **`setRuleList()`** compiles the MVEL expressions and stores the compiled rules internally. Call it during initialization (e.g. in a constructor or `@PostConstruct` method). It may also be called again later to reload rules while other threads are calling `run()`. The new rules are swapped in all at once: a run already in progress finishes with the rules it started with, and runs that start afterwards use the new rules. Don't call `setRuleList()` from several threads at the same time, since the last call wins.
 - **`run()`** is safe to call from multiple threads after `setRuleList()` has completed. Each invocation creates a fresh output object. The compiled rules are shared, and MVEL updates them internally as they are evaluated, which is why the engine configures MVEL as described below.
 - **`addImport()` / `addImports()`** must be called before `setRuleList()`. They are not thread-safe.
 - **`registerListener()` / `registerListeners()`** are thread-safe and may be called at any time, even from inside a listener callback. A listener registered during a run may start receiving callbacks partway through that run. A registered listener is called from every thread running the engine, so **listener implementations must be thread-safe**.
