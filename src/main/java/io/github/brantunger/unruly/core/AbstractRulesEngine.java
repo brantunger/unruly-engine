@@ -324,19 +324,19 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, readOnlyFacts);
         } catch (Exception e) {
-            throw failure(rule, "Failed to evaluate condition for rule '" + rule.rule().getRuleName() + "': "
-                    + e.getMessage(), e);
+            throw failure(rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
+                    + describe(e), e);
         }
 
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule.
         if (evaluated == null) {
-            throw failure(rule, "Condition for rule '" + rule.rule().getRuleName()
+            throw failure(rule, "Condition for rule '" + rule.displayName()
                     + "' evaluated to null. A condition expression must evaluate to a boolean.", null);
         }
 
         if (!(evaluated instanceof Boolean result)) {
-            throw failure(rule, "Condition for rule '" + rule.rule().getRuleName() + "' evaluated to a "
+            throw failure(rule, "Condition for rule '" + rule.displayName() + "' evaluated to a "
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
@@ -366,8 +366,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
         } catch (Exception e) {
-            throw failure(rule, "Failed to execute action for rule '" + rule.rule().getRuleName() + "': "
-                    + e.getMessage(), e);
+            throw failure(rule, "Failed to execute action for rule '" + rule.displayName() + "': "
+                    + describe(e), e);
         }
 
         for (RuleListener listener : listeners) {
@@ -400,6 +400,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return error;
     }
 
+    /**
+     * Describes an exception for an error message. Many exceptions (NPEs, bare RuntimeExceptions) carry no
+     * message, which would otherwise end the engine's message in {@code ": null"}.
+     *
+     * @param e The exception to describe
+     * @return The exception's message, or its class name if it has none
+     */
+    static String describe(Throwable e) {
+        return e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+    }
+
     private CompiledRule compileRule(Rule rule) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
@@ -422,9 +433,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     .priority(rule.getPriority())
                     .description(rule.getDescription())
                     .build();
-            return new CompiledRule(snapshot, compiledCondition, compiledAction);
+            return new CompiledRule(snapshot, ruleName, compiledCondition, compiledAction);
         } catch (Exception e) {
-            String msg = "Can not compile rule '" + ruleName + "'. Error: " + e.getMessage();
+            String msg = "Can not compile rule '" + ruleName + "'. Error: " + describe(e);
             log.error(msg);
             throw new RuleCompilationException(msg, e);
         }
