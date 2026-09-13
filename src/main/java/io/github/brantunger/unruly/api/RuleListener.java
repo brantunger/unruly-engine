@@ -9,9 +9,9 @@ import java.util.Map;
  * Implement this interface to receive callbacks before and after rules are evaluated and executed.
  * Any exception thrown by a listener, including a {@link StackOverflowError} or {@link AssertionError}, is caught
  * and logged by the engine, ensuring the core execution is not interrupted. Any other {@link Error}, such as an
- * {@link OutOfMemoryError}, propagates out of {@code run()} once every listener has received the same callback. If it
- * came from a {@code before*} callback, the condition or action doesn't run, and every listener first gets
- * {@link #onError} to close that callback.
+ * {@link OutOfMemoryError}, propagates out of {@code run()} once every listener has received the same callback, also
+ * when it is the cause of an exception the listener throws. If it came from a {@code before*} callback, the condition
+ * or action doesn't run, and every listener first gets {@link #onError} to close that callback.
  *
  * <p>
  * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every
@@ -82,7 +82,9 @@ public interface RuleListener {
      * {@code error} is the exception that {@code run()} throws once all listeners have been notified.
      * This includes a condition or action that throws an {@link Error}: a {@link StackOverflowError} or
      * {@link AssertionError} is wrapped in {@code error}. For any other {@link Error}, such as an
-     * {@link OutOfMemoryError}, {@code error} wraps it and {@code run()} rethrows the original error instead.
+     * {@link OutOfMemoryError}, {@code error} wraps it and {@code run()} rethrows the original error instead. That
+     * includes an error thrown by Java code the rule calls, such as a method, a getter or a lambda held in a fact,
+     * which reaches the engine as the cause of another exception.
      * Errors found while compiling rules in {@code setRuleList()} are not reported here.
      * </p>
      *

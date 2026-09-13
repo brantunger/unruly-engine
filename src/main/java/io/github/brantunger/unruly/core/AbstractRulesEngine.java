@@ -330,16 +330,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param outputFactory The factory supplied to the engine's constructor
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. An {@link Error} other than
-     *                                {@link StackOverflowError} or {@link AssertionError} is rethrown unchanged.
+     *                                {@link StackOverflowError} or {@link AssertionError} is rethrown unchanged,
+     *                                also when it is the cause of what the factory throws.
      */
     protected O createOutput(Supplier<O> outputFactory) {
         O output;
         try {
             output = outputFactory.get();
         } catch (Exception | Error e) {
-            if (isFatal(e)) {
-                throw (Error) e;
-            }
+            throwIfPresent(fatalError(e));
             String msg = "Output factory threw " + e;
             log.error(msg);
             throw new RuleExecutionException(msg, e);
@@ -452,9 +451,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't interrupt a
-     * run. A fatal {@link Error} (see {@link #isFatal}) doesn't stop the other listeners either, so each still gets
-     * the callback, and closes whatever it opened; the error is returned for the caller to rethrow. A second fatal
-     * error in the same callback is logged like an exception.
+     * run. A fatal {@link Error} (see {@link #fatalError}), thrown or found among the causes of what a listener
+     * throws, doesn't stop the other listeners either, so each still gets the callback, and closes whatever it opened;
+     * the error is returned for the caller to rethrow. A second fatal error in the same callback is logged like an
+     * exception.
      *
      * @return The first fatal {@link Error} a listener threw, or {@code null}
      */
@@ -464,8 +464,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 call.accept(listener);
             } catch (Exception | Error e) {
-                if (fatal == null && isFatal(e)) {
-                    fatal = (Error) e;
+                Error found = fatal == null ? fatalError(e) : null;
+                if (found != null) {
+                    fatal = found;
                 } else {
                     log.warn("Listener threw exception in {}", callback, e);
                 }
@@ -477,8 +478,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
      * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw, unless
-     * the cause is a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a listener
-     * threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
+     * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
+     * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
     private RuleExecutionException failure(List<RuleListener> snapshot, CompiledRule rule, String msg,
                                            Throwable cause) {
@@ -487,9 +488,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 : new RuleExecutionException(msg, cause);
         // A failed run() started by this rule has already logged its failure.
         Error listenerFatal = reportFailure(snapshot, rule, error, nestedRunFailure(cause) == null);
-        if (isFatal(cause)) {
-            throw (Error) cause;
-        }
+        throwIfPresent(fatalError(cause));
         throwIfPresent(listenerFatal);
         return error;
     }
@@ -513,11 +512,29 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * being run and is handled like an exception. Any other error, such as {@link OutOfMemoryError}, is left
      * for the caller to see unchanged.
      *
-     * @param thrown What was caught, or {@code null}
+     * @param thrown One throwable from a cause chain
      * @return {@code true} if {@code thrown} must be rethrown unchanged
      */
     private static boolean isFatal(Throwable thrown) {
         return thrown instanceof Error && !(thrown instanceof StackOverflowError || thrown instanceof AssertionError);
+    }
+
+    /**
+     * Finds the fatal {@link Error} (see {@link #isFatal}) in what was caught: the throwable itself, or one of its
+     * causes. An error from Java code a rule calls, such as a method, a getter or a lambda held in a fact, reaches the
+     * engine inside MVEL's own exception, so checking only the outer exception let an {@link OutOfMemoryError} be
+     * absorbed into a {@link RuleExecutionException}.
+     *
+     * @param thrown What was caught, or {@code null}
+     * @return The first fatal error in {@code thrown}'s cause chain, or {@code null} if there is none
+     */
+    private static Error fatalError(Throwable thrown) {
+        for (Throwable t : causeChain(thrown)) {
+            if (isFatal(t)) {
+                return (Error) t;
+            }
+        }
+        return null;
     }
 
     private static void throwIfPresent(Error fatal) {
