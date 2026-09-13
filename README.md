@@ -95,6 +95,8 @@ Objects.nonNull(claim.getMDDB_MULTSRC_CD())
       && claim.getPROD_SLCTN_CD().matches("0|1|2|7|8|9")))
 ```
 
+`Objects` is in `java.util`, not `java.lang`, so this condition needs `engine.addImport("java.util")` before `setRuleList()` (see [Package Imports](#package-imports)). Without it, `setRuleList()` still accepts the rule, but `run()` fails with `unresolvable property or identifier: Objects`.
+
 You can call methods upon the **"claim"** object to create boolean logic. This logic is stored in the **"condition"** field of the Rule. If the condition evaluates to _TRUE_ then the action of the rule will be executed.
 
 **Action Fact Access:**
@@ -118,7 +120,7 @@ The engine does not deep-copy fact objects, so a method that mutates one (e.g. `
 
 ### Package Imports
 
-If your MVEL rule expressions reference classes from specific packages (e.g. `Objects.nonNull()`), you can register package imports with the engine. Imports must be configured **before** calling `setRuleList()`, since rules are compiled at that point.
+MVEL resolves classes in `java.lang` by their simple name. Any other class a rule refers to by its simple name, such as `Objects` in `Objects.nonNull()`, needs its package registered with the engine, or the rule must use the fully qualified name (`java.util.Objects.nonNull()`). Imports must be configured **before** calling `setRuleList()`, since rules are compiled at that point.
 
 ```java
 // Add a single package import
@@ -208,7 +210,7 @@ With the JIT on, facts whose runtime class varies must not be run concurrently.
 The Unruly Engine provides a specific exception hierarchy to help you handle errors gracefully:
 
 - **`UnrulyException`**: The base runtime exception for the engine.
-- **`RuleCompilationException`**: Thrown during `setRuleList()` if a rule has a syntax error in its MVEL condition or action expression, has a null or blank condition or action, has a condition that contains an assignment, or if the rule list contains a `null` rule. MVEL's parser is lenient, so not every mistake is caught at this point. For example, `true)` and `output.put("k" 1)` compile without error and only fail with a `RuleExecutionException` when that rule is evaluated. Test each rule against sample facts rather than relying on `setRuleList()` alone.
+- **`RuleCompilationException`**: Thrown during `setRuleList()` if a rule has a syntax error in its MVEL condition or action expression, has a null or blank condition or action, has a condition that contains an assignment, or if the rule list contains a `null` rule. MVEL's parser is lenient, so not every mistake is caught at this point. For example, `true)` and `output.put("k" 1)` compile without error and only fail with a `RuleExecutionException` when that rule is evaluated. A class name that can't be resolved, such as `Objects` without `addImport("java.util")`, is also only reported at `run()`. Test each rule against sample facts rather than relying on `setRuleList()` alone.
 - **`RuleExecutionException`**: Thrown during `run()` if a runtime error occurs while evaluating a rule's condition or action (e.g. attempting to invoke a non-existent method), or if a condition evaluates to anything other than a boolean. A condition such as `claim.status` is rejected rather than coerced; write `claim.status == "APPROVED"`.
 
 All exceptions include the name of the offending rule in the message to aid in debugging.
