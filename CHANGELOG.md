@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.23](https://github.com/brantunger/unruly-engine/compare/v1.1.22...v1.1.23) (2026-09-13)
+
+
+### Bug Fixes
+
+* name root causes and keep error messages short ([#158](https://github.com/brantunger/unruly-engine/issues/158)) ([4e86215](https://github.com/brantunger/unruly-engine/commit/4e86215c71160a79e376bec9128ec32599a94002))
+
 ## [1.1.22](https://github.com/brantunger/unruly-engine/compare/v1.1.21...v1.1.22) (2026-09-13)
 
 
