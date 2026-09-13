@@ -9,7 +9,6 @@ import org.mvel2.util.ParseTools;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,6 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -39,12 +39,11 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
  *
  * <p>
  * <b>MVEL optimizer:</b> loading this class switches MVEL's default accessor optimizer to
- * {@link OptimizerFactory#SAFE_REFLECTIVE} for the whole JVM. MVEL's JIT optimizer rewrites
- * compiled expressions during evaluation and, when the same fact name is bound to different
- * classes, races between concurrent {@code run()} calls. MVEL selects the optimizer from a
+ * {@link OptimizerFactory#SAFE_REFLECTIVE} for the whole JVM. MVEL selects the optimizer from a
  * single global setting, so it cannot be scoped to this engine. Set the system property
- * {@value #JIT_PROPERTY}{@code =true} to leave MVEL's setting untouched; with the JIT on, facts
- * whose runtime class varies must not be run concurrently.
+ * {@value #JIT_PROPERTY}{@code =true} to leave MVEL's setting untouched. With either optimizer,
+ * concurrent {@code run()} calls never share a compiled expression: MVEL replaces the accessors
+ * cached in one without synchronization when a fact's runtime class changes.
  * </p>
  *
  * @param <O> The output object to instantiate
@@ -69,11 +68,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
-    // Volatile so a setRuleList() call on one thread is seen by run() on others. The list is fully built
-    // before it is assigned and never modified afterwards, so a single volatile write is enough.
-    private volatile List<CompiledRule> compiledRules;
+    // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set is fully built
+    // before it is assigned, so a single volatile write is enough.
+    private volatile RuleSet ruleSet;
     // Checks fact names against the imports the current rules were compiled with. Replaced alongside
-    // compiledRules; a run racing a reload may use the other list's imports, which only changes whether an
+    // ruleSet; a run racing a reload may use the other list's imports, which only changes whether an
     // imported class name is accepted.
     private volatile FactNames factNames = new FactNames(Imports.NONE);
 
@@ -96,23 +95,36 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
     protected List<CompiledRule> getCompiledRules() {
-        return compiledRules != null ? Collections.unmodifiableList(compiledRules) : null;
+        RuleSet rules = ruleSet;
+        return rules != null ? rules.rules() : null;
     }
 
     /**
-     * Returns an unmodifiable view of the compiled rules for {@code run()}. A missing call to
-     * {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run return
-     * {@code null}, indistinguishable from "no rule matched", so it is reported instead.
+     * Calls {@code run} with a compiled copy of the rules that no concurrent run is using, and keeps the copy for
+     * later runs once {@code run} returns or throws. MVEL's compiled expressions aren't safe to share between
+     * threads when a fact name is bound to different kinds of objects; see {@link RuleSet}.
      *
-     * @return An unmodifiable list of compiled rules, possibly empty
+     * <p>
+     * A missing call to {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
+     * return {@code null}, indistinguishable from "no rule matched", so it is reported instead.
+     * </p>
+     *
+     * @param run The body of a run, given the compiled rules in priority order, possibly none
+     * @param <T> The type {@code run} returns
+     * @return What {@code run} returns
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      */
-    protected List<CompiledRule> requireCompiledRules() {
-        List<CompiledRule> rules = getCompiledRules();
+    protected <T> T withCompiledRules(Function<List<CompiledRule>, T> run) {
+        RuleSet rules = ruleSet;
         if (rules == null) {
             throw new IllegalStateException("setRuleList() must be called before run()");
         }
-        return rules;
+        List<CompiledRule> copy = rules.borrow();
+        try {
+            return run.apply(copy);
+        } finally {
+            rules.release(copy);
+        }
     }
 
     /**
@@ -198,7 +210,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 .map(rule -> compileRule(rule, imports))
                 .collect(Collectors.toCollection(ArrayList::new));
         this.factNames = new FactNames(imports);
-        this.compiledRules = compiled;
+        this.ruleSet = new RuleSet(compiled, rule -> recompile(rule, imports));
     }
 
     /**
@@ -541,6 +553,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             log.error(msg);
             throw new RuleCompilationException(msg, e);
         }
+    }
+
+    /**
+     * Compiles another copy of a rule for a concurrent run. The rule already compiled with these imports in
+     * {@code setRuleList()}, so its checks and MVEL's analysis pass aren't repeated.
+     */
+    private static CompiledRule recompile(CompiledRule rule, Imports imports) {
+        return new CompiledRule(rule.rule(), rule.displayName(),
+                MVEL.compileExpression(rule.rule().getCondition(), newParserContext(imports)),
+                MVEL.compileExpression(rule.rule().getAction(), newParserContext(imports)));
     }
 
     private static Serializable compileExpression(String expression, Imports imports) {

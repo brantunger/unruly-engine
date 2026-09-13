@@ -56,24 +56,25 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     @Override
     public O run(FactStore<Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
-        List<CompiledRule> rules = requireCompiledRules();
-        // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
-        Map<String, Object> entryMap = this.unwrapFacts(facts);
-        if (rules.isEmpty()) {
-            return null;
-        }
+        return withCompiledRules(rules -> {
+            // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
+            Map<String, Object> entryMap = this.unwrapFacts(facts);
+            if (rules.isEmpty()) {
+                return null;
+            }
 
-        // Match the facts and data against the set of rules with highest priority first.
-        List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
+            // Match the facts and data against the set of rules with highest priority first.
+            List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
 
-        // Resolve any conflicts and give the selected one rule.
-        CompiledRule resolvedRule = this.resolve(matchedRuleList);
-        if (null == resolvedRule) {
-            return null;
-        }
+            // Resolve any conflicts and give the selected one rule.
+            CompiledRule resolvedRule = this.resolve(matchedRuleList);
+            if (null == resolvedRule) {
+                return null;
+            }
 
-        // Run the action of the selected rule on given data and return the output.
-        return this.executeRule(resolvedRule, createOutput(outputFactory), entryMap);
+            // Run the action of the selected rule on given data and return the output.
+            return this.executeRule(resolvedRule, createOutput(outputFactory), entryMap);
+        });
     }
 
     /**

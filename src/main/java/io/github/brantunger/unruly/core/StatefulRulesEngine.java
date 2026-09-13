@@ -61,26 +61,27 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
     @Override
     public O run(FactStore<Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
-        List<CompiledRule> rules = requireCompiledRules();
-        // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
-        Map<String, Object> entryMap = this.unwrapFacts(facts);
-        if (rules.isEmpty()) {
-            return null;
-        }
+        return withCompiledRules(rules -> {
+            // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
+            Map<String, Object> entryMap = this.unwrapFacts(facts);
+            if (rules.isEmpty()) {
+                return null;
+            }
 
-        // Match the facts and data against the set of rules with the highest priority first.
-        List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
-        if (matchedRuleList.isEmpty()) {
-            return null;
-        }
+            // Match the facts and data against the set of rules with the highest priority first.
+            List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
+            if (matchedRuleList.isEmpty()) {
+                return null;
+            }
 
-        O outputObject = createOutput(outputFactory);
+            O outputObject = createOutput(outputFactory);
 
-        // Run the action of every rule on given data, saving state each time
-        for (CompiledRule rule : matchedRuleList) {
-            outputObject = this.executeRule(rule, outputObject, entryMap);
-        }
+            // Run the action of every rule on given data, saving state each time
+            for (CompiledRule rule : matchedRuleList) {
+                outputObject = this.executeRule(rule, outputObject, entryMap);
+            }
 
-        return outputObject;
+            return outputObject;
+        });
     }
 }
