@@ -30,6 +30,9 @@ public interface RulesEngine<O> {
      * @return The output of firing the actions of the matching {@link Rule} objects, or {@code null} if the rule
      *         list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if a rule fails during evaluation
+     * @throws IllegalArgumentException if a fact is named {@code output}, or has a name rules can't refer to (not
+     *         a Java identifier, a reserved MVEL word such as {@code empty} or {@code in}, or a class name MVEL
+     *         resolves, such as {@code Math} or a class from an imported package)
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      * @throws NullPointerException if {@code facts} is {@code null}
      */
