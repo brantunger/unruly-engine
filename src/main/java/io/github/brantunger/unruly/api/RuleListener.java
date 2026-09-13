@@ -18,6 +18,11 @@ import java.util.Map;
  * A listener registered while a run is in progress may start receiving callbacks partway
  * through that run.
  * </p>
+ *
+ * <p>
+ * Every callback receives its own copy of the {@link Rule}. Changing it has no effect on the engine, on other
+ * listeners, or on later callbacks and runs.
+ * </p>
  */
 public interface RuleListener {
 
