@@ -34,10 +34,12 @@ class ConditionAssignmentsTest {
             "function f() { true }; f()              | 'function' at position 0",
             "x > 1 && with (claim) { a = 1 } == null | 'with' at position 9",
             "a?with (b) { c = 1 }                    | 'with' at position 2",
+            "a ? with (b) { c = 1 }                  | 'with' at position 4",
             "claim.a =                               | '=' at position 8",
+            "import_static java.lang.Math.max; max(x, 1) == 5 | 'import_static' at position 0",
     })
     void findsAssignments(String condition, String expected) {
-        assertEquals(expected, ConditionAssignments.find(condition));
+        assertEquals(expected, String.valueOf(ConditionAssignments.find(condition)));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -56,6 +58,10 @@ class ConditionAssignmentsTest {
             "x == -1",
             "claim.withdrawal > 0 && claim.define == 1",
             "claim.with == 1 && claim.?def == null",
+            "order.\n    with(1) == 1",
+            "m. with == 2",
+            "m .\tfunction == 2 && m.? def == null",
+            "claim.import_static == 1",
             "isdef x && x > 1",
             "status in ['A=1', 'B']",
             "($ in list if $ > 1).size() > 0",

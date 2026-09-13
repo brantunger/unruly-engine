@@ -16,7 +16,7 @@ import java.util.Set;
  *     {@code <=}, {@code >=} or {@code ~=}</li>
  *     <li>{@code ++} and {@code --}</li>
  *     <li>the keywords {@code with}, {@code def} and {@code function}, which set properties or declare
- *     functions</li>
+ *     functions, and {@code import_static}, which declares the imported method as a variable</li>
  * </ul>
  *
  * <p>
@@ -25,8 +25,33 @@ import java.util.Set;
  */
 final class ConditionAssignments {
 
-    private static final Set<String> WRITE_KEYWORDS = Set.of("with", "def", "function");
+    private static final String STATIC_IMPORT = "import_static";
+    private static final Set<String> WRITE_KEYWORDS = Set.of("with", "def", "function", STATIC_IMPORT);
     private static final String OPERATOR_CHARS = "+-*/%&|^<>";
+
+    /**
+     * An assignment found in a condition.
+     *
+     * @param text     The operator or keyword, such as {@code +=} or {@code with}
+     * @param position Where it starts in the condition
+     */
+    record Write(String text, int position) {
+
+        /**
+         * Tells whether this is {@code import_static}, which needs its own explanation.
+         *
+         * @return {@code true} for {@code import_static}
+         */
+        boolean isStaticImport() {
+            return STATIC_IMPORT.equals(text);
+        }
+
+        /** Describes the assignment, such as {@code "'+=' at position 13"}. */
+        @Override
+        public String toString() {
+            return "'" + text + "' at position " + position;
+        }
+    }
 
     private ConditionAssignments() {
     }
@@ -35,9 +60,9 @@ final class ConditionAssignments {
      * Finds the first assignment in a condition.
      *
      * @param condition The condition's source text
-     * @return A description such as {@code "'+=' at position 13"}, or {@code null} if there is none
+     * @return The assignment, or {@code null} if there is none
      */
-    static String find(String condition) {
+    static Write find(String condition) {
         int index = 0;
         while (index < condition.length()) {
             char ch = condition.charAt(index);
@@ -68,7 +93,7 @@ final class ConditionAssignments {
                 }
             }
             if (found != null) {
-                return "'" + found + "' at position " + foundAt;
+                return new Write(found, foundAt);
             }
             index = next;
         }
@@ -129,11 +154,18 @@ final class ConditionAssignments {
         return index;
     }
 
-    /** A keyword used as a member name, as in {@code claim.with} or {@code claim.?with}, is just a property. */
+    /**
+     * A keyword used as a member name, as in {@code claim.with} or {@code claim.?with}, is just a property. MVEL
+     * allows whitespace, including a line break, between the dot and the name.
+     */
     private static String writeKeyword(String text, int start, int end) {
         String word = text.substring(start, end);
-        boolean member = charAt(text, start - 1) == '.'
-                || charAt(text, start - 1) == '?' && charAt(text, start - 2) == '.';
+        int before = start - 1;
+        while (Character.isWhitespace(charAt(text, before))) {
+            before--;
+        }
+        boolean member = charAt(text, before) == '.'
+                || charAt(text, before) == '?' && charAt(text, before - 1) == '.';
         return WRITE_KEYWORDS.contains(word) && !member ? word : null;
     }
 

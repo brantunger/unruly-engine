@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ReadOnlyFactsTest {
 
     private final Map<String, Object> backing = new HashMap<>(Map.of("status", "DENIED"));
-    private final Map<String, Object> facts = new ReadOnlyFacts(backing);
+    private final Map<String, Object> facts = ReadOnlyFacts.forConditions(backing);
 
     @Test
     @DisplayName("reads through to the backing map")
@@ -31,6 +31,19 @@ class ReadOnlyFactsTest {
                 () -> facts.put("status", "APPROVED"));
         assertEquals("Cannot assign or declare 'status' in a condition: conditions can't change facts or create "
                 + "variables. Use == to compare, and move variables and functions into the action.", ex.getMessage());
+        assertEquals("DENIED", backing.get("status"));
+    }
+
+    @Test
+    @DisplayName("the view for listeners reads the same facts and rejects a write with a message about listeners")
+    void listenerView() {
+        Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(backing);
+
+        UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
+                () -> listenerFacts.put("status", "APPROVED"));
+
+        assertEquals("The facts passed to a RuleListener are read-only; 'status' can't be changed.", ex.getMessage());
+        assertEquals(Map.of("status", "DENIED"), listenerFacts);
         assertEquals("DENIED", backing.get("status"));
     }
 

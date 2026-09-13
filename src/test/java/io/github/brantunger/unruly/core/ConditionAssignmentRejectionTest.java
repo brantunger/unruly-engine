@@ -58,6 +58,28 @@ class ConditionAssignmentRejectionTest {
     }
 
     @Test
+    @DisplayName("import_static is rejected with its own explanation")
+    void staticImportRejected() {
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
+                List.of(rule("max", "import_static java.lang.Math.max; max(x, 1) == 5", "output.put('k', 1)"))));
+
+        assertEquals("Condition for rule 'max' uses import_static (at position 0), which declares the method as a "
+                + "variable, and conditions can't declare variables. Call the method through its class instead, such "
+                + "as Math.max(a, b).", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a property named with, written on the line after the dot, is read, not rejected")
+    void keywordMemberAfterLineBreak() {
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        engine.setRuleList(List.of(rule("fluent", "claim.\n    with == 2", "output.put('k', 1)")));
+
+        assertEquals(Map.of("k", 1), engine.run(claim(new HashMap<>(Map.of("with", 2)))));
+    }
+
+    @Test
     @DisplayName("a rejected rule list leaves the previous rules in place")
     void previousRulesKept() {
         StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);

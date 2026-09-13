@@ -21,9 +21,36 @@ import java.util.Set;
 final class ReadOnlyFacts extends AbstractMap<String, Object> {
 
     private final Map<String, Object> facts;
+    // The message for a rejected write, with %s for the name written to.
+    private final String writeError;
 
-    ReadOnlyFacts(Map<String, Object> facts) {
+    private ReadOnlyFacts(Map<String, Object> facts, String writeError) {
         this.facts = facts;
+        this.writeError = writeError;
+    }
+
+    /**
+     * Creates the view a condition is evaluated against. By the time a condition runs, the text check in
+     * {@code setRuleList()} has already rejected visible assignments, so a write that reaches this view is usually a
+     * declaration such as {@code int y;}, which MVEL also stores through the map. The message covers both.
+     *
+     * @param facts The unwrapped facts
+     * @return A view that rejects writes with a message about conditions
+     */
+    static Map<String, Object> forConditions(Map<String, Object> facts) {
+        return new ReadOnlyFacts(facts, "Cannot assign or declare '%s' in a condition: conditions can't change "
+                + "facts or create variables. Use == to compare, and move variables and functions into the action.");
+    }
+
+    /**
+     * Creates the view passed to {@code beforeEvaluate} and {@code afterEvaluate}, whose writes come from listener
+     * code rather than a condition.
+     *
+     * @param facts The unwrapped facts
+     * @return A view that rejects writes with a message about listeners
+     */
+    static Map<String, Object> forListeners(Map<String, Object> facts) {
+        return new ReadOnlyFacts(facts, "The facts passed to a RuleListener are read-only; '%s' can't be changed.");
     }
 
     @Override
@@ -41,15 +68,9 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
         return Collections.unmodifiableMap(facts).entrySet();
     }
 
-    /**
-     * Rejects a write. By the time a condition runs, the text check in {@code setRuleList()} has already rejected
-     * visible assignments, so what reaches here is usually a declaration such as {@code int y;}, which MVEL also
-     * stores through this map. The message covers both.
-     */
+    /** Rejects a write, naming the variable. */
     @Override
     public Object put(String key, Object value) {
-        throw new UnsupportedOperationException("Cannot assign or declare '" + key + "' in a condition: "
-                + "conditions can't change facts or create variables. Use == to compare, and move variables and "
-                + "functions into the action.");
+        throw new UnsupportedOperationException(writeError.formatted(key));
     }
 }
