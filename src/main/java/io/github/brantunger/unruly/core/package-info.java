@@ -1,9 +1,10 @@
 /**
  * Core rules engine implementations.
  *
- * <p>This package contains the engine interface and its implementations:</p>
+ * <p>This package contains the implementations of {@link io.github.brantunger.unruly.api.RulesEngine}:</p>
  * <ul>
- *   <li>{@link io.github.brantunger.unruly.api.RulesEngine} — The engine interface</li>
+ *   <li>{@link io.github.brantunger.unruly.core.AbstractRulesEngine} — Shared rule compilation, fact handling and
+ *   listener callbacks</li>
  *   <li>{@link io.github.brantunger.unruly.core.StatefulRulesEngine} — Fires all matching rules, accumulating state</li>
  *   <li>{@link io.github.brantunger.unruly.core.StatelessRulesEngine} — Fires only the highest-priority matching rule</li>
  * </ul>

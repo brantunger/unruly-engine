@@ -8,7 +8,7 @@ Unruly is a pure Java rule engine that parses and evaluates using MVEL based rul
 
 ## Installation
 
-Add the dependency to your project:
+Requires Java 17 or later. Add the dependency to your project:
 
 ### Gradle
 
@@ -132,6 +132,15 @@ engine.addImports(Set.of("java.util", "java.time"));
 // Then set the rules (imports take effect during compilation)
 engine.setRuleList(rules);
 ```
+
+### MVEL comparison gotchas
+
+MVEL compares values more loosely than Java, which can make a condition match, or not, unexpectedly:
+
+- **Enums and strings:** comparing an enum property to a string literal is always false, with no error. `claim.status == 'APPROVED'` never matches when `status` is an enum; write `claim.status.name() == 'APPROVED'`.
+- **Type coercion:** `'1' == 1` is true, and so is `amount == 1` for a `BigDecimal` fact of `1.00`. A String fact `"10"` compared as `s > 9` is true, while `'10' > '9'` compares two strings and is false.
+- **`empty`:** `s == empty` is true when `s` is `""`, and `n == empty` is true when `n` is `0`.
+- **Missing facts:** referring to a fact that isn't in the store throws `unresolvable property or identifier` instead of evaluating to `null`, so `x == null` can't test whether a fact was supplied. Use `isdef`, as in `isdef x && x > 1`.
 
 ### Facts
 
