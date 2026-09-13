@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.24](https://github.com/brantunger/unruly-engine/compare/v1.1.23...v1.1.24) (2026-09-13)
+
+
+### Bug Fixes
+
+* give the jar a stable Automatic-Module-Name ([#163](https://github.com/brantunger/unruly-engine/issues/163)) ([6a38e58](https://github.com/brantunger/unruly-engine/commit/6a38e589024b3240b0ebb43443d9e5a25a88700c))
+
 ## [1.1.23](https://github.com/brantunger/unruly-engine/compare/v1.1.22...v1.1.23) (2026-09-13)
 
 
