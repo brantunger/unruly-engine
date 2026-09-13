@@ -48,8 +48,9 @@ class FactMapEqualityTest {
 
         assertNotEquals(new FactMap<>(new Fact<>("x", 6)), factMap);
         assertNotEquals(new FactMap<>(new Fact<>("y", 5)), factMap);
-        assertNotEquals("{x=5}", factMap);
-        assertNotEquals(null, factMap);
+        // Called directly: assertNotEquals would use String.equals, or skip equals entirely for null.
+        assertFalse(factMap.equals("{x=5}"), "a non-map is never equal");
+        assertFalse(factMap.equals(null), "null is never equal");
     }
 
     @Test

@@ -15,7 +15,7 @@ If this is something you think you can fix, then [fork Unruly](https://github.co
 When adding a feature or fixing a bug, please ensure you:
 1. Write tests to cover your changes.
 2. Ensure you haven't broken existing functionality.
-3. Keep the test coverage at 100%. CI fails when coverage drops, and a PR is only merged once CI passes.
+3. Keep instruction and branch coverage at 100%. CI fails when coverage drops, and a PR is only merged once CI passes.
 
 ### Building Locally
 
