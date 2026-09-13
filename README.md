@@ -229,7 +229,7 @@ engine.registerListener(new RuleListener() {
 engine.registerListener(new LoggingRuleListener());
 ```
 
-Every `beforeEvaluate` / `beforeExecute` callback is followed by exactly one closing call. That's the matching `afterEvaluate` / `afterExecute` when the rule succeeds, or `onError` when its condition or action fails. `onError` receives the `RuleExecutionException` that `run()` then throws. Anything you open in a `before*` callback, such as a timer or tracing span, can therefore always be closed:
+Every `beforeEvaluate` / `beforeExecute` callback is followed by exactly one closing call. That's the matching `afterEvaluate` / `afterExecute` when the rule succeeds, or `onError` when its condition or action fails. `onError` receives the `RuleExecutionException` that `run()` then throws. That includes a rule that throws an `Error`: a `StackOverflowError` (e.g. runaway recursion) or `AssertionError` is wrapped in the `RuleExecutionException`, while any other `Error`, such as `OutOfMemoryError`, is wrapped for `onError` and then rethrown unchanged from `run()`. Anything you open in a `before*` callback, such as a timer or tracing span, can therefore always be closed:
 
 ```java
 engine.registerListener(new RuleListener() {

@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -295,13 +296,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param outputFactory The factory supplied to the engine's constructor
      * @return The new output object, never {@code null}
-     * @throws RuleExecutionException if the factory throws or returns {@code null}
+     * @throws RuleExecutionException if the factory throws or returns {@code null}. An {@link Error} other than
+     *                                {@link StackOverflowError} or {@link AssertionError} is rethrown unchanged.
      */
     protected O createOutput(Supplier<O> outputFactory) {
         O output;
         try {
             output = outputFactory.get();
-        } catch (Exception e) {
+        } catch (Exception | Error e) {
+            rethrowIfFatal(e);
             String msg = "Output factory threw " + e;
             log.error(msg);
             throw new RuleExecutionException(msg, e);
@@ -316,20 +319,14 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
         Map<String, Object> readOnlyFacts = new ReadOnlyFacts(entryMap);
-        for (RuleListener listener : listeners) {
-            try {
-                listener.beforeEvaluate(rule.rule(), readOnlyFacts);
-            } catch (Exception e) {
-                log.warn("Listener threw exception in beforeEvaluate", e);
-            }
-        }
+        notifyListeners("beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), readOnlyFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
             evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, readOnlyFacts);
-        } catch (Exception e) {
+        } catch (Exception | Error e) {
             throw failure(rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
                     + describe(e), e);
         }
@@ -346,64 +343,71 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
-        for (RuleListener listener : listeners) {
-            try {
-                listener.afterEvaluate(rule.rule(), readOnlyFacts, result);
-            } catch (Exception e) {
-                log.warn("Listener threw exception in afterEvaluate", e);
-            }
-        }
+        notifyListeners("afterEvaluate", listener -> listener.afterEvaluate(rule.rule(), readOnlyFacts, result));
 
         return result;
     }
 
     private O parseAction(CompiledRule rule, O outputResult, Map<String, Object> entryMap) {
-        for (RuleListener listener : listeners) {
-            try {
-                listener.beforeExecute(rule.rule(), outputResult);
-            } catch (Exception e) {
-                log.warn("Listener threw exception in beforeExecute", e);
-            }
-        }
+        notifyListeners("beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // Create a copy so we don't mutate the shared fact map with the output keyword
         Map<String, Object> input = new HashMap<>(entryMap);
         input.put(OUTPUT_KEYWORD, outputResult);
         try {
             MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
-        } catch (Exception e) {
+        } catch (Exception | Error e) {
             throw failure(rule, "Failed to execute action for rule '" + rule.displayName() + "': "
                     + describe(e), e);
         }
 
-        for (RuleListener listener : listeners) {
-            try {
-                listener.afterExecute(rule.rule(), outputResult);
-            } catch (Exception e) {
-                log.warn("Listener threw exception in afterExecute", e);
-            }
-        }
+        notifyListeners("afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
 
         return outputResult;
     }
 
     /**
-     * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
-     * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw.
+     * Calls every listener, logging what a listener throws so a faulty listener can't interrupt a run.
+     * A fatal {@link Error} is the exception: it propagates (see {@link #rethrowIfFatal}).
      */
-    private RuleExecutionException failure(CompiledRule rule, String msg, Exception cause) {
+    private void notifyListeners(String callback, Consumer<RuleListener> call) {
+        for (RuleListener listener : listeners) {
+            try {
+                call.accept(listener);
+            } catch (Exception | Error e) {
+                rethrowIfFatal(e);
+                log.warn("Listener threw exception in {}", callback, e);
+            }
+        }
+    }
+
+    /**
+     * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
+     * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw, unless
+     * the cause is a fatal {@link Error}, which is rethrown unchanged once listeners have been told.
+     */
+    private RuleExecutionException failure(CompiledRule rule, String msg, Throwable cause) {
         log.error(msg);
         RuleExecutionException error = cause == null
                 ? new RuleExecutionException(msg)
                 : new RuleExecutionException(msg, cause);
-        for (RuleListener listener : listeners) {
-            try {
-                listener.onError(rule.rule(), error);
-            } catch (Exception e) {
-                log.warn("Listener threw exception in onError", e);
-            }
-        }
+        notifyListeners("onError", listener -> listener.onError(rule.rule(), error));
+        rethrowIfFatal(cause);
         return error;
+    }
+
+    /**
+     * Rethrows {@code thrown} if it is an {@link Error} the engine must not absorb. A {@link StackOverflowError}
+     * (runaway recursion) or {@link AssertionError} ({@code assert} in a rule or listener) comes from the code
+     * being run and is handled like an exception. Any other error, such as {@link OutOfMemoryError}, is left
+     * for the caller to see unchanged.
+     *
+     * @param thrown What was caught, or {@code null}
+     */
+    private static void rethrowIfFatal(Throwable thrown) {
+        if (thrown instanceof Error error && !(error instanceof StackOverflowError || error instanceof AssertionError)) {
+            throw error;
+        }
     }
 
     /**
