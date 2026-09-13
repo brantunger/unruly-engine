@@ -7,7 +7,7 @@ An engine is designed to be configured once and then shared by every thread in y
 - [At a glance](#-at-a-glance)
 - [Reloading rules while running](#-reloading-rules-while-running)
 - [What you must keep thread-safe](#-what-you-must-keep-thread-safe)
-- [MVEL optimizer (JVM-wide)](#-mvel-optimizer-jvm-wide)
+- [Compiled rules and concurrent runs](#-compiled-rules-and-concurrent-runs)
 
 ---
 
@@ -55,11 +55,7 @@ The engine protects its own state. These parts are yours:
   several runs at once.
 - **Listeners:** the same listener instance is called from every thread running the engine.
 
-## ⚡ MVEL optimizer (JVM-wide)
-
-> [!WARNING]
-> **Loading the engine changes a global MVEL setting for the whole JVM.** Any other library in the same JVM that
-> uses MVEL is affected too.
+## ⚡ Compiled rules and concurrent runs
 
 MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact
 name to a different class, for example when `applicant` is an interface with several implementations, or is a
@@ -72,17 +68,10 @@ other run is using, compiles a new copy if every copy is busy, and gives it back
 as many copies as the most runs it has had in progress at once: the first time N runs overlap, the rule list is
 compiled N times, and those N copies stay in memory until the next `setRuleList()`.
 
-The engine also switches MVEL's default optimizer to its **reflective optimizer** when the engine class loads.
-MVEL reads this from one global setting, so the choice can't be limited to one engine.
-
-The reflective optimizer is somewhat slower. A rough single-threaded measurement with three rules went from
-about 280 ns to 370 ns per `run()`. To keep MVEL's own setting instead (the JIT is on unless you pass
-`-Dmvel2.disable.jit=true`), start the JVM with:
-
-```shell
--Dunruly.mvel.jit=true
-```
+This works with any MVEL optimizer, so the engine leaves MVEL's global optimizer setting alone. MVEL's default JIT
+optimizer stays in effect (unless you pass `-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use
+MVEL aren't affected.
 
 > [!NOTE]
-> Because concurrent runs use separate compiled copies, facts whose runtime class varies from one run to another
-> are safe to run concurrently with either optimizer.
+> Earlier versions switched MVEL to its slower reflective optimizer for the whole JVM when the engine class loaded,
+> unless the JVM was started with `-Dunruly.mvel.jit=true`. That property is now ignored.
