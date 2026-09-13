@@ -47,8 +47,10 @@ public class FactMap<T> implements FactStore<T> {
      *
      * @param facts The fact map to construct the facts from. Its values may be any {@link FactReference}
      *              implementation, such as a {@code Map<String, Fact<T>>}.
+     * @throws NullPointerException if {@code facts} is {@code null}
      */
     public FactMap(Map<String, ? extends FactReference<T>> facts) {
+        Objects.requireNonNull(facts, "facts must not be null");
         facts.forEach(FactMap::checkEntry);
         this.facts = new HashMap<>(facts);
     }
@@ -57,12 +59,15 @@ public class FactMap<T> implements FactStore<T> {
      * Construct a new FactMap from an array of existing FactReference objects
      *
      * @param facts The facts to construct a new FactMap with
+     * @throws NullPointerException if {@code facts} or any element is {@code null}
      */
     @SafeVarargs
     public FactMap(FactReference<T>... facts) {
         this();
+        Objects.requireNonNull(facts, "facts must not be null");
 
         for (FactReference<T> fact : facts) {
+            Objects.requireNonNull(fact, "facts must not contain null");
             if (fact.getName() == null) {
                 throw new IllegalArgumentException("fact name must not be null");
             }
@@ -112,6 +117,7 @@ public class FactMap<T> implements FactStore<T> {
 
     @Override
     public FactReference<T> put(FactReference<T> fact) {
+        Objects.requireNonNull(fact, "fact must not be null");
         if (fact.getName() == null) {
             throw new IllegalArgumentException("fact name must not be null");
         }
@@ -156,6 +162,7 @@ public class FactMap<T> implements FactStore<T> {
 
     @Override
     public void putAll(Map<? extends String, ? extends FactReference<T>> map) {
+        Objects.requireNonNull(map, "map must not be null");
         // Checked before copying so an invalid entry leaves this map unchanged.
         map.forEach((key, fact) -> checkEntry(key, fact));
         facts.putAll(map);
