@@ -53,7 +53,7 @@ All of them are unchecked.
 | Method | Exception | When |
 | --- | --- | --- |
 | `RulesEngineBuilder.stateless()` / `stateful()` | `NullPointerException` | The output supplier is `null` |
-| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error MVEL detects |
+| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered |
 | | `NullPointerException` | The list itself is `null` |
 | `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; the output supplier throws or returns `null` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
@@ -62,23 +62,27 @@ All of them are unchecked.
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. |
 | `addImport()` / `addImports()` | `IllegalArgumentException` | A string is neither a loadable class nor a valid package name. Nothing is imported. |
 | | `NullPointerException` | The argument or an element is `null` |
+| `registerLanguage()` | `IllegalArgumentException` | The language's name is `null` or blank |
+| | `NullPointerException` | The language is `null` |
 | `registerListener()` / `registerListeners()` | `NullPointerException` | The listener, list or an element is `null`. Nothing is registered. |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 
 Messages about a specific rule name it, for example
 `Failed to evaluate condition for rule 'prime-rate': ...`. A rule without a name appears as `(unnamed)`.
-When MVEL or your code threw the underlying error, it's available from `getCause()`.
+When the expression language or your code threw the underlying error, it's available from `getCause()`. A
+condition the language rejected, such as one with an assignment, has an `InvalidExpressionException` as its cause.
 
 ## 🔍 Caught when loading or only when running?
 
-`setRuleList()` compiles every expression, but MVEL's parser is lenient, so some mistakes only surface when a rule
-is evaluated.
+`setRuleList()` compiles every expression, but MVEL's parser is lenient, so some mistakes in MVEL rules only
+surface when a rule is evaluated. Another language decides what it catches when compiling.
 
 | Mistake | Detected by |
 | --- | --- |
 | `null` or blank condition or action | ✅ `setRuleList()` |
 | Duplicate rule name | ✅ `setRuleList()` |
+| A rule in an expression language that isn't registered | ✅ `setRuleList()` |
 | Assignment in a condition (`applicant.approved = true`, `x++`, `with`, `def`, `import_static`) | ✅ `setRuleList()` |
 | Most syntax errors (`applicant.creditScore >=`) | ✅ `setRuleList()` |
 | Some malformed expressions (`true)`, `output.put("k" 1)`) | ⚠️ only `run()` |

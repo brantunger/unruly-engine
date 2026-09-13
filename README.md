@@ -12,8 +12,9 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 **Keep business rules out of your code.**<br>
-Write each rule's condition and action as an [MVEL](https://github.com/mvel/mvel) expression, load the rules once,
-and evaluate them against your Java objects from as many threads as you like.
+Write each rule's condition and action as an [MVEL](https://github.com/mvel/mvel) expression, or in an expression
+language of your own, load the rules once, and evaluate them against your Java objects from as many threads as you
+like.
 
 [Quick start](#-quick-start) · [How it works](#-how-it-works) · [Guides](#-guides) · [FAQ](#-faq) · [Javadoc](https://brantunger.github.io/unruly-engine/latest/) · [Changelog](CHANGELOG.md)
 
@@ -31,6 +32,7 @@ and evaluate them against your Java objects from as many threads as you like.
 | 🛡 | **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
 | 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
 | 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
+| 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Register another expression language and choose it per rule, even within one rule list. |
 | 🪶 | **Lightweight** | Two runtime dependencies: MVEL 2.5 and the SLF4J API. |
 
 ## 📦 Installation
@@ -170,18 +172,20 @@ flowchart TD
 
 ### Rules
 
-A `Rule` is a plain object with five fields:
+A `Rule` is a plain object with six fields:
 
 | Field | Type | Required | Purpose |
 | --- | --- | :---: | --- |
 | `ruleName` | `String` | recommended | Names the rule in error messages and listener callbacks. Must be unique within a rule list. Unnamed rules are allowed and show as `(unnamed)`. |
-| `condition` | `String` | ✅ | An MVEL expression that must evaluate to a `boolean`. It can't assign or declare anything. |
-| `action` | `String` | ✅ | An MVEL expression that runs when the rule fires, usually changing `output`. |
+| `condition` | `String` | ✅ | An expression that must evaluate to a `boolean`. It can't assign or declare anything. |
+| `action` | `String` | ✅ | An expression that runs when the rule fires, usually changing `output`. |
 | `priority` | `Integer` | | Higher numbers fire first. Equal priorities keep their list order, and `null` sorts last. |
 | `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
+| `language` | `String` | | The expression language the condition and action are written in. `null` means MVEL. See [Other expression languages](docs/languages/custom.md). |
 
 Create a rule with `Rule.builder()`, with `new Rule()` and setters, or with
-`new Rule(ruleName, condition, action, priority, description)`. `setRuleList()` copies each rule, so changing a
+`new Rule(ruleName, condition, action, priority, description, language)`, where the constructor without `language`
+creates an MVEL rule. `setRuleList()` copies each rule, so changing a
 `Rule` afterwards has no effect until you call `setRuleList()` again.
 
 ### Facts
@@ -194,8 +198,8 @@ FactStore<Object> facts = new FactMap<>();
 facts.setValue("applicant", applicant);   // rules can now use applicant.creditScore
 ```
 
-A fact name must be a valid Java identifier, can't be an MVEL keyword such as `empty` or `in`, and can't be
-`output`. Build a new store for each request. See the [Facts guide](docs/facts.md) for the details.
+A fact name can't be `output`, and must be a name the rules' languages can refer to: in MVEL, a valid Java
+identifier that isn't a keyword such as `empty` or `in`. Build a new store for each request. See the [Facts guide](docs/facts.md) for the details.
 
 ### The output object
 
@@ -229,7 +233,9 @@ that already matched still fires.
 
 | Guide | Covers |
 | --- | --- |
-| ✍️ [Writing rules](docs/writing-rules.md) | MVEL syntax, imports and built-in class names, what rules may change, comparison gotchas, and testing rules |
+| ✍️ [Writing rules](docs/writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, and testing rules |
+| ⚡ [MVEL](docs/languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
+| 🧩 [Other expression languages](docs/languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
 | 🗂️ [Facts](docs/facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
 | 🌱 [Spring Boot](docs/spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
@@ -240,7 +246,7 @@ that already matched still fires.
 ## 🔒 Security
 
 > [!WARNING]
-> **Rules are code.** MVEL gives a rule the same access to the JVM as your own Java code: it can start
+> **Rules are code.** MVEL, the default language, gives a rule the same access to the JVM as your own Java code: it can start
 > processes, read files, open sockets and use reflection. The engine has **no sandbox and no timeout**, so
 > `while (true) {}` blocks the calling thread forever.
 
@@ -249,6 +255,8 @@ that already matched still fires.
 - Never build rules from end-user input. Facts are the safe way to pass user data in.
 - If less trusted people must write rules, run the engine in a separate, restricted process and enforce your own
   time limit around `run()`.
+- A rule in another expression language can reach whatever that language allows. Check the language's own
+  documentation before relying on it as a sandbox.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
@@ -270,7 +278,7 @@ The rule used a name that is neither a fact in the store nor a class MVEL knows.
 - The fact wasn't added, or was added under a different name. To test whether a fact exists, use `isdef name`.
 - The rule uses a class that isn't built in to MVEL, such as `Objects`, without an import. Call
   `engine.addImport("java.util")` **before** `setRuleList()`, or write `java.util.Objects`. See
-  [Classes and imports](docs/writing-rules.md#-classes-and-imports).
+  [Classes and imports](docs/languages/mvel.md#-classes-and-imports).
 
 </details>
 
@@ -278,7 +286,7 @@ The rule used a name that is neither a fact in the store nor a class MVEL knows.
 <summary><b>My enum comparison never matches</b></summary>
 
 MVEL compares an enum to a string as `false`, with no error. Write `order.status.name() == 'SHIPPED'`. See
-[Comparison gotchas](docs/writing-rules.md#-comparison-gotchas).
+[Comparison gotchas](docs/languages/mvel.md#-comparison-gotchas).
 
 </details>
 

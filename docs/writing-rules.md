@@ -1,16 +1,14 @@
 # ✍️ Writing rules
 
-Every rule has two [MVEL](https://github.com/mvel/mvel) expressions: a **condition** that decides whether the rule
-matches, and an **action** that runs when it fires. MVEL looks like Java, with some extra operators and looser
-typing.
+Every rule has two expressions: a **condition** that decides whether the rule matches, and an **action** that runs
+when it fires. They are written in an expression language: [MVEL](languages/mvel.md), unless the rule names another.
+This guide covers what holds whatever the language; the [MVEL guide](languages/mvel.md) covers MVEL's syntax.
 
 [← Back to README](../README.md)
 
 - [Anatomy of a rule](#-anatomy-of-a-rule)
-- [MVEL cheat sheet](#-mvel-cheat-sheet)
-- [Classes and imports](#-classes-and-imports)
+- [Choosing a language](#-choosing-a-language)
 - [What rules can change](#-what-rules-can-change)
-- [Comparison gotchas](#-comparison-gotchas)
 - [A bigger example](#-a-bigger-example)
 - [Testing rules](#-testing-rules)
 
@@ -23,6 +21,7 @@ Rule.builder()
         .ruleName("prime-rate")                          // unique, used in errors and listeners
         .description("Best rate for excellent credit")   // free text, ignored by the engine
         .priority(10)                                    // higher fires first
+        .language("mvel")                                // optional: null means MVEL
         .condition("applicant.creditScore >= 750")       // must evaluate to a boolean
         .action("output.approved = true; output.interestRate = 4.5")
         .build();
@@ -36,82 +35,25 @@ Rule.builder()
 | **Must evaluate to** | A `boolean` (not `null`, not a string) | Anything; the result is ignored |
 
 > [!TIP]
-> Rules are usually Java string literals, so use **single quotes** for strings inside them:
+> Rules are usually Java string literals, so in MVEL use **single quotes** for strings inside them:
 > `"applicant.name == 'Ada'"` reads far better than `"applicant.name == \"Ada\""`.
 
-## ⚡ MVEL cheat sheet
+## 🌐 Choosing a language
 
-Every example below was checked against the engine. For the full language, see the
-[MVEL language guide](http://mvel.documentnode.com/).
+| Language | How to use it | Guide |
+| --- | --- | --- |
+| ⚡ MVEL | The default: leave `language` unset, or set it to `"mvel"` | [MVEL](languages/mvel.md): syntax cheat sheet, classes and imports, comparison gotchas |
+| 🧩 Any other | `engine.registerLanguage(new MyLanguage())`, then `.language("my")` on each rule | [Other expression languages](languages/custom.md): choosing, writing and testing a language |
 
-### In conditions and actions
-
-| To | Write |
-| --- | --- |
-| Read a property (getter, record accessor or `Map` key) | `applicant.creditScore` |
-| Call a method | `applicant.name.length() > 2` |
-| Compare | `applicant.name == 'Ada'`, `applicant.creditScore >= 650` |
-| Combine | `applicant.creditScore > 700 && applicant.name != empty` |
-| Test a string or collection for an element | `applicant.name contains 'd'`, `[700, 780] contains applicant.creditScore` |
-| Match a regular expression | `applicant.name ~= '[A-Z][a-z]+'` |
-| Choose a value | `applicant.creditScore >= 750 ? 'prime' : 'standard'` |
-| Concatenate | `'Hello ' + applicant.name` |
-| Write an inline list or map | `[1, 2, 3]`, `['a': 1, 'b': 2]` |
-| Check that a fact was supplied | `isdef coapplicant` |
-| Use a class without importing it | `java.time.LocalDate.now().getYear() >= 2026` |
-
-> [!WARNING]
-> MVEL has no `in` membership test: `780 in [700, 780]` doesn't compile. To check whether a collection holds a
-> value, write `[700, 780] contains 780`.
-
-### In actions only
-
-| To | Write |
-| --- | --- |
-| Run several statements | `output.approved = true; output.interestRate = 4.5` |
-| Branch | `if (applicant.creditScore > 700) { output.tier = 'high' } else { output.tier = 'low' }` |
-| Loop | `total = 0; foreach (n : [1, 2, 3]) { total += n }; output.total = total` |
-| Define a function | `def bonus(score) { score / 100 }; output.bonus = bonus(applicant.creditScore)` |
-| Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
-
-## 📥 Classes and imports
-
-Without an import, MVEL resolves only this fixed set of class names:
-
-| Built-in class names |
-| --- |
-| `Boolean` `Byte` `Character` `CharSequence` `Class` `ClassLoader` `Double` `Exception` `Float` `Integer` `Long` `Math` `Number` `Object` `Runtime` `Short` `String` `StringBuilder` `System` `Thread` `Void` `Array` (`java.lang.reflect.Array`) |
-
-Everything else needs an import or a fully qualified name. That includes most of `java.lang`: `IllegalStateException`
-fails with `could not resolve class`, and `ProcessHandle` with `unresolvable property or identifier`.
-
-```java
-engine.addImport("java.util");                        // a whole package
-engine.addImport("java.time.LocalDate");              // a single class
-engine.addImport("java.util.Map.Entry");              // a nested class, spelled as in a Java import
-engine.addImports(Set.of("java.math", "java.time"));  // several at once
-
-engine.setRuleList(rules);                            // imports take effect here
-```
-
-> [!IMPORTANT]
-> Register imports **before** `setRuleList()`. The rules are compiled with the imports registered at that moment,
-> so an import added afterwards has no effect until the next `setRuleList()`. A rule that needs a missing import is
-> still accepted, and only fails at `run()` with `unresolvable property or identifier`.
-
-- A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
-  `IllegalArgumentException`, and nothing from that call is imported.
-- A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can no longer be used as a fact name. After `addImport("java.util")`, a fact named `Date`
-  is rejected. See [Facts](facts.md#-naming-rules).
-- Classes are looked up with the context class loader of the thread that calls `setRuleList()`. Fact names are
-  checked against that class loader too, on whichever thread calls `run()`.
+One rule list can mix languages. Register languages and imports **before** `setRuleList()`, which compiles every
+rule with the languages and imports registered at that moment.
 
 ## 🔏 What rules can change
 
 ### Conditions are read-only
 
-`setRuleList()` rejects, with a `RuleCompilationException`, any condition that assigns or declares something:
+`setRuleList()` rejects, with a `RuleCompilationException`, a condition that assigns or declares something, when
+its language can detect it. In MVEL, these are rejected:
 
 | Rejected condition | Why it's usually a mistake |
 | --- | --- |
@@ -121,7 +63,7 @@ engine.setRuleList(rules);                            // imports take effect her
 | `with (applicant) { ... }`, `def f() { ... }` | A `with` block or function |
 
 > [!NOTE]
-> The check reads the condition's text, so it can't see a method call that changes a fact, such as
+> MVEL's check reads the condition's text, so it can't see a method call that changes a fact, such as
 > `applicant.setApproved(true)`. Keep method calls in conditions free of side effects.
 
 ### Actions change the output
@@ -137,18 +79,6 @@ engine.setRuleList(rules);                            // imports take effect her
 - **Facts aren't copied.** An action that calls a method that changes a fact, such as
   `applicant.setCreditScore(0)`, affects the rules that fire after it in the same run. Conditions have already been
   evaluated by then, so it never changes which rules match.
-
-## 🚧 Comparison gotchas
-
-MVEL compares values more loosely than Java, which can make a condition match, or not match, unexpectedly.
-
-| Gotcha | Example | Do this instead |
-| --- | --- | --- |
-| 🔤 **Enums vs strings** | `order.status == 'SHIPPED'` is always `false` when `status` is an enum, with no error | `order.status.name() == 'SHIPPED'` |
-| 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
-| 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
-| 🕳 **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
-| ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, so `x == null` can't test for it | `isdef x && x > 1` |
 
 ## 📐 A bigger example
 

@@ -63,10 +63,14 @@ name to a different class, for example when `applicant` is an interface with sev
 the same compiled expression can then fail intermittently with a `RuleExecutionException` caused by a
 `ClassCastException`.
 
-So concurrent runs never share a compiled expression. Each `run()` borrows a compiled copy of the rule list that no
-other run is using, compiles a new copy if every copy is busy, and gives it back when it finishes. The engine keeps
-as many copies as the most runs it has had in progress at once: the first time N runs overlap, the rule list is
-compiled N times, and those N copies stay in memory until the next `setRuleList()`.
+So concurrent runs never share a compiled MVEL expression. Each `run()` borrows a copy of the compiled rule list
+that no other run is using, makes a new copy if every copy is busy, and gives it back when it finishes. The engine
+keeps as many copies as the most runs it has had in progress at once: the first time N runs overlap, the rule list
+is copied N times, and those N copies stay in memory until the next `setRuleList()`.
+
+Each compiled condition and action makes its own copy. An MVEL expression is compiled again; an expression in
+another language that several threads can run at once is shared instead (see
+[Other expression languages](languages/custom.md#-thread-safety)).
 
 This works with any MVEL optimizer, so the engine leaves MVEL's global optimizer setting alone. MVEL's default JIT
 optimizer stays in effect (unless you pass `-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use

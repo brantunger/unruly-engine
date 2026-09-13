@@ -101,7 +101,7 @@ mavenPublishing {
 
     pom {
         name = 'unruly-engine'
-        description = 'Unruly is a pure Java rule engine that parses and evaluates using MVEL based rules'
+        description = 'Unruly is a pure Java rules engine that evaluates rules written in MVEL or a pluggable expression language'
         url = 'https://github.com/brantunger/unruly-engine'
         licenses {
             license {
