@@ -118,6 +118,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param listener The listener to register.
      * @return A reference to this {@link RulesEngine}
+     * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public RulesEngine<O> registerListener(RuleListener listener) {
@@ -131,6 +132,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param listeners The list of listeners to register.
      * @return A reference to this {@link RulesEngine}
+     * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public RulesEngine<O> registerListeners(List<RuleListener> listeners) {
@@ -162,6 +164,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * @param ruleList The List of {@link Rule} objects to compile.
+     * @throws RuleCompilationException {@inheritDoc}
+     * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public void setRuleList(List<Rule> ruleList) {
@@ -201,6 +205,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param packages A set of packages to import
      * @return A reference to this {@link RulesEngine}
+     * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public RulesEngine<O> addImports(Set<String> packages) {
@@ -225,6 +230,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param packageString The package to import. Example: "java.util"
      * @return A reference to this {@link RulesEngine}
+     * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public RulesEngine<O> addImport(String packageString) {
