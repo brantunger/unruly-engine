@@ -61,14 +61,19 @@ The engine protects its own state. These parts are yours:
 > **Loading the engine changes a global MVEL setting for the whole JVM.** Any other library in the same JVM that
 > uses MVEL is affected too.
 
-MVEL's default JIT optimizer generates an accessor for the class it first sees. When the same fact name is later
-bound to a different class, for example when `applicant` is an interface with several implementations, MVEL falls
-back to a slower accessor that isn't thread-safe. Concurrent `run()` calls then fail intermittently with a
-`RuleExecutionException` caused by a `ClassCastException`.
+MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact
+name to a different class, for example when `applicant` is an interface with several implementations, or is a
+`Map` in one run and a record in another, MVEL replaces that accessor without synchronization. Two threads running
+the same compiled expression can then fail intermittently with a `RuleExecutionException` caused by a
+`ClassCastException`.
 
-To make concurrent use safe by default, the engine switches MVEL's default optimizer to its **reflective
-optimizer** when the engine class loads. MVEL reads this from one global setting, so the choice can't be limited
-to one engine.
+So concurrent runs never share a compiled expression. Each `run()` borrows a compiled copy of the rule list that no
+other run is using, compiles a new copy if every copy is busy, and gives it back when it finishes. The engine keeps
+as many copies as the most runs it has had in progress at once: the first time N runs overlap, the rule list is
+compiled N times, and those N copies stay in memory until the next `setRuleList()`.
+
+The engine also switches MVEL's default optimizer to its **reflective optimizer** when the engine class loads.
+MVEL reads this from one global setting, so the choice can't be limited to one engine.
 
 The reflective optimizer is somewhat slower. A rough single-threaded measurement with three rules went from
 about 280 ns to 370 ns per `run()`. To keep MVEL's own setting instead (the JIT is on unless you pass
@@ -78,5 +83,6 @@ about 280 ns to 370 ns per `run()`. To keep MVEL's own setting instead (the JIT 
 -Dunruly.mvel.jit=true
 ```
 
-> [!CAUTION]
-> With the JIT on, don't run facts whose runtime class varies from one run to another concurrently.
+> [!NOTE]
+> Because concurrent runs use separate compiled copies, facts whose runtime class varies from one run to another
+> are safe to run concurrently with either optimizer.

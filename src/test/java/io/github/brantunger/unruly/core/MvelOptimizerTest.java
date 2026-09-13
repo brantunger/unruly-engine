@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -113,6 +114,61 @@ public class MvelOptimizerTest {
                     }
                 });
                 worker.start();
+            }
+            start.countDown();
+            assertTrue(done.await(30, TimeUnit.SECONDS), "workers did not finish");
+        }
+
+        assertTrue(failures.isEmpty(), () -> failures.size() + " of " + calls + " concurrent runs failed, first: "
+                + failures.get(0));
+    }
+
+    public record Applicant(int creditScore) {
+    }
+
+    /**
+     * Regression test for #130. MVEL replaces a compiled expression's cached accessor, without synchronization, when
+     * a fact that was a Map in one run is an object in the next (or the other way round). With one compiled
+     * expression shared by every thread, a few tenths of a percent of these runs failed with ClassCastException,
+     * whichever optimizer was selected, so over 9,600 runs a broken engine fails this test essentially every time.
+     */
+    @Test
+    @DisplayName("a fact that is a Map in some runs and an object in others does not fail when run concurrently")
+    void mapAndObjectFactsUnderConcurrency() throws InterruptedException {
+        int threads = 8;
+        int runs = 4;
+        AtomicInteger calls = new AtomicInteger();
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+
+        for (int trial = 0; trial < 300; trial++) {
+            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            engine.setRuleList(List.of(Rule.builder()
+                    .ruleName("prime-rate")
+                    .condition("applicant.creditScore >= 750")
+                    .action("output.put('approved', true)")
+                    .build()));
+
+            CountDownLatch start = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(threads);
+            for (int t = 0; t < threads; t++) {
+                int worker = t;
+                new Thread(() -> {
+                    try {
+                        start.await();
+                        for (int i = 0; i < runs; i++) {
+                            FactStore<Object> facts = new FactMap<>();
+                            facts.setValue("applicant", (worker + i) % 2 == 0
+                                    ? new Applicant(800)
+                                    : new HashMap<>(Map.of("creditScore", 800)));
+                            calls.incrementAndGet();
+                            engine.run(facts);
+                        }
+                    } catch (RuleExecutionException | InterruptedException e) {
+                        failures.add(e);
+                    } finally {
+                        done.countDown();
+                    }
+                }).start();
             }
             start.countDown();
             assertTrue(done.await(30, TimeUnit.SECONDS), "workers did not finish");
