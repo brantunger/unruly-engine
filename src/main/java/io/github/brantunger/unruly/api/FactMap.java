@@ -1,9 +1,13 @@
 package io.github.brantunger.unruly.api;
 
+import java.util.AbstractSet;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 /**
  * FactMap is an implementation of {@link FactStore}. It's a Key/Value store where the key is a {@link String}
@@ -12,6 +16,7 @@ import java.util.Set;
  * <p>
  * Every way of adding a fact rejects a {@code null} name, and rejects a key that differs from the
  * {@link FactReference#getName() name} of the fact stored under it, with {@link IllegalArgumentException}.
+ * That includes {@link Map.Entry#setValue} on an {@link #entrySet()} entry and {@link #replaceAll}.
  * The varargs constructor also rejects two facts with the same name. Rules see a fact by its map key, so renaming a
  * {@code FactReference} after it has been added does not change the name rules use.
  * </p>
@@ -170,9 +175,106 @@ public class FactMap<T> implements FactStore<T> {
         return facts.values();
     }
 
+    /**
+     * Replaces every fact with the function's result. Every result is checked like {@link #put(String, FactReference)}
+     * before any is stored, so an invalid one leaves this map unchanged.
+     *
+     * @param function Computes the replacement for each name and fact
+     * @throws IllegalArgumentException if a result's name differs from its key
+     */
+    @Override
+    public void replaceAll(BiFunction<? super String, ? super FactReference<T>, ? extends FactReference<T>> function) {
+        Objects.requireNonNull(function, "function must not be null");
+        Map<String, FactReference<T>> replaced = new HashMap<>();
+        facts.forEach((key, fact) -> {
+            FactReference<T> result = function.apply(key, fact);
+            checkEntry(key, result);
+            replaced.put(key, result);
+        });
+        facts.putAll(replaced);
+    }
+
+    /**
+     * Returns a view of the entries backed by this map. Removing through the view works as usual, and an entry's
+     * {@link Map.Entry#setValue} is checked like {@link #put(String, FactReference)}, so it can't store a fact
+     * under a key that differs from the fact's name.
+     *
+     * @return A checked view of the entries
+     */
     @Override
     public Set<Entry<String, FactReference<T>>> entrySet() {
-        return facts.entrySet();
+        return new CheckedEntrySet();
+    }
+
+    /** The entry set view returned by {@link #entrySet()}. */
+    private final class CheckedEntrySet extends AbstractSet<Entry<String, FactReference<T>>> {
+
+        @Override
+        public Iterator<Entry<String, FactReference<T>>> iterator() {
+            Iterator<Entry<String, FactReference<T>>> entries = facts.entrySet().iterator();
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    return entries.hasNext();
+                }
+
+                @Override
+                public Entry<String, FactReference<T>> next() {
+                    return new CheckedEntry<>(entries.next());
+                }
+
+                @Override
+                public void remove() {
+                    entries.remove();
+                }
+            };
+        }
+
+        @Override
+        public int size() {
+            return facts.size();
+        }
+    }
+
+    /** An entry whose {@link #setValue} rejects a fact whose name differs from the entry's key. */
+    private static final class CheckedEntry<T> implements Entry<String, FactReference<T>> {
+
+        private final Entry<String, FactReference<T>> entry;
+
+        CheckedEntry(Entry<String, FactReference<T>> entry) {
+            this.entry = entry;
+        }
+
+        @Override
+        public String getKey() {
+            return entry.getKey();
+        }
+
+        @Override
+        public FactReference<T> getValue() {
+            return entry.getValue();
+        }
+
+        @Override
+        public FactReference<T> setValue(FactReference<T> fact) {
+            checkEntry(entry.getKey(), fact);
+            return entry.setValue(fact);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return entry.equals(o);
+        }
+
+        @Override
+        public int hashCode() {
+            return entry.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return entry.toString();
+        }
     }
 
     /**
