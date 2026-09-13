@@ -19,7 +19,8 @@ public final class RulesEngineBuilder {
      * Creates a new STATELESS rules engine. A stateless engine evaluates all rules but only
      * fires the action of the single highest-priority rule that matched.
      *
-     * @param outputFactory A supplier to instantiate the output object
+     * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
+     *                      return a new, non-null object each time.
      * @param <O>           The type of the output object
      * @return A new stateless {@link RulesEngine}
      * @throws NullPointerException if {@code outputFactory} is {@code null}
@@ -32,7 +33,8 @@ public final class RulesEngineBuilder {
      * Creates a new STATEFUL rules engine. A stateful engine evaluates all rules and fires
      * the actions of all matching rules in priority order, accumulating changes in the output object.
      *
-     * @param outputFactory A supplier to instantiate the output object
+     * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
+     *                      return a new, non-null object each time.
      * @param <O>           The type of the output object
      * @return A new stateful {@link RulesEngine}
      * @throws NullPointerException if {@code outputFactory} is {@code null}

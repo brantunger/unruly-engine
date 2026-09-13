@@ -1,0 +1,61 @@
+name: 🐛 Bug report
+description: Something in unruly-engine doesn't behave as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! 🙏
+
+        **Found a security issue?** Please don't file it here. Follow [SECURITY.md](https://github.com/brantunger/unruly-engine/blob/main/SECURITY.md) instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: unruly-engine version
+      placeholder: e.g. 1.1.15
+    validations:
+      required: true
+
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: e.g. Temurin 21.0.4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine type
+      options:
+        - Stateless
+        - Stateful
+        - Both, or not engine-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the full exception message and stack trace, if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The rules (name, priority, condition, action), the facts you passed, and how you called the engine.
+      render: java
+    validations:
+      required: true

@@ -1,8 +1,8 @@
 /**
  * Public API for the Unruly rules engine.
  *
- * <p>This package contains the data model used to define and supply facts and rules
- * to the engine:</p>
+ * <p>This package contains the engine interface and its builder, the listener API, and the data model used to
+ * define rules and supply facts:</p>
  * <ul>
  *   <li>{@link io.github.brantunger.unruly.api.RulesEngine} — The main rules engine interface</li>
  *   <li>{@link io.github.brantunger.unruly.api.RulesEngineBuilder} — Builder to instantiate engines without exposing internal implementations</li>

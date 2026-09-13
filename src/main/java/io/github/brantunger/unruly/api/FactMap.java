@@ -59,6 +59,7 @@ public class FactMap<T> implements FactStore<T> {
      * Construct a new FactMap from an array of existing FactReference objects
      *
      * @param facts The facts to construct a new FactMap with
+     * @throws IllegalArgumentException if a fact's name is {@code null}, or two facts share a name
      * @throws NullPointerException if {@code facts} or any element is {@code null}
      */
     @SafeVarargs
@@ -149,6 +150,14 @@ public class FactMap<T> implements FactStore<T> {
         return facts.get(key);
     }
 
+    /**
+     * Stores {@code fact} under {@code key}.
+     *
+     * @param key  The fact's name
+     * @param fact The fact. Unless it is {@code null}, its own name must equal {@code key}.
+     * @return The fact previously stored under {@code key}, or {@code null} if there was none
+     * @throws IllegalArgumentException if {@code key} is {@code null} or differs from the fact's name
+     */
     @Override
     public FactReference<T> put(String key, FactReference<T> fact) {
         checkEntry(key, fact);
@@ -160,6 +169,14 @@ public class FactMap<T> implements FactStore<T> {
         return facts.remove(key);
     }
 
+    /**
+     * Copies every entry of {@code map} into this map. Every entry is checked like {@link #put(String, FactReference)}
+     * before any is stored, so an invalid one leaves this map unchanged.
+     *
+     * @param map The facts to add
+     * @throws IllegalArgumentException if a key is {@code null} or differs from its fact's name
+     * @throws NullPointerException if {@code map} is {@code null}
+     */
     @Override
     public void putAll(Map<? extends String, ? extends FactReference<T>> map) {
         Objects.requireNonNull(map, "map must not be null");

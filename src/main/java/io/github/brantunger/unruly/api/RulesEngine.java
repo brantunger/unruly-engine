@@ -7,7 +7,14 @@ import java.util.Set;
 
 /**
  * The RulesEngine fires the action expression from a list of {@link Rule} objects when their conditions evaluate to
- * <strong>true</strong>.
+ * <strong>true</strong>. Create one with {@link RulesEngineBuilder}.
+ *
+ * <p>
+ * <b>Lifecycle:</b> register any imports with {@link #addImport(String)}, compile the rules once with
+ * {@link #setRuleList(List)}, then call {@link #run(FactStore)} as often as needed, from any number of threads.
+ * Rules are evaluated in descending priority order; equal priorities keep their list order, and a {@code null}
+ * priority sorts last. {@code setRuleList} may be called again at any time to swap in new rules atomically.
+ * </p>
  *
  * @param <O> The output object type to instantiate
  */
