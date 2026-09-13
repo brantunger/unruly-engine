@@ -88,6 +88,7 @@ fails with `could not resolve class`, and `ProcessHandle` with `unresolvable pro
 ```java
 engine.addImport("java.util");                        // a whole package
 engine.addImport("java.time.LocalDate");              // a single class
+engine.addImport("java.util.Map.Entry");              // a nested class, spelled as in a Java import
 engine.addImports(Set.of("java.math", "java.time"));  // several at once
 
 engine.setRuleList(rules);                            // imports take effect here
@@ -103,6 +104,8 @@ engine.setRuleList(rules);                            // imports take effect her
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
 - An imported class name can no longer be used as a fact name. After `addImport("java.util")`, a fact named `Date`
   is rejected. See [Facts](facts.md#-naming-rules).
+- Classes are looked up with the context class loader of the thread that calls `setRuleList()`. Fact names are
+  checked against that class loader too, on whichever thread calls `run()`.
 
 ## 🔏 What rules can change
 

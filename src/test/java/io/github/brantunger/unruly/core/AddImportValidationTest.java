@@ -34,6 +34,17 @@ class AddImportValidationTest {
         assertEquals(Map.of("d", LocalDate.of(2020, 1, 1)), engine.run(new FactMap<>()));
     }
 
+    @ParameterizedTest(name = "\"{0}\"")
+    @ValueSource(strings = {"java.util.Map.Entry", "java.util.Map$Entry"})
+    @DisplayName("a nested class is imported whether it is written with a dot or a dollar sign")
+    void nestedClassImport(String name) {
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        engine.addImport(name);
+        engine.setRuleList(List.of(rule("true", "output.put('e', Entry)")));
+
+        assertEquals(Map.of("e", Map.Entry.class), engine.run(new FactMap<>()));
+    }
+
     @Test
     @DisplayName("addImports mixes packages and classes")
     void mixedImports() {

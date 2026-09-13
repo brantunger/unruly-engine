@@ -1,6 +1,8 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
+import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import org.junit.jupiter.api.DisplayName;
@@ -68,6 +70,32 @@ class FactNameValidationTest {
     }
 
     @Test
+    @DisplayName("a class name found in two imported packages is rejected like any other class name")
+    void ambiguousClassNameRejected() {
+        StatelessRulesEngine<Map<String, Object>> imported = new StatelessRulesEngine<>(HashMap::new);
+        imported.addImport("java.util").addImport("java.sql");
+        imported.setRuleList(List.of(rule("true")));
+
+        for (int i = 0; i < 2; i++) {
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                    () -> imported.run(fact("Date", 5)));
+            assertEquals("'Date' cannot be used as a fact name: MVEL reads it as a keyword or class name, "
+                    + "so rules would never see the fact", ex.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException")
+    void nullNameRejected() {
+        HashFactStore facts = new HashFactStore();
+        facts.put((String) null, new Fact<>("x", 1));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine("true").run(facts));
+
+        assertEquals("fact name must not be null", ex.getMessage());
+    }
+
+    @Test
     @DisplayName("names are checked against the imports of the current rule list, like the rules themselves")
     void importsTakeEffectOnReload() {
         StatelessRulesEngine<Map<String, Object>> engine = engine("true");
@@ -102,6 +130,26 @@ class FactNameValidationTest {
         StatelessRulesEngine<Map<String, Object>> engine = engine("claim == 5");
         for (int i = 0; i < 3; i++) {
             assertEquals(Map.of("hit", true), engine.run(fact("claim", 5)));
+        }
+    }
+
+    /** A FactStore that, unlike FactMap, accepts a null name. */
+    private static final class HashFactStore extends HashMap<String, FactReference<Object>>
+            implements FactStore<Object> {
+
+        @Override
+        public Object getValue(String name) {
+            return get(name).getValue();
+        }
+
+        @Override
+        public void setValue(String name, Object obj) {
+            put(name, new Fact<>(name, obj));
+        }
+
+        @Override
+        public FactReference<Object> put(FactReference<Object> ref) {
+            return put(ref.getName(), ref);
         }
     }
 }

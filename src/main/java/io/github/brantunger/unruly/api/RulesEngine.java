@@ -50,7 +50,8 @@ public interface RulesEngine<O> {
     /**
      * Adds imports that rules are compiled with, so rule expressions can refer to classes by their simple names.
      * Each string is a fully qualified package name ({@code "java.util"}) or class name
-     * ({@code "java.time.LocalDate"}). Takes effect at the next {@link #setRuleList(List)}.
+     * ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). Takes effect at the next
+     * {@link #setRuleList(List)}.
      *
      * @param packages A set of packages or classes to import
      * @return A reference to this rules engine. This enables the use of the builder design pattern
@@ -62,7 +63,8 @@ public interface RulesEngine<O> {
 
     /**
      * Adds a single import that rules are compiled with: a fully qualified package name ({@code "java.util"}) or
-     * class name ({@code "java.time.LocalDate"}). Takes effect at the next {@link #setRuleList(List)}.
+     * class name ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). Takes effect at
+     * the next {@link #setRuleList(List)}.
      *
      * @param packageString The package or class to import. Example: "java.util"
      * @return A reference to this rules engine. This enables the use of the builder design pattern

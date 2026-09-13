@@ -5,6 +5,7 @@ import org.mvel2.MVEL;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
 import org.mvel2.optimizers.OptimizerFactory;
+import org.mvel2.util.ParseTools;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -164,6 +165,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code import} statements in one expression don't affect any other rule, in this list or a later one.
      * </p>
      *
+     * <p>
+     * Classes in imported packages are looked up with the context class loader of the thread that calls this
+     * method. {@code run()} checks fact names against the same class loader, whichever thread it runs on.
+     * </p>
+     *
      * @param ruleList The List of {@link Rule} objects to compile.
      * @throws RuleCompilationException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
@@ -183,7 +189,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new RuleCompilationException("Duplicate rule name '" + rule.getRuleName() + "'");
             }
         }
-        Imports imports = new Imports(Set.copyOf(packageImports), Set.copyOf(classImports));
+        Imports imports = new Imports(Set.copyOf(packageImports), Set.copyOf(classImports),
+                Imports.contextClassLoader());
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
@@ -197,7 +204,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Adds imports that rules are compiled with, so rule expressions can refer to classes by their simple names.
      * Each string is a fully qualified package name ({@code "java.util"}) or class name
-     * ({@code "java.time.LocalDate"}).
+     * ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class).
      *
      * <p>
      * Imports are accumulated across multiple calls. This method must be called
@@ -550,6 +557,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Works out what an import string names. A class MVEL can load is imported on its own, so
      * {@code addImport("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
+     * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
+     * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}.
      *
      * @param name The string passed to {@code addImport}
      * @return The class, or {@code null} if {@code name} is a package name
@@ -557,7 +566,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private static Class<?> resolveImport(String name) {
         try {
-            return Class.forName(name, false, new ParserConfiguration().getClassLoader());
+            return ParseTools.forNameWithInner(name, Imports.contextClassLoader());
         } catch (ClassNotFoundException | LinkageError e) {
             if (!isPackageName(name)) {
                 throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", e);
