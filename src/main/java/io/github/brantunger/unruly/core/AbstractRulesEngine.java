@@ -7,9 +7,11 @@ import org.mvel2.util.ParseTools;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +59,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     public static final String JIT_PROPERTY = "unruly.mvel.jit";
 
     private static final String OUTPUT_KEYWORD = "output";
+    /** How much of an exception's message an error message includes; see {@link #describe}. */
+    static final int MAX_DESCRIPTION_LENGTH = 1_000;
     // Package imports from addImport(s). Rules never compile against a shared MVEL context; see compileExpression.
     private final Set<String> packageImports = new LinkedHashSet<>();
     private final Set<Class<?>> classImports = new LinkedHashSet<>();
@@ -459,7 +463,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (fatal != null) {
             // Already on its way out of run(), so a second fatal error from onError can't replace it.
             reportFailure(snapshot, rule, new RuleExecutionException("A listener threw " + fatal.getClass().getName()
-                    + " in " + callback + " for rule '" + rule.displayName() + "'", fatal));
+                    + " in " + callback + " for rule '" + rule.displayName() + "'", fatal), true);
             throw fatal;
         }
     }
@@ -504,7 +508,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         RuleExecutionException error = cause == null
                 ? new RuleExecutionException(msg)
                 : new RuleExecutionException(msg, cause);
-        Error listenerFatal = reportFailure(snapshot, rule, error);
+        // A failed run() started by this rule has already logged its failure.
+        Error listenerFatal = reportFailure(snapshot, rule, error, nestedRunFailure(cause) == null);
         if (isFatal(cause)) {
             throw (Error) cause;
         }
@@ -513,12 +518,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Logs a failure at ERROR and tells every listener through {@link RuleListener#onError}.
+     * Logs a failure at ERROR, unless told not to, and tells every listener through {@link RuleListener#onError}.
      *
      * @return The first fatal {@link Error} a listener threw from {@code onError}, or {@code null}
      */
-    private Error reportFailure(List<RuleListener> snapshot, CompiledRule rule, RuleExecutionException error) {
-        log.error(error.getMessage());
+    private Error reportFailure(List<RuleListener> snapshot, CompiledRule rule, RuleExecutionException error,
+                                boolean logged) {
+        if (logged) {
+            log.error(error.getMessage());
+        }
         return notifyListeners(snapshot, "onError", listener -> listener.onError(listenerCopy(rule), error));
     }
 
@@ -542,14 +550,67 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Describes an exception for an error message. Many exceptions (NPEs, bare RuntimeExceptions) carry no
-     * message, which would otherwise end the engine's message in {@code ": null"}.
+     * Describes an exception for an error message:
+     * <ul>
+     *     <li>its message, or its class name if it has none (NPEs and bare RuntimeExceptions carry no message)</li>
+     *     <li>the class of its root cause when that has no message either, since MVEL copies a cause's missing message
+     *     into its own as {@code ": null"}</li>
+     *     <li>at most {@value #MAX_DESCRIPTION_LENGTH} characters of the message: MVEL pads its messages with spaces up
+     *     to the error's column, so a long expression produced messages hundreds of thousands of characters long</li>
+     * </ul>
+     * A failure of a {@code run()} started from a condition or action is described by that run's innermost failure
+     * only, so a failure nested many runs deep isn't repeated once per level.
      *
      * @param e The exception to describe
-     * @return The exception's message, or its class name if it has none
+     * @return A description of the exception for an error message
      */
     static String describe(Throwable e) {
-        return e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+        RuleExecutionException nested = nestedRunFailure(e);
+        if (nested != null) {
+            return "a nested run() failed: " + nested.getMessage();
+        }
+        String text = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+        if (text.length() > MAX_DESCRIPTION_LENGTH) {
+            text = text.substring(0, MAX_DESCRIPTION_LENGTH) + "... (" + (text.length() - MAX_DESCRIPTION_LENGTH)
+                    + " more characters)";
+        }
+        List<Throwable> chain = causeChain(e);
+        Throwable root = chain.get(chain.size() - 1);
+        return chain.size() > 1 && root.getMessage() == null
+                ? text + " (caused by " + root.getClass().getName() + ")"
+                : text;
+    }
+
+    /**
+     * Finds the innermost failure of a {@code run()} started by the code that threw {@code e}. That run already
+     * logged it and told its listeners.
+     *
+     * @param e What was caught, or {@code null}
+     * @return The innermost {@link RuleExecutionException} in {@code e}'s cause chain, or {@code null}
+     */
+    private static RuleExecutionException nestedRunFailure(Throwable e) {
+        RuleExecutionException innermost = null;
+        for (Throwable t : causeChain(e)) {
+            if (t instanceof RuleExecutionException failure) {
+                innermost = failure;
+            }
+        }
+        return innermost;
+    }
+
+    private static Throwable rootCause(Throwable e) {
+        List<Throwable> chain = causeChain(e);
+        return chain.get(chain.size() - 1);
+    }
+
+    /** Lists {@code e} and its causes, stopping if the chain loops back on itself. */
+    private static List<Throwable> causeChain(Throwable e) {
+        List<Throwable> chain = new ArrayList<>();
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable t = e; t != null && seen.add(t); t = t.getCause()) {
+            chain.add(t);
+        }
+        return chain;
     }
 
     /**
@@ -599,7 +660,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     .build();
             return new CompiledRule(snapshot, ruleName, compiledCondition, compiledAction);
         } catch (Exception e) {
-            String msg = "Can not compile rule '" + ruleName + "'. Error: " + describe(e);
+            // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
+            String reason = rootCause(e) instanceof StackOverflowError
+                    ? "the expression is too long or too deeply nested to compile"
+                    : describe(e);
+            String msg = "Can not compile rule '" + ruleName + "'. Error: " + reason;
             log.error(msg);
             throw new RuleCompilationException(msg, e);
         }
