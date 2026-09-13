@@ -120,7 +120,7 @@ The engine does not deep-copy fact objects, so a method that mutates one (e.g. `
 
 ### Package Imports
 
-MVEL resolves classes in `java.lang` by their simple name. Any other class a rule refers to by its simple name, such as `Objects` in `Objects.nonNull()`, needs its package registered with the engine, or the rule must use the fully qualified name (`java.util.Objects.nonNull()`). Imports must be configured **before** calling `setRuleList()`, since rules are compiled at that point.
+MVEL resolves classes in `java.lang` by their simple name. Any other class a rule refers to by its simple name, such as `Objects` in `Objects.nonNull()`, needs its package registered with the engine, or the rule must use the fully qualified name (`java.util.Objects.nonNull()`). `addImport()` also accepts a single class, such as `engine.addImport("java.time.LocalDate")`. A string that is neither a loadable class nor a valid package name is rejected with an `IllegalArgumentException`; a well-formed package name that doesn't exist can't be detected and is accepted. Imports must be configured **before** calling `setRuleList()`, since rules are compiled at that point.
 
 ```java
 // Add a single package import

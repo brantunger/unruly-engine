@@ -31,10 +31,10 @@ final class FactNames {
     /**
      * Creates a check for the imports a rule list was compiled with.
      *
-     * @param packageImports The packages registered with {@code addImport}
+     * @param ruleImports The packages and classes registered with {@code addImport}
      */
-    FactNames(Set<String> packageImports) {
-        packageImports.forEach(imports::addPackageImport);
+    FactNames(Imports ruleImports) {
+        ruleImports.applyTo(imports);
     }
 
     /**
@@ -60,7 +60,7 @@ final class FactNames {
         }
     }
 
-    private static boolean isIdentifier(String name) {
+    static boolean isIdentifier(String name) {
         if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
             return false;
         }

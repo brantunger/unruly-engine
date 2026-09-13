@@ -64,6 +64,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static final String OUTPUT_KEYWORD = "output";
     // Package imports from addImport(s). Rules never compile against a shared MVEL context; see compileExpression.
     private final Set<String> packageImports = new LinkedHashSet<>();
+    private final Set<Class<?>> classImports = new LinkedHashSet<>();
     // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
@@ -73,7 +74,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Checks fact names against the imports the current rules were compiled with. Replaced alongside
     // compiledRules; a run racing a reload may use the other list's imports, which only changes whether an
     // imported class name is accepted.
-    private volatile FactNames factNames = new FactNames(Set.of());
+    private volatile FactNames factNames = new FactNames(Imports.NONE);
 
     /**
      * Selects MVEL's reflective optimizer unless the JIT has been opted into. A separate method so both
@@ -182,7 +183,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new RuleCompilationException("Duplicate rule name '" + rule.getRuleName() + "'");
             }
         }
-        Set<String> imports = Set.copyOf(packageImports);
+        Imports imports = new Imports(Set.copyOf(packageImports), Set.copyOf(classImports));
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
@@ -205,15 +206,26 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param packages A set of packages to import
      * @return A reference to this {@link RulesEngine}
+     * @throws IllegalArgumentException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public RulesEngine<O> addImports(Set<String> packages) {
         Objects.requireNonNull(packages, "packages must not be null");
+        // Every name is resolved before any is registered, so an invalid one leaves the imports unchanged.
+        Set<String> newPackages = new LinkedHashSet<>();
+        Set<Class<?>> newClasses = new LinkedHashSet<>();
         for (String pkg : packages) {
             Objects.requireNonNull(pkg, "package element must not be null");
-            packageImports.add(pkg);
+            Class<?> type = resolveImport(pkg);
+            if (type != null) {
+                newClasses.add(type);
+            } else {
+                newPackages.add(pkg);
+            }
         }
+        classImports.addAll(newClasses);
+        packageImports.addAll(newPackages);
         return this;
     }
 
@@ -230,13 +242,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param packageString The package to import. Example: "java.util"
      * @return A reference to this {@link RulesEngine}
+     * @throws IllegalArgumentException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public RulesEngine<O> addImport(String packageString) {
         Objects.requireNonNull(packageString, "packageString must not be null");
-        packageImports.add(packageString);
-        return this;
+        return addImports(Set.of(packageString));
     }
 
     /**
@@ -488,7 +500,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return e.getMessage() != null ? e.getMessage() : e.getClass().getName();
     }
 
-    private CompiledRule compileRule(Rule rule, Set<String> imports) {
+    private CompiledRule compileRule(Rule rule, Imports imports) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
             throw new RuleCompilationException(
@@ -525,7 +537,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
-    private static Serializable compileExpression(String expression, Set<String> imports) {
+    private static Serializable compileExpression(String expression, Imports imports) {
         // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
         // run(). The analysis pass catches more of it up front.
         MVEL.analysisCompile(expression, newParserContext(imports));
@@ -538,9 +550,37 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * its context when it first runs. A context shared across rules let one rule change how another compiled,
      * and let {@link #setRuleList(List)} modify it while a concurrent {@code run()} was still reading it.
      */
-    private static ParserContext newParserContext(Set<String> imports) {
+    private static ParserContext newParserContext(Imports imports) {
         ParserConfiguration configuration = new ParserConfiguration();
-        imports.forEach(configuration::addPackageImport);
+        imports.applyTo(configuration);
         return new ParserContext(configuration);
+    }
+
+    /**
+     * Works out what an import string names. A class MVEL can load is imported on its own, so
+     * {@code addImport("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
+     *
+     * @param name The string passed to {@code addImport}
+     * @return The class, or {@code null} if {@code name} is a package name
+     * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name
+     */
+    private static Class<?> resolveImport(String name) {
+        try {
+            return Class.forName(name, false, new ParserConfiguration().getClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            if (!isPackageName(name)) {
+                throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", e);
+            }
+            return null;
+        }
+    }
+
+    private static boolean isPackageName(String name) {
+        for (String part : name.split("\\.", -1)) {
+            if (!FactNames.isIdentifier(part)) {
+                return false;
+            }
+        }
+        return true;
     }
 }
