@@ -33,6 +33,8 @@ class ConditionAssignmentsTest {
             "def f() { true }; f()                   | 'def' at position 0",
             "function f() { true }; f()              | 'function' at position 0",
             "x > 1 && with (claim) { a = 1 } == null | 'with' at position 9",
+            "a?with (b) { c = 1 }                    | 'with' at position 2",
+            "claim.a =                               | '=' at position 8",
     })
     void findsAssignments(String condition, String expected) {
         assertEquals(expected, ConditionAssignments.find(condition));

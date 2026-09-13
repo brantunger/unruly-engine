@@ -134,6 +134,11 @@ jacocoTestCoverageVerification {
             limit {
                 minimum = 1.00
             }
+            // Instruction coverage alone let an untested branch through, so branches are checked too.
+            limit {
+                counter = 'BRANCH'
+                minimum = 1.00
+            }
         }
     }
 }

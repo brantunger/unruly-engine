@@ -253,9 +253,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         + "' is reserved for the output object and cannot be used as a fact name");
             }
             factNames.check(entry.getKey());
-            if (entry.getValue() != null) {
-                entryMap.put(entry.getKey(), entry.getValue().getValue());
-            }
+            // A null reference is bound as null, like a Fact holding null. Skipping it left the name
+            // unresolvable, so `x == null` failed instead of matching.
+            FactReference<Object> fact = entry.getValue();
+            entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
         }
         return entryMap;
     }
