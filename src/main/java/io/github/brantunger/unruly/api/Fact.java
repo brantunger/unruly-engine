@@ -31,7 +31,10 @@ public class Fact<T> implements FactReference<T> {
     }
 
     /**
-     * Instantiate a Fact from the value of the Fact itself.
+     * Instantiate a Fact named after its value: the name is {@code obj.toString()}, such as {@code "John Smith"}
+     * or {@code "java.lang.Object@4501b7af"}. Rules can only refer to a fact whose name is a Java identifier, so
+     * prefer {@link #Fact(String, Object)} unless the value's string form is one. The name doesn't follow later
+     * changes to the value.
      *
      * @param obj The object to obtain the value from
      */
@@ -86,6 +89,12 @@ public class Fact<T> implements FactReference<T> {
         return Objects.equals(name, fact.name) && Objects.equals(value, fact.value);
     }
 
+    /**
+     * Based on the name and value, both of which can change. Don't change a Fact while it is in a hashed collection
+     * such as a {@link java.util.HashSet}, or the collection can no longer find it.
+     *
+     * @return The hash code of the name and value
+     */
     @Override
     public int hashCode() {
         return Objects.hash(name, value);
