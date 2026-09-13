@@ -58,7 +58,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @Deprecated(forRemoval = true)
     public static final String JIT_PROPERTY = "unruly.mvel.jit";
 
-    private static final String OUTPUT_KEYWORD = "output";
+    private static final String OUTPUT_KEYWORD = ActionVariables.OUTPUT_KEYWORD;
     /** How much of an exception's message an error message includes; see {@link #describe}. */
     static final int MAX_DESCRIPTION_LENGTH = 1_000;
     // Package imports from addImport(s). Rules never compile against a shared MVEL context; see compileExpression.
@@ -389,7 +389,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
-        // Create a copy so we don't mutate the shared fact map with the output keyword
+        // Reads the shared facts; the output object and the action's own assignments stay in this action.
         Map<String, Object> input = new ActionVariables(entryMap, outputResult);
         try {
             MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
@@ -401,30 +401,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         notifyAfter(snapshot, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
 
         return outputResult;
-    }
-
-    /**
-     * The variables an action runs against: a copy of the facts, so an action's assignments stay local to it,
-     * plus the output object. MVEL writes an assignment such as {@code output = new HashMap()} into this map and
-     * the engine never reads it back, so the replacement would be silently discarded. The write is rejected
-     * instead; actions change the output object in place.
-     */
-    private static final class ActionVariables extends HashMap<String, Object> {
-        private static final long serialVersionUID = 1L;
-
-        ActionVariables(Map<String, Object> facts, Object output) {
-            super(facts);
-            super.put(OUTPUT_KEYWORD, output);
-        }
-
-        @Override
-        public Object put(String key, Object value) {
-            if (OUTPUT_KEYWORD.equals(key)) {
-                throw new UnsupportedOperationException("Cannot assign '" + OUTPUT_KEYWORD
-                        + "': an action changes the output object in place (e.g. output.put(...)) but can't replace it.");
-            }
-            return super.put(key, value);
-        }
     }
 
     /**
