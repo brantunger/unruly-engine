@@ -30,7 +30,8 @@ public interface FactStore<T> extends Map<String, FactReference<T>> {
      * Puts a {@link FactReference} object into the Map.
      *
      * @param ref the {@link FactReference} object to be put into the Map
-     * @return the {@link FactReference} object put into the Map
+     * @return the previous {@link FactReference} stored under the fact's name, or {@code null} if there was
+     *         none, as with {@link java.util.Map#put(Object, Object)}
      */
     FactReference<T> put(FactReference<T> ref);
 }
