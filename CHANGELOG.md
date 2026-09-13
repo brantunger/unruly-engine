@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.17](https://github.com/brantunger/unruly-engine/compare/v1.1.16...v1.1.17) (2026-09-13)
+
+
+### Bug Fixes
+
+* check import_static and keyword members in conditions, and word listener write errors for listeners ([#146](https://github.com/brantunger/unruly-engine/issues/146)) ([dc94098](https://github.com/brantunger/unruly-engine/commit/dc94098f8f66316bbb6381c72da157082d186def))
+
 ## [1.1.16](https://github.com/brantunger/unruly-engine/compare/v1.1.15...v1.1.16) (2026-09-13)
 
 

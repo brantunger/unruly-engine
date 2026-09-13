@@ -42,7 +42,7 @@ Requires **Java 17** or later.
 
 <!-- x-release-please-start-version -->
 ```groovy
-implementation 'io.github.brantunger:unruly-engine:1.1.16'
+implementation 'io.github.brantunger:unruly-engine:1.1.17'
 ```
 <!-- x-release-please-end -->
 
@@ -53,7 +53,7 @@ implementation 'io.github.brantunger:unruly-engine:1.1.16'
 
 <!-- x-release-please-start-version -->
 ```kotlin
-implementation("io.github.brantunger:unruly-engine:1.1.16")
+implementation("io.github.brantunger:unruly-engine:1.1.17")
 ```
 <!-- x-release-please-end -->
 
@@ -67,7 +67,7 @@ implementation("io.github.brantunger:unruly-engine:1.1.16")
 <dependency>
     <groupId>io.github.brantunger</groupId>
     <artifactId>unruly-engine</artifactId>
-    <version>1.1.16</version>
+    <version>1.1.17</version>
 </dependency>
 ```
 <!-- x-release-please-end -->
