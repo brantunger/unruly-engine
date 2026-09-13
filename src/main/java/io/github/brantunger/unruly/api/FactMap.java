@@ -16,6 +16,11 @@ import java.util.Set;
  * {@code FactReference} after it has been added does not change the name rules use.
  * </p>
  *
+ * <p>
+ * {@code equals}, {@code hashCode} and {@code toString} follow the {@link Map} contract: two maps holding equal
+ * facts under the same names are equal, whatever their implementation.
+ * </p>
+ *
  * @param <T> The object/value type of the facts
  */
 public class FactMap<T> implements FactStore<T> {
@@ -168,5 +173,27 @@ public class FactMap<T> implements FactStore<T> {
     @Override
     public Set<Entry<String, FactReference<T>>> entrySet() {
         return facts.entrySet();
+    }
+
+    /**
+     * Compares by entries, as the {@link Map} contract requires: equal to any {@code Map}, of any
+     * implementation, holding equal facts under the same names.
+     *
+     * @param o The object to compare with
+     * @return {@code true} if {@code o} is a {@code Map} with the same entries
+     */
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof Map<?, ?> && facts.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return facts.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return facts.toString();
     }
 }
