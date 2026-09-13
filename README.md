@@ -1,16 +1,44 @@
-# unruly-engine
+<div align="center">
+
+<img src="docs/images/banner.svg" alt="unruly-engine: a pure-Java rules engine powered by MVEL" width="100%">
+
+<br>
 
 [![CI](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.brantunger/unruly-engine)](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.brantunger/unruly-engine?color=blue)](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
+[![Javadoc](https://img.shields.io/badge/javadoc-reference-5c6bc0)](https://javadoc.io/doc/io.github.brantunger/unruly-engine)
+[![Coverage](https://codecov.io/gh/brantunger/unruly-engine/branch/main/graph/badge.svg)](https://codecov.io/gh/brantunger/unruly-engine)
+[![Java 17+](https://img.shields.io/badge/Java-17%2B-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-Unruly is a pure Java rule engine that parses and evaluates using MVEL based rules
+**Keep business rules out of your code.**<br>
+Write each rule's condition and action as an [MVEL](https://github.com/mvel/mvel) expression, load the rules once,
+and evaluate them against your Java objects from as many threads as you like.
 
-## Installation
+[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Guides](#-guides) · [FAQ](#-faq) · [Javadoc](https://javadoc.io/doc/io.github.brantunger/unruly-engine) · [Changelog](CHANGELOG.md)
 
-Requires Java 17 or later. Add the dependency to your project:
+</div>
 
-### Gradle
+---
+
+## ✨ Features
+
+|    | Feature | What you get |
+| -- | --- | --- |
+| 📝 | **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. |
+| 🔀 | **Two engine types** | A *stateless* engine fires only the highest-priority match. A *stateful* engine fires every match. |
+| 🔢 | **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
+| 🛡 | **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
+| 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
+| 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
+| 🪶 | **Lightweight** | Two runtime dependencies: MVEL 2.5 and the SLF4J API. |
+
+## 📦 Installation
+
+Requires **Java 17** or later.
+
+<details open>
+<summary><b>Gradle (Groovy)</b></summary>
 
 <!-- x-release-please-start-version -->
 ```groovy
@@ -18,7 +46,21 @@ implementation 'io.github.brantunger:unruly-engine:1.1.15'
 ```
 <!-- x-release-please-end -->
 
-### Maven
+</details>
+
+<details>
+<summary><b>Gradle (Kotlin)</b></summary>
+
+<!-- x-release-please-start-version -->
+```kotlin
+implementation("io.github.brantunger:unruly-engine:1.1.15")
+```
+<!-- x-release-please-end -->
+
+</details>
+
+<details>
+<summary><b>Maven</b></summary>
 
 <!-- x-release-please-start-version -->
 ```xml
@@ -30,245 +72,254 @@ implementation 'io.github.brantunger:unruly-engine:1.1.15'
 ```
 <!-- x-release-please-end -->
 
-## Introduction
+</details>
 
-The Unruly Engine has two rules engine implementations.
+> [!TIP]
+> The engine logs through the SLF4J API. Add an SLF4J 2.x provider such as Logback if your application doesn't
+> already have one, or its messages go nowhere. See [Listeners & logging](docs/listeners-and-logging.md#-logging-setup).
 
-- StatelessRulesEngine
-- StatefulRulesEngine
+## 🚀 Quick start
 
-### Stateful Rules Engine
-
-In the **stateful** implementation, the rules engine fires all the actions of the rules when the condition field of the Rule returns true. In the stateful rules engine the rules are sorted by priority. Matching actions fire in priority order, highest first. They share one output object, so a lower-priority action can overwrite a field set by a higher-priority one.
-
-The stateful engine **evaluates every condition first, then fires the matched actions** in priority order. An action never causes another rule's condition to be re-checked. If a high-priority action sets `claim.status = "DENIED"`, a lower-priority rule whose condition `claim.status == "PENDING"` was already true still fires.
-
-A run is **not atomic**. If an action throws, the actions that already ran keep their changes to the output object and to any fact objects they modified. Listeners have already received their callbacks, and `run()` throws a `RuleExecutionException` naming only the rule that failed.
-
-### Stateless Rules Engine
-
-In the **stateless** implementation, the rules engine fires the action of a single rule. All condition fields within the rule list are evaluated in the stateless rule engine. However, only a single action is fired. During conflict resolution the rule with the highest priority value is found first. The action field of the rule found first will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the highest priority value.
-
-**Equal priorities:** rules with the same priority keep the order they had in the list passed to `setRuleList()`. If several matching rules share the highest priority, the stateless engine fires the one listed first, and the stateful engine fires them in list order. Rules with a `null` priority come last.
-
-## Using Unruly Engine
-
-The recommended way to use the Unruly Engine is through some mechanism of dependency injection framework like Spring.
-
-### Create the Configuration Beans
-
-Creating the main beans to use is simple. Let's say you want to create two rules engines, one stateful and one stateless both outputting to your `LoanDetails` object.
+A loan desk wants one rate per applicant: prime for excellent credit, standard for good credit.
 
 ```java
-@Configuration
-public class RulesEngineConfiguration {
-    
-    @Bean
-    public RulesEngine<LoanDetails> statelessRulesEngine() {
-        return RulesEngineBuilder.stateless(LoanDetails::new);
-    }
+// Your fact type: any object with readable properties (a record, a JavaBean, a Map, ...)
+public record Applicant(String name, int creditScore) {}
 
-    @Bean
-    public RulesEngine<LoanDetails> statefulRulesEngine() {
-        return RulesEngineBuilder.stateful(LoanDetails::new);
-    }
+// Your output type: mutable, because actions change it in place
+public class LoanDecision {
+    private boolean approved;
+    private double interestRate;
+    private final List<String> notes = new ArrayList<>();
+    // getters and setters ...
 }
 ```
 
-### Create MVEL Rules
-
-The rules parsing language is written using MVEL. MVEL has largely been inspired by Java syntax, but has some fundamental differences aimed at making it more efficient as an expression language, such as operators that directly support collection, array and string matching, as well as regular expressions. MVEL is used to evaluate expressions written using Java syntax.
-
-You can view how MVEL works here: https://mvel.documentnode.com/
-
-This is an example usage of MVEL defining a rule, where **"claim"** is the input FactStore object.
-
 ```java
-Objects.nonNull(claim.getMDDB_MULTSRC_CD())
-&& Objects.nonNull(claim.getBRND_NM_TYP_CD())
-&& ((claim.getMDDB_MULTSRC_CD().equalsIgnoreCase("M")
-   && claim.getBRND_NM_TYP_CD().toUpperCase().matches("TRDMK"))
-   || (claim.getMDDB_MULTSRC_CD().equalsIgnoreCase("N")
-      && claim.getBRND_NM_TYP_CD().toUpperCase().matches("BRNDGNRC|TRDMK"))
-   || (claim.getMDDB_MULTSRC_CD().equalsIgnoreCase("O")
-      && claim.getBRND_NM_TYP_CD().toUpperCase().matches("BRNDGNRC|TRDMK")
-      && claim.getPROD_SLCTN_CD().matches("0|1|2|7|8|9")))
+// 1. Create an engine. The supplier creates a fresh output object for each run.
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
+
+// 2. Load the rules once. Each rule has an MVEL condition and an MVEL action.
+engine.setRuleList(List.of(
+        Rule.builder()
+                .ruleName("prime-rate")
+                .priority(10)
+                .condition("applicant.creditScore >= 750")
+                .action("output.approved = true; output.interestRate = 4.5; output.notes.add('prime')")
+                .build(),
+        Rule.builder()
+                .ruleName("standard-rate")
+                .priority(5)
+                .condition("applicant.creditScore >= 650")
+                .action("output.approved = true; output.interestRate = 6.9; output.notes.add('standard')")
+                .build()));
+
+// 3. Put your facts in a store. Rules refer to each fact by its name.
+FactStore<Object> facts = new FactMap<>();
+facts.setValue("applicant", new Applicant("Ada", 780));
+
+// 4. Run the rules.
+LoanDecision decision = engine.run(facts);   // approved = true, interestRate = 4.5, notes = [prime]
 ```
 
-`Objects` is in `java.util`, not `java.lang`, so this condition needs `engine.addImport("java.util")` before `setRuleList()` (see [Package Imports](#package-imports)). Without it, `setRuleList()` still accepts the rule, but `run()` fails with `unresolvable property or identifier: Objects`.
+Both conditions are true for a score of 780. The stateless engine fires only the highest-priority match,
+`prime-rate`.
 
-You can call methods upon the **"claim"** object to create boolean logic. This logic is stored in the **"condition"** field of the Rule. If the condition evaluates to _TRUE_ then the action of the rule will be executed.
+> [!IMPORTANT]
+> `run()` returns **`null`** when no rule matches. For an applicant with a score of 600, `decision` is `null`,
+> so always check for it.
 
-**Action Fact Access:**
-Rule actions also have full access to the input facts, allowing you to compute dynamic outputs based on the input data. For example:
-```java
-// Sets the discount dynamically based on the claim's amount
-Rule rule = Rule.builder()
-    .ruleName("compute-discount")
-    .condition("claim.amount > 100")
-    .action("output.put(\"discount\", claim.amount * 0.10)")
-    .build();
+## 🧭 How it works
+
+```mermaid
+flowchart LR
+    subgraph startup["Once, at startup"]
+        direction TB
+        B["RulesEngineBuilder<br/>.stateless() / .stateful()"] --> I["addImport()<br/><i>optional</i>"]
+        I --> S["setRuleList(rules)<br/><b>compile + validate</b>"]
+    end
+    subgraph request["Per request, on any thread"]
+        direction TB
+        F["FactStore<br/>applicant, order, ..."] --> R["run(facts)"]
+        R --> O["Output object<br/><i>or null</i>"]
+    end
+    S --> R
 ```
 
-**Facts are read-only to rules:**
-- A **condition** cannot assign or declare anything. `setRuleList()` rejects a condition containing an assignment with a `RuleCompilationException`: `claim.approved = true` (a typo for `==`), `claim.amount += 5`, `x++`, a local such as `x = 5; x > 1`, a `with` block or a `def` function. The check reads the condition's text, so it can't see a method call that changes a fact, such as `claim.setApproved(true)`.
-- An **action** may assign local variables (`score = 10; output.put("score", score)`), but the assignment is visible only within that action. Other rules still see the original facts. Pass results between rules through `output`.
-- `output` is reserved. A fact with that name is rejected with an `IllegalArgumentException` at `run()`.
-- An action changes the output object in place (`output.put(...)`, `output.setScore(...)`) but can't replace it. Assigning to `output` itself, as in `output = new HashMap()` or `output = output + 1`, throws a `RuleExecutionException`, so the output type must be mutable.
+`setRuleList()` compiles every expression up front and rejects the mistakes it can detect. Each `run()` then
+follows the same path:
 
-The engine does not deep-copy fact objects, so a method that mutates one (e.g. `claim.setAmount(0)`) is still seen by later rules.
-
-### Package Imports
-
-MVEL resolves classes in `java.lang` by their simple name. Any other class a rule refers to by its simple name, such as `Objects` in `Objects.nonNull()`, needs its package registered with the engine, or the rule must use the fully qualified name (`java.util.Objects.nonNull()`). `addImport()` also accepts a single class, such as `engine.addImport("java.time.LocalDate")`. A string that is neither a loadable class nor a valid package name is rejected with an `IllegalArgumentException`; a well-formed package name that doesn't exist can't be detected and is accepted. Imports must be configured **before** calling `setRuleList()`, since rules are compiled at that point.
-
-```java
-// Add a single package import
-engine.addImport("java.util");
-
-// Or add multiple packages at once
-engine.addImports(Set.of("java.util", "java.time"));
-
-// Then set the rules (imports take effect during compilation)
-engine.setRuleList(rules);
+```mermaid
+flowchart TD
+    A(["run(facts)"]) --> B["Check fact names"]
+    B --> C["Evaluate <b>every</b> condition,<br/>highest priority first"]
+    C --> D{"Any match?"}
+    D -- no --> N(["return null"])
+    D -- yes --> E["Create the output object<br/>with your Supplier"]
+    E --> F{"Engine type"}
+    F -- stateless --> G["Fire <b>only</b> the first<br/>matched action"]
+    F -- stateful --> H["Fire <b>every</b> matched action<br/>in priority order"]
+    G --> R(["return output"])
+    H --> R
 ```
 
-### MVEL comparison gotchas
+## 🧩 Core concepts
 
-MVEL compares values more loosely than Java, which can make a condition match, or not, unexpectedly:
+### Rules
 
-- **Enums and strings:** comparing an enum property to a string literal is always false, with no error. `claim.status == 'APPROVED'` never matches when `status` is an enum; write `claim.status.name() == 'APPROVED'`.
-- **Type coercion:** `'1' == 1` is true, and so is `amount == 1` for a `BigDecimal` fact of `1.00`. A String fact `"10"` compared as `s > 9` is true, while `'10' > '9'` compares two strings and is false.
-- **`empty`:** `s == empty` is true when `s` is `""`, and `n == empty` is true when `n` is `0`.
-- **Missing facts:** referring to a fact that isn't in the store throws `unresolvable property or identifier` instead of evaluating to `null`, so `x == null` can't test whether a fact was supplied. Use `isdef`, as in `isdef x && x > 1`.
+A `Rule` is a plain object with five fields:
+
+| Field | Type | Required | Purpose |
+| --- | --- | :---: | --- |
+| `ruleName` | `String` | recommended | Names the rule in error messages and listener callbacks. Must be unique within a rule list. Unnamed rules are allowed and show as `(unnamed)`. |
+| `condition` | `String` | ✅ | An MVEL expression that must evaluate to a `boolean`. It can't assign or declare anything. |
+| `action` | `String` | ✅ | An MVEL expression that runs when the rule fires, usually changing `output`. |
+| `priority` | `Integer` | | Higher numbers fire first. Equal priorities keep their list order, and `null` sorts last. |
+| `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
+
+Create a rule with `Rule.builder()`, with `new Rule()` and setters, or with
+`new Rule(ruleName, condition, action, priority, description)`. `setRuleList()` copies each rule, so changing a
+`Rule` afterwards has no effect until you call `setRuleList()` again.
 
 ### Facts
 
-Facts are the input objects for the rules engine. If you need to process a **"claim"**, then the model must be defined and input into the Rules Engine. You do that by creating a **FactStore**. One implementation of the FactStore is a **FactMap**. Here's an example:
+Facts are the inputs. Put them in a `FactStore`; `FactMap` is the built-in implementation. Each fact's name is
+the variable that rules use:
 
 ```java
 FactStore<Object> facts = new FactMap<>();
-facts.setValue("claim", userDetails);
+facts.setValue("applicant", applicant);   // rules can now use applicant.creditScore
 ```
 
-Now "claim" can be used in the MVEL rule, you can access methods of that object, and send data through the Rules Engine.
+A fact name must be a valid Java identifier, can't be an MVEL keyword such as `empty` or `in`, and can't be
+`output`. Build a new store for each request. See the [Facts guide](docs/facts.md) for the details.
 
-A fact's name is its map key, and that key is what rules use. `FactMap` rejects a `null` name, a key that differs from the `Fact`'s own name (`put("claim", new Fact<>("other", 1))`), and two facts with the same name in its constructor, each with an `IllegalArgumentException`. Renaming a `Fact` after adding it does not change the name rules see.
+### The output object
 
-`run()` also rejects, with an `IllegalArgumentException`, a fact name rules couldn't refer to: one that isn't a Java identifier (`my-fact` would read as `my - fact`), a reserved MVEL word such as `empty`, `this` or `in`, or a class name MVEL resolves instead of the fact, such as `Math`, `String` or, after `addImport("java.util")`, `Date`.
+- Your `Supplier` creates it, once per run that matches at least one rule. It must return a **new** object each
+  time, never a shared instance.
+- Actions see it as `output` and change it in place, for example with `output.approved = true` or
+  `output.put('discount', 10)`. An action can't replace it with `output = ...`, so the output type must be mutable.
+- `run()` returns it, or `null` when no rule matched.
 
-Rule names must be unique. `setRuleList()` throws a `RuleCompilationException` for a duplicate name, while rules without a name are allowed.
+### 🔀 Choosing an engine
 
-`FactMap.setValue` always stores a new `Fact`, so a `FactMap` copied from another (`new FactMap<>(other)`) can be changed without affecting the original. The copy is shallow: the fact values themselves (e.g. the `userDetails` object) are shared, so build a fresh `FactStore` per request rather than sharing one across threads.
+|  | 🎯 Stateless | 📚 Stateful |
+| --- | --- | --- |
+| **Create with** | `RulesEngineBuilder.stateless(...)` | `RulesEngineBuilder.stateful(...)` |
+| **Conditions evaluated** | All of them | All of them |
+| **Actions fired** | Only the highest-priority match | Every match, highest priority first |
+| **Output** | Shaped by exactly one rule | Shared by all matched actions, so a later, lower-priority action can overwrite an earlier one |
+| **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation |
+| **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` |
 
-### Use the rules engine bean
+Both engines **match first, then fire**. Every condition is evaluated before any action runs, and an action
+never causes a condition to be checked again. If a higher-priority action changes a fact, a lower-priority rule
+that already matched still fires.
 
-`run()` returns the output object when at least one rule matched. It returns **`null`** when no rule matched or the rule list is empty, so check for it. Calling `run()` before `setRuleList()` throws an `IllegalStateException`.
+> [!CAUTION]
+> A stateful run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
+> output object and to any facts they modified, and `run()` throws a `RuleExecutionException` naming only the
+> rule that failed.
 
-You might then use one of the rules engine like this practical example:
+## 📚 Guides
 
-```java
-@RestController
-@RequestMapping(value = "/api")
-public class UnrulyController {
+| Guide | Covers |
+| --- | --- |
+| ✍️ [Writing rules](docs/writing-rules.md) | MVEL syntax, imports and built-in class names, what rules may change, comparison gotchas, and testing rules |
+| 🗂️ [Facts](docs/facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
+| 🌱 [Spring Boot](docs/spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
+| 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
+| 🚨 [Error handling](docs/error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
+| 🧵 [Thread safety](docs/thread-safety.md) | Concurrency guarantees, reloading rules while running, and the JVM-wide MVEL optimizer setting |
+| 📖 [Javadoc](https://javadoc.io/doc/io.github.brantunger/unruly-engine) | The API reference |
 
-    private final RulesEngine<LoanDetails> statefulRulesEngine;
+## 🔒 Security
 
-    public UnrulyController(KnowledgeBase knowledgeBase,
-                            RulesEngine<LoanDetails> statefulRulesEngine) {
-        this.statefulRulesEngine = statefulRulesEngine;
-        // Set the rules once during initialization for thread safety
-        this.statefulRulesEngine.setRuleList(knowledgeBase.getAllRules());
-    }
+> [!WARNING]
+> **Rules are code.** MVEL gives a rule the same access to the JVM as your own Java code: it can start
+> processes, read files, open sockets and use reflection. The engine has **no sandbox and no timeout**, so
+> `while (true) {}` blocks the calling thread forever.
 
-    @PostMapping(value = "/loan")
-    public ResponseEntity<?> postLoan(@RequestBody UserDetails userDetails) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue("claim", userDetails);
+- Load rules only from sources you trust as much as your application code, such as your repository or a table
+  only administrators can change.
+- Never build rules from end-user input. Facts are the safe way to pass user data in.
+- If less trusted people must write rules, run the engine in a separate, restricted process and enforce your own
+  time limit around `run()`.
 
-        LoanDetails result = statefulRulesEngine.run(facts);
-        // run() returns null when no rule matched
-        return result != null ? ResponseEntity.ok(result) : ResponseEntity.noContent().build();
-    }
-}
-```
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-## Security
+## ❓ FAQ
 
-Rule conditions and actions are MVEL expressions, and MVEL gives them the same access to the JVM as your own Java code. A rule can use any class on the classpath, including `Runtime.getRuntime().exec(...)`, `System.exit(...)`, file and network APIs, and reflection such as `Class.forName(...)`. The engine has no sandbox and no timeout, so an action such as `while (true) {}` blocks the thread calling `run()` forever.
+<details>
+<summary><b>Why does <code>run()</code> return <code>null</code>?</b></summary>
 
-Treat rule text as code:
-- Only load rules from sources you trust as much as your application code, such as your own repository or a table only administrators can change.
-- Never build rules from end-user input.
-- If rules must come from less trusted authors, run the engine in a separate, restricted process and enforce your own time limit around `run()`.
+No rule matched, or the rule list is empty. The output supplier isn't even called in that case. Check for `null`,
+or add a lowest-priority catch-all rule with the condition `true`.
 
-## Thread Safety
+</details>
 
-The rules engine is designed to be configured once and then used concurrently:
+<details>
+<summary><b>What does <code>unresolvable property or identifier</code> mean?</b></summary>
 
-- **`setRuleList()`** compiles the MVEL expressions and stores the compiled rules internally. Call it during initialization (e.g. in a constructor or `@PostConstruct` method). It may also be called again later to reload rules while other threads are calling `run()`. The new rules are swapped in all at once: a run already in progress finishes with the rules it started with, and runs that start afterwards use the new rules. Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never affect another rule or a later reload. Calling `setRuleList()` from several threads at the same time is safe, but the last call to finish wins.
-- **`run()`** is safe to call from multiple threads after `setRuleList()` has completed. Each invocation creates a fresh output object. The compiled rules are shared, and MVEL updates them internally as they are evaluated, which is why the engine configures MVEL as described below.
-- **`addImport()` / `addImports()`** must be called before `setRuleList()`. They are not thread-safe.
-- **`registerListener()` / `registerListeners()`** are thread-safe and may be called at any time, even from inside a listener callback. A listener registered during a run may start receiving callbacks partway through that run, starting with a `before*` callback rather than the `after*` or `onError` that closes one. A registered listener is called from every thread running the engine, so **listener implementations must be thread-safe**.
+The rule used a name that is neither a fact in the store nor a class MVEL knows. Common causes:
 
-### MVEL optimizer (JVM-wide)
+- The fact wasn't added, or was added under a different name. To test whether a fact exists, use `isdef name`.
+- The rule uses a class that isn't built in to MVEL, such as `Objects`, without an import. Call
+  `engine.addImport("java.util")` **before** `setRuleList()`, or write `java.util.Objects`. See
+  [Classes and imports](docs/writing-rules.md#-classes-and-imports).
 
-MVEL's default JIT optimizer generates an accessor for the class it first sees. When the same fact name is later bound to a different class (for example `claim` typed as an interface with several implementations), MVEL falls back to a slower accessor. That fallback is not thread-safe, so concurrent `run()` calls intermittently failed with a `RuleExecutionException` caused by a `ClassCastException`.
+</details>
 
-To make concurrent use safe by default, **loading the engine switches MVEL's default optimizer to its reflective optimizer for the whole JVM**. MVEL reads this from one global setting, so the choice can't be limited to this engine. It also applies to any other library in the same JVM that uses MVEL.
+<details>
+<summary><b>My enum comparison never matches</b></summary>
 
-The reflective optimizer is somewhat slower. A rough single-threaded measurement with three rules went from about 280 ns to 370 ns per `run()`. To keep MVEL's own setting (JIT on, unless you pass `-Dmvel2.disable.jit=true`), start the JVM with:
+MVEL compares an enum to a string as `false`, with no error. Write `order.status.name() == 'SHIPPED'`. See
+[Comparison gotchas](docs/writing-rules.md#-comparison-gotchas).
 
-```
--Dunruly.mvel.jit=true
-```
+</details>
 
-With the JIT on, facts whose runtime class varies must not be run concurrently.
+<details>
+<summary><b>Can I change the rules without restarting?</b></summary>
 
-## Exception Handling
+Yes. Call `setRuleList()` again at any time, even while other threads are running. A run already in progress
+finishes with the old rules, and later runs use the new ones. If the new list fails to compile, the old rules stay
+in place. See [Thread safety](docs/thread-safety.md).
 
-The Unruly Engine provides a specific exception hierarchy to help you handle errors gracefully:
+</details>
 
-- **`UnrulyException`**: The base runtime exception for the engine.
-- **`RuleCompilationException`**: Thrown during `setRuleList()` if a rule has a syntax error in its MVEL condition or action expression, has a null or blank condition or action, has a condition that contains an assignment, shares its name with another rule, or if the rule list contains a `null` rule. MVEL's parser is lenient, so not every mistake is caught at this point. For example, `true)` and `output.put("k" 1)` compile without error and only fail with a `RuleExecutionException` when that rule is evaluated. A class name that can't be resolved, such as `Objects` without `addImport("java.util")`, is also only reported at `run()`. Test each rule against sample facts rather than relying on `setRuleList()` alone.
-- **`RuleExecutionException`**: Thrown during `run()` if a runtime error occurs while evaluating a rule's condition or action (e.g. attempting to invoke a non-existent method), if a condition evaluates to anything other than a boolean, or if the output factory throws or returns `null`. A condition such as `claim.status` is rejected rather than coerced; write `claim.status == "APPROVED"`.
+<details>
+<summary><b>Can I remove a listener?</b></summary>
 
-Exceptions about a specific rule, such as a compile or execution failure, name that rule in their message. The others (an output factory failure, an invalid fact name, calling `run()` before `setRuleList()`) describe the problem instead.
+No. Listeners can be added but not removed. If you need to switch one off, give it an enabled flag, or build a new
+engine.
 
-## Observability & Lifecycle Listeners
+</details>
 
-If you need to trace which rules evaluate to true/false, or audit the engine execution, you can register a `RuleListener`:
+<details>
+<summary><b>How does this compare with Drools or Easy Rules?</b></summary>
 
-```java
-// Register a custom listener to capture evaluation decisions
-engine.registerListener(new RuleListener() {
-    @Override
-    public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
-        System.out.println("Rule " + rule.getRuleName() + " evaluated to: " + matchResult);
-    }
-});
+unruly-engine is intentionally small. It has no Rete network, no working memory and no forward chaining. Each
+`run()` makes a single pass that evaluates every condition and then fires actions, and actions never trigger
+re-evaluation. That makes it simple to reason about and a good fit for decision tables and moderate rule sets.
+If you need inference over changing facts, use a full production-rule system.
 
-// Or use the out-of-the-box LoggingRuleListener (logs all events at DEBUG level via SLF4J)
-engine.registerListener(new LoggingRuleListener());
-```
+</details>
 
-Every `beforeEvaluate` / `beforeExecute` callback is followed by exactly one closing call. That's the matching `afterEvaluate` / `afterExecute` when the rule succeeds, or `onError` when its condition or action fails. `onError` receives the `RuleExecutionException` that `run()` then throws. That includes a rule that throws an `Error`: a `StackOverflowError` (e.g. runaway recursion) or `AssertionError` is wrapped in the `RuleExecutionException`, while any other `Error`, such as `OutOfMemoryError`, is wrapped for `onError` and then rethrown unchanged from `run()`. Anything you open in a `before*` callback, such as a timer or tracing span, can therefore always be closed:
+<details>
+<summary><b>What license is it under?</b></summary>
 
-```java
-engine.registerListener(new RuleListener() {
-    @Override
-    public void beforeExecute(Rule rule, Object output) {
-        startSpan(rule);
-    }
+The GNU General Public License v3.0, not the LGPL. Check that it's compatible with how you distribute your
+software before depending on it.
 
-    @Override
-    public void afterExecute(Rule rule, Object output) {
-        endSpan(rule);
-    }
+</details>
 
-    @Override
-    public void onError(Rule rule, RuleExecutionException error) {
-        endSpan(rule, error);
-    }
-});
-```
+## 🤝 Contributing
+
+Contributions are welcome! Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the build, the quality gates and the
+PR title format. Please also read the [Code of Conduct](CODE_OF_CONDUCT.md). Maintainers can find the release
+process in [RELEASING.md](RELEASING.md).
+
+## 📄 License
+
+unruly-engine is licensed under the [GNU General Public License v3.0](LICENSE).

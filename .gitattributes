@@ -15,6 +15,7 @@
 *.html text
 *.css text
 *.js text
+*.svg text
 
 # Shell scripts and Gradle wrapper (always LF)
 *.sh text eol=lf

@@ -31,7 +31,8 @@ public interface RuleListener {
      * Called before a rule's condition is evaluated.
      *
      * @param rule  The rule being evaluated.
-     * @param facts The facts map that will be passed to the rule condition.
+     * @param facts A read-only view of the fact values, keyed by fact name. Writing to it throws
+     *              {@link UnsupportedOperationException}.
      */
     default void beforeEvaluate(Rule rule, Map<String, Object> facts) {
         // default empty implementation
@@ -41,7 +42,8 @@ public interface RuleListener {
      * Called after a rule's condition is evaluated.
      *
      * @param rule        The rule that was evaluated.
-     * @param facts       The facts map that was passed to the rule condition.
+     * @param facts       A read-only view of the fact values, keyed by fact name. Writing to it throws
+     *                    {@link UnsupportedOperationException}.
      * @param matchResult The boolean result of the condition evaluation.
      */
     default void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {

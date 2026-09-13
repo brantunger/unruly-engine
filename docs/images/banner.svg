@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">unruly-engine</title>
+  <desc id="desc">A pure-Java rules engine powered by MVEL expressions</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="0.55" stop-color="#1e1b4b"/>
+      <stop offset="1" stop-color="#3b0764"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f43f5e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#ffffff" fill-opacity="0.07"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="300" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="300" rx="20" fill="url(#dots)"/>
+
+  <!-- Logo mark: a prioritized rule list where matching rules fire -->
+  <g transform="translate(64 70)">
+    <rect width="160" height="160" rx="36" fill="url(#mark)"/>
+    <g fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M62 46 H122"/>
+      <path d="M62 80 H106" stroke-opacity="0.55"/>
+      <path d="M62 114 H122"/>
+    </g>
+    <circle cx="38" cy="46" r="12" fill="#ffffff"/>
+    <circle cx="38" cy="80" r="10" fill="none" stroke="#ffffff" stroke-width="5" stroke-opacity="0.55"/>
+    <circle cx="38" cy="114" r="12" fill="#ffffff"/>
+    <path d="M32 46 l4 4 l8 -8" fill="none" stroke="#f43f5e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M32 114 l4 4 l8 -8" fill="none" stroke="#f43f5e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="260" y="138" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="62" font-weight="700" fill="#ffffff">unruly<tspan fill="url(#accent)">-engine</tspan></text>
+  <text x="262" y="182" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="25" fill="#c7d2fe">A pure-Java rules engine powered by MVEL</text>
+
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#e0e7ff">
+    <rect x="262" y="206" width="104" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
+    <text x="314" y="227" text-anchor="middle">Java 17+</text>
+    <rect x="378" y="206" width="112" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
+    <text x="434" y="227" text-anchor="middle">MVEL rules</text>
+    <rect x="502" y="206" width="124" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
+    <text x="564" y="227" text-anchor="middle">Thread-safe</text>
+    <rect x="638" y="206" width="112" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
+    <text x="694" y="227" text-anchor="middle">GPL-3.0</text>
+  </g>
+
+  <!-- Rule card -->
+  <g transform="translate(812 58)">
+    <rect width="332" height="184" rx="14" fill="#020617" fill-opacity="0.6" stroke="#ffffff" stroke-opacity="0.15"/>
+    <circle cx="22" cy="22" r="5" fill="#f43f5e"/>
+    <circle cx="40" cy="22" r="5" fill="#fbbf24"/>
+    <circle cx="58" cy="22" r="5" fill="#34d399"/>
+    <g font-family="Cascadia Code, Consolas, Menlo, monospace" font-size="15">
+      <text x="22" y="66" fill="#94a3b8">// condition</text>
+      <text x="22" y="90" fill="#e2e8f0">claim.amount <tspan fill="#f472b6">&gt;</tspan> <tspan fill="#fbbf24">100</tspan></text>
+      <text x="22" y="128" fill="#94a3b8">// action</text>
+      <text x="22" y="152" fill="#e2e8f0">output.put(<tspan fill="#34d399">"discount"</tspan>, …)</text>
+    </g>
+  </g>
+</svg>

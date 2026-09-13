@@ -13,8 +13,8 @@ import java.util.function.Supplier;
  * <strong>STATELESS</strong> implementation, the {@link io.github.brantunger.unruly.api.RulesEngine} fires the action of a single rule. All condition fields within the
  * ruleList are evaluated in the stateless rule engine. However, only a single action is fired. During conflict
  * resolution the {@link Rule} with the highest priority value is found first. The action field of the rule found first
- * will be the only action triggered. The output object is therefore generated based on only one rule. The rule with the
- * highest priority value.
+ * will be the only action triggered. The output object is therefore shaped by only one rule: the matching rule with
+ * the highest priority value.
  *
  * <p>
  * <b>Ties:</b> if several matching rules share the highest priority, the one that appears first in the list
@@ -42,8 +42,8 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * Run all the rules through a <b>STATELESS</b> rules engine and fire the action of a single rule. All condition
      * fields within the ruleList are evaluated in the stateless rule engine. However, only a single action is fired.
      * During conflict resolution the {@link Rule} with the highest priority value is found first. The action field of
-     * the rule found first will be the only action triggered. The output object is therefore generated based on only
-     * one rule. The rule with the highest priority value.
+     * the rule found first will be the only action triggered. The output object is therefore shaped by only one rule:
+     * the matching rule with the highest priority value.
      *
      * @param facts The key/value fact store to run the rule engine against.
      * @return The object that is the result of the action getting fired against the given {@link Rule}, or
@@ -77,15 +77,7 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
-     * <pre>
-     * We can use here any resolving techniques:
-     * 1. Lex
-     * 2. Recency
-     * 3. MEA
-     * 4. Refactor
-     * 5. Priority wise
-     * Here we are using find first rule logic.
-     * </pre>
+     * Picks the rule to fire: the first matched rule, which has the highest priority because the list is sorted.
      *
      * @param ruleList The rule list to resolve the conflicts against
      * @return The {@link CompiledRule} object found first (the rule with the highest priority value)

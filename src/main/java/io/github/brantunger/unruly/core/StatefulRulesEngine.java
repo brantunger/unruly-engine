@@ -10,8 +10,8 @@ import java.util.function.Supplier;
 
 /**
  * A StatefulRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
- * <strong>STATEFUL</strong> implementation the rules engine fires all the actions of the rules when the condition
- * field of the {@link Rule} condition returns true. In the stateful rules engine, the rules are sorted by priority.
+ * <strong>STATEFUL</strong> implementation the rules engine fires the action of every {@link Rule} whose condition
+ * returns true. In the stateful rules engine, the rules are sorted by priority.
  * Matching actions fire in priority order, highest first. They share one output object, so a lower-priority action
  * can overwrite a field set by a higher-priority one.
  *
@@ -45,8 +45,8 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
-     * Run all the rules through a <b>STATEFUL</b> rules engine and fire all the actions of the rules when the condition
-     * field of the {@link Rule} condition returns true. In the stateful rules engine the rules are sorted by priority.
+     * Run all the rules through a <b>STATEFUL</b> rules engine and fire the action of every {@link Rule} whose
+     * condition returns true. In the stateful rules engine the rules are sorted by priority.
      * Matching actions fire in priority order, highest first. They share one output object, so a lower-priority
      * action can overwrite a field set by a higher-priority one.
      *

@@ -195,16 +195,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * This method adds package imports that rules are compiled with, in
-     * order to speed up the execution of rules and simplify the rule expression.
-     * You may want to use this if many of your rules require the same packages.
+     * Adds imports that rules are compiled with, so rule expressions can refer to classes by their simple names.
+     * Each string is a fully qualified package name ({@code "java.util"}) or class name
+     * ({@code "java.time.LocalDate"}).
      *
      * <p>
      * Imports are accumulated across multiple calls. This method must be called
      * <em>before</em> {@link #setRuleList(List)} for the imports to take effect.
      * </p>
      *
-     * @param packages A set of packages to import
+     * @param packages A set of packages or classes to import
      * @return A reference to this {@link RulesEngine}
      * @throws IllegalArgumentException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
@@ -230,17 +230,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * This adds a single package that rules are compiled with, in order to
-     * speed up the execution of rules and simplify the rule expression. Add the
-     * fully qualified name of the package as a string. You may want to use this if
-     * many of your rules require the same packages.
+     * Adds a single import that rules are compiled with: a fully qualified package name ({@code "java.util"}) or
+     * class name ({@code "java.time.LocalDate"}).
      *
      * <p>
      * Imports are accumulated across multiple calls. This method must be called
      * <em>before</em> {@link #setRuleList(List)} for the imports to take effect.
      * </p>
      *
-     * @param packageString The package to import. Example: "java.util"
+     * @param packageString The package or class to import. Example: "java.util"
      * @return A reference to this {@link RulesEngine}
      * @throws IllegalArgumentException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
@@ -280,14 +278,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * <p>
-     * We can use here any pattern matching algorithm:
-     * 1. Rete
-     * 2. Linear
-     * 3. Treat
-     * 4. Leaps
-     * Here we are using Linear matching algorithm for pattern matching.
-     * </p>
+     * Evaluates the rules' conditions one after another, in list order, and keeps the rules that matched.
      *
      * @param ruleList This is a list of {@link CompiledRule} objects to filter
      *                 based on when condition expression parses to
