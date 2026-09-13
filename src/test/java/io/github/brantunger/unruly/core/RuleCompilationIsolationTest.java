@@ -140,6 +140,7 @@ class RuleCompilationIsolationTest {
             engine.setRuleList(List.of(rule("a", 1, "x > 0", "output.put('a', x)")));
             AtomicBoolean stop = new AtomicBoolean();
             AtomicInteger runs = new AtomicInteger();
+            AtomicInteger reloads = new AtomicInteger();
             ConcurrentLinkedQueue<Exception> failures = new ConcurrentLinkedQueue<>();
             ExecutorService pool = Executors.newFixedThreadPool(5);
 
@@ -160,9 +161,15 @@ class RuleCompilationIsolationTest {
             pool.submit(() -> {
                 for (int i = 0; !stop.get(); i++) {
                     String v = "v" + i;
-                    engine.setRuleList(List.of(rule("a", 1, "x > 0 && String.valueOf(x).length() > 0",
-                            v + "a = x; " + v + "b = String.valueOf(" + v + "a); "
-                                    + "output.put('a', " + v + "b.concat(String.valueOf(" + v + "a)))")));
+                    try {
+                        engine.setRuleList(List.of(rule("a", 1, "x > 0 && String.valueOf(x).length() > 0",
+                                v + "a = x; " + v + "b = String.valueOf(" + v + "a); "
+                                        + "output.put('a', " + v + "b.concat(String.valueOf(" + v + "a)))")));
+                        reloads.incrementAndGet();
+                    } catch (RuntimeException e) {
+                        // Collected rather than lost in the unchecked Future, so a failing reload fails the test.
+                        failures.add(e);
+                    }
                 }
             });
             TimeUnit.SECONDS.sleep(1);
@@ -171,7 +178,8 @@ class RuleCompilationIsolationTest {
             assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
 
             assertTrue(runs.get() > 0);
-            assertTrue(failures.isEmpty(), () -> failures.size() + " runs failed, first: " + failures.peek());
+            assertTrue(reloads.get() > 0, "no reload succeeded");
+            assertTrue(failures.isEmpty(), () -> failures.size() + " runs or reloads failed, first: " + failures.peek());
         }
 
         @Test
