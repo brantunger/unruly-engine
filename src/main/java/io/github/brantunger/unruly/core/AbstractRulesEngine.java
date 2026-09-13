@@ -1,11 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import lombok.extern.slf4j.Slf4j;
-import org.mvel2.MVEL;
-import org.mvel2.ParserContext;
-import org.mvel2.util.ParseTools;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -28,8 +24,16 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 
 /**
  * The AbstractRulesEngine is an abstract implementation of the
@@ -58,10 +62,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @Deprecated(forRemoval = true)
     public static final String JIT_PROPERTY = "unruly.mvel.jit";
 
-    private static final String OUTPUT_KEYWORD = ActionVariables.OUTPUT_KEYWORD;
+    private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
     /** How much of an exception's message an error message includes; see {@link #describe}. */
     static final int MAX_DESCRIPTION_LENGTH = 1_000;
-    // Package imports from addImport(s). Rules never compile against a shared MVEL context; see compileExpression.
+    // For a thread that has no context class loader. PMD asks for the context class loader instead, which is exactly
+    // what is missing in that case.
+    @SuppressWarnings("PMD.UseProperClassLoader")
+    private static final ClassLoader LIBRARY_CLASS_LOADER = AbstractRulesEngine.class.getClassLoader();
+    // The language rules are written in.
+    private final ExpressionLanguage language = new MvelExpressionLanguage();
+    // Packages and classes from addImport(s), passed to every compilation of the next rule list.
     private final Set<String> packageImports = new LinkedHashSet<>();
     private final Set<Class<?>> classImports = new LinkedHashSet<>();
     // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
@@ -70,10 +80,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set is fully built
     // before it is assigned, so a single volatile write is enough.
     private volatile RuleSet ruleSet;
-    // Checks fact names against the imports the current rules were compiled with. Replaced alongside
-    // ruleSet; a run racing a reload may use the other list's imports, which only changes whether an
-    // imported class name is accepted.
-    private volatile FactNames factNames = new FactNames(Imports.NONE);
+    // Checks fact names against the imports the current rules were compiled with: the current rule list's compiler,
+    // or one with no imports before the first. Replaced alongside ruleSet; a run racing a reload may use the other
+    // list's imports, which only changes whether an imported class name is accepted.
+    private volatile ExpressionCompiler factNames = language.newCompiler(
+            new EngineCompileContext(Set.of(), Set.of(), LIBRARY_CLASS_LOADER));
 
     /**
      * Returns an unmodifiable view of the compiled rules list.
@@ -188,16 +199,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw compilationFailure("Duplicate rule name '" + rule.getRuleName() + "'");
             }
         }
-        Imports imports = new Imports(Set.copyOf(packageImports), Set.copyOf(classImports),
-                Imports.contextClassLoader());
+        CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
+                contextClassLoader());
+        ExpressionCompiler compiler = language.newCompiler(context);
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
                         Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                .map(rule -> compileRule(rule, imports))
+                .map(rule -> compileRule(rule, compiler))
                 .collect(Collectors.toCollection(ArrayList::new));
-        this.factNames = new FactNames(imports);
-        this.ruleSet = new RuleSet(compiled, rule -> recompile(rule, imports));
+        this.factNames = compiler;
+        this.ruleSet = new RuleSet(compiled, AbstractRulesEngine::copy);
     }
 
     /**
@@ -277,7 +289,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new IllegalArgumentException(msg);
             }
             try {
-                factNames.check(entry.getKey());
+                factNames.checkFactName(entry.getKey());
             } catch (IllegalArgumentException e) {
                 log.error(e.getMessage());
                 throw e;
@@ -362,7 +374,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, conditionFacts);
+            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(conditionFacts));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
                     + describe(e), e);
@@ -389,10 +401,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
-        // Reads the shared facts; the output object and the action's own assignments stay in this action.
-        Map<String, Object> input = new ActionVariables(entryMap, outputResult);
+        // A read-only view: an action changes the output object, never the facts other rules see.
+        ActionContext context = new EngineActionContext(Collections.unmodifiableMap(entryMap), outputResult);
         try {
-            MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
+            rule.compiledAction().execute(context);
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to execute action for rule '" + rule.displayName() + "': "
                     + describe(e), e);
@@ -619,7 +631,20 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return new RuleCompilationException(msg);
     }
 
-    private CompiledRule compileRule(Rule rule, Imports imports) {
+    /**
+     * Logs an expression the language rejected at ERROR, and returns the exception for the caller to throw, caused by
+     * the language's rejection.
+     *
+     * @param msg   What is wrong with the expression, naming the rule
+     * @param cause The language's rejection
+     * @return The exception to throw
+     */
+    private static RuleCompilationException compilationFailure(String msg, InvalidExpressionException cause) {
+        log.error(msg);
+        return new RuleCompilationException(msg, cause);
+    }
+
+    private CompiledRule compileRule(Rule rule, ExpressionCompiler compiler) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
             throw compilationFailure("Rule '" + ruleName + "' has a null or blank condition expression");
@@ -627,32 +652,37 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (rule.getAction() == null || rule.getAction().isBlank()) {
             throw compilationFailure("Rule '" + ruleName + "' has a null or blank action expression");
         }
-        // ReadOnlyFacts only stops writes to a bare variable at run time. A property write such as
-        // `claim.approved = true` goes through the fact's own setter, so assignments are rejected here instead.
-        ConditionAssignments.Write write = ConditionAssignments.find(rule.getCondition());
-        String condition = "Condition for rule '" + ruleName + "'";
-        if (write != null && write.isStaticImport()) {
-            throw compilationFailure(condition + " uses import_static (at position " + write.position()
-                    + "), which declares the method as a variable, and conditions can't declare variables. Call the "
-                    + "method through its class instead, such as Math.max(a, b).");
-        }
-        if (write != null) {
-            throw compilationFailure(condition + " contains an assignment (" + write
-                    + "). Conditions can't change facts or declare variables; use == to compare.");
-        }
+        CompiledCondition compiledCondition = compile(ruleName, "Condition",
+                () -> compiler.compileCondition(rule.getCondition()));
+        CompiledAction compiledAction = compile(ruleName, "Action", () -> compiler.compileAction(rule.getAction()));
+        // Rule is mutable and owned by the caller. Keeping their instance would let a later edit change what
+        // listeners and error messages report while the compiled expressions kept running the old rule.
+        Rule snapshot = Rule.builder()
+                .ruleName(rule.getRuleName())
+                .condition(rule.getCondition())
+                .action(rule.getAction())
+                .priority(rule.getPriority())
+                .description(rule.getDescription())
+                .build();
+        return new CompiledRule(snapshot, ruleName, compiledCondition, compiledAction);
+    }
+
+    /**
+     * Compiles one condition or action. An expression the language rejects is reported with the language's reason;
+     * anything else the language throws, such as a syntax error, becomes the cause of the failure.
+     *
+     * @param ruleName    The rule's name for messages
+     * @param expression  {@code Condition} or {@code Action}, for messages
+     * @param compilation Compiles the expression
+     * @param <T>         The type of compiled expression
+     * @return The compiled expression
+     * @throws RuleCompilationException if the expression doesn't compile
+     */
+    private static <T> T compile(String ruleName, String expression, Supplier<T> compilation) {
         try {
-            Serializable compiledCondition = compileExpression(rule.getCondition(), imports);
-            Serializable compiledAction = compileExpression(rule.getAction(), imports);
-            // Rule is mutable and owned by the caller. Keeping their instance would let a later edit change what
-            // listeners and error messages report while the compiled expressions kept running the old rule.
-            Rule snapshot = Rule.builder()
-                    .ruleName(rule.getRuleName())
-                    .condition(rule.getCondition())
-                    .action(rule.getAction())
-                    .priority(rule.getPriority())
-                    .description(rule.getDescription())
-                    .build();
-            return new CompiledRule(snapshot, ruleName, compiledCondition, compiledAction);
+            return compilation.get();
+        } catch (InvalidExpressionException e) {
+            throw compilationFailure(expression + " for rule '" + ruleName + "' " + e.getMessage(), e);
         } catch (Exception e) {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
             String reason = rootCause(e) instanceof StackOverflowError
@@ -665,36 +695,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Compiles another copy of a rule for a concurrent run. The rule already compiled with these imports in
-     * {@code setRuleList()}, so its checks and MVEL's analysis pass aren't repeated.
+     * Copies a rule for a concurrent run; see {@link RuleSet}. Each expression decides whether a copy needs compiling.
      */
-    private static CompiledRule recompile(CompiledRule rule, Imports imports) {
-        return new CompiledRule(rule.rule(), rule.displayName(),
-                MVEL.compileExpression(rule.rule().getCondition(), newParserContext(imports)),
-                MVEL.compileExpression(rule.rule().getAction(), newParserContext(imports)));
-    }
-
-    private static Serializable compileExpression(String expression, Imports imports) {
-        // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
-        // run(). The analysis pass catches more of it up front.
-        MVEL.analysisCompile(expression, newParserContext(imports));
-        return MVEL.compileExpression(expression, newParserContext(imports));
+    private static CompiledRule copy(CompiledRule rule) {
+        return new CompiledRule(rule.rule(), rule.displayName(), rule.compiledCondition().copy(),
+                rule.compiledAction().copy());
     }
 
     /**
-     * Creates a context used by exactly one compilation. MVEL records variables, their types and inline
-     * {@code import} statements on the context and its configuration, and a compiled expression goes on using
-     * its context when it first runs. A context shared across rules let one rule change how another compiled,
-     * and let {@link #setRuleList(List)} modify it while a concurrent {@code run()} was still reading it. Only the
-     * names found not to be classes are shared with the other compilations of the rule list; see
-     * {@link Imports#newConfiguration()}.
-     */
-    private static ParserContext newParserContext(Imports imports) {
-        return new ParserContext(imports.newConfiguration());
-    }
-
-    /**
-     * Works out what an import string names. A class MVEL can load is imported on its own, so
+     * Works out what an import string names. A class the context class loader can load is imported on its own, so
      * {@code addImport("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
      * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
      * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}.
@@ -705,7 +714,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private static Class<?> resolveImport(String name) {
         try {
-            return ParseTools.forNameWithInner(name, Imports.contextClassLoader());
+            return loadImport(name, contextClassLoader());
         } catch (ClassNotFoundException | LinkageError e) {
             if (!isPackageName(name)) {
                 throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", e);
@@ -714,9 +723,64 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
+    /**
+     * Loads an imported class as MVEL looks one up: by its name, then with each dot from the right replaced by
+     * {@code $} in turn, so {@code java.util.Map.Entry} finds {@code java.util.Map$Entry}. The class isn't
+     * initialized.
+     *
+     * @throws ClassNotFoundException the first lookup's exception, if no form of the name is a class
+     */
+    private static Class<?> loadImport(String name, ClassLoader loader) throws ClassNotFoundException {
+        try {
+            return loader.loadClass(name);
+        } catch (ClassNotFoundException notFound) {
+            String binaryName = name;
+            for (int dot = name.lastIndexOf('.'); dot > 0; dot = binaryName.lastIndexOf('.')) {
+                binaryName = binaryName.substring(0, dot) + '$' + binaryName.substring(dot + 1);
+                Class<?> nested = loadOrNull(binaryName, loader);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+            throw notFound;
+        }
+    }
+
+    private static Class<?> loadOrNull(String name, ClassLoader loader) {
+        try {
+            return loader.loadClass(name);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Returns the class loader to look up imported classes with: the calling thread's context class loader, or this
+     * library's own loader when the thread has none. Left to itself, MVEL takes the context class loader of whichever
+     * thread first needs one, so a lookup made from another thread could see different classes.
+     *
+     * @return The class loader for imports set up on this thread
+     */
+    private static ClassLoader contextClassLoader() {
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        return loader != null ? loader : LIBRARY_CLASS_LOADER;
+    }
+
     private static boolean isPackageName(String name) {
         for (String part : name.split("\\.", -1)) {
-            if (!FactNames.isIdentifier(part)) {
+            if (!isIdentifier(part)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isIdentifier(String name) {
+        if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
+            return false;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            if (!Character.isJavaIdentifierPart(name.charAt(i))) {
                 return false;
             }
         }

@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
 import org.mvel2.compiler.AbstractParser;
 
