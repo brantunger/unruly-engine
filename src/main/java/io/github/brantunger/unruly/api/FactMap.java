@@ -45,9 +45,10 @@ public class FactMap<T> implements FactStore<T> {
      * value through {@link #setValue} affects only this map. Calling {@code setValue} on a shared
      * {@code FactReference} directly changes it everywhere it is held.
      *
-     * @param facts The fact map to construct the facts from
+     * @param facts The fact map to construct the facts from. Its values may be any {@link FactReference}
+     *              implementation, such as a {@code Map<String, Fact<T>>}.
      */
-    public FactMap(Map<String, FactReference<T>> facts) {
+    public FactMap(Map<String, ? extends FactReference<T>> facts) {
         facts.forEach(FactMap::checkEntry);
         this.facts = new HashMap<>(facts);
     }
