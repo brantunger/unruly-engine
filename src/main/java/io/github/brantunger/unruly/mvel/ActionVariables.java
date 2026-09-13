@@ -1,4 +1,6 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
+
+import io.github.brantunger.unruly.api.language.ActionContext;
 
 import java.util.AbstractMap;
 import java.util.Collections;
@@ -20,7 +22,7 @@ import java.util.Set;
 final class ActionVariables extends AbstractMap<String, Object> {
 
     /** The name actions use for the output object. */
-    static final String OUTPUT_KEYWORD = "output";
+    static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
 
     private final Map<String, Object> facts;
     private final Map<String, Object> locals = new HashMap<>();

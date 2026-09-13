@@ -13,8 +13,8 @@ import java.util.Set;
  * which a plain {@link Collections#unmodifiableMap(Map)} would not.
  *
  * <p>
- * {@code setRuleList()} already rejects conditions whose text contains an assignment (see
- * {@link ConditionAssignments}). This view is the run-time backstop for any write that check doesn't recognize.
+ * {@code setRuleList()} already rejects conditions whose text contains an assignment (the MVEL language
+ * scans the condition's text for them). This view is the run-time backstop for any write that check doesn't recognize.
  * It only covers the variables themselves: a write to a fact's property goes through the fact object.
  * </p>
  */

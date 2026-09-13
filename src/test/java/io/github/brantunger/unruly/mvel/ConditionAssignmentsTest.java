@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

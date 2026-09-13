@@ -17,7 +17,7 @@ import java.util.function.Supplier;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("fact names are checked against imported classes with the rule list's class loader")
-class FactNameClassLookupTest {
+public class FactNameClassLookupTest {
 
     private static final String CORE_PACKAGE = "io.github.brantunger.unruly.core";
 
@@ -66,12 +66,12 @@ class FactNameClassLookupTest {
     }
 
     /** Records the classes it is asked to load. */
-    static final class RecordingClassLoader extends ClassLoader {
+    public static final class RecordingClassLoader extends ClassLoader {
 
-        final List<String> loadedClasses = new CopyOnWriteArrayList<>();
-        final List<String> resources = new CopyOnWriteArrayList<>();
+        public final List<String> loadedClasses = new CopyOnWriteArrayList<>();
+        public final List<String> resources = new CopyOnWriteArrayList<>();
 
-        RecordingClassLoader() {
+        public RecordingClassLoader() {
             super(RecordingClassLoader.class.getClassLoader());
         }
 
@@ -112,7 +112,7 @@ class FactNameClassLookupTest {
         engine.addImport(CORE_PACKAGE);
         engine.setRuleList(List.of(rule("true")));
 
-        Object result = runOnThread(classPathHidden(), engine, fact("Imports", 1));
+        Object result = runOnThread(classPathHidden(), engine, fact("RuleSet", 1));
 
         assertInstanceOf(IllegalArgumentException.class, result);
     }
@@ -123,11 +123,11 @@ class FactNameClassLookupTest {
         StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
         withContextClassLoader(classPathHidden(), () -> {
             engine.addImport(CORE_PACKAGE);
-            engine.setRuleList(List.of(rule("Imports == 1")));
+            engine.setRuleList(List.of(rule("RuleSet == 1")));
             return null;
         });
 
-        Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine, fact("Imports", 1));
+        Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine, fact("RuleSet", 1));
 
         assertEquals(Map.of("hit", true), result);
     }

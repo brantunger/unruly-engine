@@ -1,9 +1,9 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
 import java.util.Set;
 
 /**
- * Finds assignments in a condition's source text, so {@link AbstractRulesEngine#setRuleList(java.util.List)} can
+ * Finds assignments in a condition's source text, so {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} can
  * reject them before the rule ever runs.
  *
  * <p>

@@ -9,7 +9,7 @@
  *   <li>{@link io.github.brantunger.unruly.core.StatelessRulesEngine} — Fires only the highest-priority matching rule</li>
  * </ul>
  *
- * <p>Rules are compiled from MVEL expressions at configuration time via
+ * <p>Rules are compiled at configuration time, by MVEL unless another expression language is used, via
  * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}
  * and evaluated against a {@link io.github.brantunger.unruly.api.FactStore} at runtime.</p>
  */
