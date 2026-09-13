@@ -112,6 +112,8 @@ test {
     }
     systemProperties = [
             'junit.jupiter.extensions.autodetection.enabled': 'true',
+            // LoggingRuleListener logs at DEBUG; enabled so its messages can be asserted.
+            'org.slf4j.simpleLogger.log.io.github.brantunger.unruly.api.LoggingRuleListener': 'debug',
     ]
     jacoco {
         destinationFile = layout.buildDirectory.file('jacoco/test.exec').get().asFile
