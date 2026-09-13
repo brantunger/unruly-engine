@@ -138,13 +138,16 @@ The `publish` job copies the Javadoc it built to the `gh-pages` branch, which Gi
 Pages serves the `gh-pages` branch from its root (**Settings → Pages**). The branch was seeded with the Javadoc of
 1.0.4 through 1.1.25, unpacked from their `-javadoc.jar` files on Maven Central.
 
-If the publish step failed, rebuild that version's directory the same way. For a version that isn't the newest
-release, leave `pages/latest` alone:
+If the publish step failed, rebuild that version's directory from its `-javadoc.jar`. The GitHub Release has the
+jar as soon as the job attaches it; `repo1` has it only after the 30–60 minute sync. For a version that isn't the
+newest release, leave `pages/latest` alone:
 
 ```bash
 VERSION=<version>
 git clone --depth 1 --branch gh-pages https://github.com/brantunger/unruly-engine.git pages
-curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION-javadoc.jar"
+gh release download "v$VERSION" --repo brantunger/unruly-engine --pattern '*-javadoc.jar'
+# or, if the jars never reached the GitHub Release:
+# curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION-javadoc.jar"
 rm -rf "pages/$VERSION" pages/latest
 unzip -q "unruly-engine-$VERSION-javadoc.jar" -d "pages/$VERSION" -x 'META-INF/*'
 cp -r "pages/$VERSION" pages/latest
