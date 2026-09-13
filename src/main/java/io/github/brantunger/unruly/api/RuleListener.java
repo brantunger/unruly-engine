@@ -16,7 +16,8 @@ import java.util.Map;
  * thread calling {@code run()}, possibly at the same time, so implementations must be
  * thread-safe. Listeners may be registered at any time, including from inside a callback.
  * A listener registered while a run is in progress may start receiving callbacks partway
- * through that run.
+ * through that run, but always with a {@code before*} callback, never with the {@code after*} or
+ * {@code onError} that closes one.
  * </p>
  *
  * <p>
