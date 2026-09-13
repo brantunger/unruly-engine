@@ -70,6 +70,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Volatile so a setRuleList() call on one thread is seen by run() on others. The list is fully built
     // before it is assigned and never modified afterwards, so a single volatile write is enough.
     private volatile List<CompiledRule> compiledRules;
+    // Checks fact names against the imports the current rules were compiled with. Replaced alongside
+    // compiledRules; a run racing a reload may use the other list's imports, which only changes whether an
+    // imported class name is accepted.
+    private volatile FactNames factNames = new FactNames(Set.of());
 
     /**
      * Selects MVEL's reflective optimizer unless the JIT has been opted into. A separate method so both
@@ -175,12 +179,14 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
         }
         Set<String> imports = Set.copyOf(packageImports);
-        this.compiledRules = ruleList.stream()
+        List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
                         Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
                 .map(rule -> compileRule(rule, imports))
                 .collect(Collectors.toCollection(ArrayList::new));
+        this.factNames = new FactNames(imports);
+        this.compiledRules = compiled;
     }
 
     /**
@@ -234,7 +240,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param facts The key/value fact store
      * @return A map of variable names to their values
      * @throws IllegalArgumentException if a fact is named {@code output}, which actions reserve
-     *                                  for the output object
+     *                                  for the output object, or has a name rules can't refer to: one that
+     *                                  isn't a Java identifier, a reserved MVEL word, or a class name MVEL
+     *                                  resolves instead of the fact
      */
     protected Map<String, Object> unwrapFacts(FactStore<Object> facts) {
         Map<String, Object> entryMap = new HashMap<>();
@@ -244,6 +252,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new IllegalArgumentException("'" + OUTPUT_KEYWORD
                         + "' is reserved for the output object and cannot be used as a fact name");
             }
+            factNames.check(entry.getKey());
             if (entry.getValue() != null) {
                 entryMap.put(entry.getKey(), entry.getValue().getValue());
             }
