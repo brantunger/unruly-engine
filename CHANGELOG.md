@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.22](https://github.com/brantunger/unruly-engine/compare/v1.1.21...v1.1.22) (2026-09-13)
+
+
+### Bug Fixes
+
+* let every listener close its callback when one throws a fatal Error ([#156](https://github.com/brantunger/unruly-engine/issues/156)) ([0c0ae93](https://github.com/brantunger/unruly-engine/commit/0c0ae932a9554939db2e9649c1daa025bb43aa82))
+
 ## [1.1.21](https://github.com/brantunger/unruly-engine/compare/v1.1.20...v1.1.21) (2026-09-13)
 
 
