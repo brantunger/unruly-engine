@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.mvel2.MVEL;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
-import org.mvel2.optimizers.OptimizerFactory;
 import org.mvel2.util.ParseTools;
 
 import java.io.Serializable;
@@ -38,12 +37,10 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
  * evaluate to <strong>true</strong>.
  *
  * <p>
- * <b>MVEL optimizer:</b> loading this class switches MVEL's default accessor optimizer to
- * {@link OptimizerFactory#SAFE_REFLECTIVE} for the whole JVM. MVEL selects the optimizer from a
- * single global setting, so it cannot be scoped to this engine. Set the system property
- * {@value #JIT_PROPERTY}{@code =true} to leave MVEL's setting untouched. With either optimizer,
- * concurrent {@code run()} calls never share a compiled expression: MVEL replaces the accessors
- * cached in one without synchronization when a fact's runtime class changes.
+ * <b>MVEL optimizer:</b> the engine leaves MVEL's global optimizer setting alone. Concurrent
+ * {@code run()} calls never share a compiled expression, because MVEL replaces the accessors cached
+ * in one without synchronization when a fact's runtime class changes, so they are safe with any
+ * optimizer, including MVEL's default JIT optimizer.
  * </p>
  *
  * @param <O> The output object to instantiate
@@ -52,14 +49,13 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
-     * System property that, when {@code true}, keeps MVEL's JIT optimizer instead of switching to
-     * the reflective one.
+     * System property that, when {@code true}, kept MVEL's JIT optimizer instead of switching the whole JVM to the
+     * reflective one.
+     *
+     * @deprecated The engine no longer changes MVEL's optimizer, so this property is ignored.
      */
+    @Deprecated(forRemoval = true)
     public static final String JIT_PROPERTY = "unruly.mvel.jit";
-
-    static {
-        configureMvel(System.getProperty(JIT_PROPERTY));
-    }
 
     private static final String OUTPUT_KEYWORD = "output";
     // Package imports from addImport(s). Rules never compile against a shared MVEL context; see compileExpression.
@@ -75,18 +71,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // ruleSet; a run racing a reload may use the other list's imports, which only changes whether an
     // imported class name is accepted.
     private volatile FactNames factNames = new FactNames(Imports.NONE);
-
-    /**
-     * Selects MVEL's reflective optimizer unless the JIT has been opted into. A separate method so both
-     * outcomes can be tested; the static initializer only ever sees one value of the property.
-     *
-     * @param jitProperty The value of {@value #JIT_PROPERTY}, or {@code null} if unset
-     */
-    static void configureMvel(String jitProperty) {
-        if (!Boolean.parseBoolean(jitProperty)) {
-            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.SAFE_REFLECTIVE);
-        }
-    }
 
     /**
      * Returns an unmodifiable view of the compiled rules list.

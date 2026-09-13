@@ -8,7 +8,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.optimizers.OptimizerFactory;
 import org.mvel2.optimizers.dynamic.DynamicOptimizer;
-import org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 // Public, as are the fact classes: MVEL's reflective accessors need to reach their getters.
-@DisplayName("MVEL optimizer configuration")
+@DisplayName("MVEL optimizer and concurrent runs")
 public class MvelOptimizerTest {
 
     public static class ClaimA {
@@ -38,31 +37,14 @@ public class MvelOptimizerTest {
     }
 
     @Test
-    @DisplayName("the engine selects MVEL's reflective optimizer when loaded")
-    void reflectiveOptimizerIsDefault() {
-        new StatelessRulesEngine<>(HashMap::new);
+    @DisplayName("loading and running the engine leaves MVEL's global optimizer setting alone")
+    void mvelOptimizerUntouched() {
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
+        engine.run(new FactMap<>());
 
-        assertInstanceOf(ReflectiveAccessorOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
-    }
-
-    @Test
-    @DisplayName("opting in to the JIT leaves MVEL's own setting untouched")
-    void jitOptInLeavesMvelUntouched() {
-        try {
-            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.DYNAMIC);
-
-            AbstractRulesEngine.configureMvel("true");
-            assertInstanceOf(DynamicOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
-
-            AbstractRulesEngine.configureMvel("false");
-            assertInstanceOf(ReflectiveAccessorOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
-
-            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.DYNAMIC);
-            AbstractRulesEngine.configureMvel(null);
-            assertInstanceOf(ReflectiveAccessorOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
-        } finally {
-            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.SAFE_REFLECTIVE);
-        }
+        // MVEL's own default: the JIT, as the build doesn't set mvel2.disable.jit.
+        assertInstanceOf(DynamicOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
     }
 
     /**
