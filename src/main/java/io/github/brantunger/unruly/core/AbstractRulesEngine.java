@@ -328,7 +328,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
         Map<String, Object> readOnlyFacts = new ReadOnlyFacts(entryMap);
-        notifyListeners("beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), readOnlyFacts));
+        notifyListeners("beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), readOnlyFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing.
@@ -352,13 +352,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
-        notifyListeners("afterEvaluate", listener -> listener.afterEvaluate(rule.rule(), readOnlyFacts, result));
+        notifyListeners("afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), readOnlyFacts, result));
 
         return result;
     }
 
     private O parseAction(CompiledRule rule, O outputResult, Map<String, Object> entryMap) {
-        notifyListeners("beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
+        notifyListeners("beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
         // Create a copy so we don't mutate the shared fact map with the output keyword
         Map<String, Object> input = new ActionVariables(entryMap, outputResult);
@@ -369,7 +369,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + describe(e), e);
         }
 
-        notifyListeners("afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
+        notifyListeners("afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
 
         return outputResult;
     }
@@ -399,6 +399,19 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Copies a rule for one listener callback. Every callback gets its own copy, so a listener that calls a
+     * setter can't change what the engine, other listeners, later callbacks or other threads see.
+     *
+     * @param rule The compiled rule being evaluated or executed
+     * @return A new {@link Rule} with the same field values
+     */
+    private static Rule listenerCopy(CompiledRule rule) {
+        Rule source = rule.rule();
+        return new Rule(source.getRuleName(), source.getCondition(), source.getAction(), source.getPriority(),
+                source.getDescription());
+    }
+
+    /**
      * Calls every listener, logging what a listener throws so a faulty listener can't interrupt a run.
      * A fatal {@link Error} is the exception: it propagates (see {@link #rethrowIfFatal}).
      */
@@ -423,7 +436,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         RuleExecutionException error = cause == null
                 ? new RuleExecutionException(msg)
                 : new RuleExecutionException(msg, cause);
-        notifyListeners("onError", listener -> listener.onError(rule.rule(), error));
+        notifyListeners("onError", listener -> listener.onError(listenerCopy(rule), error));
         rethrowIfFatal(cause);
         return error;
     }
