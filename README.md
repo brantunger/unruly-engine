@@ -39,7 +39,7 @@ The Unruly Engine has two rules engine implementations.
 
 ### Stateful Rules Engine
 
-In the **stateful** implementation, the rules engine fires all the actions of the rules when the condition field of the Rule returns true. In the stateful rules engine the rules are sorted by priority. The highest priority wins. The output object saves state in between each rule, so rules with lower priority may override the fields in the output object.
+In the **stateful** implementation, the rules engine fires all the actions of the rules when the condition field of the Rule returns true. In the stateful rules engine the rules are sorted by priority. Matching actions fire in priority order, highest first. They share one output object, so a lower-priority action can overwrite a field set by a higher-priority one.
 
 The stateful engine **evaluates every condition first, then fires the matched actions** in priority order. An action never causes another rule's condition to be re-checked. If a high-priority action sets `claim.status = "DENIED"`, a lower-priority rule whose condition `claim.status == "PENDING"` was already true still fires.
 
