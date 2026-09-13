@@ -29,7 +29,8 @@ class ReadOnlyFactsTest {
     void putThrows() {
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> facts.put("status", "APPROVED"));
-        assertTrue(ex.getMessage().contains("'status'"));
+        assertEquals("Cannot assign or declare 'status' in a condition: conditions can't change facts or create "
+                + "variables. Use == to compare, and move variables and functions into the action.", ex.getMessage());
         assertEquals("DENIED", backing.get("status"));
     }
 
