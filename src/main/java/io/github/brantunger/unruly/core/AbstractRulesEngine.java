@@ -315,7 +315,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param outputObject an empty output object to set output data into
      * @param entryMap     The pre-built map of unwrapped facts to use as execution context.
      * @return {@code outputObject}, which the action changes in place. An action can't replace it:
-     *         assigning to {@code output} fails with a {@link RuleExecutionException}.
+     *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
+     *         {@code def} function, where it creates a variable local to the function.
      */
     protected O executeRule(CompiledRule rule, O outputObject, Map<String, Object> entryMap) {
         return parseAction(rule, outputObject, entryMap);

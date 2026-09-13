@@ -47,6 +47,7 @@ public class FactMap<T> implements FactStore<T> {
      *
      * @param facts The fact map to construct the facts from. Its values may be any {@link FactReference}
      *              implementation, such as a {@code Map<String, Fact<T>>}.
+     * @throws IllegalArgumentException if a key is {@code null} or differs from its fact's name
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     public FactMap(Map<String, ? extends FactReference<T>> facts) {
@@ -109,6 +110,7 @@ public class FactMap<T> implements FactStore<T> {
      *
      * @param name The name of the fact
      * @param obj  The new value
+     * @throws IllegalArgumentException if {@code name} is {@code null}
      */
     @Override
     public void setValue(String name, T obj) {
@@ -116,6 +118,14 @@ public class FactMap<T> implements FactStore<T> {
         facts.put(name, new Fact<>(name, obj));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @param fact {@inheritDoc}
+     * @return {@inheritDoc}
+     * @throws IllegalArgumentException if the fact's name is {@code null}
+     * @throws NullPointerException if {@code fact} is {@code null}
+     */
     @Override
     public FactReference<T> put(FactReference<T> fact) {
         Objects.requireNonNull(fact, "fact must not be null");

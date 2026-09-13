@@ -102,10 +102,11 @@ Rules see a fact by its map key, so renaming a `Fact` after adding it doesn't ch
 | A fact whose value is `null` | The variable is `null`, so `coapplicant == null` is `true` |
 | No fact with that name in the store | Referring to it throws `unresolvable property or identifier` |
 
-To check whether a fact was supplied at all, use `isdef`:
+To check whether a fact was supplied at all, use `isdef`. It is also `true` for a fact whose value is `null`, so
+check for `null` too before reading a property:
 
 ```java
-.condition("isdef coapplicant && coapplicant.creditScore >= 700")
+.condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
 ```
 
 ## 🔣 Generics
