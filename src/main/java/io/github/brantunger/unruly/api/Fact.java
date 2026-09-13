@@ -42,11 +42,12 @@ public class Fact<T> implements FactReference<T> {
     }
 
     /**
-     * Instantiate a Fact from another Fact object.
+     * Instantiate a Fact from another Fact object. The source may hold a narrower type, so a
+     * {@code Fact<String>} can be copied into a {@code Fact<Object>}.
      *
      * @param fact The existing Fact object to get the value and name from
      */
-    public Fact(FactReference<T> fact) {
+    public Fact(FactReference<? extends T> fact) {
         Objects.requireNonNull(fact, "fact must not be null");
         this.name = fact.getName();
         this.value = fact.getValue();
