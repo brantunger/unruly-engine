@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import lombok.extern.slf4j.Slf4j;
 import org.mvel2.MVEL;
-import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
 import org.mvel2.util.ParseTools;
 
@@ -560,12 +559,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Creates a context used by exactly one compilation. MVEL records variables, their types and inline
      * {@code import} statements on the context and its configuration, and a compiled expression goes on using
      * its context when it first runs. A context shared across rules let one rule change how another compiled,
-     * and let {@link #setRuleList(List)} modify it while a concurrent {@code run()} was still reading it.
+     * and let {@link #setRuleList(List)} modify it while a concurrent {@code run()} was still reading it. Only the
+     * names found not to be classes are shared with the other compilations of the rule list; see
+     * {@link Imports#newConfiguration()}.
      */
     private static ParserContext newParserContext(Imports imports) {
-        ParserConfiguration configuration = new ParserConfiguration();
-        imports.applyTo(configuration);
-        return new ParserContext(configuration);
+        return new ParserContext(imports.newConfiguration());
     }
 
     /**
