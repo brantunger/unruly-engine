@@ -127,7 +127,7 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 | Logger | Level | Messages |
 | --- | --- | --- |
-| `io.github.brantunger.unruly.core.AbstractRulesEngine` | `ERROR` | Every compile failure, rule failure and output-supplier failure, logged just before the exception is thrown |
+| `io.github.brantunger.unruly.core.AbstractRulesEngine` | `ERROR` | Every rule list `setRuleList()` rejects, fact `run()` rejects, rule failure and output-supplier failure, logged just before the exception is thrown. Misuse isn't logged: a `null` argument, `run()` before `setRuleList()`, or an invalid `addImport()` string. |
 | `io.github.brantunger.unruly.core.AbstractRulesEngine` | `WARN` | A listener threw an exception |
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Lifecycle events, if you registered the listener |
 

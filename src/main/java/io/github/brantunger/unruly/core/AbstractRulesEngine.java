@@ -177,11 +177,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         for (int i = 0; i < ruleList.size(); i++) {
             Rule rule = ruleList.get(i);
             if (rule == null) {
-                throw new RuleCompilationException("Rule at index " + i + " of the rule list is null");
+                throw compilationFailure("Rule at index " + i + " of the rule list is null");
             }
             // Duplicate names would make error messages and listener logs ambiguous. Unnamed rules are allowed.
             if (rule.getRuleName() != null && !ruleNames.add(rule.getRuleName())) {
-                throw new RuleCompilationException("Duplicate rule name '" + rule.getRuleName() + "'");
+                throw compilationFailure("Duplicate rule name '" + rule.getRuleName() + "'");
             }
         }
         Imports imports = new Imports(Set.copyOf(packageImports), Set.copyOf(classImports),
@@ -267,10 +267,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
             // Actions bind the output object to this name, silently hiding a fact of the same name.
             if (OUTPUT_KEYWORD.equals(entry.getKey())) {
-                throw new IllegalArgumentException("'" + OUTPUT_KEYWORD
-                        + "' is reserved for the output object and cannot be used as a fact name");
+                String msg = "'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as a "
+                        + "fact name";
+                log.error(msg);
+                throw new IllegalArgumentException(msg);
             }
-            factNames.check(entry.getKey());
+            try {
+                factNames.check(entry.getKey());
+            } catch (IllegalArgumentException e) {
+                log.error(e.getMessage());
+                throw e;
+            }
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
             // unresolvable, so `x == null` failed instead of matching.
             FactReference<Object> fact = entry.getValue();
@@ -495,27 +502,37 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return e.getMessage() != null ? e.getMessage() : e.getClass().getName();
     }
 
+    /**
+     * Logs a rejected rule list at ERROR, as the engine logs every failure it throws, and returns the exception for
+     * the caller to throw.
+     *
+     * @param msg What is wrong with the rule list
+     * @return The exception to throw
+     */
+    private static RuleCompilationException compilationFailure(String msg) {
+        log.error(msg);
+        return new RuleCompilationException(msg);
+    }
+
     private CompiledRule compileRule(Rule rule, Imports imports) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
-            throw new RuleCompilationException(
-                    "Rule '" + ruleName + "' has a null or blank condition expression");
+            throw compilationFailure("Rule '" + ruleName + "' has a null or blank condition expression");
         }
         if (rule.getAction() == null || rule.getAction().isBlank()) {
-            throw new RuleCompilationException(
-                    "Rule '" + ruleName + "' has a null or blank action expression");
+            throw compilationFailure("Rule '" + ruleName + "' has a null or blank action expression");
         }
         // ReadOnlyFacts only stops writes to a bare variable at run time. A property write such as
         // `claim.approved = true` goes through the fact's own setter, so assignments are rejected here instead.
         ConditionAssignments.Write write = ConditionAssignments.find(rule.getCondition());
         String condition = "Condition for rule '" + ruleName + "'";
         if (write != null && write.isStaticImport()) {
-            throw new RuleCompilationException(condition + " uses import_static (at position " + write.position()
+            throw compilationFailure(condition + " uses import_static (at position " + write.position()
                     + "), which declares the method as a variable, and conditions can't declare variables. Call the "
                     + "method through its class instead, such as Math.max(a, b).");
         }
         if (write != null) {
-            throw new RuleCompilationException(condition + " contains an assignment (" + write
+            throw compilationFailure(condition + " contains an assignment (" + write
                     + "). Conditions can't change facts or declare variables; use == to compare.");
         }
         try {
