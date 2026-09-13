@@ -107,7 +107,7 @@ The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` 
 
 - The **README** is the landing page: features, installation, quick start and core concepts.
 - The **guides** in [`docs/`](docs/README.md) hold the details.
-- The **Javadoc** in `src/main/java` is published to [javadoc.io](https://javadoc.io/doc/io.github.brantunger/unruly-engine).
+- The **Javadoc** in `src/main/java` is published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release.
   `./gradlew clean build` doesn't generate it, so run `./gradlew javadoc` after changing it and fix any errors.
 
 When writing docs:

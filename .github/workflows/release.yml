@@ -87,6 +87,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" build/libs/*.jar --clobber
 
+      # The gh-pages branch keeps one directory per release plus `latest`, served by GitHub
+      # Pages. The Central step above already ran `javadoc`, so this only copies its output.
+      - name: Publish Javadoc to GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          : "${VERSION:?release-please reported no version}"
+          git clone --quiet --depth 1 --branch gh-pages "https://github.com/${GITHUB_REPOSITORY}.git" pages
+          rm -rf "pages/${VERSION}" pages/latest
+          cp -r build/docs/javadoc "pages/${VERSION}"
+          cp -r build/docs/javadoc pages/latest
+          git -C pages add --all
+          git -C pages -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet -m "docs: Javadoc ${VERSION}"
+          git -C pages push --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
+
       # No repo1 sync poll here: propagation takes 30-60 minutes, and waiting inside this
       # run would hold the `release` concurrency group that long. RELEASING.md shows how
       # to confirm the sync by hand.
