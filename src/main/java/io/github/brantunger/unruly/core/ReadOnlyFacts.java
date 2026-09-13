@@ -41,9 +41,15 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
         return Collections.unmodifiableMap(facts).entrySet();
     }
 
+    /**
+     * Rejects a write. By the time a condition runs, the text check in {@code setRuleList()} has already rejected
+     * visible assignments, so what reaches here is usually a declaration such as {@code int y;}, which MVEL also
+     * stores through this map. The message covers both.
+     */
     @Override
     public Object put(String key, Object value) {
-        throw new UnsupportedOperationException("Cannot assign '" + key
-                + "': facts are read-only in conditions. Use == to compare.");
+        throw new UnsupportedOperationException("Cannot assign or declare '" + key + "' in a condition: "
+                + "conditions can't change facts or create variables. Use == to compare, and move variables and "
+                + "functions into the action.");
     }
 }
