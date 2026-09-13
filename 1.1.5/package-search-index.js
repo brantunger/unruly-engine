@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"io.github.brantunger.unruly.api"},{"l":"io.github.brantunger.unruly.api.exception"},{"l":"io.github.brantunger.unruly.core"}];updateSearchResults();
