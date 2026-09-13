@@ -23,6 +23,7 @@ public interface FactStore<T> extends Map<String, FactReference<T>> {
      *
      * @param name the name
      * @param obj  the value
+     * @throws IllegalArgumentException if the store rejects {@code name}, as {@link FactMap} does for {@code null}
      */
     void setValue(String name, T obj);
 
@@ -32,6 +33,8 @@ public interface FactStore<T> extends Map<String, FactReference<T>> {
      * @param ref the {@link FactReference} object to be put into the Map
      * @return the previous {@link FactReference} stored under the fact's name, or {@code null} if there was
      *         none, as with {@link java.util.Map#put(Object, Object)}
+     * @throws IllegalArgumentException if the store rejects the fact's name, as {@link FactMap} does for
+     *         {@code null}
      */
     FactReference<T> put(FactReference<T> ref);
 }

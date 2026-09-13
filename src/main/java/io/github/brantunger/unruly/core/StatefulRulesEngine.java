@@ -53,17 +53,20 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @param facts The input fact store to run rules against
      * @return The accumulated output object resulting from firing the actions of all matching rules, or
      *         {@code null} if the rule list is empty or no rule matched
+     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException {@inheritDoc}
+     * @throws IllegalArgumentException {@inheritDoc}
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
+     * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public O run(FactStore<Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
         List<CompiledRule> rules = requireCompiledRules();
+        // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
+        Map<String, Object> entryMap = this.unwrapFacts(facts);
         if (rules.isEmpty()) {
             return null;
         }
-
-        Map<String, Object> entryMap = this.unwrapFacts(facts);
 
         // Match the facts and data against the set of rules with the highest priority first.
         List<CompiledRule> matchedRuleList = this.match(rules, entryMap);

@@ -22,6 +22,7 @@ public final class RulesEngineBuilder {
      * @param outputFactory A supplier to instantiate the output object
      * @param <O>           The type of the output object
      * @return A new stateless {@link RulesEngine}
+     * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory) {
         return new StatelessRulesEngine<>(outputFactory);
@@ -34,6 +35,7 @@ public final class RulesEngineBuilder {
      * @param outputFactory A supplier to instantiate the output object
      * @param <O>           The type of the output object
      * @return A new stateful {@link RulesEngine}
+     * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory) {
         return new StatefulRulesEngine<>(outputFactory);
