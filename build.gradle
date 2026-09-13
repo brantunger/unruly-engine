@@ -31,6 +31,30 @@ tasks.named('jar') {
     }
 }
 
+// Javadoc runs on delomboked sources. Lombok adds Rule's builder, accessors and constructors while compiling, so
+// Javadoc run on the original sources leaves them out of the published documentation. Compilation, Checkstyle, PMD
+// and JaCoCo still use the original sources.
+def delombok = tasks.register('delombok', JavaExec) {
+    def outputDir = layout.buildDirectory.dir('delombok')
+    inputs.files(sourceSets.main.java)
+    outputs.dir(outputDir)
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    classpath = configurations.annotationProcessor
+    mainClass = 'lombok.launch.Main'
+    args('delombok', 'src/main/java',
+            '--target', outputDir.get().asFile.path,
+            '--classpath', sourceSets.main.compileClasspath.asPath,
+            '--format', 'generated:skip',
+            '--format', 'javaLangAsFQN:skip')
+}
+
+tasks.named('javadoc') {
+    dependsOn delombok
+    source = layout.buildDirectory.dir('delombok')
+}
+
 checkstyle {
     toolVersion = '10.20.1'
     ignoreFailures = false
