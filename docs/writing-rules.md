@@ -129,7 +129,9 @@ engine.setRuleList(rules);                            // imports take effect her
 - **Local variables stay local.** `score = 10; output.put('score', score)` works, but `score` is visible only
   inside that action. Other rules still see the original facts.
 - **Change `output` in place.** Use `output.approved = true`, `output.setRate(4.5)` or `output.put(...)`. Assigning
-  to `output` itself, as in `output = new HashMap()`, fails with a `RuleExecutionException`.
+  to `output` itself, as in `output = [:]`, fails with a `RuleExecutionException`. Inside a `def` function,
+  `output = ...` doesn't fail: it creates a variable local to the function, and `output.put(...)` calls after it in
+  that function change the discarded object.
 - **Pass results between rules through `output`.** In a stateful engine, all matched actions share the same output
   object, in priority order.
 - **Facts aren't copied.** An action that calls a method that changes a fact, such as

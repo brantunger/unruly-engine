@@ -53,7 +53,7 @@ All of them are unchecked.
 | Method | Exception | When |
 | --- | --- | --- |
 | `RulesEngineBuilder.stateless()` / `stateful()` | `NullPointerException` | The output supplier is `null` |
-| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment; an expression has a syntax error MVEL detects |
+| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error MVEL detects |
 | | `NullPointerException` | The list itself is `null` |
 | `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; the output supplier throws or returns `null` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
@@ -64,6 +64,7 @@ All of them are unchecked.
 | | `NullPointerException` | The argument or an element is `null` |
 | `registerListener()` / `registerListeners()` | `NullPointerException` | The listener, list or an element is `null`. Nothing is registered. |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
+| | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 
 Messages about a specific rule name it, for example
 `Failed to evaluate condition for rule 'prime-rate': ...`. A rule without a name appears as `(unnamed)`.
@@ -110,4 +111,5 @@ Keep in mind:
 - **A failed reload is safe.** If `setRuleList()` throws, the engine keeps the rules it had before.
 - **Failures are already logged.** The engine logs each one at ERROR before throwing; see
   [Logging setup](listeners-and-logging.md#-logging-setup).
-- **Listeners hear about it first.** `onError` receives the same exception before `run()` throws it.
+- **Listeners hear about it first.** When a condition or action fails, `onError` receives the same exception before
+  `run()` throws it. A failing output supplier and a rejected fact name are thrown without calling any listener.
