@@ -10,7 +10,14 @@ remedy.
 
 **Please don't report security issues in public GitHub issues, discussions or pull requests.**
 
-Email [brant.unger@gmail.com](mailto:brant.unger@gmail.com) with the subject `unruly-engine security`, and include:
+**Preferred:** [report a vulnerability](https://github.com/brantunger/unruly-engine/security/advisories/new) through
+GitHub's private vulnerability reporting. Only you and the maintainer can see the report, and the fix can be
+discussed and prepared in a private advisory.
+
+**Alternatively**, email [brant.unger@gmail.com](mailto:brant.unger@gmail.com) with the subject
+`unruly-engine security`.
+
+Either way, include:
 
 - the affected version,
 - a description of the issue and its impact,
