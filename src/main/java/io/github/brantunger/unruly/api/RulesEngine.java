@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api;
 
-
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
 import java.util.List;
 import java.util.Set;
@@ -10,7 +10,8 @@ import java.util.Set;
  * <strong>true</strong>. Create one with {@link RulesEngineBuilder}.
  *
  * <p>
- * <b>Lifecycle:</b> register any imports with {@link #addImport(String)}, compile the rules once with
+ * <b>Lifecycle:</b> register any imports with {@link #addImport(String)} and any expression languages besides MVEL
+ * with {@link #registerLanguage(ExpressionLanguage)}, compile the rules once with
  * {@link #setRuleList(List)}, then call {@link #run(FactStore)} as often as needed, from any number of threads.
  * Rules are evaluated in descending priority order; equal priorities keep their list order, and a {@code null}
  * priority sorts last. {@code setRuleList} may be called again at any time to swap in new rules atomically.
@@ -25,7 +26,8 @@ public interface RulesEngine<O> {
      * @param ruleList The list of {@link Rule} objects
      * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if a rule fails to compile, has a
      *         null or blank condition or action, has a condition that contains an assignment, shares its name with
-     *         another rule, or if the list contains a {@code null} rule
+     *         another rule, names an expression language that isn't registered, or if the list contains a
+     *         {@code null} rule
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      */
     void setRuleList(List<Rule> ruleList);
@@ -39,9 +41,10 @@ public interface RulesEngine<O> {
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
      *         an action fails, a condition doesn't evaluate to a boolean, or the output factory throws or returns
      *         {@code null}
-     * @throws IllegalArgumentException if a fact is named {@code output}, or has a name rules can't refer to (not
-     *         a Java identifier, a reserved MVEL word such as {@code empty} or {@code in}, or a class name MVEL
-     *         resolves, such as {@code Math} or a class from an imported package)
+     * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
+     *         language of a loaded rule can't refer to. In MVEL, that is a name that isn't a Java identifier, a
+     *         reserved word such as {@code empty} or {@code in}, or a class name MVEL resolves, such as {@code Math}
+     *         or a class from an imported package. A rule list without rules is checked against MVEL.
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      * @throws NullPointerException if {@code facts} is {@code null}
      */
@@ -72,6 +75,26 @@ public interface RulesEngine<O> {
      * @throws NullPointerException if {@code packageString} is {@code null}
      */
     RulesEngine<O> addImport(String packageString);
+
+    /**
+     * Registers an expression language that rules can be written in, chosen by each rule's {@code language}. MVEL is
+     * registered from the start; a language with the same name as a registered one replaces it, so registering a
+     * language named {@code "mvel"} changes the language of every rule whose {@code language} is {@code null}. Takes
+     * effect at the next {@link #setRuleList(List)}.
+     *
+     * <p>
+     * An implementation of this interface that doesn't support other languages keeps this default, which throws.
+     * </p>
+     *
+     * @param language The language to register
+     * @return A reference to this rules engine
+     * @throws IllegalArgumentException if the language's name is {@code null} or blank
+     * @throws NullPointerException if {@code language} is {@code null}
+     * @throws UnsupportedOperationException if this engine doesn't support other expression languages
+     */
+    default RulesEngine<O> registerLanguage(ExpressionLanguage language) {
+        throw new UnsupportedOperationException(getClass().getName() + " only supports MVEL rules");
+    }
 
     /**
      * Registers a single {@link RuleListener} to monitor rule evaluation and execution.

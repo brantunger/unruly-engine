@@ -36,10 +36,13 @@ public interface ExpressionCompiler {
 
     /**
      * Rejects the name of a fact that rules written in this language couldn't refer to, such as a keyword of the
-     * language. The engine has already rejected {@value ActionContext#OUTPUT_NAME} and {@code null}.
+     * language. The engine has already rejected {@value ActionContext#OUTPUT_NAME} and {@code null}. By default,
+     * every other name is accepted.
      *
      * @param name The fact's name
      * @throws IllegalArgumentException if rules can't refer to a fact with this name; {@code run()} throws it as is
      */
-    void checkFactName(String name);
+    default void checkFactName(String name) {
+        // Every name is accepted.
+    }
 }

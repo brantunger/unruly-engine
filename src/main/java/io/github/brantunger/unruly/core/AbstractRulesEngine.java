@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -69,8 +70,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // what is missing in that case.
     @SuppressWarnings("PMD.UseProperClassLoader")
     private static final ClassLoader LIBRARY_CLASS_LOADER = AbstractRulesEngine.class.getClassLoader();
-    // The language rules are written in.
-    private final ExpressionLanguage language = new MvelExpressionLanguage();
+    // The language of a rule whose language is null.
+    private static final String DEFAULT_LANGUAGE = MvelExpressionLanguage.LANGUAGE_NAME;
+    // Registered languages by name: MVEL, unless replaced, and those from registerLanguage().
+    private final Map<String, ExpressionLanguage> languages =
+            new ConcurrentHashMap<>(Map.of(DEFAULT_LANGUAGE, new MvelExpressionLanguage()));
     // Packages and classes from addImport(s), passed to every compilation of the next rule list.
     private final Set<String> packageImports = new LinkedHashSet<>();
     private final Set<Class<?>> classImports = new LinkedHashSet<>();
@@ -80,11 +84,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set is fully built
     // before it is assigned, so a single volatile write is enough.
     private volatile RuleSet ruleSet;
-    // Checks fact names against the imports the current rules were compiled with: the current rule list's compiler,
-    // or one with no imports before the first. Replaced alongside ruleSet; a run racing a reload may use the other
-    // list's imports, which only changes whether an imported class name is accepted.
-    private volatile ExpressionCompiler factNames = language.newCompiler(
-            new EngineCompileContext(Set.of(), Set.of(), LIBRARY_CLASS_LOADER));
+    // Check fact names for the current rule list: the compiler of each language its rules use, created with its
+    // imports, or the default language's with no imports before the first list. Replaced alongside ruleSet; a run
+    // racing a reload may use the other list's checks, which only changes whether a name one list can't use is
+    // accepted.
+    private volatile List<ExpressionCompiler> factNames = List.of(languages.get(DEFAULT_LANGUAGE).newCompiler(
+            new EngineCompileContext(Set.of(), Set.of(), LIBRARY_CLASS_LOADER)));
 
     /**
      * Returns an unmodifiable view of the compiled rules list.
@@ -180,6 +185,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * method. {@code run()} checks fact names against the same class loader, whichever thread it runs on.
      * </p>
      *
+     * <p>
+     * Each rule is compiled by the expression language its {@link Rule#getLanguage() language} names, or by MVEL if
+     * that is {@code null}, using the languages registered when this method is called. {@code run()} checks fact names
+     * against every language the rules use.
+     * </p>
+     *
      * @param ruleList The List of {@link Rule} objects to compile.
      * @throws RuleCompilationException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
@@ -201,14 +212,14 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
                 contextClassLoader());
-        ExpressionCompiler compiler = language.newCompiler(context);
+        LanguageCompilers compilers = new LanguageCompilers(Map.copyOf(languages), context);
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
                         Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                .map(rule -> compileRule(rule, compiler))
+                .map(rule -> compileRule(rule, compilers))
                 .collect(Collectors.toCollection(ArrayList::new));
-        this.factNames = compiler;
+        this.factNames = compilers.used(DEFAULT_LANGUAGE);
         this.ruleSet = new RuleSet(compiled, AbstractRulesEngine::copy);
     }
 
@@ -268,19 +279,45 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Unwraps the FactStore into a Map of values to be used as context variables in MVEL evaluation.
+     * Registers an expression language that rules can be written in. MVEL is registered from the start; a language
+     * with the same name as a registered one replaces it. Takes effect at the next {@link #setRuleList(List)}.
+     *
+     * @param language The language to register
+     * @return A reference to this {@link RulesEngine}
+     * @throws IllegalArgumentException {@inheritDoc}
+     * @throws NullPointerException {@inheritDoc}
+     */
+    @Override
+    public RulesEngine<O> registerLanguage(ExpressionLanguage language) {
+        Objects.requireNonNull(language, "language must not be null");
+        String name = language.name();
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("An expression language's name must not be null or blank: "
+                    + language.getClass().getName());
+        }
+        languages.put(name, language);
+        return this;
+    }
+
+    /**
+     * Unwraps the FactStore into a Map of values to be used as context variables when rules are evaluated.
      * This should be called once per engine run to avoid expensive allocations.
      *
      * @param facts The key/value fact store
      * @return A map of variable names to their values
-     * @throws IllegalArgumentException if a fact is named {@code output}, which actions reserve
-     *                                  for the output object, or has a name rules can't refer to: one that
-     *                                  isn't a Java identifier, a reserved MVEL word, or a class name MVEL
-     *                                  resolves instead of the fact
+     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, which actions reserve
+     *                                  for the output object, or has a name the language of a loaded rule can't
+     *                                  refer to, such as a reserved MVEL word
      */
     protected Map<String, Object> unwrapFacts(FactStore<Object> facts) {
         Map<String, Object> entryMap = new HashMap<>();
+        List<ExpressionCompiler> checks = factNames;
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
+            if (entry.getKey() == null) {
+                String msg = "fact name must not be null";
+                log.error(msg);
+                throw new IllegalArgumentException(msg);
+            }
             // Actions bind the output object to this name, silently hiding a fact of the same name.
             if (OUTPUT_KEYWORD.equals(entry.getKey())) {
                 String msg = "'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as a "
@@ -289,7 +326,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new IllegalArgumentException(msg);
             }
             try {
-                factNames.checkFactName(entry.getKey());
+                for (ExpressionCompiler check : checks) {
+                    check.checkFactName(entry.getKey());
+                }
             } catch (IllegalArgumentException e) {
                 log.error(e.getMessage());
                 throw e;
@@ -425,7 +464,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static Rule listenerCopy(CompiledRule rule) {
         Rule source = rule.rule();
         return new Rule(source.getRuleName(), source.getCondition(), source.getAction(), source.getPriority(),
-                source.getDescription());
+                source.getDescription(), source.getLanguage());
     }
 
     /**
@@ -644,13 +683,20 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return new RuleCompilationException(msg, cause);
     }
 
-    private CompiledRule compileRule(Rule rule, ExpressionCompiler compiler) {
+    private CompiledRule compileRule(Rule rule, LanguageCompilers compilers) {
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
             throw compilationFailure("Rule '" + ruleName + "' has a null or blank condition expression");
         }
         if (rule.getAction() == null || rule.getAction().isBlank()) {
             throw compilationFailure("Rule '" + ruleName + "' has a null or blank action expression");
+        }
+        String language = rule.getLanguage() != null ? rule.getLanguage() : DEFAULT_LANGUAGE;
+        ExpressionCompiler compiler = compilers.forLanguage(language);
+        if (compiler == null) {
+            throw compilationFailure("Rule '" + ruleName + "' is written in '" + language
+                    + "', which isn't a registered expression language. Registered languages: "
+                    + compilers.languageNames());
         }
         CompiledCondition compiledCondition = compile(ruleName, "Condition",
                 () -> compiler.compileCondition(rule.getCondition()));
@@ -663,6 +709,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 .action(rule.getAction())
                 .priority(rule.getPriority())
                 .description(rule.getDescription())
+                .language(rule.getLanguage())
                 .build();
         return new CompiledRule(snapshot, ruleName, compiledCondition, compiledAction);
     }
@@ -684,6 +731,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (InvalidExpressionException e) {
             throw compilationFailure(expression + " for rule '" + ruleName + "' " + e.getMessage(), e);
         } catch (Exception e) {
+            // A language may wrap an OutOfMemoryError from its compiler in its own exception.
+            throwIfPresent(fatalError(e));
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
             String reason = rootCause(e) instanceof StackOverflowError
                     ? "the expression is too long or too deeply nested to compile"

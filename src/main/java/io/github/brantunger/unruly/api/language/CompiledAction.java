@@ -21,9 +21,12 @@ public interface CompiledAction {
     void execute(ActionContext context);
 
     /**
-     * Returns an action that a concurrent run can execute while this one is in use.
+     * Returns an action that a concurrent run can execute while this one is in use. By default, returns this action,
+     * which is right for an action that several threads can execute at the same time.
      *
      * @return A new copy, or this action if several threads can execute it at the same time
      */
-    CompiledAction copy();
+    default CompiledAction copy() {
+        return this;
+    }
 }

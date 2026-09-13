@@ -21,9 +21,12 @@ public interface CompiledCondition {
     Object evaluate(EvaluationContext context);
 
     /**
-     * Returns a condition that a concurrent run can evaluate while this one is in use.
+     * Returns a condition that a concurrent run can evaluate while this one is in use. By default, returns this
+     * condition, which is right for a condition that several threads can evaluate at the same time.
      *
      * @return A new copy, or this condition if several threads can evaluate it at the same time
      */
-    CompiledCondition copy();
+    default CompiledCondition copy() {
+        return this;
+    }
 }
