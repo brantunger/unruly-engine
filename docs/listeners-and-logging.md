@@ -97,7 +97,7 @@ engine.registerListener(new RuleListener() {
 | Guarantee | Detail |
 | --- | --- |
 | 🔗 **Paired callbacks** | Every `beforeEvaluate` / `beforeExecute` is followed by exactly one matching `after*` or `onError`. A listener registered partway through a run starts with a `before*` callback, never with a closing one. |
-| 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError` or `AssertionError`, is logged at WARN and the run continues. Any other `Error`, such as `OutOfMemoryError`, propagates out of `run()`. |
+| 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError` or `AssertionError`, is logged at WARN and the run continues. Any other `Error`, such as `OutOfMemoryError`, propagates out of `run()` once every listener has received the same callback. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError` or `AssertionError` is wrapped in the `RuleExecutionException`. Any other `Error` is wrapped for `onError` and then rethrown unchanged from `run()`. |
 | 📄 **Private copies** | Each callback receives its own copy of the `Rule`. Changing it affects nothing else. |
 | 🔏 **Read-only facts** | The `facts` map holds fact values, not the `FactStore`. Writing to it throws `UnsupportedOperationException`. |
