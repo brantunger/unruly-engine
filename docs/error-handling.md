@@ -59,7 +59,7 @@ All of them are unchecked.
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
 | | `IllegalStateException` | `setRuleList()` has never been called |
 | | `NullPointerException` | `facts` is `null` |
-| | `Error` (rethrown) | A rule throws an `Error` other than `StackOverflowError` or `AssertionError`, such as `OutOfMemoryError` |
+| | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. |
 | `addImport()` / `addImports()` | `IllegalArgumentException` | A string is neither a loadable class nor a valid package name. Nothing is imported. |
 | | `NullPointerException` | The argument or an element is `null` |
 | `registerListener()` / `registerListeners()` | `NullPointerException` | The listener, list or an element is `null`. Nothing is registered. |
