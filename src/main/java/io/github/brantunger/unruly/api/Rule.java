@@ -1,7 +1,9 @@
 package io.github.brantunger.unruly.api;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * A Rule is an object that guides the {@link io.github.brantunger.unruly.api.RulesEngine}. When the condition
@@ -24,6 +26,8 @@ import lombok.Data;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Rule {
 
     private String ruleName;
