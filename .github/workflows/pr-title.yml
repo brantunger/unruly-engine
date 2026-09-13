@@ -24,8 +24,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Only `feat`, `fix` and a `!` breaking marker bump the version.
-          # Everything else lands in the changelog without cutting a release.
+          # Only `feat`, `fix` and a `!` breaking marker bump the version and appear in the
+          # changelog. Every other type is hidden in release-please-config.json and never
+          # cuts a release on its own.
           types: |
             feat
             fix

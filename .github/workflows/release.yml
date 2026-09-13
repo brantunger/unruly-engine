@@ -48,9 +48,8 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
-    # Generous: Portal validation is synchronous (3-10 min) and the sync poll below
-    # runs up to 20. A job timeout is a hard failure that continue-on-error cannot
-    # absorb, so it must sit well clear of the sum of the steps.
+    # Generous: the build and the synchronous Portal validation both run inside this job,
+    # and a job timeout is a hard failure, so it must sit well clear of the sum of the steps.
     timeout-minutes: 45
     environment: maven-central
     permissions:
@@ -88,23 +87,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" build/libs/*.jar --clobber
 
-      # publishAndReleaseToMavenCentral already blocks until the Portal finishes
-      # validating, so this confirms repo1 sync only. Propagation routinely takes
-      # 30-60 minutes, so it must never turn a successful release red.
-      - name: Wait for Maven Central sync
-        continue-on-error: true
-        timeout-minutes: 20
-        env:
-          VERSION: ${{ needs.release-please.outputs.version }}
-        run: |
-          URL="https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/${VERSION}/unruly-engine-${VERSION}.pom"
-          for i in $(seq 1 40); do
-            if curl -sSfI "$URL" >/dev/null 2>&1; then
-              echo "Synced to Maven Central: $URL"
-              exit 0
-            fi
-            echo "Attempt $i/40: not on repo1 yet, waiting 30s..."
-            sleep 30
-          done
-          echo "Not visible on repo1 after 20 minutes. The Portal release succeeded; sync can take 30-60 minutes."
-          exit 1
+      # No repo1 sync poll here: propagation takes 30-60 minutes, and waiting inside this
+      # run would hold the `release` concurrency group that long. RELEASING.md shows how
+      # to confirm the sync by hand.
