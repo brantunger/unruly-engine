@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.25](https://github.com/brantunger/unruly-engine/compare/v1.1.24...v1.1.25) (2026-09-13)
+
+
+### Bug Fixes
+
+* document Rule's Lombok-generated members in the published Javadoc ([#165](https://github.com/brantunger/unruly-engine/issues/165)) ([46e6e4a](https://github.com/brantunger/unruly-engine/commit/46e6e4a4c5b3dcd12b02c8f6892c1ed3c040b9d5))
+
 ## [1.1.24](https://github.com/brantunger/unruly-engine/compare/v1.1.23...v1.1.24) (2026-09-13)
 
 
