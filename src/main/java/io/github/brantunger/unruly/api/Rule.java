@@ -23,6 +23,12 @@ import lombok.NoArgsConstructor;
  * Changing a {@code Rule} afterwards has no effect on the engine, including on what listeners and error
  * messages report, until {@code setRuleList} is called again.
  * </p>
+ *
+ * <p>
+ * <b>Security:</b> conditions and actions are MVEL expressions with the same access to the JVM as Java code,
+ * including processes, files and reflection. The engine applies no sandbox and no timeout, so only use rules from
+ * trusted sources.
+ * </p>
  */
 @Data
 @Builder
