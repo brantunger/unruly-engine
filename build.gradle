@@ -23,6 +23,14 @@ java {
     }
 }
 
+// A stable module name for applications on the module path. Without it, the name is derived from the jar's file
+// name, which changes if the jar is renamed.
+tasks.named('jar') {
+    manifest {
+        attributes('Automatic-Module-Name': 'io.github.brantunger.unruly')
+    }
+}
+
 checkstyle {
     toolVersion = '10.20.1'
     ignoreFailures = false

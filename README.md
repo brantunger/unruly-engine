@@ -74,6 +74,9 @@ implementation("io.github.brantunger:unruly-engine:1.1.23")
 
 </details>
 
+On the module path, the jar is the automatic module `io.github.brantunger.unruly`:
+`requires io.github.brantunger.unruly;`.
+
 > [!TIP]
 > The engine logs through the SLF4J API. Add an SLF4J 2.x provider such as Logback if your application doesn't
 > already have one, or its messages go nowhere. See [Listeners & logging](docs/listeners-and-logging.md#-logging-setup).
