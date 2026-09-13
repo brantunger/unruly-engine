@@ -57,9 +57,6 @@ final class FactNames {
      * @throws IllegalArgumentException if rules can't refer to a fact with this name
      */
     void check(String name) {
-        if (name == null) {
-            throw new IllegalArgumentException("fact name must not be null");
-        }
         if (!isIdentifier(name)) {
             throw new IllegalArgumentException("'" + name + "' is not a valid fact name: "
                     + "rules can only refer to a fact named with a Java identifier");

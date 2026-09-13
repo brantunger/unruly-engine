@@ -40,4 +40,16 @@ class RuleConstructorTest {
 
         assertEquals(EXPECTED, constructor.newInstance("r", "true", "output.put('k', 1)", 1, "d"));
     }
+
+    @Test
+    @DisplayName("a public all-args constructor also takes the language, after the other fields")
+    void publicAllArgsConstructorWithLanguage() throws ReflectiveOperationException {
+        Constructor<Rule> constructor = Rule.class.getConstructor(
+                String.class, String.class, String.class, Integer.class, String.class, String.class);
+        Rule expected = Rule.builder()
+                .ruleName("r").condition("true").action("output.put('k', 1)").priority(1).description("d")
+                .language("toy").build();
+
+        assertEquals(expected, constructor.newInstance("r", "true", "output.put('k', 1)", 1, "d", "toy"));
+    }
 }

@@ -6,7 +6,9 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 
 | Guide | Covers |
 | --- | --- |
-| ✍️ [Writing rules](writing-rules.md) | MVEL syntax, imports and built-in class names, what rules may change, comparison gotchas, and testing rules |
+| ✍️ [Writing rules](writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, and testing rules |
+| ⚡ [MVEL](languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
+| 🧩 [Other expression languages](languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
 | 🗂️ [Facts](facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
 | 🌱 [Spring Boot](spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |

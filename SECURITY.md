@@ -28,8 +28,9 @@ and fixed, and credited in the release notes if you'd like.
 
 ## Threat model
 
-Rules are **code**, not data. MVEL gives a rule's condition and action the same access to the JVM as your own
-Java code, and the engine deliberately provides no sandbox and no timeout. The README's
+Rules are **code**, not data. MVEL, the default expression language, gives a rule's condition and action the same
+access to the JVM as your own Java code, and the engine deliberately provides no sandbox and no timeout. What a rule
+in another expression language can reach depends on that language. The README's
 [Security](README.md#-security) section explains how to deploy it safely.
 
 ### ✅ In scope
@@ -43,5 +44,7 @@ Java code, and the engine deliberately provides no sandbox and no timeout. The R
 
 - Anything a rule can do because rules run with full JVM access: running processes, reading files, reflection,
   `System.exit()`, and so on.
+- What an expression language you register with `registerLanguage()` lets its rules do. Report that to the
+  language's maintainers.
 - Denial of service caused by a rule, such as an infinite loop or excessive memory use.
 - Applications that build rules from untrusted input. This is documented as unsafe.
