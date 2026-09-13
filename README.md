@@ -182,6 +182,15 @@ public class UnrulyController {
 }
 ```
 
+## Security
+
+Rule conditions and actions are MVEL expressions, and MVEL gives them the same access to the JVM as your own Java code. A rule can use any class on the classpath, including `Runtime.getRuntime().exec(...)`, `System.exit(...)`, file and network APIs, and reflection such as `Class.forName(...)`. The engine has no sandbox and no timeout, so an action such as `while (true) {}` blocks the thread calling `run()` forever.
+
+Treat rule text as code:
+- Only load rules from sources you trust as much as your application code, such as your own repository or a table only administrators can change.
+- Never build rules from end-user input.
+- If rules must come from less trusted authors, run the engine in a separate, restricted process and enforce your own time limit around `run()`.
+
 ## Thread Safety
 
 The rules engine is designed to be configured once and then used concurrently:
