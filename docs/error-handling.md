@@ -78,7 +78,7 @@ is evaluated.
 | --- | --- |
 | `null` or blank condition or action | ✅ `setRuleList()` |
 | Duplicate rule name | ✅ `setRuleList()` |
-| Assignment in a condition (`applicant.approved = true`, `x++`, `with`, `def`) | ✅ `setRuleList()` |
+| Assignment in a condition (`applicant.approved = true`, `x++`, `with`, `def`, `import_static`) | ✅ `setRuleList()` |
 | Most syntax errors (`applicant.creditScore >=`) | ✅ `setRuleList()` |
 | Some malformed expressions (`true)`, `output.put("k" 1)`) | ⚠️ only `run()` |
 | A class that isn't imported (`Objects` without `addImport("java.util")`) | ⚠️ only `run()` |

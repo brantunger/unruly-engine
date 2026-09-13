@@ -344,15 +344,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
-        Map<String, Object> readOnlyFacts = new ReadOnlyFacts(entryMap);
+        Map<String, Object> conditionFacts = ReadOnlyFacts.forConditions(entryMap);
+        // A separate view, so a listener that writes to the facts isn't told about conditions.
+        Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
         List<RuleListener> snapshot = listenerSnapshot();
-        notifyListeners(snapshot, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), readOnlyFacts));
+        notifyListeners(snapshot, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), listenerFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, readOnlyFacts);
+            evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, conditionFacts);
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
                     + describe(e), e);
@@ -370,7 +372,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
-        notifyListeners(snapshot, "afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), readOnlyFacts, result));
+        notifyListeners(snapshot, "afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), listenerFacts, result));
 
         return result;
     }
@@ -510,10 +512,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         // ReadOnlyFacts only stops writes to a bare variable at run time. A property write such as
         // `claim.approved = true` goes through the fact's own setter, so assignments are rejected here instead.
-        String assignment = ConditionAssignments.find(rule.getCondition());
-        if (assignment != null) {
-            throw new RuleCompilationException("Condition for rule '" + ruleName + "' contains an assignment ("
-                    + assignment + "). Conditions can't change facts or declare variables; use == to compare.");
+        ConditionAssignments.Write write = ConditionAssignments.find(rule.getCondition());
+        String condition = "Condition for rule '" + ruleName + "'";
+        if (write != null && write.isStaticImport()) {
+            throw new RuleCompilationException(condition + " uses import_static (at position " + write.position()
+                    + "), which declares the method as a variable, and conditions can't declare variables. Call the "
+                    + "method through its class instead, such as Math.max(a, b).");
+        }
+        if (write != null) {
+            throw new RuleCompilationException(condition + " contains an assignment (" + write
+                    + "). Conditions can't change facts or declare variables; use == to compare.");
         }
         try {
             Serializable compiledCondition = compileExpression(rule.getCondition(), imports);
