@@ -15,7 +15,7 @@ If this is something you think you can fix, then [fork Unruly](https://github.co
 When adding a feature or fixing a bug, please ensure you:
 1. Write tests to cover your changes.
 2. Ensure you haven't broken existing functionality.
-3. Keep the test coverage at 100%. Our CI pipeline enforcing this will block merges if coverage drops.
+3. Keep the test coverage at 100%. CI fails when coverage drops, and a PR is only merged once CI passes.
 
 ### Building Locally
 
@@ -52,8 +52,9 @@ The type decides the next version:
 Other accepted types: `perf`, `refactor`, `test`, `build`, `ci`, `chore`, `revert`. Like `deps` and
 `docs`, none of them cuts a release or appears in the changelog. Their changes ship in the next
 `feat:` or `fix:` release.
-A CI check enforces the format, so a malformed title blocks the merge rather than
-silently skipping a release.
+A CI check validates the format, and a PR is only merged once it passes, so a malformed title is
+caught before it can silently skip a release. These checks aren't enforced by branch protection;
+maintainers merge a PR only after they pass.
 
 ## Submitting a Pull Request
 
