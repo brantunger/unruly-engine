@@ -9,7 +9,9 @@ import java.util.Map;
  * Implement this interface to receive callbacks before and after rules are evaluated and executed.
  * Any exception thrown by a listener, including a {@link StackOverflowError} or {@link AssertionError}, is caught
  * and logged by the engine, ensuring the core execution is not interrupted. Any other {@link Error}, such as an
- * {@link OutOfMemoryError}, propagates out of {@code run()}.
+ * {@link OutOfMemoryError}, propagates out of {@code run()} once every listener has received the same callback. If it
+ * came from a {@code before*} callback, the condition or action doesn't run, and every listener first gets
+ * {@link #onError} to close that callback.
  *
  * <p>
  * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every

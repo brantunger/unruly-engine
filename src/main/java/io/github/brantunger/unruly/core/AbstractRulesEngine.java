@@ -332,7 +332,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             output = outputFactory.get();
         } catch (Exception | Error e) {
-            rethrowIfFatal(e);
+            if (isFatal(e)) {
+                throw (Error) e;
+            }
             String msg = "Output factory threw " + e;
             log.error(msg);
             throw new RuleExecutionException(msg, e);
@@ -350,7 +352,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // A separate view, so a listener that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
         List<RuleListener> snapshot = listenerSnapshot();
-        notifyListeners(snapshot, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), listenerFacts));
+        notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), listenerFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing.
@@ -374,14 +376,14 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
-        notifyListeners(snapshot, "afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), listenerFacts, result));
+        notifyAfter(snapshot, "afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), listenerFacts, result));
 
         return result;
     }
 
     private O parseAction(CompiledRule rule, O outputResult, Map<String, Object> entryMap) {
         List<RuleListener> snapshot = listenerSnapshot();
-        notifyListeners(snapshot, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
+        notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
         // Create a copy so we don't mutate the shared fact map with the output keyword
         Map<String, Object> input = new ActionVariables(entryMap, outputResult);
@@ -392,7 +394,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + describe(e), e);
         }
 
-        notifyListeners(snapshot, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
+        notifyAfter(snapshot, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
 
         return outputResult;
     }
@@ -447,47 +449,95 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't
-     * interrupt a run. A fatal {@link Error} is the exception: it propagates (see {@link #rethrowIfFatal}).
+     * Calls a {@code before*} callback on every listener. If one throws a fatal {@link Error}, the condition or action
+     * doesn't run: every listener gets {@link RuleListener#onError} to close the callback it received, and the error
+     * is rethrown.
      */
-    private void notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+    private void notifyBefore(List<RuleListener> snapshot, CompiledRule rule, String callback,
+                              Consumer<RuleListener> call) {
+        Error fatal = notifyListeners(snapshot, callback, call);
+        if (fatal != null) {
+            // Already on its way out of run(), so a second fatal error from onError can't replace it.
+            reportFailure(snapshot, rule, new RuleExecutionException("A listener threw " + fatal.getClass().getName()
+                    + " in " + callback + " for rule '" + rule.displayName() + "'", fatal));
+            throw fatal;
+        }
+    }
+
+    /** Calls an {@code after*} callback on every listener, then rethrows the first fatal {@link Error} one threw. */
+    private void notifyAfter(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+        throwIfPresent(notifyListeners(snapshot, callback, call));
+    }
+
+    /**
+     * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't interrupt a
+     * run. A fatal {@link Error} (see {@link #isFatal}) doesn't stop the other listeners either, so each still gets
+     * the callback, and closes whatever it opened; the error is returned for the caller to rethrow. A second fatal
+     * error in the same callback is logged like an exception.
+     *
+     * @return The first fatal {@link Error} a listener threw, or {@code null}
+     */
+    private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+        Error fatal = null;
         for (RuleListener listener : snapshot) {
             try {
                 call.accept(listener);
             } catch (Exception | Error e) {
-                rethrowIfFatal(e);
-                log.warn("Listener threw exception in {}", callback, e);
+                if (fatal == null && isFatal(e)) {
+                    fatal = (Error) e;
+                } else {
+                    log.warn("Listener threw exception in {}", callback, e);
+                }
             }
         }
+        return fatal;
     }
 
     /**
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
      * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw, unless
-     * the cause is a fatal {@link Error}, which is rethrown unchanged once listeners have been told.
+     * the cause is a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a listener
+     * threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
     private RuleExecutionException failure(List<RuleListener> snapshot, CompiledRule rule, String msg,
                                            Throwable cause) {
-        log.error(msg);
         RuleExecutionException error = cause == null
                 ? new RuleExecutionException(msg)
                 : new RuleExecutionException(msg, cause);
-        notifyListeners(snapshot, "onError", listener -> listener.onError(listenerCopy(rule), error));
-        rethrowIfFatal(cause);
+        Error listenerFatal = reportFailure(snapshot, rule, error);
+        if (isFatal(cause)) {
+            throw (Error) cause;
+        }
+        throwIfPresent(listenerFatal);
         return error;
     }
 
     /**
-     * Rethrows {@code thrown} if it is an {@link Error} the engine must not absorb. A {@link StackOverflowError}
+     * Logs a failure at ERROR and tells every listener through {@link RuleListener#onError}.
+     *
+     * @return The first fatal {@link Error} a listener threw from {@code onError}, or {@code null}
+     */
+    private Error reportFailure(List<RuleListener> snapshot, CompiledRule rule, RuleExecutionException error) {
+        log.error(error.getMessage());
+        return notifyListeners(snapshot, "onError", listener -> listener.onError(listenerCopy(rule), error));
+    }
+
+    /**
+     * Tells whether {@code thrown} is an {@link Error} the engine must not absorb. A {@link StackOverflowError}
      * (runaway recursion) or {@link AssertionError} ({@code assert} in a rule or listener) comes from the code
      * being run and is handled like an exception. Any other error, such as {@link OutOfMemoryError}, is left
      * for the caller to see unchanged.
      *
      * @param thrown What was caught, or {@code null}
+     * @return {@code true} if {@code thrown} must be rethrown unchanged
      */
-    private static void rethrowIfFatal(Throwable thrown) {
-        if (thrown instanceof Error error && !(error instanceof StackOverflowError || error instanceof AssertionError)) {
-            throw error;
+    private static boolean isFatal(Throwable thrown) {
+        return thrown instanceof Error && !(thrown instanceof StackOverflowError || thrown instanceof AssertionError);
+    }
+
+    private static void throwIfPresent(Error fatal) {
+        if (fatal != null) {
+            throw fatal;
         }
     }
 
