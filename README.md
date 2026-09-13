@@ -112,6 +112,7 @@ Rule rule = Rule.builder()
 - A **condition** cannot assign or declare anything. `setRuleList()` rejects a condition containing an assignment with a `RuleCompilationException`: `claim.approved = true` (a typo for `==`), `claim.amount += 5`, `x++`, a local such as `x = 5; x > 1`, a `with` block or a `def` function. The check reads the condition's text, so it can't see a method call that changes a fact, such as `claim.setApproved(true)`.
 - An **action** may assign local variables (`score = 10; output.put("score", score)`), but the assignment is visible only within that action. Other rules still see the original facts. Pass results between rules through `output`.
 - `output` is reserved. A fact with that name is rejected with an `IllegalArgumentException` at `run()`.
+- An action changes the output object in place (`output.put(...)`, `output.setScore(...)`) but can't replace it. Assigning to `output` itself, as in `output = new HashMap()` or `output = output + 1`, throws a `RuleExecutionException`, so the output type must be mutable.
 
 The engine does not deep-copy fact objects, so a method that mutates one (e.g. `claim.setAmount(0)`) is still seen by later rules.
 

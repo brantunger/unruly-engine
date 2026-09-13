@@ -282,8 +282,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                     the rule for
      * @param outputObject an empty output object to set output data into
      * @param entryMap     The pre-built map of unwrapped facts to use as execution context.
-     * @return The object that is the result of the action getting fired against the
-     *         given {@link CompiledRule}
+     * @return {@code outputObject}, which the action changes in place. An action can't replace it:
+     *         assigning to {@code output} fails with a {@link RuleExecutionException}.
      */
     protected O executeRule(CompiledRule rule, O outputObject, Map<String, Object> entryMap) {
         return parseAction(rule, outputObject, entryMap);
@@ -352,8 +352,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         notifyListeners("beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // Create a copy so we don't mutate the shared fact map with the output keyword
-        Map<String, Object> input = new HashMap<>(entryMap);
-        input.put(OUTPUT_KEYWORD, outputResult);
+        Map<String, Object> input = new ActionVariables(entryMap, outputResult);
         try {
             MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
         } catch (Exception | Error e) {
@@ -364,6 +363,30 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         notifyListeners("afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
 
         return outputResult;
+    }
+
+    /**
+     * The variables an action runs against: a copy of the facts, so an action's assignments stay local to it,
+     * plus the output object. MVEL writes an assignment such as {@code output = new HashMap()} into this map and
+     * the engine never reads it back, so the replacement would be silently discarded. The write is rejected
+     * instead; actions change the output object in place.
+     */
+    private static final class ActionVariables extends HashMap<String, Object> {
+        private static final long serialVersionUID = 1L;
+
+        ActionVariables(Map<String, Object> facts, Object output) {
+            super(facts);
+            super.put(OUTPUT_KEYWORD, output);
+        }
+
+        @Override
+        public Object put(String key, Object value) {
+            if (OUTPUT_KEYWORD.equals(key)) {
+                throw new UnsupportedOperationException("Cannot assign '" + OUTPUT_KEYWORD
+                        + "': an action changes the output object in place (e.g. output.put(...)) but can't replace it.");
+            }
+            return super.put(key, value);
+        }
     }
 
     /**
