@@ -53,7 +53,7 @@ class SyntaxValidationTest {
             "status in ['A', 'B']",
             "name ~= '[a-z]+'",
             "claim.?address == null",
-            "var y = x + 1; y > 1",
+            "x + 1 > 1 && x - 1 < 5",
             "($ in list if $ > 1).size() > 0",
     })
     void validConditionsStillCompile(String condition) {

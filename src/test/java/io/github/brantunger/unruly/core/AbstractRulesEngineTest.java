@@ -332,33 +332,26 @@ class AbstractRulesEngineTest {
         }
 
         @Test
-        @DisplayName("assigning a fact in a condition throws and does not leak to later rules")
+        @DisplayName("assigning a fact in a condition is rejected by setRuleList()")
         void conditionAssignmentToFactThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            // `approved = true` is a typo for `==`; it evaluates to a Boolean, so only the
-            // read-only facts catch it.
-            engine.setRuleList(List.of(
+            // `approved = true` is a typo for `==`; it evaluates to a Boolean, so it would otherwise run.
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(List.of(
                     rule("typo", 2, "approved = true", "output.put(\"typo\", true)"),
-                    rule("check", 1, "approved == true", "output.put(\"check\", true)")));
+                    rule("check", 1, "approved == true", "output.put(\"check\", true)"))));
 
-            FactStore<Object> facts = new FactMap<>();
-            facts.setValue("approved", Boolean.FALSE);
-
-            RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
             assertTrue(ex.getMessage().contains("'typo'"));
-            assertTrue(ex.getMessage().contains("Cannot assign 'approved'"));
-            assertEquals(Boolean.FALSE, facts.getValue("approved"));
+            assertTrue(ex.getMessage().contains("'=' at position 9"));
         }
 
         @Test
-        @DisplayName("creating a new variable in a condition throws")
+        @DisplayName("creating a new variable in a condition is rejected by setRuleList()")
         void conditionNewVariableThrows() {
             StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-            engine.setRuleList(List.of(rule("new-var", 1, "(flag = true) == true", "output.put(\"k\", 1)")));
 
-            RuleExecutionException ex = assertThrows(RuleExecutionException.class,
-                    () -> engine.run(new FactMap<>()));
-            assertTrue(ex.getMessage().contains("Cannot assign 'flag'"));
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
+                    List.of(rule("new-var", 1, "(flag = true) == true", "output.put(\"k\", 1)"))));
+            assertTrue(ex.getMessage().contains("'=' at position 6"));
         }
 
         @Test

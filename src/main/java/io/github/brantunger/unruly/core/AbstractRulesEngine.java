@@ -427,6 +427,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw new RuleCompilationException(
                     "Rule '" + ruleName + "' has a null or blank action expression");
         }
+        // ReadOnlyFacts only stops writes to a bare variable at run time. A property write such as
+        // `claim.approved = true` goes through the fact's own setter, so assignments are rejected here instead.
+        String assignment = ConditionAssignments.find(rule.getCondition());
+        if (assignment != null) {
+            throw new RuleCompilationException("Condition for rule '" + ruleName + "' contains an assignment ("
+                    + assignment + "). Conditions can't change facts or declare variables; use == to compare.");
+        }
         try {
             Serializable compiledCondition = compileExpression(rule.getCondition(), imports);
             Serializable compiledAction = compileExpression(rule.getAction(), imports);
