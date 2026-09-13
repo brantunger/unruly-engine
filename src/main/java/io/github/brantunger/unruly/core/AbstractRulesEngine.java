@@ -335,7 +335,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
         Map<String, Object> readOnlyFacts = new ReadOnlyFacts(entryMap);
-        notifyListeners("beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), readOnlyFacts));
+        List<RuleListener> snapshot = listenerSnapshot();
+        notifyListeners(snapshot, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), readOnlyFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing.
@@ -343,40 +344,41 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             evaluated = MVEL.executeExpression(rule.compiledCondition(), (Object) null, readOnlyFacts);
         } catch (Exception | Error e) {
-            throw failure(rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
+            throw failure(snapshot, rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
                     + describe(e), e);
         }
 
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule.
         if (evaluated == null) {
-            throw failure(rule, "Condition for rule '" + rule.displayName()
+            throw failure(snapshot, rule, "Condition for rule '" + rule.displayName()
                     + "' evaluated to null. A condition expression must evaluate to a boolean.", null);
         }
 
         if (!(evaluated instanceof Boolean result)) {
-            throw failure(rule, "Condition for rule '" + rule.displayName() + "' evaluated to a "
+            throw failure(snapshot, rule, "Condition for rule '" + rule.displayName() + "' evaluated to a "
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
-        notifyListeners("afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), readOnlyFacts, result));
+        notifyListeners(snapshot, "afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), readOnlyFacts, result));
 
         return result;
     }
 
     private O parseAction(CompiledRule rule, O outputResult, Map<String, Object> entryMap) {
-        notifyListeners("beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
+        List<RuleListener> snapshot = listenerSnapshot();
+        notifyListeners(snapshot, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
         // Create a copy so we don't mutate the shared fact map with the output keyword
         Map<String, Object> input = new ActionVariables(entryMap, outputResult);
         try {
             MVEL.executeExpression(rule.compiledAction(), (Object) null, input);
         } catch (Exception | Error e) {
-            throw failure(rule, "Failed to execute action for rule '" + rule.displayName() + "': "
+            throw failure(snapshot, rule, "Failed to execute action for rule '" + rule.displayName() + "': "
                     + describe(e), e);
         }
 
-        notifyListeners("afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
+        notifyListeners(snapshot, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
 
         return outputResult;
     }
@@ -419,11 +421,23 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Calls every listener, logging what a listener throws so a faulty listener can't interrupt a run.
-     * A fatal {@link Error} is the exception: it propagates (see {@link #rethrowIfFatal}).
+     * Takes the listeners for one condition evaluation or one action. The same snapshot serves the
+     * {@code before*} callback and the {@code after*} or {@code onError} that closes it, so a listener registered
+     * in between, even from inside a callback, starts with the next {@code before*} instead of receiving a closing
+     * call without its opening one.
+     *
+     * @return The listeners registered right now
      */
-    private void notifyListeners(String callback, Consumer<RuleListener> call) {
-        for (RuleListener listener : listeners) {
+    private List<RuleListener> listenerSnapshot() {
+        return List.copyOf(listeners);
+    }
+
+    /**
+     * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't
+     * interrupt a run. A fatal {@link Error} is the exception: it propagates (see {@link #rethrowIfFatal}).
+     */
+    private void notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+        for (RuleListener listener : snapshot) {
             try {
                 call.accept(listener);
             } catch (Exception | Error e) {
@@ -438,12 +452,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw, unless
      * the cause is a fatal {@link Error}, which is rethrown unchanged once listeners have been told.
      */
-    private RuleExecutionException failure(CompiledRule rule, String msg, Throwable cause) {
+    private RuleExecutionException failure(List<RuleListener> snapshot, CompiledRule rule, String msg,
+                                           Throwable cause) {
         log.error(msg);
         RuleExecutionException error = cause == null
                 ? new RuleExecutionException(msg)
                 : new RuleExecutionException(msg, cause);
-        notifyListeners("onError", listener -> listener.onError(listenerCopy(rule), error));
+        notifyListeners(snapshot, "onError", listener -> listener.onError(listenerCopy(rule), error));
         rethrowIfFatal(cause);
         return error;
     }
