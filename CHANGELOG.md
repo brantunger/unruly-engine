@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.19](https://github.com/brantunger/unruly-engine/compare/v1.1.18...v1.1.19) (2026-09-13)
+
+
+### Bug Fixes
+
+* stop switching MVEL's optimizer for the whole JVM ([#150](https://github.com/brantunger/unruly-engine/issues/150)) ([0689426](https://github.com/brantunger/unruly-engine/commit/0689426bbf483dfc87571e366e96ecab717b9958))
+
 ## [1.1.18](https://github.com/brantunger/unruly-engine/compare/v1.1.17...v1.1.18) (2026-09-13)
 
 
