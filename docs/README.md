@@ -12,7 +12,7 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 | 👂 [Listeners & logging](listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
 | 🧵 [Thread safety](thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs |
-| 📖 [Javadoc](https://javadoc.io/doc/io.github.brantunger/unruly-engine) | The API reference |
+| 📖 [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
 
 For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [RELEASING.md](../RELEASING.md) ·
 [SECURITY.md](../SECURITY.md) · [Code of Conduct](../CODE_OF_CONDUCT.md)

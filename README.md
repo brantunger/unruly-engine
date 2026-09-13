@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.brantunger/unruly-engine?color=blue)](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
-[![Javadoc](https://img.shields.io/badge/javadoc-reference-5c6bc0)](https://javadoc.io/doc/io.github.brantunger/unruly-engine)
+[![Javadoc](https://img.shields.io/badge/javadoc-reference-5c6bc0)](https://brantunger.github.io/unruly-engine/latest/)
 [![Coverage](https://codecov.io/gh/brantunger/unruly-engine/branch/main/graph/badge.svg)](https://codecov.io/gh/brantunger/unruly-engine)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -15,7 +15,7 @@
 Write each rule's condition and action as an [MVEL](https://github.com/mvel/mvel) expression, load the rules once,
 and evaluate them against your Java objects from as many threads as you like.
 
-[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Guides](#-guides) · [FAQ](#-faq) · [Javadoc](https://javadoc.io/doc/io.github.brantunger/unruly-engine) · [Changelog](CHANGELOG.md)
+[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Guides](#-guides) · [FAQ](#-faq) · [Javadoc](https://brantunger.github.io/unruly-engine/latest/) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -235,7 +235,7 @@ that already matched still fires.
 | 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](docs/error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
 | 🧵 [Thread safety](docs/thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs |
-| 📖 [Javadoc](https://javadoc.io/doc/io.github.brantunger/unruly-engine) | The API reference |
+| 📖 [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
 
 ## 🔒 Security
 

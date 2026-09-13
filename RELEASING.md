@@ -1,7 +1,7 @@
 # 🚀 Releasing unruly-engine
 
 Releases are automated. Merging a PR to `main` is the only manual act. The version bump, changelog, git tag,
-GitHub Release and Maven Central publish all follow from it.
+GitHub Release, Maven Central publish and [Javadoc site](#-the-javadoc-site) all follow from it.
 
 - [The normal flow](#-the-normal-flow)
 - [Forcing a release](#-forcing-a-release)
@@ -9,6 +9,7 @@ GitHub Release and Maven Central publish all follow from it.
 - [One-time GPG setup](#-one-time-gpg-setup)
 - [When a publish half-completes](#-when-a-publish-half-completes)
 - [Checking a release by hand](#-checking-a-release-by-hand)
+- [The Javadoc site](#-the-javadoc-site)
 - [Verifying signing locally](#-verifying-signing-locally)
 
 ---
@@ -23,6 +24,7 @@ flowchart LR
     D --> E["🔨 publish job<br/>build, check, sign"]
     E --> F["📦 Central<br/>Portal"]
     F -. "30–60 min" .-> G["🌍 repo1.maven.org"]
+    F --> H["📖 Javadoc on<br/>GitHub Pages"]
 ```
 
 1. Merge PRs to `main` with [Conventional Commit](CONTRIBUTING.md#-commit-and-pr-titles) titles. `feat:` bumps the
@@ -33,7 +35,8 @@ flowchart LR
 3. Review the proposed version and changelog, then **squash-merge the release PR**.
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD and the
-   coverage gate), publishes to the Central Portal and attaches the jars to the GitHub Release.
+   coverage gate), publishes to the Central Portal, attaches the jars to the GitHub Release and copies the Javadoc
+   to [GitHub Pages](#-the-javadoc-site).
 
 Central Portal validation is synchronous, so a green `publish` job means the release was accepted. Propagation to
 `repo1.maven.org` takes a further **30–60 minutes**. The workflow doesn't wait for it, so the release queue isn't
@@ -98,6 +101,7 @@ the short (8-character) key ID so the plugin picks the right one.
 | --- | --- |
 | **Before the upload** (build, Checkstyle, PMD or coverage failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
+| **After the upload** (attaching the jars or publishing the Javadoc failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
 | **Released but broken** | Don't try to replace it. Cut the next patch version. |
 
 ## 🔎 Checking a release by hand
@@ -111,6 +115,42 @@ so it can't confirm a release. Check `repo1` instead, 30–60 minutes after publ
 VERSION=<version>
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.pom"
 # HTTP 200 once synced, 404 before
+```
+
+The Javadoc for the same version is live a minute or two after the `publish` job finishes:
+
+```bash
+curl -sI "https://brantunger.github.io/unruly-engine/$VERSION/index.html"
+# HTTP 200 once GitHub Pages has deployed the push
+```
+
+## 📖 The Javadoc site
+
+The `publish` job copies the Javadoc it built to the `gh-pages` branch, which GitHub Pages serves at
+<https://brantunger.github.io/unruly-engine/>.
+
+| Path | Contents |
+| --- | --- |
+| `/latest/` | The newest release. The README links here. |
+| `/X.Y.Z/` | Each release, kept permanently. There's no `/1.0.0/`: that version was published without a `-javadoc.jar`. |
+| `/` | Redirects to `/latest/` |
+
+Pages serves the `gh-pages` branch from its root (**Settings → Pages**). The branch was seeded with the Javadoc of
+1.0.4 through 1.1.25, unpacked from their `-javadoc.jar` files on Maven Central.
+
+If the publish step failed, rebuild that version's directory the same way. For a version that isn't the newest
+release, leave `pages/latest` alone:
+
+```bash
+VERSION=<version>
+git clone --depth 1 --branch gh-pages https://github.com/brantunger/unruly-engine.git pages
+curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION-javadoc.jar"
+rm -rf "pages/$VERSION" pages/latest
+unzip -q "unruly-engine-$VERSION-javadoc.jar" -d "pages/$VERSION" -x 'META-INF/*'
+cp -r "pages/$VERSION" pages/latest
+git -C pages add --all
+git -C pages commit -m "docs: Javadoc $VERSION"
+git -C pages push origin HEAD:gh-pages
 ```
 
 ## ✍ Verifying signing locally
