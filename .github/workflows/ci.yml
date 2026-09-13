@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The toolchain pins compilation to 17; 21 is here to catch runtime surprises.
+        # Compilation stays on the Java 17 toolchain; -PtestJdk runs the tests on each JDK listed here.
         java-version: [ '17', '21' ]
     steps:
       - uses: actions/checkout@v7
@@ -37,7 +37,7 @@ jobs:
 
       # `build` runs `check`, which pulls in Checkstyle, PMD and the 100% Jacoco gate.
       - name: Build & Test
-        run: ./gradlew build jacocoTestReport --no-daemon
+        run: ./gradlew build jacocoTestReport --no-daemon -PtestJdk=${{ matrix.java-version }}
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v7

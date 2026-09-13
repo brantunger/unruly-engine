@@ -106,12 +106,21 @@ dependencies {
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.19'
 }
 
+// Compilation always uses the Java 17 toolchain. The tests run on the JDK given by -PtestJdk (default 17), so
+// CI can run them on each JDK in its matrix; otherwise the test task would use the 17 toolchain every time.
+def testJdk = providers.gradleProperty('testJdk').getOrElse('17')
+
 test {
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(testJdk)
+    }
     useJUnitPlatform {
         includeEngines 'junit-jupiter'
     }
     systemProperties = [
             'junit.jupiter.extensions.autodetection.enabled': 'true',
+            // Lets a test confirm it really runs on the requested JDK.
+            'unruly.test.jdk': testJdk,
             // LoggingRuleListener logs at DEBUG; enabled so its messages can be asserted.
             'org.slf4j.simpleLogger.log.io.github.brantunger.unruly.api.LoggingRuleListener': 'debug',
     ]
