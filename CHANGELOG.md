@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.1.20](https://github.com/brantunger/unruly-engine/compare/v1.1.19...v1.1.20) (2026-09-13)
+
+
+### Bug Fixes
+
+* share class lookups across a rule list's compilations ([#152](https://github.com/brantunger/unruly-engine/issues/152)) ([d89ef68](https://github.com/brantunger/unruly-engine/commit/d89ef68df8e7e4e77baa326088fbf1fc07414240))
+
 ## [1.1.19](https://github.com/brantunger/unruly-engine/compare/v1.1.18...v1.1.19) (2026-09-13)
 
 
