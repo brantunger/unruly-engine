@@ -11,6 +11,12 @@ import java.util.Set;
  * this a condition such as {@code approved = true} (a typo for {@code ==}) would change
  * the fact for every later rule in the run. Rejecting the write names the variable,
  * which a plain {@link Collections#unmodifiableMap(Map)} would not.
+ *
+ * <p>
+ * {@code setRuleList()} already rejects conditions whose text contains an assignment (see
+ * {@link ConditionAssignments}). This view is the run-time backstop for any write that check doesn't recognize.
+ * It only covers the variables themselves: a write to a fact's property goes through the fact object.
+ * </p>
  */
 final class ReadOnlyFacts extends AbstractMap<String, Object> {
 
