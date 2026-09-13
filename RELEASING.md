@@ -16,16 +16,18 @@ changelog, git tag, GitHub Release and the Maven Central publish all follow from
    `check` suite, publishes to the Central Portal and attaches the jars to the Release.
 
 Central Portal validation is synchronous, so a green `publish` job means the release was
-accepted. Propagation to `repo1.maven.org` takes a further **30–60 minutes**. The "Wait for
-Maven Central sync" step polls for 20 minutes and is `continue-on-error`, so if it runs out
-the job still succeeds and only leaves a warning annotation — that means "not synced yet",
-never "the release failed".
+accepted. Propagation to `repo1.maven.org` takes a further **30–60 minutes**. The workflow
+doesn't wait for it, so the release queue isn't held up; see
+[Checking a release by hand](#checking-a-release-by-hand) to confirm the sync.
 
 ## Forcing a release
 
-If only `deps` or `chore` commits have landed, release-please will not open a release PR —
-by design, so weekly Dependabot bumps do not each ship a version. To release anyway, merge
-any `fix:` PR; it cuts a release and sweeps every pending `deps` commit into its changelog.
+Only `feat:`, `fix:` and breaking (`!`) commits open a release PR. Every other type (`deps`,
+`perf`, `refactor`, `revert`, `docs`, `chore`, `build`, `ci`, `test`) is hidden in
+`release-please-config.json`, so it never cuts a release on its own and never appears in the
+changelog. That's by design, so weekly Dependabot bumps do not each ship a version. Their
+changes go out with the next release. To release pending dependency bumps sooner, merge a
+`fix:` PR; the bumps ship in that release without their own changelog entries.
 
 `Release-As:` footers do **not** work here: the repo squash-merges with the PR title only,
 so commit bodies never reach `main`.
@@ -82,11 +84,15 @@ Maven Central is immutable: a version, once released, can never be re-uploaded o
 
 ## Checking a release by hand
 
+Deployment status on the Portal (login required): <https://central.sonatype.com/publishing/deployments>.
+
+The public artifact page on `central.sonatype.com` answers HTTP 200 for any version, even one that
+doesn't exist, so it can't confirm a release. Check `repo1` instead, 30-60 minutes after publishing:
+
 ```bash
-# Portal (immediate)
-curl -sI https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine/1.0.16
-# repo1 (30-60 min later)
-curl -sI https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/1.0.16/unruly-engine-1.0.16.pom
+VERSION=<version>
+curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.pom"
+# HTTP 200 once synced, 404 before
 ```
 
 ## Verifying signing locally

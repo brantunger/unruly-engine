@@ -46,10 +46,12 @@ The type decides the next version:
 | `fix: guard against a null rule condition` | `1.2.4` — patch |
 | `feat: add RuleListener hooks` | `1.3.0` — minor |
 | `feat!: remove the Factory interface` | `2.0.0` — major |
-| `deps: bump mvel2 to 2.5.4` | no release; listed under Dependencies |
+| `deps: bump mvel2 to 2.5.4` | no release; not listed in the changelog |
 | `docs: clarify stateless semantics` | no release |
 
-Other accepted types: `perf`, `refactor`, `test`, `build`, `ci`, `chore`, `revert`.
+Other accepted types: `perf`, `refactor`, `test`, `build`, `ci`, `chore`, `revert`. Like `deps` and
+`docs`, none of them cuts a release or appears in the changelog. Their changes ship in the next
+`feat:` or `fix:` release.
 A CI check enforces the format, so a malformed title blocks the merge rather than
 silently skipping a release.
 
