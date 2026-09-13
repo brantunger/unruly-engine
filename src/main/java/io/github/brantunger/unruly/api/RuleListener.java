@@ -7,8 +7,9 @@ import java.util.Map;
 /**
  * A listener interface to hook into the lifecycle of rule evaluation and execution.
  * Implement this interface to receive callbacks before and after rules are evaluated and executed.
- * Any exceptions thrown by a listener will be caught and logged by the engine,
- * ensuring the core execution is not interrupted.
+ * Any exception thrown by a listener, including a {@link StackOverflowError} or {@link AssertionError}, is caught
+ * and logged by the engine, ensuring the core execution is not interrupted. Any other {@link Error}, such as an
+ * {@link OutOfMemoryError}, propagates out of {@code run()}.
  *
  * <p>
  * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every
@@ -69,6 +70,9 @@ public interface RuleListener {
      *
      * <p>
      * {@code error} is the exception that {@code run()} throws once all listeners have been notified.
+     * This includes a condition or action that throws an {@link Error}: a {@link StackOverflowError} or
+     * {@link AssertionError} is wrapped in {@code error}. For any other {@link Error}, such as an
+     * {@link OutOfMemoryError}, {@code error} wraps it and {@code run()} rethrows the original error instead.
      * Errors found while compiling rules in {@code setRuleList()} are not reported here.
      * </p>
      *
