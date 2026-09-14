@@ -1,0 +1,21 @@
+# API breaks accepted by the API compatibility check (./gradlew japicmp, which ./gradlew build runs).
+#
+# The check compares the jar with the latest release on Maven Central and fails on any binary- or
+# source-incompatible change to a public or protected member. A break that is intended, for a major release,
+# goes here with its reason. Each line is:
+#
+#   <baseline version> | <kind> | <element> | <justification>
+#
+# - baseline version: the release the break is measured against, which the check's report names. A line only
+#   applies while that release is the baseline, so lines left over from an earlier release are ignored.
+# - kind: package, class, method or field. Every change to that element is accepted, not only the reported one.
+# - element: as japicmp matches it. Parameter types are fully qualified and without generics, and a constructor
+#   is named after its class:
+#     io.github.brantunger.unruly.core
+#     io.github.brantunger.unruly.core.StatelessRulesEngine
+#     io.github.brantunger.unruly.api.RulesEngine#run(io.github.brantunger.unruly.api.FactStore)
+#     io.github.brantunger.unruly.api.Rule#Rule(java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.String)
+#     io.github.brantunger.unruly.mvel.MvelExpressionLanguage#LANGUAGE_NAME
+# - justification: why users can live with the break. Required.
+#
+# A pull request that adds a line must be titled with a ! (for example feat!:), so it releases a new major version.

@@ -8,6 +8,7 @@ plugins {
     id 'com.vanniktech.maven.publish' version '0.37.0'
     id 'checkstyle'
     id 'pmd'
+    id 'me.champeau.gradle.japicmp' version '0.4.6'
 }
 
 group = 'io.github.brantunger'
@@ -185,3 +186,82 @@ jacocoTestCoverageVerification {
 }
 
 check.dependsOn jacocoTestCoverageVerification
+
+// API compatibility: every build compares the jar with the latest release on Maven Central and fails on a binary- or
+// source-incompatible change to a public or protected member, so a minor or patch release can't break code compiled
+// against an earlier one. Breaks intended for a major release are listed in config/japicmp/accepted-breaks.txt.
+//
+// The baseline is resolved in a detached configuration: in one of the project's own configurations, Gradle resolves
+// the project's coordinates to the project itself, and the check would silently compare the jar with itself.
+def apiBaseline = configurations.detachedConfiguration(
+        dependencies.create('io.github.brantunger:unruly-engine:latest.release@jar'))
+apiBaseline.transitive = false
+// Looked up on every build, so a release becomes the baseline as soon as Maven Central serves it. The version in
+// build.gradle can't be the baseline: on a release PR it names a version that isn't published yet.
+apiBaseline.resolutionStrategy.cacheDynamicVersionsFor(0, 'seconds')
+
+def apiBaselineVersion = apiBaseline.incoming.resolutionResult.rootComponent.map { root ->
+    def dependency = root.dependencies.first()
+    if (dependency instanceof org.gradle.api.artifacts.result.UnresolvedDependencyResult) {
+        throw new GradleException("Can't resolve the API baseline from Maven Central", dependency.failure)
+    }
+    dependency.selected.moduleVersion.version
+}
+
+def acceptedBreakKinds = ['package', 'class', 'method', 'field']
+// Each accepted break is [version, kind, element]. The file's header describes the format.
+def acceptedBreaks = providers.fileContents(layout.projectDirectory.file('config/japicmp/accepted-breaks.txt')).asText
+        .map { text ->
+            def entries = []
+            text.readLines().eachWithIndex { raw, i ->
+                def line = raw.trim()
+                if (!line || line.startsWith('#')) {
+                    return
+                }
+                def fields = line.split(/\|/, -1)*.trim()
+                if (fields.size() != 4 || fields.any { it.isEmpty() } || !(fields[1] in acceptedBreakKinds)) {
+                    throw new GradleException("config/japicmp/accepted-breaks.txt:${i + 1}: expected " +
+                            "'<baseline version> | package, class, method or field | <element> | <justification>', " +
+                            "got: $line")
+                }
+                entries << [version: fields[0], kind: fields[1], element: fields[2]]
+            }
+            entries
+        }
+
+def japicmp = tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
+    group = 'verification'
+    description = 'Checks the public API against the latest release on Maven Central.'
+    oldArchives.from(apiBaseline)
+    oldClasspath.from(configurations.runtimeClasspath)
+    newArchives.from(tasks.named('jar'))
+    newClasspath.from(configurations.runtimeClasspath)
+    accessModifier = 'protected'
+    onlyModified = true
+    failOnModification = true
+    failOnSourceIncompatibility = true
+
+    // Only the lines for the current baseline apply; lines for another release are ignored.
+    def applicable = acceptedBreaks.zip(apiBaselineVersion) { entries, version ->
+        entries.findAll { it.version == version }
+    }
+    packageExcludes = applicable.map { entries -> entries.findAll { it.kind == 'package' }*.element }
+    classExcludes = applicable.map { entries -> entries.findAll { it.kind == 'class' }*.element }
+    methodExcludes = applicable.map { entries -> entries.findAll { it.kind == 'method' }*.element }
+    fieldExcludes = applicable.map { entries -> entries.findAll { it.kind == 'field' }*.element }
+    def ignored = acceptedBreaks.zip(apiBaselineVersion) { entries, version ->
+        entries.count { it.version != version }
+    }
+
+    htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
+    txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
+
+    doFirst {
+        if (ignored.get() > 0) {
+            logger.warn("${ignored.get()} line(s) in config/japicmp/accepted-breaks.txt are for a baseline other " +
+                    "than ${apiBaselineVersion.get()}, so they no longer apply. Delete them.")
+        }
+    }
+}
+
+check.dependsOn japicmp
