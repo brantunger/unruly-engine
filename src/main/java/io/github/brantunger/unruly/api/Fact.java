@@ -37,6 +37,7 @@ public class Fact<T> implements FactReference<T> {
      * changes to the value.
      *
      * @param obj The object to obtain the value from
+     * @throws NullPointerException if {@code obj} is {@code null}
      */
     public Fact(T obj) {
         Objects.requireNonNull(obj, "Fact value must not be null");
@@ -49,6 +50,7 @@ public class Fact<T> implements FactReference<T> {
      * {@code Fact<String>} can be copied into a {@code Fact<Object>}.
      *
      * @param fact The existing Fact object to get the value and name from
+     * @throws NullPointerException if {@code fact} is {@code null}
      */
     public Fact(FactReference<? extends T> fact) {
         Objects.requireNonNull(fact, "fact must not be null");

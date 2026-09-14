@@ -86,6 +86,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * engine never evaluates this list: each run uses its own copy, from {@link #withCompiledRules(Function)}. Use it
      * to inspect the rules; to evaluate them, use {@code withCompiledRules} too.
      *
+     * <p>
+     * <b>Note:</b> {@link CompiledRule} is package-private, so only the engines in this package can use this method,
+     * {@link #withCompiledRules(Function)}, {@link #match(List, Map)} and
+     * {@link #executeRule(CompiledRule, Object, Map)}. They are expected to become package-private in 2.0.
+     * </p>
+     *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
     protected List<CompiledRule> getCompiledRules() {
@@ -102,6 +108,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * <p>
      * A missing call to {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
      * return {@code null}, indistinguishable from "no rule matched", so it is reported instead.
+     * </p>
+     *
+     * <p>
+     * <b>Note:</b> only the engines in this package can use this method; see {@link #getCompiledRules()}.
      * </p>
      *
      * @param run The body of a run, given the compiled rules in priority order, possibly none
@@ -228,6 +238,13 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * <em>before</em> {@link #setRuleList(List)} for the imports to take effect.
      * </p>
      *
+     * <p>
+     * Whether a string names a class is decided here, by the calling thread's context class loader, or this library's
+     * class loader if the thread has none. A string that loader can't load as a class, but that is a valid package
+     * name, is imported as a package. Classes in imported packages are looked up by {@link #setRuleList(List)}, with
+     * its thread's context class loader.
+     * </p>
+     *
      * @param packages A set of packages or classes to import
      * @return A reference to this {@link RulesEngine}
      * @throws IllegalArgumentException {@inheritDoc}
@@ -259,7 +276,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * <p>
      * Imports are accumulated across multiple calls. This method must be called
-     * <em>before</em> {@link #setRuleList(List)} for the imports to take effect.
+     * <em>before</em> {@link #setRuleList(List)} for the imports to take effect. A class name is resolved as
+     * {@link #addImports(Set)} describes.
      * </p>
      *
      * @param packageString The package or class to import. Example: "java.util"
@@ -342,6 +360,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Evaluates the rules' conditions one after another, in list order, and keeps the rules that matched.
      *
+     * <p>
+     * <b>Note:</b> only the engines in this package can use this method; see {@link #getCompiledRules()}.
+     * </p>
+     *
      * @param ruleList This is a list of {@link CompiledRule} objects to filter
      *                 based on when condition expression parses to
      *                 true
@@ -358,6 +380,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Execute a single {@link CompiledRule} object's action field against the input
      * data
+     *
+     * <p>
+     * <b>Note:</b> only the engines in this package can use this method; see {@link #getCompiledRules()}.
+     * </p>
      *
      * @param rule         The rule object to obtain the action expression to fire
      *                     the rule for
