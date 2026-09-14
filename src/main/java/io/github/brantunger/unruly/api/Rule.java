@@ -1,8 +1,6 @@
 package io.github.brantunger.unruly.api;
 
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import java.util.Objects;
 
 /**
  * A Rule is an object that guides the {@link io.github.brantunger.unruly.api.RulesEngine}. When the condition
@@ -51,10 +49,13 @@ import lombok.NoArgsConstructor;
  * that language. The engine applies no sandbox and no timeout, so only use rules from trusted sources.
  * </p>
  */
-@Data
-@Builder(toBuilder = true)
-@NoArgsConstructor
 public class Rule {
+
+    /** The multiplier {@link #hashCode()} combines field hash codes with. */
+    private static final int HASH_PRIME = 59;
+
+    /** The hash code {@link #hashCode()} uses for a {@code null} field. */
+    private static final int NULL_HASH = 43;
 
     /** The rule's name, used in error messages and listener callbacks; unique within a rule list, or {@code null}. */
     private String ruleName;
@@ -73,6 +74,15 @@ public class Rule {
 
     /** The name of the expression language the condition and action are written in, or {@code null} for MVEL. */
     private String language;
+
+    /**
+     * Creates a rule whose fields are all {@code null}, to be filled in with the setters. JSON and configuration
+     * binders create rules this way. Set at least the condition and action before passing the rule to
+     * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}.
+     */
+    public Rule() {
+        // Every field starts null.
+    }
 
     /**
      * Creates a rule written in the engine's default language, MVEL.
@@ -112,5 +122,309 @@ public class Rule {
         this.priority = priority;
         this.description = description;
         this.language = language;
+    }
+
+    /**
+     * Returns a builder for a new rule. Every field is {@code null} until it is set.
+     *
+     * @return A new builder
+     */
+    public static RuleBuilder builder() {
+        return new RuleBuilder();
+    }
+
+    /**
+     * Returns a builder that starts with this rule's fields, to create a copy with some of them changed, such as
+     * {@code rule.toBuilder().priority(5).build()}. This rule isn't changed.
+     *
+     * @return A new builder holding this rule's fields
+     */
+    public RuleBuilder toBuilder() {
+        return new RuleBuilder().ruleName(ruleName).condition(condition).action(action).priority(priority)
+                .description(description).language(language);
+    }
+
+    /**
+     * Returns the rule's name, used in error messages and listener callbacks.
+     *
+     * @return The name, or {@code null} if the rule has none
+     */
+    public String getRuleName() {
+        return ruleName;
+    }
+
+    /**
+     * Returns the condition, which must evaluate to a boolean and can't assign or declare anything.
+     *
+     * @return The condition, or {@code null} if it hasn't been set
+     */
+    public String getCondition() {
+        return condition;
+    }
+
+    /**
+     * Returns the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
+     *
+     * @return The action, or {@code null} if it hasn't been set
+     */
+    public String getAction() {
+        return action;
+    }
+
+    /**
+     * Returns the rule's priority. Higher values fire first, and {@code null} sorts last.
+     *
+     * @return The priority, or {@code null}
+     */
+    public Integer getPriority() {
+        return priority;
+    }
+
+    /**
+     * Returns the rule's description: free text for your own use, which the engine ignores but listeners receive.
+     *
+     * @return The description, or {@code null}
+     */
+    public String getDescription() {
+        return description;
+    }
+
+    /**
+     * Returns the name of the expression language the condition and action are written in.
+     *
+     * @return The language's name, or {@code null} for MVEL
+     */
+    public String getLanguage() {
+        return language;
+    }
+
+    /**
+     * Sets the rule's name, used in error messages and listener callbacks. It must be unique within a rule list.
+     *
+     * @param ruleName The name, or {@code null} for an unnamed rule
+     */
+    public void setRuleName(String ruleName) {
+        this.ruleName = ruleName;
+    }
+
+    /**
+     * Sets the condition, which must evaluate to a boolean and can't assign or declare anything.
+     *
+     * @param condition The condition
+     */
+    public void setCondition(String condition) {
+        this.condition = condition;
+    }
+
+    /**
+     * Sets the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
+     *
+     * @param action The action
+     */
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    /**
+     * Sets the rule's priority. Higher values fire first, and {@code null} sorts last.
+     *
+     * @param priority The priority, or {@code null}
+     */
+    public void setPriority(Integer priority) {
+        this.priority = priority;
+    }
+
+    /**
+     * Sets the rule's description: free text for your own use, which the engine ignores but listeners receive.
+     *
+     * @param description The description, or {@code null}
+     */
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    /**
+     * Sets the name of the expression language the condition and action are written in, as registered with
+     * {@link io.github.brantunger.unruly.api.RulesEngine#registerLanguage}.
+     *
+     * @param language The language's name, or {@code null} for MVEL
+     */
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    /**
+     * Compares every field, through its getter.
+     *
+     * @param o The object to compare with
+     * @return {@code true} if {@code o} is a {@code Rule} that {@link #canEqual(Object) can equal} this rule, and every
+     *         field of the two is equal
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Rule other)) {
+            return false;
+        }
+        return other.canEqual(this)
+                && Objects.equals(getPriority(), other.getPriority())
+                && Objects.equals(getRuleName(), other.getRuleName())
+                && Objects.equals(getCondition(), other.getCondition())
+                && Objects.equals(getAction(), other.getAction())
+                && Objects.equals(getDescription(), other.getDescription())
+                && Objects.equals(getLanguage(), other.getLanguage());
+    }
+
+    /**
+     * Returns whether {@code other} may equal a {@code Rule}. A subclass that adds state to {@link #equals(Object)}
+     * overrides this, so that it isn't equal to a plain {@code Rule} and {@code equals} stays symmetric.
+     *
+     * @param other The object being compared
+     * @return {@code true} if {@code other} is a {@code Rule}
+     */
+    protected boolean canEqual(Object other) {
+        return other instanceof Rule;
+    }
+
+    /**
+     * Combines the hash codes of every field, through its getter, consistently with {@link #equals(Object)}.
+     *
+     * @return The hash code
+     */
+    @Override
+    public int hashCode() {
+        int result = 1;
+        result = result * HASH_PRIME + hashOf(getPriority());
+        result = result * HASH_PRIME + hashOf(getRuleName());
+        result = result * HASH_PRIME + hashOf(getCondition());
+        result = result * HASH_PRIME + hashOf(getAction());
+        result = result * HASH_PRIME + hashOf(getDescription());
+        result = result * HASH_PRIME + hashOf(getLanguage());
+        return result;
+    }
+
+    private static int hashOf(Object value) {
+        return value == null ? NULL_HASH : value.hashCode();
+    }
+
+    /**
+     * Lists every field, such as {@code Rule(ruleName=prime-rate, condition=..., action=..., priority=10,
+     * description=null, language=null)}.
+     *
+     * @return The rule's fields as text
+     */
+    @Override
+    public String toString() {
+        return "Rule(ruleName=" + getRuleName() + ", condition=" + getCondition() + ", action=" + getAction()
+                + ", priority=" + getPriority() + ", description=" + getDescription() + ", language=" + getLanguage()
+                + ")";
+    }
+
+    /**
+     * Builds a {@link Rule}. Get one from {@link Rule#builder()}, or from {@link Rule#toBuilder()} to copy a rule.
+     * Every field is {@code null} until it is set.
+     */
+    // Each setter is named after the field it sets, as users of the builder expect.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+    public static class RuleBuilder {
+
+        private String ruleName;
+        private String condition;
+        private String action;
+        private Integer priority;
+        private String description;
+        private String language;
+
+        RuleBuilder() {
+            // Created by Rule.builder() and Rule.toBuilder().
+        }
+
+        /**
+         * Sets the rule's name, used in error messages and listener callbacks; unique within a rule list.
+         *
+         * @param ruleName The name, or {@code null} for an unnamed rule
+         * @return This builder
+         */
+        public RuleBuilder ruleName(String ruleName) {
+            this.ruleName = ruleName;
+            return this;
+        }
+
+        /**
+         * Sets the condition, which must evaluate to a boolean and can't assign or declare anything.
+         *
+         * @param condition The condition
+         * @return This builder
+         */
+        public RuleBuilder condition(String condition) {
+            this.condition = condition;
+            return this;
+        }
+
+        /**
+         * Sets the action, run when the rule fires; it changes the output object, which it sees as {@code output}.
+         *
+         * @param action The action
+         * @return This builder
+         */
+        public RuleBuilder action(String action) {
+            this.action = action;
+            return this;
+        }
+
+        /**
+         * Sets the rule's priority: higher values fire first, and {@code null} sorts last.
+         *
+         * @param priority The priority, or {@code null}
+         * @return This builder
+         */
+        public RuleBuilder priority(Integer priority) {
+            this.priority = priority;
+            return this;
+        }
+
+        /**
+         * Sets the rule's description: free text for your own use, which the engine ignores but listeners receive.
+         *
+         * @param description The description, or {@code null}
+         * @return This builder
+         */
+        public RuleBuilder description(String description) {
+            this.description = description;
+            return this;
+        }
+
+        /**
+         * Sets the name of the expression language the condition and action are written in.
+         *
+         * @param language The language's name, or {@code null} for MVEL
+         * @return This builder
+         */
+        public RuleBuilder language(String language) {
+            this.language = language;
+            return this;
+        }
+
+        /**
+         * Creates a rule from the fields set so far. The builder can be used again afterwards.
+         *
+         * @return A new rule
+         */
+        public Rule build() {
+            return new Rule(ruleName, condition, action, priority, description, language);
+        }
+
+        /**
+         * Lists every field set so far, such as {@code Rule.RuleBuilder(ruleName=prime-rate, condition=null, ...)}.
+         *
+         * @return The builder's fields as text
+         */
+        @Override
+        public String toString() {
+            return "Rule.RuleBuilder(ruleName=" + ruleName + ", condition=" + condition + ", action=" + action
+                    + ", priority=" + priority + ", description=" + description + ", language=" + language + ")";
+        }
     }
 }
