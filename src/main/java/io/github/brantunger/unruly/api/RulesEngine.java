@@ -25,7 +25,8 @@ public interface RulesEngine<O> {
      * Set the rule list for use in processing rules through the rules engine
      * @param ruleList The list of {@link Rule} objects
      * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if a rule fails to compile, has a
-     *         null or blank condition or action, has a condition that contains an assignment, shares its name with
+     *         null or blank condition or action, has a condition that contains an assignment or
+     *         {@code import_static}, shares its name with
      *         another rule, names an expression language that isn't registered, or if the list contains a
      *         {@code null} rule. Also if an expression language throws while creating its compiler, or returns
      *         {@code null} instead of a compiler or a compiled expression. An {@link Error} other than
@@ -61,6 +62,13 @@ public interface RulesEngine<O> {
      * ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). Takes effect at the next
      * {@link #setRuleList(List)}.
      *
+     * <p>
+     * Whether a string names a class is decided when this method is called, by the calling thread's context class
+     * loader, or this library's class loader if the thread has none. A string that loader can't load as a class, but
+     * that is a valid package name, is imported as a package. Classes in imported packages are looked up when
+     * {@link #setRuleList(List)} is called, with that thread's context class loader.
+     * </p>
+     *
      * @param packages A set of packages or classes to import
      * @return A reference to this rules engine. This enables the use of the builder design pattern
      * @throws IllegalArgumentException if a string is neither a loadable class nor a valid package name; nothing is
@@ -72,7 +80,7 @@ public interface RulesEngine<O> {
     /**
      * Adds a single import that rules are compiled with: a fully qualified package name ({@code "java.util"}) or
      * class name ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). Takes effect at
-     * the next {@link #setRuleList(List)}.
+     * the next {@link #setRuleList(List)}. A class name is resolved as {@link #addImports(Set)} describes.
      *
      * @param packageString The package or class to import. Example: "java.util"
      * @return A reference to this rules engine. This enables the use of the builder design pattern

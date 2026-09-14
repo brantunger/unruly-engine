@@ -18,6 +18,7 @@ An engine is designed to be configured once and then shared by every thread in y
 | `addImport()` / `addImports()` | ❌ | During setup, **before** `setRuleList()`. Imports are captured when rules compile, so adding one later has no effect until the next `setRuleList()`. |
 | `setRuleList()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish wins. |
 | `run()` | ✅ | From any number of threads, once `setRuleList()` has completed. |
+| `registerLanguage()` | ✅ | During setup, before `setRuleList()`. A language registered later is used from the next `setRuleList()`; one already in progress may or may not see it. |
 | `registerListener()` / `registerListeners()` | ✅ | At any time, even from inside a listener callback. |
 
 ## 🔄 Reloading rules while running

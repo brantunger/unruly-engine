@@ -70,15 +70,20 @@ engine.setRuleList(rules);                            // imports take effect her
 > [!IMPORTANT]
 > Register imports **before** `setRuleList()`. The rules are compiled with the imports registered at that moment,
 > so an import added afterwards has no effect until the next `setRuleList()`. A rule that needs a missing import is
-> still accepted, and only fails at `run()` with `unresolvable property or identifier`.
+> still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
+> `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException`, and nothing from that call is imported.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
 - An imported class name can no longer be used as a fact name. After `addImport("java.util")`, a fact named `Date`
   is rejected. See [Facts](../facts.md#-naming-rules).
-- Classes are looked up with the context class loader of the thread that calls `setRuleList()`. Fact names are
-  checked against that class loader too, on whichever thread calls `run()`.
+- A single-class import such as `"java.time.LocalDate"` is resolved when `addImport()` is called, with that thread's
+  context class loader. A string that loader can't load as a class, but that is a valid package name, is imported as
+  a package.
+- Classes in imported packages are looked up with the context class loader of the thread that calls `setRuleList()`.
+  Fact names are checked against that class loader too, on whichever thread calls `run()`.
+- A thread without a context class loader uses this library's own class loader instead.
 
 ## 🚧 Comparison gotchas
 

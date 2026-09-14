@@ -281,14 +281,16 @@ or add a lowest-priority catch-all rule with the condition `true`.
 </details>
 
 <details>
-<summary><b>What does <code>unresolvable property or identifier</code> mean?</b></summary>
+<summary><b>What do <code>unresolvable property or identifier</code> and <code>could not resolve class</code> mean?</b></summary>
 
-The rule used a name that is neither a fact in the store nor a class MVEL knows. Common causes:
+The rule used a name that is neither a fact in the store nor a class MVEL knows. Which message you get depends on
+how the name is used: `Objects.isNull(x)` fails with `unresolvable property or identifier`, and `new ArrayList()` with
+`could not resolve class`. Common causes:
 
 - The fact wasn't added, or was added under a different name. To test whether a fact exists, use `isdef name`.
-- The rule uses a class that isn't built in to MVEL, such as `Objects`, without an import. Call
-  `engine.addImport("java.util")` **before** `setRuleList()`, or write `java.util.Objects`. See
-  [Classes and imports](docs/languages/mvel.md#-classes-and-imports).
+- The rule uses a class that isn't built in to MVEL, such as `Objects` or `ArrayList`, without an import. Call
+  `engine.addImport("java.util")` **before** `setRuleList()`, or write the fully qualified name, such as
+  `java.util.Objects`. See [Classes and imports](docs/languages/mvel.md#-classes-and-imports).
 
 </details>
 
