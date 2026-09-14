@@ -53,8 +53,9 @@ All of them are unchecked.
 | Method | Exception | When |
 | --- | --- | --- |
 | `RulesEngineBuilder.stateless()` / `stateful()` | `NullPointerException` | The output supplier is `null` |
-| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered |
+| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered; an expression language throws while creating its compiler, or returns `null` instead of a compiler or a compiled expression |
 | | `NullPointerException` | The list itself is `null` |
+| | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError` is thrown while compiling, such as a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path. It's logged with the rule's name, then rethrown unchanged, even when the language wraps it in its own exception. Before 1.2.0 it was wrapped in a `RuleCompilationException`. |
 | `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; the output supplier throws or returns `null` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
 | | `IllegalStateException` | `setRuleList()` has never been called |

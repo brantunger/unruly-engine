@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
@@ -9,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiFunction;
 
 /**
  * The compilers one rule list is compiled with: one for each expression language its rules use, created when a rule
@@ -17,18 +17,20 @@ import java.util.TreeSet;
 final class LanguageCompilers {
 
     private final Map<String, ExpressionLanguage> languages;
-    private final CompileContext context;
+    private final BiFunction<String, ExpressionLanguage, ExpressionCompiler> newCompiler;
     private final Map<String, ExpressionCompiler> compilers = new LinkedHashMap<>();
 
     /**
      * Creates the compilers for one rule list.
      *
-     * @param languages The registered languages by name, as they were when the rule list was loaded
-     * @param context   The imports and class loader the rule list is compiled with
+     * @param languages   The registered languages by name, as they were when the rule list was loaded
+     * @param newCompiler Creates a language's compiler, given the name it is registered under. It throws instead of
+     *                    returning {@code null}.
      */
-    LanguageCompilers(Map<String, ExpressionLanguage> languages, CompileContext context) {
+    LanguageCompilers(Map<String, ExpressionLanguage> languages,
+                      BiFunction<String, ExpressionLanguage, ExpressionCompiler> newCompiler) {
         this.languages = languages;
-        this.context = context;
+        this.newCompiler = newCompiler;
     }
 
     /**
@@ -39,7 +41,7 @@ final class LanguageCompilers {
      */
     ExpressionCompiler forLanguage(String name) {
         ExpressionLanguage language = languages.get(name);
-        return language != null ? compilers.computeIfAbsent(name, key -> language.newCompiler(context)) : null;
+        return language != null ? compilers.computeIfAbsent(name, key -> newCompiler.apply(key, language)) : null;
     }
 
     /**
