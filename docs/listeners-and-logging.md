@@ -135,14 +135,25 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 > The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice.
 > Lower the engine logger's level if you prefer to handle logging yourself.
 
+> [!IMPORTANT]
+> The engine's logger is named after an internal class, `core.AbstractRulesEngine`, and that name may change in
+> 2.0. Configure the parent logger **`io.github.brantunger.unruly`** instead, so your configuration keeps working
+> across versions: Logback, Log4j 2 and Spring Boot apply a logger's level to every logger under its name. A more
+> specific setting still takes precedence, as the `LoggingRuleListener` line below shows. `LoggingRuleListener` is
+> public API, so its logger name won't change.
+
 **Logback** (`logback.xml`):
 
 ```xml
+<!-- For example, if you log the exceptions you catch: turn off the engine's own ERROR and WARN messages -->
+<logger name="io.github.brantunger.unruly" level="OFF"/>
+<!-- A more specific logger overrides the parent -->
 <logger name="io.github.brantunger.unruly.api.LoggingRuleListener" level="DEBUG"/>
 ```
 
 **Spring Boot** (`application.properties`):
 
 ```properties
+logging.level.io.github.brantunger.unruly=OFF
 logging.level.io.github.brantunger.unruly.api.LoggingRuleListener=DEBUG
 ```
