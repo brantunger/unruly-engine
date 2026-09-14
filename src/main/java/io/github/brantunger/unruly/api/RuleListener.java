@@ -26,6 +26,11 @@ import java.util.Map;
  * Every callback receives its own copy of the {@link Rule}. Changing it has no effect on the engine, on other
  * listeners, or on later callbacks and runs.
  * </p>
+ *
+ * <p>
+ * <b>Implementing:</b> every callback has a default that does nothing, so override only the ones you need. A callback
+ * added in a 1.x release also has a default that does nothing, so an existing listener keeps compiling and working.
+ * </p>
  */
 public interface RuleListener {
 

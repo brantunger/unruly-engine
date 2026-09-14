@@ -17,6 +17,13 @@ import java.util.Set;
  * priority sorts last. {@code setRuleList} may be called again at any time to swap in new rules atomically.
  * </p>
  *
+ * <p>
+ * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double. A
+ * method added in a 1.x release is a {@code default} method, so an existing implementation keeps compiling. A default
+ * that can't be implemented generically, such as {@link #registerLanguage(ExpressionLanguage)}, throws
+ * {@link UnsupportedOperationException}; override it to support the feature.
+ * </p>
+ *
  * @param <O> The output object type to instantiate
  */
 public interface RulesEngine<O> {

@@ -63,9 +63,16 @@ The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `
 written or compiled against an earlier release. `./gradlew build` compares the jar with the **latest release on Maven
 Central** using [japicmp](https://siom79.github.io/japicmp/), and fails when a public or protected member is removed
 or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
-interface, a new checked exception, or a new field in `Rule`, which changes its Lombok-generated all-args
-constructor. Additions such as new classes, methods and `default` methods pass. The report is at
-`build/reports/japicmp/report.html`.
+interface, a new checked exception, or a changed `Rule` constructor. When you add a field to `Rule`, add a
+constructor for the builder and keep the existing ones. Additions such as new classes, methods and `default` methods
+pass. The report is at `build/reports/japicmp/report.html`.
+
+**Adding a method to a public interface.** Users implement several of them: `RulesEngine` (for example to decorate an
+engine), `RuleListener`, `FactStore`, `FactReference`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,
+`CompiledCondition` and `CompiledAction`. Within 1.x, a method added to any public interface is a `default` method,
+and the check fails on an abstract one. When no generic implementation makes sense, the default throws
+`UnsupportedOperationException`, as `RulesEngine.registerLanguage` does. The engine-only `CompileContext`,
+`EvaluationContext` and `ActionContext` follow the same rule, and each interface's Javadoc says who implements it.
 
 An intended break belongs in a major release:
 

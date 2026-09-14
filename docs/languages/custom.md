@@ -53,6 +53,10 @@ Implement three interfaces from `io.github.brantunger.unruly.api.language`:
 | `ExpressionCompiler` | `compileCondition(String)`, `compileAction(String)`, and optionally `checkFactName(String)` | For each rule, and `checkFactName` for each fact of each `run()` |
 | `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext)` / `execute(ActionContext)`, and optionally `copy()` | Each time a rule is evaluated or fires |
 
+The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language; don't
+implement them. A method added to any of these interfaces in a 1.x release is a `default` method, so a language
+written against an earlier 1.x release keeps compiling and working.
+
 ```java
 public final class MyLanguage implements ExpressionLanguage {
 

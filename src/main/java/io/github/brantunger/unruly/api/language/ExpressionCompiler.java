@@ -8,6 +8,11 @@ package io.github.brantunger.unruly.api.language;
  * thread. {@link #checkFactName(String)} is called by every {@code run()} of the rule list, possibly on many threads at
  * once, so it must be thread-safe.
  * </p>
+ *
+ * <p>
+ * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
+ * method, so an existing language keeps compiling and working.
+ * </p>
  */
 public interface ExpressionCompiler {
 
