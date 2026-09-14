@@ -508,9 +508,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return A new {@link Rule} with the same field values
      */
     private static Rule listenerCopy(CompiledRule rule) {
-        Rule source = rule.rule();
-        return new Rule(source.getRuleName(), source.getCondition(), source.getAction(), source.getPriority(),
-                source.getDescription(), source.getLanguage());
+        return rule.rule().toBuilder().build();
     }
 
     /**

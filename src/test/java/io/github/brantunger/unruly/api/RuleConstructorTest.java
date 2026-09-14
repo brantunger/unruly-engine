@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Constructor;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -51,5 +52,28 @@ class RuleConstructorTest {
                 .language("toy").build();
 
         assertEquals(expected, constructor.newInstance("r", "true", "output.put('k', 1)", 1, "d", "toy"));
+    }
+
+    @Test
+    @DisplayName("both positional constructors are @Deprecated(since = \"1.4.0\", forRemoval = true)")
+    void positionalConstructorsDeprecatedForRemoval() throws NoSuchMethodException {
+        List<Class<?>[]> signatures = List.of(
+                new Class<?>[] {String.class, String.class, String.class, Integer.class, String.class},
+                new Class<?>[] {String.class, String.class, String.class, Integer.class, String.class, String.class});
+
+        for (Class<?>[] parameters : signatures) {
+            String name = parameters.length + "-argument constructor";
+            Deprecated deprecated = Rule.class.getConstructor(parameters).getAnnotation(Deprecated.class);
+
+            assertNotNull(deprecated, name + " isn't deprecated");
+            assertTrue(deprecated.forRemoval(), name + " isn't marked for removal");
+            assertEquals("1.4.0", deprecated.since(), name);
+        }
+    }
+
+    @Test
+    @DisplayName("the no-arg constructor that JSON and configuration binders use isn't deprecated")
+    void noArgConstructorNotDeprecated() throws NoSuchMethodException {
+        assertNull(Rule.class.getConstructor().getAnnotation(Deprecated.class));
     }
 }
