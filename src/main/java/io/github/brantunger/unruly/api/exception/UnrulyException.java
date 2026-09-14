@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The base runtime exception for the Unruly engine.
  */
@@ -11,7 +13,7 @@ public class UnrulyException extends RuntimeException {
      *
      * @param message the detail message.
      */
-    public UnrulyException(String message) {
+    public UnrulyException(@Nullable String message) {
         super(message);
     }
 
@@ -21,7 +23,7 @@ public class UnrulyException extends RuntimeException {
      * @param message the detail message.
      * @param cause   the cause.
      */
-    public UnrulyException(String message, Throwable cause) {
+    public UnrulyException(@Nullable String message, @Nullable Throwable cause) {
         super(message, cause);
     }
 }

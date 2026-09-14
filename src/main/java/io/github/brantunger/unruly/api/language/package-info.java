@@ -26,5 +26,10 @@
  * against an earlier 1.x release keeps compiling and working.</p>
  *
  * <p>Rules are written in MVEL, the engine's default language.</p>
+ *
+ * <p>Types in this package are non-null unless annotated {@link org.jspecify.annotations.Nullable}.</p>
  */
+@NullMarked
 package io.github.brantunger.unruly.api.language;
+
+import org.jspecify.annotations.NullMarked;

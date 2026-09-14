@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Set;
@@ -61,7 +62,7 @@ public interface RulesEngine<O> {
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      * @throws NullPointerException if {@code facts} is {@code null}
      */
-    O run(FactStore<Object> facts);
+    @Nullable O run(FactStore<@Nullable Object> facts);
 
     /**
      * Adds imports that rules are compiled with, so rule expressions can refer to classes by their simple names.

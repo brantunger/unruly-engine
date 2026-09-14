@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Exception thrown when a rule fails to compile.
  */
@@ -11,7 +13,7 @@ public class RuleCompilationException extends UnrulyException {
      *
      * @param message the detail message.
      */
-    public RuleCompilationException(String message) {
+    public RuleCompilationException(@Nullable String message) {
         super(message);
     }
 
@@ -21,7 +23,7 @@ public class RuleCompilationException extends UnrulyException {
      * @param message the detail message.
      * @param cause   the cause.
      */
-    public RuleCompilationException(String message, Throwable cause) {
+    public RuleCompilationException(@Nullable String message, @Nullable Throwable cause) {
         super(message, cause);
     }
 }

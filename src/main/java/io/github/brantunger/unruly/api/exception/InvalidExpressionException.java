@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Thrown by an {@link io.github.brantunger.unruly.api.language.ExpressionCompiler} to reject an expression that breaks
  * a rule the engine enforces, such as a condition that assigns to a fact.
@@ -20,7 +22,7 @@ public class InvalidExpressionException extends UnrulyException {
      *
      * @param message What is wrong with the expression, without the rule's name
      */
-    public InvalidExpressionException(String message) {
+    public InvalidExpressionException(@Nullable String message) {
         super(message);
     }
 }

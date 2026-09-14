@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A compiled condition.
  *
@@ -24,7 +26,7 @@ public interface CompiledCondition {
      * @param context The facts of the run
      * @return The result. Anything but a {@link Boolean}, including {@code null}, fails the rule.
      */
-    Object evaluate(EvaluationContext context);
+    @Nullable Object evaluate(EvaluationContext context);
 
     /**
      * Returns a condition for one run to evaluate. The engine calls it on the condition the compiler returned, which
