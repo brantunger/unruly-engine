@@ -66,6 +66,20 @@ class ExpressionLanguageRegistrationTest {
     }
 
     @Test
+    @DisplayName("the message for an unregistered language lists every registered language, sorted")
+    void unknownLanguageListsLanguagesSorted() {
+        engine.registerLanguage(new ToyExpressionLanguage("zeta"));
+        engine.registerLanguage(new ToyExpressionLanguage("alpha"));
+        engine.registerLanguage(new ToyExpressionLanguage("beta"));
+        List<Rule> rules = List.of(rule("prime-rate", "cel", "true", "1"));
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+
+        assertEquals("Rule 'prime-rate' is written in 'cel', which isn't a registered expression language. "
+                + "Registered languages: [alpha, beta, mvel, zeta]", ex.getMessage());
+    }
+
+    @Test
     @DisplayName("a language registered after setRuleList is used from the next setRuleList")
     void registeredForNextRuleList() {
         List<Rule> rules = List.of(rule("toy", "toy", "true", "put k 1"));
@@ -94,6 +108,12 @@ class ExpressionLanguageRegistrationTest {
         assertEquals("language must not be null", ex.getMessage());
     }
 
+    @Test
+    @DisplayName("registerLanguage returns the engine, so calls can be chained")
+    void registerLanguageReturnsEngine() {
+        assertSame(engine, engine.registerLanguage(new ToyExpressionLanguage()));
+    }
+
     @ParameterizedTest(name = "\"{0}\"")
     @NullSource
     @ValueSource(strings = {"", "  "})
@@ -115,6 +135,18 @@ class ExpressionLanguageRegistrationTest {
         engine.setRuleList(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "1")));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(fact("empty", 1)));
+    }
+
+    @Test
+    @DisplayName("fact names are checked by every language in use, whichever language's rule runs first")
+    void factNamesCheckedByEveryLanguageInUse() {
+        engine.registerLanguage(new ToyExpressionLanguage());
+        engine.setRuleList(List.of(
+                Rule.builder().ruleName("mvel").priority(2).condition("true").action("1").build(),
+                Rule.builder().ruleName("toy").language("toy").priority(1).condition("true").action("put k 1")
+                        .build()));
+
+        assertThrows(IllegalArgumentException.class, () -> engine.run(fact("empty", 1)), "MVEL reserves 'empty'");
     }
 
     @Test
