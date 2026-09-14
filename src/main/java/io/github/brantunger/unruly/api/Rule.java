@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.api;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -29,9 +28,15 @@ import lombok.NoArgsConstructor;
  * </ul>
  *
  * <p>
- * Create a rule with {@code Rule.builder()}, with the no-arg constructor and setters, or with the all-args
- * constructor {@code new Rule(ruleName, condition, action, priority, description, language)}. The constructor
- * without {@code language} creates a rule in the default language.
+ * Create a rule with {@code Rule.builder()}, or with the no-arg constructor and setters, which is how JSON and
+ * configuration binders create one. Copy a rule with a change with {@code toBuilder()}, for example
+ * {@code rule.toBuilder().priority(5).build()}. The positional constructors are deprecated: their parameters change
+ * whenever a field is added.
+ * </p>
+ *
+ * <p>
+ * {@code equals} and {@code hashCode} compare every field, including {@code description} and {@code language}. A
+ * field added in a later release takes part too.
  * </p>
  *
  * <p>
@@ -47,9 +52,8 @@ import lombok.NoArgsConstructor;
  * </p>
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
-@AllArgsConstructor
 public class Rule {
 
     /** The rule's name, used in error messages and listener callbacks; unique within a rule list, or {@code null}. */
@@ -78,8 +82,35 @@ public class Rule {
      * @param action      The action, run when the rule fires
      * @param priority    The rule's priority: higher values fire first, and {@code null} sorts last
      * @param description Free text for your own use, or {@code null}
+     * @deprecated Use {@link #builder()} instead. A positional constructor's parameters change whenever a field is
+     *             added, and this constructor is expected to be removed in 2.0.
      */
+    @Deprecated(since = "1.4.0", forRemoval = true)
     public Rule(String ruleName, String condition, String action, Integer priority, String description) {
         this(ruleName, condition, action, priority, description, null);
+    }
+
+    /**
+     * Creates a rule. The builder uses this constructor too.
+     *
+     * @param ruleName    The rule's name, unique within a rule list, or {@code null}
+     * @param condition   The condition, which must evaluate to a boolean
+     * @param action      The action, run when the rule fires
+     * @param priority    The rule's priority: higher values fire first, and {@code null} sorts last
+     * @param description Free text for your own use, or {@code null}
+     * @param language    The name of the expression language the condition and action are written in, or
+     *                    {@code null} for MVEL
+     * @deprecated Use {@link #builder()} instead. A positional constructor's parameters change whenever a field is
+     *             added, and this constructor is expected to be removed in 2.0.
+     */
+    @Deprecated(since = "1.4.0", forRemoval = true)
+    public Rule(String ruleName, String condition, String action, Integer priority, String description,
+                String language) {
+        this.ruleName = ruleName;
+        this.condition = condition;
+        this.action = action;
+        this.priority = priority;
+        this.description = description;
+        this.language = language;
     }
 }

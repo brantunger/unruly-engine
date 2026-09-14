@@ -193,9 +193,10 @@ A `Rule` is a plain object with six fields:
 | `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
 | `language` | `String` | | The expression language the condition and action are written in. `null` means MVEL. See [Other expression languages](docs/languages/custom.md). |
 
-Create a rule with `Rule.builder()`, with `new Rule()` and setters, or with
-`new Rule(ruleName, condition, action, priority, description, language)`, where the constructor without `language`
-creates an MVEL rule. `setRuleList()` copies each rule, so changing a
+Create a rule with `Rule.builder()`, or with `new Rule()` and setters, which is how JSON and configuration binders
+create one. Copy a rule with a change with `toBuilder()`, such as `rule.toBuilder().priority(5).build()`. The
+positional constructors, `new Rule(ruleName, condition, action, priority, description[, language])`, are deprecated
+because their parameters change whenever a field is added. `setRuleList()` copies each rule, so changing a
 `Rule` afterwards has no effect until you call `setRuleList()` again.
 
 ### Facts
