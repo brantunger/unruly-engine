@@ -1,5 +1,8 @@
 package io.github.brantunger.unruly.api;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 
 /**
@@ -13,10 +16,10 @@ import java.util.Objects;
  *      variableA.equals("Imma String")
  * </pre>
  *
- * @param <T> The object/value type of the fact.
+ * @param <T> The object/value type of the fact. A fact's value can be {@code null}.
  */
-public class Fact<T> implements FactReference<T> {
-    private String name;
+public class Fact<T extends @Nullable Object> implements FactReference<T> {
+    private @Nullable String name;
     private T value;
 
     /**
@@ -25,7 +28,7 @@ public class Fact<T> implements FactReference<T> {
      * @param name  The name of the fact
      * @param value The value of the fact
      */
-    public Fact(String name, T value) {
+    public Fact(@Nullable String name, T value) {
         this.name = name;
         this.value = value;
     }
@@ -39,7 +42,7 @@ public class Fact<T> implements FactReference<T> {
      * @param obj The object to obtain the value from
      * @throws NullPointerException if {@code obj} is {@code null}
      */
-    public Fact(T obj) {
+    public Fact(@NonNull T obj) {
         Objects.requireNonNull(obj, "Fact value must not be null");
         this.name = obj.toString();
         this.value = obj;
@@ -59,12 +62,12 @@ public class Fact<T> implements FactReference<T> {
     }
 
     @Override
-    public String getName() {
+    public @Nullable String getName() {
         return this.name;
     }
 
     @Override
-    public FactReference<T> setName(String name) {
+    public FactReference<T> setName(@Nullable String name) {
         this.name = name;
         return this;
     }
@@ -81,7 +84,7 @@ public class Fact<T> implements FactReference<T> {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
         if (this == o) {
             return true;
         }

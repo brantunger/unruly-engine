@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Map;
 
 /**
@@ -15,7 +17,8 @@ public interface EvaluationContext {
     /**
      * Returns the values of the run's facts by name.
      *
-     * @return A read-only map; writing to it throws {@link UnsupportedOperationException}
+     * @return A read-only map, whose values can be {@code null}; writing to it throws
+     *         {@link UnsupportedOperationException}
      */
-    Map<String, Object> facts();
+    Map<String, @Nullable Object> facts();
 }

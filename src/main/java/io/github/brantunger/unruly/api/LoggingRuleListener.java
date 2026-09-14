@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,12 +21,12 @@ public class LoggingRuleListener implements RuleListener {
     }
 
     @Override
-    public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+    public void beforeEvaluate(Rule rule, Map<String, @Nullable Object> facts) {
         log.debug("Evaluating condition for rule: {}", nameOf(rule));
     }
 
     @Override
-    public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
+    public void afterEvaluate(Rule rule, Map<String, @Nullable Object> facts, boolean matchResult) {
         log.debug("Evaluated condition for rule: {} | Match: {}", nameOf(rule), matchResult);
     }
 

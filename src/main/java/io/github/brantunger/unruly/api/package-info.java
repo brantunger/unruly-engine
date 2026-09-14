@@ -14,5 +14,10 @@
  *   <li>{@link io.github.brantunger.unruly.api.FactStore} — A {@link java.util.Map}-based store of facts</li>
  *   <li>{@link io.github.brantunger.unruly.api.FactMap} — Default implementation of {@code FactStore}</li>
  * </ul>
+ *
+ * <p>Types in this package are non-null unless annotated {@link org.jspecify.annotations.Nullable}.</p>
  */
+@NullMarked
 package io.github.brantunger.unruly.api;
+
+import org.jspecify.annotations.NullMarked;

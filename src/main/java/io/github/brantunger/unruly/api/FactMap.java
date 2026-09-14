@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.AbstractSet;
 import java.util.Collection;
 import java.util.HashMap;
@@ -28,9 +30,9 @@ import java.util.function.BiFunction;
  *
  * @param <T> The object/value type of the facts
  */
-public class FactMap<T> implements FactStore<T> {
+public class FactMap<T extends @Nullable Object> implements FactStore<T> {
 
-    private final Map<String, FactReference<T>> facts;
+    private final Map<String, @Nullable FactReference<T>> facts;
 
     /**
      * Construct a new empty FactMap.
@@ -50,7 +52,7 @@ public class FactMap<T> implements FactStore<T> {
      * @throws IllegalArgumentException if a key is {@code null} or differs from its fact's name
      * @throws NullPointerException if {@code facts} is {@code null}
      */
-    public FactMap(Map<String, ? extends FactReference<T>> facts) {
+    public FactMap(Map<String, ? extends @Nullable FactReference<T>> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
         facts.forEach(FactMap::checkEntry);
         this.facts = new HashMap<>(facts);
@@ -85,7 +87,7 @@ public class FactMap<T> implements FactStore<T> {
      * Rules see a fact by its map key, so a key that differs from the fact's own name would make the fact
      * unreachable under the name the caller gave it.
      */
-    private static void checkEntry(String key, FactReference<?> fact) {
+    private static void checkEntry(@Nullable String key, @Nullable FactReference<?> fact) {
         if (key == null) {
             throw new IllegalArgumentException("fact name must not be null");
         }
@@ -97,7 +99,7 @@ public class FactMap<T> implements FactStore<T> {
 
 
     @Override
-    public T getValue(String name) {
+    public @Nullable T getValue(String name) {
         FactReference<T> ref = facts.get(name);
         return ref != null ? ref.getValue() : null;
     }
@@ -127,7 +129,7 @@ public class FactMap<T> implements FactStore<T> {
      * @throws NullPointerException if {@code fact} is {@code null}
      */
     @Override
-    public FactReference<T> put(FactReference<T> fact) {
+    public @Nullable FactReference<T> put(FactReference<T> fact) {
         Objects.requireNonNull(fact, "fact must not be null");
         if (fact.getName() == null) {
             throw new IllegalArgumentException("fact name must not be null");
@@ -146,17 +148,17 @@ public class FactMap<T> implements FactStore<T> {
     }
 
     @Override
-    public boolean containsKey(Object key) {
+    public boolean containsKey(@Nullable Object key) {
         return facts.containsKey(key);
     }
 
     @Override
-    public boolean containsValue(Object value) {
+    public boolean containsValue(@Nullable Object value) {
         return facts.containsValue(value);
     }
 
     @Override
-    public FactReference<T> get(Object key) {
+    public @Nullable FactReference<T> get(@Nullable Object key) {
         return facts.get(key);
     }
 
@@ -169,13 +171,13 @@ public class FactMap<T> implements FactStore<T> {
      * @throws IllegalArgumentException if {@code key} is {@code null} or differs from the fact's name
      */
     @Override
-    public FactReference<T> put(String key, FactReference<T> fact) {
+    public @Nullable FactReference<T> put(String key, @Nullable FactReference<T> fact) {
         checkEntry(key, fact);
         return facts.put(key, fact);
     }
 
     @Override
-    public FactReference<T> remove(Object key) {
+    public @Nullable FactReference<T> remove(@Nullable Object key) {
         return facts.remove(key);
     }
 
@@ -188,7 +190,7 @@ public class FactMap<T> implements FactStore<T> {
      * @throws NullPointerException if {@code map} is {@code null}
      */
     @Override
-    public void putAll(Map<? extends String, ? extends FactReference<T>> map) {
+    public void putAll(Map<? extends String, ? extends @Nullable FactReference<T>> map) {
         Objects.requireNonNull(map, "map must not be null");
         // Checked before copying so an invalid entry leaves this map unchanged.
         map.forEach((key, fact) -> checkEntry(key, fact));
@@ -206,7 +208,7 @@ public class FactMap<T> implements FactStore<T> {
     }
 
     @Override
-    public Collection<FactReference<T>> values() {
+    public Collection<@Nullable FactReference<T>> values() {
         return facts.values();
     }
 
@@ -218,9 +220,10 @@ public class FactMap<T> implements FactStore<T> {
      * @throws IllegalArgumentException if a result's name differs from its key
      */
     @Override
-    public void replaceAll(BiFunction<? super String, ? super FactReference<T>, ? extends FactReference<T>> function) {
+    public void replaceAll(BiFunction<? super String, ? super @Nullable FactReference<T>,
+            ? extends @Nullable FactReference<T>> function) {
         Objects.requireNonNull(function, "function must not be null");
-        Map<String, FactReference<T>> replaced = new HashMap<>();
+        Map<String, @Nullable FactReference<T>> replaced = new HashMap<>();
         facts.forEach((key, fact) -> {
             FactReference<T> result = function.apply(key, fact);
             checkEntry(key, result);
@@ -237,16 +240,16 @@ public class FactMap<T> implements FactStore<T> {
      * @return A checked view of the entries
      */
     @Override
-    public Set<Entry<String, FactReference<T>>> entrySet() {
+    public Set<Entry<String, @Nullable FactReference<T>>> entrySet() {
         return new CheckedEntrySet();
     }
 
     /** The entry set view returned by {@link #entrySet()}. */
-    private final class CheckedEntrySet extends AbstractSet<Entry<String, FactReference<T>>> {
+    private final class CheckedEntrySet extends AbstractSet<Entry<String, @Nullable FactReference<T>>> {
 
         @Override
-        public Iterator<Entry<String, FactReference<T>>> iterator() {
-            Iterator<Entry<String, FactReference<T>>> entries = facts.entrySet().iterator();
+        public Iterator<Entry<String, @Nullable FactReference<T>>> iterator() {
+            Iterator<Entry<String, @Nullable FactReference<T>>> entries = facts.entrySet().iterator();
             return new Iterator<>() {
                 @Override
                 public boolean hasNext() {
@@ -254,7 +257,7 @@ public class FactMap<T> implements FactStore<T> {
                 }
 
                 @Override
-                public Entry<String, FactReference<T>> next() {
+                public Entry<String, @Nullable FactReference<T>> next() {
                     return new CheckedEntry<>(entries.next());
                 }
 
@@ -272,11 +275,12 @@ public class FactMap<T> implements FactStore<T> {
     }
 
     /** An entry whose {@link #setValue} rejects a fact whose name differs from the entry's key. */
-    private static final class CheckedEntry<T> implements Entry<String, FactReference<T>> {
+    private static final class CheckedEntry<T extends @Nullable Object>
+            implements Entry<String, @Nullable FactReference<T>> {
 
-        private final Entry<String, FactReference<T>> entry;
+        private final Entry<String, @Nullable FactReference<T>> entry;
 
-        CheckedEntry(Entry<String, FactReference<T>> entry) {
+        CheckedEntry(Entry<String, @Nullable FactReference<T>> entry) {
             this.entry = entry;
         }
 
@@ -286,18 +290,18 @@ public class FactMap<T> implements FactStore<T> {
         }
 
         @Override
-        public FactReference<T> getValue() {
+        public @Nullable FactReference<T> getValue() {
             return entry.getValue();
         }
 
         @Override
-        public FactReference<T> setValue(FactReference<T> fact) {
+        public @Nullable FactReference<T> setValue(@Nullable FactReference<T> fact) {
             checkEntry(entry.getKey(), fact);
             return entry.setValue(fact);
         }
 
         @Override
-        public boolean equals(Object o) {
+        public boolean equals(@Nullable Object o) {
             return entry.equals(o);
         }
 
@@ -320,7 +324,7 @@ public class FactMap<T> implements FactStore<T> {
      * @return {@code true} if {@code o} is a {@code Map} with the same entries
      */
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
         return o instanceof Map<?, ?> && facts.equals(o);
     }
 

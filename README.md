@@ -33,7 +33,7 @@ like.
 | 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
 | 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
 | 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Register another expression language and choose it per rule, even within one rule list. |
-| 🪶 | **Lightweight** | Two runtime dependencies: MVEL 2.5 and the SLF4J API. |
+| 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for Kotlin, IDEs and nullness checkers. |
 
 ## 📦 Installation
 

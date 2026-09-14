@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 
 /**
@@ -33,6 +35,13 @@ import java.util.Objects;
  * </p>
  *
  * <p>
+ * <b>Nullness:</b> {@code ruleName}, {@code priority}, {@code description} and {@code language} are
+ * {@link Nullable}. {@code condition} and {@code action} are required, so they aren't, but a rule created with the
+ * no-arg constructor or a builder has neither until they are set, and
+ * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} rejects it until then.
+ * </p>
+ *
+ * <p>
  * {@code equals} and {@code hashCode} compare every field, including {@code description} and {@code language}. A
  * field added in a later release takes part too.
  * </p>
@@ -58,7 +67,7 @@ public class Rule {
     private static final int NULL_HASH = 43;
 
     /** The rule's name, used in error messages and listener callbacks; unique within a rule list, or {@code null}. */
-    private String ruleName;
+    private @Nullable String ruleName;
 
     /** The condition, which must evaluate to a boolean and can't assign or declare anything. */
     private String condition;
@@ -67,13 +76,13 @@ public class Rule {
     private String action;
 
     /** The rule's priority: higher values fire first, and {@code null} sorts last. */
-    private Integer priority;
+    private @Nullable Integer priority;
 
     /** Free text for your own use; the engine ignores it, but listeners receive it. */
-    private String description;
+    private @Nullable String description;
 
     /** The name of the expression language the condition and action are written in, or {@code null} for MVEL. */
-    private String language;
+    private @Nullable String language;
 
     /**
      * Creates a rule whose fields are all {@code null}, to be filled in with the setters. JSON and configuration
@@ -96,7 +105,8 @@ public class Rule {
      *             added, and this constructor is expected to be removed in 2.0.
      */
     @Deprecated(since = "1.4.0", forRemoval = true)
-    public Rule(String ruleName, String condition, String action, Integer priority, String description) {
+    public Rule(@Nullable String ruleName, String condition, String action, @Nullable Integer priority,
+                @Nullable String description) {
         this(ruleName, condition, action, priority, description, null);
     }
 
@@ -114,8 +124,8 @@ public class Rule {
      *             added, and this constructor is expected to be removed in 2.0.
      */
     @Deprecated(since = "1.4.0", forRemoval = true)
-    public Rule(String ruleName, String condition, String action, Integer priority, String description,
-                String language) {
+    public Rule(@Nullable String ruleName, String condition, String action, @Nullable Integer priority,
+                @Nullable String description, @Nullable String language) {
         this.ruleName = ruleName;
         this.condition = condition;
         this.action = action;
@@ -149,23 +159,25 @@ public class Rule {
      *
      * @return The name, or {@code null} if the rule has none
      */
-    public String getRuleName() {
+    public @Nullable String getRuleName() {
         return ruleName;
     }
 
     /**
-     * Returns the condition, which must evaluate to a boolean and can't assign or declare anything.
+     * Returns the condition, which must evaluate to a boolean and can't assign or declare anything. A rule that isn't
+     * complete yet has none; see the class's nullness note.
      *
-     * @return The condition, or {@code null} if it hasn't been set
+     * @return The condition
      */
     public String getCondition() {
         return condition;
     }
 
     /**
-     * Returns the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
+     * Returns the action, run when the rule fires. It changes the output object, which it sees as {@code output}. A
+     * rule that isn't complete yet has none; see the class's nullness note.
      *
-     * @return The action, or {@code null} if it hasn't been set
+     * @return The action
      */
     public String getAction() {
         return action;
@@ -176,7 +188,7 @@ public class Rule {
      *
      * @return The priority, or {@code null}
      */
-    public Integer getPriority() {
+    public @Nullable Integer getPriority() {
         return priority;
     }
 
@@ -185,7 +197,7 @@ public class Rule {
      *
      * @return The description, or {@code null}
      */
-    public String getDescription() {
+    public @Nullable String getDescription() {
         return description;
     }
 
@@ -194,7 +206,7 @@ public class Rule {
      *
      * @return The language's name, or {@code null} for MVEL
      */
-    public String getLanguage() {
+    public @Nullable String getLanguage() {
         return language;
     }
 
@@ -203,7 +215,7 @@ public class Rule {
      *
      * @param ruleName The name, or {@code null} for an unnamed rule
      */
-    public void setRuleName(String ruleName) {
+    public void setRuleName(@Nullable String ruleName) {
         this.ruleName = ruleName;
     }
 
@@ -230,7 +242,7 @@ public class Rule {
      *
      * @param priority The priority, or {@code null}
      */
-    public void setPriority(Integer priority) {
+    public void setPriority(@Nullable Integer priority) {
         this.priority = priority;
     }
 
@@ -239,7 +251,7 @@ public class Rule {
      *
      * @param description The description, or {@code null}
      */
-    public void setDescription(String description) {
+    public void setDescription(@Nullable String description) {
         this.description = description;
     }
 
@@ -249,7 +261,7 @@ public class Rule {
      *
      * @param language The language's name, or {@code null} for MVEL
      */
-    public void setLanguage(String language) {
+    public void setLanguage(@Nullable String language) {
         this.language = language;
     }
 
@@ -261,7 +273,7 @@ public class Rule {
      *         field of the two is equal
      */
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
         if (this == o) {
             return true;
         }
@@ -284,7 +296,7 @@ public class Rule {
      * @param other The object being compared
      * @return {@code true} if {@code other} is a {@code Rule}
      */
-    protected boolean canEqual(Object other) {
+    protected boolean canEqual(@Nullable Object other) {
         return other instanceof Rule;
     }
 
@@ -305,7 +317,7 @@ public class Rule {
         return result;
     }
 
-    private static int hashOf(Object value) {
+    private static int hashOf(@Nullable Object value) {
         return value == null ? NULL_HASH : value.hashCode();
     }
 
@@ -330,12 +342,12 @@ public class Rule {
     @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
     public static class RuleBuilder {
 
-        private String ruleName;
+        private @Nullable String ruleName;
         private String condition;
         private String action;
-        private Integer priority;
-        private String description;
-        private String language;
+        private @Nullable Integer priority;
+        private @Nullable String description;
+        private @Nullable String language;
 
         RuleBuilder() {
             // Created by Rule.builder() and Rule.toBuilder().
@@ -347,7 +359,7 @@ public class Rule {
          * @param ruleName The name, or {@code null} for an unnamed rule
          * @return This builder
          */
-        public RuleBuilder ruleName(String ruleName) {
+        public RuleBuilder ruleName(@Nullable String ruleName) {
             this.ruleName = ruleName;
             return this;
         }
@@ -380,7 +392,7 @@ public class Rule {
          * @param priority The priority, or {@code null}
          * @return This builder
          */
-        public RuleBuilder priority(Integer priority) {
+        public RuleBuilder priority(@Nullable Integer priority) {
             this.priority = priority;
             return this;
         }
@@ -391,7 +403,7 @@ public class Rule {
          * @param description The description, or {@code null}
          * @return This builder
          */
-        public RuleBuilder description(String description) {
+        public RuleBuilder description(@Nullable String description) {
             this.description = description;
             return this;
         }
@@ -402,7 +414,7 @@ public class Rule {
          * @param language The language's name, or {@code null} for MVEL
          * @return This builder
          */
-        public RuleBuilder language(String language) {
+        public RuleBuilder language(@Nullable String language) {
             this.language = language;
             return this;
         }

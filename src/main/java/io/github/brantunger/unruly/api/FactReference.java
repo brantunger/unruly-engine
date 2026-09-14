@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A FactReference refers to objects that are used by the rules engine in conditional statements. The name field of the
  * fact is used in the conditional expression of the rule and is substituted with the object. In the following example
@@ -10,16 +12,16 @@ package io.github.brantunger.unruly.api;
  *      variableA.equals("Imma String")
  * </pre>
  *
- * @param <T> The object/value type of the fact.
+ * @param <T> The object/value type of the fact. A fact's value can be {@code null}.
  */
-public interface FactReference<T> {
+public interface FactReference<T extends @Nullable Object> {
 
     /**
      * Gets the name of the fact.
      *
-     * @return the name
+     * @return the name, or {@code null} if it has none
      */
-    String getName();
+    @Nullable String getName();
 
     /**
      * Sets the name of the fact.
@@ -27,7 +29,7 @@ public interface FactReference<T> {
      * @param name the name
      * @return The FactReference object itself
      */
-    FactReference<T> setName(String name);
+    FactReference<T> setName(@Nullable String name);
 
     /**
      * Gets the value of the fact.

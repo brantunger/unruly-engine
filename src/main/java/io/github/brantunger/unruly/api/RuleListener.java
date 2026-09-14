@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 
@@ -41,7 +42,7 @@ public interface RuleListener {
      * @param facts A read-only view of the fact values, keyed by fact name. Writing to it throws
      *              {@link UnsupportedOperationException}.
      */
-    default void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+    default void beforeEvaluate(Rule rule, Map<String, @Nullable Object> facts) {
         // default empty implementation
     }
 
@@ -53,7 +54,7 @@ public interface RuleListener {
      *                    {@link UnsupportedOperationException}.
      * @param matchResult The boolean result of the condition evaluation.
      */
-    default void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
+    default void afterEvaluate(Rule rule, Map<String, @Nullable Object> facts, boolean matchResult) {
         // default empty implementation
     }
 
