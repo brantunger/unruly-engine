@@ -4,8 +4,9 @@ package io.github.brantunger.unruly.api.language;
  * A compiled condition.
  *
  * <p>
- * The engine never evaluates one compiled condition on two threads at once: overlapping runs each use their own
- * {@link #copy()}. A condition that several threads can evaluate at the same time returns itself from {@code copy()}.
+ * The engine never evaluates one compiled condition on two threads at once, as long as {@link #copy()} returns a new
+ * object: each run evaluates its own copy, and the condition the compiler returned is only copied, never evaluated. A
+ * condition that several threads can evaluate at the same time returns itself from {@code copy()}.
  * </p>
  */
 public interface CompiledCondition {
@@ -21,10 +22,13 @@ public interface CompiledCondition {
     Object evaluate(EvaluationContext context);
 
     /**
-     * Returns a condition that a concurrent run can evaluate while this one is in use. By default, returns this
-     * condition, which is right for a condition that several threads can evaluate at the same time.
+     * Returns a condition for one run to evaluate. The engine calls it on the condition the compiler returned, which
+     * no run evaluates, and may call it from several threads at once, so a copy must be built only from state that
+     * doesn't change, such as the source and what it was compiled with. By default, returns this condition, which is
+     * right for a condition that several threads can evaluate at the same time.
      *
-     * @return A new copy, or this condition if several threads can evaluate it at the same time
+     * @return A new copy, or this condition if several threads can evaluate it at the same time. Throwing or returning
+     *         {@code null} fails the run with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
      */
     default CompiledCondition copy() {
         return this;

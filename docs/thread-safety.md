@@ -22,7 +22,8 @@ An engine is designed to be configured once and then shared by every thread in y
 
 ## 🔄 Reloading rules while running
 
-`setRuleList()` compiles the whole new list first, then swaps it in with a single atomic write.
+`setRuleList()` compiles the whole new list first, then swaps it in with a single atomic write, together with the
+fact-name checks of the languages its rules use.
 
 ```mermaid
 sequenceDiagram
@@ -43,6 +44,8 @@ sequenceDiagram
 - A run already in progress finishes with the rules it started with.
 - Runs that start after the swap use the new rules.
 - If the new list fails to compile, nothing is swapped and the old rules stay in place.
+- A run that starts during the swap may check its fact names with the other list's languages and imports. Only that
+  run is affected, and only in whether it accepts a name one of the lists can't use.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
   affect another rule or a later reload.
 
@@ -63,14 +66,15 @@ name to a different class, for example when `applicant` is an interface with sev
 the same compiled expression can then fail intermittently with a `RuleExecutionException` caused by a
 `ClassCastException`.
 
-So concurrent runs never share a compiled MVEL expression. Each `run()` borrows a copy of the compiled rule list
-that no other run is using, makes a new copy if every copy is busy, and gives it back when it finishes. The engine
-keeps as many copies as the most runs it has had in progress at once: the first time N runs overlap, the rule list
-is copied N times, and those N copies stay in memory until the next `setRuleList()`.
+So concurrent runs never share a compiled MVEL expression. The rule list `setRuleList()` compiled is kept only to
+copy from; no run uses it. Each `run()` borrows a copy that no other run is using, makes a new one if every copy is
+busy (as the first run after `setRuleList()` does), and gives it back when it finishes. The engine keeps as many
+copies as the most runs it has had in progress at once: the first time N runs overlap, N copies are made, and they
+stay in memory, with the list they were copied from, until the next `setRuleList()`.
 
-Each compiled condition and action makes its own copy. An MVEL expression is compiled again; an expression in
-another language that several threads can run at once is shared instead (see
-[Other expression languages](languages/custom.md#-thread-safety)).
+Each compiled condition and action makes its own copy. An MVEL expression is compiled again, so the first run after
+`setRuleList()` compiles each MVEL rule a second time; an expression in another language that several threads can
+run at once is shared instead (see [Other expression languages](languages/custom.md#-thread-safety)).
 
 This works with any MVEL optimizer, so the engine leaves MVEL's global optimizer setting alone. MVEL's default JIT
 optimizer stays in effect (unless you pass `-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use

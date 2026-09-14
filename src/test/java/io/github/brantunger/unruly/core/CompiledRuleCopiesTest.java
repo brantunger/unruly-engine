@@ -4,13 +4,24 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,6 +32,76 @@ class CompiledRuleCopiesTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("x", value);
         return facts;
+    }
+
+    /** A language whose compiled expressions record which instance ran, and count their copies. */
+    private static final class CountingLanguage implements ExpressionLanguage {
+
+        private final AtomicInteger conditionCopies = new AtomicInteger();
+        private final AtomicInteger actionCopies = new AtomicInteger();
+        private final List<Object> evaluated = new CopyOnWriteArrayList<>();
+        private final List<Object> executed = new CopyOnWriteArrayList<>();
+
+        @Override
+        public String name() {
+            return "counting";
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            return new ExpressionCompiler() {
+                @Override
+                public CompiledCondition compileCondition(String source) {
+                    return new Condition();
+                }
+
+                @Override
+                public CompiledAction compileAction(String source) {
+                    return new Action();
+                }
+            };
+        }
+
+        private final class Condition implements CompiledCondition {
+            @Override
+            public Object evaluate(EvaluationContext context) {
+                evaluated.add(this);
+                return true;
+            }
+
+            @Override
+            public CompiledCondition copy() {
+                conditionCopies.incrementAndGet();
+                return new Condition();
+            }
+        }
+
+        private final class Action implements CompiledAction {
+            @Override
+            public void execute(ActionContext context) {
+                executed.add(this);
+            }
+
+            @Override
+            public CompiledAction copy() {
+                actionCopies.incrementAndGet();
+                return new Action();
+            }
+        }
+    }
+
+    private static StatefulRulesEngine<Map<String, Object>> countingEngine(CountingLanguage language) {
+        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        engine.registerLanguage(language);
+        engine.setRuleList(List.of(Rule.builder().ruleName("r").language(language.name()).condition("c").action("a")
+                .build()));
+        return engine;
+    }
+
+    private static int distinct(List<Object> instances) {
+        Map<Object, Boolean> seen = new IdentityHashMap<>();
+        instances.forEach(instance -> seen.put(instance, true));
+        return seen.size();
     }
 
     @Test
@@ -56,5 +137,47 @@ class CompiledRuleCopiesTest {
 
         assertEquals(List.of("r"), rules.stream().map(CompiledRule::displayName).toList());
         assertThrows(UnsupportedOperationException.class, () -> rules.remove(0));
+    }
+
+    @Test
+    @DisplayName("the rules compiled by setRuleList are never run, and sequential runs reuse one copy")
+    void compiledRulesNeverRun() {
+        CountingLanguage language = new CountingLanguage();
+        StatefulRulesEngine<Map<String, Object>> engine = countingEngine(language);
+        CompiledRule compiled = engine.getCompiledRules().get(0);
+
+        for (int i = 0; i < 3; i++) {
+            engine.run(new FactMap<>());
+        }
+
+        assertEquals(3, language.evaluated.size());
+        assertFalse(language.evaluated.contains(compiled.compiledCondition()), "the compiled condition was evaluated");
+        assertFalse(language.executed.contains(compiled.compiledAction()), "the compiled action was executed");
+        assertEquals(1, language.conditionCopies.get(), "condition copies");
+        assertEquals(1, language.actionCopies.get(), "action copies");
+    }
+
+    @Test
+    @DisplayName("a run that starts while another holds the only copy gets its own copy of the condition and the action")
+    void overlappingRunCopiesConditionAndAction() {
+        CountingLanguage language = new CountingLanguage();
+        StatefulRulesEngine<Map<String, Object>> engine = countingEngine(language);
+        AtomicBoolean nested = new AtomicBoolean();
+        engine.registerListener(new RuleListener() {
+            @Override
+            public void beforeExecute(Rule rule, Object output) {
+                if (nested.compareAndSet(false, true)) {
+                    engine.run(new FactMap<>());
+                }
+            }
+        });
+
+        engine.run(new FactMap<>());
+
+        assertEquals(2, language.conditionCopies.get(), "condition copies");
+        assertEquals(2, language.actionCopies.get(), "action copies");
+        assertEquals(2, distinct(language.evaluated), "distinct conditions evaluated");
+        assertEquals(2, distinct(language.executed), "distinct actions executed");
+        assertTrue(Collections.disjoint(language.executed, List.of(engine.getCompiledRules().get(0).compiledAction())));
     }
 }

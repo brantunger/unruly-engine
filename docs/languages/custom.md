@@ -114,11 +114,15 @@ public final class MyLanguage implements ExpressionLanguage {
 
 ## 🧵 Thread safety
 
-- The engine never runs one compiled condition or action on two threads at once. When runs overlap, each one uses a
-  copy made with `copy()`.
+- The engine never runs one compiled condition or action on two threads at once, as long as `copy()` returns a new
+  object. Each run uses its own copy. The condition or action your compiler returned is only copied, never run.
+- `copy()` can be called from several threads at once, so build the copy only from state that doesn't change, such
+  as the source and what you compiled it with.
 - By default `copy()` returns the same object, which is right when several threads can evaluate it at the same time.
   Override it to return a new copy if a compiled expression keeps state while it runs. MVEL does, so each MVEL copy is
   compiled again.
+- A `copy()` that throws or returns `null` fails the run that needed the copy, with a `RuleExecutionException` naming
+  the rule. A fatal `Error` is rethrown unchanged.
 - `checkFactName` is called by every `run()`, possibly on many threads at once, so it must be thread-safe.
 
 ## 🧪 Testing a language

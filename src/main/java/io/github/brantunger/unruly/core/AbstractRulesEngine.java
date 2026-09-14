@@ -74,19 +74,18 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
-    // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set is fully built
-    // before it is assigned, so a single volatile write is enough.
+    // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set holds the rules and the
+    // fact-name checks of the languages they use, and is fully built before it is assigned, so one volatile write
+    // swaps in both.
     private volatile RuleSet ruleSet;
-    // Check fact names for the current rule list: the compiler of each language its rules use, created with its
-    // imports, or the default language's with no imports before the first list. Replaced alongside ruleSet; a run
-    // racing a reload may use the other list's checks, which only changes whether a name one list can't use is
-    // accepted.
-    private volatile List<ExpressionCompiler> factNames = List.of(languages.get(DEFAULT_LANGUAGE).newCompiler(
+    // Checks fact names before the first rule list is loaded: the default language's compiler, with no imports.
+    private final List<ExpressionCompiler> defaultFactChecks = List.of(languages.get(DEFAULT_LANGUAGE).newCompiler(
             new EngineCompileContext(Set.of(), Set.of(), ImportResolver.LIBRARY_CLASS_LOADER)));
 
     /**
-     * Returns an unmodifiable view of the compiled rules list.
-     * Returns {@code null} if {@link #setRuleList(List)} has not been called.
+     * Returns the rules as {@link #setRuleList(List)} compiled them, or {@code null} if it has not been called. The
+     * engine never evaluates this list: each run uses its own copy, from {@link #withCompiledRules(Function)}. Use it
+     * to inspect the rules; to evaluate them, use {@code withCompiledRules} too.
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
@@ -97,7 +96,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Calls {@code run} with a compiled copy of the rules that no concurrent run is using, and keeps the copy for
-     * later runs once {@code run} returns or throws. MVEL's compiled expressions aren't safe to share between
+     * later runs once {@code run} returns or throws. The first run after {@link #setRuleList(List)}, and a run that
+     * starts while every copy is in use, makes a new copy. MVEL's compiled expressions aren't safe to share between
      * threads when a fact name is bound to different kinds of objects; see {@link RuleSet}.
      *
      * <p>
@@ -109,6 +109,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param <T> The type {@code run} returns
      * @return What {@code run} returns
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
+     * @throws RuleExecutionException if a new copy is needed and a compiled condition or action throws or returns
+     *                                {@code null} from {@code copy()}. A fatal {@link Error} is logged, then
+     *                                rethrown unchanged.
      */
     protected <T> T withCompiledRules(Function<List<CompiledRule>, T> run) {
         RuleSet rules = ruleSet;
@@ -213,8 +216,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
                 .map(rule -> compileRule(rule, compilers))
                 .collect(Collectors.toCollection(ArrayList::new));
-        this.factNames = compilers.used(DEFAULT_LANGUAGE);
-        this.ruleSet = new RuleSet(compiled, AbstractRulesEngine::copy);
+        this.ruleSet = new RuleSet(compiled, compilers.used(DEFAULT_LANGUAGE), AbstractRulesEngine::copy);
     }
 
     /**
@@ -305,7 +307,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     protected Map<String, Object> unwrapFacts(FactStore<Object> facts) {
         Map<String, Object> entryMap = new HashMap<>();
-        List<ExpressionCompiler> checks = factNames;
+        // Read apart from the rules a run borrowed, so a run racing a reload may check names with the other list's
+        // checks. That only changes whether a name one of the lists can't use is accepted, for that run.
+        RuleSet rules = ruleSet;
+        List<ExpressionCompiler> checks = rules != null ? rules.factChecks() : defaultFactChecks;
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
             if (entry.getKey() == null) {
                 String msg = "fact name must not be null";
@@ -669,10 +674,46 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Copies a rule for a concurrent run; see {@link RuleSet}. Each expression decides whether a copy needs compiling.
+     * Copies a rule for a run; see {@link RuleSet}. Each expression decides whether a copy needs compiling.
+     *
+     * @param rule The rule as {@code setRuleList()} compiled it
+     * @return The copy
+     * @throws RuleExecutionException if the condition or action throws or returns {@code null} from {@code copy()}
      */
     private static CompiledRule copy(CompiledRule rule) {
-        return new CompiledRule(rule.rule(), rule.displayName(), rule.compiledCondition().copy(),
-                rule.compiledAction().copy());
+        CompiledCondition condition = copyOf(rule, "condition", () -> rule.compiledCondition().copy());
+        CompiledAction action = copyOf(rule, "action", () -> rule.compiledAction().copy());
+        return new CompiledRule(rule.rule(), rule.displayName(), condition, action);
+    }
+
+    /**
+     * Copies a rule's condition or action. A failure fails the run that needed the copy, naming the rule, and is logged
+     * at ERROR first. A fatal {@link Error}, thrown or found among the causes of what {@code copy()} throws, is then
+     * rethrown unchanged. No listener is told: no callback has been sent for the rule yet.
+     *
+     * @param rule       The rule being copied
+     * @param expression {@code condition} or {@code action}, for messages
+     * @param copy       Calls the expression's {@code copy()}
+     * @param <T>        The type of compiled expression
+     * @return The copy
+     * @throws RuleExecutionException if {@code copy()} throws or returns {@code null}
+     */
+    private static <T> T copyOf(CompiledRule rule, String expression, Supplier<T> copy) {
+        String failed = "Failed to copy the " + expression + " of rule '" + rule.displayName() + "': ";
+        T copied;
+        try {
+            copied = copy.get();
+        } catch (Exception | Error e) {
+            String msg = failed + Failures.describe(e);
+            log.error(msg);
+            Failures.throwIfPresent(Failures.fatalError(e));
+            throw new RuleExecutionException(msg, e);
+        }
+        if (copied == null) {
+            String msg = failed + "copy() returned null";
+            log.error(msg);
+            throw new RuleExecutionException(msg);
+        }
+        return copied;
     }
 }

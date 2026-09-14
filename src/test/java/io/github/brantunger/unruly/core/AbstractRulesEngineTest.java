@@ -561,4 +561,22 @@ class AbstractRulesEngineTest {
             assertTrue(ex.getMessage().contains("package element must not be null"));
         }
     }
+
+    @Nested
+    @DisplayName("unwrapFacts before setRuleList")
+    class UnwrapFactsBeforeRuleList {
+
+        @Test
+        @DisplayName("a subclass that unwraps facts before any rule list is loaded gets MVEL's fact-name checks")
+        void checkedWithDefaultLanguage() {
+            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            FactStore<Object> reserved = new FactMap<>();
+            reserved.setValue("empty", 1);
+            FactStore<Object> valid = new FactMap<>();
+            valid.setValue("claim", 1);
+
+            assertThrows(IllegalArgumentException.class, () -> engine.unwrapFacts(reserved));
+            assertEquals(Map.of("claim", 1), engine.unwrapFacts(valid));
+        }
+    }
 }
