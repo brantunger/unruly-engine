@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.2.3](https://github.com/brantunger/unruly-engine/compare/v1.2.2...v1.2.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* keep a stack overflow in one MVEL rule from breaking MVEL errors JVM-wide ([#199](https://github.com/brantunger/unruly-engine/issues/199)) ([8313b2d](https://github.com/brantunger/unruly-engine/commit/8313b2d6979d33b5a094360c79a1e0a0242e22dc))
+
 ## [1.2.2](https://github.com/brantunger/unruly-engine/compare/v1.2.1...v1.2.2) (2026-09-14)
 
 
