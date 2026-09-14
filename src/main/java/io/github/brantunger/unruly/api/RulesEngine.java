@@ -48,7 +48,8 @@ public interface RulesEngine<O> {
      * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
      *         language of a loaded rule can't refer to. In MVEL, that is a name that isn't a Java identifier, a
      *         reserved word such as {@code empty} or {@code in}, or a class name MVEL resolves, such as {@code Math}
-     *         or a class from an imported package. A rule list without rules is checked against MVEL.
+     *         or a class from an imported package. A rule list without rules is checked against MVEL. Also if a
+     *         language's check of a fact name fails with any other exception, which becomes the cause.
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      * @throws NullPointerException if {@code facts} is {@code null}
      */

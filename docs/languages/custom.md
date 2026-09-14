@@ -99,7 +99,8 @@ public final class MyLanguage implements ExpressionLanguage {
 - **Imports.** `CompileContext` carries the packages and classes registered with `addImport()` and the class loader
   to look them up with. A language without imports ignores them.
 - **Fact names.** Override `checkFactName` to reject a name your rules couldn't refer to, such as a keyword, with an
-  `IllegalArgumentException`. By default every name is accepted.
+  `IllegalArgumentException`. By default every name is accepted. Anything else it throws is logged and becomes an
+  `IllegalArgumentException` naming the fact and your language, except a fatal `Error`, which is rethrown unchanged.
 
 ## 📋 What the engine enforces
 

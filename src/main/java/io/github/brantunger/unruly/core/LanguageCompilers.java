@@ -3,8 +3,8 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -58,12 +58,12 @@ final class LanguageCompilers {
      * checked against the default language.
      *
      * @param defaultLanguage The name of the language a rule without one is written in
-     * @return The compilers, in the order the rules first used them
+     * @return The compilers by language name, in the order the rules first used them
      */
-    List<ExpressionCompiler> used(String defaultLanguage) {
+    Map<String, ExpressionCompiler> used(String defaultLanguage) {
         if (compilers.isEmpty()) {
             forLanguage(defaultLanguage);
         }
-        return List.copyOf(compilers.values());
+        return Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
     }
 }

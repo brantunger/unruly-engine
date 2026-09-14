@@ -2,7 +2,10 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.UnaryOperator;
@@ -28,7 +31,7 @@ import java.util.function.UnaryOperator;
 final class RuleSet {
 
     private final List<CompiledRule> compiledRules;
-    private final List<ExpressionCompiler> factNameChecks;
+    private final Map<String, ExpressionCompiler> factNameChecks;
     private final UnaryOperator<CompiledRule> copy;
     private final Queue<List<CompiledRule>> idle = new ConcurrentLinkedQueue<>();
 
@@ -36,12 +39,14 @@ final class RuleSet {
      * Creates a rule set with no copies yet.
      *
      * @param compiledRules The compiled rules, in the order they run
-     * @param factChecks    The compilers whose {@code checkFactName} every fact of a run is checked with
+     * @param factChecks    The compilers whose {@code checkFactName} every fact of a run is checked with, by language
+     *                      name, in the order they check
      * @param copy          Makes a copy of one rule for a run
      */
-    RuleSet(List<CompiledRule> compiledRules, List<ExpressionCompiler> factChecks, UnaryOperator<CompiledRule> copy) {
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> factChecks,
+            UnaryOperator<CompiledRule> copy) {
         this.compiledRules = List.copyOf(compiledRules);
-        this.factNameChecks = List.copyOf(factChecks);
+        this.factNameChecks = Collections.unmodifiableMap(new LinkedHashMap<>(factChecks));
         this.copy = copy;
     }
 
@@ -57,9 +62,9 @@ final class RuleSet {
     /**
      * Returns the compilers that check the fact names of a run of these rules.
      *
-     * @return An unmodifiable list of the compilers
+     * @return An unmodifiable map of the compilers by language name, in the order they check
      */
-    List<ExpressionCompiler> factChecks() {
+    Map<String, ExpressionCompiler> factChecks() {
         return factNameChecks;
     }
 

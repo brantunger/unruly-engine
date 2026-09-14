@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,7 +44,7 @@ class RuleSetTest {
     @DisplayName("the compiled rules are never lent; a copy in use is never lent twice, and one given back is reused")
     void copiesLentOneAtATime() {
         AtomicInteger copies = new AtomicInteger();
-        RuleSet rules = new RuleSet(List.of(RULE), List.of(), rule -> {
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of(), rule -> {
             int n = copies.incrementAndGet();
             return new CompiledRule(rule.rule(), rule.displayName(), new Stub("condition copy " + n),
                     new Stub("action copy " + n));
@@ -78,8 +79,8 @@ class RuleSetTest {
             }
         };
 
-        RuleSet rules = new RuleSet(List.of(RULE), List.of(check), rule -> rule);
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("x", check), rule -> rule);
 
-        assertEquals(List.of(check), rules.factChecks());
+        assertEquals(Map.of("x", check), rules.factChecks());
     }
 }

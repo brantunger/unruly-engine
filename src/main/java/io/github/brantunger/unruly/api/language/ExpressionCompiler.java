@@ -40,7 +40,10 @@ public interface ExpressionCompiler {
      * every other name is accepted.
      *
      * @param name The fact's name
-     * @throws IllegalArgumentException if rules can't refer to a fact with this name; {@code run()} throws it as is
+     * @throws IllegalArgumentException if rules can't refer to a fact with this name; {@code run()} throws it as is.
+     *         Anything else this method throws is logged and thrown from {@code run()} as an
+     *         {@code IllegalArgumentException} naming the fact and the language, except a fatal {@link Error}, which
+     *         is rethrown unchanged.
      */
     default void checkFactName(String name) {
         // Every name is accepted.
