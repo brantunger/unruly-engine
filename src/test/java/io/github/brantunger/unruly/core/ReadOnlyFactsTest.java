@@ -48,6 +48,20 @@ class ReadOnlyFactsTest {
     }
 
     @Test
+    @DisplayName("the view for actions reads the same facts and rejects a write, pointing to the output object")
+    void actionView() {
+        Map<String, Object> actionFacts = ReadOnlyFacts.forActions(backing);
+
+        UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
+                () -> actionFacts.put("status", "APPROVED"));
+
+        assertEquals("The facts passed to an action are read-only; 'status' can't be changed. Put the result in the "
+                + "output object instead.", ex.getMessage());
+        assertEquals(Map.of("status", "DENIED"), actionFacts);
+        assertEquals("DENIED", backing.get("status"));
+    }
+
+    @Test
     @DisplayName("remove and clear are rejected")
     void removeAndClearThrow() {
         assertThrows(UnsupportedOperationException.class, () -> facts.remove("status"));

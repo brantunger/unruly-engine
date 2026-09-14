@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.core;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -440,7 +439,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
         // A read-only view: an action changes the output object, never the facts other rules see.
-        ActionContext context = new EngineActionContext(Collections.unmodifiableMap(entryMap), outputResult);
+        ActionContext context = new EngineActionContext(ReadOnlyFacts.forActions(entryMap), outputResult);
         try {
             rule.compiledAction().execute(context);
         } catch (Exception | Error e) {
