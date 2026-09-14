@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.5.0](https://github.com/brantunger/unruly-engine/compare/v1.4.0...v1.5.0) (2026-09-14)
+
+
+### Features
+
+* mark the public API's nullness with JSpecify annotations ([#225](https://github.com/brantunger/unruly-engine/issues/225)) ([b30c539](https://github.com/brantunger/unruly-engine/commit/b30c5397684e47a20a1681a773f1382b854490f5))
+
 ## [1.4.0](https://github.com/brantunger/unruly-engine/compare/v1.3.0...v1.4.0) (2026-09-14)
 
 
