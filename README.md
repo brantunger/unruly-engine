@@ -76,8 +76,18 @@ implementation("io.github.brantunger:unruly-engine:1.2.2")
 
 </details>
 
-On the module path, the jar is the automatic module `io.github.brantunger.unruly`:
-`requires io.github.brantunger.unruly;`.
+On the module path, the jar is the automatic module `io.github.brantunger.unruly`. Require SLF4J too: its API is
+the explicit module `org.slf4j`, which an automatic module can't add to the module graph on its own.
+
+```java
+module com.example.app {
+    requires io.github.brantunger.unruly;
+    requires org.slf4j;
+}
+```
+
+Without `requires org.slf4j`, creating an engine fails with `NoClassDefFoundError: org/slf4j/LoggerFactory`. An
+application that can't change its module declaration can pass `--add-modules org.slf4j` to `java` instead.
 
 > [!TIP]
 > The engine logs through the SLF4J API. Add an SLF4J 2.x provider such as Logback if your application doesn't
