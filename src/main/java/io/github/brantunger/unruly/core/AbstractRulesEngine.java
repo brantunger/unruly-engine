@@ -78,8 +78,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // swaps in both.
     private volatile RuleSet ruleSet;
     // Checks fact names before the first rule list is loaded: the default language's compiler, with no imports.
-    private final List<ExpressionCompiler> defaultFactChecks = List.of(languages.get(DEFAULT_LANGUAGE).newCompiler(
-            new EngineCompileContext(Set.of(), Set.of(), ImportResolver.LIBRARY_CLASS_LOADER)));
+    private final Map<String, ExpressionCompiler> defaultFactChecks = Map.of(DEFAULT_LANGUAGE,
+            languages.get(DEFAULT_LANGUAGE).newCompiler(
+                    new EngineCompileContext(Set.of(), Set.of(), ImportResolver.LIBRARY_CLASS_LOADER)));
 
     /**
      * Returns the rules as {@link #setRuleList(List)} compiled them, or {@code null} if it has not been called. The
@@ -302,14 +303,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return A map of variable names to their values
      * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, which actions reserve
      *                                  for the output object, or has a name the language of a loaded rule can't
-     *                                  refer to, such as a reserved MVEL word
+     *                                  refer to, such as a reserved MVEL word, or if a language's check of the name
+     *                                  throws anything else. A fatal {@link Error} is logged, then rethrown unchanged.
      */
     protected Map<String, Object> unwrapFacts(FactStore<Object> facts) {
         Map<String, Object> entryMap = new HashMap<>();
         // Read apart from the rules a run borrowed, so a run racing a reload may check names with the other list's
         // checks. That only changes whether a name one of the lists can't use is accepted, for that run.
         RuleSet rules = ruleSet;
-        List<ExpressionCompiler> checks = rules != null ? rules.factChecks() : defaultFactChecks;
+        Map<String, ExpressionCompiler> checks = rules != null ? rules.factChecks() : defaultFactChecks;
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
             if (entry.getKey() == null) {
                 String msg = "fact name must not be null";
@@ -323,20 +325,40 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 log.error(msg);
                 throw new IllegalArgumentException(msg);
             }
-            try {
-                for (ExpressionCompiler check : checks) {
-                    check.checkFactName(entry.getKey());
-                }
-            } catch (IllegalArgumentException e) {
-                log.error(e.getMessage());
-                throw e;
-            }
+            checkFactName(entry.getKey(), checks);
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
             // unresolvable, so `x == null` failed instead of matching.
             FactReference<Object> fact = entry.getValue();
             entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
         }
         return entryMap;
+    }
+
+    /**
+     * Checks a fact name with the language of each rule in use. A language rejects a name with an
+     * {@link IllegalArgumentException}, which is logged and thrown as is. Anything else a language throws is logged
+     * and thrown as an {@code IllegalArgumentException} naming the fact and the language, except a fatal
+     * {@link Error}, thrown or among the causes of what the language throws, which is rethrown after logging.
+     *
+     * @param name   The fact's name
+     * @param checks The compilers to check it with, by language name
+     * @throws IllegalArgumentException if a language rejects the name or fails to check it
+     */
+    private static void checkFactName(String name, Map<String, ExpressionCompiler> checks) {
+        for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
+            try {
+                check.getValue().checkFactName(name);
+            } catch (IllegalArgumentException e) {
+                log.error(e.getMessage());
+                throw e;
+            } catch (Exception | Error e) {
+                String msg = "The '%s' expression language failed to check fact name '%s': %s"
+                        .formatted(check.getKey(), name, Failures.describe(e));
+                log.error(msg);
+                Failures.throwIfPresent(Failures.fatalError(e));
+                throw new IllegalArgumentException(msg, e);
+            }
+        }
     }
 
     /**
