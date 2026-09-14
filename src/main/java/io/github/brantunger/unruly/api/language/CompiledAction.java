@@ -8,6 +8,11 @@ package io.github.brantunger.unruly.api.language;
  * object: each run executes its own copy, and the action the compiler returned is only copied, never executed. An
  * action that several threads can execute at the same time returns itself from {@code copy()}.
  * </p>
+ *
+ * <p>
+ * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
+ * method, so an existing language keeps compiling and working.
+ * </p>
  */
 public interface CompiledAction {
 

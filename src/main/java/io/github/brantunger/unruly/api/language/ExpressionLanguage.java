@@ -15,6 +15,11 @@ package io.github.brantunger.unruly.api.language;
  * <p>
  * Implementations must be thread-safe: an engine can compile rule lists on several threads.
  * </p>
+ *
+ * <p>
+ * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
+ * method, so an existing language keeps compiling and working.
+ * </p>
  */
 public interface ExpressionLanguage {
 

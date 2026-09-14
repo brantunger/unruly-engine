@@ -8,6 +8,11 @@ package io.github.brantunger.unruly.api.language;
  * object: each run evaluates its own copy, and the condition the compiler returned is only copied, never evaluated. A
  * condition that several threads can evaluate at the same time returns itself from {@code copy()}.
  * </p>
+ *
+ * <p>
+ * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
+ * method, so an existing language keeps compiling and working.
+ * </p>
  */
 public interface CompiledCondition {
 
