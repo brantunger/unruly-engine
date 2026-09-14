@@ -25,6 +25,7 @@ public final class RulesEngineBuilder {
      * @return A new stateless {@link RulesEngine}
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
+    @SuppressWarnings("removal") // The constructor is deprecated so that users call this method instead.
     public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory) {
         return new StatelessRulesEngine<>(outputFactory);
     }
@@ -39,6 +40,7 @@ public final class RulesEngineBuilder {
      * @return A new stateful {@link RulesEngine}
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
+    @SuppressWarnings("removal") // The constructor is deprecated so that users call this method instead.
     public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory) {
         return new StatefulRulesEngine<>(outputFactory);
     }

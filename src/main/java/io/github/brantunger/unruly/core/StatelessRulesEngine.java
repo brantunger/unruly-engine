@@ -33,7 +33,11 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
      *                      per run that matches a rule and must return a new, non-null object each time.
      * @throws NullPointerException if {@code outputFactory} is {@code null}
+     * @deprecated Create the engine with {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateless(Supplier)}
+     *             instead. The engine classes are implementation details and are expected to become package-private
+     *             in 2.0.
      */
+    @Deprecated(since = "1.3.0", forRemoval = true)
     public StatelessRulesEngine(Supplier<O> outputFactory) {
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }

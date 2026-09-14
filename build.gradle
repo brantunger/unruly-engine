@@ -143,6 +143,12 @@ dependencies {
 // CI can run them on each JDK in its matrix; otherwise the test task would use the 17 toolchain every time.
 def testJdk = providers.gradleProperty('testJdk').getOrElse('17')
 
+// The tests construct the engines directly, and those constructors are deprecated for removal (in favour of
+// RulesEngineBuilder), so javac would otherwise print a removal warning for every one of them.
+tasks.named('compileTestJava') {
+    options.compilerArgs << '-Xlint:-removal'
+}
+
 test {
     javaLauncher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(testJdk)
