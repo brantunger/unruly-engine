@@ -12,5 +12,10 @@
  * <p>Rules are compiled at configuration time, by MVEL unless another expression language is used, via
  * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}
  * and evaluated against a {@link io.github.brantunger.unruly.api.FactStore} at runtime.</p>
+ *
+ * <p><b>Internal:</b> this package is an implementation detail. Create an engine with
+ * {@link io.github.brantunger.unruly.api.RulesEngineBuilder} and use it through
+ * {@link io.github.brantunger.unruly.api.RulesEngine}. The engines' public constructors are deprecated for removal,
+ * and the classes in this package are expected to become package-private in 2.0.</p>
  */
 package io.github.brantunger.unruly.core;
