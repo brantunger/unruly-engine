@@ -87,11 +87,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" build/libs/*.jar --clobber
 
-      # The gh-pages branch keeps one directory per release plus `latest`, served by GitHub
-      # Pages. The Central step above already ran `javadoc`, so this only copies its output.
+      # The gh-pages branch keeps one directory per release plus `latest`; the `pages` job below
+      # deploys it. The Central step above already ran `javadoc`, so this only copies its output.
       # A missing branch is recreated instead of failing the job: this version is already on
       # Central, so the job can't be re-run. RELEASING.md shows how to add the older versions back.
-      - name: Publish Javadoc to GitHub Pages
+      - name: Add the Javadoc to the gh-pages branch
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.release-please.outputs.version }}
@@ -135,3 +135,14 @@ jobs:
       # No repo1 sync poll here: propagation takes 30-60 minutes, and waiting inside this
       # run would hold the `release` concurrency group that long. RELEASING.md shows how
       # to confirm the sync by hand.
+
+  # Deploys gh-pages, which `publish` just updated, to GitHub Pages. A separate job because a job has
+  # one environment: `publish` uses maven-central, and a Pages deployment uses github-pages. Pushing
+  # to gh-pages isn't enough on its own; see pages.yml.
+  pages:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

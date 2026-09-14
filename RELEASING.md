@@ -24,7 +24,8 @@ flowchart LR
     D --> E["🔨 publish job<br/>build, check, sign"]
     E --> F["📦 Central<br/>Portal"]
     F -. "30–60 min" .-> G["🌍 repo1.maven.org"]
-    F --> H["📖 Javadoc on<br/>GitHub Pages"]
+    E --> P["📄 pages job<br/>deploy gh-pages"]
+    P --> H["📖 Javadoc on<br/>GitHub Pages"]
 ```
 
 1. Merge PRs to `main` with [Conventional Commit](CONTRIBUTING.md#-commit-and-pr-titles) titles. `feat:` bumps the
@@ -36,8 +37,8 @@ flowchart LR
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD, the
    coverage gate and the [API compatibility check](CONTRIBUTING.md#-api-compatibility) against the previous
-   release), publishes to the Central Portal, attaches the jars to the GitHub Release and copies the Javadoc
-   to [GitHub Pages](#-the-javadoc-site).
+   release), publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to
+   the `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
 
 Central Portal validation is synchronous, so a green `publish` job means the release was accepted. Propagation to
 `repo1.maven.org` takes a further **30–60 minutes**. The workflow doesn't wait for it, so the release queue isn't
@@ -102,7 +103,8 @@ the short (8-character) key ID so the plugin picks the right one.
 | --- | --- |
 | **Before the upload** (build, Checkstyle, PMD, coverage, API compatibility or Javadoc failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
-| **After the upload** (attaching the jars or publishing the Javadoc failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
+| **After the upload** (attaching the jars or adding the Javadoc to `gh-pages` failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
+| **Only the `pages` job failed** | Everything else shipped. Re-run the failed job, or redeploy with `gh workflow run pages.yml --ref main`. |
 | **Released but broken** | Don't try to replace it. Cut the next patch version. |
 
 ## 🔎 Checking a release by hand
@@ -118,17 +120,17 @@ curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VER
 # HTTP 200 once synced, 404 before
 ```
 
-The Javadoc for the same version is live a minute or two after the `publish` job finishes:
+The Javadoc for the same version is live as soon as the `pages` job finishes:
 
 ```bash
 curl -sI "https://brantunger.github.io/unruly-engine/$VERSION/index.html"
-# HTTP 200 once GitHub Pages has deployed the push
+# HTTP 200 once the pages job has deployed gh-pages
 ```
 
 ## 📖 The Javadoc site
 
-The `publish` job copies the Javadoc it built to the `gh-pages` branch, which GitHub Pages serves at
-<https://brantunger.github.io/unruly-engine/>.
+The `publish` job copies the Javadoc it built to the `gh-pages` branch, and the `pages` job
+([`pages.yml`](.github/workflows/pages.yml)) deploys that branch to <https://brantunger.github.io/unruly-engine/>.
 
 | Path | Contents |
 | --- | --- |
@@ -136,8 +138,16 @@ The `publish` job copies the Javadoc it built to the `gh-pages` branch, which Gi
 | `/X.Y.Z/` | Each release, kept permanently. There's no `/1.0.0/`: that version was published without a `-javadoc.jar`. |
 | `/` | Redirects to `/latest/` |
 
-Pages serves the `gh-pages` branch from its root (**Settings → Pages**). The branch was seeded with the Javadoc of
-1.0.4 through 1.1.25, unpacked from their `-javadoc.jar` files on Maven Central.
+**Settings → Pages → Source** must be **GitHub Actions**. A push to `gh-pages` doesn't deploy on its own; only the
+`pages` job does. Before that job existed, releases only pushed to the branch, so the Javadoc of 1.1.26 through 1.5.0
+never went live. To redeploy the branch as it is, for example after changing it by hand, run:
+
+```bash
+gh workflow run pages.yml --ref main
+```
+
+The branch was seeded with the Javadoc of 1.0.4 through 1.1.25, unpacked from their `-javadoc.jar` files on Maven
+Central.
 
 Don't delete `gh-pages`; a repository ruleset blocks deleting or force-pushing it. If the branch is missing anyway
 when a release publishes, the `publish` job recreates it with only that release's Javadoc, `/latest/` and the `/`
@@ -164,6 +174,7 @@ fi
 git -C pages add --all
 git -C pages commit -m "docs: Javadoc $VERSION"
 git -C pages push origin HEAD:gh-pages
+gh workflow run pages.yml --repo brantunger/unruly-engine --ref main   # deploy the updated branch
 ```
 
 ## ✍ Verifying signing locally

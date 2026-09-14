@@ -1,0 +1,43 @@
+name: Pages
+
+# Deploys the gh-pages branch, which keeps every release's Javadoc, to GitHub Pages. The release workflow calls this
+# after each publish; run it by hand (`gh workflow run pages.yml --ref main`) to redeploy the branch as it is.
+#
+# The site's Pages source is GitHub Actions, so pushing to gh-pages deploys nothing on its own: only a deployment made
+# by a workflow, like this one, updates the site. Settings -> Pages -> Source must stay "GitHub Actions".
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Two deployments at once could finish out of order and leave the older tree live.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          persist-credentials: false
+
+      # Leaves out .git, .github and other hidden files; the site has none it needs.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
