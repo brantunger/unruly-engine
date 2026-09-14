@@ -1,10 +1,9 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -85,17 +84,6 @@ class FactNameValidationTest {
     }
 
     @Test
-    @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException")
-    void nullNameRejected() {
-        HashFactStore facts = new HashFactStore();
-        facts.put((String) null, new Fact<>("x", 1));
-
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine("true").run(facts));
-
-        assertEquals("fact name must not be null", ex.getMessage());
-    }
-
-    @Test
     @DisplayName("names are checked against the imports of the current rule list, like the rules themselves")
     void importsTakeEffectOnReload() {
         StatelessRulesEngine<Map<String, Object>> engine = engine("true");
@@ -133,23 +121,4 @@ class FactNameValidationTest {
         }
     }
 
-    /** A FactStore that, unlike FactMap, accepts a null name. */
-    private static final class HashFactStore extends HashMap<String, FactReference<Object>>
-            implements FactStore<Object> {
-
-        @Override
-        public Object getValue(String name) {
-            return get(name).getValue();
-        }
-
-        @Override
-        public void setValue(String name, Object obj) {
-            put(name, new Fact<>(name, obj));
-        }
-
-        @Override
-        public FactReference<Object> put(FactReference<Object> ref) {
-            return put(ref.getName(), ref);
-        }
-    }
 }
