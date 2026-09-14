@@ -86,4 +86,21 @@ class SharedClassLookupTest {
 
         assertEquals(Map.of("fact", 1, "class", new Date(0), "package", new Date(0)), engine.run(facts));
     }
+
+    @Test
+    @DisplayName("an inline class import in a typed declaration finds a class another rule found not to be one")
+    void inlineClassImportInTypedDeclaration() {
+        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        engine.addImport("java.io");
+        engine.setRuleList(List.of(
+                Rule.builder().ruleName("first").priority(2).condition("LinkedList == 1")
+                        .action("output.put('fact', LinkedList)").build(),
+                Rule.builder().ruleName("second").priority(1).condition("true")
+                        .action("import java.util.LinkedList; LinkedList l = new LinkedList(); l.add(1); "
+                                + "output.put('r', l.size())").build()));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("LinkedList", 1);
+
+        assertEquals(Map.of("fact", 1, "r", 1), engine.run(facts));
+    }
 }

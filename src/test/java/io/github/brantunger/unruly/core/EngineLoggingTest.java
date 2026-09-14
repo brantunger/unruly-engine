@@ -89,7 +89,9 @@ class EngineLoggingTest {
                 Arguments.of("an assignment in a condition", List.of(rule("a", "x = 1", "output.put('k', 1)"))),
                 Arguments.of("import_static in a condition",
                         List.of(rule("a", "import_static java.lang.Math.max; max(x, 1) == 5", "output.put('k', 1)"))),
-                Arguments.of("a syntax error", List.of(rule("a", "x >= ", "output.put('k', 1)"))));
+                Arguments.of("a syntax error", List.of(rule("a", "x >= ", "output.put('k', 1)"))),
+                Arguments.of("a rule in an unregistered language",
+                        List.of(Rule.builder().ruleName("a").language("cel").condition("true").action("1").build())));
     }
 
     @ParameterizedTest(name = "{0}")
