@@ -89,7 +89,9 @@ public final class MyLanguage implements ExpressionLanguage {
 - **Errors while compiling.** Throw `InvalidExpressionException` to reject an expression that breaks a rule the
   engine enforces. Its message is used after the rule's name, as in
   `Condition for rule 'prime-rate' contains an assignment`. Anything else you throw, such as a syntax error, becomes
-  the cause of the `RuleCompilationException`.
+  the cause of the `RuleCompilationException`, except a fatal `Error`, which is logged and rethrown unchanged. The
+  same goes for `newCompiler`. Returning `null` from `newCompiler`, `compileCondition` or `compileAction` fails the
+  rule list too.
 - **Errors while running.** An exception from `evaluate` or `execute` becomes a `RuleExecutionException` naming the
   rule. A fatal `Error` such as `OutOfMemoryError` is rethrown unchanged, even when you wrap it in your own exception.
 - **Facts and output.** `facts()` is a read-only map of fact values by name. Actions see the output object as

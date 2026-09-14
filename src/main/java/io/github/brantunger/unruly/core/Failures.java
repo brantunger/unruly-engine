@@ -78,16 +78,26 @@ final class Failures {
         if (nested != null) {
             return "a nested run() failed: " + nested.getMessage();
         }
-        String text = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
-        if (text.length() > MAX_DESCRIPTION_LENGTH) {
-            text = text.substring(0, MAX_DESCRIPTION_LENGTH) + "... (" + (text.length() - MAX_DESCRIPTION_LENGTH)
-                    + " more characters)";
-        }
+        String text = truncate(e.getMessage() != null ? e.getMessage() : e.getClass().getName());
         List<Throwable> chain = causeChain(e);
         Throwable root = chain.get(chain.size() - 1);
         return chain.size() > 1 && root.getMessage() == null
                 ? text + " (caused by " + root.getClass().getName() + ")"
                 : text;
+    }
+
+    /**
+     * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, saying how many were left out.
+     *
+     * @param text The message
+     * @return The message, shortened if it was longer
+     */
+    static String truncate(String text) {
+        if (text.length() <= MAX_DESCRIPTION_LENGTH) {
+            return text;
+        }
+        return text.substring(0, MAX_DESCRIPTION_LENGTH) + "... (" + (text.length() - MAX_DESCRIPTION_LENGTH)
+                + " more characters)";
     }
 
     /**

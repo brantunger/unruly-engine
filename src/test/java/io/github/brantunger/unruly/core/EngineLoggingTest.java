@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("the engine logs each failure before throwing it")
 class EngineLoggingTest {
 
-    private static final String ENGINE_LOGGER = "io.github.brantunger.unruly.core.AbstractRulesEngine - ";
+    static final String ENGINE_LOGGER = "io.github.brantunger.unruly.core.AbstractRulesEngine - ";
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
@@ -45,7 +45,7 @@ class EngineLoggingTest {
         return facts;
     }
 
-    private static String logsOf(Runnable action) {
+    static String logsOf(Runnable action) {
         PrintStream original = System.err;
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8));
@@ -57,12 +57,26 @@ class EngineLoggingTest {
         return buffer.toString(StandardCharsets.UTF_8);
     }
 
-    /** Asserts that {@code action} throws {@code type} and that the exception's message was logged at ERROR. */
-    private static void assertLoggedAtError(Class<? extends Throwable> type, Executable action) {
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
+    /**
+     * Asserts that {@code action} throws {@code type} and that the exception's message was logged at ERROR.
+     *
+     * @return The exception
+     */
+    static <T extends Throwable> T assertLoggedAtError(Class<T> type, Executable action) {
+        AtomicReference<T> thrown = new AtomicReference<>();
         String logs = logsOf(() -> thrown.set(assertThrows(type, action)));
 
         assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + thrown.get().getMessage()), logs);
+        return thrown.get();
+    }
+
+    /** Asserts that {@code action} throws {@code error} itself, after logging {@code message} at ERROR. */
+    static void assertLoggedThenRethrown(Error error, String message, Executable action) {
+        AtomicReference<Error> thrown = new AtomicReference<>();
+        String logs = logsOf(() -> thrown.set(assertThrows(Error.class, action)));
+
+        assertSame(error, thrown.get());
+        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + message), logs);
     }
 
     static Stream<Arguments> rejectedRuleLists() {

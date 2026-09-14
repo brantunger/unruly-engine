@@ -27,7 +27,10 @@ public interface RulesEngine<O> {
      * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if a rule fails to compile, has a
      *         null or blank condition or action, has a condition that contains an assignment, shares its name with
      *         another rule, names an expression language that isn't registered, or if the list contains a
-     *         {@code null} rule
+     *         {@code null} rule. Also if an expression language throws while creating its compiler, or returns
+     *         {@code null} instead of a compiler or a compiled expression. An {@link Error} other than
+     *         {@link StackOverflowError} or {@link AssertionError} thrown while compiling, also as the cause of another
+     *         exception, is logged and then rethrown unchanged.
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      */
     void setRuleList(List<Rule> ruleList);

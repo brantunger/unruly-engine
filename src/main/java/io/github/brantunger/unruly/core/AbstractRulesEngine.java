@@ -205,7 +205,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
                 ImportResolver.contextClassLoader());
-        LanguageCompilers compilers = new LanguageCompilers(Map.copyOf(languages), context);
+        LanguageCompilers compilers = new LanguageCompilers(Map.copyOf(languages),
+                (name, language) -> newCompiler(name, language, context));
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
                         Rule::getPriority,
@@ -563,16 +564,42 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Logs an expression the language rejected at ERROR, and returns the exception for the caller to throw, caused by
-     * the language's rejection.
+     * Logs a failure to compile at ERROR, as the engine logs every failure it throws. Then rethrows the fatal
+     * {@link Error} in {@code cause}'s cause chain, if there is one (see {@link Failures#fatalError}), or returns the
+     * exception for the caller to throw.
      *
-     * @param msg   What is wrong with the expression, naming the rule
-     * @param cause The language's rejection
-     * @return The exception to throw
+     * @param msg   What failed, naming the rule or the language
+     * @param cause What the expression language threw
+     * @return The exception to throw, caused by {@code cause}
      */
-    private static RuleCompilationException compilationFailure(String msg, InvalidExpressionException cause) {
+    private static RuleCompilationException compilationFailure(String msg, Throwable cause) {
         log.error(msg);
+        Failures.throwIfPresent(Failures.fatalError(cause));
         return new RuleCompilationException(msg, cause);
+    }
+
+    /**
+     * Creates a language's compiler for one rule list. A language that throws or returns {@code null} fails the rule
+     * list, like an expression that doesn't compile.
+     *
+     * @param name     The name the language is registered under
+     * @param language The language
+     * @param context  The imports and class loader the rule list is compiled with
+     * @return The compiler
+     * @throws RuleCompilationException if the language throws or returns {@code null}
+     */
+    private static ExpressionCompiler newCompiler(String name, ExpressionLanguage language, CompileContext context) {
+        ExpressionCompiler compiler;
+        try {
+            compiler = language.newCompiler(context);
+        } catch (Exception | Error e) {
+            throw compilationFailure("The '" + name + "' expression language failed to create a compiler: "
+                    + Failures.describe(e), e);
+        }
+        if (compiler == null) {
+            throw compilationFailure("The '" + name + "' expression language returned no compiler");
+        }
+        return compiler;
     }
 
     private CompiledRule compileRule(Rule rule, LanguageCompilers compilers) {
@@ -608,31 +635,37 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Compiles one condition or action. An expression the language rejects is reported with the language's reason;
-     * anything else the language throws, such as a syntax error, becomes the cause of the failure.
+     * anything else the language throws, such as a syntax error, becomes the cause of the failure. A fatal
+     * {@link Error}, also one the language wraps in its own exception, is logged like any failure and then rethrown.
      *
      * @param ruleName    The rule's name for messages
      * @param expression  {@code Condition} or {@code Action}, for messages
      * @param compilation Compiles the expression
      * @param <T>         The type of compiled expression
      * @return The compiled expression
-     * @throws RuleCompilationException if the expression doesn't compile
+     * @throws RuleCompilationException if the expression doesn't compile, or the language returns {@code null}
      */
     private static <T> T compile(String ruleName, String expression, Supplier<T> compilation) {
+        T compiled;
         try {
-            return compilation.get();
+            compiled = compilation.get();
         } catch (InvalidExpressionException e) {
-            throw compilationFailure(expression + " for rule '" + ruleName + "' " + e.getMessage(), e);
-        } catch (Exception e) {
-            // A language may wrap an OutOfMemoryError from its compiler in its own exception.
-            Failures.throwIfPresent(Failures.fatalError(e));
+            String reason = e.getMessage() != null
+                    ? Failures.truncate(e.getMessage())
+                    : "was rejected by its expression language";
+            throw compilationFailure(expression + " for rule '" + ruleName + "' " + reason, e);
+        } catch (Exception | Error e) {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
             String reason = Failures.rootCause(e) instanceof StackOverflowError
                     ? "the expression is too long or too deeply nested to compile"
                     : Failures.describe(e);
-            String msg = "Can not compile rule '" + ruleName + "'. Error: " + reason;
-            log.error(msg);
-            throw new RuleCompilationException(msg, e);
+            throw compilationFailure("Can not compile rule '" + ruleName + "'. Error: " + reason, e);
         }
+        if (compiled == null) {
+            throw compilationFailure(expression + " for rule '" + ruleName
+                    + "' wasn't compiled: its expression language returned null");
+        }
+        return compiled;
     }
 
     /**
