@@ -89,13 +89,40 @@ jobs:
 
       # The gh-pages branch keeps one directory per release plus `latest`, served by GitHub
       # Pages. The Central step above already ran `javadoc`, so this only copies its output.
+      # A missing branch is recreated instead of failing the job: this version is already on
+      # Central, so the job can't be re-run. RELEASING.md shows how to add the older versions back.
       - name: Publish Javadoc to GitHub Pages
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           : "${VERSION:?release-please reported no version}"
-          git clone --quiet --depth 1 --branch gh-pages "https://github.com/${GITHUB_REPOSITORY}.git" pages
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" gh-pages > /dev/null; then
+            git clone --quiet --depth 1 --branch gh-pages "https://github.com/${GITHUB_REPOSITORY}.git" pages
+          else
+            status=$?
+            # 2 means the repository has no gh-pages branch; anything else is a failed lookup.
+            if [ "$status" -ne 2 ]; then
+              exit "$status"
+            fi
+            echo "::warning::The gh-pages branch was missing, so it was recreated with only the ${VERSION} Javadoc. See RELEASING.md to add the older versions back."
+            git init --quiet --initial-branch gh-pages pages
+            touch pages/.nojekyll
+            cat > pages/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <title>unruly-engine Javadoc</title>
+          <link rel="canonical" href="latest/">
+          <meta http-equiv="refresh" content="0; url=latest/">
+          </head>
+          <body>
+          <p>The unruly-engine Javadoc has moved to <a href="latest/">latest/</a>. Docs for each release are at <code>/&lt;version&gt;/</code>.</p>
+          </body>
+          </html>
+          EOF
+          fi
           rm -rf "pages/${VERSION}" pages/latest
           cp -r build/docs/javadoc "pages/${VERSION}"
           cp -r build/docs/javadoc pages/latest

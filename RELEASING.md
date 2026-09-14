@@ -99,7 +99,7 @@ the short (8-character) key ID so the plugin picks the right one.
 
 | Failure | What to do |
 | --- | --- |
-| **Before the upload** (build, Checkstyle, PMD or coverage failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
+| **Before the upload** (build, Checkstyle, PMD, coverage, delombok or Javadoc failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
 | **After the upload** (attaching the jars or publishing the Javadoc failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
 | **Released but broken** | Don't try to replace it. Cut the next patch version. |
@@ -138,19 +138,28 @@ The `publish` job copies the Javadoc it built to the `gh-pages` branch, which Gi
 Pages serves the `gh-pages` branch from its root (**Settings → Pages**). The branch was seeded with the Javadoc of
 1.0.4 through 1.1.25, unpacked from their `-javadoc.jar` files on Maven Central.
 
+Don't delete `gh-pages`; a repository ruleset blocks deleting or force-pushing it. If the branch is missing anyway
+when a release publishes, the `publish` job recreates it with only that release's Javadoc, `/latest/` and the `/`
+redirect, and logs a warning. Every older `/X.Y.Z/` then returns 404 until you add it back with the script below,
+once per version.
+
 If the publish step failed, rebuild that version's directory from its `-javadoc.jar`. The GitHub Release has the
-jar as soon as the job attaches it; `repo1` has it only after the 30–60 minute sync. For a version that isn't the
-newest release, leave `pages/latest` alone:
+jar as soon as the job attaches it; `repo1` has it only after the 30–60 minute sync. The script replaces
+`pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version:
 
 ```bash
 VERSION=<version>
+NEWEST=$(gh release view --repo brantunger/unruly-engine --json tagName -q .tagName)
 git clone --depth 1 --branch gh-pages https://github.com/brantunger/unruly-engine.git pages
 gh release download "v$VERSION" --repo brantunger/unruly-engine --pattern '*-javadoc.jar'
 # or, if the jars never reached the GitHub Release:
 # curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION-javadoc.jar"
-rm -rf "pages/$VERSION" pages/latest
+rm -rf "pages/$VERSION"
 unzip -q "unruly-engine-$VERSION-javadoc.jar" -d "pages/$VERSION" -x 'META-INF/*'
-cp -r "pages/$VERSION" pages/latest
+if [ "v$VERSION" = "$NEWEST" ]; then
+  rm -rf pages/latest
+  cp -r "pages/$VERSION" pages/latest
+fi
 git -C pages add --all
 git -C pages commit -m "docs: Javadoc $VERSION"
 git -C pages push origin HEAD:gh-pages
