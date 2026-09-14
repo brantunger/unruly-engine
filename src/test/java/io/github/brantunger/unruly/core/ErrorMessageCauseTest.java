@@ -118,7 +118,7 @@ public class ErrorMessageCauseTest {
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
 
-        assertTrue(ex.getMessage().length() < AbstractRulesEngine.MAX_DESCRIPTION_LENGTH + 100, ex.getMessage());
+        assertTrue(ex.getMessage().length() < Failures.MAX_DESCRIPTION_LENGTH + 100, ex.getMessage());
         assertTrue(ex.getMessage().matches("(?s).*\\.\\.\\. \\(\\d+ more characters\\)$"), ex.getMessage());
     }
 
@@ -129,6 +129,6 @@ public class ErrorMessageCauseTest {
         RuntimeException outer = new RuntimeException("outer", inner);
         inner.initCause(outer);
 
-        assertEquals("outer (caused by java.lang.IllegalStateException)", AbstractRulesEngine.describe(outer));
+        assertEquals("outer (caused by java.lang.IllegalStateException)", Failures.describe(outer));
     }
 }
