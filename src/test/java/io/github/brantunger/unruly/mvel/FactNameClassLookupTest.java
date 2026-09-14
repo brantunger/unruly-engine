@@ -1,25 +1,26 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("fact names are checked against imported classes with the rule list's class loader")
-public class FactNameClassLookupTest {
+class FactNameClassLookupTest {
 
-    private static final String CORE_PACKAGE = "io.github.brantunger.unruly.core";
+    /** A class the rule list's class loader can see, in a package the tests import: this test. */
+    private static final String IMPORTED_PACKAGE = FactNameClassLookupTest.class.getPackageName();
+    private static final String CLASS_NAME = FactNameClassLookupTest.class.getSimpleName();
 
     private static Rule rule(String condition) {
         return Rule.builder().ruleName("r").condition(condition).action("output.put('hit', true)").build();
@@ -65,29 +66,6 @@ public class FactNameClassLookupTest {
         };
     }
 
-    /** Records the classes it is asked to load. */
-    public static final class RecordingClassLoader extends ClassLoader {
-
-        public final List<String> loadedClasses = new CopyOnWriteArrayList<>();
-        public final List<String> resources = new CopyOnWriteArrayList<>();
-
-        public RecordingClassLoader() {
-            super(RecordingClassLoader.class.getClassLoader());
-        }
-
-        @Override
-        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            loadedClasses.add(name);
-            return super.loadClass(name, resolve);
-        }
-
-        @Override
-        public URL getResource(String name) {
-            resources.add(name);
-            return super.getResource(name);
-        }
-    }
-
     @Test
     @DisplayName("a fact name that isn't a class is never loaded as one, so nothing stays in the class loader")
     void nonClassNameNeverLoaded() {
@@ -109,10 +87,10 @@ public class FactNameClassLookupTest {
     @DisplayName("a class name is rejected on a thread whose context class loader can't see the class")
     void classNameRejectedOnAnyThread() throws InterruptedException {
         StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.addImport(CORE_PACKAGE);
+        engine.addImport(IMPORTED_PACKAGE);
         engine.setRuleList(List.of(rule("true")));
 
-        Object result = runOnThread(classPathHidden(), engine, fact("RuleSet", 1));
+        Object result = runOnThread(classPathHidden(), engine, fact(CLASS_NAME, 1));
 
         assertInstanceOf(IllegalArgumentException.class, result);
     }
@@ -122,12 +100,12 @@ public class FactNameClassLookupTest {
     void readableFactAcceptedOnAnyThread() throws InterruptedException {
         StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
         withContextClassLoader(classPathHidden(), () -> {
-            engine.addImport(CORE_PACKAGE);
-            engine.setRuleList(List.of(rule("RuleSet == 1")));
+            engine.addImport(IMPORTED_PACKAGE);
+            engine.setRuleList(List.of(rule(CLASS_NAME + " == 1")));
             return null;
         });
 
-        Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine, fact("RuleSet", 1));
+        Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine, fact(CLASS_NAME, 1));
 
         assertEquals(Map.of("hit", true), result);
     }

@@ -1,14 +1,16 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.core.StatefulRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mvel2.CompileException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -45,6 +47,17 @@ class SyntaxValidationTest {
 
         assertThrows(RuleCompilationException.class,
                 () -> engine.setRuleList(List.of(rule("true", "x == == 1"))));
+    }
+
+    @Test
+    @DisplayName("a compile error keeps MVEL's exception as its cause")
+    void compileErrorKeepsCause() {
+        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                () -> engine.setRuleList(List.of(rule("x >= ", "output.put('k', 1)"))));
+
+        assertInstanceOf(CompileException.class, ex.getCause());
     }
 
     @ParameterizedTest(name = "valid expression {0} still compiles")
