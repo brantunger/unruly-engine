@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.3.0](https://github.com/brantunger/unruly-engine/compare/v1.2.5...v1.3.0) (2026-09-14)
+
+
+### Features
+
+* deprecate the engine constructors in favour of RulesEngineBuilder ([#218](https://github.com/brantunger/unruly-engine/issues/218)) ([98136a5](https://github.com/brantunger/unruly-engine/commit/98136a596b4a62420efee3c427637ef139579658))
+
 ## [1.2.5](https://github.com/brantunger/unruly-engine/compare/v1.2.4...v1.2.5) (2026-09-14)
 
 
