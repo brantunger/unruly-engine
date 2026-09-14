@@ -7,7 +7,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -64,12 +63,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     public static final String JIT_PROPERTY = "unruly.mvel.jit";
 
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
-    /** How much of an exception's message an error message includes; see {@link #describe}. */
-    static final int MAX_DESCRIPTION_LENGTH = 1_000;
-    // For a thread that has no context class loader. PMD asks for the context class loader instead, which is exactly
-    // what is missing in that case.
-    @SuppressWarnings("PMD.UseProperClassLoader")
-    private static final ClassLoader LIBRARY_CLASS_LOADER = AbstractRulesEngine.class.getClassLoader();
     // The language of a rule whose language is null.
     private static final String DEFAULT_LANGUAGE = MvelExpressionLanguage.LANGUAGE_NAME;
     // Registered languages by name: MVEL, unless replaced, and those from registerLanguage().
@@ -89,7 +82,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // racing a reload may use the other list's checks, which only changes whether a name one list can't use is
     // accepted.
     private volatile List<ExpressionCompiler> factNames = List.of(languages.get(DEFAULT_LANGUAGE).newCompiler(
-            new EngineCompileContext(Set.of(), Set.of(), LIBRARY_CLASS_LOADER)));
+            new EngineCompileContext(Set.of(), Set.of(), ImportResolver.LIBRARY_CLASS_LOADER)));
 
     /**
      * Returns an unmodifiable view of the compiled rules list.
@@ -211,7 +204,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
         }
         CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
-                contextClassLoader());
+                ImportResolver.contextClassLoader());
         LanguageCompilers compilers = new LanguageCompilers(Map.copyOf(languages), context);
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
@@ -246,7 +239,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Set<Class<?>> newClasses = new LinkedHashSet<>();
         for (String pkg : packages) {
             Objects.requireNonNull(pkg, "package element must not be null");
-            Class<?> type = resolveImport(pkg);
+            Class<?> type = ImportResolver.resolve(pkg);
             if (type != null) {
                 newClasses.add(type);
             } else {
@@ -389,7 +382,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             output = outputFactory.get();
         } catch (Exception | Error e) {
-            throwIfPresent(fatalError(e));
+            Failures.throwIfPresent(Failures.fatalError(e));
             String msg = "Output factory threw " + e;
             log.error(msg);
             throw new RuleExecutionException(msg, e);
@@ -416,7 +409,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(conditionFacts));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
-                    + describe(e), e);
+                    + Failures.describe(e), e);
         }
 
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
@@ -446,7 +439,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             rule.compiledAction().execute(context);
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to execute action for rule '" + rule.displayName() + "': "
-                    + describe(e), e);
+                    + Failures.describe(e), e);
         }
 
         notifyAfter(snapshot, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
@@ -497,12 +490,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /** Calls an {@code after*} callback on every listener, then rethrows the first fatal {@link Error} one threw. */
     private void notifyAfter(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        throwIfPresent(notifyListeners(snapshot, callback, call));
+        Failures.throwIfPresent(notifyListeners(snapshot, callback, call));
     }
 
     /**
      * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't interrupt a
-     * run. A fatal {@link Error} (see {@link #fatalError}), thrown or found among the causes of what a listener
+     * run. A fatal {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener
      * throws, doesn't stop the other listeners either, so each still gets the callback, and closes whatever it opened;
      * the error is returned for the caller to rethrow. A second fatal error in the same callback is logged like an
      * exception.
@@ -515,7 +508,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 call.accept(listener);
             } catch (Exception | Error e) {
-                Error found = fatal == null ? fatalError(e) : null;
+                Error found = fatal == null ? Failures.fatalError(e) : null;
                 if (found != null) {
                     fatal = found;
                 } else {
@@ -538,9 +531,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 ? new RuleExecutionException(msg)
                 : new RuleExecutionException(msg, cause);
         // A failed run() started by this rule has already logged its failure.
-        Error listenerFatal = reportFailure(snapshot, rule, error, nestedRunFailure(cause) == null);
-        throwIfPresent(fatalError(cause));
-        throwIfPresent(listenerFatal);
+        Error listenerFatal = reportFailure(snapshot, rule, error, Failures.nestedRunFailure(cause) == null);
+        Failures.throwIfPresent(Failures.fatalError(cause));
+        Failures.throwIfPresent(listenerFatal);
         return error;
     }
 
@@ -555,107 +548,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             log.error(error.getMessage());
         }
         return notifyListeners(snapshot, "onError", listener -> listener.onError(listenerCopy(rule), error));
-    }
-
-    /**
-     * Tells whether {@code thrown} is an {@link Error} the engine must not absorb. A {@link StackOverflowError}
-     * (runaway recursion) or {@link AssertionError} ({@code assert} in a rule or listener) comes from the code
-     * being run and is handled like an exception. Any other error, such as {@link OutOfMemoryError}, is left
-     * for the caller to see unchanged.
-     *
-     * @param thrown One throwable from a cause chain
-     * @return {@code true} if {@code thrown} must be rethrown unchanged
-     */
-    private static boolean isFatal(Throwable thrown) {
-        return thrown instanceof Error && !(thrown instanceof StackOverflowError || thrown instanceof AssertionError);
-    }
-
-    /**
-     * Finds the fatal {@link Error} (see {@link #isFatal}) in what was caught: the throwable itself, or one of its
-     * causes. An error from Java code a rule calls, such as a method, a getter or a lambda held in a fact, reaches the
-     * engine inside MVEL's own exception, so checking only the outer exception let an {@link OutOfMemoryError} be
-     * absorbed into a {@link RuleExecutionException}.
-     *
-     * @param thrown What was caught, or {@code null}
-     * @return The first fatal error in {@code thrown}'s cause chain, or {@code null} if there is none
-     */
-    private static Error fatalError(Throwable thrown) {
-        for (Throwable t : causeChain(thrown)) {
-            if (isFatal(t)) {
-                return (Error) t;
-            }
-        }
-        return null;
-    }
-
-    private static void throwIfPresent(Error fatal) {
-        if (fatal != null) {
-            throw fatal;
-        }
-    }
-
-    /**
-     * Describes an exception for an error message:
-     * <ul>
-     *     <li>its message, or its class name if it has none (NPEs and bare RuntimeExceptions carry no message)</li>
-     *     <li>the class of its root cause when that has no message either, since MVEL copies a cause's missing message
-     *     into its own as {@code ": null"}</li>
-     *     <li>at most {@value #MAX_DESCRIPTION_LENGTH} characters of the message: MVEL pads its messages with spaces up
-     *     to the error's column, so a long expression produced messages hundreds of thousands of characters long</li>
-     * </ul>
-     * A failure of a {@code run()} started from a condition or action is described by that run's innermost failure
-     * only, so a failure nested many runs deep isn't repeated once per level.
-     *
-     * @param e The exception to describe
-     * @return A description of the exception for an error message
-     */
-    static String describe(Throwable e) {
-        RuleExecutionException nested = nestedRunFailure(e);
-        if (nested != null) {
-            return "a nested run() failed: " + nested.getMessage();
-        }
-        String text = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
-        if (text.length() > MAX_DESCRIPTION_LENGTH) {
-            text = text.substring(0, MAX_DESCRIPTION_LENGTH) + "... (" + (text.length() - MAX_DESCRIPTION_LENGTH)
-                    + " more characters)";
-        }
-        List<Throwable> chain = causeChain(e);
-        Throwable root = chain.get(chain.size() - 1);
-        return chain.size() > 1 && root.getMessage() == null
-                ? text + " (caused by " + root.getClass().getName() + ")"
-                : text;
-    }
-
-    /**
-     * Finds the innermost failure of a {@code run()} started by the code that threw {@code e}. That run already
-     * logged it and told its listeners.
-     *
-     * @param e What was caught, or {@code null}
-     * @return The innermost {@link RuleExecutionException} in {@code e}'s cause chain, or {@code null}
-     */
-    private static RuleExecutionException nestedRunFailure(Throwable e) {
-        RuleExecutionException innermost = null;
-        for (Throwable t : causeChain(e)) {
-            if (t instanceof RuleExecutionException failure) {
-                innermost = failure;
-            }
-        }
-        return innermost;
-    }
-
-    private static Throwable rootCause(Throwable e) {
-        List<Throwable> chain = causeChain(e);
-        return chain.get(chain.size() - 1);
-    }
-
-    /** Lists {@code e} and its causes, stopping if the chain loops back on itself. */
-    private static List<Throwable> causeChain(Throwable e) {
-        List<Throwable> chain = new ArrayList<>();
-        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Throwable t = e; t != null && seen.add(t); t = t.getCause()) {
-            chain.add(t);
-        }
-        return chain;
     }
 
     /**
@@ -732,11 +624,11 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw compilationFailure(expression + " for rule '" + ruleName + "' " + e.getMessage(), e);
         } catch (Exception e) {
             // A language may wrap an OutOfMemoryError from its compiler in its own exception.
-            throwIfPresent(fatalError(e));
+            Failures.throwIfPresent(Failures.fatalError(e));
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
-            String reason = rootCause(e) instanceof StackOverflowError
+            String reason = Failures.rootCause(e) instanceof StackOverflowError
                     ? "the expression is too long or too deeply nested to compile"
-                    : describe(e);
+                    : Failures.describe(e);
             String msg = "Can not compile rule '" + ruleName + "'. Error: " + reason;
             log.error(msg);
             throw new RuleCompilationException(msg, e);
@@ -749,90 +641,5 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static CompiledRule copy(CompiledRule rule) {
         return new CompiledRule(rule.rule(), rule.displayName(), rule.compiledCondition().copy(),
                 rule.compiledAction().copy());
-    }
-
-    /**
-     * Works out what an import string names. A class the context class loader can load is imported on its own, so
-     * {@code addImport("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
-     * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
-     * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}.
-     *
-     * @param name The string passed to {@code addImport}
-     * @return The class, or {@code null} if {@code name} is a package name
-     * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name
-     */
-    private static Class<?> resolveImport(String name) {
-        try {
-            return loadImport(name, contextClassLoader());
-        } catch (ClassNotFoundException | LinkageError e) {
-            if (!isPackageName(name)) {
-                throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", e);
-            }
-            return null;
-        }
-    }
-
-    /**
-     * Loads an imported class as MVEL looks one up: by its name, then with each dot from the right replaced by
-     * {@code $} in turn, so {@code java.util.Map.Entry} finds {@code java.util.Map$Entry}. The class isn't
-     * initialized.
-     *
-     * @throws ClassNotFoundException the first lookup's exception, if no form of the name is a class
-     */
-    private static Class<?> loadImport(String name, ClassLoader loader) throws ClassNotFoundException {
-        try {
-            return loader.loadClass(name);
-        } catch (ClassNotFoundException notFound) {
-            String binaryName = name;
-            for (int dot = name.lastIndexOf('.'); dot > 0; dot = binaryName.lastIndexOf('.')) {
-                binaryName = binaryName.substring(0, dot) + '$' + binaryName.substring(dot + 1);
-                Class<?> nested = loadOrNull(binaryName, loader);
-                if (nested != null) {
-                    return nested;
-                }
-            }
-            throw notFound;
-        }
-    }
-
-    private static Class<?> loadOrNull(String name, ClassLoader loader) {
-        try {
-            return loader.loadClass(name);
-        } catch (ClassNotFoundException e) {
-            return null;
-        }
-    }
-
-    /**
-     * Returns the class loader to look up imported classes with: the calling thread's context class loader, or this
-     * library's own loader when the thread has none. Left to itself, MVEL takes the context class loader of whichever
-     * thread first needs one, so a lookup made from another thread could see different classes.
-     *
-     * @return The class loader for imports set up on this thread
-     */
-    private static ClassLoader contextClassLoader() {
-        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-        return loader != null ? loader : LIBRARY_CLASS_LOADER;
-    }
-
-    private static boolean isPackageName(String name) {
-        for (String part : name.split("\\.", -1)) {
-            if (!isIdentifier(part)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isIdentifier(String name) {
-        if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
-            return false;
-        }
-        for (int i = 1; i < name.length(); i++) {
-            if (!Character.isJavaIdentifierPart(name.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
     }
 }
