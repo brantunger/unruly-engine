@@ -38,6 +38,7 @@ cd unruly-engine
 | `./gradlew test --tests '*StatefulSemanticsTest*'` | Runs a single test class |
 | `./gradlew test -PtestJdk=21` | Runs the tests on JDK 21 instead of 17 |
 | `./gradlew jacocoTestReport` | Writes the coverage report to `build/reports/jacoco/test/html/index.html` |
+| `./gradlew japicmp` | Checks the public API against the latest release and writes `build/reports/japicmp/report.html` |
 
 ## ✅ Quality gates
 
@@ -47,6 +48,7 @@ cd unruly-engine
 | 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `build.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the main sources | `build.gradle` |
+| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `build.gradle`, `config/japicmp/accepted-breaks.txt` |
 
 On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 17 and JDK 21**, and a separate check
 validates the PR title.
@@ -54,6 +56,29 @@ validates the PR title.
 > [!TIP]
 > Coverage is the gate that most often fails. When it does, run `./gradlew jacocoTestReport` and open the HTML
 > report to find the uncovered lines and branches.
+
+### 🧬 API compatibility
+
+The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `feat:` release must not break code
+written or compiled against an earlier release. `./gradlew build` compares the jar with the **latest release on Maven
+Central** using [japicmp](https://siom79.github.io/japicmp/), and fails when a public or protected member is removed
+or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
+interface, a new checked exception, or a new field in `Rule`, which changes its Lombok-generated all-args
+constructor. Additions such as new classes, methods and `default` methods pass. The report is at
+`build/reports/japicmp/report.html`.
+
+An intended break belongs in a major release:
+
+1. For each element the report lists, add a line to [`config/japicmp/accepted-breaks.txt`](config/japicmp/accepted-breaks.txt)
+   with the baseline version and why users can live with the break. The file's header shows the format.
+2. Title the PR with a `!`, such as `feat!: make the engine classes package-private`, and describe the migration
+   under ⚠️ Behavior changes in the PR description.
+
+A line only applies while its version is the latest release. Once the major version is published, the build warns
+that the old lines no longer apply, and they can be deleted.
+
+The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
+baseline already in the Gradle cache.
 
 ## 🔄 Making a change
 

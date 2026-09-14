@@ -35,9 +35,17 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      # `build` runs `check`, which pulls in Checkstyle, PMD and the 100% Jacoco gate.
+      # `build` runs `check`, which pulls in Checkstyle, PMD, the 100% Jacoco gate and the API compatibility check.
       - name: Build & Test
         run: ./gradlew build jacocoTestReport --no-daemon -PtestJdk=${{ matrix.java-version }}
+
+      - name: Upload API Compatibility Report
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: api-compatibility-report-jdk${{ matrix.java-version }}
+          path: build/reports/japicmp/
+          if-no-files-found: ignore
 
       # `build` doesn't run delombok or javadoc; otherwise the release's publish job, after tagging, is the first
       # place a broken Javadoc comment fails. Javadoc doesn't depend on the test JDK, so one run is enough.
