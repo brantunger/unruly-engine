@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -39,25 +40,46 @@ class RuleSetTest {
             new Stub("action"));
 
     @Test
-    @DisplayName("a copy in use is never lent twice, and a copy given back is reused without compiling")
+    @DisplayName("the compiled rules are never lent; a copy in use is never lent twice, and one given back is reused")
     void copiesLentOneAtATime() {
-        AtomicInteger compiles = new AtomicInteger();
-        RuleSet rules = new RuleSet(List.of(RULE), rule -> {
-            compiles.incrementAndGet();
-            return new CompiledRule(rule.rule(), rule.displayName(), new Stub("condition copy"),
-                    new Stub("action copy"));
+        AtomicInteger copies = new AtomicInteger();
+        RuleSet rules = new RuleSet(List.of(RULE), List.of(), rule -> {
+            int n = copies.incrementAndGet();
+            return new CompiledRule(rule.rule(), rule.displayName(), new Stub("condition copy " + n),
+                    new Stub("action copy " + n));
         });
 
         List<CompiledRule> first = rules.borrow();
         List<CompiledRule> second = rules.borrow();
 
-        assertSame(rules.rules(), first, "the rules compiled by setRuleList are lent first");
-        assertEquals(new Stub("condition copy"), second.get(0).compiledCondition());
-        assertEquals(1, compiles.get());
+        assertEquals(new Stub("condition copy 1"), first.get(0).compiledCondition(),
+                "the rules compiled by setRuleList are copied, not lent");
+        assertEquals(new Stub("condition copy 2"), second.get(0).compiledCondition());
+        assertEquals(List.of(RULE), rules.rules());
 
         rules.release(second);
 
         assertSame(second, rules.borrow());
-        assertEquals(1, compiles.get());
+        assertEquals(2, copies.get());
+    }
+
+    @Test
+    @DisplayName("the fact-name checks are kept with the rules they belong to")
+    void factChecksKeptWithRules() {
+        ExpressionCompiler check = new ExpressionCompiler() {
+            @Override
+            public CompiledCondition compileCondition(String source) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public CompiledAction compileAction(String source) {
+                throw new AssertionError("not compiled");
+            }
+        };
+
+        RuleSet rules = new RuleSet(List.of(RULE), List.of(check), rule -> rule);
+
+        assertEquals(List.of(check), rules.factChecks());
     }
 }

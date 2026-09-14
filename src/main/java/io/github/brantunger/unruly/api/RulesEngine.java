@@ -42,8 +42,9 @@ public interface RulesEngine<O> {
      * @return The output of firing the actions of the matching {@link Rule} objects, or {@code null} if the rule
      *         list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
-     *         an action fails, a condition doesn't evaluate to a boolean, or the output factory throws or returns
-     *         {@code null}
+     *         an action fails, a condition doesn't evaluate to a boolean, the output factory throws or returns
+     *         {@code null}, or a compiled condition or action throws or returns {@code null} when it is copied for the
+     *         run
      * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
      *         language of a loaded rule can't refer to. In MVEL, that is a name that isn't a Java identifier, a
      *         reserved word such as {@code empty} or {@code in}, or a class name MVEL resolves, such as {@code Math}
