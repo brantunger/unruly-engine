@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * A read-only view of the unwrapped facts, handed to condition expressions and listeners.
+ * A read-only view of the unwrapped facts, handed to condition expressions, actions and listeners.
  * MVEL writes assignments straight back into the map it evaluates against, so without
  * this a condition such as {@code approved = true} (a typo for {@code ==}) would change
  * the fact for every later rule in the run. Rejecting the write names the variable,
@@ -51,6 +51,18 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
      */
     static Map<String, Object> forListeners(Map<String, Object> facts) {
         return new ReadOnlyFacts(facts, "The facts passed to a RuleListener are read-only; '%s' can't be changed.");
+    }
+
+    /**
+     * Creates the view an action runs against. MVEL keeps an action's assignments in the action, so a write that
+     * reaches this view comes from another expression language, whose action should change the output object instead.
+     *
+     * @param facts The unwrapped facts
+     * @return A view that rejects writes with a message about actions
+     */
+    static Map<String, Object> forActions(Map<String, Object> facts) {
+        return new ReadOnlyFacts(facts, "The facts passed to an action are read-only; '%s' can't be changed. Put the "
+                + "result in the output object instead.");
     }
 
     @Override
