@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import org.mvel2.util.ErrorUtil;
 
 import java.util.Set;
 
@@ -26,6 +27,15 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
 
     /** The language's name. */
     public static final String LANGUAGE_NAME = "mvel";
+
+    static {
+        // MVEL formats every compile error with ErrorUtil, whose static initializer creates a logger. When the first
+        // error in the JVM is a stack overflow, such as a deeply nested rule on a small stack, that initializer fails
+        // for lack of stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then
+        // throws NoClassDefFoundError. Creating an instance initializes it here, while an engine is created on a
+        // healthy stack, so an overflow only fails the rule that caused it.
+        new ErrorUtil();
+    }
 
     /**
      * Creates the MVEL language. It holds no state: each rule list's state lives in its compiler.
