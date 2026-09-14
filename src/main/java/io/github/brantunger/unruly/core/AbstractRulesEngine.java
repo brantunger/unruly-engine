@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -49,8 +50,9 @@ import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
  *
  * @param <O> The output object to instantiate
  */
-@Slf4j
 public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
+
+    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.class);
 
     /**
      * System property that, when {@code true}, kept MVEL's JIT optimizer instead of switching the whole JVM to the

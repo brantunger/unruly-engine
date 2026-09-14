@@ -40,7 +40,7 @@ class RuleTest {
     }
 
     @Test
-    @DisplayName("setter methods work via Lombok @Data")
+    @DisplayName("setter methods update the fields")
     void setterMethodsWork() {
         Rule rule = Rule.builder().build();
 
