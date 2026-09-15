@@ -13,5 +13,4 @@ dependencyResolutionManagement {
 // core: the unruly-engine-core artifact, the engine without a language.
 // mvel: the unruly-engine artifact, the MVEL language. It depends on core, and holds the tests.
 // test-kit: the unruly-engine-test artifact, tools for testing an expression language. The tests in mvel use it.
-// module-path-test: runs small applications on the module path. Not published.
-include 'core', 'mvel', 'test-kit', 'module-path-test'
+include 'core', 'mvel', 'test-kit'
