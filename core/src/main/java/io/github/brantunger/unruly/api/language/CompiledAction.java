@@ -13,6 +13,7 @@ package io.github.brantunger.unruly.api.language;
  * existing language keeps compiling and working.
  * </p>
  */
+@FunctionalInterface
 public interface CompiledAction {
 
     /**

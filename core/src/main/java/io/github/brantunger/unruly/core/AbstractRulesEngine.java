@@ -112,6 +112,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
+    // null, not an empty list: an empty rule list is loaded, and null means none is.
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     List<CompiledRule> getCompiledRules() {
         RuleSet rules = ruleSet;
         return rules != null ? rules.rules() : null;
@@ -627,8 +629,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @throws RuleExecutionException if the property can't be set
      */
-    // A setter's own exception is the cause: InvocationTargetException only wraps it.
-    @SuppressWarnings("PMD.PreserveStackTrace")
     private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value) {
         try {
             PropertyWriter.set(output, property, value);
@@ -856,8 +856,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return compiler;
     }
 
-    // The rule set closes the compilers, or setRuleList() does if the rule list fails to load.
-    @SuppressWarnings("PMD.CloseResource")
     private CompiledRule compileRule(Rule rule, ExpressionCompiler compiler, LanguageCompilers compilers) {
         String ruleName = rule.getRuleName();
         String displayName = Failures.displayName(ruleName);

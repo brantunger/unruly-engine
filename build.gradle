@@ -12,6 +12,11 @@ allprojects {
     version = '1.8.0' // x-release-please-version
 }
 
+// The same JaCoCo version as the projects' test agents, from gradle/libs.versions.toml.
+jacoco {
+    toolVersion = libs.versions.jacoco.get()
+}
+
 // Coverage of the published artifacts. The tests are in mvel, and they cover core's and test-kit's classes too, so
 // the report and the gate combine the classes of mvel, test-kit and the projects they depend on.
 dependencies {

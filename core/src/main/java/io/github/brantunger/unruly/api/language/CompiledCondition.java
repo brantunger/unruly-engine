@@ -15,6 +15,7 @@ import org.jspecify.annotations.Nullable;
  * existing language keeps compiling and working.
  * </p>
  */
+@FunctionalInterface
 public interface CompiledCondition {
 
     /**

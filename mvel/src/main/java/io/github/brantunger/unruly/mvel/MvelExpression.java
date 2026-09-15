@@ -74,8 +74,6 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         return first != null ? first : MVEL.compileExpression(source, newParserContext(imports));
     }
 
-    // The engine closes the sessions it gives an expression.
-    @SuppressWarnings("PMD.CloseResource")
     private Serializable compiledIn(Session session) {
         if (session instanceof MvelSession mvel) {
             return mvel.compiled(this);
