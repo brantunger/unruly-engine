@@ -67,11 +67,12 @@ All of them are unchecked.
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError` is thrown while compiling, such as a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Before 1.2.0 it was wrapped in a `RuleCompilationException`. |
-| `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
+| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
 | | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. |
+| `rules()` | `IllegalStateException` | The engine is closed |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |

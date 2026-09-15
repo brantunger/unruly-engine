@@ -19,6 +19,9 @@ Every method has an empty default implementation, so override only the ones you 
 
 | Callback | Called | Arguments |
 | --- | --- | --- |
+| `beforeRun(run)` | When a run starts, before any condition | The `RunContext`: the run's number, its parent run, the match policy, the checksum of the rules it uses, and its facts |
+| `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, and the rules' checksum |
+| `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus the exception `run()` is about to throw, **including failures that belong to no rule** |
 | `beforeEvaluate(rule, facts)` | Before a condition is evaluated | The rule, and a read-only view of the fact values |
 | `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched |
 | `beforeExecute(rule, output)` | Before an action runs | The rule and the output object |
@@ -30,6 +33,7 @@ sequenceDiagram
     autonumber
     participant E as RulesEngine
     participant L as RuleListener
+    E->>L: beforeRun(run)
     Note over E,L: Phase 1: evaluate every rule's condition
     E->>L: beforeEvaluate(rule, facts)
     alt condition evaluates to a boolean
@@ -46,7 +50,19 @@ sequenceDiagram
         E->>L: onError(rule, error)
         Note over E: run() throws the error
     end
+    alt the run finished
+        E->>L: afterRun(run, result)
+    else the run failed, with or without a rule
+        E->>L: onRunError(run, error)
+    end
 ```
+
+A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
+failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, or an
+interrupt while the run waits for a compiled copy of the rules — reaches `onRunError` only, because no rule was
+involved. A run started from inside an action has the run around it as its `parent()`, so nested runs stay apart
+without a `ThreadLocal`. `RunContext` is sealed to the engine, so test a listener by running an engine rather than by
+constructing a context.
 
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
@@ -101,7 +117,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 
 | Guarantee | Detail |
 | --- | --- |
-| 🔗 **Paired callbacks** | Every `beforeEvaluate` / `beforeExecute` is followed by exactly one matching `after*` or `onError`. |
+| 🔗 **Paired callbacks** | Every `beforeRun`, `beforeEvaluate` and `beforeExecute` is followed by exactly one matching `after*`, `onError` or `onRunError`. |
+| 🧾 **Every failure of a run** | `onRunError` reports the exception `run()` throws, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. Only misuse — running before `load()`, or on a closed engine — reaches no callback. |
 | 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError` or `AssertionError`, is logged at WARN and the run continues. Any other `Error`, such as `OutOfMemoryError`, propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError` or `AssertionError` is wrapped in the `RuleExecutionException`. Any other `Error`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError` and then rethrown unchanged from `run()`. |
 | 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `load()`: the same instance every time. |

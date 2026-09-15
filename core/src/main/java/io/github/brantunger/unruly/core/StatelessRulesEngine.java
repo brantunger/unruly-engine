@@ -2,9 +2,9 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RunResult;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -58,14 +58,11 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws NullPointerException {@inheritDoc}
      */
     @Override
-    public O run(FactStore<?> facts) {
-        Objects.requireNonNull(facts, "facts must not be null");
-        return withCompiledRules((ruleSet, copy) -> {
-            // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
-            Map<String, Object> entryMap = this.unwrapFacts(facts, ruleSet.factChecks());
+    public RunResult<O> runWithResult(FactStore<?> facts) {
+        return runInScope(facts, (ruleSet, copy, entryMap) -> {
             List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
-                return null;
+                return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Match the facts and data against the set of rules with highest priority first.
@@ -74,12 +71,18 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
             // Resolve any conflicts and give the selected one rule.
             CompiledRule resolvedRule = this.resolve(matchedRuleList);
             if (null == resolvedRule) {
-                return null;
+                return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Run the action of the selected rule on given data and return the output.
-            return this.executeRule(resolvedRule, copy, createOutput(outputFactory), entryMap);
+            O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), entryMap);
+            return RunResult.of(output, List.of(resolvedRule.rule()), ruleSet.checksum());
         });
+    }
+
+    @Override
+    String matchPolicy() {
+        return "firstMatch";
     }
 
     /**

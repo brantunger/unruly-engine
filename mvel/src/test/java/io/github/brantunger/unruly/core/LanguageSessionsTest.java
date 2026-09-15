@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -376,8 +377,14 @@ class LanguageSessionsTest {
             }
 
             @Override
-            public String run(FactStore<?> facts) {
-                return withCompiledRules((rules, copy) -> "rules: " + rules.rules().size());
+            public RunResult<String> runWithResult(FactStore<?> facts) {
+                return runInScope(facts, (rules, copy, values) ->
+                        RunResult.of("rules: " + rules.rules().size(), List.of(), rules.checksum()));
+            }
+
+            @Override
+            String matchPolicy() {
+                return "firstMatch";
             }
         };
         engine.load(List.of());

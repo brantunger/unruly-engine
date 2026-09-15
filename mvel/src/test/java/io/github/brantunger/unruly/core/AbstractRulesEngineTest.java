@@ -527,20 +527,21 @@ class AbstractRulesEngineTest {
     }
 
     @Nested
-    @DisplayName("unwrapFacts without a language's checks")
-    class UnwrapFactsWithoutChecks {
+    @DisplayName("fact names a run rejects")
+    class RejectedFactNames {
 
         @Test
-        @DisplayName("without a language's checks, only a null name and output are rejected")
-        void noLanguageChecks() {
+        @DisplayName("a fact named output is rejected, because actions bind the output object to that name")
+        void outputIsReserved() {
             StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
-            FactStore<Object> mvelKeyword = new FactMap<>();
-            mvelKeyword.setValue("empty", 1);
+            engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
             FactStore<Object> output = new FactMap<>();
             output.setValue("output", 1);
 
-            assertEquals(Map.of("empty", 1), engine.unwrapFacts(mvelKeyword, Map.of()));
-            assertThrows(IllegalArgumentException.class, () -> engine.unwrapFacts(output, Map.of()));
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(output));
+
+            assertEquals("'output' is reserved for the output object and cannot be used as a fact name",
+                    ex.getMessage());
         }
     }
 }
