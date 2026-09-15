@@ -37,7 +37,7 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws IllegalArgumentException if an import can't be resolved
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
-    StatelessRulesEngine(Supplier<O> outputFactory, EngineConfiguration configuration) {
+    StatelessRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         super(configuration);
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }

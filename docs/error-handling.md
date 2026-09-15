@@ -58,7 +58,8 @@ All of them are unchecked.
 | `defaultLanguage()` | `NullPointerException` | The name is `null` |
 | `imports()` / `listener()` / `listeners()` | `NullPointerException` | The argument or an element is `null`. Nothing is added. |
 | `maxCopies()` | `IllegalArgumentException` | The limit on compiled copies is less than 1 |
-| `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or two found languages have the same name |
+| `outputType()` / `outputWriter()` / `option()` | `NullPointerException` | An argument is `null` |
+| `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language, or a language given an option, isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or two found languages have the same name |
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
 | | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |
 | `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |

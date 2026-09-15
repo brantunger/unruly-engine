@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
@@ -366,8 +367,8 @@ class LanguageSessionsTest {
         RuleSet closedRules = new RuleSet(List.of(), Map.of());
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
-        EngineConfiguration configuration = new EngineConfiguration(List.of(), null, List.of(), List.of(),
-                EngineConfiguration.UNLIMITED_COPIES);
+        EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
+                EngineConfiguration.UNLIMITED_COPIES, Object.class, OutputWriter.beansAndMaps(), Map.of());
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
             @Override
             RuleSet currentRules() {

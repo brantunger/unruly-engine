@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
 
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -78,6 +80,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Object lifecycle = new Object();
     // The most compiled copies of the rules that runs hold at once, or RuleSet.UNLIMITED.
     private final int maxCopies;
+    // The output type languages are told about, and what sets the properties actions return.
+    private final Class<?> outputType;
+    private final OutputWriter<? super O> outputWriter;
+    // Each language's options, by language name.
+    private final Map<String, Map<String, String>> options;
 
     /**
      * Creates an engine with the builder's settings: takes or finds its languages and picks the default one, and
@@ -85,14 +92,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * all of them in use waits for one; see {@link RuleSet}.
      *
      * @param configuration The builder's settings
-     * @throws IllegalStateException    if the languages or the default language can't be resolved, as
+     * @throws IllegalStateException    if the languages or the default language can't be resolved, or options are given
+     *                                  for a language the engine doesn't have, as
      *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
      * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
      *                                  class that exists but can't be loaded
      */
-    AbstractRulesEngine(EngineConfiguration configuration) {
+    AbstractRulesEngine(EngineConfiguration<O> configuration) {
         this.languages = LanguageRegistry.resolve(configuration.languages(), configuration.defaultLanguage(),
                 ImportResolver.contextClassLoader());
+        // Checked once the languages are known, so an option for a language that isn't found isn't silently ignored.
+        for (String language : configuration.options().keySet()) {
+            if (!languages.languages().containsKey(language)) {
+                throw new IllegalStateException("Options are given for the expression language '"
+                        + Failures.quote(language) + "', which isn't one of the engine's expression languages: "
+                        + new TreeSet<>(languages.languages().keySet()));
+            }
+        }
         Set<String> packages = new LinkedHashSet<>();
         Set<Class<?>> classes = new LinkedHashSet<>();
         for (String name : configuration.imports()) {
@@ -107,6 +123,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.classImports = Collections.unmodifiableSet(classes);
         this.listeners = configuration.listeners();
         this.maxCopies = configuration.maxCopies();
+        this.outputType = configuration.outputType();
+        this.outputWriter = configuration.outputWriter();
+        this.options = configuration.options();
     }
 
     /**
@@ -250,10 +269,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         rule.getRuleName());
             }
         }
-        CompileContext context = new EngineCompileContext(packageImports, classImports,
-                ImportResolver.contextClassLoader());
+        ClassLoader loader = ImportResolver.contextClassLoader();
+        // Each language gets its own options.
         LanguageCompilers compilers = new LanguageCompilers(languages.languages(),
-                (name, language) -> newCompiler(name, language, context));
+                (name, language) -> newCompiler(name, language, new EngineCompileContext(packageImports, classImports,
+                        loader, outputType, options.getOrDefault(name, Map.of()))));
         RuleSet loaded;
         try {
             List<Rule> sorted = ruleList.stream()
@@ -514,7 +534,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value) {
         try {
-            PropertyWriter.set(output, property, value);
+            outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
             throw propertyFailure(snapshot, rule, property, e.getCause());
         } catch (Exception | Error e) {

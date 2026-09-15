@@ -12,13 +12,13 @@ import java.util.Objects;
  * set on it ({@link #set(Map)}). A language whose expressions compute values without side effects returns properties.
  *
  * <p>
- * The engine sets the properties in the order of the map, after the action returns: on a {@link Map} output with
- * {@code put}, and on any other output with its public setter, such as {@code setInterestRate} for
- * {@code interestRate}. The setter's parameter must accept the value as it is, because the engine doesn't convert it.
- * A property the engine can't set fails the rule with a
+ * The engine sets the properties in the order of the map, after the action returns, with the engine's
+ * {@link io.github.brantunger.unruly.api.OutputWriter}. By default that is {@code put} on a {@link Map} output, and on
+ * any other output the public setter whose parameter accepts the value, such as {@code setInterestRate} for
+ * {@code interestRate}, without converting it. A property the writer can't set fails the rule with a
  * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, which listeners receive in
- * {@code onError}. In a run of an engine that fires every match, each firing rule's properties are set in turn, so a later rule can overwrite an
- * earlier one's.
+ * {@code onError}. In a run of an engine that fires every match, each firing rule's properties are set in turn, so a
+ * later rule can overwrite an earlier one's.
  * </p>
  */
 public final class ActionResult {

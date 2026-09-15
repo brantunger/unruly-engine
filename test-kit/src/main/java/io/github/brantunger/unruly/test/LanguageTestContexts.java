@@ -52,7 +52,24 @@ public final class LanguageTestContexts {
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader) {
-        return new EngineCompileContext(packageImports, classImports, classLoader);
+        return compile(packageImports, classImports, classLoader, Object.class, Map.of());
+    }
+
+    /**
+     * Creates a compile context with an output type and the language's options.
+     *
+     * @param packageImports The imported packages, such as {@code java.util}; copied
+     * @param classImports   The classes imported one by one; copied
+     * @param classLoader    The class loader to look up classes in the imported packages with
+     * @param outputType     The type of the output object, as the engine's builder was told; {@code Object.class} when
+     *                       it wasn't
+     * @param options        The language's options, as the engine's builder was given them; copied
+     * @return The context
+     * @throws NullPointerException if an argument, or an element of a set or of the options, is {@code null}
+     */
+    public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
+                                         ClassLoader classLoader, Class<?> outputType, Map<String, String> options) {
+        return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options);
     }
 
     /**

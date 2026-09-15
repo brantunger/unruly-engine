@@ -2,12 +2,14 @@ package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 
+import java.util.Map;
 import java.util.Set;
 
 /**
  * What every compilation of a rule list is given: the imports the engine was built with, from
  * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#imports(String...)}, the class loader to look classes up
- * with, and a way to report warnings. A language without imports ignores them.
+ * with, the type of the output object, this language's options, and a way to report warnings. A language uses what it
+ * needs and ignores the rest.
  *
  * <p>
  * <b>Implemented by the engine</b>, which passes it to a language. It's sealed, so a language can't implement it; a
@@ -39,6 +41,24 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * @return The class loader, never {@code null}
      */
     ClassLoader classLoader();
+
+    /**
+     * Returns the type of the output object, which the engine was built with through
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#outputType(Class)}. A language may use it, for example
+     * to check the properties its actions return; the engine doesn't.
+     *
+     * @return The output type, or {@link Object} if the engine wasn't told one
+     */
+    Class<?> outputType();
+
+    /**
+     * Returns this language's options, set with
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#option(String, String, String)}. What an option means
+     * is up to the language.
+     *
+     * @return The values by option name, empty if this language was given none; unmodifiable
+     */
+    Map<String, String> options();
 
     /**
      * Reports a problem that doesn't stop an expression compiling, such as use of a deprecated function. The engine

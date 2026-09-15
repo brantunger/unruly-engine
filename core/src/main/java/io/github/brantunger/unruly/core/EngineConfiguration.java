@@ -1,9 +1,14 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * The settings an engine is built with, as {@link io.github.brantunger.unruly.api.RulesEngineBuilder} collected them.
@@ -14,21 +19,31 @@ import java.util.List;
  * @param imports         The package and class names to import, not yet resolved
  * @param listeners       The listeners, in the order they're called
  * @param maxCopies       The most compiled copies of the rules, or {@link #UNLIMITED_COPIES}
+ * @param outputType      The output type languages are told about
+ * @param outputWriter    Sets the properties actions return on the output object
+ * @param options         Each language's options, by language name
+ * @param <O>             The type of the output object
  */
-public record EngineConfiguration(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
-                                  List<RuleListener> listeners, int maxCopies) {
+public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
+                                     List<RuleListener> listeners, int maxCopies, Class<? super O> outputType,
+                                     OutputWriter<? super O> outputWriter, Map<String, Map<String, String>> options) {
 
     /** The {@code maxCopies} of an engine that makes as many copies as its runs need. */
     public static final int UNLIMITED_COPIES = RuleSet.UNLIMITED;
 
     /**
-     * Keeps unmodifiable copies of the lists, so later changes to the builder don't change an engine.
+     * Keeps unmodifiable copies of the lists and options, so later changes to the builder don't change an engine.
      *
-     * @throws NullPointerException if a list, or an element of one, is {@code null}
+     * @throws NullPointerException if an argument other than {@code defaultLanguage}, or an element, is {@code null}
      */
     public EngineConfiguration {
         languages = List.copyOf(languages);
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
+        Objects.requireNonNull(outputType, "outputType");
+        Objects.requireNonNull(outputWriter, "outputWriter");
+        Map<String, Map<String, String>> copied = new LinkedHashMap<>();
+        options.forEach((language, values) -> copied.put(language, Map.copyOf(values)));
+        options = Collections.unmodifiableMap(copied);
     }
 }

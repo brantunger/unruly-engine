@@ -1,4 +1,6 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.api;
+
+import org.jspecify.annotations.Nullable;
 
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
@@ -10,11 +12,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Sets the properties an action returned on the output object: with {@code put} on a {@link Map}, and otherwise with
- * the output class's public setter whose parameter accepts the value. Values aren't converted. Each class's setters are
- * looked up once.
+ * The default {@link OutputWriter}: {@code put} on a {@link Map}, and otherwise the output class's public setter whose
+ * parameter accepts the value. Values aren't converted. Each class's setters are looked up once.
  */
-final class PropertyWriter {
+final class BeansAndMapsWriter implements OutputWriter<Object> {
+
+    /** The one instance, which keeps no state of its own. */
+    static final BeansAndMapsWriter INSTANCE = new BeansAndMapsWriter();
 
     // The public instance methods with one parameter whose names start with "set", by name, for each output class.
     // Overloads are in the order of their parameter type's name, so the choice between them doesn't vary between runs.
@@ -29,7 +33,7 @@ final class PropertyWriter {
         }
     };
 
-    private PropertyWriter() {
+    private BeansAndMapsWriter() {
     }
 
     /**
@@ -44,9 +48,10 @@ final class PropertyWriter {
      *                                      an {@link java.lang.reflect.InvocationTargetException}
      */
     @SuppressWarnings("unchecked")
-    static void set(Object output, String property, Object value) throws ReflectiveOperationException {
+    @Override
+    public void set(Object output, String property, @Nullable Object value) throws ReflectiveOperationException {
         if (output instanceof Map<?, ?> map) {
-            ((Map<String, Object>) map).put(property, value);
+            ((Map<String, @Nullable Object>) map).put(property, value);
             return;
         }
         String name = "set" + Character.toUpperCase(property.charAt(0)) + property.substring(1);
@@ -60,7 +65,7 @@ final class PropertyWriter {
                 + " that accepts " + (value == null ? "null" : "a " + value.getClass().getName()));
     }
 
-    private static boolean accepts(Class<?> parameter, Object value) {
+    private static boolean accepts(Class<?> parameter, @Nullable Object value) {
         if (value == null) {
             return !parameter.isPrimitive();
         }
