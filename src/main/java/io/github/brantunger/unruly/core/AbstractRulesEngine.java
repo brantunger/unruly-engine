@@ -480,8 +480,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param outputFactory The factory supplied to the engine's constructor
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. An {@link Error} other than
-     *                                {@link StackOverflowError} or {@link AssertionError} is rethrown unchanged,
-     *                                also when it is the cause of what the factory throws.
+     *                                {@link StackOverflowError} or {@link AssertionError} is logged, then rethrown
+     *                                unchanged, also when it is the cause of what the factory throws.
      */
     protected O createOutput(Supplier<O> outputFactory) {
         O output;
@@ -489,9 +489,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             output = outputFactory.get();
         } catch (Exception | Error e) {
             Failures.keepInterruptStatus(e);
-            Failures.throwIfPresent(Failures.fatalError(e));
             String msg = "Output factory threw " + e;
             log.error(msg);
+            Failures.throwIfPresent(Failures.fatalError(e));
             throw new RuleExecutionException(msg, e);
         }
         if (output == null) {
@@ -531,7 +531,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
         }
 
-        notifyAfter(snapshot, "afterEvaluate", listener -> listener.afterEvaluate(listenerCopy(rule), listenerFacts, result));
+        notifyAfter(snapshot, rule, "afterEvaluate",
+                listener -> listener.afterEvaluate(listenerCopy(rule), listenerFacts, result));
 
         return result;
     }
@@ -549,7 +550,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + Failures.describe(e), e);
         }
 
-        notifyAfter(snapshot, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
+        notifyAfter(snapshot, rule, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
 
         return outputResult;
     }
@@ -587,16 +588,29 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Error fatal = notifyListeners(snapshot, callback, call);
         if (fatal != null) {
             // Already on its way out of run(), so a second fatal error from onError can't replace it.
-            reportFailure(snapshot, rule, new RuleExecutionException("A listener threw " + fatal.getClass().getName()
-                    + " in " + callback + " for rule '" + rule.displayName() + "'", fatal, rule.rule().getRuleName()),
-                    true);
+            reportFailure(snapshot, rule, new RuleExecutionException(listenerFatalMessage(fatal, callback, rule), fatal,
+                    rule.rule().getRuleName()), true);
             throw fatal;
         }
     }
 
-    /** Calls an {@code after*} callback on every listener, then rethrows the first fatal {@link Error} one threw. */
-    private void notifyAfter(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        Failures.throwIfPresent(notifyListeners(snapshot, callback, call));
+    /**
+     * Calls an {@code after*} callback on every listener, then logs the first fatal {@link Error} one threw at ERROR
+     * and rethrows it. Every listener already closed its callback, so none gets {@code onError}.
+     */
+    private void notifyAfter(List<RuleListener> snapshot, CompiledRule rule, String callback,
+                             Consumer<RuleListener> call) {
+        Error fatal = notifyListeners(snapshot, callback, call);
+        if (fatal != null) {
+            String msg = listenerFatalMessage(fatal, callback, rule);
+            log.error(msg);
+            throw fatal;
+        }
+    }
+
+    private static String listenerFatalMessage(Error fatal, String callback, CompiledRule rule) {
+        return "A listener threw " + fatal.getClass().getName() + " in " + callback + " for rule '"
+                + rule.displayName() + "'";
     }
 
     /**
