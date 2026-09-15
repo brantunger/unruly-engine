@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Set;
 
 /**
@@ -62,12 +64,12 @@ final class ConditionAssignments {
      * @param condition The condition's source text
      * @return The assignment, or {@code null} if there is none
      */
-    static Write find(String condition) {
+    static @Nullable Write find(String condition) {
         int index = 0;
         while (index < condition.length()) {
             char ch = condition.charAt(index);
             int next = index + 1;
-            String found = null;
+            @Nullable String found = null;
             int foundAt = index;
             switch (ch) {
                 case '\'', '"' -> next = endOfLiteral(condition, index);
@@ -158,7 +160,7 @@ final class ConditionAssignments {
      * A keyword used as a member name, as in {@code claim.with} or {@code claim.?with}, is just a property. MVEL
      * allows whitespace, including a line break, between the dot and the name.
      */
-    private static String writeKeyword(String text, int start, int end) {
+    private static @Nullable String writeKeyword(String text, int start, int end) {
         String word = text.substring(start, end);
         int before = start - 1;
         while (Character.isWhitespace(charAt(text, before))) {
