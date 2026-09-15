@@ -18,6 +18,9 @@ final class Failures {
     /** How much of an exception's message an error message includes; see {@link #describe}. */
     static final int MAX_DESCRIPTION_LENGTH = 1_000;
 
+    /** How much of a fact, rule or language name a message includes; see {@link #quote}. */
+    static final int MAX_NAME_LENGTH = 200;
+
     private Failures() {
     }
 
@@ -115,6 +118,60 @@ final class Failures {
             }
         }
         return innermost;
+    }
+
+    /**
+     * Makes a fact, rule or language name safe to put in a message the engine logs. Line breaks, tabs and other
+     * control characters, including the Unicode line and paragraph separators, are escaped ({@code \n}, {@code \r},
+     * {@code \t}, or a backslash, {@code u} and four hex digits), so a name from request data can't start a forged
+     * log line. A name longer than {@value #MAX_NAME_LENGTH} characters is shortened. {@code mvel.FactNames} and
+     * {@code api.LoggingRuleListener} keep a copy, because those packages can't use this one.
+     *
+     * @param name The name
+     * @return The name, escaped and shortened if it was longer
+     */
+    static String quote(String name) {
+        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
+        StringBuilder quoted = new StringBuilder(shown);
+        for (int i = 0; i < shown; i++) {
+            char c = name.charAt(i);
+            switch (c) {
+                case '\n' -> quoted.append("\\n");
+                case '\r' -> quoted.append("\\r");
+                case '\t' -> quoted.append("\\t");
+                default -> {
+                    int type = Character.getType(c);
+                    if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
+                            || type == Character.PARAGRAPH_SEPARATOR) {
+                        quoted.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        quoted.append(c);
+                    }
+                }
+            }
+        }
+        if (name.length() > MAX_NAME_LENGTH) {
+            quoted.append("... (").append(name.length() - MAX_NAME_LENGTH).append(" more characters)");
+        }
+        return quoted.toString();
+    }
+
+    /**
+     * Sets the current thread's interrupt status again when what was caught was caused by an interrupt. A rule,
+     * listener or language interrupted while it blocks throws an {@link InterruptedException}, which clears the
+     * status, and the engine receives it wrapped by MVEL or the language; without this, the caller of {@code run()}
+     * couldn't tell the thread had been interrupted. A {@link java.io.InterruptedIOException} doesn't count: a
+     * {@link java.net.SocketTimeoutException} is one.
+     *
+     * @param thrown What was caught, or {@code null}
+     */
+    static void keepInterruptStatus(Throwable thrown) {
+        for (Throwable t : causeChain(thrown)) {
+            if (t instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     static Throwable rootCause(Throwable e) {

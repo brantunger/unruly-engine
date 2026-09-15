@@ -260,11 +260,12 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         for (int i = 0; i < ruleList.size(); i++) {
             Rule rule = ruleList.get(i);
             if (rule == null) {
-                throw compilationFailure("Rule at index " + i + " of the rule list is null");
+                throw compilationFailure("Rule at index " + i + " of the rule list is null", null, null);
             }
             // Duplicate names would make error messages and listener logs ambiguous. Unnamed rules are allowed.
             if (rule.getRuleName() != null && !ruleNames.add(rule.getRuleName())) {
-                throw compilationFailure("Duplicate rule name '" + rule.getRuleName() + "'");
+                throw compilationFailure("Duplicate rule name '" + Failures.quote(rule.getRuleName()) + "'", null,
+                        rule.getRuleName());
             }
         }
         CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
@@ -421,8 +422,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 log.error(e.getMessage());
                 throw e;
             } catch (Exception | Error e) {
+                Failures.keepInterruptStatus(e);
                 String msg = "The '%s' expression language failed to check fact name '%s': %s"
-                        .formatted(check.getKey(), name, Failures.describe(e));
+                        .formatted(Failures.quote(check.getKey()), Failures.quote(name), Failures.describe(e));
                 log.error(msg);
                 Failures.throwIfPresent(Failures.fatalError(e));
                 throw new IllegalArgumentException(msg, e);
@@ -486,6 +488,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             output = outputFactory.get();
         } catch (Exception | Error e) {
+            Failures.keepInterruptStatus(e);
             Failures.throwIfPresent(Failures.fatalError(e));
             String msg = "Output factory threw " + e;
             log.error(msg);
@@ -585,7 +588,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (fatal != null) {
             // Already on its way out of run(), so a second fatal error from onError can't replace it.
             reportFailure(snapshot, rule, new RuleExecutionException("A listener threw " + fatal.getClass().getName()
-                    + " in " + callback + " for rule '" + rule.displayName() + "'", fatal), true);
+                    + " in " + callback + " for rule '" + rule.displayName() + "'", fatal, rule.rule().getRuleName()),
+                    true);
             throw fatal;
         }
     }
@@ -610,6 +614,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 call.accept(listener);
             } catch (Exception | Error e) {
+                Failures.keepInterruptStatus(e);
                 Error found = fatal == null ? Failures.fatalError(e) : null;
                 if (found != null) {
                     fatal = found;
@@ -623,15 +628,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
-     * {@code before*} callback still gets a closing call. Returns the exception for the caller to throw, unless
+     * {@code before*} callback still gets a closing call. An interrupt in {@code cause} sets the thread's interrupt
+     * status again. Returns the exception for the caller to throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
     private RuleExecutionException failure(List<RuleListener> snapshot, CompiledRule rule, String msg,
                                            Throwable cause) {
-        RuleExecutionException error = cause == null
-                ? new RuleExecutionException(msg)
-                : new RuleExecutionException(msg, cause);
+        RuleExecutionException error = new RuleExecutionException(msg, cause, rule.rule().getRuleName());
+        Failures.keepInterruptStatus(cause);
         // A failed run() started by this rule has already logged its failure.
         Error listenerFatal = reportFailure(snapshot, rule, error, Failures.nestedRunFailure(cause) == null);
         Failures.throwIfPresent(Failures.fatalError(cause));
@@ -653,30 +658,21 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Logs a rejected rule list at ERROR, as the engine logs every failure it throws, and returns the exception for
-     * the caller to throw.
+     * Logs a rejected rule list or a failure to compile at ERROR, as the engine logs every failure it throws. An
+     * interrupt in {@code cause} sets the thread's interrupt status again. Then rethrows the fatal {@link Error} in
+     * {@code cause}'s cause chain, if there is one (see {@link Failures#fatalError}), or returns the exception for the
+     * caller to throw.
      *
-     * @param msg What is wrong with the rule list
-     * @return The exception to throw
-     */
-    private static RuleCompilationException compilationFailure(String msg) {
-        log.error(msg);
-        return new RuleCompilationException(msg);
-    }
-
-    /**
-     * Logs a failure to compile at ERROR, as the engine logs every failure it throws. Then rethrows the fatal
-     * {@link Error} in {@code cause}'s cause chain, if there is one (see {@link Failures#fatalError}), or returns the
-     * exception for the caller to throw.
-     *
-     * @param msg   What failed, naming the rule or the language
-     * @param cause What the expression language threw
+     * @param msg      What failed, naming the rule or the language
+     * @param cause    What the expression language threw, or {@code null}
+     * @param ruleName The name of the rule that failed, or {@code null} if the failure isn't about one rule
      * @return The exception to throw, caused by {@code cause}
      */
-    private static RuleCompilationException compilationFailure(String msg, Throwable cause) {
+    private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName) {
         log.error(msg);
+        Failures.keepInterruptStatus(cause);
         Failures.throwIfPresent(Failures.fatalError(cause));
-        return new RuleCompilationException(msg, cause);
+        return new RuleCompilationException(msg, cause, ruleName);
     }
 
     /**
@@ -694,33 +690,38 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             compiler = language.newCompiler(context);
         } catch (Exception | Error e) {
-            throw compilationFailure("The '" + name + "' expression language failed to create a compiler: "
-                    + Failures.describe(e), e);
+            throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to create a "
+                    + "compiler: " + Failures.describe(e), e, null);
         }
         if (compiler == null) {
-            throw compilationFailure("The '" + name + "' expression language returned no compiler");
+            throw compilationFailure("The '" + Failures.quote(name) + "' expression language returned no compiler",
+                    null, null);
         }
         return compiler;
     }
 
     private CompiledRule compileRule(Rule rule, LanguageCompilers compilers) {
-        String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "(unnamed)";
+        String ruleName = rule.getRuleName();
+        String displayName = ruleName != null ? Failures.quote(ruleName) : "(unnamed)";
         if (rule.getCondition() == null || rule.getCondition().isBlank()) {
-            throw compilationFailure("Rule '" + ruleName + "' has a null or blank condition expression");
+            throw compilationFailure("Rule '" + displayName + "' has a null or blank condition expression", null,
+                    ruleName);
         }
         if (rule.getAction() == null || rule.getAction().isBlank()) {
-            throw compilationFailure("Rule '" + ruleName + "' has a null or blank action expression");
+            throw compilationFailure("Rule '" + displayName + "' has a null or blank action expression", null,
+                    ruleName);
         }
         String language = rule.getLanguage() != null ? rule.getLanguage() : DEFAULT_LANGUAGE;
         ExpressionCompiler compiler = compilers.forLanguage(language);
         if (compiler == null) {
-            throw compilationFailure("Rule '" + ruleName + "' is written in '" + language
+            throw compilationFailure("Rule '" + displayName + "' is written in '" + Failures.quote(language)
                     + "', which isn't a registered expression language. Registered languages: "
-                    + compilers.languageNames());
+                    + compilers.languageNames(), null, ruleName);
         }
-        CompiledCondition compiledCondition = compile(ruleName, "Condition",
+        CompiledCondition compiledCondition = compile(displayName, ruleName, "Condition",
                 () -> compiler.compileCondition(rule.getCondition()));
-        CompiledAction compiledAction = compile(ruleName, "Action", () -> compiler.compileAction(rule.getAction()));
+        CompiledAction compiledAction = compile(displayName, ruleName, "Action",
+                () -> compiler.compileAction(rule.getAction()));
         // Rule is mutable and owned by the caller. Keeping their instance would let a later edit change what
         // listeners and error messages report while the compiled expressions kept running the old rule.
         Rule snapshot = Rule.builder()
@@ -731,7 +732,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 .description(rule.getDescription())
                 .language(rule.getLanguage())
                 .build();
-        return new CompiledRule(snapshot, ruleName, compiledCondition, compiledAction);
+        return new CompiledRule(snapshot, displayName, compiledCondition, compiledAction);
     }
 
     /**
@@ -739,14 +740,15 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * anything else the language throws, such as a syntax error, becomes the cause of the failure. A fatal
      * {@link Error}, also one the language wraps in its own exception, is logged like any failure and then rethrown.
      *
-     * @param ruleName    The rule's name for messages
+     * @param displayName The rule's name for messages
+     * @param ruleName    The rule's name, or {@code null}
      * @param expression  {@code Condition} or {@code Action}, for messages
      * @param compilation Compiles the expression
      * @param <T>         The type of compiled expression
      * @return The compiled expression
      * @throws RuleCompilationException if the expression doesn't compile, or the language returns {@code null}
      */
-    private static <T> T compile(String ruleName, String expression, Supplier<T> compilation) {
+    private static <T> T compile(String displayName, String ruleName, String expression, Supplier<T> compilation) {
         T compiled;
         try {
             compiled = compilation.get();
@@ -754,17 +756,17 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             String reason = e.getMessage() != null
                     ? Failures.truncate(e.getMessage())
                     : "was rejected by its expression language";
-            throw compilationFailure(expression + " for rule '" + ruleName + "' " + reason, e);
+            throw compilationFailure(expression + " for rule '" + displayName + "' " + reason, e, ruleName);
         } catch (Exception | Error e) {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
             String reason = Failures.rootCause(e) instanceof StackOverflowError
                     ? "the expression is too long or too deeply nested to compile"
                     : Failures.describe(e);
-            throw compilationFailure("Can not compile rule '" + ruleName + "'. Error: " + reason, e);
+            throw compilationFailure("Can not compile rule '" + displayName + "'. Error: " + reason, e, ruleName);
         }
         if (compiled == null) {
-            throw compilationFailure(expression + " for rule '" + ruleName
-                    + "' wasn't compiled: its expression language returned null");
+            throw compilationFailure(expression + " for rule '" + displayName
+                    + "' wasn't compiled: its expression language returned null", null, ruleName);
         }
         return compiled;
     }
@@ -800,15 +802,16 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             copied = copy.get();
         } catch (Exception | Error e) {
+            Failures.keepInterruptStatus(e);
             String msg = failed + Failures.describe(e);
             log.error(msg);
             Failures.throwIfPresent(Failures.fatalError(e));
-            throw new RuleExecutionException(msg, e);
+            throw new RuleExecutionException(msg, e, rule.rule().getRuleName());
         }
         if (copied == null) {
             String msg = failed + "copy() returned null";
             log.error(msg);
-            throw new RuleExecutionException(msg);
+            throw new RuleExecutionException(msg, null, rule.rule().getRuleName());
         }
         return copied;
     }
