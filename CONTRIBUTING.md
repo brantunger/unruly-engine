@@ -108,7 +108,8 @@ its lines no longer apply, and they can be deleted. Because the baseline is neve
 `main` and the `1.x` branch are each checked against their own release line.
 
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
-baseline already in the Gradle cache.
+baseline already in the Gradle cache. The lookup is kept for 24 hours, so a new release becomes the baseline within a
+day; pass `-PapiCheck.refresh` to look it up again, as the release workflow does.
 
 ## 🔄 Making a change
 

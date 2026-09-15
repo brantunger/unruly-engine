@@ -100,7 +100,8 @@ jobs:
       # none of the tests, checks or build logic they run can read the secrets. It also
       # builds the combined Javadoc site, which the Central step doesn't.
       - name: Build
-        run: ./gradlew clean build javadoc --no-daemon
+        # Without the build cache, so the published jars are built from scratch, and with a fresh API baseline.
+        run: ./gradlew clean build javadoc --no-daemon --no-build-cache -PapiCheck.refresh
 
       # Only this step gets the secrets, and it skips `check`, which the step above ran.
       # Signing is done in-memory by the vanniktech plugin — no gpg keyring is imported
@@ -112,7 +113,8 @@ jobs:
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_PASSWORD }}
-        run: ./gradlew publishAndReleaseToMavenCentral -x check --no-daemon
+        # Without the configuration cache, which would store the signing key and Portal token on disk.
+        run: ./gradlew publishAndReleaseToMavenCentral -x check --no-daemon --no-build-cache --no-configuration-cache
 
       - name: Attach artifacts to the GitHub Release
         env:

@@ -71,12 +71,15 @@ def apiCheck = extensions.create('apiCheck', ApiCheckExtension)
 
 def projectGroup = project.group.toString()
 def projectVersion = project.version.toString()
+def refreshBaseline = providers.gradleProperty('apiCheck.refresh').present
 
 def newestRelease = { String notation ->
     def configuration = configurations.detachedConfiguration(dependencies.create("${notation}@jar"))
     configuration.transitive = false
-    // Looked up on every build, so a release becomes the baseline as soon as Maven Central serves it.
-    configuration.resolutionStrategy.cacheDynamicVersionsFor(0, 'seconds')
+    // A new release becomes the baseline within a day of Maven Central serving it, or at once with
+    // -PapiCheck.refresh, which the release workflow passes. Looking it up on every build would stop the configuration
+    // cache from being reused, because the cached lookup would always have expired.
+    configuration.resolutionStrategy.cacheDynamicVersionsFor(refreshBaseline ? 0 : 24, 'hours')
     def dependency = configuration.incoming.resolutionResult.rootComponent.get().dependencies.first()
     [configuration: configuration, dependency: dependency]
 }
@@ -176,19 +179,20 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
     htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
     txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
 
-    onlyIf('the artifact has a release to compare with') {
+    // The closures log through the task, not the build script, so the configuration cache can store them.
+    onlyIf('the artifact has a release to compare with') { task ->
         def baseline = apiBaseline.get()
         if (baseline.skip) {
-            logger.lifecycle("Skipping the API check: ${baseline.note}, and has no release to compare with")
+            task.logger.lifecycle("Skipping the API check: ${baseline.note}, and has no release to compare with")
         }
         !baseline.skip
     }
 
-    doFirst {
+    doFirst { task ->
         def baseline = apiBaseline.get()
-        logger.lifecycle("Comparing the API with ${baseline.name} ${baseline.version}${baseline.note}")
+        task.logger.lifecycle("Comparing the API with ${baseline.name} ${baseline.version}${baseline.note}")
         if (ignored.get() > 0) {
-            logger.warn("${ignored.get()} line(s) in config/japicmp/accepted-breaks.txt are for a major version " +
+            task.logger.warn("${ignored.get()} line(s) in config/japicmp/accepted-breaks.txt are for a major version " +
                     "that is already released, so they no longer apply against ${apiBaselineMajor.get()}.x. " +
                     "Delete them.")
         }
