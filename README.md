@@ -8,7 +8,7 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.brantunger/unruly-engine?color=blue)](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
 [![Javadoc](https://img.shields.io/badge/javadoc-reference-5c6bc0)](https://brantunger.github.io/unruly-engine/latest/)
 [![Coverage](https://codecov.io/gh/brantunger/unruly-engine/branch/main/graph/badge.svg)](https://codecov.io/gh/brantunger/unruly-engine)
-[![Java 17+](https://img.shields.io/badge/Java-17%2B-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
+[![Java 21+](https://img.shields.io/badge/Java-21%2B-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 **Keep business rules out of your code.**<br>
@@ -37,7 +37,7 @@ like.
 
 ## 📦 Installation
 
-Requires **Java 17** or later.
+Requires **Java 21** or later. Moving from 1.x? See the [migration guide](docs/migrating-to-2.md).
 
 <details open>
 <summary><b>Gradle (Groovy)</b></summary>

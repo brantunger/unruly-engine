@@ -20,7 +20,7 @@ base {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(21)
     }
 }
 
@@ -107,9 +107,9 @@ dependencies {
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.19'
 }
 
-// Compilation always uses the Java 17 toolchain. The tests run on the JDK given by -PtestJdk (default 17), so
-// CI can run them on each JDK in its matrix; otherwise the test task would use the 17 toolchain every time.
-def testJdk = providers.gradleProperty('testJdk').getOrElse('17')
+// Compilation always uses the Java 21 toolchain. The tests run on the JDK given by -PtestJdk (default 21), so
+// CI can run them on each JDK in its matrix; otherwise the test task would use the 21 toolchain every time.
+def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
 
 // The tests construct the engines directly, and those constructors are deprecated for removal (in favour of
 // RulesEngineBuilder), so javac would otherwise print a removal warning for every one of them.

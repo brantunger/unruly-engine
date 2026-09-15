@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * CI runs the build once per JDK in its matrix with {@code -PtestJdk}. This confirms the tests actually run on that
- * JDK rather than on the Java 17 compile toolchain.
+ * JDK rather than on the Java 21 compile toolchain.
  */
 @DisplayName("test JDK")
 class TestJdkTest {
