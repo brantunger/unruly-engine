@@ -108,4 +108,5 @@ MVEL aren't affected.
 
 > [!NOTE]
 > Earlier versions switched MVEL to its slower reflective optimizer for the whole JVM when the engine class loaded,
-> unless the JVM was started with `-Dunruly.mvel.jit=true`. That property is now ignored.
+> unless the JVM was started with `-Dunruly.mvel.jit=true`. Later 1.x releases ignored that property, and 2.0 removes
+> the `AbstractRulesEngine.JIT_PROPERTY` constant that named it.

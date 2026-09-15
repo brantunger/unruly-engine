@@ -4,7 +4,8 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
-import io.github.brantunger.unruly.core.StatefulRulesEngine;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +47,7 @@ class SharedClassLookupTest {
     @DisplayName("a name used by several expressions, and by a copy compiled for a concurrent run, is looked up once")
     void notClassLookedUpOnce() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.addImport("java.util");
         List<Object> innerOutputs = new CopyOnWriteArrayList<>();
         engine.registerListener(new RuleListener() {
@@ -75,7 +76,7 @@ class SharedClassLookupTest {
     @Test
     @DisplayName("an inline import still finds a class that another rule's expressions found not to be one")
     void inlineImportsNotAnsweredFromCache() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.addImport("java.io");
         engine.setRuleList(List.of(
                 rule("fact", "Date == 1", "output.put('fact', Date)"),
@@ -90,7 +91,7 @@ class SharedClassLookupTest {
     @Test
     @DisplayName("an inline class import in a typed declaration finds a class another rule found not to be one")
     void inlineClassImportInTypedDeclaration() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.addImport("java.io");
         engine.setRuleList(List.of(
                 Rule.builder().ruleName("first").priority(2).condition("LinkedList == 1")

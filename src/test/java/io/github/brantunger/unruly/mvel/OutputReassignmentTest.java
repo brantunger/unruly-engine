@@ -2,9 +2,9 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.core.StatefulRulesEngine;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,7 +26,7 @@ class OutputReassignmentTest {
     @Test
     @DisplayName("an immutable output can't be replaced; the assignment throws instead of being ignored")
     void immutableOutputReassignmentThrows() {
-        StatefulRulesEngine<Integer> engine = new StatefulRulesEngine<>(() -> 0);
+        RulesEngine<Integer> engine = RulesEngineBuilder.stateful(() -> 0);
         engine.setRuleList(List.of(rule("increments", 1, "output = output + 1")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -43,7 +43,7 @@ class OutputReassignmentTest {
             "java.util.Map output = new java.util.HashMap()",
     })
     void mapOutputReassignmentThrows(String action) {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(rule("replaces", 1, action)));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -53,7 +53,7 @@ class OutputReassignmentTest {
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"output += 1", "output++"})
     void compoundOutputAssignmentThrows(String action) {
-        StatelessRulesEngine<Integer> engine = new StatelessRulesEngine<>(() -> 0);
+        RulesEngine<Integer> engine = RulesEngineBuilder.stateless(() -> 0);
         engine.setRuleList(List.of(rule("compound", 1, action)));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -63,7 +63,7 @@ class OutputReassignmentTest {
     @Test
     @DisplayName("changing the output in place and assigning other locals still work")
     void inPlaceChangesStillWork() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.setRuleList(List.of(
                 rule("put", 4, "output.put('a', 1)"),
                 rule("with", 3, "with (output) { put('w', 2) }"),

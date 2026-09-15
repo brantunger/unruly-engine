@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +26,7 @@ class FactCopyConstructorTest {
     @Test
     @DisplayName("a rule can refer to the copied fact by its name")
     void copiedFactUsableInRules() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("x == 'hi'")
                 .action("output.put('hit', true)").build()));
 

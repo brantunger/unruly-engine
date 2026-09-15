@@ -111,8 +111,8 @@ dependencies {
 // CI can run them on each JDK in its matrix; otherwise the test task would use the 21 toolchain every time.
 def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
 
-// The tests construct the engines directly, and those constructors are deprecated for removal (in favour of
-// RulesEngineBuilder), so javac would otherwise print a removal warning for every one of them.
+// The tests still call Rule's and Fact's setters, which are deprecated for removal, so javac would otherwise print a
+// removal warning for every call.
 tasks.named('compileTestJava') {
     options.compilerArgs << '-Xlint:-removal'
 }
@@ -225,7 +225,11 @@ def japicmp = tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) 
     def applicable = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
         entries.findAll { it.major > major }
     }
-    packageExcludes = applicable.map { entries -> entries.findAll { it.kind == 'package' }*.element }
+    // core is internal: its classes are package-private except Engines, the builder's entry point, so it is never
+    // compared.
+    packageExcludes = applicable.map { entries ->
+        ['io.github.brantunger.unruly.core'] + entries.findAll { it.kind == 'package' }*.element
+    }
     classExcludes = applicable.map { entries -> entries.findAll { it.kind == 'class' }*.element }
     methodExcludes = applicable.map { entries -> entries.findAll { it.kind == 'method' }*.element }
     fieldExcludes = applicable.map { entries -> entries.findAll { it.kind == 'field' }*.element }
@@ -246,3 +250,8 @@ def japicmp = tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) 
 }
 
 check.dependsOn japicmp
+
+// The Javadoc documents the API only. core's one public class, Engines, exists for RulesEngineBuilder.
+tasks.named('javadoc') {
+    exclude 'io/github/brantunger/unruly/core/**'
+}

@@ -3,7 +3,7 @@ package io.github.brantunger.unruly.api;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
+import io.github.brantunger.unruly.core.Engines;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -33,7 +33,7 @@ class NullnessAnnotationsTest {
             assertTrue(type.getPackage().isAnnotationPresent(NullMarked.class),
                     type.getPackageName() + " isn't @NullMarked");
         }
-        assertFalse(StatelessRulesEngine.class.getPackage().isAnnotationPresent(NullMarked.class));
+        assertFalse(Engines.class.getPackage().isAnnotationPresent(NullMarked.class));
     }
 
     @Test

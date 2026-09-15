@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly;
 
 import io.github.brantunger.unruly.api.RulesEngine;
-import io.github.brantunger.unruly.core.AbstractRulesEngine;
+import io.github.brantunger.unruly.core.Engines;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,7 +24,7 @@ class ClassFileVersionTest {
     private static final int JAVA_21 = 65;
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {RulesEngine.class, AbstractRulesEngine.class, MvelExpressionLanguage.class})
+    @ValueSource(classes = {RulesEngine.class, Engines.class, MvelExpressionLanguage.class})
     @DisplayName("the library's classes are compiled for Java 21")
     void compiledForJava21(Class<?> type) throws IOException {
         String resource = type.getSimpleName() + ".class";

@@ -66,3 +66,39 @@ without a `language` is still written in MVEL.
 **What to change:** usually nothing. When you repackage the library, merge service files, for example with the Maven
 Shade plugin's `ServicesResourceTransformer`, or register MVEL yourself with
 `engine.registerLanguage(new MvelExpressionLanguage())`.
+
+## 🔒 Engines are created only with RulesEngineBuilder
+
+**What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in
+`io.github.brantunger.unruly.core` are no longer public. Their constructors, deprecated since 1.3.0 and 1.6.0, are
+removed, and so is `AbstractRulesEngine.JIT_PROPERTY`, which 1.x already ignored. The `core` package is internal and
+no longer in the Javadoc.
+
+**Who is affected:** code that creates an engine with `new`, declares a variable of an engine class, subclasses
+`AbstractRulesEngine`, checks `instanceof StatefulRulesEngine`, or refers to `JIT_PROPERTY`.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `new StatelessRulesEngine<>(Decision::new)` | `RulesEngineBuilder.stateless(Decision::new)` |
+| `new StatefulRulesEngine<>(Decision::new, 64)` | `RulesEngineBuilder.stateful(Decision::new, 64)` |
+| `StatelessRulesEngine<Decision> engine` | `RulesEngine<Decision> engine` |
+| `class MyEngine extends AbstractRulesEngine<Decision>` | Implement `RulesEngine` and delegate to an engine from `RulesEngineBuilder` |
+| `AbstractRulesEngine.JIT_PROPERTY` | Delete it; it had no effect |
+
+`core.Engines` is public only so `RulesEngineBuilder` can reach the engines. Don't use it: it may change in any
+release.
+
+## 🪵 The engine logs under a fixed name
+
+**What changed:** the engine logs rejected rule lists and facts, rule failures and listener exceptions under the logger
+`io.github.brantunger.unruly.engine`, instead of `io.github.brantunger.unruly.core.AbstractRulesEngine`.
+
+**Who is affected:** logging configuration that names the old logger. Configuration for the parent logger
+`io.github.brantunger.unruly`, as the 1.x logging guide recommended, keeps working.
+
+**What to change:** replace the old name, for example:
+
+- Logback: `<logger name="io.github.brantunger.unruly.engine" level="OFF"/>`
+- Spring Boot: `logging.level.io.github.brantunger.unruly.engine=off`

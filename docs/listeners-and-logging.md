@@ -137,8 +137,8 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 | Logger | Level | Messages |
 | --- | --- | --- |
-| `io.github.brantunger.unruly.core.AbstractRulesEngine` | `ERROR` | Every rule list `setRuleList()` rejects, fact `run()` rejects, rule failure and output-supplier failure, logged just before the exception is thrown. That includes a fatal `Error` from compiling or running a rule, which is logged and then rethrown. Misuse isn't logged: a `null` argument, `run()` before `setRuleList()`, or an invalid `addImport()` string. |
-| `io.github.brantunger.unruly.core.AbstractRulesEngine` | `WARN` | A listener threw an exception |
+| `io.github.brantunger.unruly.engine` | `ERROR` | Every rule list `setRuleList()` rejects, fact `run()` rejects, rule failure and output-supplier failure, logged just before the exception is thrown. That includes a fatal `Error` from compiling or running a rule, which is logged and then rethrown. Misuse isn't logged: a `null` argument, `run()` before `setRuleList()`, or an invalid `addImport()` string. |
+| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception |
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Lifecycle events, if you registered the listener |
 
 > [!NOTE]
@@ -152,11 +152,10 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 > Lower the engine logger's level if you prefer to handle logging yourself.
 
 > [!IMPORTANT]
-> The engine's logger is named after an internal class, `core.AbstractRulesEngine`, and that name may change in
-> 2.0. Configure the parent logger **`io.github.brantunger.unruly`** instead, so your configuration keeps working
-> across versions: Logback, Log4j 2 and Spring Boot apply a logger's level to every logger under its name. A more
-> specific setting still takes precedence, as the `LoggingRuleListener` line below shows. `LoggingRuleListener` is
-> public API, so its logger name won't change.
+> The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. In 1.x it
+> was `io.github.brantunger.unruly.core.AbstractRulesEngine`. The parent logger **`io.github.brantunger.unruly`** covers
+> the engine and `LoggingRuleListener`: Logback, Log4j 2 and Spring Boot apply a logger's level to every logger under
+> its name, and a more specific setting still takes precedence, as the `LoggingRuleListener` line below shows.
 
 **Logback** (`logback.xml`):
 

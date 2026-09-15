@@ -3,9 +3,10 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.core.StatefulRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,7 +34,7 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a doubled operator in a condition is rejected at compile time")
     void doubledOperatorInConditionRejected() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.setRuleList(List.of(rule("x == == 1", "output.put('k', 1)"))));
@@ -43,7 +44,7 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a doubled operator in an action is rejected at compile time")
     void doubledOperatorInActionRejected() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
 
         assertThrows(RuleCompilationException.class,
                 () -> engine.setRuleList(List.of(rule("true", "x == == 1"))));
@@ -52,7 +53,7 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a compile error keeps MVEL's exception as its cause")
     void compileErrorKeepsCause() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.setRuleList(List.of(rule("x >= ", "output.put('k', 1)"))));
@@ -70,7 +71,7 @@ class SyntaxValidationTest {
             "($ in list if $ > 1).size() > 0",
     })
     void validConditionsStillCompile(String condition) {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.addImport("java.util");
 
         assertDoesNotThrow(() -> engine.setRuleList(List.of(rule(condition, "output.put('k', 1)"))));
@@ -85,7 +86,7 @@ class SyntaxValidationTest {
             "score = 10; output.put('s', score)",
     })
     void validActionsStillCompile(String action) {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
 
         assertDoesNotThrow(() -> engine.setRuleList(List.of(rule("true", action))));
     }
@@ -93,7 +94,7 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("imports added before setRuleList() are visible to the analysis pass")
     void importsVisibleToAnalysis() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.addImport("java.util");
         engine.setRuleList(List.of(rule("Objects.nonNull(name)", "output.put('k', 1)")));
 
@@ -106,7 +107,7 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("known limitation: a stray closing parenthesis is only reported at run()")
     void strayParenthesisOnlyFailsAtRun() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.setRuleList(List.of(rule("true)", "output.put('k', 1)")));
 
         assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));

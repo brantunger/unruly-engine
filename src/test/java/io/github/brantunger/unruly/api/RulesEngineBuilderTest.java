@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.core.StatefulRulesEngine;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import java.lang.reflect.Constructor;
@@ -10,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class RulesEngineBuilderTest {
@@ -25,7 +22,7 @@ public class RulesEngineBuilderTest {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(TWO_MATCHING_RULES);
 
-        assertInstanceOf(StatelessRulesEngine.class, engine);
+        assertEquals("StatelessRulesEngine", engine.getClass().getSimpleName());
         assertEquals(Map.of("high", true), engine.run(new FactMap<>()));
     }
 
@@ -35,7 +32,7 @@ public class RulesEngineBuilderTest {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
         engine.setRuleList(TWO_MATCHING_RULES);
 
-        assertInstanceOf(StatefulRulesEngine.class, engine);
+        assertEquals("StatefulRulesEngine", engine.getClass().getSimpleName());
         assertEquals(Map.of("high", true, "low", true), engine.run(new FactMap<>()));
     }
     

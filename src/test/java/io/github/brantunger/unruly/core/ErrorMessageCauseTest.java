@@ -83,7 +83,7 @@ public class ErrorMessageCauseTest {
         assertTrue(message.startsWith("Failed to execute action for rule 'rec': a nested run() failed: "
                 + "Failed to execute action for rule 'rec': [Error: could not access: missing"), message);
         assertEquals(2, count(message, "Failed to execute action for rule 'rec'"), message);
-        assertEquals(1, count(logs, "ERROR io.github.brantunger.unruly.core.AbstractRulesEngine"), logs);
+        assertEquals(1, count(logs, "ERROR io.github.brantunger.unruly.engine"), logs);
     }
 
     @Test

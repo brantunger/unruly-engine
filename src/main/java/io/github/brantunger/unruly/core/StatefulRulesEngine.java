@@ -29,7 +29,7 @@ import java.util.function.Supplier;
  *
  * @param <O> The output object type to instantiate when the rule's action expression is fired.
  */
-public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
+final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
     private final Supplier<O> outputFactory;
 
@@ -39,12 +39,8 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
      *                      per run that matches a rule and must return a new, non-null object each time.
      * @throws NullPointerException if {@code outputFactory} is {@code null}
-     * @deprecated Create the engine with {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateful(Supplier)}
-     *             instead. The engine classes are implementation details and are expected to become package-private
-     *             in 2.0.
      */
-    @Deprecated(since = "1.3.0", forRemoval = true)
-    public StatefulRulesEngine(Supplier<O> outputFactory) {
+    StatefulRulesEngine(Supplier<O> outputFactory) {
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }
 
@@ -58,12 +54,8 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      *                      describes
      * @throws IllegalArgumentException if {@code maxCopies} is less than 1
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
-     * @deprecated Create the engine with
-     *             {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateful(Supplier, int)} instead. The
-     *             engine classes are implementation details and are expected to become package-private in 2.0.
      */
-    @Deprecated(since = "1.6.0", forRemoval = true)
-    public StatefulRulesEngine(Supplier<O> outputFactory, int maxCopies) {
+    StatefulRulesEngine(Supplier<O> outputFactory, int maxCopies) {
         super(maxCopies);
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }

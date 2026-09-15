@@ -3,8 +3,9 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.optimizers.OptimizerFactory;
@@ -40,7 +41,7 @@ public class MvelOptimizerTest {
     @Test
     @DisplayName("loading and running the engine leaves MVEL's global optimizer setting alone")
     void mvelOptimizerUntouched() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
         engine.run(new FactMap<>());
 
@@ -61,7 +62,7 @@ public class MvelOptimizerTest {
         List<Throwable> failures = new ArrayList<>();
 
         for (int trial = 0; trial < 200; trial++) {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
             engine.setRuleList(List.of(Rule.builder()
                     .ruleName("poly")
                     .priority(1)
@@ -124,7 +125,7 @@ public class MvelOptimizerTest {
         List<Throwable> failures = new CopyOnWriteArrayList<>();
 
         for (int trial = 0; trial < 300; trial++) {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
             engine.setRuleList(List.of(Rule.builder()
                     .ruleName("prime-rate")
                     .condition("applicant.creditScore >= 750")

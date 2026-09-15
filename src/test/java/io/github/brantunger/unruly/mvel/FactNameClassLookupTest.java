@@ -3,7 +3,8 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -44,7 +45,7 @@ class FactNameClassLookupTest {
     }
 
     /** Runs {@code run()} on a new thread whose context class loader is {@code loader}. */
-    private static Object runOnThread(ClassLoader loader, StatelessRulesEngine<Map<String, Object>> engine,
+    private static Object runOnThread(ClassLoader loader, RulesEngine<Map<String, Object>> engine,
                                       FactStore<Object> facts) throws InterruptedException {
         AtomicReference<Object> result = new AtomicReference<>();
         Thread thread = new Thread(() -> {
@@ -70,7 +71,7 @@ class FactNameClassLookupTest {
     @DisplayName("a fact name that isn't a class is never loaded as one, so nothing stays in the class loader")
     void nonClassNameNeverLoaded() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
 
         Object output = withContextClassLoader(loader, () -> {
             engine.addImport("java.util");
@@ -86,7 +87,7 @@ class FactNameClassLookupTest {
     @Test
     @DisplayName("a class name is rejected on a thread whose context class loader can't see the class")
     void classNameRejectedOnAnyThread() throws InterruptedException {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.addImport(IMPORTED_PACKAGE);
         engine.setRuleList(List.of(rule("true")));
 
@@ -98,7 +99,7 @@ class FactNameClassLookupTest {
     @Test
     @DisplayName("a fact rules can read isn't rejected because the running thread's class loader sees a class")
     void readableFactAcceptedOnAnyThread() throws InterruptedException {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         withContextClassLoader(classPathHidden(), () -> {
             engine.addImport(IMPORTED_PACKAGE);
             engine.setRuleList(List.of(rule(CLASS_NAME + " == 1")));
@@ -113,7 +114,7 @@ class FactNameClassLookupTest {
     @Test
     @DisplayName("a thread without a context class loader uses the library's own class loader")
     void noContextClassLoader() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
 
         Object output = withContextClassLoader(null, () -> {
             engine.addImport("java.util.Map.Entry").addImport("java.util");
