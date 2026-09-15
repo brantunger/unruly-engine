@@ -3,17 +3,16 @@ package io.github.brantunger.unruly.api.language;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A compiled condition.
+ * A compiled condition, shared by every run of its rule list.
  *
  * <p>
- * The engine never evaluates one compiled condition on two threads at once, as long as {@link #copy()} returns a new
- * object: each run evaluates its own copy, and the condition the compiler returned is only copied, never evaluated. A
- * condition that several threads can evaluate at the same time returns itself from {@code copy()}.
+ * Several runs can evaluate one compiled condition at the same time, each with its own {@link Session}, which only one
+ * run uses at a time. Keep what changes while the condition runs in the session.
  * </p>
  *
  * <p>
- * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
- * method, so an existing language keeps compiling and working.
+ * <b>Implemented by</b> expression languages. A method added to this interface is a {@code default} method, so an
+ * existing language keeps compiling and working.
  * </p>
  */
 public interface CompiledCondition {
@@ -24,20 +23,9 @@ public interface CompiledCondition {
      * {@code run()} rethrows unchanged.
      *
      * @param context The facts of the run
+     * @param session The run's session for this condition's language, created by the compiler that compiled it
      * @return The result. Anything but a {@link Boolean}, including {@code null}, fails the rule.
+     * @throws Exception if the condition fails
      */
-    @Nullable Object evaluate(EvaluationContext context);
-
-    /**
-     * Returns a condition for one run to evaluate. The engine calls it on the condition the compiler returned, which
-     * no run evaluates, and may call it from several threads at once, so a copy must be built only from state that
-     * doesn't change, such as the source and what it was compiled with. By default, returns this condition, which is
-     * right for a condition that several threads can evaluate at the same time.
-     *
-     * @return A new copy, or this condition if several threads can evaluate it at the same time. Throwing or returning
-     *         {@code null} fails the run with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
-     */
-    default CompiledCondition copy() {
-        return this;
-    }
+    @Nullable Object evaluate(EvaluationContext context, Session session) throws Exception;
 }

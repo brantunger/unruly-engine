@@ -35,7 +35,7 @@ import java.util.Set;
  *
  * @param <O> The output object type to instantiate
  */
-public interface RulesEngine<O> {
+public interface RulesEngine<O> extends AutoCloseable {
 
     /**
      * Set the rule list for use in processing rules through the rules engine
@@ -167,4 +167,20 @@ public interface RulesEngine<O> {
      * @throws NullPointerException if {@code listeners} or any element is {@code null}; nothing is registered
      */
     RulesEngine<O> registerListeners(List<RuleListener> listeners);
+
+    /**
+     * Closes the engine, and releases what its expression languages hold for the rules, such as interpreter contexts.
+     * Runs in progress finish first: the languages' sessions are closed as each run returns, and their compilers after
+     * the last one. Afterwards, {@link #run(FactStore)} and {@link #setRuleList(List)} throw
+     * {@link IllegalStateException}. Closing an engine that is already closed does nothing.
+     *
+     * <p>
+     * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
+     * is rethrown unchanged. By default, this method does nothing.
+     * </p>
+     */
+    @Override
+    default void close() {
+        // Nothing to release.
+    }
 }

@@ -12,6 +12,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -41,12 +42,12 @@ class RuleNameOnExceptionTest {
         return thrown.get();
     }
 
-    /** A language whose compiled condition fails to copy, so the first run fails while copying the rule. */
-    private static ExpressionLanguage failingCopyLanguage() {
+    /** A language that fails to create a session, so the first run fails before it evaluates any rule. */
+    private static ExpressionLanguage failingSessionLanguage() {
         return new ExpressionLanguage() {
             @Override
             public String name() {
-                return "no-copy";
+                return "no-session";
             }
 
             @Override
@@ -54,23 +55,18 @@ class RuleNameOnExceptionTest {
                 return new ExpressionCompiler() {
                     @Override
                     public CompiledCondition compileCondition(String source) {
-                        return new CompiledCondition() {
-                            @Override
-                            public Object evaluate(io.github.brantunger.unruly.api.language.EvaluationContext c) {
-                                return true;
-                            }
-
-                            @Override
-                            public CompiledCondition copy() {
-                                throw new IllegalStateException("can't copy");
-                            }
-                        };
+                        return (evaluationContext, session) -> true;
                     }
 
                     @Override
                     public CompiledAction compileAction(String source) {
-                        return actionContext -> {
+                        return (actionContext, session) -> {
                         };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        throw new IllegalStateException("can't create a session");
                     }
                 };
             }
@@ -111,13 +107,17 @@ class RuleNameOnExceptionTest {
     }
 
     @Test
-    @DisplayName("a compiled expression that fails to copy names its rule")
-    void copyFailure() {
-        engine.registerLanguage(failingCopyLanguage());
-        engine.setRuleList(List.of(Rule.builder().ruleName("copied").language("no-copy").condition("c").action("a")
-                .build()));
+    @DisplayName("a language that fails to create a session names no rule: the failure is about the language")
+    void sessionFailure() {
+        engine.registerLanguage(failingSessionLanguage());
+        engine.setRuleList(List.of(Rule.builder().ruleName("unstarted").language("no-session").condition("c")
+                .action("a").build()));
 
-        assertEquals("copied", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
+        RuleExecutionException ex = thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+        assertNull(ex.getRuleName());
+        assertTrue(ex.getMessage().startsWith("The 'no-session' expression language failed to create a session"),
+                ex.getMessage());
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.example.withtestkit;
 
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
@@ -18,12 +19,13 @@ public final class Main {
     private Main() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         // The contexts are the engine's records, in the core package that the core module exports only to the kit.
         EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 2));
-        CompiledCondition condition = new MvelExpressionLanguage().newCompiler(LanguageTestContexts.compile())
-                .compileCondition("x > 1");
-        check(Boolean.TRUE.equals(condition.evaluate(evaluation)), "the condition didn't evaluate to true");
+        ExpressionCompiler compiler = new MvelExpressionLanguage().newCompiler(LanguageTestContexts.compile());
+        CompiledCondition condition = compiler.compileCondition("x > 1");
+        check(Boolean.TRUE.equals(condition.evaluate(evaluation, compiler.newSession())),
+                "the condition didn't evaluate to true");
 
         Module core = evaluation.getClass().getModule();
         String corePackage = "io.github.brantunger.unruly.core";

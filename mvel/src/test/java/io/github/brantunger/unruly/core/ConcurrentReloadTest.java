@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -40,13 +41,18 @@ class ConcurrentReloadTest {
             return new ExpressionCompiler() {
                 @Override
                 public CompiledCondition compileCondition(String source) {
-                    return evaluation -> true;
+                    return (evaluation, session) -> true;
                 }
 
                 @SuppressWarnings("unchecked")
                 @Override
                 public CompiledAction compileAction(String source) {
-                    return action -> ((Map<String, Object>) action.output()).put("src", "A");
+                    return (action, session) -> ((Map<String, Object>) action.output()).put("src", "A");
+                }
+
+                @Override
+                public Session newSession() {
+                    return Session.none();
                 }
 
                 @Override

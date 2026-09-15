@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,8 +29,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("setRuleList reports a failing expression language like a rule that doesn't compile")
 class CompileFailureTest {
 
-    private static final Supplier<CompiledCondition> TRUE = () -> context -> true;
-    private static final Supplier<CompiledAction> NO_OP = () -> context -> {
+    private static final Supplier<CompiledCondition> TRUE = () -> (context, session) -> true;
+    private static final Supplier<CompiledAction> NO_OP = () -> (context, session) -> {
     };
 
     private final StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
@@ -58,6 +59,11 @@ class CompileFailureTest {
             @Override
             public CompiledAction compileAction(String source) {
                 return action.get();
+            }
+
+            @Override
+            public Session newSession() {
+                return Session.none();
             }
         });
     }

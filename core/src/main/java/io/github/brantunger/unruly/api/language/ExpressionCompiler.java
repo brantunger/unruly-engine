@@ -1,27 +1,35 @@
 package io.github.brantunger.unruly.api.language;
 
 /**
- * Compiles the conditions and actions of one rule list, and checks the names of the facts they run against.
+ * Compiles the conditions and actions of one rule list, checks the names of the facts they run against, and creates
+ * the sessions they run with.
  *
  * <p>
  * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} calls the compile methods on one
- * thread. {@link #checkFactName(String)} is called by every {@code run()} of the rule list, possibly on many threads at
- * once, so it must be thread-safe.
+ * thread. {@link #checkFactName(String)} and {@link #newSession()} are called by runs of the rule list, possibly on
+ * many threads at once, so they must be thread-safe.
  * </p>
  *
  * <p>
- * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
- * method, so an existing language keeps compiling and working.
+ * The engine closes the compiler once it no longer needs the rule list, after closing every session the compiler
+ * created: when a later {@code setRuleList()} has replaced the rule list and no run is still using it, when the engine
+ * is closed, or when the rule list fails to load.
+ * </p>
+ *
+ * <p>
+ * <b>Implemented by</b> expression languages. A method added to this interface is a {@code default} method, so an
+ * existing language keeps compiling and working.
  * </p>
  */
-public interface ExpressionCompiler {
+public interface ExpressionCompiler extends AutoCloseable {
 
     /**
      * Compiles a condition. A condition must evaluate to a {@link Boolean}, and can't change facts or declare
      * variables; a compiler that can see such a write rejects the condition here.
      *
      * @param source The condition, never {@code null} or blank
-     * @return The compiled condition
+     * @return The compiled condition, which every run of the rule list shares. Keep what changes while it runs in a
+     *         {@link Session}.
      * @throws io.github.brantunger.unruly.api.exception.InvalidExpressionException if the condition breaks a rule the
      *         engine enforces, such as assigning to a fact. Any other exception, such as a syntax error, is reported
      *         as the cause of a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}.
@@ -32,12 +40,23 @@ public interface ExpressionCompiler {
      * Compiles an action, which changes the output object it sees as {@value ActionContext#OUTPUT_NAME}.
      *
      * @param source The action, never {@code null} or blank
-     * @return The compiled action
+     * @return The compiled action, which every run of the rule list shares. Keep what changes while it runs in a
+     *         {@link Session}.
      * @throws io.github.brantunger.unruly.api.exception.InvalidExpressionException if the action breaks a rule the
      *         engine enforces. Any other exception, such as a syntax error, is reported as the cause of a
      *         {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}.
      */
     CompiledAction compileAction(String source);
+
+    /**
+     * Creates a session for one copy of the rule list: the state this language's conditions and actions change while
+     * they run. Every condition and action this compiler compiled is given the session of the run that evaluates it.
+     *
+     * @return A new session, or {@link Session#none()} if the compiled expressions keep no state between runs and are
+     *         safe to run on several threads at once. Throwing or returning {@code null} fails the run that needed the
+     *         session with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
+     */
+    Session newSession();
 
     /**
      * Rejects the name of a fact that rules written in this language couldn't refer to, such as a keyword of the
@@ -52,5 +71,15 @@ public interface ExpressionCompiler {
      */
     default void checkFactName(String name) {
         // Every name is accepted.
+    }
+
+    /**
+     * Releases what the compiler holds. The engine calls it once, after closing every session the compiler created. By
+     * default, does nothing. An exception it throws is logged at WARN and not thrown, except a fatal {@link Error},
+     * which is rethrown unchanged.
+     */
+    @Override
+    default void close() {
+        // Nothing to release.
     }
 }

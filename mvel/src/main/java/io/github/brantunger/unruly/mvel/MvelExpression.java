@@ -4,25 +4,34 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.Session;
 import org.mvel2.MVEL;
 import org.mvel2.ParserContext;
 
 import java.io.Serializable;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * One compiled MVEL condition or action.
+ * One compiled MVEL condition or action, shared by every run of its rule list.
  *
  * <p>
  * MVEL caches an accessor in a compiled expression the first time it runs, and replaces it without synchronization
- * when a later run binds the same name to a different kind of object, so {@link #copy()} compiles a new expression.
+ * when a later run binds the same name to a different kind of object, so MVEL's compiled form isn't shared: each
+ * {@link MvelSession} runs its own, from {@link #newCompiled()}.
  * </p>
- *
- * @param source   The expression's source text
- * @param imports  The imports it is compiled with
- * @param compiled MVEL's compiled expression
  */
-record MvelExpression(String source, Imports imports, Serializable compiled)
-        implements CompiledCondition, CompiledAction {
+final class MvelExpression implements CompiledCondition, CompiledAction {
+
+    private final String source;
+    private final Imports imports;
+    // MVEL's compiled expression from when the rule list loaded, which no run has used, until a session takes it.
+    private final AtomicReference<Serializable> loaded;
+
+    private MvelExpression(String source, Imports imports, Serializable loaded) {
+        this.source = source;
+        this.imports = imports;
+        this.loaded = new AtomicReference<>(loaded);
+    }
 
     /**
      * Compiles an expression.
@@ -39,23 +48,37 @@ record MvelExpression(String source, Imports imports, Serializable compiled)
     }
 
     @Override
-    public Object evaluate(EvaluationContext context) {
-        return MVEL.executeExpression(compiled, (Object) null, context.facts());
+    public Object evaluate(EvaluationContext context, Session session) {
+        return MVEL.executeExpression(compiledIn(session), (Object) null, context.facts());
     }
 
     @Override
-    public void execute(ActionContext context) {
+    public void execute(ActionContext context, Session session) {
         // Reads the facts; the output object and the action's own assignments stay in this action.
-        MVEL.executeExpression(compiled, (Object) null, new ActionVariables(context.facts(), context.output()));
+        MVEL.executeExpression(compiledIn(session), (Object) null,
+                new ActionVariables(context.facts(), context.output()));
     }
 
     /**
-     * Compiles another copy for a concurrent run. The expression already compiled with these imports, so MVEL's
-     * analysis pass isn't repeated.
+     * Returns MVEL's compiled form of this expression for a new session: the one compiled when the rule list loaded,
+     * the first time, then a new compilation. The expression already compiled with these imports, so MVEL's analysis
+     * pass isn't repeated. Sessions on several threads can call it at once.
+     *
+     * @return A compiled expression that no other session runs
      */
-    @Override
-    public MvelExpression copy() {
-        return new MvelExpression(source, imports, MVEL.compileExpression(source, newParserContext(imports)));
+    Serializable newCompiled() {
+        Serializable first = loaded.getAndSet(null);
+        return first != null ? first : MVEL.compileExpression(source, newParserContext(imports));
+    }
+
+    // The engine closes the sessions it gives an expression.
+    @SuppressWarnings("PMD.CloseResource")
+    private Serializable compiledIn(Session session) {
+        if (session instanceof MvelSession mvel) {
+            return mvel.compiled(this);
+        }
+        throw new IllegalArgumentException("An MVEL expression runs with a session its compiler created, not "
+                + session);
     }
 
     /**

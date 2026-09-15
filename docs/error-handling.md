@@ -57,7 +57,7 @@ All of them are unchecked.
 | `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered; an expression language throws while creating its compiler, or returns `null` instead of a compiler or a compiled expression |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError` is thrown while compiling, such as a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Before 1.2.0 it was wrapped in a `RuleCompilationException`. |
-| `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; the output supplier throws or returns `null`; a compiled condition or action throws or returns `null` when it is copied for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
+| `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
 | | `IllegalStateException` | `setRuleList()` has never been called |
 | | `NullPointerException` | `facts` is `null` |
@@ -127,8 +127,8 @@ Keep in mind:
   exception a rule caused, such as `For input string: "123-45-6789"`. With sensitive facts, turn off the
   `io.github.brantunger.unruly` logger and log a redacted form yourself.
 - **Listeners hear about it first.** When a condition or action fails, `onError` receives the same exception before
-  `run()` throws it. A failing output supplier, a rejected fact name and a compiled expression that fails to copy
-  are thrown without calling any listener.
+  `run()` throws it. A failing output supplier, a rejected fact name and an expression language that fails to create
+  a session are thrown without calling any listener.
 - **An interrupt isn't lost.** If a rule, listener, output supplier or expression language is interrupted while it
   blocks, for example in `Thread.sleep` or `BlockingQueue.take`, the `InterruptedException` clears the thread's
   interrupt status and reaches the engine wrapped. The engine sets the status again before it throws or carries on,

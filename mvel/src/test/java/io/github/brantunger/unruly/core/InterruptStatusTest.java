@@ -10,9 +10,9 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -41,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class InterruptStatusTest {
 
     /** Where the language, listener or output supplier throws. */
-    enum Where { NEW_COMPILER, COMPILE, COPY, CONDITION, ACTION, LISTENER, OUTPUT, FACT_NAME }
+    enum Where { NEW_COMPILER, COMPILE, SESSION, CONDITION, ACTION, LISTENER, OUTPUT, FACT_NAME }
 
     /** The thread's interrupt status after {@code engine} ran into {@code interrupted} at {@code where}. */
     private static boolean interruptStatusAfter(Where where, Exception interrupted) throws InterruptedException {
@@ -104,12 +104,18 @@ class InterruptStatusTest {
             return at(Where.NEW_COMPILER, new ExpressionCompiler() {
                 @Override
                 public CompiledCondition compileCondition(String source) {
-                    return at(Where.COMPILE, new Condition());
+                    CompiledCondition condition = (evaluationContext, session) -> at(Where.CONDITION, true);
+                    return at(Where.COMPILE, condition);
                 }
 
                 @Override
                 public CompiledAction compileAction(String source) {
-                    return actionContext -> at(Where.ACTION, actionContext);
+                    return (actionContext, session) -> at(Where.ACTION, actionContext);
+                }
+
+                @Override
+                public Session newSession() {
+                    return at(Where.SESSION, Session.none());
                 }
 
                 @Override
@@ -117,18 +123,6 @@ class InterruptStatusTest {
                     at(Where.FACT_NAME, name);
                 }
             });
-        }
-
-        private final class Condition implements CompiledCondition {
-            @Override
-            public Object evaluate(EvaluationContext context) {
-                return at(Where.CONDITION, true);
-            }
-
-            @Override
-            public CompiledCondition copy() {
-                return at(Where.COPY, new Condition());
-            }
         }
     }
 

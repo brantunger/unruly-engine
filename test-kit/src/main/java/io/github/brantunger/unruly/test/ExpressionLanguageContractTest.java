@@ -8,7 +8,12 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
+import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,11 +23,13 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -45,8 +52,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * it. On the module path, the package of the extending test must be open to {@code org.junit.platform.commons}.
  * </p>
  */
-// A test class: each check makes several assertions, and their failure messages show the values compared.
-@SuppressWarnings({"PMD.JUnitTestContainsTooManyAsserts", "PMD.JUnitAssertionsShouldIncludeMessage"})
+// A test class: each check makes several assertions, and their failure messages show the values compared. The engines
+// the checks build are discarded with the check, except where a check is about closing.
+@SuppressWarnings({"PMD.JUnitTestContainsTooManyAsserts", "PMD.JUnitAssertionsShouldIncludeMessage",
+        "PMD.CloseResource"})
 public abstract class ExpressionLanguageContractTest {
 
     /** The output key the checks' actions put a fact's value under. */
@@ -224,6 +233,71 @@ public abstract class ExpressionLanguageContractTest {
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, alwaysTrue(), putFact(SEEN, "x")));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 1)));
+    }
+
+    @Test
+    @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's closed")
+    void compilerClosed() {
+        ExpressionLanguage language = language();
+        List<AtomicInteger> closes = new CopyOnWriteArrayList<>();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        engine.registerLanguage(countingCloses(language, closes));
+
+        engine.setRuleList(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+        assertEquals(Map.of(SEEN, 1), engine.run(fact("x", 1)));
+        engine.setRuleList(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
+
+        assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
+        assertEquals(Map.of(SEEN, 2), engine.run(fact("x", 2)));
+
+        engine.close();
+        engine.close();
+
+        assertEquals(List.of(1, 1), closes.stream().map(AtomicInteger::get).toList());
+    }
+
+    /** Wraps a language so that each compiler it creates counts how often it's closed. */
+    private static ExpressionLanguage countingCloses(ExpressionLanguage language, List<AtomicInteger> closes) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                AtomicInteger closed = new AtomicInteger();
+                closes.add(closed);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(String source) {
+                        return compiler.compileCondition(source);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(String source) {
+                        return compiler.compileAction(source);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void checkFactName(String name) {
+                        compiler.checkFactName(name);
+                    }
+
+                    @Override
+                    public void close() {
+                        closed.incrementAndGet();
+                        compiler.close();
+                    }
+                };
+            }
+        };
     }
 
     @Test

@@ -55,4 +55,14 @@ class RulesEngineDefaultMethodTest {
 
         assertTrue(ex.getMessage().endsWith("only supports MVEL rules"), ex.getMessage());
     }
+
+    @Test
+    @DisplayName("close() does nothing by default, so an existing implementation works in try-with-resources")
+    void closeDoesNothingByDefault() {
+        assertDoesNotThrow(() -> {
+            try (RulesEngine<Object> engine = new MvelOnlyEngine()) {
+                assertNotNull(engine);
+            }
+        });
+    }
 }
