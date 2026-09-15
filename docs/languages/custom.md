@@ -18,7 +18,7 @@ languages on an engine, and one rule list can mix them.
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
-engine.registerLanguage(new MyLanguage());          // MVEL is registered from the start
+engine.registerLanguage(new MyLanguage());          // MVEL is found on the class path
 
 engine.setRuleList(List.of(
         Rule.builder()
@@ -35,6 +35,11 @@ engine.setRuleList(List.of(
 ```
 
 - Register languages **before** `setRuleList()`. Like imports, a language registered afterwards is used from the next
+  `setRuleList()`.
+- A language can also be found without registering it. List its class in
+  `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` inside its jar, which is how MVEL
+  is found. Each `setRuleList()` looks with this library's class loader and its thread's context class loader. A
+  registered language replaces a found one with the same name, and two found languages with the same name fail
   `setRuleList()`.
 - A rule whose language isn't registered is rejected by `setRuleList()`:
   `Rule 'prime-rate' is written in 'cel', which isn't a registered expression language. Registered languages: [mvel]`.

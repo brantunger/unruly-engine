@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -33,7 +32,6 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 
 /**
  * The AbstractRulesEngine is an abstract implementation of the
@@ -66,11 +64,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
     // The smallest limit on compiled copies: one run at a time.
     private static final int MIN_COPIES = 1;
-    // The language of a rule whose language is null.
-    private static final String DEFAULT_LANGUAGE = MvelExpressionLanguage.LANGUAGE_NAME;
-    // Registered languages by name: MVEL, unless replaced, and those from registerLanguage().
-    private final Map<String, ExpressionLanguage> languages =
-            new ConcurrentHashMap<>(Map.of(DEFAULT_LANGUAGE, new MvelExpressionLanguage()));
+    // The language of a rule whose language is null: MVEL, which is found with ServiceLoader like any other language.
+    private static final String DEFAULT_LANGUAGE = "mvel";
+    // The languages found with ServiceLoader, and those from registerLanguage().
+    private final LanguageRegistry languages = new LanguageRegistry();
     // Packages and classes from addImport(s), passed to every compilation of the next rule list.
     private final Set<String> packageImports = new LinkedHashSet<>();
     private final Set<Class<?>> classImports = new LinkedHashSet<>();
@@ -83,10 +80,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private volatile RuleSet ruleSet;
     // The most compiled copies of the rules that runs hold at once, or RuleSet.UNLIMITED.
     private final int maxCopies;
-    // Checks fact names before the first rule list is loaded: the default language's compiler, with no imports.
-    private final Map<String, ExpressionCompiler> defaultFactChecks = Map.of(DEFAULT_LANGUAGE,
-            languages.get(DEFAULT_LANGUAGE).newCompiler(
-                    new EngineCompileContext(Set.of(), Set.of(), ImportResolver.LIBRARY_CLASS_LOADER)));
 
     /**
      * Creates an engine that makes as many compiled copies of its rules as its runs need at once.
@@ -244,8 +237,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * <p>
      * Each rule is compiled by the expression language its {@link Rule#getLanguage() language} names, or by MVEL if
-     * that is {@code null}, using the languages registered when this method is called. {@code run()} checks fact names
-     * against every language the rules use.
+     * that is {@code null}. The languages are found with {@link java.util.ServiceLoader} each time this method is
+     * called, with this library's class loader and the thread's context class loader, and a language registered with
+     * {@link #registerLanguage(ExpressionLanguage)} replaces a found one with the same name. {@code run()} checks fact
+     * names against every language the rules use.
      * </p>
      *
      * @param ruleList The List of {@link Rule} objects to compile.
@@ -270,7 +265,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
                 ImportResolver.contextClassLoader());
-        LanguageCompilers compilers = new LanguageCompilers(Map.copyOf(languages),
+        LanguageCompilers compilers = new LanguageCompilers(availableLanguages(context.classLoader()),
                 (name, language) -> newCompiler(name, language, context));
         List<CompiledRule> compiled = ruleList.stream()
                 .sorted(Comparator.comparing(
@@ -345,8 +340,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Registers an expression language that rules can be written in. MVEL is registered from the start; a language
-     * with the same name as a registered one replaces it. Takes effect at the next {@link #setRuleList(List)}.
+     * Registers an expression language that rules can be written in. It replaces a registered language, or a language
+     * found with {@link java.util.ServiceLoader} such as MVEL, with the same name. Takes effect at the next
+     * {@link #setRuleList(List)}.
      *
      * @param language The language to register
      * @return A reference to this {@link RulesEngine}
@@ -355,19 +351,14 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public RulesEngine<O> registerLanguage(ExpressionLanguage language) {
-        Objects.requireNonNull(language, "language must not be null");
-        String name = language.name();
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("An expression language's name must not be null or blank: "
-                    + language.getClass().getName());
-        }
-        languages.put(name, language);
+        languages.register(language);
         return this;
     }
 
     /**
      * Unwraps the FactStore into a Map of values to be used as context variables when rules are evaluated.
-     * This should be called once per engine run to avoid expensive allocations.
+     * This should be called once per engine run to avoid expensive allocations. Before a rule list is loaded, no
+     * language checks the names.
      *
      * @param facts The key/value fact store
      * @return A map of variable names to their values
@@ -381,7 +372,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // Read apart from the rules a run borrowed, so a run racing a reload may check names with the other list's
         // checks. That only changes whether a name one of the lists can't use is accepted, for that run.
         RuleSet rules = ruleSet;
-        Map<String, ExpressionCompiler> checks = rules != null ? rules.factChecks() : defaultFactChecks;
+        Map<String, ExpressionCompiler> checks = rules != null ? rules.factChecks() : Map.of();
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
             if (entry.getKey() == null) {
                 String msg = "fact name must not be null";
@@ -687,6 +678,21 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Failures.keepInterruptStatus(cause);
         Failures.throwIfPresent(Failures.fatalError(cause));
         return new RuleCompilationException(msg, cause, ruleName);
+    }
+
+    /**
+     * Finds the languages a rule list is compiled with. A failure to find them fails the rule list.
+     *
+     * @param loader The class loader the rule list is compiled with
+     * @return The languages by name
+     * @throws RuleCompilationException if finding the languages throws
+     */
+    private Map<String, ExpressionLanguage> availableLanguages(ClassLoader loader) {
+        try {
+            return languages.available(loader);
+        } catch (Exception | Error e) {
+            throw compilationFailure("Failed to find the expression languages: " + Failures.describe(e), e, null);
+        }
     }
 
     /**

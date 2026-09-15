@@ -44,7 +44,8 @@ public interface RulesEngine<O> {
      *         null or blank condition or action, has a condition that contains an assignment or
      *         {@code import_static}, shares its name with
      *         another rule, names an expression language that isn't registered, or if the list contains a
-     *         {@code null} rule. Also if an expression language throws while creating its compiler, or returns
+     *         {@code null} rule. Also if finding the expression languages fails, for example because two found
+     *         languages have the same name, or if an expression language throws while creating its compiler, or returns
      *         {@code null} instead of a compiler or a compiled expression. An {@link Error} other than
      *         {@link StackOverflowError} or {@link AssertionError} thrown while compiling, also as the cause of another
      *         exception, is logged and then rethrown unchanged.
@@ -116,10 +117,12 @@ public interface RulesEngine<O> {
     RulesEngine<O> addImport(String packageString);
 
     /**
-     * Registers an expression language that rules can be written in, chosen by each rule's {@code language}. MVEL is
-     * registered from the start; a language with the same name as a registered one replaces it, so registering a
-     * language named {@code "mvel"} changes the language of every rule whose {@code language} is {@code null}. Takes
-     * effect at the next {@link #setRuleList(List)}.
+     * Registers an expression language that rules can be written in, chosen by each rule's {@code language}. Languages
+     * listed in a {@code META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage} file, MVEL
+     * among them, are found with {@link java.util.ServiceLoader} whenever {@link #setRuleList(List)} is called. A
+     * registered language replaces a registered or found language with the same name, so registering a language named
+     * {@code "mvel"} changes the language of every rule whose {@code language} is {@code null}. Takes effect at the next
+     * {@link #setRuleList(List)}.
      *
      * <p>
      * An implementation of this interface that doesn't support other languages keeps this default, which throws.

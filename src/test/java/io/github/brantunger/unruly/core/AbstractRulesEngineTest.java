@@ -567,16 +567,16 @@ class AbstractRulesEngineTest {
     class UnwrapFactsBeforeRuleList {
 
         @Test
-        @DisplayName("a subclass that unwraps facts before any rule list is loaded gets MVEL's fact-name checks")
-        void checkedWithDefaultLanguage() {
+        @DisplayName("a subclass that unwraps facts before any rule list is loaded gets no language's checks")
+        void noLanguageChecks() {
             StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-            FactStore<Object> reserved = new FactMap<>();
-            reserved.setValue("empty", 1);
-            FactStore<Object> valid = new FactMap<>();
-            valid.setValue("claim", 1);
+            FactStore<Object> mvelKeyword = new FactMap<>();
+            mvelKeyword.setValue("empty", 1);
+            FactStore<Object> output = new FactMap<>();
+            output.setValue("output", 1);
 
-            assertThrows(IllegalArgumentException.class, () -> engine.unwrapFacts(reserved));
-            assertEquals(Map.of("claim", 1), engine.unwrapFacts(valid));
+            assertEquals(Map.of("empty", 1), engine.unwrapFacts(mvelKeyword));
+            assertThrows(IllegalArgumentException.class, () -> engine.unwrapFacts(output));
         }
     }
 }
