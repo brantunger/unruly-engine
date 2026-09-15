@@ -1,10 +1,12 @@
 # 🚀 Releasing unruly-engine
 
-Releases are automated. Merging a PR to `main` is the only manual act. The version bump, changelog, git tag,
-GitHub Release, Maven Central publish and [Javadoc site](#-the-javadoc-site) all follow from it.
+Releases are automated. Merging a PR to `main` (or to `1.x`, for a [hotfix](#-hotfix-releases-from-1x)) is the only
+manual act. The version bump, changelog, git tag, GitHub Release, Maven Central publish and
+[Javadoc site](#-the-javadoc-site) all follow from it.
 
 - [The normal flow](#-the-normal-flow)
 - [Forcing a release](#-forcing-a-release)
+- [Hotfix releases from 1.x](#-hotfix-releases-from-1x)
 - [Required secrets](#-required-secrets)
 - [One-time GPG setup](#-one-time-gpg-setup)
 - [When a publish half-completes](#-when-a-publish-half-completes)
@@ -55,6 +57,58 @@ bumps ship in that release without their own changelog entries.
 > [!NOTE]
 > `Release-As:` footers do **not** work here. The repository squash-merges with the PR title only, so commit bodies
 > never reach `main`.
+
+## 🌿 Hotfix releases from 1.x
+
+2.0 is developed on `main`, so once its first breaking change is merged, a 1.x fix can't be released from there.
+1.x fixes ship from a `1.x` branch instead. The release workflow and CI run on it the same way as on `main`:
+release-please opens **chore(1.x): release 1.X.Y** against `1.x`, and merging that PR publishes the version.
+
+### Once, before the first hotfix
+
+1. Create the branch from the last 1.x release tag:
+
+   ```bash
+   git fetch origin --tags
+   git push origin 'v1.6.0^{commit}:refs/heads/1.x'
+   ```
+
+2. Allow the branch in both deployment environments. They only accept `main` (and `gh-pages`), so the `publish` and
+   `pages` jobs would fail on `1.x` before running:
+
+   ```bash
+   gh api -X POST repos/brantunger/unruly-engine/environments/maven-central/deployment-branch-policies -f name=1.x -f type=branch
+   gh api -X POST repos/brantunger/unruly-engine/environments/github-pages/deployment-branch-policies -f name=1.x -f type=branch
+   ```
+
+3. Protect the branch like `main` (pull requests only, no force pushes or deletion; admins can bypass):
+
+   ```bash
+   gh api -X POST repos/brantunger/unruly-engine/rulesets --input - <<'EOF'
+   {"name": "Protect 1.x", "target": "branch", "enforcement": "active",
+    "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
+    "conditions": {"ref_name": {"include": ["refs/heads/1.x"], "exclude": []}},
+    "rules": [{"type": "deletion"}, {"type": "non_fast_forward"},
+              {"type": "pull_request", "parameters": {"required_approving_review_count": 0,
+               "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false,
+               "require_last_push_approval": false, "required_review_thread_resolution": false}}]}
+   EOF
+   ```
+
+4. Optionally, for weekly dependency bumps on `1.x` too, copy both entries in `.github/dependabot.yml` on `main`
+   and add `target-branch: "1.x"` to the copies. Dependabot reads that file only from the default branch, and its
+   security updates only ever target the default branch, so check `1.x` by hand when an alert names a dependency it
+   uses.
+
+### Each hotfix
+
+1. Fix it on `main` first if the bug is there too, then cherry-pick the squashed commit onto a branch from `1.x`
+   and open a PR into `1.x` with the same `fix:` title. CI runs on it as it does for `main`.
+2. Squash-merge it. release-please opens **chore(1.x): release 1.X.Y**; review and squash-merge that too.
+3. The `publish` and `pages` jobs publish the version and add `/1.X.Y/` to the Javadoc site. `/latest/` and the
+   repository's **Latest** GitHub Release stay on the newest version: the workflow moves them only for the highest
+   release tag.
+4. `CHANGELOG.md` on `main` doesn't list the hotfix. Its GitHub Release and the changelog on `1.x` do.
 
 ## 🔑 Required secrets
 
@@ -134,7 +188,7 @@ The `publish` job copies the Javadoc it built to the `gh-pages` branch, and the 
 
 | Path | Contents |
 | --- | --- |
-| `/latest/` | The newest release. The README links here. |
+| `/latest/` | The newest release, by version number: a hotfix of an older line doesn't replace it. The README links here. |
 | `/X.Y.Z/` | Each release, kept permanently. There's no `/1.0.0/`: that version was published without a `-javadoc.jar`. |
 | `/` | Redirects to `/latest/` |
 
@@ -156,18 +210,20 @@ once per version.
 
 If the publish step failed, rebuild that version's directory from its `-javadoc.jar`. The GitHub Release has the
 jar as soon as the job attaches it; `repo1` has it only after the 30–60 minute sync. The script replaces
-`pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version:
+`pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version or a 1.x hotfix:
 
 ```bash
 VERSION=<version>
-NEWEST=$(gh release view --repo brantunger/unruly-engine --json tagName -q .tagName)
+# The highest release tag, the same way the release workflow decides. Not "Latest", which a mistake can move.
+NEWEST=$(git ls-remote --tags --refs https://github.com/brantunger/unruly-engine.git 'v*' \
+  | sed -n 's#^.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
 git clone --depth 1 --branch gh-pages https://github.com/brantunger/unruly-engine.git pages
 gh release download "v$VERSION" --repo brantunger/unruly-engine --pattern '*-javadoc.jar'
 # or, if the jars never reached the GitHub Release:
 # curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION-javadoc.jar"
 rm -rf "pages/$VERSION"
 unzip -q "unruly-engine-$VERSION-javadoc.jar" -d "pages/$VERSION" -x 'META-INF/*'
-if [ "v$VERSION" = "$NEWEST" ]; then
+if [ "$VERSION" = "$NEWEST" ]; then
   rm -rf pages/latest
   cp -r "pages/$VERSION" pages/latest
 fi

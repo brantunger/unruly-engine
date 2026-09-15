@@ -7,7 +7,8 @@ name: Release
 
 on:
   push:
-    branches: [ "main" ]
+    # `1.x` releases hotfixes for the 1.x line once `main` moves to 2.0; see RELEASING.md.
+    branches: [ "main", "1.x" ]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +23,7 @@ jobs:
   release-please:
     # workflow_dispatch can be launched from any branch; without this guard
     # release-please would open a release PR against that branch.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/1.x'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -33,6 +34,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
+      newest: ${{ steps.newest.outputs.newest }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
@@ -43,6 +45,28 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # The branch that was pushed: release PRs, tags and the manifest are per branch.
+          target-branch: ${{ github.ref_name }}
+
+      # release-please marks every GitHub Release it creates as the repository's "Latest" release, so a hotfix
+      # from 1.x would take that from a newer 2.x release. The newest version is the highest release tag, which
+      # already includes the tag just created. Pre-release tags (with a suffix) are left out.
+      - name: Keep the newest release marked Latest
+        id: newest
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          : "${VERSION:?release-please reported no version}"
+          newest=$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" 'v*' \
+            | sed -n 's#^.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
+          : "${newest:?no release tags found}"
+          echo "newest=${newest}" >> "$GITHUB_OUTPUT"
+          if [ "$newest" != "$VERSION" ]; then
+            echo "::notice::${VERSION} isn't the newest release, so v${newest} stays marked Latest."
+            gh release edit "v${newest}" --repo "$GITHUB_REPOSITORY" --latest
+          fi
 
   publish:
     needs: release-please
@@ -89,14 +113,17 @@ jobs:
 
       # The gh-pages branch keeps one directory per release plus `latest`; the `pages` job below
       # deploys it. The Central step above already ran `javadoc`, so this only copies its output.
+      # `latest` only moves for the newest release, so a hotfix from 1.x doesn't replace newer docs.
       # A missing branch is recreated instead of failing the job: this version is already on
       # Central, so the job can't be re-run. RELEASING.md shows how to add the older versions back.
       - name: Add the Javadoc to the gh-pages branch
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.release-please.outputs.version }}
+          NEWEST: ${{ needs.release-please.outputs.newest }}
         run: |
           : "${VERSION:?release-please reported no version}"
+          : "${NEWEST:?the release-please job reported no newest version}"
           if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" gh-pages > /dev/null; then
             git clone --quiet --depth 1 --branch gh-pages "https://github.com/${GITHUB_REPOSITORY}.git" pages
           else
@@ -123,9 +150,14 @@ jobs:
           </html>
           EOF
           fi
-          rm -rf "pages/${VERSION}" pages/latest
+          rm -rf "pages/${VERSION}"
           cp -r build/docs/javadoc "pages/${VERSION}"
-          cp -r build/docs/javadoc pages/latest
+          if [ "$VERSION" = "$NEWEST" ] || [ ! -d pages/latest ]; then
+            rm -rf pages/latest
+            cp -r build/docs/javadoc pages/latest
+          else
+            echo "::notice::${VERSION} isn't the newest release, so latest/ keeps the ${NEWEST} Javadoc."
+          fi
           git -C pages add --all
           git -C pages -c user.name='github-actions[bot]' \
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
