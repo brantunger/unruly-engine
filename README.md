@@ -213,24 +213,42 @@ flowchart TD
 
 ### Rules
 
-A `Rule` is a plain object with six fields:
+A `Rule` is an immutable object with six fields:
 
 | Field | Type | Required | Purpose |
 | --- | --- | :---: | --- |
-| `ruleName` | `String` | recommended | Names the rule in error messages and listener callbacks. Must be unique within a rule list. Unnamed rules are allowed and show as `(unnamed)`. |
+| `ruleName` | `String` | ✅ | Names the rule in error messages, exceptions and listener callbacks. Must not be blank, and must be unique within a rule list. |
 | `condition` | `String` | ✅ | An expression that must evaluate to a `boolean`. It can't assign or declare anything, but it can call methods; see [What rules can change](docs/writing-rules.md#-what-rules-can-change). |
 | `action` | `String` | ✅ | An expression that runs when the rule fires, usually changing `output`. |
 | `priority` | `Integer` | | Higher numbers fire first. Equal priorities keep their list order, and `null` sorts last. |
 | `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
 | `language` | `String` | | The expression language the condition and action are written in. `null` means MVEL. See [Other expression languages](docs/languages/custom.md). |
 
-Create a rule with `Rule.builder()`. The no-arg constructor and the setters still work, but are deprecated since
-1.8.0 because `Rule` is expected to become immutable in 2.0: a JSON or configuration binder can build rules through
-`Rule.RuleBuilder` instead, for example with a Jackson mix-in using
-`@JsonDeserialize(builder = Rule.RuleBuilder.class)` and `@JsonPOJOBuilder(withPrefix = "")`. Copy a rule with a change with `toBuilder()`, such as `rule.toBuilder().priority(5).build()`. The
-positional constructors, `new Rule(ruleName, condition, action, priority, description[, language])`, are deprecated
-because their parameters change whenever a field is added. `setRuleList()` copies each rule, so changing a
-`Rule` afterwards has no effect until you call `setRuleList()` again.
+Create a rule with `Rule.builder()`. Its `build()` throws `IllegalStateException` when the name, condition or action
+is missing, naming the field. Copy a rule with a change with `toBuilder()`, such as
+`rule.toBuilder().priority(5).build()`. A rule can't change, so the engine keeps the rules you pass to
+`setRuleList()`, and listeners receive those same instances.
+
+To read rules from JSON with Jackson, register one mix-in for `Rule` and one for its builder:
+
+```java
+@JsonDeserialize(builder = Rule.RuleBuilder.class)
+abstract class RuleMixIn {
+}
+
+@JsonPOJOBuilder(withPrefix = "")
+abstract class RuleBuilderMixIn {
+}
+
+ObjectMapper mapper = JsonMapper.builder()
+        .addMixIn(Rule.class, RuleMixIn.class)
+        .addMixIn(Rule.RuleBuilder.class, RuleBuilderMixIn.class)
+        .build();
+List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
+```
+
+The code is the same for Jackson 2 and Jackson 3, which Spring Boot 4 uses; only the imports differ
+(`com.fasterxml.jackson` or `tools.jackson`). A rule without a name, condition or action fails while it's read.
 
 ### Facts
 

@@ -195,21 +195,11 @@ final class Failures {
      * Names a rule's condition or action for a message, such as {@code Condition for rule 'prime-rate'}.
      *
      * @param kind     Whether it's the rule's condition or its action
-     * @param ruleName The rule's name, or {@code null} if it has none
+     * @param ruleName The rule's name
      * @return The name
      */
     static String expression(ExpressionKind kind, String ruleName) {
-        return (kind == ExpressionKind.CONDITION ? "Condition" : "Action") + " for rule '" + displayName(ruleName) + "'";
-    }
-
-    /**
-     * Returns a rule's name for a message: escaped and shortened as {@link #quote(String)} does, or {@code (unnamed)}.
-     *
-     * @param ruleName The rule's name, or {@code null} if it has none
-     * @return The name to show
-     */
-    static String displayName(String ruleName) {
-        return ruleName != null ? quote(ruleName) : "(unnamed)";
+        return (kind == ExpressionKind.CONDITION ? "Condition" : "Action") + " for rule '" + quote(ruleName) + "'";
     }
 
     /**

@@ -201,6 +201,59 @@ JsonLogic, write actions. In `ExpressionLanguageContractTest`, `reassignOutput()
 | `void execute(ActionContext context)` | `ActionResult execute(ActionContext context, Session session)`, returning `ActionResult.done()` |
 | Writing a computed value back to the output with reflection | `return ActionResult.set(Map.of("approved", true))` |
 
+## 🧱 Rules are immutable and need a name
+
+**What changed:**
+
+- `Rule` is a final, immutable class. Its no-arg and positional constructors, its setters and `canEqual`, deprecated
+  since 1.4.0 and 1.8.0, are removed. `Rule.RuleBuilder` is final too.
+- `build()` throws `IllegalStateException` when the name is `null` or blank, or the condition or action is `null`. The
+  message names the field, such as `ruleName must not be null`. `setRuleList()` still rejects a blank condition or
+  action.
+- `getRuleName()` is never `null`, so every rule is checked for a duplicate name, and messages and
+  `LoggingRuleListener` no longer show `(unnamed)`. An `Expression` needs a rule name too.
+- The engine keeps the rules passed to `setRuleList()` instead of copying them, and listeners receive those same
+  instances.
+
+**Who is affected:** code that builds a rule without a name, creates or changes rules with the constructors or
+setters, subclasses `Rule`, or reads rules from JSON or configuration through the no-arg constructor and setters.
+Authors of expression languages whose tests create an `Expression` without a rule name.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `Rule.builder().condition(c).action(a).build()` | Add `.ruleName("...")` |
+| `new Rule(name, condition, action, priority, description)` | `Rule.builder().ruleName(name).condition(condition).action(action).priority(priority).description(description).build()` |
+| `new Rule()`, then setters | `Rule.builder()`, then the builder's methods and `build()` |
+| `rule.setPriority(5)` | `rule = rule.toBuilder().priority(5).build()` |
+| JSON read through the no-arg constructor and setters | The two Jackson mix-ins below |
+| Spring `@ConfigurationProperties` binding `List<Rule>` | Bind your own record and build the rules; see [Spring Boot](spring-boot.md#-rules-from-configuration) |
+| `rule.getRuleName() != null ? name : "(unnamed)"`; in Kotlin, `rule.ruleName ?: "(unnamed)"` | `rule.getRuleName()`; in Kotlin, `rule.ruleName` is a `String` |
+| `new Expression(null, kind, text)` | `new Expression("rule-name", kind, text)` |
+
+To read rules with Jackson, register one mix-in for `Rule` and one for its builder. The code is the same for Jackson 2
+and Jackson 3; only the imports differ (`com.fasterxml.jackson` or `tools.jackson`):
+
+```java
+@JsonDeserialize(builder = Rule.RuleBuilder.class)
+abstract class RuleMixIn {
+}
+
+@JsonPOJOBuilder(withPrefix = "")
+abstract class RuleBuilderMixIn {
+}
+
+ObjectMapper mapper = JsonMapper.builder()
+        .addMixIn(Rule.class, RuleMixIn.class)
+        .addMixIn(Rule.RuleBuilder.class, RuleBuilderMixIn.class)
+        .build();
+List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
+```
+
+JSON with a rule that has no name, condition or action now fails while it's read, instead of when `setRuleList()`
+loads it.
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in

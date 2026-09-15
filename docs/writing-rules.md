@@ -18,7 +18,7 @@ This guide covers what holds whatever the language; the [MVEL guide](languages/m
 
 ```java
 Rule.builder()
-        .ruleName("prime-rate")                          // unique, used in errors and listeners
+        .ruleName("prime-rate")                          // required and unique: used in errors and listeners
         .description("Best rate for excellent credit")   // free text, ignored by the engine
         .priority(10)                                    // higher fires first
         .language("mvel")                                // optional: null means MVEL

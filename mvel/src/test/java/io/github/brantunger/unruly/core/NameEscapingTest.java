@@ -95,7 +95,7 @@ class NameEscapingTest {
 
         Failure blank = failure(() -> engine.setRuleList(List.of(
                 Rule.builder().ruleName("blank\n" + FORGED).condition(" ").action("x").build())));
-        assertEquals("Rule 'blank\\n" + FORGED + "' has a null or blank condition expression",
+        assertEquals("Rule 'blank\\n" + FORGED + "' has a blank condition expression",
                 blank.thrown().getMessage());
 
         Failure language = failure(() -> engine.setRuleList(List.of(Rule.builder().ruleName("r")

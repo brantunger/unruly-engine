@@ -130,9 +130,9 @@ class CompileFailureDetailsTest {
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
 
-        assertTrue(ex.getMessage().startsWith("3 rules failed to compile: Rule 'blank condition' has a null or blank "
-                + "condition expression; Rule 'blank action' has a null or blank action expression; Rule 'unknown' is "
-                + "written in 'nope'"), ex.getMessage());
+        assertTrue(ex.getMessage().startsWith("3 rules failed to compile: Rule 'blank condition' has a blank condition "
+                + "expression; Rule 'blank action' has a blank action expression; Rule 'unknown' is written in "
+                + "'nope'"), ex.getMessage());
         assertEquals(java.util.Arrays.asList(ExpressionKind.CONDITION, ExpressionKind.ACTION, null),
                 ex.failures().stream().map(RuleCompilationException::getExpressionKind).toList());
     }
@@ -170,13 +170,13 @@ class CompileFailureDetailsTest {
 
         engine.setRuleList(List.of(
                 Rule.builder().ruleName("named").language("recording").condition("c1").action("a1").build(),
-                Rule.builder().language("recording").condition("c2").action("a2").build()));
+                Rule.builder().ruleName("other").language("recording").condition("c2").action("a2").build()));
 
         assertEquals(List.of(
                 new Expression("named", ExpressionKind.CONDITION, "c1"),
                 new Expression("named", ExpressionKind.ACTION, "a1"),
-                new Expression(null, ExpressionKind.CONDITION, "c2"),
-                new Expression(null, ExpressionKind.ACTION, "a2")), language.compiled);
+                new Expression("other", ExpressionKind.CONDITION, "c2"),
+                new Expression("other", ExpressionKind.ACTION, "a2")), language.compiled);
     }
 
     @Test
@@ -185,7 +185,7 @@ class CompileFailureDetailsTest {
         engine.registerLanguage(new RecordingLanguage());
         List<Rule> rules = List.of(
                 Rule.builder().ruleName("w").language("recording").condition("warn at 2:5").action("warn at 3").build(),
-                Rule.builder().language("recording").condition("true").action("warn").build());
+                Rule.builder().ruleName("v").language("recording").condition("true").action("warn").build());
 
         String logs = logsOf(() -> engine.setRuleList(rules));
 
@@ -193,7 +193,7 @@ class CompileFailureDetailsTest {
                 + "line 2, column 5: deprecated"), logs);
         assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'w' has a warning at line 3: "
                 + "odd spacing"), logs);
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule '(unnamed)' has a warning: "
+        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'v' has a warning: "
                 + "reported as a warning"), logs);
         FactStore<Object> facts = new FactMap<>();
         assertEquals(Map.of("ran", "warn"), engine.run(facts));

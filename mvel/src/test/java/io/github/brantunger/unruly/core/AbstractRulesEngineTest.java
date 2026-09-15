@@ -451,19 +451,6 @@ class AbstractRulesEngineTest {
     class RuleConditionValidation {
 
         @Test
-        @DisplayName("null condition throws RuleCompilationException naming the rule")
-        void nullConditionThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            Rule rule = Rule.builder().ruleName("my-rule").condition(null)
-                    .action("output.put(\"k\",1)").build();
-
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                    () -> engine.setRuleList(List.of(rule)));
-            assertTrue(ex.getMessage().contains("my-rule"), "error should name the offending rule");
-            assertTrue(ex.getMessage().contains("condition"));
-        }
-
-        @Test
         @DisplayName("blank condition throws RuleCompilationException naming the rule")
         void blankConditionThrows() {
             StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
@@ -485,34 +472,11 @@ class AbstractRulesEngineTest {
 
             assertThrows(RuleCompilationException.class, () -> engine.setRuleList(List.of(rule)));
         }
-
-        @Test
-        @DisplayName("unnamed rule with null condition reports '(unnamed)' in error")
-        void unnamedRuleWithNullConditionReportsUnnamed() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            Rule rule = Rule.builder().condition(null).action("output.put(\"k\",1)").build();
-
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                    () -> engine.setRuleList(List.of(rule)));
-            assertTrue(ex.getMessage().contains("(unnamed)"));
-        }
     }
 
     @Nested
     @DisplayName("Rule action validation")
     class RuleActionValidation {
-
-        @Test
-        @DisplayName("null action throws RuleCompilationException naming the rule")
-        void nullActionThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            Rule rule = Rule.builder().ruleName("my-rule").condition("true").action(null).build();
-
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                    () -> engine.setRuleList(List.of(rule)));
-            assertTrue(ex.getMessage().contains("my-rule"));
-            assertTrue(ex.getMessage().contains("action"));
-        }
 
         @Test
         @DisplayName("blank action throws RuleCompilationException naming the rule")

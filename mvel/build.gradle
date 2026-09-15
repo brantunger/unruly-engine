@@ -18,6 +18,9 @@ dependencies {
     implementation libs.mvel2
 
     testImplementation project(':test-kit')
+    // The Jackson mix-ins the docs show for reading rules from JSON are tested with Jackson 2 and Jackson 3.
+    testImplementation libs.jackson2.databind
+    testImplementation libs.jackson3.databind
     testImplementation platform(libs.junit.bom)
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -43,6 +46,8 @@ def modulePathTestJars = configurations.resolvable('modulePathTestJars') {
 dependencies {
     modulePathTest project(':mvel')
     modulePathTest project(':test-kit')
+    modulePathTest libs.jackson2.databind
+    modulePathTest libs.jackson3.databind
     modulePathTest platform(libs.junit.bom)
     modulePathTest 'org.junit.platform:junit-platform-launcher'
     modulePathTest 'org.junit.jupiter:junit-jupiter-engine'

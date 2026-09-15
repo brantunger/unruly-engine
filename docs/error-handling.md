@@ -54,7 +54,8 @@ All of them are unchecked.
 | --- | --- | --- |
 | `RulesEngineBuilder.stateless()` / `stateful()` | `NullPointerException` | The output supplier is `null` |
 | | `IllegalArgumentException` | The limit on compiled copies, `maxCopies`, is less than 1 |
-| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is `null` or blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered; an expression language throws while creating its compiler, or returns `null` instead of a compiler or a compiled expression |
+| `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |
+| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered; an expression language throws while creating its compiler, or returns `null` instead of a compiler or a compiled expression |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError` is thrown while compiling, such as a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Before 1.2.0 it was wrapped in a `RuleCompilationException`. |
 | `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
@@ -71,7 +72,7 @@ All of them are unchecked.
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 
 Messages about a specific rule name it, for example
-`Failed to evaluate condition for rule 'prime-rate': ...`. A rule without a name appears as `(unnamed)`. In a
+`Failed to evaluate condition for rule 'prime-rate': ...`. In a
 message, line breaks and other control characters in a rule, fact or language name are escaped (`\n`), and a name
 longer than 200 characters is shortened, so a name can't start a log line of its own.
 When the expression language or your code threw the underlying error, it's available from `getCause()`. An

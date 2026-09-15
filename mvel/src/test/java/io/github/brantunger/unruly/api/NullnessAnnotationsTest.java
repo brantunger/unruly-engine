@@ -16,7 +16,6 @@ import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -75,19 +74,17 @@ class NullnessAnnotationsTest {
     @Test
     @DisplayName("Rule's optional fields are @Nullable on its accessors, builder and equals, and its required ones aren't")
     void ruleNullness() throws NoSuchMethodException {
-        Map<String, Class<?>> optional = Map.of("RuleName", String.class, "Priority", Integer.class,
-                "Description", String.class, "Language", String.class);
+        Map<String, Class<?>> optional = Map.of("Priority", Integer.class, "Description", String.class,
+                "Language", String.class);
         for (Map.Entry<String, Class<?>> field : optional.entrySet()) {
             String builderMethod = Character.toLowerCase(field.getKey().charAt(0)) + field.getKey().substring(1);
             assertNullable(Rule.class.getMethod("get" + field.getKey()).getAnnotatedReturnType());
-            assertNullable(Rule.class.getMethod("set" + field.getKey(), field.getValue())
-                    .getAnnotatedParameterTypes()[0]);
             assertNullable(Rule.RuleBuilder.class.getMethod(builderMethod, field.getValue())
                     .getAnnotatedParameterTypes()[0]);
         }
         assertNullable(Rule.class.getMethod("equals", Object.class).getAnnotatedParameterTypes()[0]);
-        for (String required : List.of("Condition", "Action")) {
-            String builderMethod = required.toLowerCase(Locale.ROOT);
+        for (String required : List.of("RuleName", "Condition", "Action")) {
+            String builderMethod = Character.toLowerCase(required.charAt(0)) + required.substring(1);
             assertFalse(isNullable(Rule.class.getMethod("get" + required).getAnnotatedReturnType()),
                     "get" + required + "() is @Nullable");
             assertFalse(isNullable(Rule.RuleBuilder.class.getMethod(builderMethod, String.class)

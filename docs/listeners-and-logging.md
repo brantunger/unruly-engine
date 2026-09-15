@@ -99,7 +99,7 @@ engine.registerListener(new RuleListener() {
 | 🔗 **Paired callbacks** | Every `beforeEvaluate` / `beforeExecute` is followed by exactly one matching `after*` or `onError`. A listener registered partway through a run starts with a `before*` callback, never with a closing one. |
 | 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError` or `AssertionError`, is logged at WARN and the run continues. Any other `Error`, such as `OutOfMemoryError`, propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError` or `AssertionError` is wrapped in the `RuleExecutionException`. Any other `Error`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError` and then rethrown unchanged from `run()`. |
-| 📄 **Private copies** | Each callback receives its own copy of the `Rule`. Changing it affects nothing else. |
+| 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `setRuleList()`: the same instance every time. |
 | 🔏 **Read-only facts** | The `facts` map holds fact values, not the `FactStore`. Writing to it throws `UnsupportedOperationException`. |
 | 🧵 **Concurrency** | An engine shared across threads calls the same listener from every thread, possibly at the same time. **Listeners must be thread-safe.** |
 
