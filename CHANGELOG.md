@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.7.1](https://github.com/brantunger/unruly-engine/compare/v1.7.0...v1.7.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* log a fatal error from the output supplier or an after listener callback before rethrowing it ([#265](https://github.com/brantunger/unruly-engine/issues/265)) ([ca7abff](https://github.com/brantunger/unruly-engine/commit/ca7abff808903da18ce19750dedd53c27e09a01a))
+
 ## [1.7.0](https://github.com/brantunger/unruly-engine/compare/v1.6.1...v1.7.0) (2026-09-15)
 
 
