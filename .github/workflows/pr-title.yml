@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: amannn/action-semantic-pull-request@v6
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -44,3 +44,19 @@ jobs:
           subjectPatternError: |
             The subject "{subject}" is invalid for the "{type}" type.
             It should start with a lowercase letter and not end with a period.
+
+      # release-please reads `!` after any type as a breaking change, cuts a major release and
+      # lists the commit under "BREAKING CHANGES", even for a type the changelog hides, such as
+      # deps. Only feat and fix may carry it. The title is passed through the environment, not
+      # interpolated into the script, because this runs on pull_request_target.
+      - name: Allow a breaking-change marker only on feat and fix
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [[ "$TITLE" =~ ^([a-z]+)(\([^\)]*\))?!: ]]; then
+            type="${BASH_REMATCH[1]}"
+            if [[ "$type" != "feat" && "$type" != "fix" ]]; then
+              echo "::error::'$type!' would cut a major release. Use feat! or fix! for a breaking change, or remove the !."
+              exit 1
+            fi
+          fi

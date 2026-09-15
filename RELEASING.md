@@ -125,7 +125,9 @@ thing that can read them.
 | `GPG_KEY_ID` | The key ID. The workflow doesn't use it; it's kept for the keyserver step below. |
 
 The workflow passes these to Gradle as `ORG_GRADLE_PROJECT_mavenCentralUsername`, `…Password`,
-`…signingInMemoryKey` and `…signingInMemoryKeyPassword`. Signing happens in memory; no GPG keyring is imported
+`…signingInMemoryKey` and `…signingInMemoryKeyPassword`, and only to the publish step, which skips `check`: the full
+build, with its tests and checks, has already run in an earlier step without them. Every action in the workflows is
+pinned to a commit SHA, with its version in a comment, and Dependabot updates both. Signing happens in memory; no GPG keyring is imported
 onto the runner.
 
 ## 🔐 One-time GPG setup
