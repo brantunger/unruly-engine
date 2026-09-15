@@ -38,7 +38,6 @@ The build has three projects:
 | `core` | `unruly-engine-core` | The API, the language SPI and the engine, without an expression language |
 | `mvel` | `unruly-engine` | The MVEL language, and all the tests: most of them run MVEL rules |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
-| `module-path-test` | Nothing | Applications that run on the module path: with MVEL, without MVEL, and with the test kit |
 
 Settings shared by the published projects are in the convention plugins in `buildSrc/src/main/groovy`.
 
@@ -61,7 +60,7 @@ Settings shared by the published projects are in the convention plugins in `buil
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of both artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in each published project's `build.gradle`, `config/japicmp/accepted-breaks.txt` |
-| 🧭 **Module path** | Three applications run on the module path: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, and one runs the test kit's contract test with JUnit | `module-path-test` |
+| 🧭 **Module path** | `ModulePathTest` compiles three applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, and one runs the test kit's contract test with JUnit | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |
 
 On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21 and JDK 25**, and a separate check
 validates the PR title.

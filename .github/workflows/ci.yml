@@ -37,7 +37,7 @@ jobs:
           cache: 'gradle'
 
       # `build` runs `check`, which pulls in Checkstyle, PMD, the 100% Jacoco gate, the API compatibility check of
-      # every artifact and the module-path applications.
+      # every artifact, and the tests, including the applications ModulePathTest runs on the module path.
       - name: Build & Test
         run: ./gradlew build jacocoTestReport --no-daemon -PtestJdk=${{ matrix.java-version }}
 
