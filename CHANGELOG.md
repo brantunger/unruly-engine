@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.8.0](https://github.com/brantunger/unruly-engine/compare/v1.7.1...v1.8.0) (2026-09-15)
+
+
+### Features
+
+* deprecate the rule and fact setters 2.0 removes, and make RuleBuilder's constructor public ([#271](https://github.com/brantunger/unruly-engine/issues/271)) ([6b67cce](https://github.com/brantunger/unruly-engine/commit/6b67cce5c6cea5fbe49bd792b39100606b7426f8))
+
 ## [1.7.1](https://github.com/brantunger/unruly-engine/compare/v1.7.0...v1.7.1) (2026-09-15)
 
 
