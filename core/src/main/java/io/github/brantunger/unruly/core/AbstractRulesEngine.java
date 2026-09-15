@@ -247,7 +247,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         rule.getRuleName());
             }
         }
-        CompileContext context = new EngineCompileContext(Set.copyOf(packageImports), Set.copyOf(classImports),
+        CompileContext context = new EngineCompileContext(packageImports, classImports,
                 ImportResolver.contextClassLoader());
         LanguageCompilers compilers = new LanguageCompilers(availableLanguages(context.classLoader()),
                 (name, language) -> newCompiler(name, language, context));
@@ -470,8 +470,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
-        Map<String, Object> conditionFacts = ReadOnlyFacts.forConditions(entryMap);
-        // A separate view, so a listener that writes to the facts isn't told about conditions.
+        // The evaluation context makes its own read-only view, whose messages are about conditions, so a listener
+        // that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), listenerFacts));
@@ -480,7 +480,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(conditionFacts));
+            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(entryMap));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
                     + Failures.describe(e), e);
@@ -508,8 +508,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
-        // A read-only view: an action changes the output object, never the facts other rules see.
-        ActionContext context = new EngineActionContext(ReadOnlyFacts.forActions(entryMap), outputResult);
+        // The context gives the action a read-only view: an action changes the output object, never the facts other
+        // rules see.
+        ActionContext context = new EngineActionContext(entryMap, outputResult);
         try {
             rule.compiledAction().execute(context);
         } catch (Exception | Error e) {

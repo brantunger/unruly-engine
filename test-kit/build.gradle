@@ -1,0 +1,31 @@
+plugins {
+    id 'unruly.library'
+}
+
+// Tools for testing an expression language. The engine's own tests use them too, so they can't drift from the engine.
+def artifact = 'unruly-engine-test'
+
+base {
+    archivesName = artifact
+}
+
+dependencies {
+    api project(':core')
+    // Part of the kit's API: the contract test is a JUnit Jupiter test class.
+    api libs.junit.jupiter.api
+}
+
+mavenPublishing {
+    coordinates(project.group.toString(), artifact, project.version.toString())
+
+    pom {
+        name = artifact
+        description = 'Tools for testing an Unruly expression language: a JUnit Jupiter contract test, and the ' +
+                'contexts the engine passes to a language'
+    }
+}
+
+apiCheck {
+    artifactId = artifact
+    firstRelease = '2.0.0'
+}

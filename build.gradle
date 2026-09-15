@@ -11,10 +11,11 @@ allprojects {
     version = '1.8.0' // x-release-please-version
 }
 
-// Coverage of both artifacts. The tests are in mvel, and they cover core's classes too, so the report and the
-// gate combine the classes of mvel and of the projects it depends on.
+// Coverage of the published artifacts. The tests are in mvel, and they cover core's and test-kit's classes too, so
+// the report and the gate combine the classes of mvel, test-kit and the projects they depend on.
 dependencies {
     jacocoAggregation project(':mvel')
+    jacocoAggregation project(':test-kit')
 }
 
 reporting {
@@ -35,10 +36,14 @@ reporting {
 
 def coverageVerification = tasks.register('jacocoTestCoverageVerification', JacocoCoverageVerification) {
     group = 'verification'
-    description = 'Fails unless the tests cover every instruction and branch of both artifacts.'
+    description = 'Fails unless the tests cover every instruction and branch of the published artifacts.'
     def report = tasks.named('jacocoTestReport', JacocoReport).get()
     executionData.from(report.executionData)
-    classDirectories.from(report.classDirectories)
+    // The test kit's ExpressionLanguageContractTest is a test class. Its lambdas that always throw leave instructions
+    // JaCoCo can't reach, and the tests run it for MVEL and for a test language, so it isn't gated.
+    classDirectories.from(report.classDirectories.asFileTree.matching {
+        exclude 'io/github/brantunger/unruly/test/ExpressionLanguageContractTest*'
+    })
     sourceDirectories.from(report.sourceDirectories)
     violationRules {
         rule {
@@ -58,7 +63,7 @@ tasks.named('check') {
     dependsOn coverageVerification
 }
 
-// One Javadoc site for both modules. The javadoc tool gets the modules rather than source files, so it documents
+// One Javadoc site for all the modules. The javadoc tool gets the modules rather than source files, so it documents
 // only the packages they export, and each module gets its own directory.
 def javadocLibraryPath = configurations.create('javadocModulePath') {
     canBeConsumed = false
@@ -75,16 +80,20 @@ def javadocLibraryPath = configurations.create('javadocModulePath') {
 
 dependencies {
     javadocModulePath project(':mvel')
+    javadocModulePath project(':test-kit')
+    // JUnit's annotations refer to its API status annotation, which isn't one of JUnit's runtime dependencies.
+    javadocModulePath libs.apiguardian.api
 }
 
 def moduleSources = [
         'io.github.brantunger.unruly.core': layout.projectDirectory.dir('core/src/main/java'),
         'io.github.brantunger.unruly'     : layout.projectDirectory.dir('mvel/src/main/java'),
+        'io.github.brantunger.unruly.test': layout.projectDirectory.dir('test-kit/src/main/java'),
 ]
 
 tasks.register('javadoc', Exec) {
     group = 'documentation'
-    description = 'Generates one Javadoc site for both modules in build/docs/javadoc.'
+    description = 'Generates one Javadoc site for all the modules in build/docs/javadoc.'
 
     // Only the libraries: the two modules themselves come from their sources.
     def libraries = javadocLibraryPath.incoming.artifactView {

@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.core.Engines;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
+import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +30,7 @@ class NullnessAnnotationsTest {
     @DisplayName("the public API packages are @NullMarked, and the internal core package isn't")
     void publicPackagesNullMarked() {
         for (Class<?> type : List.of(Rule.class, UnrulyException.class, CompiledCondition.class,
-                MvelExpressionLanguage.class)) {
+                MvelExpressionLanguage.class, LanguageTestContexts.class)) {
             assertTrue(type.getPackage().isAnnotationPresent(NullMarked.class),
                     type.getPackageName() + " isn't @NullMarked");
         }

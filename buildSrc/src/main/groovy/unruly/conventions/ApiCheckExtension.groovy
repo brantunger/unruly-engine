@@ -20,4 +20,10 @@ abstract class ApiCheckExtension {
 
     /** The packages of the predecessor that aren't in this artifact. */
     abstract ListProperty<String> getPredecessorExcludedPackages()
+
+    /**
+     * For a new artifact without a predecessor: the version of its first release. While it has no release and the
+     * build's version is no higher than this, the check is skipped; after that, a missing baseline fails the build.
+     */
+    abstract Property<String> getFirstRelease()
 }

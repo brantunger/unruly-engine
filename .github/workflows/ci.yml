@@ -37,7 +37,7 @@ jobs:
           cache: 'gradle'
 
       # `build` runs `check`, which pulls in Checkstyle, PMD, the 100% Jacoco gate, the API compatibility check of
-      # both artifacts and the module-path applications.
+      # every artifact and the module-path applications.
       - name: Build & Test
         run: ./gradlew build jacocoTestReport --no-daemon -PtestJdk=${{ matrix.java-version }}
 
@@ -49,6 +49,7 @@ jobs:
           path: |
             core/build/reports/japicmp/
             mvel/build/reports/japicmp/
+            test-kit/build/reports/japicmp/
           if-no-files-found: ignore
 
       # `build` doesn't run javadoc; otherwise the release's publish job, after tagging, is the first

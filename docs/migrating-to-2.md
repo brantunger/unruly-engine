@@ -83,7 +83,7 @@ it. An application whose rules all name other languages can depend on `unruly-en
 
 **What changed:** each jar has a module declaration. `unruly-engine` is still the module `io.github.brantunger.unruly`,
 and `unruly-engine-core` is the module `io.github.brantunger.unruly.core`. They export only the API packages, not
-`io.github.brantunger.unruly.core`, and they require SLF4J and MVEL themselves. The Javadoc site has a directory for
+`io.github.brantunger.unruly.core`, which only the test kit can read, and they require SLF4J and MVEL themselves. The Javadoc site has a directory for
 each module.
 
 **Who is affected:**
@@ -104,6 +104,30 @@ each module.
   [README's installation section](../README.md#-installation) shows.
 - Remove `requires org.slf4j` unless your application uses SLF4J itself.
 - Update links to Javadoc pages.
+
+## 🧪 A language's contexts are sealed, and its tests use the test kit
+
+**What changed:** `CompileContext`, `EvaluationContext` and `ActionContext` in `io.github.brantunger.unruly.api.language`
+are sealed, so only the engine implements them. The new `unruly-engine-test` artifact has the contract test for
+languages, `io.github.brantunger.unruly.test.ExpressionLanguageContractTest`, and `LanguageTestContexts`, which
+creates the contexts for unit tests.
+
+**Who is affected:** authors of an expression language whose tests implement a context, or who copied
+`ExpressionLanguageContractTest` from the repository. A class that implements a context no longer compiles:
+
+```
+error: class is not allowed to extend sealed class: EvaluationContext (as it is not listed in its 'permits' clause)
+```
+
+**What to change:**
+
+- Add `io.github.brantunger:unruly-engine-test` to your test dependencies, at the engine's version.
+- Replace a test's own contexts with `LanguageTestContexts.compile()`, `evaluation(facts)` and
+  `action(facts, output)`.
+- Delete a copied contract test, and extend `io.github.brantunger.unruly.test.ExpressionLanguageContractTest`
+  instead. Its abstract methods didn't change.
+
+See [Testing a language](languages/custom.md#-testing-a-language).
 
 ## 🔒 Engines are created only with RulesEngineBuilder
 

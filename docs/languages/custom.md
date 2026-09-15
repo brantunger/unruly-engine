@@ -59,9 +59,10 @@ Implement three interfaces from `io.github.brantunger.unruly.api.language`:
 | `ExpressionCompiler` | `compileCondition(String)`, `compileAction(String)`, and optionally `checkFactName(String)` | For each rule, and `checkFactName` for each fact of each `run()` |
 | `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext)` / `execute(ActionContext)`, and optionally `copy()` | Each time a rule is evaluated or fires |
 
-The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language; don't
-implement them. A method added to any of these interfaces in a 1.x release is a `default` method, so a language
-written against an earlier 1.x release keeps compiling and working.
+The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
+sealed, so only the engine implements them; tests create them with [`LanguageTestContexts`](#-testing-a-language). A
+method added to an interface you implement is a `default` method, so a language written against an earlier 2.x
+release keeps compiling and working.
 
 ```java
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
@@ -161,11 +162,45 @@ public no-argument constructor. Declare it both ways to support both paths:
 
 ## 🧪 Testing a language
 
-The repository's
-[`ExpressionLanguageContractTest`](../../mvel/src/test/java/io/github/brantunger/unruly/api/language/ExpressionLanguageContractTest.java)
-checks the promises above for any language. You extend it and supply expressions in your language, such as a
-condition that assigns to a fact or an action that declares a variable. MVEL and a small test-only language both pass
-it. It isn't published in a jar yet, so copy it into your own tests.
+The `unruly-engine-test` artifact, at the same version as the engine, has two tools for a language's tests. Add it
+with test scope, for example `testImplementation 'io.github.brantunger:unruly-engine-test:<version>'`. It's built with
+JUnit Jupiter 6, and brings JUnit Jupiter's API.
+
+- **`ExpressionLanguageContractTest`** checks the promises above for any language. Extend it and supply expressions in
+  your language, such as a condition that assigns to a fact or an action that declares a variable. MVEL and a small
+  test-only language both pass it.
+- **`LanguageTestContexts`** creates the contexts the engine passes to a language, to test a compiler or a compiled
+  expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run.
+
+```java
+import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
+import io.github.brantunger.unruly.test.LanguageTestContexts;
+
+class MyLanguageContractTest extends ExpressionLanguageContractTest {
+    @Override
+    protected ExpressionLanguage language() {
+        return new MyLanguage();
+    }
+
+    @Override
+    protected String factEquals(String fact, int value) {
+        return fact + " == " + value;
+    }
+
+    // ... one method for each expression the checks need
+
+    @Test
+    void conditionComparesFacts() {
+        ExpressionCompiler compiler = language().newCompiler(LanguageTestContexts.compile());
+        CompiledCondition condition = compiler.compileCondition(factEquals("x", 1));
+
+        assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1))));
+    }
+}
+```
+
+On the module path, the kit is the module `io.github.brantunger.unruly.test`. Open the package of your contract test
+to `org.junit.platform.commons`, so JUnit can run it.
 
 ## 🔒 Security
 
