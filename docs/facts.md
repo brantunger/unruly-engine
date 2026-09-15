@@ -122,7 +122,8 @@ target type is `FactStore<Object>`.
 - `setValue` always stores a **new** `Fact`. A `FactMap` copied from another (`new FactMap<>(other)`) can
   therefore be changed with `setValue` without affecting the original.
 - The copy is **shallow**. `Fact` objects added with `put` and the values themselves are shared, and calling
-  `setValue` on a shared `Fact` object changes it in every map that holds it.
+  `setValue` on a shared `Fact` object changes it in every map that holds it. `Fact.setName` and `Fact.setValue` are
+  deprecated since 1.8.0, because facts are expected to become immutable in 2.0: create a new `Fact` instead.
 - The engine doesn't copy fact values either. If an action calls a method that changes a fact, such as
   `applicant.setCreditScore(0)`, rules that fire later in the same run see the change.
 

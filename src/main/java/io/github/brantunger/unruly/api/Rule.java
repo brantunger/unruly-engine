@@ -28,10 +28,11 @@ import java.util.Objects;
  * </ul>
  *
  * <p>
- * Create a rule with {@code Rule.builder()}, or with the no-arg constructor and setters, which is how JSON and
- * configuration binders create one. Copy a rule with a change with {@code toBuilder()}, for example
- * {@code rule.toBuilder().priority(5).build()}. The positional constructors are deprecated: their parameters change
- * whenever a field is added.
+ * Create a rule with {@code Rule.builder()}. Copy a rule with a change with {@code toBuilder()}, for example
+ * {@code rule.toBuilder().priority(5).build()}. The positional constructors, the no-arg constructor and the setters are
+ * deprecated: {@code Rule} is expected to become immutable in 2.0. A JSON or configuration binder can build a rule
+ * through {@link RuleBuilder}, whose constructor is public for that; with Jackson, for example, a mix-in with
+ * {@code @JsonDeserialize(builder = Rule.RuleBuilder.class)} and {@code @JsonPOJOBuilder(withPrefix = "")}.
  * </p>
  *
  * <p>
@@ -58,6 +59,8 @@ import java.util.Objects;
  * that language. The engine applies no sandbox and no timeout, so only use rules from trusted sources.
  * </p>
  */
+// Each @Deprecated repeats its version, so the Javadoc shows the version rather than a constant's name.
+@SuppressWarnings("PMD.AvoidDuplicateLiterals")
 public class Rule {
 
     /** The multiplier {@link #hashCode()} combines field hash codes with. */
@@ -88,7 +91,11 @@ public class Rule {
      * Creates a rule whose fields are all {@code null}, to be filled in with the setters. JSON and configuration
      * binders create rules this way. Set at least the condition and action before passing the rule to
      * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}.
+     *
+     * @deprecated Use {@link #builder()}. A binder can build rules through {@link RuleBuilder} instead; see the class
+     *             description. {@code Rule} is expected to become immutable in 2.0, without this constructor.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public Rule() {
         // Every field starts null.
     }
@@ -214,7 +221,10 @@ public class Rule {
      * Sets the rule's name, used in error messages and listener callbacks. It must be unique within a rule list.
      *
      * @param ruleName The name, or {@code null} for an unnamed rule
+     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
+     *             is expected to become immutable in 2.0, without setters.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public void setRuleName(@Nullable String ruleName) {
         this.ruleName = ruleName;
     }
@@ -223,7 +233,10 @@ public class Rule {
      * Sets the condition, which must evaluate to a boolean and can't assign or declare anything.
      *
      * @param condition The condition
+     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
+     *             is expected to become immutable in 2.0, without setters.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public void setCondition(String condition) {
         this.condition = condition;
     }
@@ -232,7 +245,10 @@ public class Rule {
      * Sets the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
      *
      * @param action The action
+     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
+     *             is expected to become immutable in 2.0, without setters.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public void setAction(String action) {
         this.action = action;
     }
@@ -241,7 +257,10 @@ public class Rule {
      * Sets the rule's priority. Higher values fire first, and {@code null} sorts last.
      *
      * @param priority The priority, or {@code null}
+     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
+     *             is expected to become immutable in 2.0, without setters.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public void setPriority(@Nullable Integer priority) {
         this.priority = priority;
     }
@@ -250,7 +269,10 @@ public class Rule {
      * Sets the rule's description: free text for your own use, which the engine ignores but listeners receive.
      *
      * @param description The description, or {@code null}
+     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
+     *             is expected to become immutable in 2.0, without setters.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public void setDescription(@Nullable String description) {
         this.description = description;
     }
@@ -260,7 +282,10 @@ public class Rule {
      * {@link io.github.brantunger.unruly.api.RulesEngine#registerLanguage}.
      *
      * @param language The language's name, or {@code null} for MVEL
+     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
+     *             is expected to become immutable in 2.0, without setters.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     public void setLanguage(@Nullable String language) {
         this.language = language;
     }
@@ -295,7 +320,10 @@ public class Rule {
      *
      * @param other The object being compared
      * @return {@code true} if {@code other} is a {@code Rule}
+     * @deprecated {@code Rule} is expected to become a final class in 2.0, so it can't be subclassed and doesn't need
+     *             this method.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     protected boolean canEqual(@Nullable Object other) {
         return other instanceof Rule;
     }
@@ -349,8 +377,14 @@ public class Rule {
         private @Nullable String description;
         private @Nullable String language;
 
-        RuleBuilder() {
-            // Created by Rule.builder() and Rule.toBuilder().
+        /**
+         * Creates a builder with every field {@code null}. In code, call {@link Rule#builder()}. This constructor is
+         * public so that a binder can create the builder itself, such as Jackson through
+         * {@code @JsonDeserialize(builder = Rule.RuleBuilder.class)}, also on the module path, where a non-public
+         * constructor isn't accessible.
+         */
+        public RuleBuilder() {
+            // Every field starts null.
         }
 
         /**

@@ -8,6 +8,12 @@ import java.util.Map;
  * FactStore is an extension of a {@link Map}. It's a Key/Value store where the key is a {@link String} representing
  * the fact's name, and the value is a {@link FactReference} itself.
  *
+ * <p>
+ * <b>2.0:</b> a {@code FactStore} is expected to stop being a {@link Map}. Methods inherited from an interface can't be
+ * deprecated, so prefer {@link #getValue(String)}, {@link #setValue(String, Object)} and
+ * {@link #put(FactReference)} over the {@code Map} methods now, to keep code working then.
+ * </p>
+ *
  * @param <T> The object/value type of the fact. A fact's value, and a {@code FactReference} in the map, can be
  *            {@code null}.
  */

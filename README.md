@@ -208,8 +208,10 @@ A `Rule` is a plain object with six fields:
 | `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
 | `language` | `String` | | The expression language the condition and action are written in. `null` means MVEL. See [Other expression languages](docs/languages/custom.md). |
 
-Create a rule with `Rule.builder()`, or with `new Rule()` and setters, which is how JSON and configuration binders
-create one. Copy a rule with a change with `toBuilder()`, such as `rule.toBuilder().priority(5).build()`. The
+Create a rule with `Rule.builder()`. The no-arg constructor and the setters still work, but are deprecated since
+1.8.0 because `Rule` is expected to become immutable in 2.0: a JSON or configuration binder can build rules through
+`Rule.RuleBuilder` instead, for example with a Jackson mix-in using
+`@JsonDeserialize(builder = Rule.RuleBuilder.class)` and `@JsonPOJOBuilder(withPrefix = "")`. Copy a rule with a change with `toBuilder()`, such as `rule.toBuilder().priority(5).build()`. The
 positional constructors, `new Rule(ruleName, condition, action, priority, description[, language])`, are deprecated
 because their parameters change whenever a field is added. `setRuleList()` copies each rule, so changing a
 `Rule` afterwards has no effect until you call `setRuleList()` again.
