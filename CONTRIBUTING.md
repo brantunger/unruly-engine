@@ -62,8 +62,9 @@ Settings shared by the published projects are in the convention plugins in `buil
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in each published project's `build.gradle`, `config/japicmp/accepted-breaks.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles three applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, and one runs the test kit's contract test with JUnit | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |
 
-On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21 and JDK 25**, and a separate check
-validates the PR title.
+On every pull request, CI runs `./gradlew build jacocoTestReport javadoc` on **JDK 21**, and the tests again on
+**JDK 25** with `./gradlew :mvel:test -PtestJdk=25`. A separate check validates the PR title. CI restores Gradle's
+caches from `main`, so a pull request only rebuilds what it changed.
 
 > [!TIP]
 > Coverage is the gate that most often fails. When it does, run `./gradlew jacocoTestReport` and open the HTML
