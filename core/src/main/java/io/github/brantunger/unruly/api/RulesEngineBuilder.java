@@ -47,7 +47,8 @@ public final class RulesEngineBuilder {
      * compiled copies of its rules.
      *
      * <p>
-     * Each run uses a compiled copy of the rules that no other run is using. An engine without a limit makes a new
+     * Each run uses a copy of the rules, one session for each expression language, that no other run is using.
+     * An engine without a limit makes a new
      * copy whenever all of them are in use, and keeps as many as the most runs it has had in progress at once. This
      * engine keeps at most {@code maxCopies}: a run that starts while all of them are in use waits until one is free,
      * so at most {@code maxCopies} runs are in progress at once. A run started from inside another run on the same

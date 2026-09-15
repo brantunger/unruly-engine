@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,13 +55,18 @@ class ExpressionLanguageRegistrationTest {
                 return new ExpressionCompiler() {
                     @Override
                     public CompiledCondition compileCondition(String source) {
-                        return evaluation -> true;
+                        return (evaluation, session) -> true;
                     }
 
                     @Override
                     public CompiledAction compileAction(String source) {
-                        return action -> {
+                        return (action, session) -> {
                         };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return Session.none();
                     }
 
                     @Override
@@ -279,6 +285,11 @@ class ExpressionLanguageRegistrationTest {
                     @Override
                     public CompiledAction compileAction(String source) {
                         throw new AssertionError("the condition fails first");
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return Session.none();
                     }
                 };
             }

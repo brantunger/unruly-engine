@@ -22,7 +22,8 @@ import java.util.function.BiConsumer;
  * </ul>
  *
  * <p>
- * It relies on the interfaces' default {@code copy()} and {@code checkFactName()}.
+ * Its compiled expressions keep no state, so its session is {@link Session#none()}. It relies on the default
+ * {@code checkFactName()}.
  * </p>
  */
 public final class ToyExpressionLanguage implements ExpressionLanguage {
@@ -57,6 +58,11 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
             public CompiledAction compileAction(String source) {
                 return action(source);
             }
+
+            @Override
+            public Session newSession() {
+                return Session.none();
+            }
         };
     }
 
@@ -67,12 +73,12 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
         }
         if (tokens.size() == 1) {
             String operand = tokens.get(0);
-            return context -> value(operand, context.facts(), Map.of());
+            return (context, session) -> value(operand, context.facts(), Map.of());
         }
         if (tokens.size() == 3 && "==".equals(tokens.get(1))) {
             String left = tokens.get(0);
             String right = tokens.get(2);
-            return context -> Objects.equals(value(left, context.facts(), Map.of()),
+            return (context, session) -> Objects.equals(value(left, context.facts(), Map.of()),
                     value(right, context.facts(), Map.of()));
         }
         throw new IllegalArgumentException("syntax error in condition '" + source + "'");
@@ -97,7 +103,7 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
                 throw new IllegalArgumentException("syntax error in action statement '" + statement.trim() + "'");
             }
         }
-        return context -> {
+        return (context, session) -> {
             Map<String, Object> locals = new HashMap<>();
             statements.forEach(statement -> statement.accept(context, locals));
         };

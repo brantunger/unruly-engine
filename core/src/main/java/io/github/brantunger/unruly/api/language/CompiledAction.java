@@ -1,17 +1,16 @@
 package io.github.brantunger.unruly.api.language;
 
 /**
- * A compiled action.
+ * A compiled action, shared by every run of its rule list.
  *
  * <p>
- * The engine never executes one compiled action on two threads at once, as long as {@link #copy()} returns a new
- * object: each run executes its own copy, and the action the compiler returned is only copied, never executed. An
- * action that several threads can execute at the same time returns itself from {@code copy()}.
+ * Several runs can execute one compiled action at the same time, each with its own {@link Session}, which only one run
+ * uses at a time. Keep what changes while the action runs in the session.
  * </p>
  *
  * <p>
- * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
- * method, so an existing language keeps compiling and working.
+ * <b>Implemented by</b> expression languages. A method added to this interface is a {@code default} method, so an
+ * existing language keeps compiling and working.
  * </p>
  */
 public interface CompiledAction {
@@ -23,19 +22,8 @@ public interface CompiledAction {
      * {@code run()} rethrows unchanged.
      *
      * @param context The facts of the run and the output object
+     * @param session The run's session for this action's language, created by the compiler that compiled it
+     * @throws Exception if the action fails
      */
-    void execute(ActionContext context);
-
-    /**
-     * Returns an action for one run to execute. The engine calls it on the action the compiler returned, which no run
-     * executes, and may call it from several threads at once, so a copy must be built only from state that doesn't
-     * change, such as the source and what it was compiled with. By default, returns this action, which is right for an
-     * action that several threads can execute at the same time.
-     *
-     * @return A new copy, or this action if several threads can execute it at the same time. Throwing or returning
-     *         {@code null} fails the run with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
-     */
-    default CompiledAction copy() {
-        return this;
-    }
+    void execute(ActionContext context, Session session) throws Exception;
 }

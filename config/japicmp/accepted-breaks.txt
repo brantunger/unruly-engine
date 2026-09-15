@@ -23,3 +23,7 @@
 # - justification: why users can live with the break. Required.
 #
 # A pull request that adds a line must be titled with a ! (for example feat!:), so it releases a new major version.
+
+2 | class | io.github.brantunger.unruly.api.language.CompiledCondition | copy() is removed: every run shares a compiled condition, and evaluate(context, session) gets the run's Session instead (#280). A language keeps its per-run state in a session from ExpressionCompiler.newSession(), or returns Session.none(); the migration guide shows each change.
+2 | class | io.github.brantunger.unruly.api.language.CompiledAction | copy() is removed: every run shares a compiled action, and execute(context, session) gets the run's Session instead (#280). A language keeps its per-run state in a session from ExpressionCompiler.newSession(), or returns Session.none(); the migration guide shows each change.
+2 | class | io.github.brantunger.unruly.api.language.ExpressionCompiler | newSession() is abstract, so every language decides whether its expressions keep state while they run (#280, replacing #240's abstract copy()). A language without such state returns Session.none().

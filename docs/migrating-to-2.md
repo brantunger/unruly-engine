@@ -129,6 +129,34 @@ error: class is not allowed to extend sealed class: EvaluationContext (as it is 
 
 See [Testing a language](languages/custom.md#-testing-a-language).
 
+## 🔁 Languages keep run state in sessions, and engines can be closed
+
+**What changed:**
+
+- `CompiledCondition.copy()` and `CompiledAction.copy()` are removed. Every run shares a rule list's compiled
+  expressions, and a language keeps what changes while they run in a `Session`. `ExpressionCompiler.newSession()`
+  creates one for each copy of the rules, and `evaluate` and `execute` take it as a second parameter. Both may throw
+  checked exceptions.
+- `ExpressionCompiler`, `Session` and `RulesEngine` are `AutoCloseable`. The engine closes sessions and compilers once it
+  no longer needs them: after `setRuleList()` replaces the rules and their runs finish, and when the engine is closed.
+  After `close()`, `run()` and `setRuleList()` throw `IllegalStateException`.
+
+**Who is affected:** authors of expression languages. Code that implements `RulesEngine` keeps compiling, because
+`close()` has a default. Rule authors change nothing.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `copy()` returning `this`, the default | `newSession()` returning `Session.none()` |
+| `copy()` returning a new expression with its own state | Keep that state in a `Session` from `newSession()`, and read it from the `session` parameter |
+| `evaluate(EvaluationContext context)` | `evaluate(EvaluationContext context, Session session)` |
+| `execute(ActionContext context)` | `execute(ActionContext context, Session session)` |
+| Resources released by garbage collection | Release them in `Session.close()` or `ExpressionCompiler.close()` |
+
+Close an engine you discard, such as one built for a test or a short task, with `close()` or a try-with-resources
+block.
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in

@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.Session;
 
 /**
  * Compiles one rule list's MVEL expressions with the list's imports, and checks fact names against them.
@@ -46,6 +47,14 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     @Override
     public CompiledAction compileAction(String source) {
         return MvelExpression.compile(source, imports);
+    }
+
+    /**
+     * Creates the session that holds one copy of the rule list's compiled MVEL expressions.
+     */
+    @Override
+    public Session newSession() {
+        return new MvelSession();
     }
 
     @Override

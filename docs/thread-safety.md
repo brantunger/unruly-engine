@@ -67,16 +67,25 @@ name to a different class, for example when `applicant` is an interface with sev
 the same compiled expression can then fail intermittently with a `RuleExecutionException` caused by a
 `ClassCastException`.
 
-So concurrent runs never share a compiled MVEL expression. The rule list `setRuleList()` compiled is kept only to
-copy from; no run uses it. Each `run()` borrows a copy that no other run is using, makes a new one if every copy is
-busy (as the first run after `setRuleList()` does), and gives it back when it finishes. By default the engine keeps
-as many copies as the most runs it has had in progress at once: the first time N runs overlap, N copies are made, and
-they stay in memory, with the list they were copied from, until the next `setRuleList()`. To bound that number,
-[limit the copies](#limiting-the-copies).
+So concurrent runs never share MVEL's compiled form of an expression. The engine compiles a rule list once, when
+`setRuleList()` loads it, and every run shares those compiled rules. What an expression language changes while its
+expressions run lives in a *session*, and a copy of the rules is one session for each language the rules use. Each
+`run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first run after
+`setRuleList()` does), and gives it back when it finishes. By default the engine keeps as many copies as the most runs
+it has had in progress at once: the first time N runs overlap, N copies are made, and they stay in memory until the
+next `setRuleList()` or `close()`. To bound that number, [limit the copies](#limiting-the-copies).
 
-Each compiled condition and action makes its own copy. An MVEL expression is compiled again, so the first run after
-`setRuleList()` compiles each MVEL rule a second time; an expression in another language that several threads can
-run at once is shared instead (see [Other expression languages](languages/custom.md#-thread-safety)).
+MVEL's session compiles each MVEL expression again the first time it runs it, except the first session, which takes
+the expression `setRuleList()` compiled. A language whose expressions several threads can run at once keeps nothing
+in its sessions (see [Other expression languages](languages/custom.md#-thread-safety)).
+
+### Closing
+
+When `setRuleList()` replaces the rules, the engine closes the old rules' idle sessions at once, and a session still in
+use when the run using it returns. Once no run uses the old rules, it closes their languages' compilers too.
+`close()` does the same for the current rules, and afterwards `run()` and `setRuleList()` throw
+`IllegalStateException`. `RulesEngine` is `AutoCloseable`, so an engine built for a short task can go in a
+try-with-resources block. A failure to close a session or a compiler is logged at WARN and doesn't fail a run.
 
 ### Limiting the copies
 
@@ -94,7 +103,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::ne
 - At most 64 copies are made, so at most 64 runs are in progress at once. A run that starts while all of them are in
   use waits until one is free. On a virtual thread, a waiting run doesn't hold a platform thread.
 - A run started from inside another run on the same thread, such as from an action or a listener, doesn't wait: the
-  copy it would wait for may be its own. If no copy is free, it gets an extra copy that isn't kept.
+  copy it would wait for may be its own. If no copy is free, it gets an extra copy, whose sessions are closed when it
+  returns.
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
   `InterruptedException`, and the thread's interrupt status stays set.
 - While `setRuleList()` swaps in a new list, runs still using the old list can hold up to that many copies more.

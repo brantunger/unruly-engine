@@ -71,21 +71,22 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      *         {@code null} if the rule list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException {@inheritDoc}
      * @throws IllegalArgumentException {@inheritDoc}
-     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called, or the engine is closed
      * @throws NullPointerException {@inheritDoc}
      */
     @Override
     public O run(FactStore<Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
-        return withCompiledRules(rules -> {
+        return withCompiledRules((ruleSet, copy) -> {
             // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
-            Map<String, Object> entryMap = this.unwrapFacts(facts);
+            Map<String, Object> entryMap = this.unwrapFacts(facts, ruleSet.factChecks());
+            List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
                 return null;
             }
 
             // Match the facts and data against the set of rules with the highest priority first.
-            List<CompiledRule> matchedRuleList = this.match(rules, entryMap);
+            List<CompiledRule> matchedRuleList = this.match(rules, copy, entryMap);
             if (matchedRuleList.isEmpty()) {
                 return null;
             }
@@ -94,7 +95,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
             // Run the action of every rule on given data, saving state each time
             for (CompiledRule rule : matchedRuleList) {
-                outputObject = this.executeRule(rule, outputObject, entryMap);
+                outputObject = this.executeRule(rule, copy, outputObject, entryMap);
             }
 
             return outputObject;

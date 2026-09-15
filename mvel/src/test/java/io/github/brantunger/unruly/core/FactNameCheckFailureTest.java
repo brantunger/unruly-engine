@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -38,13 +39,18 @@ class FactNameCheckFailureTest {
                 return new ExpressionCompiler() {
                     @Override
                     public CompiledCondition compileCondition(String source) {
-                        return evaluation -> true;
+                        return (evaluation, session) -> true;
                     }
 
                     @Override
                     public CompiledAction compileAction(String source) {
-                        return action -> {
+                        return (action, session) -> {
                         };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return Session.none();
                     }
 
                     @Override

@@ -13,6 +13,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -42,15 +43,20 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("an engine with a limit on compiled copies keeps at most that many, and a run waits for a free one")
 class CompiledCopyLimitTest {
 
-    /** A language whose condition waits for {@link #gate} to open, and which counts copies and runs in progress. */
+    /**
+     * A language whose condition waits for {@link #gate} to open, and which counts the sessions it makes, each a copy of
+     * its one-rule list, and the runs in progress.
+     */
     private static final class GateLanguage implements ExpressionLanguage {
 
         private final CountDownLatch gate = new CountDownLatch(1);
         private final AtomicInteger inProgress = new AtomicInteger();
         private final AtomicInteger mostInProgress = new AtomicInteger();
-        private final AtomicInteger copies = new AtomicInteger();
-        // How many of the next copy() calls throw.
-        private final AtomicInteger failingCopies = new AtomicInteger();
+        // Every session made, in order, including those that failed.
+        private final AtomicInteger sessionsMade = new AtomicInteger();
+        private final List<GateSession> sessions = new CopyOnWriteArrayList<>();
+        // How many of the next newSession() calls throw.
+        private final AtomicInteger failingSessions = new AtomicInteger();
 
         @Override
         public String name() {
@@ -67,15 +73,26 @@ class CompiledCopyLimitTest {
 
                 @Override
                 public CompiledAction compileAction(String source) {
-                    return actionContext -> {
+                    return (actionContext, session) -> {
                     };
+                }
+
+                @Override
+                public Session newSession() {
+                    sessionsMade.incrementAndGet();
+                    if (failingSessions.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+                        throw new IllegalStateException("session failed");
+                    }
+                    GateSession session = new GateSession();
+                    sessions.add(session);
+                    return session;
                 }
             };
         }
 
         private final class Condition implements CompiledCondition {
             @Override
-            public Object evaluate(EvaluationContext context) {
+            public Object evaluate(EvaluationContext context, Session session) {
                 mostInProgress.accumulateAndGet(inProgress.incrementAndGet(), Math::max);
                 try {
                     assertTrue(gate.await(20, TimeUnit.SECONDS), "the gate never opened");
@@ -87,15 +104,16 @@ class CompiledCopyLimitTest {
                     inProgress.decrementAndGet();
                 }
             }
+        }
+    }
 
-            @Override
-            public CompiledCondition copy() {
-                copies.incrementAndGet();
-                if (failingCopies.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
-                    throw new IllegalStateException("copy failed");
-                }
-                return new Condition();
-            }
+    /** A session that records whether the engine closed it. */
+    private static final class GateSession implements Session {
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        @Override
+        public void close() {
+            closed.set(true);
         }
     }
 
@@ -151,7 +169,7 @@ class CompiledCopyLimitTest {
         }
 
         await(() -> language.inProgress.get() == 2 && waiting(threads) == 4, "2 runs are in progress and 4 wait");
-        assertEquals(2, language.copies.get(), "copies made while four runs wait");
+        assertEquals(2, language.sessionsMade.get(), "sessions made while four runs wait");
         language.gate.countDown();
         for (Thread thread : threads) {
             thread.join();
@@ -159,7 +177,7 @@ class CompiledCopyLimitTest {
 
         assertEquals(6, outputs.size(), "every run finished");
         assertEquals(2, language.mostInProgress.get(), "most runs in progress at once");
-        assertEquals(2, language.copies.get(), "the waiting runs reused the two copies");
+        assertEquals(2, language.sessionsMade.get(), "the waiting runs reused the two sessions");
     }
 
     @Test
@@ -175,7 +193,10 @@ class CompiledCopyLimitTest {
         assertEquals(Map.of(), engine.run(new FactMap<>()));
 
         assertEquals(List.of(Map.of(), Map.of()), nestedOutputs);
-        assertEquals(3, language.copies.get(), "one kept copy, plus an extra copy for each nested run");
+        assertEquals(3, language.sessions.size(), "one kept session, plus an extra session for each nested run");
+        assertFalse(language.sessions.get(0).closed.get(), "the kept copy's session stays open");
+        assertTrue(language.sessions.get(1).closed.get(), "the first nested run's session is closed when it returns");
+        assertTrue(language.sessions.get(2).closed.get(), "the second nested run's session is closed when it returns");
     }
 
     @Test
@@ -191,7 +212,8 @@ class CompiledCopyLimitTest {
         engine.run(new FactMap<>());
 
         assertEquals(2, nestedOutputs.size());
-        assertEquals(2, language.copies.get(), "both copies are kept and reused");
+        assertEquals(2, language.sessionsMade.get(), "both copies are kept and reused");
+        assertTrue(language.sessions.stream().noneMatch(session -> session.closed.get()), "no kept session is closed");
     }
 
     @Test
@@ -232,7 +254,7 @@ class CompiledCopyLimitTest {
         assertTrue(interruptStatus.get(), "the thread's interrupt status is set after run() throws");
         assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + ex.getMessage()), logs);
         assertEquals(Map.of(), engine.run(new FactMap<>()), "a later run gets the copy");
-        assertEquals(1, language.copies.get());
+        assertEquals(1, language.sessionsMade.get());
     }
 
     @Test
@@ -240,7 +262,7 @@ class CompiledCopyLimitTest {
     void failedCopyFreesItsPlace() throws InterruptedException {
         GateLanguage language = new GateLanguage();
         language.gate.countDown();
-        language.failingCopies.set(1);
+        language.failingSessions.set(1);
         RulesEngine<Map<String, Object>> engine = engine(language, 1);
 
         String logs = logsOf(() -> assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>())));
@@ -253,9 +275,10 @@ class CompiledCopyLimitTest {
             assertEquals(Map.of(), engine.run(new FactMap<>()), "run " + i + " on the thread whose copy failed");
         }
 
-        assertTrue(logs.contains("Failed to copy the condition of rule 'r': copy failed"), logs);
+        assertTrue(logs.contains("The 'gate' expression language failed to create a session"), logs);
+        assertTrue(logs.contains("session failed"), logs);
         assertEquals(Map.of(), otherThreadOutput.get(), "a run on another thread didn't get a copy");
-        assertEquals(2, language.copies.get(), "the failed copy, then one kept copy that every later run reuses");
+        assertEquals(2, language.sessionsMade.get(), "the failed session, then one kept session that every later run reuses");
     }
 
     @Test
@@ -271,7 +294,7 @@ class CompiledCopyLimitTest {
 
         assertTrue(logs.contains("'output'"), logs);
         assertEquals(Map.of(), engine.run(new FactMap<>()));
-        assertEquals(1, language.copies.get());
+        assertEquals(1, language.sessionsMade.get());
     }
 
     @Test

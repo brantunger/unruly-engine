@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.api;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.core.Engines;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
@@ -67,7 +68,7 @@ class NullnessAnnotationsTest {
         assertNullable(typeArgument(RuleListener.class.getMethod("afterEvaluate", Rule.class, Map.class,
                 boolean.class).getAnnotatedParameterTypes()[1], 1));
         assertNullable(typeArgument(EvaluationContext.class.getMethod("facts").getAnnotatedReturnType(), 1));
-        assertNullable(CompiledCondition.class.getMethod("evaluate", EvaluationContext.class)
+        assertNullable(CompiledCondition.class.getMethod("evaluate", EvaluationContext.class, Session.class)
                 .getAnnotatedReturnType());
     }
 

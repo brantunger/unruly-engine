@@ -89,7 +89,7 @@ check them. Marking a parameter non-null that accepted `null`, or a return value
 
 **Adding a method to a public interface.** Users implement several of them: `RulesEngine` (for example to decorate an
 engine), `RuleListener`, `FactStore`, `FactReference`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,
-`CompiledCondition` and `CompiledAction`. Within 1.x, a method added to any public interface is a `default` method,
+`CompiledCondition`, `CompiledAction` and `Session`. Within 1.x, a method added to any public interface is a `default` method,
 and the check fails on an abstract one. When no generic implementation makes sense, the default throws
 `UnsupportedOperationException`, as `RulesEngine.registerLanguage` does. The engine-only `CompileContext`,
 `EvaluationContext` and `ActionContext` are sealed, so they can gain any method. Each interface's Javadoc says who

@@ -13,8 +13,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -41,9 +41,9 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
  *
  * <p>
  * <b>MVEL optimizer:</b> the engine leaves MVEL's global optimizer setting alone. Concurrent
- * {@code run()} calls never share a compiled expression, because MVEL replaces the accessors cached
- * in one without synchronization when a fact's runtime class changes, so they are safe with any
- * optimizer, including MVEL's default JIT optimizer.
+ * {@code run()} calls never share a session, and MVEL's session holds the run's own compiled expressions, because MVEL
+ * replaces the accessors cached in one without synchronization when a fact's runtime class changes, so they are safe
+ * with any optimizer, including MVEL's default JIT optimizer.
  * </p>
  *
  * @param <O> The output object to instantiate
@@ -60,6 +60,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static final int MIN_COPIES = 1;
     // The language of a rule whose language is null: MVEL, which is found with ServiceLoader like any other language.
     private static final String DEFAULT_LANGUAGE = "mvel";
+    private static final String CLOSED_MESSAGE = "The engine is closed";
     // The languages found with ServiceLoader, and those from registerLanguage().
     private final LanguageRegistry languages = new LanguageRegistry();
     // Packages and classes from addImport(s), passed to every compilation of the next rule list.
@@ -69,9 +70,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // or from inside a callback can't throw ConcurrentModificationException out of run().
     private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
     // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set holds the rules and the
-    // fact-name checks of the languages they use, and is fully built before it is assigned, so one volatile write
-    // swaps in both.
+    // compilers of the languages they use, and is fully built before it is assigned, so one volatile write swaps in
+    // both. Assigned while holding lifecycle, so each rule set replaced is retired once, and none is assigned after
+    // close().
     private volatile RuleSet ruleSet;
+    private volatile boolean closed;
+    private final Object lifecycle = new Object();
     // The most compiled copies of the rules that runs hold at once, or RuleSet.UNLIMITED.
     private final int maxCopies;
 
@@ -98,9 +102,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Returns the rules as {@link #setRuleList(List)} compiled them, or {@code null} if it has not been called. The
-     * engine never evaluates this list: each run uses its own copy, from {@link #withCompiledRules(Function)}. Use it
-     * to inspect the rules; to evaluate them, use {@code withCompiledRules} too.
+     * Returns the rules as {@link #setRuleList(List)} compiled them, or {@code null} if it has not been called or the
+     * engine is closed. Every run shares them, each with its own sessions, from {@link #withCompiledRules(BiFunction)}.
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
@@ -110,38 +113,54 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Calls {@code run} with a compiled copy of the rules that no concurrent run is using, and keeps the copy for
-     * later runs once {@code run} returns or throws. The first run after {@link #setRuleList(List)}, and a run that
-     * starts while every copy is in use, makes a new copy. An engine created with a limit on copies keeps at most that
-     * many: a run that finds all of them in use waits for one, unless it is nested in another run on the same thread,
-     * which gets an extra copy that isn't kept. MVEL's compiled expressions aren't safe to share between threads when
-     * a fact name is bound to different kinds of objects; see {@link RuleSet}.
+     * Calls {@code run} with the rules and a copy of them, one session for each language, that no concurrent run is
+     * using, and gives the copy back once {@code run} returns or throws. The first run after {@link #setRuleList(List)},
+     * and a run that starts while every copy is in use, makes a new copy. An engine created with a limit on copies
+     * keeps at most that many: a run that finds all of them in use waits for one, unless it is nested in another run on
+     * the same thread, which gets an extra copy that isn't kept. MVEL's compiled expressions aren't safe to share
+     * between threads when a fact name is bound to different kinds of objects; see {@link RuleSet}. A run that reads a
+     * rule set just as a reload or {@link #close()} closes it reads the rules again.
      *
      * <p>
      * A missing call to {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
      * return {@code null}, indistinguishable from "no rule matched", so it is reported instead.
      * </p>
      *
-     * @param run The body of a run, given the compiled rules in priority order, possibly none
+     * @param run The body of a run, given the rule set, whose rules are in priority order, possibly none, and the copy
      * @param <T> The type {@code run} returns
      * @return What {@code run} returns
-     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
-     * @throws RuleExecutionException if a new copy is needed and a compiled condition or action throws or returns
-     *                                {@code null} from {@code copy()}, or if the thread is interrupted while it waits
-     *                                for a copy, which keeps its interrupt status set. Each is logged at ERROR; a
-     *                                fatal {@link Error} from {@code copy()} is then rethrown unchanged.
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called, or the engine is closed
+     * @throws RuleExecutionException if a new copy is needed and a language throws or returns {@code null} from
+     *                                {@code newSession()}, or if the thread is interrupted while it waits for a copy,
+     *                                which keeps its interrupt status set. Each is logged at ERROR; a fatal
+     *                                {@link Error} from {@code newSession()} is then rethrown unchanged.
      */
-    <T> T withCompiledRules(Function<List<CompiledRule>, T> run) {
-        RuleSet rules = ruleSet;
-        if (rules == null) {
-            throw new IllegalStateException("setRuleList() must be called before run()");
-        }
-        RuleSet.Copy copy = borrow(rules);
+    <T> T withCompiledRules(BiFunction<RuleSet, RuleSet.Copy, T> run) {
+        RuleSet rules;
+        RuleSet.Copy copy;
+        do {
+            rules = currentRules();
+            copy = borrow(rules);
+        } while (copy == null);
         try {
-            return run.apply(copy.rules());
+            return run.apply(rules, copy);
         } finally {
             rules.release(copy);
         }
+    }
+
+    /**
+     * Returns the rule set runs start with.
+     *
+     * @return The rule set
+     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called, or the engine is closed
+     */
+    RuleSet currentRules() {
+        RuleSet rules = ruleSet;
+        if (rules == null) {
+            throw new IllegalStateException(closed ? CLOSED_MESSAGE : "setRuleList() must be called before run()");
+        }
+        return rules;
     }
 
     /**
@@ -227,9 +246,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * names against every language the rules use.
      * </p>
      *
+     * <p>
+     * The rule list it replaces is closed once no run is using it: its languages' sessions and compilers are closed. A
+     * rule list that fails to load closes the compilers it created.
+     * </p>
+     *
      * @param ruleList The List of {@link Rule} objects to compile.
      * @throws RuleCompilationException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
+     * @throws IllegalStateException if the engine is closed
      */
     @Override
     public void setRuleList(List<Rule> ruleList) {
@@ -251,13 +276,54 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 ImportResolver.contextClassLoader());
         LanguageCompilers compilers = new LanguageCompilers(availableLanguages(context.classLoader()),
                 (name, language) -> newCompiler(name, language, context));
-        List<CompiledRule> compiled = ruleList.stream()
-                .sorted(Comparator.comparing(
-                        Rule::getPriority,
-                        Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                .map(rule -> compileRule(rule, compilers))
-                .collect(Collectors.toCollection(ArrayList::new));
-        this.ruleSet = new RuleSet(compiled, compilers.used(DEFAULT_LANGUAGE), AbstractRulesEngine::copy, maxCopies);
+        RuleSet loaded;
+        try {
+            List<CompiledRule> compiled = ruleList.stream()
+                    .sorted(Comparator.comparing(
+                            Rule::getPriority,
+                            Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
+                    .map(rule -> compileRule(rule, compilers))
+                    .collect(Collectors.toCollection(ArrayList::new));
+            loaded = new RuleSet(compiled, compilers.used(DEFAULT_LANGUAGE), maxCopies);
+        } catch (RuntimeException | Error e) {
+            Closing.compilers(compilers.created());
+            throw e;
+        }
+        RuleSet replaced;
+        synchronized (lifecycle) {
+            if (closed) {
+                loaded.retire();
+                throw new IllegalStateException(CLOSED_MESSAGE);
+            }
+            replaced = ruleSet;
+            ruleSet = loaded;
+        }
+        if (replaced != null) {
+            replaced.retire();
+        }
+    }
+
+    /**
+     * Closes the engine. The rule list is closed once no run is using it: runs in progress finish, their sessions are
+     * closed as each one returns, and the languages' compilers after the last one. Afterwards, {@code run()} and
+     * {@link #setRuleList(List)} throw {@link IllegalStateException}. Closing it again does nothing.
+     */
+    // A closed engine has no rule set.
+    @SuppressWarnings("PMD.NullAssignment")
+    @Override
+    public void close() {
+        RuleSet replaced;
+        synchronized (lifecycle) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            replaced = ruleSet;
+            ruleSet = null;
+        }
+        if (replaced != null) {
+            replaced.retire();
+        }
     }
 
     /**
@@ -341,22 +407,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Unwraps the FactStore into a Map of values to be used as context variables when rules are evaluated.
-     * This should be called once per engine run to avoid expensive allocations. Before a rule list is loaded, no
-     * language checks the names.
+     * This should be called once per engine run to avoid expensive allocations.
      *
-     * @param facts The key/value fact store
+     * @param facts  The key/value fact store
+     * @param checks The compilers of the rule list the run uses, which check each name, by language name
      * @return A map of variable names to their values
      * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, which actions reserve
      *                                  for the output object, or has a name the language of a loaded rule can't
      *                                  refer to, such as a reserved MVEL word, or if a language's check of the name
      *                                  throws anything else. A fatal {@link Error} is logged, then rethrown unchanged.
      */
-    Map<String, Object> unwrapFacts(FactStore<Object> facts) {
+    Map<String, Object> unwrapFacts(FactStore<Object> facts, Map<String, ExpressionCompiler> checks) {
         Map<String, Object> entryMap = new HashMap<>();
-        // Read apart from the rules a run borrowed, so a run racing a reload may check names with the other list's
-        // checks. That only changes whether a name one of the lists can't use is accepted, for that run.
-        RuleSet rules = ruleSet;
-        Map<String, ExpressionCompiler> checks = rules != null ? rules.factChecks() : Map.of();
         for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
             if (entry.getKey() == null) {
                 String msg = "fact name must not be null";
@@ -413,13 +475,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param ruleList This is a list of {@link CompiledRule} objects to filter
      *                 based on when condition expression parses to
      *                 true
+     * @param copy     The run's copy of the rules, whose sessions the conditions run with
      * @param entryMap The pre-built map of unwrapped facts to use as execution context.
      * @return List of {@link CompiledRule} objects where their condition evaluated
      *         to <b>true</b>
      */
-    List<CompiledRule> match(List<CompiledRule> ruleList, Map<String, Object> entryMap) {
+    List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap) {
         return ruleList.stream()
-                .filter(rule -> parseCondition(rule, entryMap))
+                .filter(rule -> parseCondition(rule, copy, entryMap))
                 .toList();
     }
 
@@ -429,14 +492,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param rule         The rule object to obtain the action expression to fire
      *                     the rule for
+     * @param copy         The run's copy of the rules, whose session the action runs with
      * @param outputObject an empty output object to set output data into
      * @param entryMap     The pre-built map of unwrapped facts to use as execution context.
      * @return {@code outputObject}, which the action changes in place. An action can't replace it:
      *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
      *         {@code def} function, where it creates a variable local to the function.
      */
-    O executeRule(CompiledRule rule, O outputObject, Map<String, Object> entryMap) {
-        return parseAction(rule, outputObject, entryMap);
+    O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, Map<String, Object> entryMap) {
+        return parseAction(rule, copy, outputObject, entryMap);
     }
 
     /**
@@ -469,7 +533,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return output;
     }
 
-    private boolean parseCondition(CompiledRule rule, Map<String, Object> entryMap) {
+    private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap) {
         // The evaluation context makes its own read-only view, whose messages are about conditions, so a listener
         // that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
@@ -480,7 +544,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(entryMap));
+            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(entryMap),
+                    copy.sessions().get(rule.language()));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
                     + Failures.describe(e), e);
@@ -504,7 +569,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return result;
     }
 
-    private O parseAction(CompiledRule rule, O outputResult, Map<String, Object> entryMap) {
+    private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, Map<String, Object> entryMap) {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
 
@@ -512,7 +577,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // rules see.
         ActionContext context = new EngineActionContext(entryMap, outputResult);
         try {
-            rule.compiledAction().execute(context);
+            rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, "Failed to execute action for rule '" + rule.displayName() + "': "
                     + Failures.describe(e), e);
@@ -697,6 +762,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return compiler;
     }
 
+    // The rule set closes the compilers, or setRuleList() does if the rule list fails to load.
+    @SuppressWarnings("PMD.CloseResource")
     private CompiledRule compileRule(Rule rule, LanguageCompilers compilers) {
         String ruleName = rule.getRuleName();
         String displayName = ruleName != null ? Failures.quote(ruleName) : "(unnamed)";
@@ -729,7 +796,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 .description(rule.getDescription())
                 .language(rule.getLanguage())
                 .build();
-        return new CompiledRule(snapshot, displayName, compiledCondition, compiledAction);
+        return new CompiledRule(snapshot, displayName, language, compiledCondition, compiledAction);
     }
 
     /**
@@ -766,50 +833,5 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     + "' wasn't compiled: its expression language returned null", null, ruleName);
         }
         return compiled;
-    }
-
-    /**
-     * Copies a rule for a run; see {@link RuleSet}. Each expression decides whether a copy needs compiling.
-     *
-     * @param rule The rule as {@code setRuleList()} compiled it
-     * @return The copy
-     * @throws RuleExecutionException if the condition or action throws or returns {@code null} from {@code copy()}
-     */
-    private static CompiledRule copy(CompiledRule rule) {
-        CompiledCondition condition = copyOf(rule, "condition", () -> rule.compiledCondition().copy());
-        CompiledAction action = copyOf(rule, "action", () -> rule.compiledAction().copy());
-        return new CompiledRule(rule.rule(), rule.displayName(), condition, action);
-    }
-
-    /**
-     * Copies a rule's condition or action. A failure fails the run that needed the copy, naming the rule, and is logged
-     * at ERROR first. A fatal {@link Error}, thrown or found among the causes of what {@code copy()} throws, is then
-     * rethrown unchanged. No listener is told: no callback has been sent for the rule yet.
-     *
-     * @param rule       The rule being copied
-     * @param expression {@code condition} or {@code action}, for messages
-     * @param copy       Calls the expression's {@code copy()}
-     * @param <T>        The type of compiled expression
-     * @return The copy
-     * @throws RuleExecutionException if {@code copy()} throws or returns {@code null}
-     */
-    private static <T> T copyOf(CompiledRule rule, String expression, Supplier<T> copy) {
-        String failed = "Failed to copy the " + expression + " of rule '" + rule.displayName() + "': ";
-        T copied;
-        try {
-            copied = copy.get();
-        } catch (Exception | Error e) {
-            Failures.keepInterruptStatus(e);
-            String msg = failed + Failures.describe(e);
-            log.error(msg);
-            Failures.throwIfPresent(Failures.fatalError(e));
-            throw new RuleExecutionException(msg, e, rule.rule().getRuleName());
-        }
-        if (copied == null) {
-            String msg = failed + "copy() returned null";
-            log.error(msg);
-            throw new RuleExecutionException(msg, null, rule.rule().getRuleName());
-        }
-        return copied;
     }
 }

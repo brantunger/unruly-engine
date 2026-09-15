@@ -54,7 +54,7 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * the same imports. MVEL keeps that answer only on the configuration that looked the name up, by trying to load it
      * from every imported package, and each condition and action is compiled with a configuration of its own, so one
      * rule can't change how another compiles. Without sharing, a name was looked up again for every expression that
-     * used it, and again for every compiled copy made for concurrent runs.
+     * used it, and again for the compiled copy of every session that runs it.
      */
     private static final class SharedLookupConfiguration extends ParserConfiguration {
 

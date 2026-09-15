@@ -19,8 +19,8 @@ import java.util.Set;
  *     <li>Variables an action declares stay local to that action, and assigning to {@code output} fails.</li>
  *     <li>A fact name must be a Java identifier that isn't one of MVEL's reserved words, such as {@code empty} or
  *     {@code in}, and isn't a class name MVEL resolves instead, such as {@code Math} or an imported class.</li>
- *     <li>MVEL caches accessors in a compiled expression without synchronization, so a concurrent run gets its own
- *     compiled copy.</li>
+ *     <li>MVEL caches accessors in a compiled expression without synchronization, so each session, which one run
+ *     uses at a time, runs its own compiled copy of each expression.</li>
  * </ul>
  */
 public final class MvelExpressionLanguage implements ExpressionLanguage {

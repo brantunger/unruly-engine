@@ -64,6 +64,15 @@ final class LanguageCompilers {
         if (compilers.isEmpty()) {
             forLanguage(defaultLanguage);
         }
+        return created();
+    }
+
+    /**
+     * Returns the compilers created so far, which are closed if the rule list fails to load.
+     *
+     * @return The compilers by language name, in the order they were created
+     */
+    Map<String, ExpressionCompiler> created() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
     }
 }

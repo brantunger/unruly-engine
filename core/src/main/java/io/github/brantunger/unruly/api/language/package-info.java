@@ -6,10 +6,12 @@
  * <ul>
  *   <li>{@link io.github.brantunger.unruly.api.language.ExpressionLanguage} — A language, which creates a compiler for
  *   each rule list</li>
- *   <li>{@link io.github.brantunger.unruly.api.language.ExpressionCompiler} — Compiles one rule list's expressions and
- *   checks fact names</li>
+ *   <li>{@link io.github.brantunger.unruly.api.language.ExpressionCompiler} — Compiles one rule list's expressions,
+ *   checks fact names and creates sessions</li>
  *   <li>{@link io.github.brantunger.unruly.api.language.CompiledCondition} and
- *   {@link io.github.brantunger.unruly.api.language.CompiledAction} — Compiled expressions</li>
+ *   {@link io.github.brantunger.unruly.api.language.CompiledAction} — Compiled expressions, which every run shares</li>
+ *   <li>{@link io.github.brantunger.unruly.api.language.Session} — What a language changes while its expressions run,
+ *   one for each copy of the rules</li>
  * </ul>
  *
  * <p>Implemented by the engine, which passes them to a language. They're sealed to the engine's own implementations,

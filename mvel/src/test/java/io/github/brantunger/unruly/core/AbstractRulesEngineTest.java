@@ -563,11 +563,11 @@ class AbstractRulesEngineTest {
     }
 
     @Nested
-    @DisplayName("unwrapFacts before setRuleList")
-    class UnwrapFactsBeforeRuleList {
+    @DisplayName("unwrapFacts without a language's checks")
+    class UnwrapFactsWithoutChecks {
 
         @Test
-        @DisplayName("a subclass that unwraps facts before any rule list is loaded gets no language's checks")
+        @DisplayName("without a language's checks, only a null name and output are rejected")
         void noLanguageChecks() {
             StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
             FactStore<Object> mvelKeyword = new FactMap<>();
@@ -575,8 +575,8 @@ class AbstractRulesEngineTest {
             FactStore<Object> output = new FactMap<>();
             output.setValue("output", 1);
 
-            assertEquals(Map.of("empty", 1), engine.unwrapFacts(mvelKeyword));
-            assertThrows(IllegalArgumentException.class, () -> engine.unwrapFacts(output));
+            assertEquals(Map.of("empty", 1), engine.unwrapFacts(mvelKeyword, Map.of()));
+            assertThrows(IllegalArgumentException.class, () -> engine.unwrapFacts(output, Map.of()));
         }
     }
 }

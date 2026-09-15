@@ -51,13 +51,14 @@ engine.setRuleList(List.of(
 
 ## 🛠 Writing a language
 
-Implement three interfaces from `io.github.brantunger.unruly.api.language`:
+Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 | Interface | You implement | Called |
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | Once per `setRuleList()` that uses the language |
-| `ExpressionCompiler` | `compileCondition(String)`, `compileAction(String)`, and optionally `checkFactName(String)` | For each rule, and `checkFactName` for each fact of each `run()` |
-| `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext)` / `execute(ActionContext)`, and optionally `copy()` | Each time a rule is evaluated or fires |
+| `ExpressionCompiler` | `compileCondition(String)`, `compileAction(String)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each fact of each `run()`; `newSession` for each copy of the rules |
+| `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext, Session)` / `execute(ActionContext, Session)` | Each time a rule is evaluated or fires |
+| `Session` | Optionally `close()`, if your expressions keep state while they run | One per language for each copy of the rules |
 
 The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
 sealed, so only the engine implements them; tests create them with [`LanguageTestContexts`](#-testing-a-language). A
@@ -85,13 +86,19 @@ public final class MyLanguage implements ExpressionLanguage {
                 if (parsed.assignsSomething()) {
                     throw new InvalidExpressionException("contains an assignment");
                 }
-                return evaluation -> parsed.evaluate(evaluation.facts());   // must return a Boolean
+                return (evaluation, session) -> parsed.evaluate(evaluation.facts());   // must return a Boolean
             }
 
             @Override
             public CompiledAction compileAction(String source) {
                 MyExpression parsed = MyParser.parse(source);
-                return action -> parsed.execute(action.facts(), action.output());
+                return (action, session) -> parsed.execute(action.facts(), action.output());
+            }
+
+            @Override
+            public Session newSession() {
+                // Nothing changes while these expressions run. Otherwise, return a new session holding that state.
+                return Session.none();
             }
         };
     }
@@ -125,19 +132,22 @@ public final class MyLanguage implements ExpressionLanguage {
 | Requires a condition to return a `Boolean`: `null`, a string or a number fails the rule | Keep an action's variables local to that action, so later rules still see the original facts |
 | Rejects a fact named `null` or `output` | Bind the output object as `output`, and don't let an action replace it |
 | Wraps failures in `RuleCompilationException` and `RuleExecutionException`, rethrows fatal errors, and calls listeners | Reject fact names it can't refer to |
-| Passes read-only facts, and gives concurrent runs their own copies (see below) | Document what rules can reach: files, processes, reflection |
+| Passes read-only facts, gives each run its own sessions, and closes them (see below) | Document what rules can reach: files, processes, reflection |
 
 ## 🧵 Thread safety
 
-- The engine never runs one compiled condition or action on two threads at once, as long as `copy()` returns a new
-  object. Each run uses its own copy. The condition or action your compiler returned is only copied, never run.
-- `copy()` can be called from several threads at once, so build the copy only from state that doesn't change, such
-  as the source and what you compiled it with.
-- By default `copy()` returns the same object, which is right when several threads can evaluate it at the same time.
-  Override it to return a new copy if a compiled expression keeps state while it runs. MVEL does, so each MVEL copy is
-  compiled again.
-- A `copy()` that throws or returns `null` fails the run that needed the copy, with a `RuleExecutionException` naming
-  the rule. A fatal `Error` is rethrown unchanged.
+- Every run shares the compiled conditions and actions, possibly on many threads at once. Keep whatever changes while
+  an expression runs in a `Session`: `newSession()` creates one for each copy of the rules, and every condition and
+  action of your language in a run gets that copy's session. The engine never gives one session to two runs at once,
+  though a session can be used on different threads, one run after another.
+- Return `Session.none()` when your compiled expressions keep no state while they run. Return a new session when they
+  do, such as a single-threaded interpreter context. MVEL's session holds its own compiled copy of each expression.
+- `newSession()` can be called from several threads at once. One that throws or returns `null` fails the run that
+  needed the session with a `RuleExecutionException`, and the sessions other languages already made for that copy are
+  closed. A fatal `Error` is rethrown unchanged.
+- The engine closes each session once no run needs it, and then the compiler: when `setRuleList()` has replaced the
+  rules and their runs have finished, when the engine is closed, and when a rule list fails to load. Override
+  `close()` on either to release resources. A failure is logged at WARN and doesn't fail a run.
 - `checkFactName` is called by every `run()`, possibly on many threads at once, so it must be thread-safe.
 
 ## 📦 Packaging a language
@@ -190,11 +200,11 @@ class MyLanguageContractTest extends ExpressionLanguageContractTest {
     // ... one method for each expression the checks need
 
     @Test
-    void conditionComparesFacts() {
+    void conditionComparesFacts() throws Exception {
         ExpressionCompiler compiler = language().newCompiler(LanguageTestContexts.compile());
         CompiledCondition condition = compiler.compileCondition(factEquals("x", 1));
 
-        assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1))));
+        assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1)), compiler.newSession()));
     }
 }
 ```

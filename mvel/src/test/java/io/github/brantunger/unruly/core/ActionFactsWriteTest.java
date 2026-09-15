@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -36,15 +37,20 @@ class ActionFactsWriteTest {
             return new ExpressionCompiler() {
                 @Override
                 public CompiledCondition compileCondition(String source) {
-                    return evaluation -> true;
+                    return (evaluation, session) -> true;
                 }
 
                 @SuppressWarnings("unchecked")
                 @Override
                 public CompiledAction compileAction(String source) {
                     return "write".equals(source)
-                            ? action -> action.facts().put("x", 99)
-                            : action -> ((Map<String, Object>) action.output()).put("x", action.facts().get("x"));
+                            ? (action, session) -> action.facts().put("x", 99)
+                            : (action, session) -> ((Map<String, Object>) action.output()).put("x", action.facts().get("x"));
+                }
+
+                @Override
+                public Session newSession() {
+                    return Session.none();
                 }
             };
         }

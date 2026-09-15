@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 
 import java.util.Map;
 
@@ -24,13 +25,18 @@ public final class KeyLanguage implements ExpressionLanguage {
         return new ExpressionCompiler() {
             @Override
             public CompiledCondition compileCondition(String source) {
-                return evaluation -> Boolean.TRUE.equals(evaluation.facts().get(source));
+                return (evaluation, session) -> Boolean.TRUE.equals(evaluation.facts().get(source));
             }
 
             @Override
             public CompiledAction compileAction(String source) {
                 String[] keyAndValue = source.split("=", 2);
-                return action -> output(action.output()).put(keyAndValue[0], keyAndValue[1]);
+                return (action, session) -> output(action.output()).put(keyAndValue[0], keyAndValue[1]);
+            }
+
+            @Override
+            public Session newSession() {
+                return Session.none();
             }
         };
     }
