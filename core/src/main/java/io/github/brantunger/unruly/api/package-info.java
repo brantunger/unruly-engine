@@ -11,7 +11,7 @@
  *   <li>{@link io.github.brantunger.unruly.api.Rule} — A rule with a condition, action, and priority</li>
  *   <li>{@link io.github.brantunger.unruly.api.FactReference} — Interface for a named, typed fact</li>
  *   <li>{@link io.github.brantunger.unruly.api.Fact} — Default implementation of {@code FactReference}</li>
- *   <li>{@link io.github.brantunger.unruly.api.FactStore} — A {@link java.util.Map}-based store of facts</li>
+ *   <li>{@link io.github.brantunger.unruly.api.FactStore} — A store of facts, keyed by name</li>
  *   <li>{@link io.github.brantunger.unruly.api.FactMap} — Default implementation of {@code FactStore}</li>
  * </ul>
  *

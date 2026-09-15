@@ -31,12 +31,12 @@ engine.registerListener(object : RuleListener {
 
 | API | Kotlin type |
 | --- | --- |
-| `RulesEngine.run(facts)` | takes `FactStore<Any?>`, returns `O?` |
+| `RulesEngine.run(facts)` | takes `FactStore<*>`, so any `FactMap`; returns `O?` |
 | `FactStore.getValue(name)`, `FactMap.getValue(name)` | `T?` |
 | `RuleListener.beforeEvaluate` / `afterEvaluate` facts | `Map<String, Any?>` |
 | `Rule.priority`, `description`, `language` | `Int?`, `String?`, `String?` |
 | `Rule.ruleName`, `Rule.condition`, `Rule.action`, and the builder's `ruleName()`, `condition()` and `action()` | `String` |
-| `FactReference.name` | `String?` |
+| `FactReference.name` | `String` |
 | `RuleCompilationException.ruleName`, `RuleExecutionException.ruleName` | `String?` |
 
 ## ⬆ Upgrading Kotlin code from 1.4 or earlier
@@ -45,12 +45,13 @@ Code that compiled against 1.4 can fail to compile against 1.5.0 or later. Each 
 
 | Kotlin code written for 1.4 | Error from 1.5.0 | Change it to |
 | --- | --- | --- |
-| `engine.run(FactMap<Any>())` | `argument type mismatch: actual type is 'FactMap<Any>', but 'FactStore<Any?>' was expected` | `FactMap<Any?>()`, or a variable declared as `FactStore<Any?>` |
 | `override fun beforeEvaluate(rule: Rule, facts: Map<String, Any>)` | `'beforeEvaluate' overrides nothing` | `facts: Map<String, Any?>`, also in `afterEvaluate` |
 | `val out: Out = engine.run(facts)` | `expected 'Out', actual 'Out?'` | handle `null`, which `run()` returns when no rule matched |
 | `val value: Any = facts.getValue("a")` | a nullable type where a non-null one is expected | `Any?`, or handle `null` |
-| `val name: String = reference.name`, for a fact's name | a nullable type where a non-null one is expected | `String?`, or handle `null` |
 | `Rule.builder().condition(c)` with `c: String?` | a nullable argument where a non-null one is expected | pass a `String`: a condition and an action are required |
+
+Two errors that 1.5.0 to 1.8.0 reported are gone in 2.0.0: `engine.run(FactMap<Any>())` compiles, and a fact's
+`name` is a `String`.
 
 To upgrade first and fix the errors afterwards, the Kotlin compiler flag `-Xjspecify-annotations=warn` reports them as
 warnings. It's a temporary escape hatch; remove it once the code compiles without it:

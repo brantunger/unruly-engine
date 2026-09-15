@@ -4,6 +4,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.AbstractSet;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -19,8 +20,12 @@ import java.util.function.BiFunction;
  * Every way of adding a fact rejects a {@code null} name, and rejects a key that differs from the
  * {@link FactReference#getName() name} of the fact stored under it, with {@link IllegalArgumentException}.
  * That includes {@link Map.Entry#setValue} on an {@link #entrySet()} entry and {@link #replaceAll}.
- * The varargs constructor also rejects two facts with the same name. Rules see a fact by its map key, so renaming a
- * {@code FactReference} after it has been added does not change the name rules use.
+ * The varargs constructor also rejects two facts with the same name.
+ * </p>
+ *
+ * <p>
+ * A {@code FactMap} is a {@link Map} as well as a {@link FactStore}, so a {@code FactMap} variable has every
+ * {@code Map} method. {@link #asMap()} returns a read-only view of it.
  * </p>
  *
  * <p>
@@ -30,7 +35,7 @@ import java.util.function.BiFunction;
  *
  * @param <T> The object/value type of the facts
  */
-public class FactMap<T extends @Nullable Object> implements FactStore<T> {
+public class FactMap<T extends @Nullable Object> implements FactStore<T>, Map<String, @Nullable FactReference<T>> {
 
     private final Map<String, @Nullable FactReference<T>> facts;
 
@@ -43,9 +48,8 @@ public class FactMap<T extends @Nullable Object> implements FactStore<T> {
 
     /**
      * Construct a new FactMap from a map of facts.
-     * The map itself is copied, but the {@link FactReference} objects are shared with it. Changing a
-     * value through {@link #setValue} affects only this map. Calling {@code setValue} on a shared
-     * {@code FactReference} directly changes it everywhere it is held.
+     * The map itself is copied, and the {@link FactReference} objects are shared with it. Changing a
+     * value through {@link #setValue} affects only this map.
      *
      * @param facts The fact map to construct the facts from. Its values may be any {@link FactReference}
      *              implementation, such as a {@code Map<String, Fact<T>>}.
@@ -72,9 +76,7 @@ public class FactMap<T extends @Nullable Object> implements FactStore<T> {
 
         for (FactReference<T> fact : facts) {
             Objects.requireNonNull(fact, "facts must not contain null");
-            if (fact.getName() == null) {
-                throw new IllegalArgumentException("fact name must not be null");
-            }
+            checkEntry(fact.getName(), fact);
             // Only the last of two same-named facts would survive, silently dropping the first.
             if (this.facts.containsKey(fact.getName())) {
                 throw new IllegalArgumentException("duplicate fact name '" + fact.getName() + "'");
@@ -131,10 +133,12 @@ public class FactMap<T extends @Nullable Object> implements FactStore<T> {
     @Override
     public @Nullable FactReference<T> put(FactReference<T> fact) {
         Objects.requireNonNull(fact, "fact must not be null");
-        if (fact.getName() == null) {
-            throw new IllegalArgumentException("fact name must not be null");
-        }
         return put(fact.getName(), fact);
+    }
+
+    @Override
+    public Map<String, @Nullable FactReference<T>> asMap() {
+        return Collections.unmodifiableMap(facts);
     }
 
     @Override

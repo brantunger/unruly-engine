@@ -366,7 +366,7 @@ class LanguageSessionsTest {
             }
 
             @Override
-            public String run(FactStore<Object> facts) {
+            public String run(FactStore<?> facts) {
                 return withCompiledRules((rules, copy) -> "rules: " + rules.rules().size());
             }
         };

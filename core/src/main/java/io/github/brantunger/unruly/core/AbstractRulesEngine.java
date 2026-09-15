@@ -444,9 +444,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  refer to, such as a reserved MVEL word, or if a language's check of the name
      *                                  throws anything else. A fatal {@link Error} is logged, then rethrown unchanged.
      */
-    Map<String, Object> unwrapFacts(FactStore<Object> facts, Map<String, ExpressionCompiler> checks) {
+    Map<String, Object> unwrapFacts(FactStore<?> facts, Map<String, ExpressionCompiler> checks) {
         Map<String, Object> entryMap = new HashMap<>();
-        for (Map.Entry<String, FactReference<Object>> entry : facts.entrySet()) {
+        for (Map.Entry<String, ? extends FactReference<?>> entry : facts.asMap().entrySet()) {
             if (entry.getKey() == null) {
                 String msg = "fact name must not be null";
                 log.error(msg);
@@ -462,7 +462,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             checkFactName(entry.getKey(), checks);
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
             // unresolvable, so `x == null` failed instead of matching.
-            FactReference<Object> fact = entry.getValue();
+            FactReference<?> fact = entry.getValue();
             entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
         }
         return entryMap;

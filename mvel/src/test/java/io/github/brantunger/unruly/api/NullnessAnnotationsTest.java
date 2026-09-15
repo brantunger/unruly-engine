@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
+import java.lang.reflect.AnnotatedWildcardType;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -38,23 +39,24 @@ class NullnessAnnotationsTest {
     }
 
     @Test
-    @DisplayName("run() returns @Nullable O and takes a FactStore<@Nullable Object>")
+    @DisplayName("run() returns @Nullable O and takes a FactStore<?>")
     void runNullness() throws NoSuchMethodException {
         Method run = RulesEngine.class.getMethod("run", FactStore.class);
 
         assertNullable(run.getAnnotatedReturnType());
-        assertNullable(typeArgument(run.getAnnotatedParameterTypes()[0], 0));
+        assertInstanceOf(AnnotatedWildcardType.class, typeArgument(run.getAnnotatedParameterTypes()[0], 0));
     }
 
     @Test
-    @DisplayName("a fact's value, a fact's name and a FactReference in a FactStore can be null")
+    @DisplayName("a fact's value and a FactReference in a FactStore can be null, and a fact's name can't")
     void factsNullness() throws NoSuchMethodException {
         for (Class<?> type : List.of(FactReference.class, FactStore.class, Fact.class, FactMap.class)) {
             assertNullable(type.getTypeParameters()[0].getAnnotatedBounds()[0]);
         }
-        assertNullable(FactReference.class.getMethod("getName").getAnnotatedReturnType());
+        assertFalse(isNullable(FactReference.class.getMethod("getName").getAnnotatedReturnType()),
+                "getName() is @Nullable");
         assertNullable(FactStore.class.getMethod("getValue", String.class).getAnnotatedReturnType());
-        assertNullable(typeArgument(FactStore.class.getAnnotatedInterfaces()[0], 1));
+        assertNullable(typeArgument(FactStore.class.getMethod("asMap").getAnnotatedReturnType(), 1));
         assertNullable(FactMap.class.getMethod("get", Object.class).getAnnotatedParameterTypes()[0]);
         assertNullable(Fact.class.getMethod("equals", Object.class).getAnnotatedParameterTypes()[0]);
     }

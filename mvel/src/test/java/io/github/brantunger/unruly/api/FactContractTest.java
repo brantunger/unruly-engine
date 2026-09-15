@@ -39,14 +39,6 @@ class FactContractTest {
     }
 
     @Test
-    @DisplayName("a null value for the single-argument Fact constructor names the argument")
-    void nullFactValueMessage() {
-        NullPointerException ex = assertThrows(NullPointerException.class, () -> new Fact<>((Object) null));
-
-        assertEquals("Fact value must not be null", ex.getMessage());
-    }
-
-    @Test
     @DisplayName("FactMap.replaceAll(null) names the argument")
     void replaceAllNullMessage() {
         FactMap<Object> facts = new FactMap<>();

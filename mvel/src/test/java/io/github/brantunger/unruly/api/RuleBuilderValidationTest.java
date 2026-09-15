@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Rule.RuleBuilder.build() rejects an incomplete rule")
@@ -61,5 +64,15 @@ class RuleBuilderValidationTest {
         assertThrows(IllegalStateException.class, builder::build);
 
         assertEquals("r", builder.ruleName("r").build().getRuleName());
+    }
+
+    @Test
+    @DisplayName("the builder's constructor is public, so a binder such as a Jackson mix-in can create the builder")
+    void constructorPublic() throws Exception {
+        Constructor<Rule.RuleBuilder> constructor = Rule.RuleBuilder.class.getDeclaredConstructor();
+
+        assertTrue(Modifier.isPublic(constructor.getModifiers()));
+        Rule rule = constructor.newInstance().ruleName("r").condition("true").action("output.put('k', 1)").build();
+        assertEquals(complete().build(), rule);
     }
 }

@@ -52,12 +52,6 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
 }
 
-// The tests still call Fact's setters, which are deprecated for removal. Without this, each call is a
-// removal warning, which fails the build; javac still prints a note that some test sources use them.
-tasks.named('compileTestJava', JavaCompile) {
-    options.compilerArgs << '-Xlint:-removal'
-}
-
 // Every Javadoc warning fails the build too: a missing comment, @param or @return, or a broken link or HTML.
 tasks.withType(Javadoc).configureEach {
     options.addBooleanOption('Xdoclint:all', true)

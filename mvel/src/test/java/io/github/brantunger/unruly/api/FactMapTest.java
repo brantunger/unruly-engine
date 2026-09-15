@@ -263,19 +263,4 @@ class FactMapTest {
             assertEquals("claim", factMap.get("claim").getName());
         }
     }
-
-    @Nested
-    @DisplayName("put null-name fact")
-    class PutNullNameFact {
-
-        @Test
-        @DisplayName("put(FactReference) with null name throws IllegalArgumentException")
-        void putFactWithNullNameThrows() {
-            Fact<Object> nullNameFact = new Fact<>(null, "value");
-
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                    () -> factMap.put(nullNameFact));
-            assertTrue(ex.getMessage().contains("fact name must not be null"));
-        }
-    }
 }

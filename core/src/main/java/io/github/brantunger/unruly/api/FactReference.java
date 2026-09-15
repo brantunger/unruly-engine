@@ -12,6 +12,11 @@ import org.jspecify.annotations.Nullable;
  *      variableA.equals("Imma String")
  * </pre>
  *
+ * <p>
+ * A fact's name and value don't change: a {@link FactStore} keeps a fact under its name, and to change a value it stores
+ * a new fact. {@link Fact} is the built-in implementation.
+ * </p>
+ *
  * @param <T> The object/value type of the fact. A fact's value can be {@code null}.
  */
 public interface FactReference<T extends @Nullable Object> {
@@ -19,20 +24,9 @@ public interface FactReference<T extends @Nullable Object> {
     /**
      * Gets the name of the fact.
      *
-     * @return the name, or {@code null} if it has none
+     * @return the name
      */
-    @Nullable String getName();
-
-    /**
-     * Sets the name of the fact.
-     *
-     * @param name the name
-     * @return The FactReference object itself
-     * @deprecated Create a new fact with {@code new Fact<>(name, value)}, or set a value by name with
-     *             {@link FactStore#setValue(String, Object)}. Facts are expected to become immutable in 2.0.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    FactReference<T> setName(@Nullable String name);
+    String getName();
 
     /**
      * Gets the value of the fact.
@@ -40,15 +34,4 @@ public interface FactReference<T extends @Nullable Object> {
      * @return the value object reference
      */
     T getValue();
-
-    /**
-     * Sets the value of the fact.
-     *
-     * @param obj the value object reference
-     * @return The FactReference object itself
-     * @deprecated Create a new fact with {@code new Fact<>(name, value)}, or set a value by name with
-     *             {@link FactStore#setValue(String, Object)}. Facts are expected to become immutable in 2.0.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    FactReference<T> setValue(T obj);
 }
