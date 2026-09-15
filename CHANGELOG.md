@@ -11,6 +11,38 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.0.0](https://github.com/brantunger/unruly-engine/compare/v1.8.0...v2.0.0) (2026-09-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* configure engines on a builder, choose a default language, and rename stateless, stateful and setRuleList ([#324](https://github.com/brantunger/unruly-engine/issues/324))
+* make facts immutable and named, stop FactStore extending Map, and accept any FactStore in run() ([#323](https://github.com/brantunger/unruly-engine/issues/323))
+* make Rule immutable, require rule names, and read rules from JSON with two Jackson mix-ins ([#322](https://github.com/brantunger/unruly-engine/issues/322))
+* let an action return properties for the engine to set on the output ([#312](https://github.com/brantunger/unruly-engine/issues/312))
+* compile a language's Expression, report every broken rule, and locate errors ([#305](https://github.com/brantunger/unruly-engine/issues/305))
+* keep a language's run state in pooled sessions, and close them ([#304](https://github.com/brantunger/unruly-engine/issues/304))
+* seal the SPI contexts and publish the language test kit ([#303](https://github.com/brantunger/unruly-engine/issues/303))
+* split the engine into unruly-engine-core and the MVEL unruly-engine, as named modules ([#302](https://github.com/brantunger/unruly-engine/issues/302))
+* hide the engine classes behind RulesEngineBuilder and log under a fixed name ([#301](https://github.com/brantunger/unruly-engine/issues/301))
+* find expression languages with ServiceLoader and create MVEL only when rules load ([#300](https://github.com/brantunger/unruly-engine/issues/300))
+* require Java 21 ([#298](https://github.com/brantunger/unruly-engine/issues/298))
+
+### Features
+
+* compile a language's Expression, report every broken rule, and locate errors ([#305](https://github.com/brantunger/unruly-engine/issues/305)) ([0a64b7d](https://github.com/brantunger/unruly-engine/commit/0a64b7d67cb9d14c5184e22f0cd32902cd1174c4))
+* configure engines on a builder, choose a default language, and rename stateless, stateful and setRuleList ([#324](https://github.com/brantunger/unruly-engine/issues/324)) ([45eb4a4](https://github.com/brantunger/unruly-engine/commit/45eb4a49b5e47ae6b179094b94b956df484f494d))
+* find expression languages with ServiceLoader and create MVEL only when rules load ([#300](https://github.com/brantunger/unruly-engine/issues/300)) ([de37d15](https://github.com/brantunger/unruly-engine/commit/de37d15529ff5282a95282172e2d946fa81806b8))
+* give languages the output type and their own options, and let an application set how output properties are written ([#325](https://github.com/brantunger/unruly-engine/issues/325)) ([28b9d2e](https://github.com/brantunger/unruly-engine/commit/28b9d2e851d748ab92af2957a4769e0932a98d9d))
+* hide the engine classes behind RulesEngineBuilder and log under a fixed name ([#301](https://github.com/brantunger/unruly-engine/issues/301)) ([b04aa2d](https://github.com/brantunger/unruly-engine/commit/b04aa2dc2cd69b6464aad9c9f43bbb0b567e263d))
+* keep a language's run state in pooled sessions, and close them ([#304](https://github.com/brantunger/unruly-engine/issues/304)) ([c596ffe](https://github.com/brantunger/unruly-engine/commit/c596ffe0038459edc2ea0710da04aee258bba59c))
+* let an action return properties for the engine to set on the output ([#312](https://github.com/brantunger/unruly-engine/issues/312)) ([f84ae7d](https://github.com/brantunger/unruly-engine/commit/f84ae7d0f7e4f6673aec6750e630125b738fef7b))
+* make facts immutable and named, stop FactStore extending Map, and accept any FactStore in run() ([#323](https://github.com/brantunger/unruly-engine/issues/323)) ([5cc1b95](https://github.com/brantunger/unruly-engine/commit/5cc1b95befc1c3d6d8c4989bc86e9218f4fb9635))
+* make Rule immutable, require rule names, and read rules from JSON with two Jackson mix-ins ([#322](https://github.com/brantunger/unruly-engine/issues/322)) ([ca6f342](https://github.com/brantunger/unruly-engine/commit/ca6f342ef37d6547a1041c34c56ef00e657b1b1e))
+* require Java 21 ([#298](https://github.com/brantunger/unruly-engine/issues/298)) ([674736b](https://github.com/brantunger/unruly-engine/commit/674736b70aeefae0ff206a1b4f3be8a87a1c7fa1))
+* seal the SPI contexts and publish the language test kit ([#303](https://github.com/brantunger/unruly-engine/issues/303)) ([a1c69e2](https://github.com/brantunger/unruly-engine/commit/a1c69e28222504452b19a91a1718bb2c22f3eba8))
+* split the engine into unruly-engine-core and the MVEL unruly-engine, as named modules ([#302](https://github.com/brantunger/unruly-engine/issues/302)) ([bb0ce61](https://github.com/brantunger/unruly-engine/commit/bb0ce612e753012e0ab59ef618231b368a6baf76))
+
 ## [1.8.0](https://github.com/brantunger/unruly-engine/compare/v1.7.1...v1.8.0) (2026-09-15)
 
 

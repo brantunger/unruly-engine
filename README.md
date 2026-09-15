@@ -44,7 +44,7 @@ Requires **Java 21** or later. Moving from 1.x? See the [migration guide](docs/m
 
 <!-- x-release-please-start-version -->
 ```groovy
-implementation 'io.github.brantunger:unruly-engine:1.8.0'
+implementation 'io.github.brantunger:unruly-engine:2.0.0'
 ```
 <!-- x-release-please-end -->
 
@@ -55,7 +55,7 @@ implementation 'io.github.brantunger:unruly-engine:1.8.0'
 
 <!-- x-release-please-start-version -->
 ```kotlin
-implementation("io.github.brantunger:unruly-engine:1.8.0")
+implementation("io.github.brantunger:unruly-engine:2.0.0")
 ```
 <!-- x-release-please-end -->
 
@@ -69,7 +69,7 @@ implementation("io.github.brantunger:unruly-engine:1.8.0")
 <dependency>
     <groupId>io.github.brantunger</groupId>
     <artifactId>unruly-engine</artifactId>
-    <version>1.8.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 <!-- x-release-please-end -->
