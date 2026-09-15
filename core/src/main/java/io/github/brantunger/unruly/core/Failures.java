@@ -27,16 +27,32 @@ final class Failures {
     }
 
     /**
-     * Tells whether {@code thrown} is an {@link Error} the engine must not absorb. A {@link StackOverflowError}
-     * (runaway recursion) or {@link AssertionError} ({@code assert} in a rule or listener) comes from the code
-     * being run and is handled like an exception. Any other error, such as {@link OutOfMemoryError}, is left
-     * for the caller to see unchanged.
+     * Tells whether {@code thrown} is an {@link Error} the engine must not absorb, because the JVM itself is failing
+     * and no message about a rule would help: a {@link VirtualMachineError} other than {@link StackOverflowError},
+     * such as {@link OutOfMemoryError}, {@link InternalError} or {@link UnknownError}.
+     *
+     * <p>
+     * Every other error comes from the code being run, so it's handled like an exception and reported with the name of
+     * the rule it came from:
+     * </p>
+     * <ul>
+     *     <li>{@link StackOverflowError} (runaway recursion), which is itself a {@code VirtualMachineError} and so is
+     *     excluded here on purpose;</li>
+     *     <li>{@link AssertionError} ({@code assert} in a rule, a listener or a language);</li>
+     *     <li>every {@link LinkageError} — {@link NoClassDefFoundError}, {@link IllegalAccessError},
+     *     {@link IncompatibleClassChangeError}, {@link ExceptionInInitializerError}, {@link VerifyError} and the rest —
+     *     which means a class a rule uses is missing or can't be read: a configuration problem in one rule, not a
+     *     failing JVM;</li>
+     *     <li>any other {@link Error}, such as {@link java.io.IOError} or
+     *     {@link java.util.ServiceConfigurationError}.</li>
+     * </ul>
      *
      * @param thrown One throwable from a cause chain
      * @return {@code true} if {@code thrown} must be rethrown unchanged
      */
     private static boolean isFatal(Throwable thrown) {
-        return thrown instanceof Error && !(thrown instanceof StackOverflowError || thrown instanceof AssertionError);
+        // StackOverflowError is a VirtualMachineError, so excluding it needs its own check.
+        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError);
     }
 
     /**

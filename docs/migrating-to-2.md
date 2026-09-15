@@ -332,6 +332,30 @@ code.
 | `RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new)` | `RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build()`: in a chained call, Java needs the output type |
 | A class that implements `RulesEngine` | Implement `load` and `run`, and remove `setRuleList`, `addImport`, `addImports`, `registerLanguage`, `registerListener` and `registerListeners` |
 
+## 🔗 A missing class is reported like any other failure
+
+**What changed:** the engine used to rethrow every `Error` except `StackOverflowError` and `AssertionError`
+unchanged, so a `LinkageError` escaped `run()` and `load()` raw, with no rule name. Now only a
+`VirtualMachineError` other than `StackOverflowError` — `OutOfMemoryError`, `InternalError`, `UnknownError` — escapes.
+
+Every other `Error` is reported like an exception, naming the rule and keeping the error as its cause. That covers
+every `LinkageError`: `NoClassDefFoundError`, `IllegalAccessError`, `IncompatibleClassChangeError`,
+`ExceptionInInitializerError`, `VerifyError`. A missing or unreadable class means one rule is misconfigured, not that
+the JVM is failing — for example a fact class exported only to `mvel2` on the module path, or a class directory on a
+case-insensitive file system.
+
+**Who is affected:** anyone catching a `LinkageError` around `load()` or `run()`, and listeners that see one thrown by
+another listener. This reverses a 1.x decision, and the API compatibility check can't see it.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `catch (NoClassDefFoundError e)` around `load(rules)` | `catch (RuleCompilationException e)`; `e.getRuleName()` names the rule and `e.getCause()` is the error |
+| `catch (LinkageError e)` around `run(facts)` | `catch (RuleExecutionException e)`, with the error as its cause |
+| A listener throwing a `LinkageError` to abort a run | It's contained and logged at WARN, like any listener failure; the run continues |
+| `catch (OutOfMemoryError e)` | Unchanged: a `VirtualMachineError` still escapes unchanged |
+
 ## 🎯 A first-match engine stops at the first match
 
 **What changed:** a first-match engine (`RulesEngineBuilder.firstMatch(...)`, the old `stateless`) evaluates
