@@ -25,6 +25,8 @@ public class InvalidExpressionException extends UnrulyException {
     private static final long serialVersionUID = 1L;
 
     /** Where and what the language found wrong, possibly nothing. */
+    // The list is from List.copyOf, which serializes, though its declared type, List, isn't Serializable.
+    @SuppressWarnings("serial")
     private final List<Issue> reportedIssues;
 
     /**

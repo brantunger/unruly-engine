@@ -25,9 +25,13 @@ public class RuleCompilationException extends UnrulyException {
     private final @Nullable ExpressionKind expressionKind;
 
     /** Where and what the expression language found wrong, possibly nothing. */
+    // The list is from List.copyOf, which serializes, though its declared type, List, isn't Serializable.
+    @SuppressWarnings("serial")
     private final List<InvalidExpressionException.Issue> reportedIssues;
 
     /** Each rule's failure when several rules failed, or nothing when this exception is the only failure. */
+    // The list is from List.copyOf, which serializes, though its declared type, List, isn't Serializable.
+    @SuppressWarnings("serial")
     private final List<RuleCompilationException> ruleFailures;
 
     /**

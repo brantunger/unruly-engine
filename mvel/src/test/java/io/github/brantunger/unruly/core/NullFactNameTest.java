@@ -35,6 +35,8 @@ class NullFactNameTest {
     private static final class HashFactStore extends HashMap<String, FactReference<Object>>
             implements FactStore<Object> {
 
+        private static final long serialVersionUID = 1L;
+
         @Override
         public Object getValue(String name) {
             return get(name).getValue();
