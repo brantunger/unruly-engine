@@ -71,9 +71,16 @@ All of them are unchecked.
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 
 Messages about a specific rule name it, for example
-`Failed to evaluate condition for rule 'prime-rate': ...`. A rule without a name appears as `(unnamed)`.
+`Failed to evaluate condition for rule 'prime-rate': ...`. A rule without a name appears as `(unnamed)`. In a
+message, line breaks and other control characters in a rule, fact or language name are escaped (`\n`), and a name
+longer than 200 characters is shortened, so a name can't start a log line of its own.
 When the expression language or your code threw the underlying error, it's available from `getCause()`. A
 condition the language rejected, such as one with an assignment, has an `InvalidExpressionException` as its cause.
+
+To act on the failing rule without parsing the message, for example to disable it or count failures per rule, call
+`getRuleName()` on the `RuleCompilationException` or `RuleExecutionException`. It returns the name exactly as the
+rule has it, or `null` for a rule without a name and for failures that aren't about one rule, such as a failing
+output supplier or an expression language that can't create its compiler.
 
 ## 🔍 Caught when loading or only when running?
 
@@ -119,3 +126,8 @@ Keep in mind:
   [Logging setup](listeners-and-logging.md#-logging-setup).
 - **Listeners hear about it first.** When a condition or action fails, `onError` receives the same exception before
   `run()` throws it. A failing output supplier and a rejected fact name are thrown without calling any listener.
+- **An interrupt isn't lost.** If a rule, listener, output supplier or expression language is interrupted while it
+  blocks, for example in `Thread.sleep` or `BlockingQueue.take`, the `InterruptedException` clears the thread's
+  interrupt status and reaches the engine wrapped. The engine sets the status again before it throws or carries on,
+  so an executor shutting down or `Future.cancel(true)` still sees it. An `InterruptedIOException` such as
+  `SocketTimeoutException` isn't treated as an interrupt.

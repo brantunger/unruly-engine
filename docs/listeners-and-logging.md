@@ -119,6 +119,9 @@ Executed action for rule: prime-rate
 Failed rule: standard-rate | Error: Failed to execute action for rule 'standard-rate': ...
 ```
 
+Rule names appear as the engine's error messages show them: line breaks and other control characters are escaped
+(`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own.
+
 ## 🔧 Logging setup
 
 The engine depends only on the **SLF4J 2.x API**. Without a provider on the classpath, SLF4J prints

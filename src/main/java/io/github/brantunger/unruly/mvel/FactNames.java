@@ -28,6 +28,9 @@ final class FactNames {
      */
     static final int MAX_CACHED_MISSES = 4096;
 
+    // The longest part of a fact name a message shows, as in the engine's messages.
+    private static final int MAX_NAME_LENGTH = 200;
+
     private static final Set<String> RESERVED = reservedWords();
 
     private final Set<String> importedClassNames;
@@ -58,13 +61,44 @@ final class FactNames {
      */
     void check(String name) {
         if (!isIdentifier(name)) {
-            throw new IllegalArgumentException("'" + name + "' is not a valid fact name: "
+            throw new IllegalArgumentException("'" + quote(name) + "' is not a valid fact name: "
                     + "rules can only refer to a fact named with a Java identifier");
         }
         if (RESERVED.contains(name) || importedClassNames.contains(name) || isPackageClass(name)) {
-            throw new IllegalArgumentException("'" + name + "' cannot be used as a fact name: "
+            throw new IllegalArgumentException("'" + quote(name) + "' cannot be used as a fact name: "
                     + "MVEL reads it as a keyword or class name, so rules would never see the fact");
         }
+    }
+
+    /**
+     * Escapes and shortens a fact name for a message, as the engine's {@code core.Failures.quote} does. Fact names can
+     * come from request data, and the engine logs these messages, so a line break in a name mustn't start a log line.
+     * Only a name that isn't an identifier can contain one.
+     */
+    static String quote(String name) {
+        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
+        StringBuilder quoted = new StringBuilder(shown);
+        for (int i = 0; i < shown; i++) {
+            char c = name.charAt(i);
+            switch (c) {
+                case '\n' -> quoted.append("\\n");
+                case '\r' -> quoted.append("\\r");
+                case '\t' -> quoted.append("\\t");
+                default -> {
+                    int type = Character.getType(c);
+                    if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
+                            || type == Character.PARAGRAPH_SEPARATOR) {
+                        quoted.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        quoted.append(c);
+                    }
+                }
+            }
+        }
+        if (name.length() > MAX_NAME_LENGTH) {
+            quoted.append("... (").append(name.length() - MAX_NAME_LENGTH).append(" more characters)");
+        }
+        return quoted.toString();
     }
 
     private boolean isPackageClass(String name) {
