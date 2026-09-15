@@ -1,3 +1,5 @@
+import unruly.conventions.FilesSystemProperty
+
 plugins {
     id 'unruly.library'
     id 'org.gradlex.extra-java-module-info'
@@ -79,15 +81,17 @@ apiCheck {
 
 // The tests are here, not in core or test-kit, because most of them run MVEL rules. They run on the class path, so the tests in
 // core's packages can use its package-private classes.
-def modulePathJars = files(modulePathTestJars)
-
 tasks.named('test', Test) {
-    // Read by ModulePathTest. An input, so a changed jar reruns the tests and the build cache stays correct.
-    inputs.files(modulePathJars).withPropertyName('modulePathJars').withNormalizer(ClasspathNormalizer)
-    jvmArgumentProviders.add({ ["-Dunruly.module-path=${modulePathJars.asPath}".toString()] } as CommandLineArgumentProvider)
+    // Read by ModulePathTest. The jars are an input, so a changed jar reruns the tests, and their absolute paths
+    // aren't, so the tests can still come from the build cache.
+    jvmArgumentProviders.add(objects.newInstance(FilesSystemProperty).tap {
+        name = 'unruly.module-path'
+        files.from(modulePathTestJars)
+    })
     // Read by PackageDependencyTest.
-    systemProperty 'unruly.main.sources', files(
-            layout.settingsDirectory.dir('core/src/main/java'),
-            layout.projectDirectory.dir('src/main/java'),
-            layout.settingsDirectory.dir('test-kit/src/main/java')).asPath
+    jvmArgumentProviders.add(objects.newInstance(FilesSystemProperty).tap {
+        name = 'unruly.main.sources'
+        files.from(layout.settingsDirectory.dir('core/src/main/java'), layout.projectDirectory.dir('src/main/java'),
+                layout.settingsDirectory.dir('test-kit/src/main/java'))
+    })
 }

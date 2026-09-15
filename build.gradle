@@ -1,4 +1,5 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import unruly.conventions.ModuleJavadoc
 
 plugins {
     id 'base'
@@ -34,17 +35,20 @@ reporting {
     }
 }
 
+def coverageReport = tasks.named('jacocoTestReport', JacocoReport)
+
 def coverageVerification = tasks.register('jacocoTestCoverageVerification', JacocoCoverageVerification) {
     group = 'verification'
     description = 'Fails unless the tests cover every instruction and branch of the published artifacts.'
-    def report = tasks.named('jacocoTestReport', JacocoReport).get()
-    executionData.from(report.executionData)
+    executionData.from(coverageReport.map { report -> report.executionData })
     // The test kit's ExpressionLanguageContractTest is a test class. Its lambdas that always throw leave instructions
     // JaCoCo can't reach, and the tests run it for MVEL and for a test language, so it isn't gated.
-    classDirectories.from(report.classDirectories.asFileTree.matching {
-        exclude 'io/github/brantunger/unruly/test/ExpressionLanguageContractTest*'
+    classDirectories.from(coverageReport.map { report ->
+        report.classDirectories.asFileTree.matching {
+            exclude 'io/github/brantunger/unruly/test/ExpressionLanguageContractTest*'
+        }
     })
-    sourceDirectories.from(report.sourceDirectories)
+    sourceDirectories.from(coverageReport.map { report -> report.sourceDirectories })
     violationRules {
         rule {
             limit {
@@ -65,9 +69,9 @@ tasks.named('check') {
 
 // One Javadoc site for all the modules. The javadoc tool gets the modules rather than source files, so it documents
 // only the packages they export, and each module gets its own directory.
-def javadocLibraryPath = configurations.create('javadocModulePath') {
-    canBeConsumed = false
-    canBeResolved = true
+def javadocLibraries = configurations.dependencyScope('javadocModulePath')
+def javadocLibraryPath = configurations.resolvable('javadocModulePathJars') {
+    extendsFrom(javadocLibraries.get())
     attributes {
         attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
         attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
@@ -91,37 +95,18 @@ def moduleSources = [
         'io.github.brantunger.unruly.test': layout.projectDirectory.dir('test-kit/src/main/java'),
 ]
 
-tasks.register('javadoc', Exec) {
+tasks.register('javadoc', ModuleJavadoc) {
     group = 'documentation'
     description = 'Generates one Javadoc site for all the modules in build/docs/javadoc.'
-
-    // Only the libraries: the two modules themselves come from their sources.
-    def libraries = javadocLibraryPath.incoming.artifactView {
-        componentFilter { it instanceof ModuleComponentIdentifier }
-    }.files
-    def destination = layout.buildDirectory.dir('docs/javadoc')
-    def title = "unruly-engine ${project.version} API"
-
-    inputs.files(moduleSources.values()).withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.files(libraries)
-    outputs.dir(destination)
-
-    executable = javaToolchains.javadocToolFor {
+    moduleSourcePaths = moduleSources.collectEntries { module, sources -> [module, sources.asFile.absolutePath] }
+    sources.from(moduleSources.values())
+    // Only the libraries: the modules themselves come from their sources.
+    modulePath.from(javadocLibraryPath.map { configuration ->
+        configuration.incoming.artifactView { componentFilter { it instanceof ModuleComponentIdentifier } }.files
+    })
+    title = "unruly-engine ${project.version} API"
+    javadocTool = javaToolchains.javadocToolFor {
         languageVersion = JavaLanguageVersion.of(21)
-    }.get().executablePath.asFile.absolutePath
-    argumentProviders.add({
-        def arguments = ['-d', destination.get().asFile.absolutePath, '-quiet',
-                         '-encoding', 'UTF-8', '-docencoding', 'UTF-8', '-charset', 'UTF-8',
-                         '-doctitle', title, '-windowtitle', title,
-                         '--module', moduleSources.keySet().join(','),
-                         '--module-path', libraries.asPath]
-        moduleSources.each { module, sources ->
-            arguments += ['--module-source-path', "${module}=${sources.asFile.absolutePath}"]
-        }
-        arguments
-    } as CommandLineArgumentProvider)
-
-    doFirst {
-        destination.get().asFile.deleteDir()
     }
+    destination = layout.buildDirectory.dir('docs/javadoc')
 }
