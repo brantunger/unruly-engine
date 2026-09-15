@@ -141,7 +141,8 @@ The type decides the next version:
 
 The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` and `revert`. Like `deps` and
 `docs`, none of them cuts a release or appears in the changelog; their changes ship with the next `feat:` or
-`fix:` release. A malformed title fails the title check, so it's caught before it can silently skip a release.
+`fix:` release. Only `feat` and `fix` may carry the breaking-change `!`: release-please would read `deps!:` or
+`chore!:` as a major release too, so the title check rejects it. A malformed title fails the title check, so it's caught before it can silently skip a release.
 
 ## 📖 Documentation
 
