@@ -13,6 +13,13 @@ plugins {
     id 'me.champeau.gradle.japicmp'
 }
 
+// JaCoCo's version is in gradle/libs.versions.toml, where Dependabot updates it.
+def jacocoVersion = extensions.getByType(VersionCatalogsExtension).named('libs').findVersion('jacoco').get().requiredVersion
+
+jacoco {
+    toolVersion = jacocoVersion
+}
+
 // The tests in mvel also cover core's and test-kit's classes, so the root project's jacocoTestReport and
 // jacocoTestCoverageVerification cover the artifacts together. Each project's own tasks would see only its classes.
 tasks.named('jacocoTestReport') {

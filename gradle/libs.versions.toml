@@ -1,11 +1,19 @@
 [versions]
+# The build's tools. Each also has a library below that the build doesn't use: it lets Dependabot find and update the
+# version, which it can't do for a toolVersion string in a build script.
+checkstyle = "14.1.0"
+jacoco = "0.8.15"
 junit = "6.1.3"
+pmd = "7.27.0"
 
 [libraries]
 apiguardian-api = "org.apiguardian:apiguardian-api:1.1.2"
+checkstyle = { module = "com.puppycrawl.tools:checkstyle", version.ref = "checkstyle" }
+jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
 jspecify = "org.jspecify:jspecify:1.0.1"
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 mvel2 = "org.mvel:mvel2:2.5.4.Final"
+pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 slf4j-api = "org.slf4j:slf4j-api:2.0.19"
 slf4j-simple = "org.slf4j:slf4j-simple:2.0.19"

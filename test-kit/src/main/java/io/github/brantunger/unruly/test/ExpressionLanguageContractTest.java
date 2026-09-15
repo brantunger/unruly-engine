@@ -56,7 +56,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 // A test class: each check makes several assertions, and their failure messages show the values compared. The engines
 // the checks build are discarded with the check, except where a check is about closing.
-@SuppressWarnings({"PMD.JUnitTestContainsTooManyAsserts", "PMD.JUnitAssertionsShouldIncludeMessage",
+@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.UnitTestAssertionsShouldIncludeMessage",
         "PMD.CloseResource"})
 public abstract class ExpressionLanguageContractTest {
 

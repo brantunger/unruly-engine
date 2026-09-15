@@ -11,15 +11,18 @@ java {
     }
 }
 
+// The tools' versions are in gradle/libs.versions.toml, where Dependabot updates them.
+def toolVersions = extensions.getByType(VersionCatalogsExtension).named('libs')
+
 checkstyle {
     // 14.1.0 parses module-info.java; 13.7.0 and earlier can't. It needs Java 21, which the toolchain provides.
-    toolVersion = '14.1.0'
+    toolVersion = toolVersions.findVersion('checkstyle').get().requiredVersion
     ignoreFailures = false
     maxWarnings = 0
 }
 
 pmd {
-    toolVersion = '7.5.0'
+    toolVersion = toolVersions.findVersion('pmd').get().requiredVersion
     ignoreFailures = false
     sourceSets = [sourceSets.main]
     ruleSets = []
@@ -32,7 +35,11 @@ pmd {
     <rule ref="category/java/bestpractices.xml">
         <exclude name="GuardLogStatement"/>
     </rule>
-    <rule ref="category/java/errorprone.xml"/>
+    <rule ref="category/java/errorprone.xml">
+        <!-- The engine runs languages, listeners and setters it doesn't know, and turns anything they throw into a
+             failure of the rule, the run or the rule list, so catching Exception and Error is how it works. -->
+        <exclude name="AvoidCatchingGenericException"/>
+    </rule>
 </ruleset>''')
 }
 
