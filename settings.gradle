@@ -3,3 +3,14 @@ plugins {
 }
 
 rootProject.name = 'unruly-engine'
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+}
+
+// core: the unruly-engine-core artifact, the engine without a language.
+// mvel: the unruly-engine artifact, the MVEL language. It depends on core, and holds the tests.
+// module-path-test: runs small applications on the module path. Not published.
+include 'core', 'mvel', 'module-path-test'

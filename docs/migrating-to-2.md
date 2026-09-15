@@ -67,6 +67,44 @@ without a `language` is still written in MVEL.
 Shade plugin's `ServicesResourceTransformer`, or register MVEL yourself with
 `engine.registerLanguage(new MvelExpressionLanguage())`.
 
+## 📦 MVEL is a separate jar
+
+**What changed:** the library is published as two artifacts. `unruly-engine-core` is the engine and its API, and
+`unruly-engine` is the MVEL language, which depends on `unruly-engine-core`. Package and class names didn't change.
+
+**Who is affected:** builds that list jars by hand instead of resolving dependencies, or that exclude the library's
+transitive dependencies. With only `unruly-engine-<version>.jar`, the API classes are missing.
+
+**What to change:** usually nothing. A Maven or Gradle dependency on `unruly-engine` brings `unruly-engine-core` with
+it. An application whose rules all name other languages can depend on `unruly-engine-core` alone; see
+[Packaging a language](languages/custom.md#-packaging-a-language).
+
+## 🧭 The jars are named modules
+
+**What changed:** each jar has a module declaration. `unruly-engine` is still the module `io.github.brantunger.unruly`,
+and `unruly-engine-core` is the module `io.github.brantunger.unruly.core`. They export only the API packages, not
+`io.github.brantunger.unruly.core`, and they require SLF4J and MVEL themselves. The Javadoc site has a directory for
+each module.
+
+**Who is affected:**
+
+- **Gradle applications on the module path.** Gradle puts MVEL's jar, which has no module name, on the class path, so
+  the application fails to start:
+  ```
+  java.lang.module.FindException: Module mvel2 not found, required by io.github.brantunger.unruly
+  ```
+- **Module-path applications that required SLF4J only for the engine.** `requires org.slf4j` and
+  `--add-modules org.slf4j` are no longer needed, and are harmless.
+- **Links to Javadoc pages.** For example, `latest/io/github/brantunger/unruly/api/RulesEngine.html` is now
+  `latest/io.github.brantunger.unruly.core/io/github/brantunger/unruly/api/RulesEngine.html`.
+
+**What to change:**
+
+- Gradle: name MVEL's module with the extra-java-module-info plugin, as the
+  [README's installation section](../README.md#-installation) shows.
+- Remove `requires org.slf4j` unless your application uses SLF4J itself.
+- Update links to Javadoc pages.
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in

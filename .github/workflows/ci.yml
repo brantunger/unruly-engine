@@ -36,7 +36,8 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      # `build` runs `check`, which pulls in Checkstyle, PMD, the 100% Jacoco gate and the API compatibility check.
+      # `build` runs `check`, which pulls in Checkstyle, PMD, the 100% Jacoco gate, the API compatibility check of
+      # both artifacts and the module-path applications.
       - name: Build & Test
         run: ./gradlew build jacocoTestReport --no-daemon -PtestJdk=${{ matrix.java-version }}
 
@@ -45,11 +46,14 @@ jobs:
         if: failure()
         with:
           name: api-compatibility-report-jdk${{ matrix.java-version }}
-          path: build/reports/japicmp/
+          path: |
+            core/build/reports/japicmp/
+            mvel/build/reports/japicmp/
           if-no-files-found: ignore
 
       # `build` doesn't run javadoc; otherwise the release's publish job, after tagging, is the first
       # place a broken Javadoc comment fails. Javadoc doesn't depend on the test JDK, so one run is enough.
+      # It builds the combined site and each artifact's -javadoc.jar contents.
       - name: Javadoc
         if: matrix.java-version == '21'
         run: ./gradlew javadoc --no-daemon

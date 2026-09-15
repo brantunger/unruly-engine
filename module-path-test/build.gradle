@@ -1,0 +1,56 @@
+plugins {
+    id 'java'
+    id 'org.gradlex.extra-java-module-info'
+}
+
+// Runs two small applications on the module path, so the module declarations, and the README's module-path section,
+// stay true. Each application is a named module that requires only one of the engine's modules, and fails if a check
+// fails. `check` runs both.
+// - withMvel requires io.github.brantunger.unruly, and runs MVEL rules on the application's own classes.
+// - withoutMvel requires io.github.brantunger.unruly.core, and provides its own language. mvel2 isn't on its module
+//   path.
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+sourceSets {
+    withMvel
+    withoutMvel
+}
+
+dependencies {
+    withMvelImplementation project(':mvel')
+    withMvelRuntimeOnly libs.slf4j.simple
+
+    withoutMvelImplementation project(':core')
+    withoutMvelRuntimeOnly libs.slf4j.simple
+}
+
+// The same name users' module paths give mvel2; see mvel/build.gradle.
+extraJavaModuleInfo {
+    automaticModule('org.mvel:mvel2', 'mvel2')
+}
+
+// Like the tests, the applications run on the JDK given by -PtestJdk.
+def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
+
+['withMvel', 'withoutMvel'].each { name ->
+    def sourceSet = sourceSets.named(name)
+    def module = "com.example.${name.toLowerCase()}"
+    def run = tasks.register("run${name.capitalize()}", JavaExec) {
+        group = 'verification'
+        description = "Runs the module ${module} on the module path."
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(testJdk)
+        }
+        classpath = sourceSet.get().runtimeClasspath
+        mainModule = module
+        mainClass = "${module}.Main"
+    }
+    tasks.named('check') {
+        dependsOn run
+    }
+}

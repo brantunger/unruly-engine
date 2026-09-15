@@ -1,0 +1,63 @@
+// Compilation, tests and static analysis, shared by the core and mvel projects.
+plugins {
+    id 'java-library'
+    id 'checkstyle'
+    id 'pmd'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+checkstyle {
+    // 14.1.0 parses module-info.java; 13.7.0 and earlier can't. It needs Java 21, which the toolchain provides.
+    toolVersion = '14.1.0'
+    ignoreFailures = false
+    maxWarnings = 0
+}
+
+pmd {
+    toolVersion = '7.5.0'
+    ignoreFailures = false
+    sourceSets = [sourceSets.main]
+    ruleSets = []
+    ruleSetConfig = resources.text.fromString('''<?xml version="1.0"?>
+<ruleset name="Unruly PMD Ruleset"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>Unruly PMD Ruleset</description>
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="GuardLogStatement"/>
+    </rule>
+    <rule ref="category/java/errorprone.xml"/>
+</ruleset>''')
+}
+
+// Compilation always uses the Java 21 toolchain. The tests run on the JDK given by -PtestJdk (default 21), so
+// CI can run them on each JDK in its matrix; otherwise the test task would use the 21 toolchain every time.
+def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
+
+// The tests still call Rule's and Fact's setters, which are deprecated for removal, so javac would otherwise print a
+// removal warning for every call.
+tasks.named('compileTestJava', JavaCompile) {
+    options.compilerArgs << '-Xlint:-removal'
+}
+
+tasks.named('test', Test) {
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(testJdk)
+    }
+    useJUnitPlatform {
+        includeEngines 'junit-jupiter'
+    }
+    systemProperties = [
+            'junit.jupiter.extensions.autodetection.enabled': 'true',
+            // Lets a test confirm it really runs on the requested JDK.
+            'unruly.test.jdk': testJdk,
+            // LoggingRuleListener logs at DEBUG; enabled so its messages can be asserted.
+            'org.slf4j.simpleLogger.log.io.github.brantunger.unruly.api.LoggingRuleListener': 'debug',
+    ]
+}
