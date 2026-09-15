@@ -24,7 +24,7 @@ val decision: LoanDecision? = engine.run(facts)   // null when no rule matched
 
 engine.registerListener(object : RuleListener {
     override fun afterEvaluate(rule: Rule, facts: Map<String, Any?>, matchResult: Boolean) {
-        println("${rule.ruleName ?: "(unnamed)"} matched: $matchResult")
+        println("${rule.ruleName} matched: $matchResult")
     }
 })
 ```
@@ -34,8 +34,8 @@ engine.registerListener(object : RuleListener {
 | `RulesEngine.run(facts)` | takes `FactStore<Any?>`, returns `O?` |
 | `FactStore.getValue(name)`, `FactMap.getValue(name)` | `T?` |
 | `RuleListener.beforeEvaluate` / `afterEvaluate` facts | `Map<String, Any?>` |
-| `Rule.ruleName`, `priority`, `description`, `language` | `String?`, `Int?`, `String?`, `String?` |
-| `Rule.condition`, `Rule.action`, and the builder's `condition()` / `action()` | `String` |
+| `Rule.priority`, `description`, `language` | `Int?`, `String?`, `String?` |
+| `Rule.ruleName`, `Rule.condition`, `Rule.action`, and the builder's `ruleName()`, `condition()` and `action()` | `String` |
 | `FactReference.name` | `String?` |
 | `RuleCompilationException.ruleName`, `RuleExecutionException.ruleName` | `String?` |
 
@@ -49,7 +49,7 @@ Code that compiled against 1.4 can fail to compile against 1.5.0 or later. Each 
 | `override fun beforeEvaluate(rule: Rule, facts: Map<String, Any>)` | `'beforeEvaluate' overrides nothing` | `facts: Map<String, Any?>`, also in `afterEvaluate` |
 | `val out: Out = engine.run(facts)` | `expected 'Out', actual 'Out?'` | handle `null`, which `run()` returns when no rule matched |
 | `val value: Any = facts.getValue("a")` | a nullable type where a non-null one is expected | `Any?`, or handle `null` |
-| `val name: String = rule.ruleName`, or a fact's `name` | a nullable type where a non-null one is expected | `String?`, or `?: "(unnamed)"` |
+| `val name: String = reference.name`, for a fact's name | a nullable type where a non-null one is expected | `String?`, or handle `null` |
 | `Rule.builder().condition(c)` with `c: String?` | a nullable argument where a non-null one is expected | pass a `String`: a condition and an action are required |
 
 To upgrade first and fix the errors afterwards, the Kotlin compiler flag `-Xjspecify-annotations=warn` reports them as

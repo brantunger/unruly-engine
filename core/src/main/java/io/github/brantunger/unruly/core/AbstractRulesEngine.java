@@ -282,8 +282,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             if (rule == null) {
                 throw compilationFailure("Rule at index " + i + " of the rule list is null", null, null);
             }
-            // Duplicate names would make error messages and listener logs ambiguous. Unnamed rules are allowed.
-            if (rule.getRuleName() != null && !ruleNames.add(rule.getRuleName())) {
+            // Duplicate names would make error messages, exceptions and listener logs ambiguous.
+            if (!ruleNames.add(rule.getRuleName())) {
                 throw compilationFailure("Duplicate rule name '" + Failures.quote(rule.getRuleName()) + "'", null,
                         rule.getRuleName());
             }
@@ -566,7 +566,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
         List<RuleListener> snapshot = listenerSnapshot();
-        notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(listenerCopy(rule), listenerFacts));
+        notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing.
@@ -592,14 +592,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
 
         notifyAfter(snapshot, rule, "afterEvaluate",
-                listener -> listener.afterEvaluate(listenerCopy(rule), listenerFacts, result));
+                listener -> listener.afterEvaluate(rule.rule(), listenerFacts, result));
 
         return result;
     }
 
     private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, Map<String, Object> entryMap) {
         List<RuleListener> snapshot = listenerSnapshot();
-        notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(listenerCopy(rule), outputResult));
+        notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
@@ -619,7 +619,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             setProperty(snapshot, rule, outputResult, property.getKey(), property.getValue());
         }
 
-        notifyAfter(snapshot, rule, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
+        notifyAfter(snapshot, rule, "afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
 
         return outputResult;
     }
@@ -643,17 +643,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                                    Throwable cause) {
         return failure(snapshot, rule, ExpressionKind.ACTION, "Failed to set '" + Failures.quote(property)
                 + "' on the output for rule '" + rule.displayName() + "': " + Failures.describe(cause), cause);
-    }
-
-    /**
-     * Copies a rule for one listener callback. Every callback gets its own copy, so a listener that calls a
-     * setter can't change what the engine, other listeners, later callbacks or other threads see.
-     *
-     * @param rule The compiled rule being evaluated or executed
-     * @return A new {@link Rule} with the same field values
-     */
-    private static Rule listenerCopy(CompiledRule rule) {
-        return rule.rule().toBuilder().build();
     }
 
     /**
@@ -758,7 +747,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (logged) {
             log.error(error.getMessage());
         }
-        return notifyListeners(snapshot, "onError", listener -> listener.onError(listenerCopy(rule), error));
+        return notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), error));
     }
 
     /**
@@ -858,13 +847,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private CompiledRule compileRule(Rule rule, ExpressionCompiler compiler, LanguageCompilers compilers) {
         String ruleName = rule.getRuleName();
-        String displayName = Failures.displayName(ruleName);
-        if (rule.getCondition() == null || rule.getCondition().isBlank()) {
-            throw compilationFailure("Rule '" + displayName + "' has a null or blank condition expression", null,
+        String displayName = Failures.quote(ruleName);
+        if (rule.getCondition().isBlank()) {
+            throw compilationFailure("Rule '" + displayName + "' has a blank condition expression", null,
                     ruleName, ExpressionKind.CONDITION, List.of());
         }
-        if (rule.getAction() == null || rule.getAction().isBlank()) {
-            throw compilationFailure("Rule '" + displayName + "' has a null or blank action expression", null,
+        if (rule.getAction().isBlank()) {
+            throw compilationFailure("Rule '" + displayName + "' has a blank action expression", null,
                     ruleName, ExpressionKind.ACTION, List.of());
         }
         String language = languageOf(rule);
@@ -877,17 +866,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 new Expression(ruleName, ExpressionKind.CONDITION, rule.getCondition()), compiler::compileCondition);
         CompiledAction compiledAction = compile(
                 new Expression(ruleName, ExpressionKind.ACTION, rule.getAction()), compiler::compileAction);
-        // Rule is mutable and owned by the caller. Keeping their instance would let a later edit change what
-        // listeners and error messages report while the compiled expressions kept running the old rule.
-        Rule snapshot = Rule.builder()
-                .ruleName(rule.getRuleName())
-                .condition(rule.getCondition())
-                .action(rule.getAction())
-                .priority(rule.getPriority())
-                .description(rule.getDescription())
-                .language(rule.getLanguage())
-                .build();
-        return new CompiledRule(snapshot, displayName, language, compiledCondition, compiledAction);
+        return new CompiledRule(rule, displayName, language, compiledCondition, compiledAction);
     }
 
     /**

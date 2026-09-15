@@ -42,19 +42,6 @@ class LoggingRuleListenerNameTest {
     }
 
     @Test
-    @DisplayName("an unnamed rule is logged as (unnamed), like the engine's error messages")
-    void unnamedRule() {
-        String logs = logsOf(Rule.builder().condition("true").action("x").build());
-
-        assertTrue(logs.contains("Evaluating condition for rule: (unnamed)"), logs);
-        assertTrue(logs.contains("Evaluated condition for rule: (unnamed) | Match: true"), logs);
-        assertTrue(logs.contains("Executing action for rule: (unnamed)"), logs);
-        assertTrue(logs.contains("Executed action for rule: (unnamed)"), logs);
-        assertTrue(logs.contains("Failed rule: (unnamed) | Error: boom"), logs);
-        assertFalse(logs.contains("rule: null"), logs);
-    }
-
-    @Test
     @DisplayName("a named rule is logged by its name")
     void namedRule() {
         String logs = logsOf(Rule.builder().ruleName("claim-rule").condition("true").action("x").build());

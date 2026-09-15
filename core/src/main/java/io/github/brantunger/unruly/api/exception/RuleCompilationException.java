@@ -119,7 +119,7 @@ public class RuleCompilationException extends UnrulyException {
      * it. Unlike the message, it isn't escaped or shortened, so it can be used to look the rule up.
      *
      * @return the rule's name, or {@code null} if the failure isn't about one rule (for example an expression language
-     *         failed to create its compiler, or an element of the list is {@code null}) or the rule has no name
+     *         failed to create its compiler, or an element of the list is {@code null})
      */
     public @Nullable String getRuleName() {
         return ruleName;

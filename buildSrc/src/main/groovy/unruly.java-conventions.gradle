@@ -52,7 +52,7 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
 }
 
-// The tests still call Rule's and Fact's setters, which are deprecated for removal. Without this, each call is a
+// The tests still call Fact's setters, which are deprecated for removal. Without this, each call is a
 // removal warning, which fails the build; javac still prints a note that some test sources use them.
 tasks.named('compileTestJava', JavaCompile) {
     options.compilerArgs << '-Xlint:-removal'

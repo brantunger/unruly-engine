@@ -17,14 +17,6 @@ class DeprecationsForTwoTest {
 
     private static List<Executable> deprecatedMembers() throws NoSuchMethodException {
         return List.of(
-                Rule.class.getConstructor(),
-                Rule.class.getMethod("setRuleName", String.class),
-                Rule.class.getMethod("setCondition", String.class),
-                Rule.class.getMethod("setAction", String.class),
-                Rule.class.getMethod("setPriority", Integer.class),
-                Rule.class.getMethod("setDescription", String.class),
-                Rule.class.getMethod("setLanguage", String.class),
-                Rule.class.getDeclaredMethod("canEqual", Object.class),
                 FactReference.class.getMethod("setName", String.class),
                 FactReference.class.getMethod("setValue", Object.class),
                 Fact.class.getMethod("setName", String.class),
@@ -32,7 +24,7 @@ class DeprecationsForTwoTest {
     }
 
     @Test
-    @DisplayName("Rule's no-arg constructor, setters and canEqual, and the fact setters, are deprecated for removal since 1.8.0")
+    @DisplayName("the fact setters are deprecated for removal since 1.8.0")
     void deprecatedForRemoval() throws NoSuchMethodException {
         for (Executable member : deprecatedMembers()) {
             Deprecated deprecated = member.getAnnotation(Deprecated.class);

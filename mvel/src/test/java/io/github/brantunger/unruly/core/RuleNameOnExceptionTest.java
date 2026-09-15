@@ -155,11 +155,8 @@ class RuleNameOnExceptionTest {
     }
 
     @Test
-    @DisplayName("an unnamed rule, and failures that aren't about one rule, have no rule name")
+    @DisplayName("failures that aren't about one rule have no rule name")
     void noRuleName() {
-        engine.setRuleList(List.of(Rule.builder().condition("missing > 1").action("x").build()));
-        assertNull(thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
-
         assertNull(thrown(RuleCompilationException.class, () -> engine.setRuleList(Arrays.asList((Rule) null)))
                 .getRuleName());
 

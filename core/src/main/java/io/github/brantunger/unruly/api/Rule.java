@@ -13,8 +13,8 @@ import java.util.Objects;
  * <p>
  * Fields:
  * <ul>
- *     <li>{@code ruleName}: identifies the rule in error messages and listener callbacks. Must be unique within a
- *     rule list; a rule without a name is allowed.</li>
+ *     <li>{@code ruleName}: identifies the rule in error messages, exceptions and listener callbacks. Required, not
+ *     blank, and unique within a rule list.</li>
  *     <li>{@code condition}: an expression that must evaluate to a boolean. It can't assign or declare anything.
  *     Required.</li>
  *     <li>{@code action}: an expression run when the rule fires. It changes the output object, which it sees as
@@ -28,18 +28,34 @@ import java.util.Objects;
  * </ul>
  *
  * <p>
- * Create a rule with {@code Rule.builder()}. Copy a rule with a change with {@code toBuilder()}, for example
- * {@code rule.toBuilder().priority(5).build()}. The positional constructors, the no-arg constructor and the setters are
- * deprecated: {@code Rule} is expected to become immutable in 2.0. A JSON or configuration binder can build a rule
- * through {@link RuleBuilder}, whose constructor is public for that; with Jackson, for example, a mix-in with
- * {@code @JsonDeserialize(builder = Rule.RuleBuilder.class)} and {@code @JsonPOJOBuilder(withPrefix = "")}.
+ * A rule is immutable. Create one with {@link #builder()}, whose {@link RuleBuilder#build() build()} rejects a rule
+ * without a name, a condition or an action. Copy a rule with a change with {@link #toBuilder()}, for example
+ * {@code rule.toBuilder().priority(5).build()}. Because a rule can't change, the engine keeps the rules passed to
+ * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}, and listeners receive those same
+ * instances.
  * </p>
  *
  * <p>
- * <b>Nullness:</b> {@code ruleName}, {@code priority}, {@code description} and {@code language} are
- * {@link Nullable}. {@code condition} and {@code action} are required, so they aren't, but a rule created with the
- * no-arg constructor or a builder has neither until they are set, and
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} rejects it until then.
+ * <b>Reading rules from JSON:</b> a binder builds rules through {@link RuleBuilder}, whose constructor is public for
+ * that. With Jackson, register one mix-in for {@code Rule} and one for its builder:
+ * {@snippet :
+ * @JsonDeserialize(builder = Rule.RuleBuilder.class)
+ * abstract class RuleMixIn {
+ * }
+ *
+ * @JsonPOJOBuilder(withPrefix = "")
+ * abstract class RuleBuilderMixIn {
+ * }
+ *
+ * ObjectMapper mapper = JsonMapper.builder()
+ *         .addMixIn(Rule.class, RuleMixIn.class)
+ *         .addMixIn(Rule.RuleBuilder.class, RuleBuilderMixIn.class)
+ *         .build();
+ * List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
+ * }
+ * The code is the same for Jackson 2 ({@code com.fasterxml.jackson.databind}) and Jackson 3
+ * ({@code tools.jackson.databind}); only the imports differ. A rule without a name, a condition or an action fails
+ * while it's read.
  * </p>
  *
  * <p>
@@ -48,20 +64,12 @@ import java.util.Objects;
  * </p>
  *
  * <p>
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} takes a copy of each rule.
- * Changing a {@code Rule} afterwards has no effect on the engine, including on what listeners and error
- * messages report, until {@code setRuleList} is called again.
- * </p>
- *
- * <p>
  * <b>Security:</b> conditions and actions are code. In MVEL, the default language, they have the same access to the
  * JVM as Java code, including processes, files and reflection; what a rule in another language can reach depends on
  * that language. The engine applies no sandbox and no timeout, so only use rules from trusted sources.
  * </p>
  */
-// Each @Deprecated repeats its version, so the Javadoc shows the version rather than a constant's name.
-@SuppressWarnings("PMD.AvoidDuplicateLiterals")
-public class Rule {
+public final class Rule {
 
     /** The multiplier {@link #hashCode()} combines field hash codes with. */
     private static final int HASH_PRIME = 59;
@@ -69,70 +77,26 @@ public class Rule {
     /** The hash code {@link #hashCode()} uses for a {@code null} field. */
     private static final int NULL_HASH = 43;
 
-    /** The rule's name, used in error messages and listener callbacks; unique within a rule list, or {@code null}. */
-    private @Nullable String ruleName;
+    /** The rule's name, used in error messages, exceptions and listener callbacks; unique within a rule list. */
+    private final String ruleName;
 
     /** The condition, which must evaluate to a boolean and can't assign or declare anything. */
-    private String condition;
+    private final String condition;
 
     /** The action, run when the rule fires; it changes the output object, which it sees as {@code output}. */
-    private String action;
+    private final String action;
 
     /** The rule's priority: higher values fire first, and {@code null} sorts last. */
-    private @Nullable Integer priority;
+    private final @Nullable Integer priority;
 
     /** Free text for your own use; the engine ignores it, but listeners receive it. */
-    private @Nullable String description;
+    private final @Nullable String description;
 
     /** The name of the expression language the condition and action are written in, or {@code null} for MVEL. */
-    private @Nullable String language;
+    private final @Nullable String language;
 
-    /**
-     * Creates a rule whose fields are all {@code null}, to be filled in with the setters. JSON and configuration
-     * binders create rules this way. Set at least the condition and action before passing the rule to
-     * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}.
-     *
-     * @deprecated Use {@link #builder()}. A binder can build rules through {@link RuleBuilder} instead; see the class
-     *             description. {@code Rule} is expected to become immutable in 2.0, without this constructor.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public Rule() {
-        // Every field starts null.
-    }
-
-    /**
-     * Creates a rule written in the engine's default language, MVEL.
-     *
-     * @param ruleName    The rule's name, unique within a rule list, or {@code null}
-     * @param condition   The condition, which must evaluate to a boolean
-     * @param action      The action, run when the rule fires
-     * @param priority    The rule's priority: higher values fire first, and {@code null} sorts last
-     * @param description Free text for your own use, or {@code null}
-     * @deprecated Use {@link #builder()} instead. A positional constructor's parameters change whenever a field is
-     *             added, and this constructor is expected to be removed in 2.0.
-     */
-    @Deprecated(since = "1.4.0", forRemoval = true)
-    public Rule(@Nullable String ruleName, String condition, String action, @Nullable Integer priority,
-                @Nullable String description) {
-        this(ruleName, condition, action, priority, description, null);
-    }
-
-    /**
-     * Creates a rule. The builder uses this constructor too.
-     *
-     * @param ruleName    The rule's name, unique within a rule list, or {@code null}
-     * @param condition   The condition, which must evaluate to a boolean
-     * @param action      The action, run when the rule fires
-     * @param priority    The rule's priority: higher values fire first, and {@code null} sorts last
-     * @param description Free text for your own use, or {@code null}
-     * @param language    The name of the expression language the condition and action are written in, or
-     *                    {@code null} for MVEL
-     * @deprecated Use {@link #builder()} instead. A positional constructor's parameters change whenever a field is
-     *             added, and this constructor is expected to be removed in 2.0.
-     */
-    @Deprecated(since = "1.4.0", forRemoval = true)
-    public Rule(@Nullable String ruleName, String condition, String action, @Nullable Integer priority,
-                @Nullable String description, @Nullable String language) {
+    private Rule(String ruleName, String condition, String action, @Nullable Integer priority,
+                 @Nullable String description, @Nullable String language) {
         this.ruleName = ruleName;
         this.condition = condition;
         this.action = action;
@@ -162,17 +126,16 @@ public class Rule {
     }
 
     /**
-     * Returns the rule's name, used in error messages and listener callbacks.
+     * Returns the rule's name, used in error messages, exceptions and listener callbacks.
      *
-     * @return The name, or {@code null} if the rule has none
+     * @return The name, which isn't blank
      */
-    public @Nullable String getRuleName() {
+    public String getRuleName() {
         return ruleName;
     }
 
     /**
-     * Returns the condition, which must evaluate to a boolean and can't assign or declare anything. A rule that isn't
-     * complete yet has none; see the class's nullness note.
+     * Returns the condition, which must evaluate to a boolean and can't assign or declare anything.
      *
      * @return The condition
      */
@@ -181,8 +144,7 @@ public class Rule {
     }
 
     /**
-     * Returns the action, run when the rule fires. It changes the output object, which it sees as {@code output}. A
-     * rule that isn't complete yet has none; see the class's nullness note.
+     * Returns the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
      *
      * @return The action
      */
@@ -218,84 +180,10 @@ public class Rule {
     }
 
     /**
-     * Sets the rule's name, used in error messages and listener callbacks. It must be unique within a rule list.
-     *
-     * @param ruleName The name, or {@code null} for an unnamed rule
-     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
-     *             is expected to become immutable in 2.0, without setters.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public void setRuleName(@Nullable String ruleName) {
-        this.ruleName = ruleName;
-    }
-
-    /**
-     * Sets the condition, which must evaluate to a boolean and can't assign or declare anything.
-     *
-     * @param condition The condition
-     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
-     *             is expected to become immutable in 2.0, without setters.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public void setCondition(String condition) {
-        this.condition = condition;
-    }
-
-    /**
-     * Sets the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
-     *
-     * @param action The action
-     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
-     *             is expected to become immutable in 2.0, without setters.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public void setAction(String action) {
-        this.action = action;
-    }
-
-    /**
-     * Sets the rule's priority. Higher values fire first, and {@code null} sorts last.
-     *
-     * @param priority The priority, or {@code null}
-     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
-     *             is expected to become immutable in 2.0, without setters.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public void setPriority(@Nullable Integer priority) {
-        this.priority = priority;
-    }
-
-    /**
-     * Sets the rule's description: free text for your own use, which the engine ignores but listeners receive.
-     *
-     * @param description The description, or {@code null}
-     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
-     *             is expected to become immutable in 2.0, without setters.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public void setDescription(@Nullable String description) {
-        this.description = description;
-    }
-
-    /**
-     * Sets the name of the expression language the condition and action are written in, as registered with
-     * {@link io.github.brantunger.unruly.api.RulesEngine#registerLanguage}.
-     *
-     * @param language The language's name, or {@code null} for MVEL
-     * @deprecated Build the rule with {@link #builder()}, or copy it with a change with {@link #toBuilder()}. {@code Rule}
-     *             is expected to become immutable in 2.0, without setters.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    public void setLanguage(@Nullable String language) {
-        this.language = language;
-    }
-
-    /**
-     * Compares every field, through its getter.
+     * Compares every field.
      *
      * @param o The object to compare with
-     * @return {@code true} if {@code o} is a {@code Rule} that {@link #canEqual(Object) can equal} this rule, and every
-     *         field of the two is equal
+     * @return {@code true} if {@code o} is a {@code Rule} and every field of the two is equal
      */
     @Override
     public boolean equals(@Nullable Object o) {
@@ -305,43 +193,28 @@ public class Rule {
         if (!(o instanceof Rule other)) {
             return false;
         }
-        return other.canEqual(this)
-                && Objects.equals(getPriority(), other.getPriority())
-                && Objects.equals(getRuleName(), other.getRuleName())
-                && Objects.equals(getCondition(), other.getCondition())
-                && Objects.equals(getAction(), other.getAction())
-                && Objects.equals(getDescription(), other.getDescription())
-                && Objects.equals(getLanguage(), other.getLanguage());
+        return Objects.equals(priority, other.priority)
+                && ruleName.equals(other.ruleName)
+                && condition.equals(other.condition)
+                && action.equals(other.action)
+                && Objects.equals(description, other.description)
+                && Objects.equals(language, other.language);
     }
 
     /**
-     * Returns whether {@code other} may equal a {@code Rule}. A subclass that adds state to {@link #equals(Object)}
-     * overrides this, so that it isn't equal to a plain {@code Rule} and {@code equals} stays symmetric.
-     *
-     * @param other The object being compared
-     * @return {@code true} if {@code other} is a {@code Rule}
-     * @deprecated {@code Rule} is expected to become a final class in 2.0, so it can't be subclassed and doesn't need
-     *             this method.
-     */
-    @Deprecated(since = "1.8.0", forRemoval = true)
-    protected boolean canEqual(@Nullable Object other) {
-        return other instanceof Rule;
-    }
-
-    /**
-     * Combines the hash codes of every field, through its getter, consistently with {@link #equals(Object)}.
+     * Combines the hash codes of every field, consistently with {@link #equals(Object)}.
      *
      * @return The hash code
      */
     @Override
     public int hashCode() {
         int result = 1;
-        result = result * HASH_PRIME + hashOf(getPriority());
-        result = result * HASH_PRIME + hashOf(getRuleName());
-        result = result * HASH_PRIME + hashOf(getCondition());
-        result = result * HASH_PRIME + hashOf(getAction());
-        result = result * HASH_PRIME + hashOf(getDescription());
-        result = result * HASH_PRIME + hashOf(getLanguage());
+        result = result * HASH_PRIME + hashOf(priority);
+        result = result * HASH_PRIME + ruleName.hashCode();
+        result = result * HASH_PRIME + condition.hashCode();
+        result = result * HASH_PRIME + action.hashCode();
+        result = result * HASH_PRIME + hashOf(description);
+        result = result * HASH_PRIME + hashOf(language);
         return result;
     }
 
@@ -357,22 +230,21 @@ public class Rule {
      */
     @Override
     public String toString() {
-        return "Rule(ruleName=" + getRuleName() + ", condition=" + getCondition() + ", action=" + getAction()
-                + ", priority=" + getPriority() + ", description=" + getDescription() + ", language=" + getLanguage()
-                + ")";
+        return "Rule(ruleName=" + ruleName + ", condition=" + condition + ", action=" + action
+                + ", priority=" + priority + ", description=" + description + ", language=" + language + ")";
     }
 
     /**
      * Builds a {@link Rule}. Get one from {@link Rule#builder()}, or from {@link Rule#toBuilder()} to copy a rule.
-     * Every field is {@code null} until it is set.
+     * Every field is {@code null} until it is set, and {@link #build()} checks that the required ones are.
      */
     // Each setter is named after the field it sets, as users of the builder expect.
     @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
-    public static class RuleBuilder {
+    public static final class RuleBuilder {
 
         private @Nullable String ruleName;
-        private String condition;
-        private String action;
+        private @Nullable String condition;
+        private @Nullable String action;
         private @Nullable Integer priority;
         private @Nullable String description;
         private @Nullable String language;
@@ -388,18 +260,19 @@ public class Rule {
         }
 
         /**
-         * Sets the rule's name, used in error messages and listener callbacks; unique within a rule list.
+         * Sets the rule's name, used in error messages, exceptions and listener callbacks. Required, not blank, and
+         * unique within a rule list.
          *
-         * @param ruleName The name, or {@code null} for an unnamed rule
+         * @param ruleName The name
          * @return This builder
          */
-        public RuleBuilder ruleName(@Nullable String ruleName) {
+        public RuleBuilder ruleName(String ruleName) {
             this.ruleName = ruleName;
             return this;
         }
 
         /**
-         * Sets the condition, which must evaluate to a boolean and can't assign or declare anything.
+         * Sets the condition, which must evaluate to a boolean and can't assign or declare anything. Required.
          *
          * @param condition The condition
          * @return This builder
@@ -411,6 +284,7 @@ public class Rule {
 
         /**
          * Sets the action, run when the rule fires; it changes the output object, which it sees as {@code output}.
+         * Required.
          *
          * @param action The action
          * @return This builder
@@ -454,12 +328,28 @@ public class Rule {
         }
 
         /**
-         * Creates a rule from the fields set so far. The builder can be used again afterwards.
+         * Creates a rule from the fields set so far. The builder can be used again afterwards. A blank condition or
+         * action is allowed here; {@link RulesEngine#setRuleList(java.util.List)} rejects it, naming the rule.
          *
          * @return A new rule
+         * @throws IllegalStateException if the name is {@code null} or blank, or the condition or action is
+         *                               {@code null}. The message names the first such field, such as
+         *                               {@code ruleName must not be null}.
          */
         public Rule build() {
-            return new Rule(ruleName, condition, action, priority, description, language);
+            String name = required(ruleName, "ruleName");
+            if (name.isBlank()) {
+                throw new IllegalStateException("ruleName must not be blank");
+            }
+            return new Rule(name, required(condition, "condition"), required(action, "action"), priority, description,
+                    language);
+        }
+
+        private static String required(@Nullable String value, String field) {
+            if (value == null) {
+                throw new IllegalStateException(field + " must not be null");
+            }
+            return value;
         }
 
         /**

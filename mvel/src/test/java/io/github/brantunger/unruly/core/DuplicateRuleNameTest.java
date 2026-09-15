@@ -27,12 +27,4 @@ class DuplicateRuleNameTest {
                 () -> engine.setRuleList(List.of(rule("a"), rule("b"), rule("a"))));
         assertTrue(ex.getMessage().contains("Duplicate rule name 'a'"));
     }
-
-    @Test
-    @DisplayName("several unnamed rules are still allowed")
-    void unnamedRulesAllowed() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-
-        assertDoesNotThrow(() -> engine.setRuleList(List.of(rule(null), rule(null), rule("named"))));
-    }
 }

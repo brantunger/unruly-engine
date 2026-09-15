@@ -6,6 +6,7 @@ singleton bean, load its rules at startup, and call `run()` from your request ha
 [← Back to README](../README.md)
 
 - [Configure the engine](#-configure-the-engine)
+- [Rules from configuration](#-rules-from-configuration)
 - [Use it in a controller](#-use-it-in-a-controller)
 - [Reload rules without restarting](#-reload-rules-without-restarting)
 - [Several engines](#-several-engines)
@@ -57,6 +58,43 @@ public class RuleRepository {
 > [!TIP]
 > If a rule doesn't compile, `setRuleList()` throws a `RuleCompilationException`, so the bean fails to be created
 > and the application refuses to start. That's usually what you want: broken rules never reach production traffic.
+
+## 🗂️ Rules from configuration
+
+`Rule` is immutable and has no setters, so `@ConfigurationProperties` can't bind it. Bind your own record, and build
+the rules from it:
+
+```java
+@ConfigurationProperties("loan")
+public record LoanRulesProperties(List<RuleProperties> rules) {
+
+    public record RuleProperties(String name, Integer priority, String condition, String action) {
+
+        public Rule toRule() {
+            return Rule.builder()
+                    .ruleName(name)
+                    .priority(priority)
+                    .condition(condition)
+                    .action(action)
+                    .build();
+        }
+    }
+}
+```
+
+```yaml
+loan:
+  rules:
+    - name: prime-rate
+      priority: 10
+      condition: applicant.creditScore >= 750
+      action: output.approved = true; output.interestRate = 4.5
+```
+
+Enable the record with `@EnableConfigurationProperties(LoanRulesProperties.class)`, then pass
+`properties.rules().stream().map(RuleProperties::toRule).toList()` to `setRuleList()`. A rule without a name, condition
+or action makes `toRule()` throw, so the application refuses to start. To read rules from JSON instead, register the
+Jackson mix-ins shown under [Rules](../README.md#rules).
 
 ## 🌐 Use it in a controller
 

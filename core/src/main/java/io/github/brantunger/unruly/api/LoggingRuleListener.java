@@ -30,9 +30,9 @@ public class LoggingRuleListener implements RuleListener {
     // The same limit as the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
 
-    /** Names a rule the way the engine's error messages do, so an unnamed rule isn't logged as {@code null}. */
+    /** Names a rule the way the engine's error messages do. */
     private static String nameOf(Rule rule) {
-        return rule.getRuleName() != null ? quote(rule.getRuleName()) : "(unnamed)";
+        return quote(rule.getRuleName());
     }
 
     /** Escapes and shortens a name as the engine's {@code core.Failures.quote} does. */

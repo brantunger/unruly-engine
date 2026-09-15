@@ -61,7 +61,7 @@ Settings shared by the published projects are in the convention plugins in `buil
 | ⚠️ **Warnings** | No javac warning in main or test sources (`-Xlint:all -Werror`), and no Javadoc warning (`-Xdoclint:all -Werror`) in the site or any `-javadoc.jar` | `buildSrc/src/main/groovy/unruly.java-conventions.gradle`, `buildSrc/src/main/groovy/unruly/conventions/ModuleJavadoc.groovy` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of both artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in each published project's `build.gradle`, `config/japicmp/accepted-breaks.txt` |
-| 🧭 **Module path** | `ModulePathTest` compiles three applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, and one runs the test kit's contract test with JUnit | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |
+| 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, one runs the test kit's contract test with JUnit, and one reads rules from JSON through the documented Jackson 2 and Jackson 3 mix-ins | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |
 
 On every pull request, CI runs `./gradlew build jacocoTestReport javadoc` on **JDK 21**, and the tests again on
 **JDK 25** with `./gradlew :mvel:test -PtestJdk=25`. A separate check validates the PR title. CI restores Gradle's
@@ -78,8 +78,8 @@ written or compiled against an earlier release. `./gradlew build` compares each 
 Maven Central that isn't higher than the version in the root `build.gradle`** using [japicmp](https://siom79.github.io/japicmp/),
 and fails when a public or protected member is removed
 or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
-interface, a new checked exception, or a changed `Rule` constructor. When you add a field to `Rule`, add it to
-the builder; don't add a constructor, because the positional constructors are deprecated. Additions such as new classes, methods and `default` methods
+interface, a new checked exception, or a changed method of `Rule`. When you add a field to `Rule`, add it to
+the builder, `equals`, `hashCode` and `toString`; `Rule` has no public constructor to keep in step. Additions such as new classes, methods and `default` methods
 pass. Each project writes its report to `build/reports/japicmp/report.html`.
 `unruly-engine-core` has no release before 2.0.0, so until then it's compared with the last 1.x `unruly-engine` jar,
 without that jar's `mvel` package. `unruly-engine-test` is new in 2.0.0, so its check is skipped until then.

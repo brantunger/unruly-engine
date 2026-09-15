@@ -24,8 +24,8 @@ import java.util.Map;
  * </p>
  *
  * <p>
- * Every callback receives its own copy of the {@link Rule}. Changing it has no effect on the engine, on other
- * listeners, or on later callbacks and runs.
+ * A {@link Rule} is immutable, so every callback receives the rule as it was passed to
+ * {@link RulesEngine#setRuleList(java.util.List)}: the same instance each time.
  * </p>
  *
  * <p>

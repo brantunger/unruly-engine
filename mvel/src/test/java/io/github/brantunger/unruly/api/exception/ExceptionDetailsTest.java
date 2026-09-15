@@ -84,9 +84,9 @@ class ExceptionDetailsTest {
     }
 
     @Test
-    @DisplayName("an expression needs a kind and text, and may have no rule name")
+    @DisplayName("an expression needs a rule name, a kind and text")
     void expressionValidated() {
-        assertNull(new Expression(null, ExpressionKind.ACTION, "a").ruleName());
+        assertThrows(NullPointerException.class, () -> new Expression(null, ExpressionKind.ACTION, "a"));
         assertThrows(NullPointerException.class, () -> new Expression("r", null, "a"));
         assertThrows(NullPointerException.class, () -> new Expression("r", ExpressionKind.ACTION, null));
     }

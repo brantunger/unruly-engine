@@ -233,8 +233,8 @@ class ExpressionLanguageRegistrationTest {
     }
 
     @Test
-    @DisplayName("listeners and the loaded rule keep the language the rule had when it was loaded")
-    void languageInListenerCopy() {
+    @DisplayName("listeners and the loaded rule have the rule's language")
+    void languageInListenerCallbacks() {
         List<String> languages = new CopyOnWriteArrayList<>();
         engine.registerListener(new RuleListener() {
             @Override
@@ -245,7 +245,6 @@ class ExpressionLanguageRegistrationTest {
         engine.registerLanguage(new ToyExpressionLanguage());
         Rule rule = rule("toy", "toy", "true", "put k 1");
         engine.setRuleList(new ArrayList<>(List.of(rule)));
-        rule.setLanguage("changed");
 
         engine.run(new FactMap<>());
 

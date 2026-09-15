@@ -112,4 +112,11 @@ class ModulePathTest {
 
         assertTrue(output.contains("contract checks passed"), output);
     }
+
+    @Test
+    @DisplayName("a module reads rules from JSON through the documented Jackson 2 and Jackson 3 mix-ins")
+    void withJackson() throws Exception {
+        String output = run("withJackson", "com.example.withjackson", MODULE_PATH);
+        assertTrue(output.contains("Module path with Jackson: rules read with Jackson 2 and Jackson 3"), output);
+    }
 }
