@@ -13,10 +13,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("setRuleList reports every rule that fails to compile, which expression failed, and where")
+@DisplayName("load reports every rule that fails to compile, which expression failed, and where")
 class CompileErrorReportingTest {
 
-    private final RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+    private final RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+            HashMap::new).build();
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
@@ -31,7 +32,7 @@ class CompileErrorReportingTest {
                 rule("r2", "true", "output.put('k', "),
                 rule("r3", "x == == 1", "output.put('k', 1)"));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertTrue(ex.getMessage().startsWith("3 rules failed to compile: Condition for rule 'r1' "), ex.getMessage());
         assertTrue(ex.getMessage().contains("; Action for rule 'r2' "), ex.getMessage());
@@ -44,7 +45,7 @@ class CompileErrorReportingTest {
     void actionNamedWithPosition() {
         List<Rule> rules = List.of(rule("r2", "true", "output.put('k', "));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertEquals("Action for rule 'r2' failed to compile at line 1, column 11: unbalanced braces ( ... )",
                 ex.getMessage());
@@ -56,7 +57,7 @@ class CompileErrorReportingTest {
     void laterLineReported() {
         List<Rule> rules = List.of(rule("r", "x ==\n  == 1", "output.put('k', 1)"));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertEquals("Condition for rule 'r' failed to compile at line 2, column 6: Malformed expression",
                 ex.getMessage());

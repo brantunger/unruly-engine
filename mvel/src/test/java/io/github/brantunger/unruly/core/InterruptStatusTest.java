@@ -65,21 +65,23 @@ class InterruptStatusTest {
     }
 
     private static void runInto(Where where, RuntimeException thrown) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(where == Where.OUTPUT
-                ? () -> {
-                    throw thrown;
-                }
-                : HashMap::new);
-        engine.registerLanguage(new ThrowingLanguage(where, thrown));
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                where == Where.OUTPUT
+                        ? () -> {
+                            throw thrown;
+                        }
+                        : HashMap::new)
+                .language(new ThrowingLanguage(where, thrown));
         if (where == Where.LISTENER) {
-            engine.registerListener(new RuleListener() {
+            builder.listener(new RuleListener() {
                 @Override
                 public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
                     throw thrown;
                 }
             });
         }
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").language("throwing").condition("c").action("a")
+        RulesEngine<Map<String, Object>> engine = builder.build();
+        engine.load(List.of(Rule.builder().ruleName("r").language("throwing").condition("c").action("a")
                 .build()));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("x", 1);
@@ -145,8 +147,8 @@ class InterruptStatusTest {
     @Test
     @DisplayName("an MVEL action interrupted in Thread.sleep fails the run, and the caller still sees the interrupt")
     void mvelActionInterrupted() throws InterruptedException {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("sleepy").condition("true")
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(Rule.builder().ruleName("sleepy").condition("true")
                 .action("java.lang.Thread.sleep(20000)").build()));
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         AtomicBoolean status = new AtomicBoolean();

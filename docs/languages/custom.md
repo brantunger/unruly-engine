@@ -1,7 +1,7 @@
 # 🧩 Other expression languages
 
-Rules are written in [MVEL](mvel.md) unless they name another expression language. You can register any number of
-languages on an engine, and one rule list can mix them.
+A rule is written in the expression language it names, or in the engine's default language, which is [MVEL](mvel.md)
+unless you give the engine others. An engine can have any number of languages, and one rule list can mix them.
 
 [← Writing rules](../writing-rules.md) · [← Back to README](../../README.md)
 
@@ -18,10 +18,13 @@ languages on an engine, and one rule list can mix them.
 ## 🎯 Choosing a language per rule
 
 ```java
-RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
-engine.registerLanguage(new MyLanguage());          // MVEL is found on the class path
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .language(new MvelExpressionLanguage())     // giving languages replaces finding them, so add MVEL too
+        .language(new MyLanguage())
+        .defaultLanguage("mvel")                    // the language of rules without one
+        .build();
 
-engine.setRuleList(List.of(
+engine.load(List.of(
         Rule.builder()
                 .ruleName("prime-rate")
                 .language("my")                     // the name MyLanguage.name() returns
@@ -29,25 +32,26 @@ engine.setRuleList(List.of(
                 .action("...")
                 .build(),
         Rule.builder()
-                .ruleName("standard-rate")          // no language: MVEL
+                .ruleName("standard-rate")          // no language: the default, MVEL
                 .condition("applicant.creditScore >= 650")
                 .action("output.interestRate = 6.9")
                 .build()));
 ```
 
-- Register languages **before** `setRuleList()`. Like imports, a language registered afterwards is used from the next
-  `setRuleList()`.
-- A language can also be found without registering it. List its class in
-  `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` inside its jar, which is how MVEL
-  is found. Each `setRuleList()` looks with this library's class loader and its thread's context class loader. A
-  registered language replaces a found one with the same name, and two found languages with the same name fail
-  `setRuleList()`.
-- A rule whose language isn't registered is rejected by `setRuleList()`:
-  `Rule 'prime-rate' is written in 'cel', which isn't a registered expression language. Registered languages: [mvel]`.
-- Registering a language with the same name as a registered one replaces it. A language named `mvel` replaces MVEL
-  for every rule whose `language` is `null`.
+- An engine's languages are set when it's built, and can't change. Once you call `language(...)`, the engine has
+  exactly the languages you give it, so add `new MvelExpressionLanguage()` too if rules still use MVEL. Two languages
+  with the same name fail `language(...)`.
+- Without `language(...)`, `build()` finds languages with `java.util.ServiceLoader`: each class listed in
+  `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` inside a jar, which is how MVEL is
+  found. It looks once, with this library's class loader and the building thread's context class loader. Two found
+  languages with the same name fail `build()`.
+- The default language, for rules whose `language` is `null`, is the one named with `defaultLanguage(...)`, or else the
+  engine's only language. `build()` throws `IllegalStateException` when the engine has no language, has several and no
+  default, or has a default that isn't one of its languages.
+- A rule written in a language the engine doesn't have is rejected by `load()`:
+  `Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: [mvel]`.
 - `run()` checks each fact's name against every language the loaded rules use, so a name one of them can't refer to
-  is rejected. A rule list without rules is checked against MVEL.
+  is rejected. A rule list without rules is checked against the default language.
 
 ## 🛠 Writing a language
 
@@ -55,7 +59,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 | Interface | You implement | Called |
 | --- | --- | --- |
-| `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | Once per `setRuleList()` that uses the language |
+| `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | Once per `load()` that uses the language |
 | `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each fact of each `run()`; `newSession` for each copy of the rules |
 | `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext, Session)` / `execute(ActionContext, Session)`, which returns an `ActionResult` | Each time a rule is evaluated or fires |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | One per language for each copy of the rules |
@@ -110,8 +114,7 @@ public final class MyLanguage implements ExpressionLanguage {
 
 `MyParser` and `MyExpression` stand for your language's own parser and compiled form.
 
-- **The expression.** `compileCondition` and `compileAction` get an `Expression`: the rule's name (`null` for a rule
-  without one), whether it's the rule's `CONDITION` or its `ACTION`, and its `text()`.
+- **The expression.** `compileCondition` and `compileAction` get an `Expression`: the rule's name, whether it's the rule's `CONDITION` or its `ACTION`, and its `text()`.
 - **Errors while compiling.** Throw `InvalidExpressionException` to reject an expression that breaks a rule the
   engine enforces, or has an error you can point to, such as a syntax error. Its message is used after the
   expression's name, as in `Condition for rule 'prime-rate' contains an assignment`. Pass its `issues`, each with a
@@ -133,11 +136,11 @@ public final class MyLanguage implements ExpressionLanguage {
   `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. The engine sets each property in order,
   with `put` on a `Map` output or with the output's public setter, such as `setInterestRate`, whose parameter must
   accept the value as it is. A property it can't set, or a `null` result, fails the rule with a
-  `RuleExecutionException`. In a stateful run, a later rule's properties overwrite an earlier one's. In
+  `RuleExecutionException`. In an all-matches run, a later rule's properties overwrite an earlier one's. In
   `ExpressionLanguageContractTest`, return `null` from `reassignOutput()` or `declareVariable()` if your actions
   can't express them.
-- **Imports.** `CompileContext` carries the packages and classes registered with `addImport()` and the class loader
-  to look them up with. A language without imports ignores them.
+- **Imports.** `CompileContext` carries the packages and classes the engine was built with, from `imports(...)`, and
+  the class loader to look them up with. A language without imports ignores them.
 - **Fact names.** Override `checkFactName` to reject a name your rules couldn't refer to, such as a keyword, with an
   `IllegalArgumentException`. By default every name is accepted. Anything else it throws is logged and becomes an
   `IllegalArgumentException` naming the fact and your language, except a fatal `Error`, which is rethrown unchanged.
@@ -146,8 +149,8 @@ public final class MyLanguage implements ExpressionLanguage {
 
 | The engine does this for every language | Your language must do this |
 | --- | --- |
-| Rejects `null` rules, blank conditions and actions, duplicate names and unregistered languages | Reject syntax errors when compiling, where it can |
-| Runs rules in priority order, and fires one match (stateless) or every match (stateful) | Reject a condition that assigns or declares something, where it can detect that |
+| Rejects `null` rules, blank conditions and actions, duplicate names and languages the engine doesn't have | Reject syntax errors when compiling, where it can |
+| Runs rules in priority order, and fires the highest-priority match (first match) or every match (all matches) | Reject a condition that assigns or declares something, where it can detect that |
 | Requires a condition to return a `Boolean`: `null`, a string or a number fails the rule | Keep an action's variables local to that action, so later rules still see the original facts |
 | Rejects a fact named `null` or `output`, and sets the properties an action returns | Bind the output object as `output` and don't let an action replace it, or return the action's results as properties |
 | Wraps failures in `RuleCompilationException` and `RuleExecutionException`, rethrows fatal errors, and calls listeners | Reject fact names it can't refer to |
@@ -164,7 +167,7 @@ public final class MyLanguage implements ExpressionLanguage {
 - `newSession()` can be called from several threads at once. One that throws or returns `null` fails the run that
   needed the session with a `RuleExecutionException`, and the sessions other languages already made for that copy are
   closed. A fatal `Error` is rethrown unchanged.
-- The engine closes each session once no run needs it, and then the compiler: when `setRuleList()` has replaced the
+- The engine closes each session once no run needs it, and then the compiler: when `load()` has replaced the
   rules and their runs have finished, when the engine is closed, and when a rule list fails to load. Override
   `close()` on either to release resources. A failure is logged at WARN and doesn't fail a run.
 - `checkFactName` is called by every `run()`, possibly on many threads at once, so it must be thread-safe.
@@ -174,7 +177,7 @@ public final class MyLanguage implements ExpressionLanguage {
 A language in its own jar needs only `unruly-engine-core`, the engine without MVEL. So does an application whose rules
 all name other languages: it can depend on `unruly-engine-core` instead of `unruly-engine`, and leave MVEL out.
 
-The engine finds a language without `registerLanguage()` when its jar declares it as a service. The class needs a
+An engine built without `language(...)` finds a language when its jar declares it as a service. The class needs a
 public no-argument constructor. Declare it both ways to support both paths:
 
 - **Class path:** a file `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` that contains

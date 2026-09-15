@@ -16,7 +16,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * One loaded rule list: the rules as {@code setRuleList()} compiled them, the compilers of the languages they use, and
+ * One loaded rule list: the rules as {@code load()} compiled them, the compilers of the languages they use, and
  * the copies of the rules that runs use. Keeping the compilers here lets a reload swap in the rules and their fact-name
  * checks with one write.
  *
@@ -104,7 +104,7 @@ final class RuleSet {
     }
 
     /**
-     * Returns the rules as {@code setRuleList()} compiled them, which every run shares.
+     * Returns the rules as {@code load()} compiled them, which every run shares.
      *
      * @return An unmodifiable list of the compiled rules
      */

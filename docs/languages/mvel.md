@@ -68,32 +68,33 @@ the rule uses the class: `new IllegalStateException()` fails with `could not res
 > `java.lang.Runtime`, or through reflection on any object. See [Security](#-security).
 
 ```java
-engine.addImport("java.util");                        // a whole package
-engine.addImport("java.time.LocalDate");              // a single class
-engine.addImport("java.util.Map.Entry");              // a nested class, spelled as in a Java import
-engine.addImports(Set.of("java.math", "java.time"));  // several at once
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .imports("java.util")                        // a whole package
+        .imports("java.time.LocalDate")              // a single class
+        .imports("java.util.Map.Entry")              // a nested class, spelled as in a Java import
+        .imports("java.math", "java.time")           // several at once
+        .build();                                    // imports are resolved here
 
-engine.setRuleList(rules);                            // imports take effect here
+engine.load(rules);
 ```
 
 > [!IMPORTANT]
-> Register imports **before** `setRuleList()`. The rules are compiled with the imports registered at that moment,
-> so an import added afterwards has no effect until the next `setRuleList()`. A rule that needs a missing import is
-> still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
+> An engine's imports are set when it's built, and every `load()` compiles with them. A rule that needs a missing
+> import is still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
 > `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
-  `IllegalArgumentException`, and nothing from that call is imported.
+  `IllegalArgumentException` from `build()`, and no engine is built.
 - A class that exists but can't be loaded, for example because a class it extends is missing from the class path,
   is rejected the same way, with the `LinkageError` as the cause. Before 1.6.1 it was imported as a package, and rules
   that used it failed later with `unresolvable property or identifier`.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can no longer be used as a fact name. After `addImport("java.util")`, a fact named `Date`
+- An imported class name can no longer be used as a fact name. On an engine built with `imports("java.util")`, a fact named `Date`
   is rejected. See [Facts](../facts.md#-naming-rules).
-- A single-class import such as `"java.time.LocalDate"` is resolved when `addImport()` is called, with that thread's
+- A single-class import such as `"java.time.LocalDate"` is resolved by `build()`, with the building thread's
   context class loader. A string that loader can't load as a class, but that is a valid package name, is imported as
   a package.
-- Classes in imported packages are looked up with the context class loader of the thread that calls `setRuleList()`.
+- Classes in imported packages are looked up with the context class loader of the thread that calls `load()`.
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
 - A thread without a context class loader uses this library's own class loader instead.
 

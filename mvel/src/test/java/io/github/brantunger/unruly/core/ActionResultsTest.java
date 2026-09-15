@@ -127,9 +127,8 @@ class ActionResultsTest {
     }
 
     private static <O> RulesEngine<O> stateful(Supplier<O> output, Rule... rules) {
-        RulesEngine<O> engine = RulesEngineBuilder.stateful(output);
-        engine.registerLanguage(PATCH);
-        engine.setRuleList(List.of(rules));
+        RulesEngine<O> engine = RulesEngineBuilder.<O>allMatches(output).language(PATCH).build();
+        engine.load(List.of(rules));
         return engine;
     }
 
@@ -170,7 +169,7 @@ class ActionResultsTest {
     }
 
     @Test
-    @DisplayName("in a stateful run, rules' properties are set in firing order, so a later rule overwrites an earlier one")
+    @DisplayName("in a run that fires every match, rules' properties are set in firing order, so a later rule overwrites an earlier one")
     void firingOrder() {
         RulesEngine<Map<String, Object>> engine = stateful(LinkedHashMap::new,
                 rule("first", 2, "rate=1;first=true"),
@@ -182,14 +181,16 @@ class ActionResultsTest {
     @Test
     @DisplayName("a property without a setter that accepts the value fails the rule as an action, and listeners hear of it")
     void noSetter() {
-        RulesEngine<Decision> engine = stateful(Decision::new, rule("r", 1, "missing=1"));
         List<RuleExecutionException> errors = new ArrayList<>();
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void onError(Rule rule, RuleExecutionException exception) {
-                errors.add(exception);
-            }
-        });
+        RulesEngine<Decision> engine = RulesEngineBuilder.allMatches(Decision::new).language(PATCH)
+                .listener(new RuleListener() {
+                    @Override
+                    public void onError(Rule rule, RuleExecutionException exception) {
+                        errors.add(exception);
+                    }
+                })
+                .build();
+        engine.load(List.of(rule("r", 1, "missing=1")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 

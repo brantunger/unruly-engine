@@ -15,7 +15,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("the stateless engine evaluates every condition before firing one action")
+@DisplayName("a first-match engine evaluates every condition before firing one action")
 class StatelessEvaluationTest {
 
     private static Rule rule(String name, int priority, String condition, String action) {
@@ -25,15 +25,15 @@ class StatelessEvaluationTest {
     @Test
     @DisplayName("a lower-priority condition is evaluated even though a higher-priority rule already matched")
     void everyConditionEvaluated() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
         List<String> evaluated = new CopyOnWriteArrayList<>();
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
-                evaluated.add(rule.getRuleName() + "=" + matchResult);
-            }
-        });
-        engine.setRuleList(List.of(
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                builder -> builder.listener(new RuleListener() {
+                    @Override
+                    public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
+                        evaluated.add(rule.getRuleName() + "=" + matchResult);
+                    }
+                }));
+        engine.load(List.of(
                 rule("high", 2, "true", "output.put('fired', 'high')"),
                 rule("low", 1, "true", "output.put('fired', 'low')")));
 
@@ -44,8 +44,8 @@ class StatelessEvaluationTest {
     @Test
     @DisplayName("a lower-priority condition that throws makes run() throw")
     void lowerPriorityConditionFailureThrows() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(
                 rule("high", 2, "true", "output.put('fired', 'high')"),
                 rule("low", 1, "x.missing > 1", "output.put('fired', 'low')")));
         FactStore<Object> facts = new FactMap<>();

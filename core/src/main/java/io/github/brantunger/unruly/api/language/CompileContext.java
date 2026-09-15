@@ -5,9 +5,8 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import java.util.Set;
 
 /**
- * What every compilation of a rule list is given: the imports registered with
- * {@link io.github.brantunger.unruly.api.RulesEngine#addImports(Set)} before
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}, the class loader to look classes up
+ * What every compilation of a rule list is given: the imports the engine was built with, from
+ * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#imports(String...)}, the class loader to look classes up
  * with, and a way to report warnings. A language without imports ignores them.
  *
  * <p>
@@ -35,7 +34,7 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
 
     /**
      * Returns the class loader to look up classes in {@link #packageImports()} with: the context class loader of the
-     * thread that called {@code setRuleList()}, or the engine's own class loader if that thread has none.
+     * thread that called {@code load()}, or the engine's own class loader if that thread has none.
      *
      * @return The class loader, never {@code null}
      */

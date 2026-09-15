@@ -49,23 +49,24 @@ Spring Boot 3 and 4 both run on Java 21. The engine is tested on Java 21 and 25.
 
 ## 🔎 Expression languages are found with ServiceLoader
 
-**What changed:** the engine no longer creates MVEL itself. Each time `setRuleList()` is called, it finds expression
-languages with `java.util.ServiceLoader`, from
+**What changed:** the engine no longer creates MVEL itself. An engine built without `language(...)` finds expression
+languages with `java.util.ServiceLoader` when it's built, from
 `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` files, and MVEL is one of them. A rule
-without a `language` is still written in MVEL.
+without a `language` is written in the engine's default language, which is MVEL when MVEL is the only language found.
 
 **Who is affected:**
 
-- **Class paths with another language listed in such a file.** That language can now be used by rules without
-  `registerLanguage()`. Two found languages with the same name fail `setRuleList()`.
+- **Class paths with another language listed in such a file.** That language can now be used by rules without being
+  given to the engine. With MVEL and another language found, `build()` fails until `defaultLanguage(...)` names the
+  language of rules without one. Two found languages with the same name fail `build()`.
 - **Applications repackaged into one jar** (a shaded or "uber" jar) that keep only one of several `META-INF/services`
-  files with the same name. If MVEL's entry is lost, a rule without a `language` fails:
-  `Rule 'prime-rate' is written in 'mvel', which isn't a registered expression language. Registered languages: []`.
-- **Class paths without `mvel2`.** Creating an engine now succeeds, and `setRuleList()` fails instead.
+  files with the same name. If MVEL's entry is lost and no other language is found, building an engine fails:
+  `The engine has no expression language: add one with language(), or put a language's jar on the class path`.
+- **Class paths without `mvel2`.** Building an engine now succeeds, and loading MVEL rules fails instead.
 
 **What to change:** usually nothing. When you repackage the library, merge service files, for example with the Maven
-Shade plugin's `ServicesResourceTransformer`, or register MVEL yourself with
-`engine.registerLanguage(new MvelExpressionLanguage())`.
+Shade plugin's `ServicesResourceTransformer`, or give the engine MVEL yourself with
+`.language(new MvelExpressionLanguage())` on its builder.
 
 ## 📦 MVEL is a separate jar
 
@@ -138,8 +139,8 @@ See [Testing a language](languages/custom.md#-testing-a-language).
   creates one for each copy of the rules, and `evaluate` and `execute` take it as a second parameter. Both may throw
   checked exceptions.
 - `ExpressionCompiler`, `Session` and `RulesEngine` are `AutoCloseable`. The engine closes sessions and compilers once it
-  no longer needs them: after `setRuleList()` replaces the rules and their runs finish, and when the engine is closed.
-  After `close()`, `run()` and `setRuleList()` throw `IllegalStateException`.
+  no longer needs them: after `load()` replaces the rules and their runs finish, and when the engine is closed.
+  After `close()`, `run()` and `load()` throw `IllegalStateException`.
 
 **Who is affected:** authors of expression languages. Code that implements `RulesEngine` keeps compiling, because
 `close()` has a default. Rule authors change nothing.
@@ -165,7 +166,7 @@ block.
   name, `ExpressionKind.CONDITION` or `ACTION`, and the text.
 - `InvalidExpressionException` can carry `issues()`, each with a severity, a line, a column and a message.
   `CompileContext.warn(Expression, Issue)` reports a warning, which is logged at WARN and doesn't fail loading.
-- `setRuleList()` compiles every rule, then throws once. `RuleCompilationException.failures()` has each broken rule's
+- `load()` compiles every rule, then throws once. `RuleCompilationException.failures()` has each broken rule's
   exception, and `getExpressionKind()` and `issues()` say what failed and where. `RuleExecutionException` has
   `getExpressionKind()` too.
 - Compile error messages name the expression. `Can not compile rule 'r'. Error: ...` is now
@@ -208,11 +209,11 @@ JsonLogic, write actions. In `ExpressionLanguageContractTest`, `reassignOutput()
 - `Rule` is a final, immutable class. Its no-arg and positional constructors, its setters and `canEqual`, deprecated
   since 1.4.0 and 1.8.0, are removed. `Rule.RuleBuilder` is final too.
 - `build()` throws `IllegalStateException` when the name is `null` or blank, or the condition or action is `null`. The
-  message names the field, such as `ruleName must not be null`. `setRuleList()` still rejects a blank condition or
+  message names the field, such as `ruleName must not be null`. `load()` still rejects a blank condition or
   action.
 - `getRuleName()` is never `null`, so every rule is checked for a duplicate name, and messages and
   `LoggingRuleListener` no longer show `(unnamed)`. An `Expression` needs a rule name too.
-- The engine keeps the rules passed to `setRuleList()` instead of copying them, and listeners receive those same
+- The engine keeps the rules passed to `load()` instead of copying them, and listeners receive those same
   instances.
 
 **Who is affected:** code that builds a rule without a name, creates or changes rules with the constructors or
@@ -251,7 +252,7 @@ ObjectMapper mapper = JsonMapper.builder()
 List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
 ```
 
-JSON with a rule that has no name, condition or action now fails while it's read, instead of when `setRuleList()`
+JSON with a rule that has no name, condition or action now fails while it's read, instead of when `load()`
 loads it.
 
 ## 🗂️ Facts are immutable, and a FactStore isn't a Map
@@ -287,6 +288,47 @@ code.
 | Kotlin: `engine.run(FactMap<Any>())` didn't compile | It compiles. A listener's `facts` parameter is still `Map<String, Any?>`. |
 | Kotlin: a fact's `name` is a `String?` | It's a `String` |
 
+## 🏗️ Engines are configured on a builder, and renamed
+
+**What changed:**
+
+- `RulesEngineBuilder.stateless(...)` and `stateful(...)` are renamed `firstMatch(...)` and `allMatches(...)`, after
+  the hit policies they implement, and return a builder; `build()` creates the engine. A first-match engine fires the
+  action of the highest-priority matching rule, and an all-matches engine fires every match in priority order, as
+  before.
+- Imports, expression languages, listeners and the limit on compiled copies are set on the builder, and can't change
+  once the engine is built. `RulesEngine.addImport`, `addImports`, `registerLanguage`, `registerListener` and
+  `registerListeners` are removed, and so are the `stateless(supplier, maxCopies)` and `stateful(supplier, maxCopies)`
+  overloads.
+- `RulesEngine.setRuleList(rules)` is renamed `load(rules)`. It still compiles the rules and swaps them in atomically,
+  at any time.
+- Imports are resolved by `build()`, so a bad import fails `build()` with `IllegalArgumentException` instead of
+  `addImport()`. Expression languages are found once, by `build()`, instead of by every `setRuleList()`. Two found
+  languages with the same name, or a found language without a name, fail `build()` with `IllegalStateException`, and
+  a language that can't be created fails it with `ServiceConfigurationError`.
+- Once `language(...)` is called, the engine has exactly the languages given, and MVEL isn't added for you. A rule
+  without a `language` is written in the engine's default language: the one named with `defaultLanguage(...)`, or else
+  the only language. `build()` fails when the engine has several languages and no default. A rule list without rules
+  checks fact names against the default language instead of MVEL.
+
+**Who is affected:** every application that creates an engine, and classes that implement `RulesEngine`.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `RulesEngineBuilder.stateless(Decision::new)` | `RulesEngineBuilder.firstMatch(Decision::new).build()` |
+| `RulesEngineBuilder.stateful(Decision::new)` | `RulesEngineBuilder.allMatches(Decision::new).build()` |
+| `RulesEngineBuilder.stateless(Decision::new, 64)` | `RulesEngineBuilder.firstMatch(Decision::new).maxCopies(64).build()` |
+| `engine.setRuleList(rules)` | `engine.load(rules)` |
+| `engine.addImport("java.util")`, `engine.addImports(names)` | `.imports("java.util")`, `.imports(names)` on the builder |
+| `engine.registerListener(listener)`, `engine.registerListeners(list)` | `.listener(listener)`, `.listeners(list)` on the builder |
+| `engine.registerLanguage(language)`, with rules still in MVEL | `.language(new MvelExpressionLanguage()).language(language).defaultLanguage("mvel")` on the builder |
+| A rule without a `language` on an engine given only other languages | It's written in the default language: set `language` on the rule, or choose the default with `defaultLanguage(...)` |
+| A listener or import added to an engine that is already running | Build a new engine with it, and load the rules into it |
+| `RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new)` | `RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build()`: in a chained call, Java needs the output type |
+| A class that implements `RulesEngine` | Implement `load` and `run`, and remove `setRuleList`, `addImport`, `addImports`, `registerLanguage`, `registerListener` and `registerListeners` |
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in
@@ -301,8 +343,8 @@ no longer in the Javadoc.
 
 | 1.x | 2.0 |
 | --- | --- |
-| `new StatelessRulesEngine<>(Decision::new)` | `RulesEngineBuilder.stateless(Decision::new)` |
-| `new StatefulRulesEngine<>(Decision::new, 64)` | `RulesEngineBuilder.stateful(Decision::new, 64)` |
+| `new StatelessRulesEngine<>(Decision::new)` | `RulesEngineBuilder.firstMatch(Decision::new).build()` |
+| `new StatefulRulesEngine<>(Decision::new, 64)` | `RulesEngineBuilder.allMatches(Decision::new).maxCopies(64).build()` |
 | `StatelessRulesEngine<Decision> engine` | `RulesEngine<Decision> engine` |
 | `class MyEngine extends AbstractRulesEngine<Decision>` | Implement `RulesEngine` and delegate to an engine from `RulesEngineBuilder` |
 | `AbstractRulesEngine.JIT_PROPERTY` | Delete it; it had no effect |

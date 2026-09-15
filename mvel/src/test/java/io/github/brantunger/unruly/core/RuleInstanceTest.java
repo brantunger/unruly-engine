@@ -49,14 +49,14 @@ class RuleInstanceTest {
     }
 
     private static StatefulRulesEngine<Map<String, Object>> engine(Rule rule, RuleListener listener) {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.registerListener(listener);
-        engine.setRuleList(List.of(rule));
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.listener(listener));
+        engine.load(List.of(rule));
         return engine;
     }
 
     @Test
-    @DisplayName("the loaded rule and every listener callback are the rule passed to setRuleList()")
+    @DisplayName("the loaded rule and every listener callback are the rule passed to load()")
     void sameInstance() {
         Rule rule = Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build();
         Recorder recorder = new Recorder();

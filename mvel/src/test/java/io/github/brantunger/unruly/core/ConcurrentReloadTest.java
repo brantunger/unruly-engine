@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -84,7 +85,7 @@ class ConcurrentReloadTest {
     // Probabilistic before the fix, which wrote the rules and the checks separately: the writes of two reloads could
     // interleave, pairing the rules of one list with the checks of the other until the next reload.
     @Test
-    @DisplayName("after two setRuleList calls race, the loaded rules are checked with their own languages")
+    @DisplayName("after two load calls race, the loaded rules are checked with their own languages")
     void rulesAndChecksSwappedTogether() throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
@@ -92,17 +93,18 @@ class ConcurrentReloadTest {
             int mismatches = 0;
             long deadline = System.nanoTime() + TIME_BUDGET_NANOS;
             while (iterations < ITERATIONS && System.nanoTime() < deadline) {
-                StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-                engine.registerLanguage(STRICT);
+                StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                        builder -> builder.language(STRICT).language(new MvelExpressionLanguage())
+                                .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME));
                 CyclicBarrier barrier = new CyclicBarrier(2);
                 Future<?> loadA = pool.submit(() -> {
                     barrier.await();
-                    engine.setRuleList(LIST_A);
+                    engine.load(LIST_A);
                     return null;
                 });
                 Future<?> loadB = pool.submit(() -> {
                     barrier.await();
-                    engine.setRuleList(LIST_B);
+                    engine.load(LIST_B);
                     return null;
                 });
                 loadA.get();

@@ -153,15 +153,17 @@ public abstract class ExpressionLanguageContractTest {
                 .language(language().name()).build();
     }
 
+    private static RulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
+        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language).build();
+    }
+
     private RulesEngine<Map<String, Object>> engine() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.registerLanguage(language());
-        return engine;
+        return engine(language());
     }
 
     private RulesEngine<Map<String, Object>> engine(Rule... rules) {
         RulesEngine<Map<String, Object>> engine = engine();
-        engine.setRuleList(List.of(rules));
+        engine.load(List.of(rules));
         return engine;
     }
 
@@ -193,12 +195,12 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a condition that assigns to a fact is rejected by setRuleList")
+    @DisplayName("a condition that assigns to a fact is rejected by load")
     void conditionAssignmentRejected() {
         RulesEngine<Map<String, Object>> engine = engine();
         List<Rule> rules = List.of(rule("r", 1, assignment("x", 2), putFact(SEEN, "x")));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
     }
@@ -226,12 +228,12 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a syntax error is reported by setRuleList, naming the rule and its condition")
+    @DisplayName("a syntax error is reported by load, naming the rule and its condition")
     void syntaxErrorAtLoad() {
         RulesEngine<Map<String, Object>> engine = engine();
         List<Rule> rules = List.of(rule("r", 1, syntaxError(), putFact(SEEN, "x")));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertEquals("r", ex.getRuleName());
         assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
@@ -253,12 +255,11 @@ public abstract class ExpressionLanguageContractTest {
     void compilerClosed() {
         ExpressionLanguage language = language();
         List<AtomicInteger> closes = new CopyOnWriteArrayList<>();
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.registerLanguage(countingCloses(language, closes));
+        RulesEngine<Map<String, Object>> engine = engine(countingCloses(language, closes));
 
-        engine.setRuleList(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+        engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
         assertEquals(Map.of(SEEN, 1), engine.run(fact("x", 1)));
-        engine.setRuleList(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
+        engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
 
         assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
         assertEquals(Map.of(SEEN, 2), engine.run(fact("x", 2)));

@@ -17,15 +17,13 @@ import java.util.Map;
  * <p>
  * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every
  * thread calling {@code run()}, possibly at the same time, so implementations must be
- * thread-safe. Listeners may be registered at any time, including from inside a callback.
- * A listener registered while a run is in progress may start receiving callbacks partway
- * through that run, but always with a {@code before*} callback, never with the {@code after*} or
- * {@code onError} that closes one.
+ * thread-safe. Listeners are added when the engine is built, with
+ * {@link RulesEngineBuilder#listener(RuleListener)}, and can't change afterwards.
  * </p>
  *
  * <p>
  * A {@link Rule} is immutable, so every callback receives the rule as it was passed to
- * {@link RulesEngine#setRuleList(java.util.List)}: the same instance each time.
+ * {@link RulesEngine#load(java.util.List)}: the same instance each time.
  * </p>
  *
  * <p>
@@ -91,7 +89,7 @@ public interface RuleListener {
      * {@link OutOfMemoryError}, {@code error} wraps it and {@code run()} rethrows the original error instead. That
      * includes an error thrown by Java code the rule calls, such as a method, a getter or a lambda held in a fact,
      * which reaches the engine as the cause of another exception.
-     * Errors found while compiling rules in {@code setRuleList()} are not reported here.
+     * Errors found while compiling rules in {@code load()} are not reported here.
      * </p>
      *
      * @param rule  The rule whose condition or action failed.

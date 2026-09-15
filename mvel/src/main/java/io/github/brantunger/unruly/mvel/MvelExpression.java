@@ -86,7 +86,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * Creates a context used by exactly one compilation. MVEL records variables, their types and inline
      * {@code import} statements on the context and its configuration, and a compiled expression goes on using
      * its context when it first runs. A context shared across rules let one rule change how another compiled,
-     * and let {@code setRuleList()} modify it while a concurrent {@code run()} was still reading it. Only the
+     * and let {@code load()} modify it while a concurrent {@code run()} was still reading it. Only the
      * names found not to be classes are shared with the other compilations of the rule list; see
      * {@link Imports#newConfiguration()}.
      */

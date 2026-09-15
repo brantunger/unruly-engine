@@ -21,10 +21,10 @@ class DuplicateRuleNameTest {
     @Test
     @DisplayName("setRuleList() rejects two rules with the same name")
     void duplicateNamesRejected() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                () -> engine.setRuleList(List.of(rule("a"), rule("b"), rule("a"))));
+                () -> engine.load(List.of(rule("a"), rule("b"), rule("a"))));
         assertTrue(ex.getMessage().contains("Duplicate rule name 'a'"));
     }
 }

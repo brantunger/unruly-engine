@@ -27,8 +27,8 @@ public final class Main {
                 "the MVEL module is in the module graph");
         check(ModuleLayer.boot().findModule("mvel2").isEmpty(), "mvel2 is in the module graph");
 
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(
                 Rule.builder()
                         .ruleName("vip-discount")
                         .language("key")

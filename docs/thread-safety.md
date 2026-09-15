@@ -15,15 +15,14 @@ An engine is designed to be configured once and then shared by every thread in y
 
 | Method | Thread-safe? | When to call it |
 | --- | :---: | --- |
-| `addImport()` / `addImports()` | ❌ | During setup, **before** `setRuleList()`. Imports are captured when rules compile, so adding one later has no effect until the next `setRuleList()`. |
-| `setRuleList()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish wins. |
-| `run()` | ✅ | From any number of threads, once `setRuleList()` has completed. |
-| `registerLanguage()` | ✅ | During setup, before `setRuleList()`. A language registered later is used from the next `setRuleList()`; one already in progress may or may not see it. |
-| `registerListener()` / `registerListeners()` | ✅ | At any time, even from inside a listener callback. |
+| `RulesEngineBuilder` methods and `build()` | ❌ | During setup, on one thread. The engine a builder builds is thread-safe, and its imports, languages and listeners can't change afterwards. |
+| `load()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish wins. |
+| `run()` | ✅ | From any number of threads, once `load()` has completed. |
+| `close()` | ✅ | Once the engine is no longer needed. Runs in progress finish first. |
 
 ## 🔄 Reloading rules while running
 
-`setRuleList()` compiles the whole new list first, then swaps it in with a single atomic write, together with the
+`load()` compiles the whole new list first, then swaps it in with a single atomic write, together with the
 fact-name checks of the languages its rules use.
 
 ```mermaid
@@ -34,7 +33,7 @@ sequenceDiagram
     A->>E: run(facts)
     activate E
     Note over E: Uses rule list v1
-    B->>E: setRuleList(v2)
+    B->>E: load(v2)
     Note over E: Compiles v2, then swaps it in
     E-->>A: Output from v1
     deactivate E
@@ -45,8 +44,8 @@ sequenceDiagram
 - A run already in progress finishes with the rules it started with.
 - Runs that start after the swap use the new rules.
 - If the new list fails to compile, nothing is swapped and the old rules stay in place.
-- A run that starts during the swap may check its fact names with the other list's languages and imports. Only that
-  run is affected, and only in whether it accepts a name one of the lists can't use.
+- A run that starts during the swap may check its fact names with the languages the other list's rules use. Only
+  that run is affected, and only in whether it accepts a name one of the lists can't use.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
   affect another rule or a later reload.
 
@@ -68,22 +67,22 @@ the same compiled expression can then fail intermittently with a `RuleExecutionE
 `ClassCastException`.
 
 So concurrent runs never share MVEL's compiled form of an expression. The engine compiles a rule list once, when
-`setRuleList()` loads it, and every run shares those compiled rules. What an expression language changes while its
+`load()` loads it, and every run shares those compiled rules. What an expression language changes while its
 expressions run lives in a *session*, and a copy of the rules is one session for each language the rules use. Each
 `run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first run after
-`setRuleList()` does), and gives it back when it finishes. By default the engine keeps as many copies as the most runs
+`load()` does), and gives it back when it finishes. By default the engine keeps as many copies as the most runs
 it has had in progress at once: the first time N runs overlap, N copies are made, and they stay in memory until the
-next `setRuleList()` or `close()`. To bound that number, [limit the copies](#limiting-the-copies).
+next `load()` or `close()`. To bound that number, [limit the copies](#limiting-the-copies).
 
 MVEL's session compiles each MVEL expression again the first time it runs it, except the first session, which takes
-the expression `setRuleList()` compiled. A language whose expressions several threads can run at once keeps nothing
+the expression `load()` compiled. A language whose expressions several threads can run at once keeps nothing
 in its sessions (see [Other expression languages](languages/custom.md#-thread-safety)).
 
 ### Closing
 
-When `setRuleList()` replaces the rules, the engine closes the old rules' idle sessions at once, and a session still in
+When `load()` replaces the rules, the engine closes the old rules' idle sessions at once, and a session still in
 use when the run using it returns. Once no run uses the old rules, it closes their languages' compilers too.
-`close()` does the same for the current rules, and afterwards `run()` and `setRuleList()` throw
+`close()` does the same for the current rules, and afterwards `run()` and `load()` throw
 `IllegalStateException`. `RulesEngine` is `AutoCloseable`, so an engine built for a short task can go in a
 try-with-resources block. A failure to close a session or a compiler is logged at WARN and doesn't fail a run.
 
@@ -97,7 +96,7 @@ makes and keeps a copy for each.
 Give the engine a limit when you build it:
 
 ```java
-RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new, 64);
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).maxCopies(64).build();
 ```
 
 - At most 64 copies are made, so at most 64 runs are in progress at once. A run that starts while all of them are in
@@ -107,7 +106,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::ne
   returns.
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
   `InterruptedException`, and the thread's interrupt status stays set.
-- While `setRuleList()` swaps in a new list, runs still using the old list can hold up to that many copies more.
+- While `load()` swaps in a new list, runs still using the old list can hold up to that many copies more.
 
 Choose a limit close to the number of runs that can make progress at once: around the number of processors for rules
 that only compute, higher for rules that wait on I/O.

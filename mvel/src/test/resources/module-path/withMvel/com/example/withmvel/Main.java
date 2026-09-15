@@ -19,8 +19,8 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
-        engine.setRuleList(List.of(
+        RulesEngine<LoanDecision> engine = RulesEngineBuilder.<LoanDecision>firstMatch(LoanDecision::new).build();
+        engine.load(List.of(
                 Rule.builder()
                         .ruleName("prime-rate")
                         .priority(10)

@@ -28,15 +28,6 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     /** The language's name. */
     public static final String LANGUAGE_NAME = "mvel";
 
-    static {
-        // MVEL formats every compile error with ErrorUtil, whose static initializer creates a logger. When the first
-        // error in the JVM is a stack overflow, such as a deeply nested rule on a small stack, that initializer fails
-        // for lack of stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then
-        // throws NoClassDefFoundError. Creating an instance initializes it here, when an engine starts loading a rule
-        // list and finds its languages, before any rule is compiled, so an overflow only fails the rule that caused it.
-        new ErrorUtil();
-    }
-
     /**
      * Creates the MVEL language. It holds no state: each rule list's state lives in its compiler.
      */
@@ -51,7 +42,31 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
 
     @Override
     public ExpressionCompiler newCompiler(CompileContext context) {
+        ErrorReporting.initialize();
         return new MvelExpressionCompiler(new Imports(Set.copyOf(context.packageImports()),
                 Set.copyOf(context.classImports()), context.classLoader()));
+    }
+
+    /**
+     * MVEL formats every compile error with ErrorUtil, whose static initializer creates a logger. When the first error
+     * in the JVM is a stack overflow, such as a deeply nested rule on a small stack, that initializer fails for lack of
+     * stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then throws
+     * NoClassDefFoundError. This holder initializes it when a rule list starts loading, before any rule is compiled, so
+     * an overflow only fails the rule that caused it. It isn't done when the language is created, because an engine
+     * creates its languages when it's built, and building an engine loads no MVEL class.
+     */
+    private static final class ErrorReporting {
+
+        static {
+            new ErrorUtil();
+        }
+
+        private ErrorReporting() {
+        }
+
+        /** Initializes ErrorUtil, the first time it's called, by initializing this class. */
+        static void initialize() {
+            // The static initializer does the work.
+        }
     }
 }

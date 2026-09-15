@@ -19,54 +19,32 @@ public final class Engines {
     }
 
     /**
-     * Creates a stateless engine with no limit on compiled copies.
+     * Creates an engine that fires the highest-priority matching rule.
      *
      * @param outputFactory Creates the output object
+     * @param configuration The builder's settings
      * @param <O>           The type of the output object
      * @return The engine
-     * @throws NullPointerException if {@code outputFactory} is {@code null}
+     * @throws IllegalStateException    if the languages or the default language can't be resolved
+     * @throws IllegalArgumentException if an import can't be resolved
+     * @throws NullPointerException     if an argument is {@code null}
      */
-    public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory) {
-        return new StatelessRulesEngine<>(outputFactory);
+    public static <O> RulesEngine<O> firstMatch(Supplier<O> outputFactory, EngineConfiguration configuration) {
+        return new StatelessRulesEngine<>(outputFactory, configuration);
     }
 
     /**
-     * Creates a stateful engine with no limit on compiled copies.
+     * Creates an engine that fires every matching rule in priority order.
      *
      * @param outputFactory Creates the output object
+     * @param configuration The builder's settings
      * @param <O>           The type of the output object
      * @return The engine
-     * @throws NullPointerException if {@code outputFactory} is {@code null}
+     * @throws IllegalStateException    if the languages or the default language can't be resolved
+     * @throws IllegalArgumentException if an import can't be resolved
+     * @throws NullPointerException     if an argument is {@code null}
      */
-    public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory) {
-        return new StatefulRulesEngine<>(outputFactory);
-    }
-
-    /**
-     * Creates a stateless engine that keeps at most {@code maxCopies} compiled copies of its rules.
-     *
-     * @param outputFactory Creates the output object
-     * @param maxCopies     The most compiled copies, at least 1
-     * @param <O>           The type of the output object
-     * @return The engine
-     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
-     * @throws NullPointerException     if {@code outputFactory} is {@code null}
-     */
-    public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory, int maxCopies) {
-        return new StatelessRulesEngine<>(outputFactory, maxCopies);
-    }
-
-    /**
-     * Creates a stateful engine that keeps at most {@code maxCopies} compiled copies of its rules.
-     *
-     * @param outputFactory Creates the output object
-     * @param maxCopies     The most compiled copies, at least 1
-     * @param <O>           The type of the output object
-     * @return The engine
-     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
-     * @throws NullPointerException     if {@code outputFactory} is {@code null}
-     */
-    public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory, int maxCopies) {
-        return new StatefulRulesEngine<>(outputFactory, maxCopies);
+    public static <O> RulesEngine<O> allMatches(Supplier<O> outputFactory, EngineConfiguration configuration) {
+        return new StatefulRulesEngine<>(outputFactory, configuration);
     }
 }

@@ -1,6 +1,6 @@
 # 👂 Listeners & logging
 
-Register a `RuleListener` to trace which rules matched, time each rule, or audit decisions. The engine also logs
+Add a `RuleListener` to an engine to trace which rules matched, time each rule, or audit decisions. The engine also logs
 its own failures through SLF4J.
 
 [← Back to README](../README.md)
@@ -48,25 +48,28 @@ sequenceDiagram
     end
 ```
 
-Compile errors from `setRuleList()` are never reported to listeners; they're thrown directly.
+Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
 ## ✍ Writing a listener
 
 ```java
-engine.registerListener(new RuleListener() {
-    @Override
-    public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matched) {
-        System.out.println(rule.getRuleName() + " matched: " + matched);
-    }
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .listener(new RuleListener() {
+            @Override
+            public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matched) {
+                System.out.println(rule.getRuleName() + " matched: " + matched);
+            }
 
-    @Override
-    public void onError(Rule rule, RuleExecutionException error) {
-        System.out.println(rule.getRuleName() + " failed: " + error.getMessage());
-    }
-});
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                System.out.println(rule.getRuleName() + " failed: " + error.getMessage());
+            }
+        })
+        .build();
 ```
 
-Use `registerListeners(List)` to add several at once. Listeners can be added at any time, but not removed.
+Use `listeners(Collection)` to add several at once, in order. An engine's listeners are set when it's built, and can't
+be added or removed afterwards.
 
 ### Tracing each rule
 
@@ -74,32 +77,34 @@ Every `before*` callback is followed by exactly one closing callback, so anythin
 `startSpan` and `endSpan` stand in for your own tracing API:
 
 ```java
-engine.registerListener(new RuleListener() {
-    @Override
-    public void beforeExecute(Rule rule, Object output) {
-        startSpan(rule);
-    }
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .listener(new RuleListener() {
+            @Override
+            public void beforeExecute(Rule rule, Object output) {
+                startSpan(rule);
+            }
 
-    @Override
-    public void afterExecute(Rule rule, Object output) {
-        endSpan(rule);
-    }
+            @Override
+            public void afterExecute(Rule rule, Object output) {
+                endSpan(rule);
+            }
 
-    @Override
-    public void onError(Rule rule, RuleExecutionException error) {
-        endSpan(rule, error);
-    }
-});
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                endSpan(rule, error);
+            }
+        })
+        .build();
 ```
 
 ## ✅ Guarantees
 
 | Guarantee | Detail |
 | --- | --- |
-| 🔗 **Paired callbacks** | Every `beforeEvaluate` / `beforeExecute` is followed by exactly one matching `after*` or `onError`. A listener registered partway through a run starts with a `before*` callback, never with a closing one. |
+| 🔗 **Paired callbacks** | Every `beforeEvaluate` / `beforeExecute` is followed by exactly one matching `after*` or `onError`. |
 | 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError` or `AssertionError`, is logged at WARN and the run continues. Any other `Error`, such as `OutOfMemoryError`, propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError` or `AssertionError` is wrapped in the `RuleExecutionException`. Any other `Error`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError` and then rethrown unchanged from `run()`. |
-| 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `setRuleList()`: the same instance every time. |
+| 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `load()`: the same instance every time. |
 | 🔏 **Read-only facts** | The `facts` map holds fact values, not the `FactStore`. Writing to it throws `UnsupportedOperationException`. |
 | 🧵 **Concurrency** | An engine shared across threads calls the same listener from every thread, possibly at the same time. **Listeners must be thread-safe.** |
 
@@ -108,10 +113,12 @@ engine.registerListener(new RuleListener() {
 A ready-made listener that logs every lifecycle event at **DEBUG** level:
 
 ```java
-engine.registerListener(new LoggingRuleListener());
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .listener(new LoggingRuleListener())
+        .build();
 ```
 
-For the README's quick start, a stateless engine and a score of 780, it logs:
+For the README's quick start, a first-match engine and a score of 780, it logs:
 
 ```text
 Evaluating condition for rule: prime-rate
@@ -122,7 +129,7 @@ Executing action for rule: prime-rate
 Executed action for rule: prime-rate
 ```
 
-Every condition is evaluated before any action runs, and the stateless engine fires only `prime-rate`. When a
+Every condition is evaluated before any action runs, and the first-match engine fires only `prime-rate`. When a
 condition or action fails, the listener logs a line such as
 `Failed rule: prime-rate | Error: Failed to execute action for rule 'prime-rate': ...` in place of the closing line.
 
@@ -137,9 +144,9 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 | Logger | Level | Messages |
 | --- | --- | --- |
-| `io.github.brantunger.unruly.engine` | `ERROR` | Every rule list `setRuleList()` rejects, fact `run()` rejects, rule failure and output-supplier failure, logged just before the exception is thrown. That includes a fatal `Error` from compiling or running a rule, which is logged and then rethrown. Misuse isn't logged: a `null` argument, `run()` before `setRuleList()`, or an invalid `addImport()` string. |
+| `io.github.brantunger.unruly.engine` | `ERROR` | Every rule list `load()` rejects, fact `run()` rejects, rule failure and output-supplier failure, logged just before the exception is thrown. That includes a fatal `Error` from compiling or running a rule, which is logged and then rethrown. Misuse isn't logged: a `null` argument, `run()` before `load()`, or an invalid builder setting, such as an import that is neither a class nor a package name. |
 | `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception |
-| `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Lifecycle events, if you registered the listener |
+| `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Lifecycle events, if you added the listener |
 
 > [!NOTE]
 > The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice.

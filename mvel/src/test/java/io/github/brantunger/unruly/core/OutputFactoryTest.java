@@ -20,13 +20,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class OutputFactoryTest {
 
     private static final List<Function<Supplier<Map<String, Object>>, RulesEngine<Map<String, Object>>>> ENGINES =
-            List.of(StatefulRulesEngine::new, StatelessRulesEngine::new);
+            List.of(factory -> RulesEngineBuilder.allMatches(factory).build(),
+                    factory -> RulesEngineBuilder.firstMatch(factory).build());
 
     private static RulesEngine<Map<String, Object>> engineWith(
             Function<Supplier<Map<String, Object>>, RulesEngine<Map<String, Object>>> constructor,
             Supplier<Map<String, Object>> factory, String condition) {
         RulesEngine<Map<String, Object>> engine = constructor.apply(factory);
-        engine.setRuleList(List.of(Rule.builder()
+        engine.load(List.of(Rule.builder()
                 .ruleName("first-rule")
                 .condition(condition)
                 .action("output.put('k', 1)")
@@ -36,18 +37,15 @@ class OutputFactoryTest {
     }
 
     @Test
-    @DisplayName("a null factory is rejected by both constructors and the builder")
+    @DisplayName("a null factory is rejected by both builder methods")
     void nullFactoryRejected() {
-        NullPointerException stateful = assertThrows(NullPointerException.class,
-                () -> new StatefulRulesEngine<Map<String, Object>>(null));
-        assertTrue(stateful.getMessage().contains("outputFactory must not be null"));
+        NullPointerException allMatches = assertThrows(NullPointerException.class,
+                () -> RulesEngineBuilder.allMatches(null));
+        assertTrue(allMatches.getMessage().contains("outputFactory must not be null"));
 
-        NullPointerException stateless = assertThrows(NullPointerException.class,
-                () -> new StatelessRulesEngine<Map<String, Object>>(null));
-        assertTrue(stateless.getMessage().contains("outputFactory must not be null"));
-
-        assertThrows(NullPointerException.class, () -> RulesEngineBuilder.stateful(null));
-        assertThrows(NullPointerException.class, () -> RulesEngineBuilder.stateless(null));
+        NullPointerException firstMatch = assertThrows(NullPointerException.class,
+                () -> RulesEngineBuilder.firstMatch(null));
+        assertTrue(firstMatch.getMessage().contains("outputFactory must not be null"));
     }
 
     @Test

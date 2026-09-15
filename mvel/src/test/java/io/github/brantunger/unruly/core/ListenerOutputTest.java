@@ -19,15 +19,15 @@ class ListenerOutputTest {
     @Test
     @DisplayName("the output passed to afterExecute is the object run() returns, already changed by the action")
     void afterExecuteReceivesOutput() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
         AtomicReference<Object> seen = new AtomicReference<>();
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void afterExecute(Rule rule, Object output) {
-                seen.set(output);
-            }
-        });
-        engine.setRuleList(List.of(Rule.builder().ruleName("a").condition("true").action("output.put('k', 1)").build()));
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                builder -> builder.listener(new RuleListener() {
+                    @Override
+                    public void afterExecute(Rule rule, Object output) {
+                        seen.set(output);
+                    }
+                }));
+        engine.load(List.of(Rule.builder().ruleName("a").condition("true").action("output.put('k', 1)").build()));
 
         Map<String, Object> output = engine.run(new FactMap<>());
 

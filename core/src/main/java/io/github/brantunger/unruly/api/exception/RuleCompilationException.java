@@ -8,7 +8,7 @@ import java.util.List;
  * Exception thrown when a rule fails to compile, or when several do.
  *
  * <p>
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} compiles every rule before it throws,
+ * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} compiles every rule before it throws,
  * so one exception reports every broken rule: {@link #failures()} has one exception for each, and the name, expression
  * kind and issues of this exception are those of the first.
  * </p>

@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,22 +48,25 @@ class SharedClassLookupTest {
     @DisplayName("a name used by several expressions, and by a copy compiled for a concurrent run, is looked up once")
     void notClassLookedUpOnce() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.addImport("java.util");
+        AtomicReference<RulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         List<Object> innerOutputs = new CopyOnWriteArrayList<>();
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void beforeExecute(Rule rule, Object output) {
-                // A run started while the outer run holds its copy of the rules compiles another copy.
-                if (innerOutputs.isEmpty()) {
-                    innerOutputs.add("started");
-                    innerOutputs.set(0, engine.run(amount(2)));
-                }
-            }
-        });
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports("java.util")
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeExecute(Rule rule, Object output) {
+                        // A run started while the outer run holds its copy of the rules compiles another copy.
+                        if (innerOutputs.isEmpty()) {
+                            innerOutputs.add("started");
+                            innerOutputs.set(0, self.get().run(amount(2)));
+                        }
+                    }
+                })
+                .build();
+        self.set(engine);
 
         Object output = withContextClassLoader(loader, () -> {
-            engine.setRuleList(List.of(
+            engine.load(List.of(
                     rule("low", "amount > 1", "output.put('low', amount)"),
                     rule("high", "amount < 10", "output.put('high', amount)")));
             return engine.run(amount(5));
@@ -76,9 +80,9 @@ class SharedClassLookupTest {
     @Test
     @DisplayName("an inline import still finds a class that another rule's expressions found not to be one")
     void inlineImportsNotAnsweredFromCache() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.addImport("java.io");
-        engine.setRuleList(List.of(
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports("java.io").build();
+        engine.load(List.of(
                 rule("fact", "Date == 1", "output.put('fact', Date)"),
                 rule("class", "true", "import java.util.Date; output.put('class', new Date(0))"),
                 rule("package", "true", "import java.util.*; output.put('package', new Date(0))")));
@@ -91,9 +95,9 @@ class SharedClassLookupTest {
     @Test
     @DisplayName("an inline class import in a typed declaration finds a class another rule found not to be one")
     void inlineClassImportInTypedDeclaration() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.addImport("java.io");
-        engine.setRuleList(List.of(
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports("java.io").build();
+        engine.load(List.of(
                 Rule.builder().ruleName("first").priority(2).condition("LinkedList == 1")
                         .action("output.put('fact', LinkedList)").build(),
                 Rule.builder().ruleName("second").priority(1).condition("true")

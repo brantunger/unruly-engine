@@ -38,25 +38,13 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      *
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
      *                      per run that matches a rule and must return a new, non-null object each time.
-     * @throws NullPointerException if {@code outputFactory} is {@code null}
-     */
-    StatefulRulesEngine(Supplier<O> outputFactory) {
-        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
-    }
-
-    /**
-     * Construct a StatefulRulesEngine that keeps at most {@code maxCopies} compiled copies of its rules.
-     *
-     * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
-     *                      per run that matches a rule and must return a new, non-null object each time.
-     * @param maxCopies     The most compiled copies of the rules to keep, at least 1, as
-     *                      {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateful(Supplier, int)}
-     *                      describes
-     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
+     * @param configuration The builder's settings
+     * @throws IllegalStateException    if the languages or the default language can't be resolved
+     * @throws IllegalArgumentException if an import can't be resolved
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
-    StatefulRulesEngine(Supplier<O> outputFactory, int maxCopies) {
-        super(maxCopies);
+    StatefulRulesEngine(Supplier<O> outputFactory, EngineConfiguration configuration) {
+        super(configuration);
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }
 
@@ -71,7 +59,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      *         {@code null} if the rule list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException {@inheritDoc}
      * @throws IllegalArgumentException {@inheritDoc}
-     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      * @throws NullPointerException {@inheritDoc}
      */
     @Override

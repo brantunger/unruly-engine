@@ -21,8 +21,8 @@ class NullFactNameTest {
     @Test
     @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException, logged at ERROR")
     void nullNameRejected() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('hit', true)")
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('hit', true)")
                 .build()));
         HashFactStore facts = new HashFactStore();
         facts.put((String) null, new Fact<>("x", 1));

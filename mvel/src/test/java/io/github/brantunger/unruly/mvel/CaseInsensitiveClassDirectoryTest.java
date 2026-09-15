@@ -53,11 +53,11 @@ class CaseInsensitiveClassDirectoryTest {
     @Test
     @DisplayName("the README quick start's rule compiles and runs when 'applicant' finds Applicant.class")
     void wrongNameIsNotAClass() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
         ClassLoader caseInsensitive = loaderThrowing(new NoClassDefFoundError("applicant (wrong name: Applicant)"));
 
         Map<String, Object> output = withContextClassLoader(caseInsensitive, () -> {
-            engine.setRuleList(List.of(PRIME_RATE));
+            engine.load(List.of(PRIME_RATE));
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("applicant", Map.of("creditScore", 780));
             return engine.run(facts);
@@ -69,12 +69,12 @@ class CaseInsensitiveClassDirectoryTest {
     @Test
     @DisplayName("any other NoClassDefFoundError from the lookup is still rethrown unchanged")
     void otherLinkageErrorRethrown() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
         NoClassDefFoundError missingDependency = new NoClassDefFoundError("com/example/MissingDependency");
 
         NoClassDefFoundError thrown = assertThrows(NoClassDefFoundError.class,
                 () -> withContextClassLoader(loaderThrowing(missingDependency), () -> {
-                    engine.setRuleList(List.of(PRIME_RATE));
+                    engine.load(List.of(PRIME_RATE));
                     return null;
                 }));
 

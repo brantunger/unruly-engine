@@ -26,11 +26,11 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a language's fact-name check that fails unexpectedly is reported like a rejected name")
 class FactNameCheckFailureTest {
 
-    private final StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+    private StatefulRulesEngine<Map<String, Object>> engine;
 
-    /** Registers a language named x whose checkFactName calls {@code check}, and loads one rule written in it. */
+    /** Builds an engine with a language named x whose checkFactName calls {@code check}, and loads one rule in it. */
     private void load(Consumer<String> check) {
-        engine.registerLanguage(new ExpressionLanguage() {
+        engine = TestEngines.allMatches(HashMap::new, builder -> builder.language(new ExpressionLanguage() {
             @Override
             public String name() {
                 return "x";
@@ -60,8 +60,8 @@ class FactNameCheckFailureTest {
                     }
                 };
             }
-        });
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").language("x").condition("c").action("a").build()));
+        }));
+        engine.load(List.of(Rule.builder().ruleName("r").language("x").condition("c").action("a").build()));
     }
 
     private static FactStore<Object> fact(String name) {

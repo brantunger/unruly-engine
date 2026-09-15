@@ -19,6 +19,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,19 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("compile failures carry each rule's failure, the expression kind and the language's issues")
 class CompileFailureDetailsTest {
 
-    private final RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+    private final RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+            HashMap::new).build();
+
+    /** An engine with only the given language. */
+    private static RulesEngine<Map<String, Object>> withLanguage(ExpressionLanguage language) {
+        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language).build();
+    }
+
+    /** An engine with MVEL, the language of rules without one, and the given language. */
+    private static RulesEngine<Map<String, Object>> withMvel(ExpressionLanguage language) {
+        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(new MvelExpressionLanguage())
+                .language(language).defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME).build();
+    }
 
     /** A language that records what it compiles, and warns about expressions that start with {@code warn}. */
     private static final class RecordingLanguage implements ExpressionLanguage {
@@ -94,7 +107,7 @@ class CompileFailureDetailsTest {
                 rule("r1", "x >= ", "output.put('k', 1)"),
                 rule("r2", "true", "output.put('k', "));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         List<RuleCompilationException> failures = ex.failures();
         assertEquals(2, failures.size());
@@ -114,7 +127,7 @@ class CompileFailureDetailsTest {
     void oneBrokenRule() {
         List<Rule> rules = List.of(rule("r", "x >= ", "output.put('k', 1)"), rule("ok", "true", "output.put('k', 1)"));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertEquals(List.of(ex), ex.failures());
         assertSame(ex, ex.failures().get(0));
@@ -128,7 +141,7 @@ class CompileFailureDetailsTest {
                 rule("blank action", "true", ""),
                 Rule.builder().ruleName("unknown").language("nope").condition("c").action("a").build());
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertTrue(ex.getMessage().startsWith("3 rules failed to compile: Rule 'blank condition' has a blank condition "
                 + "expression; Rule 'blank action' has a blank action expression; Rule 'unknown' is written in "
@@ -140,7 +153,7 @@ class CompileFailureDetailsTest {
     @Test
     @DisplayName("a language that can't create its compiler fails the rule list at once, however many rules failed before")
     void languageFailureThrownAtOnce() {
-        engine.registerLanguage(new ExpressionLanguage() {
+        RulesEngine<Map<String, Object>> mixed = withMvel(new ExpressionLanguage() {
             @Override
             public String name() {
                 return "broken";
@@ -155,7 +168,7 @@ class CompileFailureDetailsTest {
                 rule("r1", "x >= ", "output.put('k', 1)"),
                 Rule.builder().ruleName("b").language("broken").condition("c").action("a").build());
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> mixed.load(rules));
 
         assertEquals("The 'broken' expression language failed to create a compiler: no interpreter", ex.getMessage());
         assertNull(ex.getExpressionKind());
@@ -166,9 +179,8 @@ class CompileFailureDetailsTest {
     @DisplayName("a language gets each expression with its rule's name and kind")
     void languageGetsExpressions() {
         RecordingLanguage language = new RecordingLanguage();
-        engine.registerLanguage(language);
 
-        engine.setRuleList(List.of(
+        withLanguage(language).load(List.of(
                 Rule.builder().ruleName("named").language("recording").condition("c1").action("a1").build(),
                 Rule.builder().ruleName("other").language("recording").condition("c2").action("a2").build()));
 
@@ -182,12 +194,12 @@ class CompileFailureDetailsTest {
     @Test
     @DisplayName("a warning is logged at WARN with the rule, the expression and its position, and loading carries on")
     void warningsLogged() {
-        engine.registerLanguage(new RecordingLanguage());
+        RulesEngine<Map<String, Object>> recording = withLanguage(new RecordingLanguage());
         List<Rule> rules = List.of(
                 Rule.builder().ruleName("w").language("recording").condition("warn at 2:5").action("warn at 3").build(),
                 Rule.builder().ruleName("v").language("recording").condition("true").action("warn").build());
 
-        String logs = logsOf(() -> engine.setRuleList(rules));
+        String logs = logsOf(() -> recording.load(rules));
 
         assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Condition for rule 'w' has a warning at "
                 + "line 2, column 5: deprecated"), logs);
@@ -196,7 +208,7 @@ class CompileFailureDetailsTest {
         assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'v' has a warning: "
                 + "reported as a warning"), logs);
         FactStore<Object> facts = new FactMap<>();
-        assertEquals(Map.of("ran", "warn"), engine.run(facts));
+        assertEquals(Map.of("ran", "warn"), recording.run(facts));
     }
 
     @Test
@@ -215,26 +227,27 @@ class CompileFailureDetailsTest {
     @DisplayName("a run-time failure says whether the condition or the action failed")
     void runFailuresNameTheirKind() {
         List<Rule> conditionFails = List.of(rule("c", "x.missing", "output.put('k', 1)"));
-        engine.setRuleList(conditionFails);
+        engine.load(conditionFails);
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("x", 1);
         assertEquals(ExpressionKind.CONDITION,
                 assertThrows(RuleExecutionException.class, () -> engine.run(facts)).getExpressionKind());
 
-        engine.setRuleList(List.of(rule("n", "null", "output.put('k', 1)")));
+        engine.load(List.of(rule("n", "null", "output.put('k', 1)")));
         assertEquals(ExpressionKind.CONDITION,
                 assertThrows(RuleExecutionException.class, () -> engine.run(facts)).getExpressionKind());
 
-        engine.setRuleList(List.of(rule("s", "'yes'", "output.put('k', 1)")));
+        engine.load(List.of(rule("s", "'yes'", "output.put('k', 1)")));
         assertEquals(ExpressionKind.CONDITION,
                 assertThrows(RuleExecutionException.class, () -> engine.run(facts)).getExpressionKind());
 
-        engine.setRuleList(List.of(rule("a", "true", "x.missing()")));
+        engine.load(List.of(rule("a", "true", "x.missing()")));
         assertEquals(ExpressionKind.ACTION,
                 assertThrows(RuleExecutionException.class, () -> engine.run(facts)).getExpressionKind());
 
-        RulesEngine<Map<String, Object>> nullOutput = RulesEngineBuilder.stateful(() -> null);
-        nullOutput.setRuleList(List.of(rule("o", "true", "output.put('k', 1)")));
+        RulesEngine<Map<String, Object>> nullOutput = RulesEngineBuilder.<Map<String, Object>>allMatches(() -> null)
+                .build();
+        nullOutput.load(List.of(rule("o", "true", "output.put('k', 1)")));
         assertNull(assertThrows(RuleExecutionException.class, () -> nullOutput.run(facts)).getExpressionKind());
     }
 }

@@ -14,6 +14,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -147,12 +148,19 @@ class LanguageSessionsTest {
         return Rule.builder().ruleName(name).language(language).condition("c").action(name).build();
     }
 
+    /** An engine that fires every match, with MVEL for rules without a language, and the given languages. */
     private static RulesEngine<Map<String, Object>> stateful(ExpressionLanguage... languages) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+        builder.language(new MvelExpressionLanguage()).defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME);
         for (ExpressionLanguage language : languages) {
-            engine.registerLanguage(language);
+            builder.language(language);
         }
-        return engine;
+        return builder.build();
+    }
+
+    /** An engine that fires the first match, with only the given language. */
+    private static RulesEngine<Map<String, Object>> firstMatch(ExpressionLanguage language) {
+        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).language(language).build();
     }
 
     private static void await(CountDownLatch latch) {
@@ -169,7 +177,7 @@ class LanguageSessionsTest {
     void oneSessionPerLanguagePerCopy() {
         ConfinedLanguage confined = new ConfinedLanguage("confined");
         RulesEngine<Map<String, Object>> engine = stateful(confined);
-        engine.setRuleList(List.of(rule("a", "confined"), rule("b", "confined"), rule("c", "confined"),
+        engine.load(List.of(rule("a", "confined"), rule("b", "confined"), rule("c", "confined"),
                 Rule.builder().ruleName("m").condition("true").action("output.put('m', 1)").build()));
 
         Map<String, Object> first = engine.run(new FactMap<>());
@@ -186,9 +194,8 @@ class LanguageSessionsTest {
     @DisplayName("concurrent runs never use one session at the same time, and make no more sessions than runs overlap")
     void concurrentRunsNeverShareASession() throws Exception {
         ConfinedLanguage confined = new ConfinedLanguage("confined");
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.registerLanguage(confined);
-        engine.setRuleList(List.of(rule("a", "confined"), rule("b", "confined")));
+        RulesEngine<Map<String, Object>> engine = firstMatch(confined);
+        engine.load(List.of(rule("a", "confined"), rule("b", "confined")));
         ExecutorService pool = Executors.newFixedThreadPool(8);
         try {
             List<Future<?>> runs = new ArrayList<>();
@@ -215,10 +222,10 @@ class LanguageSessionsTest {
     void reloadClosesIdleSessionsAndCompiler() {
         ConfinedLanguage confined = new ConfinedLanguage("confined");
         RulesEngine<Map<String, Object>> engine = stateful(confined);
-        engine.setRuleList(List.of(rule("a", "confined")));
+        engine.load(List.of(rule("a", "confined")));
         engine.run(new FactMap<>());
 
-        engine.setRuleList(List.of(rule("b", "confined")));
+        engine.load(List.of(rule("b", "confined")));
 
         assertEquals(List.of(1), confined.closes());
         assertEquals(1, confined.compilersClosed.get());
@@ -230,9 +237,8 @@ class LanguageSessionsTest {
     @DisplayName("a reload closes a session still in use, and then the compiler, only when the run using it returns")
     void reloadWaitsForRunsInProgress() throws Exception {
         ConfinedLanguage confined = new ConfinedLanguage("confined");
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.registerLanguage(confined);
-        engine.setRuleList(List.of(rule("a", "confined")));
+        RulesEngine<Map<String, Object>> engine = firstMatch(confined);
+        engine.load(List.of(rule("a", "confined")));
         CountDownLatch inAction = new CountDownLatch(1);
         CountDownLatch finish = new CountDownLatch(1);
         AtomicBoolean hold = new AtomicBoolean(true);
@@ -249,7 +255,7 @@ class LanguageSessionsTest {
             // Makes a second session, which is idle once this run returns.
             engine.run(new FactMap<>());
 
-            engine.setRuleList(List.of(rule("b", "confined")));
+            engine.load(List.of(rule("b", "confined")));
 
             assertEquals(List.of(0, 1), confined.closes(), "the held session stays open, and the idle one is closed");
             assertEquals(0, confined.compilersClosed.get());
@@ -266,11 +272,11 @@ class LanguageSessionsTest {
     }
 
     @Test
-    @DisplayName("closing the engine closes its sessions and compiler; afterwards run and setRuleList fail")
+    @DisplayName("closing the engine closes its sessions and compiler; afterwards run and load fail")
     void closeEngine() {
         ConfinedLanguage confined = new ConfinedLanguage("confined");
         RulesEngine<Map<String, Object>> engine = stateful(confined);
-        engine.setRuleList(List.of(rule("a", "confined")));
+        engine.load(List.of(rule("a", "confined")));
         engine.run(new FactMap<>());
 
         engine.close();
@@ -282,14 +288,15 @@ class LanguageSessionsTest {
         assertEquals(CLOSED,
                 assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>())).getMessage());
         List<Rule> rules = List.of(rule("b", "confined"));
-        assertEquals(CLOSED, assertThrows(IllegalStateException.class, () -> engine.setRuleList(rules)).getMessage());
+        assertEquals(CLOSED, assertThrows(IllegalStateException.class, () -> engine.load(rules)).getMessage());
         assertEquals(2, confined.compilersClosed.get(), "the compiler of the rules loaded after the engine closed");
     }
 
     @Test
     @DisplayName("an engine closed before any rules are loaded says it's closed")
     void closeBeforeRulesLoaded() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
 
         engine.close();
 
@@ -304,10 +311,10 @@ class LanguageSessionsTest {
         confined.closeFailure = new IllegalStateException("session stuck");
         confined.compilerCloseFailure = new IllegalStateException("compiler stuck");
         RulesEngine<Map<String, Object>> engine = stateful(confined);
-        engine.setRuleList(List.of(rule("a", "confined")));
+        engine.load(List.of(rule("a", "confined")));
         engine.run(new FactMap<>());
 
-        String logs = logsOf(() -> engine.setRuleList(List.of(rule("b", "confined"))));
+        String logs = logsOf(() -> engine.load(List.of(rule("b", "confined"))));
 
         assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - The 'confined' expression language failed "
                 + "to close a session: "), logs);
@@ -327,11 +334,11 @@ class LanguageSessionsTest {
         ConfinedLanguage b = new ConfinedLanguage("b");
         b.closeFailure = new OutOfMemoryError("second");
         RulesEngine<Map<String, Object>> engine = stateful(a, b);
-        engine.setRuleList(List.of(rule("x", "a"), rule("y", "b")));
+        engine.load(List.of(rule("x", "a"), rule("y", "b")));
         engine.run(new FactMap<>());
         List<Rule> next = List.of(rule("z", "a"));
 
-        assertSame(first, assertThrows(OutOfMemoryError.class, () -> engine.setRuleList(next)));
+        assertSame(first, assertThrows(OutOfMemoryError.class, () -> engine.load(next)));
 
         assertEquals(List.of(1), a.closes());
         assertEquals(List.of(1), b.closes());
@@ -347,7 +354,7 @@ class LanguageSessionsTest {
         RulesEngine<Map<String, Object>> engine = stateful(confined);
         List<Rule> rules = List.of(rule("a", "confined"), rule("b", "unknown"));
 
-        assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertEquals(1, confined.compilersClosed.get());
         assertEquals(List.of(), confined.sessions);
@@ -359,7 +366,9 @@ class LanguageSessionsTest {
         RuleSet closedRules = new RuleSet(List.of(), Map.of());
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>() {
+        EngineConfiguration configuration = new EngineConfiguration(List.of(), null, List.of(), List.of(),
+                EngineConfiguration.UNLIMITED_COPIES);
+        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
             @Override
             RuleSet currentRules() {
                 return reads.getAndIncrement() == 0 ? closedRules : super.currentRules();
@@ -370,7 +379,7 @@ class LanguageSessionsTest {
                 return withCompiledRules((rules, copy) -> "rules: " + rules.rules().size());
             }
         };
-        engine.setRuleList(List.of());
+        engine.load(List.of());
 
         assertEquals("rules: 0", engine.run(new FactMap<>()));
         assertEquals(2, reads.get());

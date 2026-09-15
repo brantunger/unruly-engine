@@ -27,8 +27,15 @@ class FatalErrorLogTest {
             .action("output.put('k', 1)").build());
 
     private static RulesEngine<Map<String, Object>> engine(Supplier<Map<String, Object>> output) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(output);
-        engine.setRuleList(RULES);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(output).build();
+        engine.load(RULES);
+        return engine;
+    }
+
+    private static RulesEngine<Map<String, Object>> engine(RuleListener listener) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .listener(listener).build();
+        engine.load(RULES);
         return engine;
     }
 
@@ -62,8 +69,7 @@ class FatalErrorLogTest {
     void beforeCallbackThrowsFatalError(String callback) {
         OutOfMemoryError oom = new OutOfMemoryError("listener oom");
         AtomicReference<RuleExecutionException> reported = new AtomicReference<>();
-        RulesEngine<Map<String, Object>> engine = engine(HashMap::new);
-        engine.registerListener(new RuleListener() {
+        RulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
             @Override
             public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
                 if ("beforeEvaluate".equals(callback)) {
@@ -95,8 +101,7 @@ class FatalErrorLogTest {
     @DisplayName("an OutOfMemoryError from afterEvaluate names the callback and the rule")
     void afterEvaluateThrowsFatalError() {
         OutOfMemoryError oom = new OutOfMemoryError("listener oom");
-        RulesEngine<Map<String, Object>> engine = engine(HashMap::new);
-        engine.registerListener(new RuleListener() {
+        RulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
             @Override
             public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
                 throw oom;
@@ -111,8 +116,7 @@ class FatalErrorLogTest {
     @DisplayName("an OutOfMemoryError that causes what afterExecute throws names the callback and the rule")
     void afterExecuteWrapsFatalError() {
         OutOfMemoryError oom = new OutOfMemoryError("listener oom");
-        RulesEngine<Map<String, Object>> engine = engine(HashMap::new);
-        engine.registerListener(new RuleListener() {
+        RulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
             @Override
             public void afterExecute(Rule rule, Object output) {
                 throw new IllegalStateException("audit failed", oom);

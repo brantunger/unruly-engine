@@ -71,11 +71,11 @@ class FactNameClassLookupTest {
     @DisplayName("a fact name that isn't a class is never loaded as one, so nothing stays in the class loader")
     void nonClassNameNeverLoaded() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
 
         Object output = withContextClassLoader(loader, () -> {
-            engine.addImport("java.util");
-            engine.setRuleList(List.of(rule("true")));
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .imports("java.util").build();
+            engine.load(List.of(rule("true")));
             return engine.run(fact("line_1", 1));
         });
 
@@ -87,9 +87,9 @@ class FactNameClassLookupTest {
     @Test
     @DisplayName("a class name is rejected on a thread whose context class loader can't see the class")
     void classNameRejectedOnAnyThread() throws InterruptedException {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.addImport(IMPORTED_PACKAGE);
-        engine.setRuleList(List.of(rule("true")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .imports(IMPORTED_PACKAGE).build();
+        engine.load(List.of(rule("true")));
 
         Object result = runOnThread(classPathHidden(), engine, fact(CLASS_NAME, 1));
 
@@ -99,11 +99,11 @@ class FactNameClassLookupTest {
     @Test
     @DisplayName("a fact rules can read isn't rejected because the running thread's class loader sees a class")
     void readableFactAcceptedOnAnyThread() throws InterruptedException {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        withContextClassLoader(classPathHidden(), () -> {
-            engine.addImport(IMPORTED_PACKAGE);
-            engine.setRuleList(List.of(rule(CLASS_NAME + " == 1")));
-            return null;
+        RulesEngine<Map<String, Object>> engine = withContextClassLoader(classPathHidden(), () -> {
+            RulesEngine<Map<String, Object>> built = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .imports(IMPORTED_PACKAGE).build();
+            built.load(List.of(rule(CLASS_NAME + " == 1")));
+            return built;
         });
 
         Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine, fact(CLASS_NAME, 1));
@@ -114,11 +114,10 @@ class FactNameClassLookupTest {
     @Test
     @DisplayName("a thread without a context class loader uses the library's own class loader")
     void noContextClassLoader() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-
         Object output = withContextClassLoader(null, () -> {
-            engine.addImport("java.util.Map.Entry").addImport("java.util");
-            engine.setRuleList(List.of(rule("Objects.nonNull(Entry)")));
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .imports("java.util.Map.Entry", "java.util").build();
+            engine.load(List.of(rule("Objects.nonNull(Entry)")));
             assertThrows(IllegalArgumentException.class, () -> engine.run(fact("Date", 1)));
             return engine.run(fact("claim", 1));
         });

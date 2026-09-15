@@ -22,10 +22,11 @@ public class RulesEngineConfiguration {
 
     @Bean
     public RulesEngine<LoanDecision> loanRulesEngine(RuleRepository ruleRepository) {
-        RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
-        engine.addImport("java.time");                        // imports first...
-        engine.registerListener(new LoggingRuleListener());   // ...listeners at any time...
-        engine.setRuleList(ruleRepository.findLoanRules());   // ...then compile the rules once
+        RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+                .imports("java.time")                       // imports and listeners are set on the builder...
+                .listener(new LoggingRuleListener())
+                .build();
+        engine.load(ruleRepository.findLoanRules());        // ...then compile the rules once
         return engine;
     }
 }
@@ -56,7 +57,7 @@ public class RuleRepository {
 ```
 
 > [!TIP]
-> If a rule doesn't compile, `setRuleList()` throws a `RuleCompilationException`, so the bean fails to be created
+> If a rule doesn't compile, `load()` throws a `RuleCompilationException`, so the bean fails to be created
 > and the application refuses to start. That's usually what you want: broken rules never reach production traffic.
 
 ## 🗂️ Rules from configuration
@@ -92,7 +93,7 @@ loan:
 ```
 
 Enable the record with `@EnableConfigurationProperties(LoanRulesProperties.class)`, then pass
-`properties.rules().stream().map(RuleProperties::toRule).toList()` to `setRuleList()`. A rule without a name, condition
+`properties.rules().stream().map(RuleProperties::toRule).toList()` to `load()`. A rule without a name, condition
 or action makes `toRule()` throw, so the application refuses to start. To read rules from JSON instead, register the
 Jackson mix-ins shown under [Rules](../README.md#rules).
 
@@ -121,12 +122,12 @@ public class LoanController {
 }
 ```
 
-The engine bean is shared by every request thread, which is safe once `setRuleList()` has completed. See
+The engine bean is shared by every request thread, which is safe once `load()` has completed. See
 [Thread safety](thread-safety.md).
 
 ## 🔄 Reload rules without restarting
 
-`setRuleList()` may be called while other threads are running rules. The new list is compiled first and then
+`load()` may be called while other threads are running rules. The new list is compiled first and then
 swapped in atomically, so a run already in progress finishes with the old rules.
 
 ```java
@@ -144,7 +145,7 @@ public class LoanRulesReloader {
     @Scheduled(fixedDelay = 60_000)   // requires @EnableScheduling
     public void reload() {
         try {
-            loanRulesEngine.setRuleList(ruleRepository.findLoanRules());
+            loanRulesEngine.load(ruleRepository.findLoanRules());
         } catch (RuleCompilationException e) {
             // The previous rules stay in place; alert someone instead of serving broken rules.
         }
@@ -152,8 +153,8 @@ public class LoanRulesReloader {
 }
 ```
 
-Imports are applied when the rules are compiled. Register them before the first `setRuleList()`, and don't call
-`addImport()` while a reload may be running, because it isn't thread-safe.
+A reload replaces only the rules. The engine's imports and listeners are set when it's built; to change them, build a
+new engine.
 
 ## 🔀 Several engines
 
@@ -161,10 +162,10 @@ When you have more than one engine with the same output type, name the one you w
 
 ```java
 @Bean
-public RulesEngine<LoanDecision> pricingEngine() { /* stateless */ }
+public RulesEngine<LoanDecision> pricingEngine() { /* firstMatch */ }
 
 @Bean
-public RulesEngine<LoanDecision> complianceEngine() { /* stateful */ }
+public RulesEngine<LoanDecision> complianceEngine() { /* allMatches */ }
 ```
 
 ```java

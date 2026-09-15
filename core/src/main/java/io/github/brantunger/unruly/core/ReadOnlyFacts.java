@@ -13,7 +13,7 @@ import java.util.Set;
  * which a plain {@link Collections#unmodifiableMap(Map)} would not.
  *
  * <p>
- * {@code setRuleList()} already rejects conditions whose text contains an assignment (the MVEL language
+ * {@code load()} already rejects conditions whose text contains an assignment (the MVEL language
  * scans the condition's text for them). This view is the run-time backstop for any write that check doesn't recognize.
  * It only covers the variables themselves: a write to a fact's property goes through the fact object.
  * </p>
@@ -31,7 +31,7 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
 
     /**
      * Creates the view a condition is evaluated against. By the time a condition runs, the text check in
-     * {@code setRuleList()} has already rejected visible assignments, so a write that reaches this view is usually a
+     * {@code load()} has already rejected visible assignments, so a write that reaches this view is usually a
      * declaration such as {@code int y;}, which MVEL also stores through the map. The message covers both.
      *
      * @param facts The unwrapped facts

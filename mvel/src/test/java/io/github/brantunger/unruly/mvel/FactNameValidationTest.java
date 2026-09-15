@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class FactNameValidationTest {
 
     private static RulesEngine<Map<String, Object>> engine(String condition) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(rule(condition)));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule(condition)));
         return engine;
     }
 
@@ -62,9 +62,9 @@ class FactNameValidationTest {
     void importedClassNameRejected() {
         assertEquals(Map.of("hit", true), engine("Date == 5").run(fact("Date", 5)));
 
-        RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.stateless(HashMap::new);
-        imported.addImport("java.util");
-        imported.setRuleList(List.of(rule("true")));
+        RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .imports("java.util").build();
+        imported.load(List.of(rule("true")));
 
         assertThrows(IllegalArgumentException.class, () -> imported.run(fact("Date", 5)));
     }
@@ -72,9 +72,9 @@ class FactNameValidationTest {
     @Test
     @DisplayName("a class name found in two imported packages is rejected like any other class name")
     void ambiguousClassNameRejected() {
-        RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.stateless(HashMap::new);
-        imported.addImport("java.util").addImport("java.sql");
-        imported.setRuleList(List.of(rule("true")));
+        RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .imports("java.util", "java.sql").build();
+        imported.load(List.of(rule("true")));
 
         for (int i = 0; i < 2; i++) {
             IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
@@ -82,18 +82,6 @@ class FactNameValidationTest {
             assertEquals("'Date' cannot be used as a fact name: MVEL reads it as a keyword or class name, "
                     + "so rules would never see the fact", ex.getMessage());
         }
-    }
-
-    @Test
-    @DisplayName("names are checked against the imports of the current rule list, like the rules themselves")
-    void importsTakeEffectOnReload() {
-        RulesEngine<Map<String, Object>> engine = engine("true");
-        engine.addImport("java.util");
-
-        assertEquals(Map.of("hit", true), engine.run(fact("Date", 5)), "rules compiled before the import");
-
-        engine.setRuleList(List.of(rule("true")));
-        assertThrows(IllegalArgumentException.class, () -> engine.run(fact("Date", 5)));
     }
 
     @Test

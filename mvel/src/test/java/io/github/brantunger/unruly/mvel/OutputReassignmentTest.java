@@ -26,8 +26,8 @@ class OutputReassignmentTest {
     @Test
     @DisplayName("an immutable output can't be replaced; the assignment throws instead of being ignored")
     void immutableOutputReassignmentThrows() {
-        RulesEngine<Integer> engine = RulesEngineBuilder.stateful(() -> 0);
-        engine.setRuleList(List.of(rule("increments", 1, "output = output + 1")));
+        RulesEngine<Integer> engine = RulesEngineBuilder.<Integer>allMatches(() -> 0).build();
+        engine.load(List.of(rule("increments", 1, "output = output + 1")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
@@ -43,8 +43,8 @@ class OutputReassignmentTest {
             "java.util.Map output = new java.util.HashMap()",
     })
     void mapOutputReassignmentThrows(String action) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(rule("replaces", 1, action)));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule("replaces", 1, action)));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
         assertTrue(ex.getMessage().contains("Cannot assign 'output'"));
@@ -53,8 +53,8 @@ class OutputReassignmentTest {
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"output += 1", "output++"})
     void compoundOutputAssignmentThrows(String action) {
-        RulesEngine<Integer> engine = RulesEngineBuilder.stateless(() -> 0);
-        engine.setRuleList(List.of(rule("compound", 1, action)));
+        RulesEngine<Integer> engine = RulesEngineBuilder.<Integer>firstMatch(() -> 0).build();
+        engine.load(List.of(rule("compound", 1, action)));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
         assertTrue(ex.getMessage().contains("Cannot assign 'output'"));
@@ -63,8 +63,8 @@ class OutputReassignmentTest {
     @Test
     @DisplayName("changing the output in place and assigning other locals still work")
     void inPlaceChangesStillWork() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.setRuleList(List.of(
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        engine.load(List.of(
                 rule("put", 4, "output.put('a', 1)"),
                 rule("with", 3, "with (output) { put('w', 2) }"),
                 rule("locals", 2, "x = 5; int y = 6; output.put('xy', x + y)"),

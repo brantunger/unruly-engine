@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,7 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("addImport rejects a class that exists but can't be loaded, instead of importing it as a package")
+@DisplayName("an import of a class that exists but can't be loaded fails build(), instead of importing it as a package")
 class UnloadableImportTest {
 
     /**
@@ -46,6 +45,10 @@ class UnloadableImportTest {
         }
     }
 
+    private static RulesEngineBuilder<Map<String, Object>> importing(String name) {
+        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).imports(name);
+    }
+
     @ParameterizedTest(name = "{0}")
     @CsvSource(delimiter = '|', value = {
             "p.A | java.lang.NoClassDefFoundError: p/Base",
@@ -53,10 +56,10 @@ class UnloadableImportTest {
             "p.C | java.lang.ClassFormatError: Incompatible magic value 16909060 in class file p/C"})
     @DisplayName("a class that exists but can't be loaded is rejected, with the linkage error as the cause")
     void unloadableClassRejected(String name, String error) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngineBuilder<Map<String, Object>> builder = importing(name);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(() -> engine.addImport(name)));
+                () -> withContextClassLoader(builder::build));
 
         assertEquals("Can't import '" + name + "': the class exists but can't be loaded: " + error, ex.getMessage());
         assertEquals(error, assertInstanceOf(LinkageError.class, ex.getCause()).toString());
@@ -65,8 +68,8 @@ class UnloadableImportTest {
     @Test
     @DisplayName("a name that only finds a class file in a different case is still a package import")
     void wrongNameIsAPackage() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngineBuilder<Map<String, Object>> builder = importing("p.a");
 
-        assertDoesNotThrow(() -> withContextClassLoader(() -> engine.addImport("p.a")));
+        assertDoesNotThrow(() -> withContextClassLoader(builder::build));
     }
 }

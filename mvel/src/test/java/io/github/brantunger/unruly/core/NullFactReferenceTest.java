@@ -16,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class NullFactReferenceTest {
 
     private static StatelessRulesEngine<Map<String, Object>> engine() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("is-null").condition("x == null")
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(Rule.builder().ruleName("is-null").condition("x == null")
                 .action("output.put('isNull', true)").build()));
         return engine;
     }

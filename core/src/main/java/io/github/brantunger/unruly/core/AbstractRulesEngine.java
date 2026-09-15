@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -61,20 +61,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static final Logger log = LoggerFactory.getLogger(LOGGER_NAME);
 
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
-    // The smallest limit on compiled copies: one run at a time.
-    private static final int MIN_COPIES = 1;
-    // The language of a rule whose language is null: MVEL, which is found with ServiceLoader like any other language.
-    private static final String DEFAULT_LANGUAGE = "mvel";
     private static final String CLOSED_MESSAGE = "The engine is closed";
-    // The languages found with ServiceLoader, and those from registerLanguage().
-    private final LanguageRegistry languages = new LanguageRegistry();
-    // Packages and classes from addImport(s), passed to every compilation of the next rule list.
-    private final Set<String> packageImports = new LinkedHashSet<>();
-    private final Set<Class<?>> classImports = new LinkedHashSet<>();
-    // Copy-on-write: callbacks iterate a snapshot, so registering a listener from another thread
-    // or from inside a callback can't throw ConcurrentModificationException out of run().
-    private final List<RuleListener> listeners = new CopyOnWriteArrayList<>();
-    // Volatile so a setRuleList() call on one thread is seen by run() on others. The rule set holds the rules and the
+    // The engine's languages and its default language, fixed when it's built.
+    private final LanguageRegistry languages;
+    // The imported packages and classes, resolved when the engine is built and passed to every compilation.
+    private final Set<String> packageImports;
+    private final Set<Class<?>> classImports;
+    // Fixed when the engine is built, so every callback of a run goes to the same listeners.
+    private final List<RuleListener> listeners;
+    // Volatile so a load() call on one thread is seen by run() on others. The rule set holds the rules and the
     // compilers of the languages they use, and is fully built before it is assigned, so one volatile write swaps in
     // both. Assigned while holding lifecycle, so each rule set replaced is retired once, and none is assigned after
     // close().
@@ -85,29 +80,37 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final int maxCopies;
 
     /**
-     * Creates an engine that makes as many compiled copies of its rules as its runs need at once.
-     */
-    AbstractRulesEngine() {
-        this.maxCopies = RuleSet.UNLIMITED;
-    }
-
-    /**
-     * Creates an engine that keeps at most {@code maxCopies} compiled copies of its rules. A run that finds all of them
-     * in use waits for one; see {@link RuleSet}.
+     * Creates an engine with the builder's settings: takes or finds its languages and picks the default one, and
+     * resolves its imports with the building thread's context class loader. A limit on copies means a run that finds
+     * all of them in use waits for one; see {@link RuleSet}.
      *
-     * @param maxCopies The most copies, at least 1
-     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
+     * @param configuration The builder's settings
+     * @throws IllegalStateException    if the languages or the default language can't be resolved, as
+     *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
+     * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
+     *                                  class that exists but can't be loaded
      */
-    AbstractRulesEngine(int maxCopies) {
-        if (maxCopies < MIN_COPIES) {
-            throw new IllegalArgumentException(
-                    "maxCopies must be at least " + MIN_COPIES + ", but was " + maxCopies);
+    AbstractRulesEngine(EngineConfiguration configuration) {
+        this.languages = LanguageRegistry.resolve(configuration.languages(), configuration.defaultLanguage(),
+                ImportResolver.contextClassLoader());
+        Set<String> packages = new LinkedHashSet<>();
+        Set<Class<?>> classes = new LinkedHashSet<>();
+        for (String name : configuration.imports()) {
+            Class<?> type = ImportResolver.resolve(name);
+            if (type != null) {
+                classes.add(type);
+            } else {
+                packages.add(name);
+            }
         }
-        this.maxCopies = maxCopies;
+        this.packageImports = Collections.unmodifiableSet(packages);
+        this.classImports = Collections.unmodifiableSet(classes);
+        this.listeners = configuration.listeners();
+        this.maxCopies = configuration.maxCopies();
     }
 
     /**
-     * Returns the rules as {@link #setRuleList(List)} compiled them, or {@code null} if it has not been called or the
+     * Returns the rules as {@link #load(List)} compiled them, or {@code null} if it has not been called or the
      * engine is closed. Every run shares them, each with its own sessions, from {@link #withCompiledRules(BiFunction)}.
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
@@ -121,7 +124,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Calls {@code run} with the rules and a copy of them, one session for each language, that no concurrent run is
-     * using, and gives the copy back once {@code run} returns or throws. The first run after {@link #setRuleList(List)},
+     * using, and gives the copy back once {@code run} returns or throws. The first run after {@link #load(List)},
      * and a run that starts while every copy is in use, makes a new copy. An engine created with a limit on copies
      * keeps at most that many: a run that finds all of them in use waits for one, unless it is nested in another run on
      * the same thread, which gets an extra copy that isn't kept. MVEL's compiled expressions aren't safe to share
@@ -129,14 +132,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * rule set just as a reload or {@link #close()} closes it reads the rules again.
      *
      * <p>
-     * A missing call to {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
+     * A missing call to {@link #load(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
      * return {@code null}, indistinguishable from "no rule matched", so it is reported instead.
      * </p>
      *
      * @param run The body of a run, given the rule set, whose rules are in priority order, possibly none, and the copy
      * @param <T> The type {@code run} returns
      * @return What {@code run} returns
-     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      * @throws RuleExecutionException if a new copy is needed and a language throws or returns {@code null} from
      *                                {@code newSession()}, or if the thread is interrupted while it waits for a copy,
      *                                which keeps its interrupt status set. Each is logged at ERROR; a fatal
@@ -160,12 +163,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Returns the rule set runs start with.
      *
      * @return The rule set
-     * @throws IllegalStateException if {@link #setRuleList(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      */
     RuleSet currentRules() {
         RuleSet rules = ruleSet;
         if (rules == null) {
-            throw new IllegalStateException(closed ? CLOSED_MESSAGE : "setRuleList() must be called before run()");
+            throw new IllegalStateException(closed ? CLOSED_MESSAGE : "load() must be called before run()");
         }
         return rules;
     }
@@ -191,49 +194,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Registers a single {@link RuleListener} to monitor rule evaluation and execution.
-     *
-     * @param listener The listener to register.
-     * @return A reference to this {@link RulesEngine}
-     * @throws NullPointerException {@inheritDoc}
-     */
-    @Override
-    public RulesEngine<O> registerListener(RuleListener listener) {
-        Objects.requireNonNull(listener, "listener must not be null");
-        this.listeners.add(listener);
-        return this;
-    }
-
-    /**
-     * Registers a list of {@link RuleListener} to monitor rule evaluation and execution.
-     *
-     * @param listeners The list of listeners to register.
-     * @return A reference to this {@link RulesEngine}
-     * @throws NullPointerException {@inheritDoc}
-     */
-    @Override
-    public RulesEngine<O> registerListeners(List<RuleListener> listeners) {
-        Objects.requireNonNull(listeners, "listeners must not be null");
-        // Checked up front so a list with a null registers nothing. A stored null would otherwise throw
-        // inside every callback, logged as a misleading "Listener threw exception" warning on every run.
-        for (RuleListener listener : listeners) {
-            Objects.requireNonNull(listener, "listener element must not be null");
-        }
-        this.listeners.addAll(listeners);
-        return this;
-    }
-
-    /**
      * Set the list of rules used for processing in the Rules Engine.
      * Rules are sorted by priority in descending order (highest priority first).
      * Rules with a {@code null} priority are treated as lowest priority.
      * Rules with equal priority keep their relative order from {@code ruleList}.
-     *
-     * <p>
-     * <b>Note:</b> Any package imports configured via {@link #addImport(String)} or
-     * {@link #addImports(Set)} must be set <em>before</em> calling this method, as
-     * rules are compiled with the imports registered at the time of this call.
-     * </p>
      *
      * <p>
      * Every condition and action is compiled in isolation. Variables, their types and inline
@@ -246,11 +210,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * <p>
-     * Each rule is compiled by the expression language its {@link Rule#getLanguage() language} names, or by MVEL if
-     * that is {@code null}. The languages are found with {@link java.util.ServiceLoader} each time this method is
-     * called, with this library's class loader and the thread's context class loader, and a language registered with
-     * {@link #registerLanguage(ExpressionLanguage)} replaces a found one with the same name. {@code run()} checks fact
-     * names against every language the rules use.
+     * Each rule is compiled by the expression language its {@link Rule#getLanguage() language} names, or by the
+     * engine's default language if that is {@code null}. {@code run()} checks fact names against every language the
+     * rules use, or against the default language if there are no rules.
      * </p>
      *
      * <p>
@@ -273,7 +235,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // The rule set closes the compilers, or this method does if the rule list fails to load.
     @SuppressWarnings("PMD.CloseResource")
     @Override
-    public void setRuleList(List<Rule> ruleList) {
+    public void load(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
         // Checked before sorting, which would otherwise fail with a bare NPE from Rule::getPriority.
         Set<String> ruleNames = new HashSet<>();
@@ -290,7 +252,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         CompileContext context = new EngineCompileContext(packageImports, classImports,
                 ImportResolver.contextClassLoader());
-        LanguageCompilers compilers = new LanguageCompilers(availableLanguages(context.classLoader()),
+        LanguageCompilers compilers = new LanguageCompilers(languages.languages(),
                 (name, language) -> newCompiler(name, language, context));
         RuleSet loaded;
         try {
@@ -311,7 +273,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 }
             }
             throwIfAnyFailed(failures);
-            loaded = new RuleSet(compiled, compilers.used(DEFAULT_LANGUAGE), maxCopies);
+            loaded = new RuleSet(compiled, compilers.used(languages.defaultLanguage()), maxCopies);
         } catch (RuntimeException | Error e) {
             Closing.compilers(compilers.created());
             throw e;
@@ -333,7 +295,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Closes the engine. The rule list is closed once no run is using it: runs in progress finish, their sessions are
      * closed as each one returns, and the languages' compilers after the last one. Afterwards, {@code run()} and
-     * {@link #setRuleList(List)} throw {@link IllegalStateException}. Closing it again does nothing.
+     * {@link #load(List)} throw {@link IllegalStateException}. Closing it again does nothing.
      */
     // A closed engine has no rule set.
     @SuppressWarnings("PMD.NullAssignment")
@@ -351,85 +313,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (replaced != null) {
             replaced.retire();
         }
-    }
-
-    /**
-     * Adds imports that rules are compiled with, so rule expressions can refer to classes by their simple names.
-     * Each string is a fully qualified package name ({@code "java.util"}) or class name
-     * ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class).
-     *
-     * <p>
-     * Imports are accumulated across multiple calls. This method must be called
-     * <em>before</em> {@link #setRuleList(List)} for the imports to take effect.
-     * </p>
-     *
-     * <p>
-     * Whether a string names a class is decided here, by the calling thread's context class loader, or this library's
-     * class loader if the thread has none. A string that loader can't load as a class, but that is a valid package
-     * name, is imported as a package. Classes in imported packages are looked up by {@link #setRuleList(List)}, with
-     * its thread's context class loader.
-     * </p>
-     *
-     * @param packages A set of packages or classes to import
-     * @return A reference to this {@link RulesEngine}
-     * @throws IllegalArgumentException {@inheritDoc}
-     * @throws NullPointerException {@inheritDoc}
-     */
-    @Override
-    public RulesEngine<O> addImports(Set<String> packages) {
-        Objects.requireNonNull(packages, "packages must not be null");
-        // Every name is resolved before any is registered, so an invalid one leaves the imports unchanged.
-        Set<String> newPackages = new LinkedHashSet<>();
-        Set<Class<?>> newClasses = new LinkedHashSet<>();
-        for (String pkg : packages) {
-            Objects.requireNonNull(pkg, "package element must not be null");
-            Class<?> type = ImportResolver.resolve(pkg);
-            if (type != null) {
-                newClasses.add(type);
-            } else {
-                newPackages.add(pkg);
-            }
-        }
-        classImports.addAll(newClasses);
-        packageImports.addAll(newPackages);
-        return this;
-    }
-
-    /**
-     * Adds a single import that rules are compiled with: a fully qualified package name ({@code "java.util"}) or
-     * class name ({@code "java.time.LocalDate"}).
-     *
-     * <p>
-     * Imports are accumulated across multiple calls. This method must be called
-     * <em>before</em> {@link #setRuleList(List)} for the imports to take effect. A class name is resolved as
-     * {@link #addImports(Set)} describes.
-     * </p>
-     *
-     * @param packageString The package or class to import. Example: "java.util"
-     * @return A reference to this {@link RulesEngine}
-     * @throws IllegalArgumentException {@inheritDoc}
-     * @throws NullPointerException {@inheritDoc}
-     */
-    @Override
-    public RulesEngine<O> addImport(String packageString) {
-        Objects.requireNonNull(packageString, "packageString must not be null");
-        return addImports(Set.of(packageString));
-    }
-
-    /**
-     * Registers an expression language that rules can be written in. It replaces a registered language, or a language
-     * found with {@link java.util.ServiceLoader} such as MVEL, with the same name. Takes effect at the next
-     * {@link #setRuleList(List)}.
-     *
-     * @param language The language to register
-     * @return A reference to this {@link RulesEngine}
-     * @throws IllegalArgumentException {@inheritDoc}
-     * @throws NullPointerException {@inheritDoc}
-     */
-    @Override
-    public RulesEngine<O> registerLanguage(ExpressionLanguage language) {
-        languages.register(language);
-        return this;
     }
 
     /**
@@ -646,15 +529,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Takes the listeners for one condition evaluation or one action. The same snapshot serves the
-     * {@code before*} callback and the {@code after*} or {@code onError} that closes it, so a listener registered
-     * in between, even from inside a callback, starts with the next {@code before*} instead of receiving a closing
-     * call without its opening one.
+     * Returns the listeners for one condition evaluation or one action: the ones the engine was built with, which
+     * can't change.
      *
-     * @return The listeners registered right now
+     * @return The listeners
      */
     private List<RuleListener> listenerSnapshot() {
-        return List.copyOf(listeners);
+        return listeners;
     }
 
     /**
@@ -801,30 +682,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 + failures.stream().map(Throwable::getMessage).collect(Collectors.joining("; ")), failures);
     }
 
-    private static String languageOf(Rule rule) {
-        return rule.getLanguage() != null ? rule.getLanguage() : DEFAULT_LANGUAGE;
-    }
-
-    /**
-     * Finds the languages a rule list is compiled with. A failure to find them fails the rule list.
-     *
-     * @param loader The class loader the rule list is compiled with
-     * @return The languages by name
-     * @throws RuleCompilationException if finding the languages throws
-     */
-    private Map<String, ExpressionLanguage> availableLanguages(ClassLoader loader) {
-        try {
-            return languages.available(loader);
-        } catch (Exception | Error e) {
-            throw compilationFailure("Failed to find the expression languages: " + Failures.describe(e), e, null);
-        }
+    private String languageOf(Rule rule) {
+        return rule.getLanguage() != null ? rule.getLanguage() : languages.defaultLanguage();
     }
 
     /**
      * Creates a language's compiler for one rule list. A language that throws or returns {@code null} fails the rule
      * list, like an expression that doesn't compile.
      *
-     * @param name     The name the language is registered under
+     * @param name     The language's name
      * @param language The language
      * @param context  The imports and class loader the rule list is compiled with
      * @return The compiler
@@ -859,8 +725,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String language = languageOf(rule);
         if (compiler == null) {
             throw compilationFailure("Rule '" + displayName + "' is written in '" + Failures.quote(language)
-                    + "', which isn't a registered expression language. Registered languages: "
-                    + compilers.languageNames(), null, ruleName);
+                    + "', which isn't one of the engine's expression languages: " + compilers.languageNames(), null,
+                    ruleName);
         }
         CompiledCondition compiledCondition = compile(
                 new Expression(ruleName, ExpressionKind.CONDITION, rule.getCondition()), compiler::compileCondition);

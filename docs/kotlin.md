@@ -14,19 +14,19 @@ which types are nullable.
 ## 🚀 Using the engine from Kotlin
 
 ```kotlin
-val engine: RulesEngine<LoanDecision> = RulesEngineBuilder.stateless(::LoanDecision)
-engine.setRuleList(rules)
+val engine: RulesEngine<LoanDecision> = RulesEngineBuilder.firstMatch(::LoanDecision)
+    .listener(object : RuleListener {
+        override fun afterEvaluate(rule: Rule, facts: Map<String, Any?>, matchResult: Boolean) {
+            println("${rule.ruleName} matched: $matchResult")
+        }
+    })
+    .build()
+engine.load(rules)
 
 val facts = FactMap<Any?>()
 facts.setValue("applicant", Applicant("Ada", 780))
 
 val decision: LoanDecision? = engine.run(facts)   // null when no rule matched
-
-engine.registerListener(object : RuleListener {
-    override fun afterEvaluate(rule: Rule, facts: Map<String, Any?>, matchResult: Boolean) {
-        println("${rule.ruleName} matched: $matchResult")
-    }
-})
 ```
 
 | API | Kotlin type |

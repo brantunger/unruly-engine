@@ -19,7 +19,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("syntax validation at setRuleList()")
+@DisplayName("syntax validation at load()")
 class SyntaxValidationTest {
 
     private static Rule rule(String condition, String action) {
@@ -34,29 +34,29 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a doubled operator in a condition is rejected at compile time")
     void doubledOperatorInConditionRejected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                () -> engine.setRuleList(List.of(rule("x == == 1", "output.put('k', 1)"))));
+                () -> engine.load(List.of(rule("x == == 1", "output.put('k', 1)"))));
         assertTrue(ex.getMessage().contains("'syntax'"));
     }
 
     @Test
     @DisplayName("a doubled operator in an action is rejected at compile time")
     void doubledOperatorInActionRejected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
         assertThrows(RuleCompilationException.class,
-                () -> engine.setRuleList(List.of(rule("true", "x == == 1"))));
+                () -> engine.load(List.of(rule("true", "x == == 1"))));
     }
 
     @Test
     @DisplayName("a compile error keeps MVEL's exception as its cause")
     void compileErrorKeepsCause() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                () -> engine.setRuleList(List.of(rule("x >= ", "output.put('k', 1)"))));
+                () -> engine.load(List.of(rule("x >= ", "output.put('k', 1)"))));
 
         assertInstanceOf(CompileException.class, ex.getCause().getCause());
     }
@@ -71,10 +71,10 @@ class SyntaxValidationTest {
             "($ in list if $ > 1).size() > 0",
     })
     void validConditionsStillCompile(String condition) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.addImport("java.util");
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports("java.util").build();
 
-        assertDoesNotThrow(() -> engine.setRuleList(List.of(rule(condition, "output.put('k', 1)"))));
+        assertDoesNotThrow(() -> engine.load(List.of(rule(condition, "output.put('k', 1)"))));
     }
 
     @ParameterizedTest(name = "valid action {0} still compiles")
@@ -86,17 +86,17 @@ class SyntaxValidationTest {
             "score = 10; output.put('s', score)",
     })
     void validActionsStillCompile(String action) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
-        assertDoesNotThrow(() -> engine.setRuleList(List.of(rule("true", action))));
+        assertDoesNotThrow(() -> engine.load(List.of(rule("true", action))));
     }
 
     @Test
-    @DisplayName("imports added before setRuleList() are visible to the analysis pass")
+    @DisplayName("the engine's imports are visible to the analysis pass")
     void importsVisibleToAnalysis() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.addImport("java.util");
-        engine.setRuleList(List.of(rule("Objects.nonNull(name)", "output.put('k', 1)")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports("java.util").build();
+        engine.load(List.of(rule("Objects.nonNull(name)", "output.put('k', 1)")));
 
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("name", "n");
@@ -107,8 +107,8 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("known limitation: a stray closing parenthesis is only reported at run()")
     void strayParenthesisOnlyFailsAtRun() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
-        engine.setRuleList(List.of(rule("true)", "output.put('k', 1)")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        engine.load(List.of(rule("true)", "output.put('k', 1)")));
 
         assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
     }

@@ -11,7 +11,7 @@ import java.util.Set;
 
 /**
  * The variables an action runs against: the facts, read through without copying, plus the output object and the
- * variables the action assigns, which stay local to it. A stateful run executes every matched action, so copying all
+ * variables the action assigns, which stay local to it. A run that fires every match executes every matched action, so copying all
  * the facts for each one cost the number of facts times the number of matched rules.
  *
  * <p>
