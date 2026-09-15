@@ -199,13 +199,13 @@ follows the same path:
 ```mermaid
 flowchart TD
     A(["run(facts)"]) --> B["Check fact names"]
-    B --> C["Evaluate <b>every</b> condition,<br/>highest priority first"]
+    B --> C["Evaluate conditions,<br/>highest priority first"]
     C --> D{"Any match?"}
     D -- no --> N(["return null"])
     D -- yes --> E["Create the output object<br/>with your Supplier"]
     E --> F{"Engine type"}
-    F -- first match --> G["Fire <b>only</b> the first<br/>matched action"]
-    F -- all matches --> H["Fire <b>every</b> matched action<br/>in priority order"]
+    F -- first match --> G["Stop at the first match<br/>and fire its action"]
+    F -- all matches --> H["Evaluate the rest, then fire<br/><b>every</b> matched action in priority order"]
     G --> R(["return output"])
     H --> R
 ```
@@ -282,15 +282,16 @@ identifier that isn't a keyword such as `empty` or `in`. Build a new store for e
 |  | 🎯 First match | 📚 All matches |
 | --- | --- | --- |
 | **Create with** | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
-| **Conditions evaluated** | All of them | All of them |
+| **Conditions evaluated** | Until the first match; the rules below it aren't evaluated | All of them |
 | **Actions fired** | Only the highest-priority match | Every match, highest priority first |
 | **Output** | Shaped by exactly one rule | Shared by all matched actions, so a later, lower-priority action can overwrite an earlier one |
 | **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation |
 | **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` |
 
-Both engines **match first, then fire**. Every condition is evaluated before any action runs, and an action
-never causes a condition to be checked again. If a higher-priority action changes a fact, a lower-priority rule
-that already matched still fires.
+A **first-match** engine evaluates conditions in priority order and stops at the first match, so a broken
+lower-priority rule can't fail a run that's already decided. An **all-matches** engine **matches first, then fires**:
+every condition is evaluated before any action runs, and an action never causes a condition to be checked again. If a
+higher-priority action changes a fact, a lower-priority rule that already matched still fires.
 
 > [!CAUTION]
 > An all-matches run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
@@ -393,8 +394,8 @@ flag, or build a new engine.
 <summary><b>How does this compare with Drools or Easy Rules?</b></summary>
 
 unruly-engine is intentionally small. It has no Rete network, no working memory and no forward chaining. Each
-`run()` makes a single pass that evaluates every condition and then fires actions, and actions never trigger
-re-evaluation. That makes it simple to reason about and a good fit for decision tables and moderate rule sets.
+`run()` makes a single pass in priority order — a first-match engine stops at the first match, an all-matches engine
+evaluates every condition and then fires — and actions never trigger re-evaluation. That makes it simple to reason about and a good fit for decision tables and moderate rule sets.
 If you need inference over changing facts, use a full production-rule system.
 
 </details>
