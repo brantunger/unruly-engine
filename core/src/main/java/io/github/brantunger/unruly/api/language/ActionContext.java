@@ -17,7 +17,8 @@ public sealed interface ActionContext extends EvaluationContext
     String OUTPUT_NAME = "output";
 
     /**
-     * Returns the output object, which the action changes in place. An action can't replace it.
+     * Returns the output object. The action changes it in place, or returns {@link ActionResult#set(java.util.Map)}
+     * with the properties for the engine to set on it. An action can't replace it.
      *
      * @return The output object, never {@code null}
      */

@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issu
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -56,7 +57,10 @@ class CompileFailureDetailsTest {
                 @Override
                 public CompiledAction compileAction(Expression source) {
                     record(context, source);
-                    return (action, session) -> ((Map<String, Object>) action.output()).put("ran", source.text());
+                    return (action, session) -> {
+                        ((Map<String, Object>) action.output()).put("ran", source.text());
+                        return ActionResult.done();
+                    };
                 }
 
                 @Override

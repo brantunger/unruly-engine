@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -32,8 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class CompileFailureTest {
 
     private static final Supplier<CompiledCondition> TRUE = () -> (context, session) -> true;
-    private static final Supplier<CompiledAction> NO_OP = () -> (context, session) -> {
-    };
+    private static final Supplier<CompiledAction> NO_OP = () -> (context, session) -> ActionResult.done();
 
     private final StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
 

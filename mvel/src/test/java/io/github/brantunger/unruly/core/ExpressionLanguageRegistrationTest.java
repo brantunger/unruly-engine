@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -61,8 +62,7 @@ class ExpressionLanguageRegistrationTest {
 
                     @Override
                     public CompiledAction compileAction(Expression expression) {
-                        return (action, session) -> {
-                        };
+                        return (action, session) -> ActionResult.done();
                     }
 
                     @Override

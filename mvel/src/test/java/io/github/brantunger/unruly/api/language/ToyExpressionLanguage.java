@@ -5,10 +5,10 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.BiConsumer;
 
 /**
  * A tiny expression language for tests. It keeps its own variables and never writes to the map it reads facts from,
@@ -17,7 +17,8 @@ import java.util.function.BiConsumer;
  * <ul>
  *     <li>A condition is {@code OPERAND} or {@code OPERAND == OPERAND}.</li>
  *     <li>An action is statements separated by {@code ;}: {@code let NAME = OPERAND} declares a variable, and
- *     {@code put KEY OPERAND} puts a value into the output map.</li>
+ *     {@code put KEY OPERAND} puts a value into the output map, or, for a language that returns properties, into the
+ *     action's {@link ActionResult}.</li>
  *     <li>An operand is an integer, {@code true}, {@code false}, {@code null}, or the name of a variable or fact.</li>
  * </ul>
  *
@@ -32,13 +33,25 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
     public static final String LANGUAGE_NAME = "toy";
 
     private final String languageName;
+    private final boolean returnsProperties;
 
     public ToyExpressionLanguage() {
         this(LANGUAGE_NAME);
     }
 
     public ToyExpressionLanguage(String languageName) {
+        this(languageName, false);
+    }
+
+    /**
+     * Creates the language.
+     *
+     * @param languageName      Its name
+     * @param returnsProperties Whether an action returns what it puts as properties, instead of changing the output
+     */
+    public ToyExpressionLanguage(String languageName, boolean returnsProperties) {
         this.languageName = languageName;
+        this.returnsProperties = returnsProperties;
     }
 
     @Override
@@ -68,6 +81,12 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
         };
     }
 
+    /** One statement of an action, given the action's context, its variables and the map that {@code put} writes to. */
+    @FunctionalInterface
+    private interface Statement {
+        void run(ActionContext context, Map<String, Object> locals, Map<String, Object> target);
+    }
+
     private static CompiledCondition condition(String source) {
         List<String> tokens = tokens(source);
         if (tokens.contains("=")) {
@@ -86,8 +105,8 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
         throw new IllegalArgumentException("syntax error in condition '" + source + "'");
     }
 
-    private static CompiledAction action(String source) {
-        List<BiConsumer<ActionContext, Map<String, Object>>> statements = new ArrayList<>();
+    private CompiledAction action(String source) {
+        List<Statement> statements = new ArrayList<>();
         for (String statement : source.split(";")) {
             List<String> tokens = tokens(statement);
             if (tokens.size() >= 2 && ActionContext.OUTPUT_NAME.equals(tokens.get(0)) && "=".equals(tokens.get(1))) {
@@ -96,18 +115,21 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
             if (tokens.size() == 4 && "let".equals(tokens.get(0)) && "=".equals(tokens.get(2))) {
                 String variable = tokens.get(1);
                 String operand = tokens.get(3);
-                statements.add((context, locals) -> locals.put(variable, value(operand, context.facts(), locals)));
+                statements.add((context, locals, target) ->
+                        locals.put(variable, value(operand, context.facts(), locals)));
             } else if (tokens.size() == 3 && "put".equals(tokens.get(0))) {
                 String key = tokens.get(1);
                 String operand = tokens.get(2);
-                statements.add((context, locals) -> output(context).put(key, value(operand, context.facts(), locals)));
+                statements.add((context, locals, target) -> target.put(key, value(operand, context.facts(), locals)));
             } else if (!tokens.isEmpty()) {
                 throw new IllegalArgumentException("syntax error in action statement '" + statement.trim() + "'");
             }
         }
         return (context, session) -> {
             Map<String, Object> locals = new HashMap<>();
-            statements.forEach(statement -> statement.accept(context, locals));
+            Map<String, Object> target = returnsProperties ? new LinkedHashMap<>() : output(context);
+            statements.forEach(statement -> statement.run(context, locals, target));
+            return returnsProperties ? ActionResult.set(target) : ActionResult.done();
         };
     }
 

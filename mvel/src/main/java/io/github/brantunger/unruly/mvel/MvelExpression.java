@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
@@ -53,10 +54,12 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     @Override
-    public void execute(ActionContext context, Session session) {
-        // Reads the facts; the output object and the action's own assignments stay in this action.
+    public ActionResult execute(ActionContext context, Session session) {
+        // Reads the facts; the output object and the action's own assignments stay in this action, which changes the
+        // output in place.
         MVEL.executeExpression(compiledIn(session), (Object) null,
                 new ActionVariables(context.facts(), context.output()));
+        return ActionResult.done();
     }
 
     /**

@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
@@ -30,7 +31,7 @@ class RuleSetTest {
         }
 
         @Override
-        public void execute(ActionContext context, Session session) {
+        public ActionResult execute(ActionContext context, Session session) {
             throw new AssertionError("not run");
         }
     }

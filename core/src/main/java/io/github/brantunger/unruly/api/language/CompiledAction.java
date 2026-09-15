@@ -16,14 +16,18 @@ package io.github.brantunger.unruly.api.language;
 public interface CompiledAction {
 
     /**
-     * Executes the action, which changes {@link ActionContext#output()} in place. Variables it declares stay local to
-     * this execution. An exception it throws fails the rule with a
+     * Executes the action. The action either changes {@link ActionContext#output()} in place and returns
+     * {@link ActionResult#done()}, or returns {@link ActionResult#set(java.util.Map)} with the properties the engine
+     * sets on the output, as a language without side effects does. Variables it declares stay local to this execution.
+     * An exception it throws fails the rule with a
      * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, except a fatal {@link Error}, which
      * {@code run()} rethrows unchanged.
      *
      * @param context The facts of the run and the output object
      * @param session The run's session for this action's language, created by the compiler that compiled it
+     * @return What the action did, never {@code null}. Returning {@code null} fails the rule with a
+     *         {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
      * @throws Exception if the action fails
      */
-    void execute(ActionContext context, Session session) throws Exception;
+    ActionResult execute(ActionContext context, Session session) throws Exception;
 }

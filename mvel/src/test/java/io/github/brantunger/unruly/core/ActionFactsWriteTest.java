@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -46,8 +47,14 @@ class ActionFactsWriteTest {
                 public CompiledAction compileAction(Expression expression) {
                     String source = expression.text();
                     return "write".equals(source)
-                            ? (action, session) -> action.facts().put("x", 99)
-                            : (action, session) -> ((Map<String, Object>) action.output()).put("x", action.facts().get("x"));
+                            ? (action, session) -> {
+                                action.facts().put("x", 99);
+                                return ActionResult.done();
+                            }
+                            : (action, session) -> {
+                                ((Map<String, Object>) action.output()).put("x", action.facts().get("x"));
+                                return ActionResult.done();
+                            };
                 }
 
                 @Override

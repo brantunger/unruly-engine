@@ -184,6 +184,23 @@ block.
 | Reloading to find the next broken rule | `failures()`, which lists them all |
 | `getCause()` is MVEL's `CompileException` | `getCause().getCause()`, or `issues()` |
 
+## ↩️ Actions return a result
+
+**What changed:** `CompiledAction.execute` returns an `ActionResult`. `ActionResult.done()` means the action changed
+the output itself, as before. `ActionResult.set(properties)` returns values for the engine to set on the output: with
+`put` on a `Map`, or with the output's public setters. This lets languages without side effects, such as CEL or
+JsonLogic, write actions. In `ExpressionLanguageContractTest`, `reassignOutput()` and `declareVariable()` may return
+`null` to skip their checks.
+
+**Who is affected:** authors of expression languages. Rule authors change nothing.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `void execute(ActionContext context)` | `ActionResult execute(ActionContext context, Session session)`, returning `ActionResult.done()` |
+| Writing a computed value back to the output with reflection | `return ActionResult.set(Map.of("approved", true))` |
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in
