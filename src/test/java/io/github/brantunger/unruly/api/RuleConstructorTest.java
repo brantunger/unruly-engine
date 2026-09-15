@@ -72,8 +72,12 @@ class RuleConstructorTest {
     }
 
     @Test
-    @DisplayName("the no-arg constructor that JSON and configuration binders use isn't deprecated")
-    void noArgConstructorNotDeprecated() throws NoSuchMethodException {
-        assertNull(Rule.class.getConstructor().getAnnotation(Deprecated.class));
+    @DisplayName("the no-arg constructor binders use is deprecated for removal since 1.8.0, when 2.0's immutable Rule comes next")
+    void noArgConstructorDeprecatedSince160() throws NoSuchMethodException {
+        Deprecated deprecated = Rule.class.getConstructor().getAnnotation(Deprecated.class);
+
+        assertNotNull(deprecated, "the no-arg constructor isn't deprecated");
+        assertTrue(deprecated.forRemoval());
+        assertEquals("1.8.0", deprecated.since());
     }
 }

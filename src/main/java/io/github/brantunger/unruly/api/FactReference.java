@@ -28,7 +28,10 @@ public interface FactReference<T extends @Nullable Object> {
      *
      * @param name the name
      * @return The FactReference object itself
+     * @deprecated Create a new fact with {@code new Fact<>(name, value)}, or set a value by name with
+     *             {@link FactStore#setValue(String, Object)}. Facts are expected to become immutable in 2.0.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     FactReference<T> setName(@Nullable String name);
 
     /**
@@ -43,6 +46,9 @@ public interface FactReference<T extends @Nullable Object> {
      *
      * @param obj the value object reference
      * @return The FactReference object itself
+     * @deprecated Create a new fact with {@code new Fact<>(name, value)}, or set a value by name with
+     *             {@link FactStore#setValue(String, Object)}. Facts are expected to become immutable in 2.0.
      */
+    @Deprecated(since = "1.8.0", forRemoval = true)
     FactReference<T> setValue(T obj);
 }

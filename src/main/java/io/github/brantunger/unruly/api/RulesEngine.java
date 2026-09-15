@@ -19,6 +19,14 @@ import java.util.Set;
  * </p>
  *
  * <p>
+ * <b>2.0:</b> imports, expression languages and listeners are expected to be set when the engine is built, rather than
+ * on an engine that may already be running, so {@link #addImports(Set)}, {@link #addImport(String)},
+ * {@link #registerLanguage(ExpressionLanguage)}, {@link #registerListener(RuleListener)} and
+ * {@link #registerListeners(List)} are expected to move to the engine builder. They aren't deprecated yet, because
+ * 1.x has no replacement.
+ * </p>
+ *
+ * <p>
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double. A
  * method added in a 1.x release is a {@code default} method, so an existing implementation keeps compiling. A default
  * that can't be implemented generically, such as {@link #registerLanguage(ExpressionLanguage)}, throws
@@ -77,6 +85,10 @@ public interface RulesEngine<O> {
      * {@link #setRuleList(List)} is called, with that thread's context class loader.
      * </p>
      *
+     * <p>
+     * <b>2.0:</b> expected to move to the engine builder; see the class description.
+     * </p>
+     *
      * @param packages A set of packages or classes to import
      * @return A reference to this rules engine. This enables the use of the builder design pattern
      * @throws IllegalArgumentException if a string is neither a loadable class nor a valid package name, or names a
@@ -90,6 +102,10 @@ public interface RulesEngine<O> {
      * Adds a single import that rules are compiled with: a fully qualified package name ({@code "java.util"}) or
      * class name ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). Takes effect at
      * the next {@link #setRuleList(List)}. A class name is resolved as {@link #addImports(Set)} describes.
+     *
+     * <p>
+     * <b>2.0:</b> expected to move to the engine builder; see the class description.
+     * </p>
      *
      * @param packageString The package or class to import. Example: "java.util"
      * @return A reference to this rules engine. This enables the use of the builder design pattern
@@ -109,6 +125,10 @@ public interface RulesEngine<O> {
      * An implementation of this interface that doesn't support other languages keeps this default, which throws.
      * </p>
      *
+     * <p>
+     * <b>2.0:</b> expected to move to the engine builder; see the class description.
+     * </p>
+     *
      * @param language The language to register
      * @return A reference to this rules engine
      * @throws IllegalArgumentException if the language's name is {@code null} or blank
@@ -122,6 +142,10 @@ public interface RulesEngine<O> {
     /**
      * Registers a single {@link RuleListener} to monitor rule evaluation and execution.
      *
+     * <p>
+     * <b>2.0:</b> expected to move to the engine builder; see the class description.
+     * </p>
+     *
      * @param listener The listener to register.
      * @return A reference to this rules engine.
      * @throws NullPointerException if {@code listener} is {@code null}
@@ -130,6 +154,10 @@ public interface RulesEngine<O> {
 
     /**
      * Registers a list of {@link RuleListener} to monitor rule evaluation and execution.
+     *
+     * <p>
+     * <b>2.0:</b> expected to move to the engine builder; see the class description.
+     * </p>
      *
      * @param listeners The list of listeners to register.
      * @return A reference to this rules engine.

@@ -66,6 +66,16 @@ public class Fact<T extends @Nullable Object> implements FactReference<T> {
         return this.name;
     }
 
+    /**
+     * Sets the name of the fact.
+     *
+     * @param name the name
+     * @return This fact
+     * @deprecated Create a new fact with {@code new Fact<>(name, value)}, or set a value by name with
+     *             {@link FactStore#setValue(String, Object)}. Facts are expected to become immutable in 2.0.
+     */
+    @Deprecated(since = "1.8.0", forRemoval = true)
+    @SuppressWarnings("removal") // Overrides the FactReference method, which is deprecated too.
     @Override
     public FactReference<T> setName(@Nullable String name) {
         this.name = name;
@@ -77,6 +87,16 @@ public class Fact<T extends @Nullable Object> implements FactReference<T> {
         return this.value;
     }
 
+    /**
+     * Sets the value of the fact.
+     *
+     * @param obj the value
+     * @return This fact
+     * @deprecated Create a new fact with {@code new Fact<>(name, value)}, or set a value by name with
+     *             {@link FactStore#setValue(String, Object)}. Facts are expected to become immutable in 2.0.
+     */
+    @Deprecated(since = "1.8.0", forRemoval = true)
+    @SuppressWarnings("removal") // Overrides the FactReference method, which is deprecated too.
     @Override
     public FactReference<T> setValue(T obj) {
         this.value = obj;
