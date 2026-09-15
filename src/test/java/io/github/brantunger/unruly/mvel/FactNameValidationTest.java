@@ -3,7 +3,8 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("fact names rules can't refer to are rejected at run()")
 class FactNameValidationTest {
 
-    private static StatelessRulesEngine<Map<String, Object>> engine(String condition) {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+    private static RulesEngine<Map<String, Object>> engine(String condition) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(rule(condition)));
         return engine;
     }
@@ -37,7 +38,7 @@ class FactNameValidationTest {
     @ParameterizedTest(name = "\"{0}\"")
     @ValueSource(strings = {"my-fact", "a.b", "has space", "1x", ""})
     void nonIdentifiersRejected(String name) {
-        StatelessRulesEngine<Map<String, Object>> engine = engine("true");
+        RulesEngine<Map<String, Object>> engine = engine("true");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 1)));
 
@@ -48,7 +49,7 @@ class FactNameValidationTest {
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"empty", "nil", "null", "true", "this", "isdef", "in", "with", "var", "def", "Math", "String"})
     void reservedNamesRejected(String name) {
-        StatelessRulesEngine<Map<String, Object>> engine = engine("true");
+        RulesEngine<Map<String, Object>> engine = engine("true");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 5)));
 
@@ -61,7 +62,7 @@ class FactNameValidationTest {
     void importedClassNameRejected() {
         assertEquals(Map.of("hit", true), engine("Date == 5").run(fact("Date", 5)));
 
-        StatelessRulesEngine<Map<String, Object>> imported = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.stateless(HashMap::new);
         imported.addImport("java.util");
         imported.setRuleList(List.of(rule("true")));
 
@@ -71,7 +72,7 @@ class FactNameValidationTest {
     @Test
     @DisplayName("a class name found in two imported packages is rejected like any other class name")
     void ambiguousClassNameRejected() {
-        StatelessRulesEngine<Map<String, Object>> imported = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.stateless(HashMap::new);
         imported.addImport("java.util").addImport("java.sql");
         imported.setRuleList(List.of(rule("true")));
 
@@ -86,7 +87,7 @@ class FactNameValidationTest {
     @Test
     @DisplayName("names are checked against the imports of the current rule list, like the rules themselves")
     void importsTakeEffectOnReload() {
-        StatelessRulesEngine<Map<String, Object>> engine = engine("true");
+        RulesEngine<Map<String, Object>> engine = engine("true");
         engine.addImport("java.util");
 
         assertEquals(Map.of("hit", true), engine.run(fact("Date", 5)), "rules compiled before the import");
@@ -115,7 +116,7 @@ class FactNameValidationTest {
     @Test
     @DisplayName("repeated runs with the same names are answered from the cache")
     void repeatedRunsAccepted() {
-        StatelessRulesEngine<Map<String, Object>> engine = engine("claim == 5");
+        RulesEngine<Map<String, Object>> engine = engine("claim == 5");
         for (int i = 0; i < 3; i++) {
             assertEquals(Map.of("hit", true), engine.run(fact("claim", 5)));
         }

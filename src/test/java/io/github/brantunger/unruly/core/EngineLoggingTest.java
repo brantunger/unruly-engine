@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("the engine logs each failure before throwing it")
 class EngineLoggingTest {
 
-    static final String ENGINE_LOGGER = "io.github.brantunger.unruly.core.AbstractRulesEngine - ";
+    static final String ENGINE_LOGGER = "io.github.brantunger.unruly.engine - ";
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();

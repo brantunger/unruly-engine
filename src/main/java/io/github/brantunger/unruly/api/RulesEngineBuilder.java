@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.core.StatefulRulesEngine;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
+import io.github.brantunger.unruly.core.Engines;
 
 import java.util.function.Supplier;
 
@@ -10,9 +9,6 @@ import java.util.function.Supplier;
  * without requiring them to directly import core engine implementations.
  */
 public final class RulesEngineBuilder {
-
-    // The engine constructors are deprecated so that users call these methods instead.
-    private static final String REMOVAL = "removal";
 
     private RulesEngineBuilder() {
         // Hide utility class constructor
@@ -28,9 +24,8 @@ public final class RulesEngineBuilder {
      * @return A new stateless {@link RulesEngine}
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
-    @SuppressWarnings(REMOVAL)
     public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory) {
-        return new StatelessRulesEngine<>(outputFactory);
+        return Engines.stateless(outputFactory);
     }
 
     /**
@@ -43,9 +38,8 @@ public final class RulesEngineBuilder {
      * @return A new stateful {@link RulesEngine}
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
-    @SuppressWarnings(REMOVAL)
     public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory) {
-        return new StatefulRulesEngine<>(outputFactory);
+        return Engines.stateful(outputFactory);
     }
 
     /**
@@ -77,9 +71,8 @@ public final class RulesEngineBuilder {
      * @throws IllegalArgumentException if {@code maxCopies} is less than 1
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
-    @SuppressWarnings(REMOVAL)
     public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory, int maxCopies) {
-        return new StatelessRulesEngine<>(outputFactory, maxCopies);
+        return Engines.stateless(outputFactory, maxCopies);
     }
 
     /**
@@ -96,8 +89,7 @@ public final class RulesEngineBuilder {
      * @throws IllegalArgumentException if {@code maxCopies} is less than 1
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
-    @SuppressWarnings(REMOVAL)
     public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory, int maxCopies) {
-        return new StatefulRulesEngine<>(outputFactory, maxCopies);
+        return Engines.stateful(outputFactory, maxCopies);
     }
 }

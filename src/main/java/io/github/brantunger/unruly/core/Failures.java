@@ -11,7 +11,7 @@ import java.util.Set;
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
  * unchanged, and how an exception is described in an error message. Nothing here logs, so every failure is still
- * logged under {@link AbstractRulesEngine}'s logger name.
+ * logged under the engine's logger name, {@code io.github.brantunger.unruly.engine}.
  */
 final class Failures {
 

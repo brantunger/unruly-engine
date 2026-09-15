@@ -48,18 +48,12 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
  *
  * @param <O> The output object to instantiate
  */
-public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
+abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.class);
+    // A fixed name, documented for logging configuration, so it doesn't change when this internal class does.
+    static final String LOGGER_NAME = "io.github.brantunger.unruly.engine";
 
-    /**
-     * System property that, when {@code true}, kept MVEL's JIT optimizer instead of switching the whole JVM to the
-     * reflective one.
-     *
-     * @deprecated The engine no longer changes MVEL's optimizer, so this property is ignored.
-     */
-    @Deprecated(forRemoval = true)
-    public static final String JIT_PROPERTY = "unruly.mvel.jit";
+    private static final Logger log = LoggerFactory.getLogger(LOGGER_NAME);
 
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
     // The smallest limit on compiled copies: one run at a time.
@@ -84,7 +78,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Creates an engine that makes as many compiled copies of its rules as its runs need at once.
      */
-    public AbstractRulesEngine() {
+    AbstractRulesEngine() {
         this.maxCopies = RuleSet.UNLIMITED;
     }
 
@@ -108,15 +102,9 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * engine never evaluates this list: each run uses its own copy, from {@link #withCompiledRules(Function)}. Use it
      * to inspect the rules; to evaluate them, use {@code withCompiledRules} too.
      *
-     * <p>
-     * <b>Note:</b> {@link CompiledRule} is package-private, so only the engines in this package can use this method,
-     * {@link #withCompiledRules(Function)}, {@link #match(List, Map)} and
-     * {@link #executeRule(CompiledRule, Object, Map)}. They are expected to become package-private in 2.0.
-     * </p>
-     *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
-    protected List<CompiledRule> getCompiledRules() {
+    List<CompiledRule> getCompiledRules() {
         RuleSet rules = ruleSet;
         return rules != null ? rules.rules() : null;
     }
@@ -134,10 +122,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * return {@code null}, indistinguishable from "no rule matched", so it is reported instead.
      * </p>
      *
-     * <p>
-     * <b>Note:</b> only the engines in this package can use this method; see {@link #getCompiledRules()}.
-     * </p>
-     *
      * @param run The body of a run, given the compiled rules in priority order, possibly none
      * @param <T> The type {@code run} returns
      * @return What {@code run} returns
@@ -147,7 +131,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                for a copy, which keeps its interrupt status set. Each is logged at ERROR; a
      *                                fatal {@link Error} from {@code copy()} is then rethrown unchanged.
      */
-    protected <T> T withCompiledRules(Function<List<CompiledRule>, T> run) {
+    <T> T withCompiledRules(Function<List<CompiledRule>, T> run) {
         RuleSet rules = ruleSet;
         if (rules == null) {
             throw new IllegalStateException("setRuleList() must be called before run()");
@@ -367,7 +351,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  refer to, such as a reserved MVEL word, or if a language's check of the name
      *                                  throws anything else. A fatal {@link Error} is logged, then rethrown unchanged.
      */
-    protected Map<String, Object> unwrapFacts(FactStore<Object> facts) {
+    Map<String, Object> unwrapFacts(FactStore<Object> facts) {
         Map<String, Object> entryMap = new HashMap<>();
         // Read apart from the rules a run borrowed, so a run racing a reload may check names with the other list's
         // checks. That only changes whether a name one of the lists can't use is accepted, for that run.
@@ -426,10 +410,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Evaluates the rules' conditions one after another, in list order, and keeps the rules that matched.
      *
-     * <p>
-     * <b>Note:</b> only the engines in this package can use this method; see {@link #getCompiledRules()}.
-     * </p>
-     *
      * @param ruleList This is a list of {@link CompiledRule} objects to filter
      *                 based on when condition expression parses to
      *                 true
@@ -437,7 +417,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return List of {@link CompiledRule} objects where their condition evaluated
      *         to <b>true</b>
      */
-    protected List<CompiledRule> match(List<CompiledRule> ruleList, Map<String, Object> entryMap) {
+    List<CompiledRule> match(List<CompiledRule> ruleList, Map<String, Object> entryMap) {
         return ruleList.stream()
                 .filter(rule -> parseCondition(rule, entryMap))
                 .toList();
@@ -447,10 +427,6 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Execute a single {@link CompiledRule} object's action field against the input
      * data
      *
-     * <p>
-     * <b>Note:</b> only the engines in this package can use this method; see {@link #getCompiledRules()}.
-     * </p>
-     *
      * @param rule         The rule object to obtain the action expression to fire
      *                     the rule for
      * @param outputObject an empty output object to set output data into
@@ -459,7 +435,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
      *         {@code def} function, where it creates a variable local to the function.
      */
-    protected O executeRule(CompiledRule rule, O outputObject, Map<String, Object> entryMap) {
+    O executeRule(CompiledRule rule, O outputObject, Map<String, Object> entryMap) {
         return parseAction(rule, outputObject, entryMap);
     }
 
@@ -474,7 +450,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                {@link StackOverflowError} or {@link AssertionError} is logged, then rethrown
      *                                unchanged, also when it is the cause of what the factory throws.
      */
-    protected O createOutput(Supplier<O> outputFactory) {
+    O createOutput(Supplier<O> outputFactory) {
         O output;
         try {
             output = outputFactory.get();

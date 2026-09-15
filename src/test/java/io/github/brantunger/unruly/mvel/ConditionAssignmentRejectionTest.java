@@ -3,9 +3,9 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.core.StatefulRulesEngine;
-import io.github.brantunger.unruly.core.StatelessRulesEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,7 +33,7 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("a property assignment is rejected before it can change the fact")
     void propertyAssignmentRejected() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
                 List.of(rule("typo", "claim.approved = true", "output.put('fired', true)"))));
@@ -53,7 +53,7 @@ class ConditionAssignmentRejectionTest {
             "if (true) { claim.a = 1 }; true",
     })
     void otherWritesRejected(String condition) {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
 
         assertThrows(RuleCompilationException.class,
                 () -> engine.setRuleList(List.of(rule("writes", condition, "output.put('k', 1)"))));
@@ -62,7 +62,7 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("import_static is rejected with its own explanation")
     void staticImportRejected() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
                 List.of(rule("max", "import_static java.lang.Math.max; max(x, 1) == 5", "output.put('k', 1)"))));
@@ -75,7 +75,7 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("a property named with, written on the line after the dot, is read, not rejected")
     void keywordMemberAfterLineBreak() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(rule("fluent", "claim.\n    with == 2", "output.put('k', 1)")));
 
         assertEquals(Map.of("k", 1), engine.run(claim(new HashMap<>(Map.of("with", 2)))));
@@ -84,7 +84,7 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("a rejected rule list leaves the previous rules in place")
     void previousRulesKept() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(rule("ok", "claim.approved == true", "output.put('ok', true)")));
 
         assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
@@ -96,7 +96,7 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("actions may still assign local variables")
     void actionsMayAssign() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(rule("assigns", "true", "score = 10; score += 1; output.put('score', score)")));
 
         assertEquals(Map.of("score", 11), engine.run(new FactMap<>()));
@@ -106,7 +106,7 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("known limitation: a write made by calling a method is not detected")
     void methodCallWriteNotDetected() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
         engine.setRuleList(List.of(rule("mutates", "claim.put('status', 'DENIED') == 'OPEN'", "output.put('k', 1)")));
         Map<String, Object> claim = new HashMap<>(Map.of("status", "OPEN"));
 
