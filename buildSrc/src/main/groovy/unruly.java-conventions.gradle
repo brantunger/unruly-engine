@@ -47,10 +47,21 @@ pmd {
 // CI can run them on each JDK in its matrix; otherwise the test task would use the 21 toolchain every time.
 def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
 
-// The tests still call Rule's and Fact's setters, which are deprecated for removal, so javac would otherwise print a
-// removal warning for every call.
+// Every javac warning fails the build, in main and test sources.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+// The tests still call Rule's and Fact's setters, which are deprecated for removal. Without this, each call is a
+// removal warning, which fails the build; javac still prints a note that some test sources use them.
 tasks.named('compileTestJava', JavaCompile) {
     options.compilerArgs << '-Xlint:-removal'
+}
+
+// Every Javadoc warning fails the build too: a missing comment, @param or @return, or a broken link or HTML.
+tasks.withType(Javadoc).configureEach {
+    options.addBooleanOption('Xdoclint:all', true)
+    options.addBooleanOption('Werror', true)
 }
 
 tasks.named('test', Test) {

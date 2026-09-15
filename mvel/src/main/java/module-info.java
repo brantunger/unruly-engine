@@ -4,6 +4,8 @@
  *
  * @provides io.github.brantunger.unruly.api.language.ExpressionLanguage The MVEL language, named {@code mvel}.
  */
+// "requires-automatic": mvel2 has no module name, so it can only be required as an automatic module.
+@SuppressWarnings("requires-automatic")
 module io.github.brantunger.unruly {
     requires transitive io.github.brantunger.unruly.core;
     // mvel2 has no module name, so its name comes from its jar's file name.

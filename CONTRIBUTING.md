@@ -58,6 +58,7 @@ Settings shared by the published projects are in the convention plugins in `buil
 | 🧪 **Tests** | The JUnit 5 suite | `mvel/src/test` |
 | 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| ⚠️ **Warnings** | No javac warning in main or test sources (`-Xlint:all -Werror`), and no Javadoc warning (`-Xdoclint:all -Werror`) in the site or any `-javadoc.jar` | `buildSrc/src/main/groovy/unruly.java-conventions.gradle`, `buildSrc/src/main/groovy/unruly/conventions/ModuleJavadoc.groovy` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of both artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in each published project's `build.gradle`, `config/japicmp/accepted-breaks.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles three applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, and one runs the test kit's contract test with JUnit | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |

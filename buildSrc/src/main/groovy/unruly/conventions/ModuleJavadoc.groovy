@@ -56,7 +56,8 @@ abstract class ModuleJavadoc extends DefaultTask {
     void generate() {
         File destination = getDestination().get().asFile
         destination.deleteDir()
-        List<String> arguments = ['-d', destination.absolutePath, '-quiet',
+        // A warning fails the task, like the projects' own Javadoc tasks.
+        List<String> arguments = ['-d', destination.absolutePath, '-quiet', '-Xdoclint:all', '-Werror',
                                   '-encoding', 'UTF-8', '-docencoding', 'UTF-8', '-charset', 'UTF-8',
                                   '-doctitle', getTitle().get(), '-windowtitle', getTitle().get(),
                                   '--module', getModuleSourcePaths().get().keySet().join(','),
