@@ -103,7 +103,8 @@ release-please opens **chore(1.x): release 1.X.Y** against `1.x`, and merging th
 ### Each hotfix
 
 1. Fix it on `main` first if the bug is there too, then cherry-pick the squashed commit onto a branch from `1.x`
-   and open a PR into `1.x` with the same `fix:` title. CI runs on it as it does for `main`.
+   and open a PR into `1.x` with the same `fix:` title. CI runs on it as it does for `main`. The API check
+   compares `1.x` with the newest 1.x release, never with a 2.x one.
 2. Squash-merge it. release-please opens **chore(1.x): release 1.X.Y**; review and squash-merge that too.
 3. The `publish` and `pages` jobs publish the version and add `/1.X.Y/` to the Javadoc site. `/latest/` and the
    repository's **Latest** GitHub Release stay on the newest version: the workflow moves them only for the highest

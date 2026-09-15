@@ -38,7 +38,7 @@ cd unruly-engine
 | `./gradlew test --tests '*StatefulSemanticsTest*'` | Runs a single test class |
 | `./gradlew test -PtestJdk=21` | Runs the tests on JDK 21 instead of 17 |
 | `./gradlew jacocoTestReport` | Writes the coverage report to `build/reports/jacoco/test/html/index.html` |
-| `./gradlew japicmp` | Checks the public API against the latest release and writes `build/reports/japicmp/report.html` |
+| `./gradlew japicmp` | Checks the public API against the newest release up to the build's version and writes `build/reports/japicmp/report.html` |
 
 ## ✅ Quality gates
 
@@ -60,8 +60,9 @@ validates the PR title.
 ### 🧬 API compatibility
 
 The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `feat:` release must not break code
-written or compiled against an earlier release. `./gradlew build` compares the jar with the **latest release on Maven
-Central** using [japicmp](https://siom79.github.io/japicmp/), and fails when a public or protected member is removed
+written or compiled against an earlier release. `./gradlew build` compares the jar with the **newest release on Maven
+Central that isn't higher than the version in `build.gradle`** using [japicmp](https://siom79.github.io/japicmp/),
+and fails when a public or protected member is removed
 or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
 interface, a new checked exception, or a changed `Rule` constructor. When you add a field to `Rule`, add a
 constructor for the builder and keep the existing ones. Additions such as new classes, methods and `default` methods
@@ -77,12 +78,15 @@ and the check fails on an abstract one. When no generic implementation makes sen
 An intended break belongs in a major release:
 
 1. For each element the report lists, add a line to [`config/japicmp/accepted-breaks.txt`](config/japicmp/accepted-breaks.txt)
-   with the baseline version and why users can live with the break. The file's header shows the format.
+   with the major version the break ships in (for example `2`) and why users can live with the break. The file's
+   header shows the format.
 2. Title the PR with a `!`, such as `feat!: make the engine classes package-private`, and describe the migration
    under ⚠️ Behavior changes in the PR description.
 
-A line only applies while its version is the latest release. Once the major version is published, the build warns
-that the old lines no longer apply, and they can be deleted.
+A line applies while the baseline is from an earlier major version, so a hotfix released from the `1.x` branch in
+the meantime doesn't turn it off. Once that major version is published and becomes the baseline, the build warns that
+its lines no longer apply, and they can be deleted. Because the baseline is never higher than the build's own version,
+`main` and the `1.x` branch are each checked against their own release line.
 
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
 baseline already in the Gradle cache.
