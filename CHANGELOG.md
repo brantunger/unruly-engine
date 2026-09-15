@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [1.7.0](https://github.com/brantunger/unruly-engine/compare/v1.6.1...v1.7.0) (2026-09-15)
+
+
+### Features
+
+* name the failing rule on exceptions, escape names in messages and keep interrupts ([#263](https://github.com/brantunger/unruly-engine/issues/263)) ([fe1a1ce](https://github.com/brantunger/unruly-engine/commit/fe1a1ce4e3bfb810b7f0066fc383233577128c48))
+
 ## [1.6.1](https://github.com/brantunger/unruly-engine/compare/v1.6.0...v1.6.1) (2026-09-15)
 
 
