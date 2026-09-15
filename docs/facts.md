@@ -30,25 +30,26 @@ classDiagram
         getValue(name) T
         setValue(name, value)
         put(FactReference) FactReference
+        asMap() Map
     }
     class FactMap~T~
     class Map~String, FactReference~ {
         <<interface>>
     }
     FactReference <|.. Fact
-    Map <|-- FactStore
     FactStore <|.. FactMap
+    Map <|.. FactMap
     FactStore o-- FactReference : holds
 ```
 
 | Type | Kind | Role |
 | --- | --- | --- |
 | `FactReference<T>` | interface | A named value |
-| `Fact<T>` | class | The built-in `FactReference` |
-| `FactStore<T>` | interface | A `Map<String, FactReference<T>>` keyed by fact name, plus value-level helpers |
-| `FactMap<T>` | class | The built-in `FactStore`, backed by a `HashMap` |
+| `Fact<T>` | final class | The built-in `FactReference`. Its name and value can't change. |
+| `FactStore<T>` | interface | Facts keyed by name: `getValue`, `setValue`, `put`, and a read-only `asMap()` view |
+| `FactMap<T>` | class | The built-in `FactStore`, backed by a `HashMap`. It's also a `Map<String, FactReference<T>>`. |
 
-The engine reads each entry's **key** as the variable name and binds it to the fact's **value**.
+The engine reads the store through `asMap()`: each **key** is a variable name, bound to its fact's **value**.
 
 ## ➕ Adding facts
 
@@ -68,12 +69,11 @@ Applicant applicant = (Applicant) facts.getValue("applicant");
 `FactMap` also has constructors that take `Fact` objects (`new FactMap<>(fact1, fact2)`) or copy another map
 (`new FactMap<>(otherMap)`).
 
+A `FactStore` isn't a `Map`. To read every fact, use `facts.asMap()`, a read-only view that follows later changes. A
+variable declared as `FactMap` has the `Map` methods too, such as `remove` and `clear`.
+
 Any readable property works in a rule. `applicant.creditScore` calls a JavaBean getter (`getCreditScore()`), a
 record accessor (`creditScore()`) or looks up a `Map` key.
-
-> [!TIP]
-> Use `new Fact<>(name, value)` rather than `new Fact<>(value)`. The one-argument constructor names the fact after
-> `value.toString()`, such as `"java.lang.Object@4501b7af"`, which rules usually can't refer to.
 
 ## 🏷 Naming rules
 
@@ -95,7 +95,7 @@ The checks happen in two places, and both throw `IllegalArgumentException`:
   (`put("claim", new Fact<>("other", 1))`), and two facts with the same name in its constructor.
 - **`run()`** rejects any name in the table above, whichever `FactStore` implementation you use.
 
-Rules see a fact by its map key, so renaming a `Fact` after adding it doesn't change the name rules use.
+A `Fact` needs a name: `new Fact<>(null, value)` throws `NullPointerException`.
 
 ## 🕳 Null and missing facts
 
@@ -113,17 +113,14 @@ check for `null` too before reading a property:
 
 ## 🔣 Generics
 
-`run()` accepts a `FactStore<Object>`. Java generics are invariant, so a `FactMap<Applicant>` isn't accepted even
-when every value is an `Applicant`. Declare the store as `FactStore<Object>`, or write `new FactMap<>()` where the
-target type is `FactStore<Object>`.
+`run()` accepts a `FactStore` of any type, so a `FactMap<Applicant>` works as well as a `FactStore<Object>`.
 
 ## 📋 Copying and sharing
 
 - `setValue` always stores a **new** `Fact`. A `FactMap` copied from another (`new FactMap<>(other)`) can
   therefore be changed with `setValue` without affecting the original.
-- The copy is **shallow**. `Fact` objects added with `put` and the values themselves are shared, and calling
-  `setValue` on a shared `Fact` object changes it in every map that holds it. `Fact.setName` and `Fact.setValue` are
-  deprecated since 1.8.0, because facts are expected to become immutable in 2.0: create a new `Fact` instead.
+- The copy is **shallow**. `Fact` objects added with `put` and the values themselves are shared. A `Fact` can't
+  change, so sharing one is safe, but a value such as an `Applicant` is the same object in both maps.
 - The engine doesn't copy fact values either. If an action calls a method that changes a fact, such as
   `applicant.setCreditScore(0)`, rules that fire later in the same run see the change.
 

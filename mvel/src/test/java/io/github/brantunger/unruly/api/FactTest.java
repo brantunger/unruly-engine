@@ -33,26 +33,6 @@ class FactTest {
     }
 
     @Nested
-    @DisplayName("Constructor with object only")
-    class ObjectConstructor {
-
-        @Test
-        @DisplayName("should use toString as name")
-        void shouldUseToStringAsName() {
-            Fact<Integer> fact = new Fact<>(42);
-
-            assertEquals("42", fact.getName());
-            assertEquals(42, fact.getValue());
-        }
-
-        @Test
-        @DisplayName("should throw NullPointerException for null")
-        void shouldThrowForNull() {
-            assertThrows(NullPointerException.class, () -> new Fact<>(null));
-        }
-    }
-
-    @Nested
     @DisplayName("Constructor with FactReference")
     class CopyConstructor {
 
@@ -64,33 +44,6 @@ class FactTest {
 
             assertEquals("key", copy.getName());
             assertEquals("value", copy.getValue());
-        }
-    }
-
-    @Nested
-    @DisplayName("Mutability")
-    class Mutability {
-
-        @Test
-        @DisplayName("setName should update name and return this")
-        void setNameShouldUpdateAndReturnSelf() {
-            Fact<String> fact = new Fact<>("old", "value");
-
-            FactReference<String> result = fact.setName("new");
-
-            assertEquals("new", fact.getName());
-            assertSame(fact, result);
-        }
-
-        @Test
-        @DisplayName("setValue should update value and return this")
-        void setValueShouldUpdateAndReturnSelf() {
-            Fact<String> fact = new Fact<>("key", "old");
-
-            FactReference<String> result = fact.setValue("new");
-
-            assertEquals("new", fact.getValue());
-            assertSame(fact, result);
         }
     }
 

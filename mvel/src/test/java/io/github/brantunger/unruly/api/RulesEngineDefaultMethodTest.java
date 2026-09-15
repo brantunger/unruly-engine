@@ -20,7 +20,7 @@ class RulesEngineDefaultMethodTest {
         }
 
         @Override
-        public Object run(FactStore<Object> facts) {
+        public Object run(FactStore<?> facts) {
             throw new AssertionError("not called");
         }
 

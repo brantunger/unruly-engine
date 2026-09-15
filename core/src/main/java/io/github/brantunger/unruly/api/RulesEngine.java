@@ -56,7 +56,8 @@ public interface RulesEngine<O> extends AutoCloseable {
     /**
      * Fire rules engine against the rules supplied by the rules list.
      *
-     * @param facts The key/value fact store to run the rule engine against.
+     * @param facts The facts to run the rules against. Any {@link FactStore} is accepted, such as a
+     *              {@code FactMap<Applicant>}. The engine reads them through {@link FactStore#asMap()}.
      * @return The output of firing the actions of the matching {@link Rule} objects, or {@code null} if the rule
      *         list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
@@ -71,7 +72,7 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      * @throws NullPointerException if {@code facts} is {@code null}
      */
-    @Nullable O run(FactStore<@Nullable Object> facts);
+    @Nullable O run(FactStore<?> facts);
 
     /**
      * Adds imports that rules are compiled with, so rule expressions can refer to classes by their simple names.

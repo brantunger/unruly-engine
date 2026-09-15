@@ -75,7 +75,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws NullPointerException {@inheritDoc}
      */
     @Override
-    public O run(FactStore<Object> facts) {
+    public O run(FactStore<?> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
         return withCompiledRules((ruleSet, copy) -> {
             // Validated before the empty-list return, so an invalid fact is reported whatever the rules.

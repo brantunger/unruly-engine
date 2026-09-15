@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.Rule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,11 @@ class NullFactNameTest {
         @Override
         public FactReference<Object> put(FactReference<Object> ref) {
             return put(ref.getName(), ref);
+        }
+
+        @Override
+        public Map<String, FactReference<Object>> asMap() {
+            return Collections.unmodifiableMap(this);
         }
     }
 }

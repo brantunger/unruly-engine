@@ -68,6 +68,7 @@ All of them are unchecked.
 | `registerLanguage()` | `IllegalArgumentException` | The language's name is `null` or blank |
 | | `NullPointerException` | The language is `null` |
 | `registerListener()` / `registerListeners()` | `NullPointerException` | The listener, list or an element is `null`. Nothing is registered. |
+| `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 

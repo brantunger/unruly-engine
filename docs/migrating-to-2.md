@@ -254,6 +254,39 @@ List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
 JSON with a rule that has no name, condition or action now fails while it's read, instead of when `setRuleList()`
 loads it.
 
+## 🗂️ Facts are immutable, and a FactStore isn't a Map
+
+**What changed:**
+
+- `FactStore` no longer extends `Map`. It has `getValue`, `setValue` and `put(FactReference)`, and a new `asMap()`
+  that returns a read-only view of the facts by name. `FactMap` still implements `Map`, so a `FactMap` variable keeps
+  every `Map` method.
+- `Fact` is a final, immutable class. `FactReference.setName` and `setValue`, and their overrides in `Fact`, deprecated
+  since 1.8.0, are removed. So is the constructor `Fact(value)`, which named a fact after `value.toString()`.
+- A fact needs a name: `new Fact<>(null, value)` throws `NullPointerException`, and `FactReference.getName()` is never
+  `null`.
+- `RulesEngine.run` takes a `FactStore<?>`, so a `FactMap<Applicant>` is accepted. `FactStore<Object> facts = new
+  FactMap<>()` still works.
+
+**Who is affected:** code that calls a `Map` method on a variable declared as `FactStore`; code that changes a `Fact`
+or creates one with `new Fact<>(value)`; classes that implement `FactStore`, `FactReference` or `RulesEngine`; Kotlin
+code.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `facts.get(name)`, `facts.keySet()` or another read on a `FactStore` variable | `facts.asMap().get(name)`, `facts.asMap().keySet()` |
+| `facts.remove(name)`, `facts.clear()` or another change on a `FactStore` variable | Declare the variable as `FactMap<Object>` |
+| `fact.setValue(value)` | `facts.setValue(name, value)`, which stores a new `Fact` |
+| `fact.setName(name)` | `new Fact<>(name, fact.getValue())` |
+| `new Fact<>(value)` | `new Fact<>("name", value)` |
+| A class that implements `FactStore` | Implement `asMap()`. The class may still implement `Map` too. |
+| A class that implements `FactReference` | Remove `setName` and `setValue`, and never return a `null` name |
+| `public O run(FactStore<Object> facts)` in a class that implements `RulesEngine` | `public O run(FactStore<?> facts)`. The old method no longer compiles: `name clash: run(FactStore<Object>) in MyEngine and run(FactStore<?>) in RulesEngine have the same erasure, yet neither overrides the other` |
+| Kotlin: `engine.run(FactMap<Any>())` didn't compile | It compiles. A listener's `facts` parameter is still `Map<String, Any?>`. |
+| Kotlin: a fact's `name` is a `String?` | It's a `String` |
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in

@@ -28,7 +28,7 @@ class FactMapNameValidationTest {
         FactMap<Object> facts = new FactMap<>();
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> facts.put(null, new Fact<>(null, 1)));
+                () -> facts.put(null, null));
         assertTrue(ex.getMessage().contains("fact name must not be null"));
     }
 
@@ -61,7 +61,7 @@ class FactMapNameValidationTest {
     @DisplayName("the map constructor rejects a null key and a key/name mismatch")
     void mapConstructorValidates() {
         Map<String, FactReference<Object>> nullKey = new HashMap<>();
-        nullKey.put(null, new Fact<>(null, 1));
+        nullKey.put(null, null);
         assertThrows(IllegalArgumentException.class, () -> new FactMap<>(nullKey));
 
         Map<String, FactReference<Object>> mismatch = new HashMap<>();
