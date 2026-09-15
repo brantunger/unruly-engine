@@ -50,12 +50,14 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
     public ExpressionCompiler newCompiler(CompileContext context) {
         return new ExpressionCompiler() {
             @Override
-            public CompiledCondition compileCondition(String source) {
+            public CompiledCondition compileCondition(Expression expression) {
+                String source = expression.text();
                 return condition(source);
             }
 
             @Override
-            public CompiledAction compileAction(String source) {
+            public CompiledAction compileAction(Expression expression) {
+                String source = expression.text();
                 return action(source);
             }
 

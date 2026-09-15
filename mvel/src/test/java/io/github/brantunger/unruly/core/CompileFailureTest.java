@@ -7,6 +7,8 @@ import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
@@ -52,12 +54,12 @@ class CompileFailureTest {
     private static ExpressionLanguage language(Supplier<CompiledCondition> condition, Supplier<CompiledAction> action) {
         return language("x", () -> new ExpressionCompiler() {
             @Override
-            public CompiledCondition compileCondition(String source) {
+            public CompiledCondition compileCondition(Expression expression) {
                 return condition.get();
             }
 
             @Override
-            public CompiledAction compileAction(String source) {
+            public CompiledAction compileAction(Expression expression) {
                 return action.get();
             }
 
@@ -96,7 +98,7 @@ class CompileFailureTest {
         ExpressionLanguage language = language(throwing(new IllegalStateException("[Error: OptionalDep]", missing)),
                 NO_OP);
 
-        assertLoggedThenRethrown(missing, "Can not compile rule 'r'. Error: [Error: OptionalDep]",
+        assertLoggedThenRethrown(missing, "Condition for rule 'r' failed to compile: [Error: OptionalDep]",
                 () -> load(language));
     }
 
@@ -158,7 +160,7 @@ class CompileFailureTest {
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
 
-        assertEquals("Can not compile rule 'r'. Error: the expression is too long or too deeply nested to compile",
+        assertEquals("Condition for rule 'r' failed to compile: the expression is too long or too deeply nested to compile",
                 ex.getMessage());
         assertSame(overflow, ex.getCause());
     }
@@ -171,7 +173,7 @@ class CompileFailureTest {
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
 
-        assertEquals("Can not compile rule 'r'. Error: parser invariant", ex.getMessage());
+        assertEquals("Action for rule 'r' failed to compile: parser invariant", ex.getMessage());
         assertSame(assertion, ex.getCause());
     }
 

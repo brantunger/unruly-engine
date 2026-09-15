@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
@@ -46,12 +47,12 @@ class RuleSetTest {
     private static ExpressionCompiler compiler(String language, AtomicInteger counter, List<String> created) {
         return new ExpressionCompiler() {
             @Override
-            public CompiledCondition compileCondition(String source) {
+            public CompiledCondition compileCondition(Expression expression) {
                 throw new AssertionError("not compiled");
             }
 
             @Override
-            public CompiledAction compileAction(String source) {
+            public CompiledAction compileAction(Expression expression) {
                 throw new AssertionError("not compiled");
             }
 

@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 
 import java.util.ArrayList;
@@ -187,5 +189,39 @@ final class Failures {
             chain.add(t);
         }
         return chain;
+    }
+
+    /**
+     * Names a rule's condition or action for a message, such as {@code Condition for rule 'prime-rate'}.
+     *
+     * @param kind     Whether it's the rule's condition or its action
+     * @param ruleName The rule's name, or {@code null} if it has none
+     * @return The name
+     */
+    static String expression(ExpressionKind kind, String ruleName) {
+        return (kind == ExpressionKind.CONDITION ? "Condition" : "Action") + " for rule '" + displayName(ruleName) + "'";
+    }
+
+    /**
+     * Returns a rule's name for a message: escaped and shortened as {@link #quote(String)} does, or {@code (unnamed)}.
+     *
+     * @param ruleName The rule's name, or {@code null} if it has none
+     * @return The name to show
+     */
+    static String displayName(String ruleName) {
+        return ruleName != null ? quote(ruleName) : "(unnamed)";
+    }
+
+    /**
+     * Describes where an issue is for a message, such as {@code  at line 2, column 5}.
+     *
+     * @param issue The issue
+     * @return The position with a leading space, or an empty string if the issue's line isn't known
+     */
+    static String position(InvalidExpressionException.Issue issue) {
+        if (issue.line() == 0) {
+            return "";
+        }
+        return " at line " + issue.line() + (issue.column() == 0 ? "" : ", column " + issue.column());
     }
 }

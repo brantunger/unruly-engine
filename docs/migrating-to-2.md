@@ -157,6 +157,33 @@ See [Testing a language](languages/custom.md#-testing-a-language).
 Close an engine you discard, such as one built for a test or a short task, with `close()` or a try-with-resources
 block.
 
+## 📝 Languages compile an Expression, and every broken rule is reported
+
+**What changed:**
+
+- `ExpressionCompiler.compileCondition` and `compileAction` take an `Expression` instead of a `String`: the rule's
+  name, `ExpressionKind.CONDITION` or `ACTION`, and the text.
+- `InvalidExpressionException` can carry `issues()`, each with a severity, a line, a column and a message.
+  `CompileContext.warn(Expression, Issue)` reports a warning, which is logged at WARN and doesn't fail loading.
+- `setRuleList()` compiles every rule, then throws once. `RuleCompilationException.failures()` has each broken rule's
+  exception, and `getExpressionKind()` and `issues()` say what failed and where. `RuleExecutionException` has
+  `getExpressionKind()` too.
+- Compile error messages name the expression. `Can not compile rule 'r'. Error: ...` is now
+  `Condition for rule 'r' failed to compile: ...` or `Action for rule 'r' failed to compile: ...`. An MVEL syntax
+  error reads `Condition for rule 'r' failed to compile at line 1, column 6: Malformed expression`, and its cause is
+  an `InvalidExpressionException`, whose cause is MVEL's `CompileException`.
+
+**Who is affected:** authors of expression languages, and code that reads compile error messages or causes.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| `compileCondition(String source)` | `compileCondition(Expression source)`, reading `source.text()` |
+| Parsing `Can not compile rule 'x'. Error: ...` | `getRuleName()`, `getExpressionKind()` and `issues()`, or the new message |
+| Reloading to find the next broken rule | `failures()`, which lists them all |
+| `getCause()` is MVEL's `CompileException` | `getCause().getCause()`, or `issues()` |
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in

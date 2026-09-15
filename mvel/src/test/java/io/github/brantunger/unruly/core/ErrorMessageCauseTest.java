@@ -104,7 +104,7 @@ public class ErrorMessageCauseTest {
         compiler.join();
 
         RuleCompilationException ex = assertInstanceOf(RuleCompilationException.class, thrown.get());
-        assertEquals("Can not compile rule 'long'. Error: the expression is too long or too deeply nested to compile",
+        assertEquals("Condition for rule 'long' failed to compile: the expression is too long or too deeply nested to compile",
                 ex.getMessage());
     }
 

@@ -58,7 +58,7 @@ class SyntaxValidationTest {
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.setRuleList(List.of(rule("x >= ", "output.put('k', 1)"))));
 
-        assertInstanceOf(CompileException.class, ex.getCause());
+        assertInstanceOf(CompileException.class, ex.getCause().getCause());
     }
 
     @ParameterizedTest(name = "valid expression {0} still compiles")

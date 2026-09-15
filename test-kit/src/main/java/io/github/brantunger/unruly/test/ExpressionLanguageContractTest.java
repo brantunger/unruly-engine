@@ -5,12 +5,14 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
@@ -217,12 +219,16 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a syntax error is reported by setRuleList")
+    @DisplayName("a syntax error is reported by setRuleList, naming the rule and its condition")
     void syntaxErrorAtLoad() {
         RulesEngine<Map<String, Object>> engine = engine();
         List<Rule> rules = List.of(rule("r", 1, syntaxError(), putFact(SEEN, "x")));
 
-        assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+
+        assertEquals("r", ex.getRuleName());
+        assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
+        assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
     }
 
     @Test
@@ -271,13 +277,13 @@ public abstract class ExpressionLanguageContractTest {
                 closes.add(closed);
                 return new ExpressionCompiler() {
                     @Override
-                    public CompiledCondition compileCondition(String source) {
-                        return compiler.compileCondition(source);
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
                     }
 
                     @Override
-                    public CompiledAction compileAction(String source) {
-                        return compiler.compileAction(source);
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
                     }
 
                     @Override

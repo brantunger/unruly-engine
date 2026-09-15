@@ -1,10 +1,12 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
@@ -98,8 +100,8 @@ class LanguageTestContextsTest {
     @DisplayName("a language's compiled condition and action can be tested without an engine")
     void unitTestLanguage() throws Exception {
         ExpressionCompiler compiler = new ToyExpressionLanguage().newCompiler(LanguageTestContexts.compile());
-        CompiledCondition condition = compiler.compileCondition("x == 1");
-        CompiledAction action = compiler.compileAction("put seen x");
+        CompiledCondition condition = compiler.compileCondition(new Expression("r", ExpressionKind.CONDITION, "x == 1"));
+        CompiledAction action = compiler.compileAction(new Expression("r", ExpressionKind.ACTION, "put seen x"));
         Session session = compiler.newSession();
         Map<String, Object> output = new HashMap<>();
 
@@ -114,8 +116,8 @@ class LanguageTestContextsTest {
     void unitTestMvel() throws Exception {
         ExpressionCompiler compiler = new MvelExpressionLanguage().newCompiler(
                 LanguageTestContexts.compile(Set.of("java.util"), Set.of(), getClass().getClassLoader()));
-        CompiledCondition condition = compiler.compileCondition("x > 1");
-        CompiledAction action = compiler.compileAction("output.put('seen', new ArrayList(x))");
+        CompiledCondition condition = compiler.compileCondition(new Expression("r", ExpressionKind.CONDITION, "x > 1"));
+        CompiledAction action = compiler.compileAction(new Expression("r", ExpressionKind.ACTION, "output.put('seen', new ArrayList(x))"));
         Session session = compiler.newSession();
         Map<String, Object> output = new HashMap<>();
 
