@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -87,9 +88,10 @@ class CompiledRuleCopiesTest {
 
         private final class Action implements CompiledAction {
             @Override
-            public void execute(ActionContext context, Session session) {
+            public ActionResult execute(ActionContext context, Session session) {
                 executed.add(this);
                 executedWith.add(session);
+                return ActionResult.done();
             }
         }
     }

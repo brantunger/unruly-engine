@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -111,7 +112,7 @@ class InterruptStatusTest {
 
                 @Override
                 public CompiledAction compileAction(Expression expression) {
-                    return (actionContext, session) -> at(Where.ACTION, actionContext);
+                    return (actionContext, session) -> at(Where.ACTION, ActionResult.done());
                 }
 
                 @Override

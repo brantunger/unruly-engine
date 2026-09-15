@@ -57,7 +57,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | Once per `setRuleList()` that uses the language |
 | `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each fact of each `run()`; `newSession` for each copy of the rules |
-| `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext, Session)` / `execute(ActionContext, Session)` | Each time a rule is evaluated or fires |
+| `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext, Session)` / `execute(ActionContext, Session)`, which returns an `ActionResult` | Each time a rule is evaluated or fires |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | One per language for each copy of the rules |
 
 The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
@@ -92,7 +92,10 @@ public final class MyLanguage implements ExpressionLanguage {
             @Override
             public CompiledAction compileAction(Expression source) {
                 MyExpression parsed = MyParser.parse(source.text());
-                return (action, session) -> parsed.execute(action.facts(), action.output());
+                return (action, session) -> {
+                    parsed.execute(action.facts(), action.output());   // changes output in place
+                    return ActionResult.done();
+                };
             }
 
             @Override
@@ -125,6 +128,14 @@ public final class MyLanguage implements ExpressionLanguage {
   rule. A fatal `Error` such as `OutOfMemoryError` is rethrown unchanged, even when you wrap it in your own exception.
 - **Facts and output.** `facts()` is a read-only map of fact values by name. Actions see the output object as
   `output` (`ActionContext.OUTPUT_NAME`), and the engine already rejects a fact with that name.
+- **What an action returns.** An action that changes `output` in place returns `ActionResult.done()`. A language
+  whose expressions compute values without side effects, such as CEL or JsonLogic, returns
+  `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. The engine sets each property in order,
+  with `put` on a `Map` output or with the output's public setter, such as `setInterestRate`, whose parameter must
+  accept the value as it is. A property it can't set, or a `null` result, fails the rule with a
+  `RuleExecutionException`. In a stateful run, a later rule's properties overwrite an earlier one's. In
+  `ExpressionLanguageContractTest`, return `null` from `reassignOutput()` or `declareVariable()` if your actions
+  can't express them.
 - **Imports.** `CompileContext` carries the packages and classes registered with `addImport()` and the class loader
   to look them up with. A language without imports ignores them.
 - **Fact names.** Override `checkFactName` to reject a name your rules couldn't refer to, such as a keyword, with an
@@ -138,7 +149,7 @@ public final class MyLanguage implements ExpressionLanguage {
 | Rejects `null` rules, blank conditions and actions, duplicate names and unregistered languages | Reject syntax errors when compiling, where it can |
 | Runs rules in priority order, and fires one match (stateless) or every match (stateful) | Reject a condition that assigns or declares something, where it can detect that |
 | Requires a condition to return a `Boolean`: `null`, a string or a number fails the rule | Keep an action's variables local to that action, so later rules still see the original facts |
-| Rejects a fact named `null` or `output` | Bind the output object as `output`, and don't let an action replace it |
+| Rejects a fact named `null` or `output`, and sets the properties an action returns | Bind the output object as `output` and don't let an action replace it, or return the action's results as properties |
 | Wraps failures in `RuleCompilationException` and `RuleExecutionException`, rethrows fatal errors, and calls listeners | Reject fact names it can't refer to |
 | Passes read-only facts, gives each run its own sessions, and closes them (see below) | Document what rules can reach: files, processes, reflection |
 

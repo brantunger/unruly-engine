@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -29,6 +30,7 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -518,7 +520,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param copy         The run's copy of the rules, whose session the action runs with
      * @param outputObject an empty output object to set output data into
      * @param entryMap     The pre-built map of unwrapped facts to use as execution context.
-     * @return {@code outputObject}, which the action changes in place. An action can't replace it:
+     * @return {@code outputObject}, which the action changed in place or whose properties were set from the action's
+     *         result. An action can't replace it:
      *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
      *         {@code def} function, where it creates a variable local to the function.
      */
@@ -599,16 +602,47 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
         ActionContext context = new EngineActionContext(entryMap, outputResult);
+        ActionResult result;
         try {
-            rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
+            result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
         } catch (Exception | Error e) {
-            throw failure(snapshot, rule, ExpressionKind.ACTION, "Failed to execute action for rule '" + rule.displayName() + "': "
-                    + Failures.describe(e), e);
+            throw failure(snapshot, rule, ExpressionKind.ACTION, "Failed to execute action for rule '"
+                    + rule.displayName() + "': " + Failures.describe(e), e);
+        }
+        if (result == null) {
+            throw failure(snapshot, rule, ExpressionKind.ACTION, "Action for rule '" + rule.displayName()
+                    + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).", null);
+        }
+        for (Map.Entry<String, Object> property : result.properties().entrySet()) {
+            setProperty(snapshot, rule, outputResult, property.getKey(), property.getValue());
         }
 
         notifyAfter(snapshot, rule, "afterExecute", listener -> listener.afterExecute(listenerCopy(rule), outputResult));
 
         return outputResult;
+    }
+
+    /**
+     * Sets one property an action returned on the output object. A failure fails the rule like a failing action.
+     *
+     * @throws RuleExecutionException if the property can't be set
+     */
+    // A setter's own exception is the cause: InvocationTargetException only wraps it.
+    @SuppressWarnings("PMD.PreserveStackTrace")
+    private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value) {
+        try {
+            PropertyWriter.set(output, property, value);
+        } catch (InvocationTargetException e) {
+            throw propertyFailure(snapshot, rule, property, e.getCause());
+        } catch (Exception | Error e) {
+            throw propertyFailure(snapshot, rule, property, e);
+        }
+    }
+
+    private RuleExecutionException propertyFailure(List<RuleListener> snapshot, CompiledRule rule, String property,
+                                                   Throwable cause) {
+        return failure(snapshot, rule, ExpressionKind.ACTION, "Failed to set '" + Failures.quote(property)
+                + "' on the output for rule '" + rule.displayName() + "': " + Failures.describe(cause), cause);
     }
 
     /**

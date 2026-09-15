@@ -251,6 +251,8 @@ identifier that isn't a keyword such as `empty` or `in`. Build a new store for e
   time, never a shared instance.
 - Actions see it as `output` and change it in place, for example with `output.approved = true` or
   `output.put('discount', 10)`. An action can't replace it with `output = ...`, so the output type must be mutable.
+  In a language whose actions return values instead, the engine sets them with `put` on a `Map` output, or with the
+  output's public setters.
 - `run()` returns it, or `null` when no rule matched.
 
 ### 🔀 Choosing an engine

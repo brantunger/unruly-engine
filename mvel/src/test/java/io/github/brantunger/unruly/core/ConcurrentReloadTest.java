@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -48,7 +49,10 @@ class ConcurrentReloadTest {
                 @SuppressWarnings("unchecked")
                 @Override
                 public CompiledAction compileAction(Expression expression) {
-                    return (action, session) -> ((Map<String, Object>) action.output()).put("src", "A");
+                    return (action, session) -> {
+                        ((Map<String, Object>) action.output()).put("src", "A");
+                        return ActionResult.done();
+                    };
                 }
 
                 @Override

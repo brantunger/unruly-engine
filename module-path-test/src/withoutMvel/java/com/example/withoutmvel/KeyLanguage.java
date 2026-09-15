@@ -1,5 +1,6 @@
 package com.example.withoutmvel;
 
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -34,7 +35,10 @@ public final class KeyLanguage implements ExpressionLanguage {
             public CompiledAction compileAction(Expression expression) {
                 String source = expression.text();
                 String[] keyAndValue = source.split("=", 2);
-                return (action, session) -> output(action.output()).put(keyAndValue[0], keyAndValue[1]);
+                return (action, session) -> {
+                    output(action.output()).put(keyAndValue[0], keyAndValue[1]);
+                    return ActionResult.done();
+                };
             }
 
             @Override

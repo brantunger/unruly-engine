@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -97,6 +98,7 @@ class LanguageSessionsTest {
                         use(session);
                         duringAction.run();
                         ((Map<String, Object>) action.output()).put(source, sessions.indexOf(session) + 1);
+                        return ActionResult.done();
                     };
                 }
 

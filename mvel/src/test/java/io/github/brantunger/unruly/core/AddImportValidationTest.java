@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -60,8 +61,7 @@ class AddImportValidationTest {
 
                     @Override
                     public CompiledAction compileAction(Expression expression) {
-                        return (action, session) -> {
-                        };
+                        return (action, session) -> ActionResult.done();
                     }
 
                     @Override

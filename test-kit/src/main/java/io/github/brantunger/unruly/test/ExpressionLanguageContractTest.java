@@ -108,7 +108,8 @@ public abstract class ExpressionLanguageContractTest {
     protected abstract String assignment(String fact, int value);
 
     /**
-     * Returns an action that puts a fact's value into the output map.
+     * Returns an action that puts a fact's value into the output map, by changing the output or by returning the
+     * property in an {@link io.github.brantunger.unruly.api.language.ActionResult}.
      *
      * @param key  The key to put the value under
      * @param fact The fact's name
@@ -121,16 +122,17 @@ public abstract class ExpressionLanguageContractTest {
      *
      * @param name  The variable's name
      * @param value The value it holds
-     * @return The action
+     * @return The action, or {@code null} if the language's actions have no variables, which skips the check
      */
-    protected abstract String declareVariable(String name, int value);
+    protected abstract @Nullable String declareVariable(String name, int value);
 
     /**
      * Returns an action that assigns a new object to the output.
      *
-     * @return The action
+     * @return The action, or {@code null} if the language's actions can't assign anything, as for a language that
+     *         returns its results as properties, which skips the check
      */
-    protected abstract String reassignOutput();
+    protected abstract @Nullable String reassignOutput();
 
     /**
      * Returns a condition with a syntax error.
@@ -204,14 +206,19 @@ public abstract class ExpressionLanguageContractTest {
     @Test
     @DisplayName("an action can't replace the output object")
     void outputNotReplaceable() {
-        assertThrows(UnrulyException.class, () -> engine(rule("r", 1, alwaysTrue(), reassignOutput())).run(fact("x", 1)));
+        String reassign = reassignOutput();
+        assumeTrue(reassign != null, "the language's actions can't assign the output");
+        // A language may reject the assignment when compiling or when running.
+        assertThrows(UnrulyException.class, () -> engine(rule("r", 1, alwaysTrue(), reassign)).run(fact("x", 1)));
     }
 
     @Test
     @DisplayName("a variable an action declares doesn't change the facts later actions see")
     void actionVariablesStayLocal() {
+        String declare = declareVariable("x", 2);
+        assumeTrue(declare != null, "the language's actions have no variables");
         RulesEngine<Map<String, Object>> engine = engine(
-                rule("declares", 2, alwaysTrue(), declareVariable("x", 2)),
+                rule("declares", 2, alwaysTrue(), declare),
                 rule("reads", 1, alwaysTrue(), putFact(SEEN, "x")));
 
         assertEquals(Map.of(SEEN, 1), engine.run(fact("x", 1)));
