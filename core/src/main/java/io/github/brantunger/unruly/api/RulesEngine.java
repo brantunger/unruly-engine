@@ -36,9 +36,10 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         blank condition or action, has a condition that contains an assignment or {@code import_static}, shares
      *         its name with another rule, is written in a language the engine doesn't have, or if the list contains a
      *         {@code null} rule. Also if an expression language throws while creating its compiler, or returns
-     *         {@code null} instead of a compiler or a compiled expression. An {@link Error} other than
-     *         {@link StackOverflowError} or {@link AssertionError} thrown while compiling, also as the cause of another
-     *         exception, is logged and then rethrown unchanged.
+     *         {@code null} instead of a compiler or a compiled expression. That includes a {@link LinkageError} such as
+     *         a {@link NoClassDefFoundError} for a class a rule uses, which means the rule is misconfigured rather than
+     *         the JVM failing. A {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
+     *         compiling, also as the cause of another exception, is logged and then rethrown unchanged.
      * @throws IllegalStateException if the engine is closed
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      */

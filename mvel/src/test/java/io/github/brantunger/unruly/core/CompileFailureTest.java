@@ -98,14 +98,17 @@ class CompileFailureTest {
     // #183
 
     @Test
-    @DisplayName("a fatal Error inside a compiler's exception is logged with the rule's name, then rethrown")
-    void fatalErrorWhileCompilingLogged() {
+    @DisplayName("a missing class inside a compiler's exception fails the rule list, naming the rule")
+    void linkageErrorWhileCompilingIsWrapped() {
         NoClassDefFoundError missing = new NoClassDefFoundError("OptionalDep");
         ExpressionLanguage language = language(throwing(new IllegalStateException("[Error: OptionalDep]", missing)),
                 NO_OP);
 
-        assertLoggedThenRethrown(missing, "Condition for rule 'r' failed to compile: [Error: OptionalDep]",
-                () -> load(language));
+        RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
+
+        assertEquals("Condition for rule 'r' failed to compile: [Error: OptionalDep]", ex.getMessage());
+        assertEquals("r", ex.getRuleName());
+        assertSame(missing, ex.getCause().getCause(), "the missing class is the cause");
     }
 
     // #184 item 1

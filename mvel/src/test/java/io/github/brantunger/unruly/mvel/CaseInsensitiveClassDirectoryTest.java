@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -67,18 +69,20 @@ class CaseInsensitiveClassDirectoryTest {
     }
 
     @Test
-    @DisplayName("any other NoClassDefFoundError from the lookup is still rethrown unchanged")
-    void otherLinkageErrorRethrown() {
+    @DisplayName("any other NoClassDefFoundError from the lookup fails the rule list, naming the rule")
+    void otherLinkageErrorFailsTheLoad() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
         NoClassDefFoundError missingDependency = new NoClassDefFoundError("com/example/MissingDependency");
 
-        NoClassDefFoundError thrown = assertThrows(NoClassDefFoundError.class,
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
                 () -> withContextClassLoader(loaderThrowing(missingDependency), () -> {
                     engine.load(List.of(PRIME_RATE));
                     return null;
                 }));
 
-        assertSame(missingDependency, thrown);
+        assertEquals("prime-rate", thrown.getRuleName());
+        assertTrue(Stream.iterate((Throwable) thrown, t -> t != null, Throwable::getCause)
+                .anyMatch(t -> t == missingDependency), thrown.getMessage());
     }
 
     @Test
