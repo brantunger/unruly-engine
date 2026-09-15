@@ -14,6 +14,7 @@ import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -72,12 +73,24 @@ class NullnessAnnotationsTest {
     @Test
     @DisplayName("Rule's optional fields are @Nullable on its accessors, builder and equals, and its required ones aren't")
     void ruleNullness() throws NoSuchMethodException {
-        assertNullable(Rule.class.getMethod("getPriority").getAnnotatedReturnType());
-        assertNullable(Rule.class.getMethod("setPriority", Integer.class).getAnnotatedParameterTypes()[0]);
-        assertNullable(Rule.RuleBuilder.class.getMethod("priority", Integer.class).getAnnotatedParameterTypes()[0]);
+        Map<String, Class<?>> optional = Map.of("RuleName", String.class, "Priority", Integer.class,
+                "Description", String.class, "Language", String.class);
+        for (Map.Entry<String, Class<?>> field : optional.entrySet()) {
+            String builderMethod = Character.toLowerCase(field.getKey().charAt(0)) + field.getKey().substring(1);
+            assertNullable(Rule.class.getMethod("get" + field.getKey()).getAnnotatedReturnType());
+            assertNullable(Rule.class.getMethod("set" + field.getKey(), field.getValue())
+                    .getAnnotatedParameterTypes()[0]);
+            assertNullable(Rule.RuleBuilder.class.getMethod(builderMethod, field.getValue())
+                    .getAnnotatedParameterTypes()[0]);
+        }
         assertNullable(Rule.class.getMethod("equals", Object.class).getAnnotatedParameterTypes()[0]);
-        assertFalse(isNullable(Rule.class.getMethod("getCondition").getAnnotatedReturnType()),
-                "getCondition() is @Nullable");
+        for (String required : List.of("Condition", "Action")) {
+            String builderMethod = required.toLowerCase(Locale.ROOT);
+            assertFalse(isNullable(Rule.class.getMethod("get" + required).getAnnotatedReturnType()),
+                    "get" + required + "() is @Nullable");
+            assertFalse(isNullable(Rule.RuleBuilder.class.getMethod(builderMethod, String.class)
+                    .getAnnotatedParameterTypes()[0]), "RuleBuilder." + builderMethod + "() is @Nullable");
+        }
     }
 
     @Test

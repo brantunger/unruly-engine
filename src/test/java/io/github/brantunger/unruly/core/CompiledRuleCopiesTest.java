@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
@@ -23,6 +24,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("each run uses a compiled copy of the rules that no other run is using")
@@ -66,6 +68,9 @@ class CompiledRuleCopiesTest {
             @Override
             public Object evaluate(EvaluationContext context) {
                 evaluated.add(this);
+                if (context.facts().containsKey("fail")) {
+                    throw new IllegalStateException("condition failed");
+                }
                 return true;
             }
 
@@ -153,6 +158,28 @@ class CompiledRuleCopiesTest {
         assertEquals(3, language.evaluated.size());
         assertFalse(language.evaluated.contains(compiled.compiledCondition()), "the compiled condition was evaluated");
         assertFalse(language.executed.contains(compiled.compiledAction()), "the compiled action was executed");
+        assertEquals(1, language.conditionCopies.get(), "condition copies");
+        assertEquals(1, language.actionCopies.get(), "action copies");
+    }
+
+    @Test
+    @DisplayName("a run that throws gives its copy back, so later runs reuse it instead of copying the rules again")
+    void failedRunsGiveBackTheirCopy() {
+        CountingLanguage language = new CountingLanguage();
+        StatefulRulesEngine<Map<String, Object>> engine = countingEngine(language);
+        FactStore<Object> rejected = new FactMap<>();
+        rejected.setValue("output", 1);
+        FactStore<Object> failing = new FactMap<>();
+        failing.setValue("fail", true);
+
+        logsOf(() -> {
+            for (int i = 0; i < 5; i++) {
+                assertThrows(IllegalArgumentException.class, () -> engine.run(rejected));
+                assertThrows(RuleExecutionException.class, () -> engine.run(failing));
+            }
+        });
+        assertEquals(Map.of(), engine.run(new FactMap<>()));
+
         assertEquals(1, language.conditionCopies.get(), "condition copies");
         assertEquals(1, language.actionCopies.get(), "action copies");
     }

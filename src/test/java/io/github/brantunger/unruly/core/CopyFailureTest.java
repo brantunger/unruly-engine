@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -47,8 +48,26 @@ class CopyFailureTest {
                 return overlapping.get() ? copyWhileOverlapping.get() : this;
             }
         };
-        CompiledAction action = context -> {
+        load(condition, context -> {
+        });
+    }
+
+    /** Loads one rule whose action's copy() calls {@code copyWhileOverlapping} during an overlapping run. */
+    private void loadWithAction(Supplier<CompiledAction> copyWhileOverlapping) {
+        CompiledAction action = new CompiledAction() {
+            @Override
+            public void execute(ActionContext context) {
+            }
+
+            @Override
+            public CompiledAction copy() {
+                return overlapping.get() ? copyWhileOverlapping.get() : this;
+            }
         };
+        load(evaluation -> true, action);
+    }
+
+    private void load(CompiledCondition condition, CompiledAction action) {
         engine.registerLanguage(new ExpressionLanguage() {
             @Override
             public String name() {
@@ -114,6 +133,23 @@ class CopyFailureTest {
         RuleExecutionException ex = assertInstanceOf(RuleExecutionException.class, thrown.get());
         assertEquals("Failed to copy the condition of rule 'r': compiled script handle can't be duplicated",
                 ex.getMessage());
+        assertSame(cause, ex.getCause());
+        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + ex.getMessage()), logs);
+    }
+
+    @Test
+    @DisplayName("an action whose copy() throws is reported as a failure to copy the action")
+    void actionCopyThrows() {
+        IllegalStateException cause = new IllegalStateException("compiled action can't be duplicated");
+        loadWithAction(() -> {
+            throw cause;
+        });
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> thrown.set(overlappingRunFailure()));
+
+        RuleExecutionException ex = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        assertEquals("Failed to copy the action of rule 'r': compiled action can't be duplicated", ex.getMessage());
         assertSame(cause, ex.getCause());
         assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + ex.getMessage()), logs);
     }

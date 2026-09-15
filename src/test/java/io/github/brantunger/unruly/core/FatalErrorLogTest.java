@@ -5,17 +5,22 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedThenRethrown;
+import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("a fatal Error from the output supplier or an after* callback is logged at ERROR before it is rethrown")
+@DisplayName("a fatal Error from the output supplier or a listener callback is logged at ERROR before it is rethrown")
 class FatalErrorLogTest {
 
     private static final List<Rule> RULES = List.of(Rule.builder().ruleName("r").condition("true")
@@ -49,6 +54,41 @@ class FatalErrorLogTest {
 
         assertLoggedThenRethrown(oom, "Output factory threw java.lang.IllegalStateException: no connection",
                 () -> engine.run(new FactMap<>()));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"beforeEvaluate", "beforeExecute"})
+    @DisplayName("an OutOfMemoryError from a before* callback names the callback and the rule, in the log and in onError")
+    void beforeCallbackThrowsFatalError(String callback) {
+        OutOfMemoryError oom = new OutOfMemoryError("listener oom");
+        AtomicReference<RuleExecutionException> reported = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = engine(HashMap::new);
+        engine.registerListener(new RuleListener() {
+            @Override
+            public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+                if ("beforeEvaluate".equals(callback)) {
+                    throw oom;
+                }
+            }
+
+            @Override
+            public void beforeExecute(Rule rule, Object output) {
+                if ("beforeExecute".equals(callback)) {
+                    throw oom;
+                }
+            }
+
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                reported.set(error);
+            }
+        });
+        String message = "A listener threw java.lang.OutOfMemoryError in " + callback + " for rule 'r'";
+
+        assertLoggedThenRethrown(oom, message, () -> engine.run(new FactMap<>()));
+
+        assertEquals(message, reported.get().getMessage());
+        assertSame(oom, reported.get().getCause());
     }
 
     @Test

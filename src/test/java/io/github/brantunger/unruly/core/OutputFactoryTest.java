@@ -60,9 +60,8 @@ class OutputFactoryTest {
             }, "true");
 
             RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
-            assertTrue(ex.getMessage().startsWith("Output factory threw"));
-            assertTrue(ex.getMessage().contains("no connection"));
-            assertFalse(ex.getMessage().contains("first-rule"), "the rule is not to blame");
+            assertEquals("Output factory threw java.lang.IllegalStateException: no connection", ex.getMessage(),
+                    "the rule is not to blame");
             assertSame(boom, ex.getCause());
         }
     }
@@ -74,8 +73,8 @@ class OutputFactoryTest {
             RulesEngine<Map<String, Object>> engine = engineWith(constructor, () -> null, "true");
 
             RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
-            assertTrue(ex.getMessage().contains("Output factory returned null"));
-            assertFalse(ex.getMessage().contains("first-rule"));
+            assertEquals("Output factory returned null. It must return a new output object on every call.",
+                    ex.getMessage(), "the rule is not to blame");
         }
     }
 

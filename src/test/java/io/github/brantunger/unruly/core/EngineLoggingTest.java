@@ -145,23 +145,56 @@ class EngineLoggingTest {
         assertLoggedAtError(RuleExecutionException.class, () -> returningNull.run(new FactMap<>()));
     }
 
-    @Test
-    @DisplayName("a listener that throws is logged at WARN and the run continues")
-    void listenerFailureLogged() {
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"beforeEvaluate", "afterEvaluate", "beforeExecute", "afterExecute", "onError"})
+    @DisplayName("a listener that throws is logged at WARN, naming the callback, and the run continues")
+    void listenerFailureLogged(String callback) {
         StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
         engine.registerListener(new RuleListener() {
+            private void called(String name) {
+                if (name.equals(callback)) {
+                    throw new IllegalStateException("listener boom");
+                }
+            }
+
             @Override
             public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
-                throw new IllegalStateException("listener boom");
+                called("beforeEvaluate");
+            }
+
+            @Override
+            public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
+                called("afterEvaluate");
+            }
+
+            @Override
+            public void beforeExecute(Rule rule, Object output) {
+                called("beforeExecute");
+            }
+
+            @Override
+            public void afterExecute(Rule rule, Object output) {
+                called("afterExecute");
+            }
+
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                called("onError");
             }
         });
-        engine.setRuleList(List.of(rule("a", "true", "output.put('k', 1)")));
-        AtomicReference<Map<String, Object>> output = new AtomicReference<>();
+        // onError is only called for a rule that fails.
+        boolean failing = "onError".equals(callback);
+        engine.setRuleList(List.of(rule("a", failing ? "x.missing > 1" : "true", "output.put('k', 1)")));
+        AtomicReference<Object> outcome = new AtomicReference<>();
 
-        String logs = logsOf(() -> output.set(engine.run(new FactMap<>())));
+        String logs = logsOf(() -> outcome.set(failing
+                ? assertThrows(RuleExecutionException.class, () -> engine.run(fact("x", 1)))
+                : engine.run(fact("x", 1))));
 
-        assertEquals(Map.of("k", 1), output.get());
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeEvaluate"), logs);
+        if (!failing) {
+            assertEquals(Map.of("k", 1), outcome.get());
+        }
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback), logs);
         assertTrue(logs.contains("listener boom"), logs);
     }
 }

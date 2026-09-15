@@ -4,24 +4,68 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("addImport accepts packages and classes and rejects anything else")
 class AddImportValidationTest {
 
+    /** A class nested two levels deep, imported by its dotted name. */
+    public static final class Mid {
+        public static final class Inner {
+        }
+    }
+
     private static Rule rule(String condition, String action) {
         return Rule.builder().ruleName("r").condition(condition).action(action).build();
+    }
+
+    /** Loads one rule written in a language that keeps the context it is compiled with, and returns that context. */
+    private static CompileContext compileContextOf(StatelessRulesEngine<Map<String, Object>> engine) {
+        AtomicReference<CompileContext> captured = new AtomicReference<>();
+        engine.registerLanguage(new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return "capture";
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                captured.set(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(String source) {
+                        return evaluation -> true;
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(String source) {
+                        return action -> {
+                        };
+                    }
+                };
+            }
+        });
+        engine.setRuleList(List.of(Rule.builder().ruleName("r").language("capture").condition("c").action("a").build()));
+        return captured.get();
     }
 
     @Test
@@ -43,6 +87,18 @@ class AddImportValidationTest {
         engine.setRuleList(List.of(rule("true", "output.put('e', Entry)")));
 
         assertEquals(Map.of("e", Map.Entry.class), engine.run(new FactMap<>()));
+    }
+
+    @Test
+    @DisplayName("a class nested two levels deep is imported by its dotted name, not taken for a package")
+    void twoLevelNestedClassImport() {
+        String name = "io.github.brantunger.unruly.core.AddImportValidationTest.Mid.Inner";
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        engine.addImport(name);
+        engine.setRuleList(List.of(rule("true", "output.put('c', Inner)")));
+
+        assertSame(Mid.Inner.class, ImportResolver.resolve(name));
+        assertEquals(Map.of("c", Mid.Inner.class), engine.run(new FactMap<>()));
     }
 
     @Test
@@ -86,6 +142,34 @@ class AddImportValidationTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("x", 1);
         assertThrows(RuleExecutionException.class, () -> engine.run(facts), "java.util must not have been imported");
+    }
+
+    @Test
+    @DisplayName("addImports with a class name before an invalid name imports neither")
+    void invalidNameAfterClassImportsNothing() {
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> engine.addImports(new LinkedHashSet<>(List.of("java.time.LocalDate", "not a package!!"))));
+
+        CompileContext context = compileContextOf(engine);
+        assertEquals(Set.of(), context.classImports());
+        assertEquals(Set.of(), context.packageImports());
+    }
+
+    @Test
+    @DisplayName("a language gets unmodifiable imports that later addImport calls don't change")
+    void compileContextImportsAreAnUnmodifiableSnapshot() {
+        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        engine.addImport("java.util").addImport("java.time.LocalDate");
+        CompileContext context = compileContextOf(engine);
+
+        assertThrows(UnsupportedOperationException.class, () -> context.packageImports().add("java.text"));
+        assertThrows(UnsupportedOperationException.class, () -> context.classImports().add(LocalTime.class));
+        engine.addImport("java.text").addImport("java.time.LocalTime");
+
+        assertEquals(Set.of("java.util"), context.packageImports());
+        assertEquals(Set.of(LocalDate.class), context.classImports());
     }
 
     @Test
