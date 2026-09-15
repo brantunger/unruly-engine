@@ -77,17 +77,30 @@ implementation("io.github.brantunger:unruly-engine:1.6.0")
 </details>
 
 On the module path, the jar is the automatic module `io.github.brantunger.unruly`. Require SLF4J too: its API is
-the explicit module `org.slf4j`, which an automatic module can't add to the module graph on its own.
+the explicit module `org.slf4j`, which an automatic module can't add to the module graph on its own. Rules read your
+classes through MVEL, so also export every package whose classes rules use: fact types, the output type, the types
+of properties rules reach through them, and imported classes.
 
 ```java
 module com.example.app {
     requires io.github.brantunger.unruly;
     requires org.slf4j;
+    exports com.example.app.model; // or opens; either way without a "to" clause
 }
 ```
 
-Without `requires org.slf4j`, creating an engine fails with `NoClassDefFoundError: org/slf4j/LoggerFactory`. An
-application that can't change its module declaration can pass `--add-modules org.slf4j` to `java` instead.
+- **Without `requires org.slf4j`**, creating an engine fails with `NoClassDefFoundError: org/slf4j/LoggerFactory`.
+  The engine's POM gives slf4j-api `runtime` scope, so `requires org.slf4j` only compiles if your build also
+  depends on slf4j-api. Otherwise, pass `--add-modules org.slf4j` to `java` instead.
+- **Without the export**, a rule that uses one of your classes fails on its first run, for example with
+  `RuleExecutionException: ... [Error: could not access field: com.example.app.model.Applicant.creditScore]`. JDK
+  types and `Map` facts need no export.
+- **Don't export or open the package only `to mvel2`.** Rules then work for about 50 runs, until MVEL's JIT
+  optimizer generates accessor classes. Those classes aren't in the `mvel2` module, so from then on every run fails
+  with `IllegalAccessError: ... module com.example.app does not export com.example.app.model to unnamed module`. If
+  you need the qualified export, start the JVM with `-Dmvel2.disable.jit=true`, which keeps MVEL on its slower
+  reflective accessors. Exporting only `to io.github.brantunger.unruly` doesn't work either: MVEL reads the classes,
+  not the engine.
 
 > [!TIP]
 > The engine logs through the SLF4J API. Add an SLF4J 2.x provider such as Logback if your application doesn't
