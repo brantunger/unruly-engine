@@ -13,21 +13,22 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @param packages    Package names, imported with all their classes
  * @param classes     Classes imported one by one
- * @param classLoader The class loader that finds the classes in {@code packages}
+ * @param classLoader The class loader that finds the classes in {@code packages}, as an {@link ExactNameClassLoader}
  * @param notClasses  Names found not to be a class in any of {@code packages}, shared by the configurations created
  *                    with {@link #newConfiguration()}
  */
 record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses) {
 
     /**
-     * Creates the imports for one rule list, with nothing known yet about which names aren't classes.
+     * Creates the imports for one rule list, with nothing known yet about which names aren't classes. The class loader
+     * is wrapped once here, for every expression of the rule list, in an {@link ExactNameClassLoader}.
      *
      * @param packages    Package names, imported with all their classes
      * @param classes     Classes imported one by one
-     * @param classLoader The class loader that finds the classes in {@code packages}
+     * @param classLoader The application's class loader that finds the classes in {@code packages}
      */
     Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader) {
-        this(packages, classes, classLoader, ConcurrentHashMap.newKeySet());
+        this(packages, classes, new ExactNameClassLoader(classLoader), ConcurrentHashMap.newKeySet());
     }
 
     /**

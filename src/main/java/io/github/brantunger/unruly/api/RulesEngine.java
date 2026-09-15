@@ -72,14 +72,15 @@ public interface RulesEngine<O> {
      *
      * <p>
      * Whether a string names a class is decided when this method is called, by the calling thread's context class
-     * loader, or this library's class loader if the thread has none. A string that loader can't load as a class, but
+     * loader, or this library's class loader if the thread has none. A string that loader doesn't find as a class, but
      * that is a valid package name, is imported as a package. Classes in imported packages are looked up when
      * {@link #setRuleList(List)} is called, with that thread's context class loader.
      * </p>
      *
      * @param packages A set of packages or classes to import
      * @return A reference to this rules engine. This enables the use of the builder design pattern
-     * @throws IllegalArgumentException if a string is neither a loadable class nor a valid package name; nothing is
+     * @throws IllegalArgumentException if a string is neither a loadable class nor a valid package name, or names a
+     *         class that exists but can't be loaded, for example because a class it depends on is missing; nothing is
      *         imported
      * @throws NullPointerException if {@code packages} or any element is {@code null}
      */
@@ -92,7 +93,8 @@ public interface RulesEngine<O> {
      *
      * @param packageString The package or class to import. Example: "java.util"
      * @return A reference to this rules engine. This enables the use of the builder design pattern
-     * @throws IllegalArgumentException if the string is neither a loadable class nor a valid package name
+     * @throws IllegalArgumentException if the string is neither a loadable class nor a valid package name, or names a
+     *         class that exists but can't be loaded
      * @throws NullPointerException if {@code packageString} is {@code null}
      */
     RulesEngine<O> addImport(String packageString);

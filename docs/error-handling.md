@@ -62,7 +62,7 @@ All of them are unchecked.
 | | `IllegalStateException` | `setRuleList()` has never been called |
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. |
-| `addImport()` / `addImports()` | `IllegalArgumentException` | A string is neither a loadable class nor a valid package name. Nothing is imported. |
+| `addImport()` / `addImports()` | `IllegalArgumentException` | A string is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path. Nothing is imported. |
 | | `NullPointerException` | The argument or an element is `null` |
 | `registerLanguage()` | `IllegalArgumentException` | The language's name is `null` or blank |
 | | `NullPointerException` | The language is `null` |

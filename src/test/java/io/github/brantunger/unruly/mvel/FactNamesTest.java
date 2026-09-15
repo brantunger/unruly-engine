@@ -54,7 +54,7 @@ class FactNamesTest {
     }
 
     @Test
-    @DisplayName("a class file that can't be loaded isn't a class")
+    @DisplayName("a class file that can't be loaded isn't a class, as MVEL's own lookup in an imported package treats it")
     void unloadableClassFile(@TempDir Path dir) throws IOException {
         Files.createDirectories(dir.resolve("broken"));
         Files.write(dir.resolve("broken").resolve("Thing.class"), new byte[] {1, 2, 3});
@@ -65,5 +65,44 @@ class FactNamesTest {
             assertNotNull(loader.getResource("broken/Thing.class"));
             assertDoesNotThrow(() -> names.check("Thing"));
         }
+    }
+
+    @Test
+    @DisplayName("a class file the loader lists but then can't find isn't a class")
+    void listedButNotLoadable(@TempDir Path dir) throws IOException {
+        URL found = dir.toUri().toURL();
+        ClassLoader resourcesOnly = new ClassLoader(null) {
+            @Override
+            public URL getResource(String name) {
+                return name.equals("pkg/Ghost.class") ? found : null;
+            }
+        };
+        FactNames names = new FactNames(new Imports(Set.of("pkg"), Set.of(), resourcesOnly));
+
+        assertDoesNotThrow(() -> names.check("Ghost"));
+    }
+
+    @Test
+    @DisplayName("a class file found for a name that differs in case isn't a class")
+    void classFileWithWrongName(@TempDir Path dir) throws IOException {
+        // What a class directory on a case-insensitive file system does: pkg/date.class finds pkg/Date.class.
+        URL found = dir.toUri().toURL();
+        ClassLoader caseInsensitive = new ClassLoader(null) {
+            @Override
+            public URL getResource(String name) {
+                return name.equals("pkg/date.class") ? found : null;
+            }
+
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.equals("pkg.date")) {
+                    throw new NoClassDefFoundError("pkg/date (wrong name: pkg/Date)");
+                }
+                return super.loadClass(name, resolve);
+            }
+        };
+        FactNames names = new FactNames(new Imports(Set.of("pkg"), Set.of(), caseInsensitive));
+
+        assertDoesNotThrow(() -> names.check("date"));
     }
 }
