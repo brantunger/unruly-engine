@@ -56,7 +56,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | Interface | You implement | Called |
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | Once per `setRuleList()` that uses the language |
-| `ExpressionCompiler` | `compileCondition(String)`, `compileAction(String)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each fact of each `run()`; `newSession` for each copy of the rules |
+| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each fact of each `run()`; `newSession` for each copy of the rules |
 | `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext, Session)` / `execute(ActionContext, Session)` | Each time a rule is evaluated or fires |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | One per language for each copy of the rules |
 
@@ -81,8 +81,8 @@ public final class MyLanguage implements ExpressionLanguage {
         // One compiler per rule list: keep per-list caches here. context has the imports and class loader.
         return new ExpressionCompiler() {
             @Override
-            public CompiledCondition compileCondition(String source) {
-                MyExpression parsed = MyParser.parse(source);   // throw any exception for a syntax error
+            public CompiledCondition compileCondition(Expression source) {
+                MyExpression parsed = MyParser.parse(source.text());   // see "Errors while compiling" below
                 if (parsed.assignsSomething()) {
                     throw new InvalidExpressionException("contains an assignment");
                 }
@@ -90,8 +90,8 @@ public final class MyLanguage implements ExpressionLanguage {
             }
 
             @Override
-            public CompiledAction compileAction(String source) {
-                MyExpression parsed = MyParser.parse(source);
+            public CompiledAction compileAction(Expression source) {
+                MyExpression parsed = MyParser.parse(source.text());
                 return (action, session) -> parsed.execute(action.facts(), action.output());
             }
 
@@ -107,12 +107,20 @@ public final class MyLanguage implements ExpressionLanguage {
 
 `MyParser` and `MyExpression` stand for your language's own parser and compiled form.
 
+- **The expression.** `compileCondition` and `compileAction` get an `Expression`: the rule's name (`null` for a rule
+  without one), whether it's the rule's `CONDITION` or its `ACTION`, and its `text()`.
 - **Errors while compiling.** Throw `InvalidExpressionException` to reject an expression that breaks a rule the
-  engine enforces. Its message is used after the rule's name, as in
-  `Condition for rule 'prime-rate' contains an assignment`. Anything else you throw, such as a syntax error, becomes
-  the cause of the `RuleCompilationException`, except a fatal `Error`, which is logged and rethrown unchanged. The
-  same goes for `newCompiler`. Returning `null` from `newCompiler`, `compileCondition` or `compileAction` fails the
-  rule list too.
+  engine enforces, or has an error you can point to, such as a syntax error. Its message is used after the
+  expression's name, as in `Condition for rule 'prime-rate' contains an assignment`. Pass its `issues`, each with a
+  line and column when you know them, and the `RuleCompilationException` carries them. Anything else you throw
+  becomes the cause of a `RuleCompilationException` whose message reads
+  `Condition for rule 'prime-rate' failed to compile: ...`, except a fatal `Error`, which is logged and rethrown
+  unchanged. The same goes for `newCompiler`. Returning `null` from `newCompiler`, `compileCondition` or
+  `compileAction` fails the rule list too. The engine compiles every rule before it throws, so one load reports every
+  broken rule.
+- **Warnings.** To report a problem that shouldn't stop a rule loading, such as a deprecated function, call
+  `warn(source, issue)` on the `CompileContext` your compiler was created with. The engine logs it at WARN, naming the
+  rule, the expression and the position.
 - **Errors while running.** An exception from `evaluate` or `execute` becomes a `RuleExecutionException` naming the
   rule. A fatal `Error` such as `OutOfMemoryError` is rethrown unchanged, even when you wrap it in your own exception.
 - **Facts and output.** `facts()` is a read-only map of fact values by name. Actions see the output object as
@@ -202,7 +210,8 @@ class MyLanguageContractTest extends ExpressionLanguageContractTest {
     @Test
     void conditionComparesFacts() throws Exception {
         ExpressionCompiler compiler = language().newCompiler(LanguageTestContexts.compile());
-        CompiledCondition condition = compiler.compileCondition(factEquals("x", 1));
+        CompiledCondition condition = compiler.compileCondition(
+                new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
 
         assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1)), compiler.newSession()));
     }

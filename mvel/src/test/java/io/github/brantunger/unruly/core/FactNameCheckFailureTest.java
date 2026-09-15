@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
@@ -38,12 +39,12 @@ class FactNameCheckFailureTest {
             public ExpressionCompiler newCompiler(CompileContext context) {
                 return new ExpressionCompiler() {
                     @Override
-                    public CompiledCondition compileCondition(String source) {
+                    public CompiledCondition compileCondition(Expression expression) {
                         return (evaluation, session) -> true;
                     }
 
                     @Override
-                    public CompiledAction compileAction(String source) {
+                    public CompiledAction compileAction(Expression expression) {
                         return (action, session) -> {
                         };
                     }

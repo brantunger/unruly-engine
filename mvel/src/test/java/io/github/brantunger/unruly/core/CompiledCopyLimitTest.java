@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
@@ -67,12 +68,12 @@ class CompiledCopyLimitTest {
         public ExpressionCompiler newCompiler(CompileContext context) {
             return new ExpressionCompiler() {
                 @Override
-                public CompiledCondition compileCondition(String source) {
+                public CompiledCondition compileCondition(Expression expression) {
                     return new Condition();
                 }
 
                 @Override
-                public CompiledAction compileAction(String source) {
+                public CompiledAction compileAction(Expression expression) {
                     return (actionContext, session) -> {
                     };
                 }

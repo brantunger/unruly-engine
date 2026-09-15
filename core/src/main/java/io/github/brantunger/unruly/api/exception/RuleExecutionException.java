@@ -13,6 +13,9 @@ public class RuleExecutionException extends UnrulyException {
      */
     private final @Nullable String ruleName;
 
+    /** Whether the rule's condition or its action failed, or {@code null} if the failure isn't about one of them. */
+    private final @Nullable ExpressionKind expressionKind;
+
     /**
      * Constructs a new exception with the specified detail message.
      *
@@ -41,8 +44,23 @@ public class RuleExecutionException extends UnrulyException {
      *                 rule has no name.
      */
     public RuleExecutionException(@Nullable String message, @Nullable Throwable cause, @Nullable String ruleName) {
+        this(message, cause, ruleName, null);
+    }
+
+    /**
+     * Constructs a new exception for one rule's condition or action.
+     *
+     * @param message        the detail message.
+     * @param cause          the cause.
+     * @param ruleName       the name of the rule that failed, or {@code null} if the failure isn't about one rule or
+     *                       the rule has no name.
+     * @param expressionKind whether the condition or the action failed, or {@code null} if neither did
+     */
+    public RuleExecutionException(@Nullable String message, @Nullable Throwable cause, @Nullable String ruleName,
+                                  @Nullable ExpressionKind expressionKind) {
         super(message, cause);
         this.ruleName = ruleName;
+        this.expressionKind = expressionKind;
     }
 
     /**
@@ -54,5 +72,15 @@ public class RuleExecutionException extends UnrulyException {
      */
     public @Nullable String getRuleName() {
         return ruleName;
+    }
+
+    /**
+     * Returns whether the rule's condition or its action failed.
+     *
+     * @return the kind of expression, or {@code null} if the failure isn't about a condition or an action, for example
+     *         a listener or the output supplier failed
+     */
+    public @Nullable ExpressionKind getExpressionKind() {
+        return expressionKind;
     }
 }

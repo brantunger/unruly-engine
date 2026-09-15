@@ -74,8 +74,18 @@ Messages about a specific rule name it, for example
 `Failed to evaluate condition for rule 'prime-rate': ...`. A rule without a name appears as `(unnamed)`. In a
 message, line breaks and other control characters in a rule, fact or language name are escaped (`\n`), and a name
 longer than 200 characters is shortened, so a name can't start a log line of its own.
-When the expression language or your code threw the underlying error, it's available from `getCause()`. A
-condition the language rejected, such as one with an assignment, has an `InvalidExpressionException` as its cause.
+When the expression language or your code threw the underlying error, it's available from `getCause()`. An
+expression the language rejected, such as a condition with an assignment or an MVEL syntax error, has an
+`InvalidExpressionException` as its cause.
+
+`setRuleList()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
+failed: `failures()` has each rule's own exception, and the message lists them, such as
+`2 rules failed to compile: Condition for rule 'r1' failed to compile at line 1, column 6: Malformed expression; Action for rule 'r2' ...`.
+A failure that isn't about one rule, such as a `null` rule, a duplicate name or a language that can't create its
+compiler, is thrown at once.
+
+`getExpressionKind()` on either exception says whether the rule's condition or its action failed. `issues()` on a
+`RuleCompilationException` says where the language found each problem, with a line and column when it knows them.
 
 To act on the failing rule without parsing the message, for example to disable it or count failures per rule, call
 `getRuleName()` on the `RuleCompilationException` or `RuleExecutionException`. It returns the name exactly as the

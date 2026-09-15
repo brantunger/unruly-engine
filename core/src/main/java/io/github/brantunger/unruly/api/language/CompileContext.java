@@ -1,12 +1,14 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+
 import java.util.Set;
 
 /**
  * What every compilation of a rule list is given: the imports registered with
  * {@link io.github.brantunger.unruly.api.RulesEngine#addImports(Set)} before
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}, and the class loader to look
- * classes up with. A language without imports ignores them.
+ * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}, the class loader to look classes up
+ * with, and a way to report warnings. A language without imports ignores them.
  *
  * <p>
  * <b>Implemented by the engine</b>, which passes it to a language. It's sealed, so a language can't implement it; a
@@ -38,4 +40,15 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * @return The class loader, never {@code null}
      */
     ClassLoader classLoader();
+
+    /**
+     * Reports a problem that doesn't stop an expression compiling, such as use of a deprecated function. The engine
+     * logs it at WARN, naming the rule, whether the expression is its condition or its action, and where the problem
+     * is, and loading carries on. To stop the expression compiling, throw an {@link InvalidExpressionException} instead.
+     *
+     * @param source The expression the problem is in
+     * @param issue  The problem, reported as a warning whatever its severity
+     * @throws NullPointerException if {@code source} or {@code issue} is {@code null}
+     */
+    void warn(Expression source, InvalidExpressionException.Issue issue);
 }

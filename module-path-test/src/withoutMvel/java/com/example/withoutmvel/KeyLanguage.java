@@ -3,6 +3,7 @@ package com.example.withoutmvel;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
@@ -24,12 +25,14 @@ public final class KeyLanguage implements ExpressionLanguage {
     public ExpressionCompiler newCompiler(CompileContext context) {
         return new ExpressionCompiler() {
             @Override
-            public CompiledCondition compileCondition(String source) {
+            public CompiledCondition compileCondition(Expression expression) {
+                String source = expression.text();
                 return (evaluation, session) -> Boolean.TRUE.equals(evaluation.facts().get(source));
             }
 
             @Override
-            public CompiledAction compileAction(String source) {
+            public CompiledAction compileAction(Expression expression) {
+                String source = expression.text();
                 String[] keyAndValue = source.split("=", 2);
                 return (action, session) -> output(action.output()).put(keyAndValue[0], keyAndValue[1]);
             }
