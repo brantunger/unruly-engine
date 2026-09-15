@@ -26,14 +26,14 @@ like.
 
 |    | Feature | What you get |
 | -- | --- | --- |
-| 📝 | **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. |
+| 📝 | **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
 | 🔀 | **Two engine types** | A *stateless* engine fires only the highest-priority match. A *stateful* engine fires every match. |
 | 🔢 | **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
 | 🛡 | **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
 | 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
 | 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
 | 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Register another expression language and choose it per rule, even within one rule list. |
-| 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for Kotlin, IDEs and nullness checkers. |
+| 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. |
 
 ## 📦 Installation
 
@@ -202,7 +202,7 @@ A `Rule` is a plain object with six fields:
 | Field | Type | Required | Purpose |
 | --- | --- | :---: | --- |
 | `ruleName` | `String` | recommended | Names the rule in error messages and listener callbacks. Must be unique within a rule list. Unnamed rules are allowed and show as `(unnamed)`. |
-| `condition` | `String` | ✅ | An expression that must evaluate to a `boolean`. It can't assign or declare anything. |
+| `condition` | `String` | ✅ | An expression that must evaluate to a `boolean`. It can't assign or declare anything, but it can call methods; see [What rules can change](docs/writing-rules.md#-what-rules-can-change). |
 | `action` | `String` | ✅ | An expression that runs when the rule fires, usually changing `output`. |
 | `priority` | `Integer` | | Higher numbers fire first. Equal priorities keep their list order, and `null` sorts last. |
 | `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
@@ -221,7 +221,7 @@ the variable that rules use:
 
 ```java
 FactStore<Object> facts = new FactMap<>();
-facts.setValue("applicant", applicant);   // rules can now use applicant.creditScore
+facts.setValue("applicant", new Applicant("Ada", 780));   // rules can now use applicant.creditScore
 ```
 
 A fact name can't be `output`, and must be a name the rules' languages can refer to: in MVEL, a valid Java
@@ -266,6 +266,7 @@ that already matched still fires.
 | 🌱 [Spring Boot](docs/spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](docs/error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
+| 🟣 [Kotlin](docs/kotlin.md) | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](docs/thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
 | 📖 [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
 
@@ -315,8 +316,8 @@ how the name is used: `Objects.isNull(x)` fails with `unresolvable property or i
 
 While compiling `applicant.creditScore`, MVEL checks whether `applicant` is a class. Your classes are in the default
 package and in a class directory, as an IDE or `javac *.java` leaves them, on a case-insensitive file system (the
-default on Windows and macOS), so the lookup for `applicant.class` found `Applicant.class`. Before 1.7.0 that failed
-`setRuleList()`. From 1.7.0 the engine treats such a class file as a different class and reads `applicant` as the
+default on Windows and macOS), so the lookup for `applicant.class` found `Applicant.class`. Before 1.6.1 that failed
+`setRuleList()`. From 1.6.1 the engine treats such a class file as a different class and reads `applicant` as the
 fact. On an older version, put your classes in a package; classes packaged in a jar aren't affected.
 
 </details>

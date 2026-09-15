@@ -37,7 +37,7 @@ Every example below was checked against the engine. For the full language, see t
 > MVEL has no `in` membership test: `780 in [700, 780]` doesn't compile. To check whether a collection holds a
 > value, write `[700, 780] contains 780`.
 
-### In actions only
+### Mostly in actions
 
 | To | Write |
 | --- | --- |
@@ -47,16 +47,25 @@ Every example below was checked against the engine. For the full language, see t
 | Define a function | `def bonus(score) { score / 100 }; output.bonus = bonus(applicant.creditScore)` |
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
+A condition may also run several statements, branch or loop, as long as nothing in it assigns; see
+[What rules can change](../writing-rules.md#-what-rules-can-change).
+
 ## 📥 Classes and imports
 
-Without an import, MVEL resolves only this fixed set of class names:
+Without an import, MVEL resolves these class names on their own, as well as the primitive type names `boolean`
+`byte` `char` `double` `float` `int` `long` `short`:
 
 | Built-in class names |
 | --- |
 | `Boolean` `Byte` `Character` `CharSequence` `Class` `ClassLoader` `Double` `Exception` `Float` `Integer` `Long` `Math` `Number` `Object` `Runtime` `Short` `String` `StringBuilder` `System` `Thread` `Void` `Array` (`java.lang.reflect.Array`) |
 
-Everything else needs an import or a fully qualified name. That includes most of `java.lang`: `IllegalStateException`
-fails with `could not resolve class`, and `ProcessHandle` with `unresolvable property or identifier`.
+Everything else needs an import or a fully qualified name, including most of `java.lang`. The error depends on how
+the rule uses the class: `new IllegalStateException()` fails with `could not resolve class`, and a bare
+`IllegalStateException` with `unresolvable property or identifier`.
+
+> [!NOTE]
+> Imports are a convenience, not access control. A rule can reach any class by its fully qualified name, such as
+> `java.lang.Runtime`, or through reflection on any object. See [Security](#-security).
 
 ```java
 engine.addImport("java.util");                        // a whole package
@@ -76,7 +85,7 @@ engine.setRuleList(rules);                            // imports take effect her
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException`, and nothing from that call is imported.
 - A class that exists but can't be loaded, for example because a class it extends is missing from the class path,
-  is rejected the same way, with the `LinkageError` as the cause. Before 1.7.0 it was imported as a package, and rules
+  is rejected the same way, with the `LinkageError` as the cause. Before 1.6.1 it was imported as a package, and rules
   that used it failed later with `unresolvable property or identifier`.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
 - An imported class name can no longer be used as a fact name. After `addImport("java.util")`, a fact named `Date`

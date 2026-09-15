@@ -64,9 +64,13 @@ written or compiled against an earlier release. `./gradlew build` compares the j
 Central that isn't higher than the version in `build.gradle`** using [japicmp](https://siom79.github.io/japicmp/),
 and fails when a public or protected member is removed
 or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
-interface, a new checked exception, or a changed `Rule` constructor. When you add a field to `Rule`, add a
-constructor for the builder and keep the existing ones. Additions such as new classes, methods and `default` methods
+interface, a new checked exception, or a changed `Rule` constructor. When you add a field to `Rule`, add it to
+the builder; don't add a constructor, because the positional constructors are deprecated. Additions such as new classes, methods and `default` methods
 pass. The report is at `build/reports/japicmp/report.html`.
+
+**Nullness annotations are API for Kotlin.** Kotlin reads the JSpecify annotations strictly, and japicmp doesn't
+check them. Marking a parameter non-null that accepted `null`, or a return value, generic type or listener parameter
+`@Nullable` that wasn't, breaks Kotlin sources, so it belongs in a major release like any other break.
 
 **Adding a method to a public interface.** Users implement several of them: `RulesEngine` (for example to decorate an
 engine), `RuleListener`, `FactStore`, `FactReference`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,

@@ -111,13 +111,20 @@ A ready-made listener that logs every lifecycle event at **DEBUG** level:
 engine.registerListener(new LoggingRuleListener());
 ```
 
+For the README's quick start, a stateless engine and a score of 780, it logs:
+
 ```text
 Evaluating condition for rule: prime-rate
 Evaluated condition for rule: prime-rate | Match: true
+Evaluating condition for rule: standard-rate
+Evaluated condition for rule: standard-rate | Match: true
 Executing action for rule: prime-rate
 Executed action for rule: prime-rate
-Failed rule: standard-rate | Error: Failed to execute action for rule 'standard-rate': ...
 ```
+
+Every condition is evaluated before any action runs, and the stateless engine fires only `prime-rate`. When a
+condition or action fails, the listener logs a line such as
+`Failed rule: prime-rate | Error: Failed to execute action for rule 'prime-rate': ...` in place of the closing line.
 
 Rule names appear as the engine's error messages show them: line breaks and other control characters are escaped
 (`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own.
@@ -136,6 +143,12 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 > [!NOTE]
 > The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice.
+
+> [!CAUTION]
+> Failure messages can contain fact values. The JDK, MVEL and your own code put values into exception messages, such
+> as `For input string: "123-45-6789"` or `uncomparable values <<123-45-6789>> and <<5>>`, and the engine copies the
+> message into its ERROR log line and into `LoggingRuleListener`'s DEBUG line. If your facts hold sensitive data, turn
+> off the `io.github.brantunger.unruly` logger and log a redacted form of the failure yourself.
 > Lower the engine logger's level if you prefer to handle logging yourself.
 
 > [!IMPORTANT]
