@@ -58,6 +58,9 @@ implement them. A method added to any of these interfaces in a 1.x release is a 
 written against an earlier 1.x release keeps compiling and working.
 
 ```java
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.api.language.*;
+
 public final class MyLanguage implements ExpressionLanguage {
 
     @Override

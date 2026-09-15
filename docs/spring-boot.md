@@ -33,6 +33,11 @@ public class RulesEngineConfiguration {
 `LoanDecision` is your output type and `RuleRepository` is your own component. Rules can come from anywhere that
 can produce a `List<Rule>`: a database table, a YAML file, a config service, or plain code.
 
+> [!WARNING]
+> Rules are code: a rule can do anything your application code can. Whoever can change the table, file or service
+> the rules come from can run code in your application, so protect it like your source code. See
+> [Security](../README.md#-security).
+
 ```java
 @Component
 public class RuleRepository {

@@ -59,7 +59,7 @@ FactStore<Object> facts = new FactMap<>();
 facts.setValue("applicant", new Applicant("Ada", 780));
 
 // Or add a Fact object
-facts.put(new Fact<>("order", order));
+facts.put(new Fact<>("order", Map.of("id", 42)));
 
 // Read a value back
 Applicant applicant = (Applicant) facts.getValue("applicant");

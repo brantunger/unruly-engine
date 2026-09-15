@@ -50,10 +50,12 @@ rule with the languages and imports registered at that moment.
 
 ## 🔏 What rules can change
 
-### Conditions are read-only
+### Conditions can't assign
 
 `setRuleList()` rejects, with a `RuleCompilationException`, a condition that assigns or declares something, when
-its language can detect it. In MVEL, these are rejected:
+its language can detect it. That isn't a sandbox: a condition can still call methods, loop and run several
+statements, so it can change state (`System.setProperty('k', 'v') == null`) or never finish
+(`while (true) {}; true`). Keep conditions to expressions without side effects. In MVEL, these are rejected:
 
 | Rejected condition | Why it's usually a mistake |
 | --- | --- |
@@ -85,7 +87,8 @@ its language can detect it. In MVEL, these are rejected:
 A stateful engine suits validation: every rule that matches adds its finding, so the output collects them all.
 
 ```java
-public record Loan(double amount, int termMonths) {}
+// Applicant is the record from the README's quick start; Loan is another of your types:
+// public record Loan(double amount, int termMonths) {}
 
 RulesEngine<List<String>> engine = RulesEngineBuilder.stateful(ArrayList::new);
 engine.setRuleList(List.of(
@@ -125,6 +128,7 @@ non-boolean condition only fails when the rule runs (see
 rule a test with sample facts that make it match and not match:
 
 ```java
+// primeRateRule is the prime-rate Rule from the README's quick start.
 @Test
 void primeRateAppliesFrom750() {
     RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
@@ -140,4 +144,5 @@ void primeRateAppliesFrom750() {
 ```
 
 If your rules live outside the code, for example in a database, a test that loads them all and runs each one
-against representative facts catches errors before they reach production.
+against representative facts catches errors before they reach production. Rules are code, so protect that database
+like your source code; see [Security](../README.md#-security).

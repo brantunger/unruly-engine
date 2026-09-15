@@ -123,9 +123,12 @@ Keep in mind:
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `setRuleList()` throws, the engine keeps the rules it had before.
 - **Failures are already logged.** The engine logs each one at ERROR before throwing; see
-  [Logging setup](listeners-and-logging.md#-logging-setup).
+  [Logging setup](listeners-and-logging.md#-logging-setup). The message can contain fact values, copied from the
+  exception a rule caused, such as `For input string: "123-45-6789"`. With sensitive facts, turn off the
+  `io.github.brantunger.unruly` logger and log a redacted form yourself.
 - **Listeners hear about it first.** When a condition or action fails, `onError` receives the same exception before
-  `run()` throws it. A failing output supplier and a rejected fact name are thrown without calling any listener.
+  `run()` throws it. A failing output supplier, a rejected fact name and a compiled expression that fails to copy
+  are thrown without calling any listener.
 - **An interrupt isn't lost.** If a rule, listener, output supplier or expression language is interrupted while it
   blocks, for example in `Thread.sleep` or `BlockingQueue.take`, the `InterruptedException` clears the thread's
   interrupt status and reaches the engine wrapped. The engine sets the status again before it throws or carries on,
