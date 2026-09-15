@@ -26,20 +26,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-
       - name: Set up JDK ${{ matrix.java-version }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: ${{ matrix.java-version }}
           distribution: 'temurin'
-          cache: 'gradle'
 
-      # `build` runs `check`, which pulls in Checkstyle, PMD, the 100% Jacoco gate, the API compatibility check of
-      # every artifact, and the tests, including the applications ModulePathTest runs on the module path.
+      # Validates the Gradle wrapper, and caches Gradle's dependencies, wrapper and build cache between runs. Runs on
+      # main save the cache; pull requests only read it. The basic provider is open source; the default, enhanced one
+      # isn't. The configuration cache isn't saved, because that needs an encryption key.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+
+      # `build` runs `check`: Checkstyle, PMD, the 100% JaCoCo gate, the API compatibility check of every artifact,
+      # and the tests, including the applications ModulePathTest runs on the module path. `javadoc` runs in the same
+      # build, so a broken Javadoc comment fails here, not first in the release's publish job after tagging.
       - name: Build & Test
-        run: ./gradlew build jacocoTestReport --no-daemon -PtestJdk=${{ matrix.java-version }}
+        if: matrix.java-version == '21'
+        run: ./gradlew build jacocoTestReport javadoc --no-daemon
+
+      # Compilation always uses the Java 21 toolchain, so only the tests depend on this JDK; -PtestJdk runs them on it.
+      - name: Test on JDK ${{ matrix.java-version }}
+        if: matrix.java-version != '21'
+        run: ./gradlew :mvel:test --no-daemon -PtestJdk=${{ matrix.java-version }}
 
       - name: Upload API Compatibility Report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -52,16 +63,9 @@ jobs:
             test-kit/build/reports/japicmp/
           if-no-files-found: ignore
 
-      # `build` doesn't run javadoc; otherwise the release's publish job, after tagging, is the first
-      # place a broken Javadoc comment fails. Javadoc doesn't depend on the test JDK, so one run is enough.
-      # It builds the combined site and each artifact's -javadoc.jar contents.
-      - name: Javadoc
-        if: matrix.java-version == '21'
-        run: ./gradlew javadoc --no-daemon
-
       - name: Upload Coverage Report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+        if: always() && matrix.java-version == '21'
         with:
           name: jacoco-report-jdk${{ matrix.java-version }}
           path: build/reports/jacoco/
