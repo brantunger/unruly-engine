@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.AbstractMap;
 import java.util.Collections;
@@ -19,13 +20,14 @@ import java.util.Set;
  * place.
  * </p>
  */
-final class ActionVariables extends AbstractMap<String, Object> {
+final class ActionVariables extends AbstractMap<String, @Nullable Object> {
 
     /** The name actions use for the output object. */
     static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
 
-    private final Map<String, Object> facts;
-    private final Map<String, Object> locals = new HashMap<>();
+    // A fact's value, and a variable an action assigns, can be null.
+    private final Map<String, @Nullable Object> facts;
+    private final Map<String, @Nullable Object> locals = new HashMap<>();
 
     /**
      * Creates the variables for one action.
@@ -33,13 +35,13 @@ final class ActionVariables extends AbstractMap<String, Object> {
      * @param facts  The run's facts, which this map never changes
      * @param output The output object, bound to {@value #OUTPUT_KEYWORD}
      */
-    ActionVariables(Map<String, Object> facts, Object output) {
+    ActionVariables(Map<String, @Nullable Object> facts, Object output) {
         this.facts = facts;
         locals.put(OUTPUT_KEYWORD, output);
     }
 
     @Override
-    public Object get(Object key) {
+    public @Nullable Object get(Object key) {
         return locals.containsKey(key) ? locals.get(key) : facts.get(key);
     }
 
@@ -54,21 +56,21 @@ final class ActionVariables extends AbstractMap<String, Object> {
      * @throws UnsupportedOperationException if {@code key} is {@value #OUTPUT_KEYWORD}
      */
     @Override
-    public Object put(String key, Object value) {
+    public @Nullable Object put(String key, @Nullable Object value) {
         if (OUTPUT_KEYWORD.equals(key)) {
             throw new UnsupportedOperationException("Cannot assign '" + OUTPUT_KEYWORD
                     + "': an action changes the output object in place (e.g. output.put(...)) but can't replace it.");
         }
-        Object previous = get(key);
+        @Nullable Object previous = get(key);
         locals.put(key, value);
         return previous;
     }
 
     /** Returns a snapshot of every variable, local ones taking precedence. Only built when MVEL lists variables. */
     @Override
-    public Set<Entry<String, Object>> entrySet() {
-        Map<String, Object> merged = new HashMap<>(facts);
+    public Set<Entry<String, @Nullable Object>> entrySet() {
+        Map<String, @Nullable Object> merged = new HashMap<>(facts);
         merged.putAll(locals);
-        return Collections.unmodifiableMap(merged).entrySet();
+        return Collections.<String, @Nullable Object>unmodifiableMap(merged).entrySet();
     }
 }
