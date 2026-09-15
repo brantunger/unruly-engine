@@ -65,6 +65,12 @@ public final class RulesEngineBuilder<O> {
      * Starts building an engine that fires the action of the highest-priority rule whose condition is true: the first
      * match, in DMN's terms. Rules with equal priorities keep their list order.
      *
+     * <p>
+     * Conditions are evaluated in that order, and the run stops at the first match, so the rules below it are never
+     * evaluated: they're neither matched nor unmatched, and a broken condition among them can't fail a run that's
+     * already decided. Use {@link #allMatches(Supplier)} when every condition must be evaluated.
+     * </p>
+     *
      * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
      *                      return a new, non-null object each time.
      * @param <O>           The type of the output object

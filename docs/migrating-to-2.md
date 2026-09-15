@@ -332,6 +332,30 @@ code.
 | `RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new)` | `RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build()`: in a chained call, Java needs the output type |
 | A class that implements `RulesEngine` | Implement `load` and `run`, and remove `setRuleList`, `addImport`, `addImports`, `registerLanguage`, `registerListener` and `registerListeners` |
 
+## 🎯 A first-match engine stops at the first match
+
+**What changed:** a first-match engine (`RulesEngineBuilder.firstMatch(...)`, the old `stateless`) evaluates
+conditions in priority order and **stops at the first match**. It used to evaluate every condition and then fire the
+highest-priority match. An all-matches engine is unchanged: it still evaluates every condition before firing any
+action.
+
+Two consequences:
+
+- A broken lower-priority condition no longer fails a run that a higher-priority rule already decided.
+- Firing one rule costs one matching condition instead of all of them.
+
+**Who is affected:** anyone whose listeners count condition callbacks, or who relied on every run exercising every
+rule. This is a behaviour change that the API compatibility check can't see, so there's no compiler error to catch it.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| A listener counting `beforeEvaluate` / `afterEvaluate` per run | Expect calls only up to the first match on a first-match engine |
+| Relying on every run evaluating every rule, as a smoke test | Validate the rules at startup or in a test, as [Writing rules](writing-rules.md) recommends, rather than in production runs |
+| Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false` |
+| Needing every condition evaluated, for example to detect more than one match | Use `allMatches(...)` |
+
 ## 📊 A run reports what it did, and an engine reports its rules
 
 **What changed:**

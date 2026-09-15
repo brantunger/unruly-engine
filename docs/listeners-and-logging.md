@@ -140,13 +140,12 @@ For the README's quick start, a first-match engine and a score of 780, it logs:
 ```text
 Evaluating condition for rule: prime-rate
 Evaluated condition for rule: prime-rate | Match: true
-Evaluating condition for rule: standard-rate
-Evaluated condition for rule: standard-rate | Match: true
 Executing action for rule: prime-rate
 Executed action for rule: prime-rate
 ```
 
-Every condition is evaluated before any action runs, and the first-match engine fires only `prime-rate`. When a
+A first-match engine stops at the first match, so `standard-rate` is never evaluated and doesn't appear. An
+all-matches engine evaluates every condition first, so it would log both rules before firing either action. When a
 condition or action fails, the listener logs a line such as
 `Failed rule: prime-rate | Error: Failed to execute action for rule 'prime-rate': ...` in place of the closing line.
 

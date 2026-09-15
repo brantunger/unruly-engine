@@ -538,8 +538,20 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap) {
         return ruleList.stream()
-                .filter(rule -> parseCondition(rule, copy, entryMap))
+                .filter(rule -> matches(rule, copy, entryMap))
                 .toList();
+    }
+
+    /**
+     * Evaluates one rule's condition, telling the listeners about it.
+     *
+     * @param rule     The rule whose condition to evaluate
+     * @param copy     The run's copy of the rules, whose sessions the condition runs with
+     * @param entryMap The run's facts
+     * @return Whether the condition was true
+     */
+    boolean matches(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap) {
+        return parseCondition(rule, copy, entryMap);
     }
 
     /**

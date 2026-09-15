@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -43,11 +44,9 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
-     * Run all the rules through a <b>STATELESS</b> rules engine and fire the action of a single rule. All condition
-     * fields within the ruleList are evaluated in the stateless rule engine. However, only a single action is fired.
-     * During conflict resolution the {@link Rule} with the highest priority value is found first. The action field of
-     * the rule found first will be the only action triggered. The output object is therefore shaped by only one rule:
-     * the matching rule with the highest priority value.
+     * Fires the action of the first rule whose condition is true. Conditions are evaluated in priority order, and the
+     * run stops at the first match, so the rules below it are never evaluated: they are neither matched nor unmatched.
+     * The output object is therefore shaped by only one rule, the matching rule with the highest priority value.
      *
      * @param facts The key/value fact store to run the rule engine against.
      * @return The object that is the result of the action getting fired against the given {@link Rule}, or
@@ -65,11 +64,9 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
-            // Match the facts and data against the set of rules with highest priority first.
-            List<CompiledRule> matchedRuleList = this.match(rules, copy, entryMap);
-
-            // Resolve any conflicts and give the selected one rule.
-            CompiledRule resolvedRule = this.resolve(matchedRuleList);
+            // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
+            // broken lower-priority condition can't fail a run that is already decided.
+            CompiledRule resolvedRule = this.firstMatch(rules, copy, entryMap);
             if (null == resolvedRule) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
@@ -86,13 +83,20 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
-     * Picks the rule to fire: the first matched rule, which has the highest priority because the list is sorted.
+     * Returns the first rule whose condition is true, evaluating them in priority order and stopping there.
      *
-     * @param ruleList The rule list to resolve the conflicts against
-     * @return The {@link CompiledRule} object found first (the rule with the highest priority value)
+     * @param ruleList The rules, in evaluation order
+     * @param copy     The run's copy of the rules, whose sessions the conditions run with
+     * @param entryMap The run's facts
+     * @return The first matching rule, or {@code null} if none matched
      */
-    private CompiledRule resolve(List<CompiledRule> ruleList) {
-        return ruleList.stream().findFirst().orElse(null);
+    private CompiledRule firstMatch(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap) {
+        for (CompiledRule rule : ruleList) {
+            if (this.matches(rule, copy, entryMap)) {
+                return rule;
+            }
+        }
+        return null;
     }
 }
 
