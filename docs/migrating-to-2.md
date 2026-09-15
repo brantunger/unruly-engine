@@ -332,6 +332,38 @@ code.
 | `RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new)` | `RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build()`: in a chained call, Java needs the output type |
 | A class that implements `RulesEngine` | Implement `load` and `run`, and remove `setRuleList`, `addImport`, `addImports`, `registerLanguage`, `registerListener` and `registerListeners` |
 
+## 📊 A run reports what it did, and an engine reports its rules
+
+**What changed:**
+
+- **`runWithResult(facts)`** returns a `RunResult`: the output object, the rules that fired in firing order, and the
+  checksum of the rules the run used. `run(facts)` is unchanged, and is now a `default` method returning
+  `runWithResult(facts).output()`.
+- **`rules()`** returns a `RuleSetInfo`: the loaded rules in evaluation order, their checksum, and when they were
+  loaded. Before the first `load()` it reports no rules and no load time.
+- **The checksum** is the lowercase hex SHA-256 of the rules, covering each rule's name, priority, resolved language,
+  condition and action, but not its description. A rule with no `language` hashes as the engine's default language, so
+  the same rules on engines with different defaults have different checksums. A run keeps the checksum of the rules it
+  started with, so it can differ from `rules().checksum()` after a reload: that's what an audit needs.
+- **Listeners see a run**, with three new `default` callbacks: `beforeRun(RunContext)`,
+  `afterRun(RunContext, RunResult)` and `onRunError(RunContext, RuntimeException)`. `onRunError` reports failures that
+  belong to no rule too: a rejected fact name, an output supplier that throws, and an interrupt while the run waits for
+  a compiled copy of the rules. `RunContext` identifies the run and names its parent, so a run started from an action
+  no longer needs a `ThreadLocal` to be told apart.
+
+**Who is affected:** classes that implement `RulesEngine`, such as decorators and test doubles. Listeners and callers
+compile unchanged.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| A class that implements `RulesEngine` | Implement `runWithResult` and `rules()`; `run` now has a default that delegates to `runWithResult`. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return. |
+| A listener with a `ThreadLocal` to group callbacks into a run | `beforeRun` / `afterRun`, and `RunContext.runId()` or the context itself |
+| A listener that counts failures in `onError` | `onRunError` also reports failures that belong to no rule |
+| Recording which rules produced a decision with a shared listener | `runWithResult(facts).firedRules()` |
+| Recording which version of the rules produced a decision | `runWithResult(facts).ruleSetChecksum()`, and `engine.rules().checksum()` for the engine's current rules |
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in

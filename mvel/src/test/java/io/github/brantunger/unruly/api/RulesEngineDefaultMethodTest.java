@@ -12,15 +12,29 @@ class RulesEngineDefaultMethodTest {
 
     /** An implementation that overrides only the abstract methods. */
     private static final class MinimalEngine implements RulesEngine<Object> {
+
+        private static final String CHECKSUM = "checksum";
+
         @Override
         public void load(List<Rule> ruleList) {
             throw new AssertionError("not called");
         }
 
         @Override
-        public Object run(FactStore<?> facts) {
-            throw new AssertionError("not called");
+        public RunResult<Object> runWithResult(FactStore<?> facts) {
+            return RunResult.of("output", List.of(), CHECKSUM);
         }
+
+        @Override
+        public RuleSetInfo rules() {
+            return RuleSetInfo.of(List.of(), CHECKSUM, null);
+        }
+    }
+
+    @Test
+    @DisplayName("run() returns the result's output by default, so an implementation only writes runWithResult()")
+    void runDelegatesToRunWithResult() {
+        assertEquals("output", new MinimalEngine().run(new FactMap<>()));
     }
 
     @Test

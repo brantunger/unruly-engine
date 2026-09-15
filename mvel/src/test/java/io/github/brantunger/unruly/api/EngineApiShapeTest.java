@@ -28,9 +28,32 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("RulesEngine has only load, run and close: imports, languages and listeners can't change on a built engine")
+    @DisplayName("RulesEngine loads rules, runs them, reports what it loaded and closes: nothing else changes on it")
     void engineMethods() {
-        assertEquals(List.of("close", "load", "run"), names(RulesEngine.class));
+        assertEquals(List.of("close", "load", "rules", "run", "runWithResult"), names(RulesEngine.class));
+    }
+
+    @Test
+    @DisplayName("RuleListener sees a run start and end as well as each rule")
+    void listenerCallbacks() {
+        assertEquals(List.of("afterEvaluate", "afterExecute", "afterRun", "beforeEvaluate", "beforeExecute",
+                "beforeRun", "onError", "onRunError"), names(RuleListener.class));
+    }
+
+    @Test
+    @DisplayName("a run's result and the loaded rules are final classes, and a run's context is sealed to the engine")
+    // Loaded by name, so this test compiles against a release that doesn't have these types yet.
+    void runTypes() throws ClassNotFoundException {
+        Class<?> runResult = Class.forName("io.github.brantunger.unruly.api.RunResult");
+        Class<?> ruleSetInfo = Class.forName("io.github.brantunger.unruly.api.RuleSetInfo");
+        Class<?> runContext = Class.forName("io.github.brantunger.unruly.api.RunContext");
+
+        assertTrue(Modifier.isFinal(runResult.getModifiers()), "RunResult isn't final");
+        assertTrue(Modifier.isFinal(ruleSetInfo.getModifiers()), "RuleSetInfo isn't final");
+        assertTrue(runContext.isSealed(), "RunContext isn't sealed");
+        assertEquals(List.of("io.github.brantunger.unruly.core.EngineRunContext"),
+                Arrays.stream(runContext.getPermittedSubclasses()).map(Class::getName).toList());
+        assertEquals(List.of("facts", "matchPolicy", "parent", "ruleSetChecksum", "runId"), names(runContext));
     }
 
     @Test

@@ -34,6 +34,50 @@ import java.util.Map;
 public interface RuleListener {
 
     /**
+     * Called when a run starts, before any condition is evaluated. It's followed by exactly one call to
+     * {@link #afterRun} or {@link #onRunError}, so a span, timer or logging context opened here can always be closed.
+     *
+     * <p>
+     * A run that waits for a compiled copy of the rules opens its scope when the wait ends, so the wait isn't inside
+     * the pair. A {@code run()} that fails because no rules are loaded, or because the engine is closed, is misuse and
+     * reaches no callback.
+     * </p>
+     *
+     * @param run The run, which identifies it and carries its facts and the checksum of the rules it uses
+     */
+    default void beforeRun(RunContext run) {
+        // default empty implementation
+    }
+
+    /**
+     * Called when a run has finished, after the last {@code after*} callback.
+     *
+     * @param run    The run that {@link #beforeRun} opened
+     * @param result What the run did: the output object, the rules that fired, and the rules' checksum
+     */
+    default void afterRun(RunContext run, RunResult<?> result) {
+        // default empty implementation
+    }
+
+    /**
+     * Called when a run fails, in place of {@link #afterRun}. Unlike {@link #onError}, this reports every failure of
+     * the run, including the ones that belong to no rule: a fact name no language can refer to, an output supplier
+     * that throws or returns {@code null}, and an interrupt while the run waits for a compiled copy of the rules.
+     *
+     * <p>
+     * A failure inside a rule reaches that rule's {@link #onError} first, then this callback. {@code error} is what
+     * {@code run()} throws; when a fatal {@link Error} is rethrown instead, {@code error} is the
+     * {@link RuleExecutionException} that wraps it, as {@link #onError} describes.
+     * </p>
+     *
+     * @param run   The run that {@link #beforeRun} opened
+     * @param error The exception about to be thrown from {@code run()}
+     */
+    default void onRunError(RunContext run, RuntimeException error) {
+        // default empty implementation
+    }
+
+    /**
      * Called before a rule's condition is evaluated.
      *
      * @param rule  The rule being evaluated.

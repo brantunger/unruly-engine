@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,6 +56,9 @@ final class RuleSet {
 
     private final List<CompiledRule> compiledRules;
     private final Map<String, ExpressionCompiler> compilers;
+    // Identify these rules, and when they were loaded, for RulesEngine.rules() and every run's result.
+    private final String ruleChecksum;
+    private final Instant loadTime;
     private final Queue<Map<String, Session>> idle = new ConcurrentLinkedQueue<>();
     private final int copyLimit;
     private final boolean limited;
@@ -98,6 +102,8 @@ final class RuleSet {
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, int limit) {
         this.compiledRules = List.copyOf(compiledRules);
         this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
+        this.ruleChecksum = Checksums.ofRules(this.compiledRules);
+        this.loadTime = Instant.now();
         this.copyLimit = limit;
         this.limited = limit != UNLIMITED;
         this.permits = new Semaphore(limit);
@@ -110,6 +116,25 @@ final class RuleSet {
      */
     List<CompiledRule> rules() {
         return compiledRules;
+    }
+
+    /**
+     * Returns the checksum that identifies these rules, as
+     * {@link io.github.brantunger.unruly.api.RuleSetInfo#checksum()} describes it.
+     *
+     * @return The checksum
+     */
+    String checksum() {
+        return ruleChecksum;
+    }
+
+    /**
+     * Returns when these rules were compiled.
+     *
+     * @return The time the rule set was created
+     */
+    Instant loadedAt() {
+        return loadTime;
     }
 
     /**

@@ -63,7 +63,8 @@ class PackageDependencyTest {
 
     /** Dependencies that only the listed files may have. */
     private static final Map<Dependency, List<String>> ONLY_FILES = Map.of(
-            new Dependency("api", "core"), List.of("api/RulesEngineBuilder.java"),
+            // The builder creates the engines, and RunContext permits the engine's record.
+            new Dependency("api", "core"), List.of("api/RulesEngineBuilder.java", "api/RunContext.java"),
             // Each context interface permits the engine's record.
             new Dependency("api.language", "core"), List.of("api/language/ActionContext.java",
                     "api/language/CompileContext.java", "api/language/EvaluationContext.java"),

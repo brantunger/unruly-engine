@@ -2,9 +2,10 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RunResult;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -63,30 +64,34 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws NullPointerException {@inheritDoc}
      */
     @Override
-    public O run(FactStore<?> facts) {
-        Objects.requireNonNull(facts, "facts must not be null");
-        return withCompiledRules((ruleSet, copy) -> {
-            // Validated before the empty-list return, so an invalid fact is reported whatever the rules.
-            Map<String, Object> entryMap = this.unwrapFacts(facts, ruleSet.factChecks());
+    public RunResult<O> runWithResult(FactStore<?> facts) {
+        return runInScope(facts, (ruleSet, copy, entryMap) -> {
             List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
-                return null;
+                return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Match the facts and data against the set of rules with the highest priority first.
             List<CompiledRule> matchedRuleList = this.match(rules, copy, entryMap);
             if (matchedRuleList.isEmpty()) {
-                return null;
+                return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             O outputObject = createOutput(outputFactory);
 
             // Run the action of every rule on given data, saving state each time
+            List<Rule> fired = new ArrayList<>();
             for (CompiledRule rule : matchedRuleList) {
                 outputObject = this.executeRule(rule, copy, outputObject, entryMap);
+                fired.add(rule.rule());
             }
 
-            return outputObject;
+            return RunResult.of(outputObject, fired, ruleSet.checksum());
         });
+    }
+
+    @Override
+    String matchPolicy() {
+        return "allMatches";
     }
 }

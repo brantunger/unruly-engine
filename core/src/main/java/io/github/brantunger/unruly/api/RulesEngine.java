@@ -10,15 +10,18 @@ import java.util.List;
  * listeners and limit on compiled copies once.
  *
  * <p>
- * <b>Lifecycle:</b> compile the rules with {@link #load(List)}, then call {@link #run(FactStore)} as often as needed,
- * from any number of threads. Rules are evaluated in descending priority order; equal priorities keep their list order,
+ * <b>Lifecycle:</b> compile the rules with {@link #load(List)}, then call {@link #run(FactStore)} or
+ * {@link #runWithResult(FactStore)} as often as needed, from any number of threads. Rules are evaluated in descending priority order; equal priorities keep their list order,
  * and a {@code null} priority sorts last. {@code load} may be called again at any time to swap in new rules atomically.
  * Close the engine with {@link #close()} once it's no longer needed.
  * </p>
  *
  * <p>
- * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double. A
- * method added in a later 2.x release is a {@code default} method, so an existing implementation keeps compiling.
+ * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
+ * Implement {@link #load(List)}, {@link #runWithResult(FactStore)} and {@link #rules()}; {@link #run(FactStore)} and
+ * {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
+ * implementation keeps compiling. {@link RunResult#of(Object, List, String)} and
+ * {@link RuleSetInfo#of(List, String, java.time.Instant)} create the values an implementation returns.
  * </p>
  *
  * @param <O> The output object type to instantiate
@@ -61,7 +64,35 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      * @throws NullPointerException if {@code facts} is {@code null}
      */
-    @Nullable O run(FactStore<?> facts);
+    default @Nullable O run(FactStore<?> facts) {
+        return runWithResult(facts).output();
+    }
+
+    /**
+     * Fires the rules like {@link #run(FactStore)}, and reports what the run did: the output object, the rules that
+     * fired, and the checksum of the rules the run used. A caller can record which rules produced a decision without
+     * a {@link RuleListener}.
+     *
+     * @param facts The facts to run the rules against, as {@link #run(FactStore)} takes them
+     * @return What the run did, never {@code null}. Its {@link RunResult#output() output} is {@code null} exactly when
+     *         no rule fired, because the rule list is empty or no condition matched.
+     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it
+     * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     * @throws NullPointerException if {@code facts} is {@code null}
+     */
+    RunResult<O> runWithResult(FactStore<?> facts);
+
+    /**
+     * Returns the rules the engine has loaded, their checksum and when they were loaded. A run started before a reload
+     * finishes with the rules it started with, so compare {@link RunResult#ruleSetChecksum()} with
+     * {@link RuleSetInfo#checksum()} rather than assuming they match.
+     *
+     * @return The loaded rules, never {@code null}. Before the first {@link #load(List)} it has no rules, the checksum
+     *         of an empty rule list, and no {@link RuleSetInfo#loadedAt() load time}.
+     * @throws IllegalStateException if the engine is closed
+     */
+    RuleSetInfo rules();
 
     /**
      * Closes the engine, and releases what its expression languages hold for the rules, such as interpreter contexts.

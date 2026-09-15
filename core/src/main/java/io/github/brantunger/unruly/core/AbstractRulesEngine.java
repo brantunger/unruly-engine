@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.function.BiFunction;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -26,7 +26,10 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.RuleSetInfo;
 import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
@@ -85,6 +88,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final OutputWriter<? super O> outputWriter;
     // Each language's options, by language name.
     private final Map<String, Map<String, String>> options;
+    // Numbers this engine's runs, so a listener can tell them apart.
+    private final AtomicLong runIds = new AtomicLong();
+    // The run this thread is inside, so a run an action or a listener starts knows the run around it. Removed when
+    // the outermost run ends, so a pooled thread keeps nothing.
+    private final ThreadLocal<RunContext> currentRun = new ThreadLocal<>();
 
     /**
      * Creates an engine with the builder's settings: takes or finds its languages and picks the default one, and
@@ -130,7 +138,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Returns the rules as {@link #load(List)} compiled them, or {@code null} if it has not been called or the
-     * engine is closed. Every run shares them, each with its own sessions, from {@link #withCompiledRules(BiFunction)}.
+     * engine is closed. Every run shares them, each with its own sessions, from
+     * {@link #runInScope(FactStore, RunBody)}.
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
@@ -164,18 +173,120 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                which keeps its interrupt status set. Each is logged at ERROR; a fatal
      *                                {@link Error} from {@code newSession()} is then rethrown unchanged.
      */
-    <T> T withCompiledRules(BiFunction<RuleSet, RuleSet.Copy, T> run) {
+    /** The body of one run: what the engine does with the rules, its copy of them and the run's facts. */
+    @FunctionalInterface
+    interface RunBody<O> {
+
+        /**
+         * Runs the rules.
+         *
+         * @param rules The rule set the run uses
+         * @param copy  The run's copy of the rules
+         * @param facts The run's fact values, already checked
+         * @return What the run did
+         */
+        RunResult<O> run(RuleSet rules, RuleSet.Copy copy, Map<String, Object> facts);
+    }
+
+    /**
+     * Runs one run inside its listener scope: every listener gets {@link RuleListener#beforeRun}, then the rule
+     * callbacks, then exactly one of {@link RuleListener#afterRun} and {@link RuleListener#onRunError}.
+     *
+     * <p>
+     * The fact values are collected before the run borrows a copy of the rules, so the scope can carry them, and their
+     * names are checked inside the scope, so a name no language can refer to reaches {@code onRunError}. A run that
+     * waits for a copy opens its scope when the wait ends; an interrupt while waiting opens and closes a scope of its
+     * own. Failing because no rules are loaded, or because the engine is closed, is misuse and reaches no listener.
+     * </p>
+     *
+     * @param facts The facts the run was given
+     * @param body  What the engine does once it holds a copy of the rules
+     * @return What the run did
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     */
+    RunResult<O> runInScope(FactStore<?> facts, RunBody<O> body) {
+        Objects.requireNonNull(facts, "facts must not be null");
+        Map<String, Object> values = factValues(facts);
+        Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
         RuleSet rules;
         RuleSet.Copy copy;
         do {
             rules = currentRules();
-            copy = borrow(rules);
+            copy = borrow(rules, listenerFacts);
         } while (copy == null);
+        List<RuleListener> snapshot = listenerSnapshot();
+        RunContext parent = currentRun.get();
+        EngineRunContext run = newRun(rules, listenerFacts, parent);
+        currentRun.set(run);
         try {
-            return run.apply(rules, copy);
+            notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+            RunResult<O> result;
+            try {
+                checkFactNames(values, rules.factChecks());
+                result = body.run(rules, copy, values);
+            } catch (RuntimeException e) {
+                notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, e));
+                throw e;
+            } catch (Error e) {
+                // run() rethrows the error itself; listeners see what it failed with.
+                RuleExecutionException wrapped = new RuleExecutionException("The run failed with " + e, e);
+                notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, wrapped));
+                throw e;
+            }
+            notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
+            return result;
         } finally {
+            if (parent == null) {
+                currentRun.remove();
+            } else {
+                currentRun.set(parent);
+            }
             rules.release(copy);
         }
+    }
+
+    /** Creates the context one run is reported to listeners with. */
+    private EngineRunContext newRun(RuleSet rules, Map<String, Object> listenerFacts, RunContext parent) {
+        return new EngineRunContext(runIds.incrementAndGet(), parent, matchPolicy(), rules.checksum(), listenerFacts);
+    }
+
+    /**
+     * Calls one run callback on every listener, logging what a listener throws, like the rule callbacks. A fatal
+     * {@link Error} a listener throws is rethrown once every listener has had the callback.
+     */
+    private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+        Error fatal = notifyListeners(snapshot, callback, call);
+        if (fatal != null) {
+            log.error("A listener threw {} in {}", fatal.getClass().getName(), callback);
+            throw fatal;
+        }
+    }
+
+    /**
+     * Returns which rules this engine fires, for {@link RunContext#matchPolicy()}.
+     *
+     * @return {@code "firstMatch"} or {@code "allMatches"}
+     */
+    abstract String matchPolicy();
+
+    /**
+     * Returns the rules this engine has loaded, their checksum and when they were loaded.
+     *
+     * @return The loaded rules, or an empty rule list with the checksum of no rules before the first
+     *         {@link #load(List)}
+     * @throws IllegalStateException if the engine is closed
+     */
+    @Override
+    public RuleSetInfo rules() {
+        RuleSet rules = ruleSet;
+        if (rules == null) {
+            if (closed) {
+                throw new IllegalStateException(CLOSED_MESSAGE);
+            }
+            return RuleSetInfo.of(List.of(), Checksums.ofRules(List.of()), null);
+        }
+        return RuleSetInfo.of(rules.rules().stream().map(CompiledRule::rule).toList(), rules.checksum(),
+                rules.loadedAt());
     }
 
     /**
@@ -200,7 +311,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
      * @throws RuleExecutionException if the thread is interrupted while waiting for a copy
      */
-    private static RuleSet.Copy borrow(RuleSet rules) {
+    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts) {
         try {
             return rules.borrow();
         } catch (InterruptedException e) {
@@ -208,7 +319,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             String msg = "Interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
                     + " were in use";
             log.error(msg);
-            throw new RuleExecutionException(msg, e);
+            RuleExecutionException failure = new RuleExecutionException(msg, e);
+            // The run never started, so it opens and closes a scope of its own for listeners.
+            List<RuleListener> snapshot = listenerSnapshot();
+            EngineRunContext run = newRun(rules, listenerFacts, currentRun.get());
+            notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+            notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, failure));
+            throw failure;
         }
     }
 
@@ -336,39 +453,48 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Unwraps the FactStore into a Map of values to be used as context variables when rules are evaluated.
-     * This should be called once per engine run to avoid expensive allocations.
+     * Collects the fact values a run was given, without checking their names, so the run's listeners can be given the
+     * facts before the names are checked.
      *
-     * @param facts  The key/value fact store
-     * @param checks The compilers of the rule list the run uses, which check each name, by language name
-     * @return A map of variable names to their values
-     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, which actions reserve
-     *                                  for the output object, or has a name the language of a loaded rule can't
-     *                                  refer to, such as a reserved MVEL word, or if a language's check of the name
-     *                                  throws anything else. A fatal {@link Error} is logged, then rethrown unchanged.
+     * @param facts The key/value fact store
+     * @return A map of fact names to their values, which may hold a {@code null} name a custom store allowed
      */
-    Map<String, Object> unwrapFacts(FactStore<?> facts, Map<String, ExpressionCompiler> checks) {
+    private static Map<String, Object> factValues(FactStore<?> facts) {
         Map<String, Object> entryMap = new HashMap<>();
         for (Map.Entry<String, ? extends FactReference<?>> entry : facts.asMap().entrySet()) {
-            if (entry.getKey() == null) {
-                String msg = "fact name must not be null";
-                log.error(msg);
-                throw new IllegalArgumentException(msg);
-            }
-            // Actions bind the output object to this name, silently hiding a fact of the same name.
-            if (OUTPUT_KEYWORD.equals(entry.getKey())) {
-                String msg = "'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as a "
-                        + "fact name";
-                log.error(msg);
-                throw new IllegalArgumentException(msg);
-            }
-            checkFactName(entry.getKey(), checks);
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
             // unresolvable, so `x == null` failed instead of matching.
             FactReference<?> fact = entry.getValue();
             entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
         }
         return entryMap;
+    }
+
+    /**
+     * Checks every fact name of a run: not {@code null}, not the output's name, and one the language of each loaded
+     * rule can refer to.
+     *
+     * @param values The fact values by name
+     * @param checks The compilers of the rule list the run uses, which check each name, by language name
+     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, or has a name a language
+     *                                  can't refer to, or if a language's check of the name throws anything else
+     */
+    private static void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
+        for (String name : values.keySet()) {
+            if (name == null) {
+                String msg = "fact name must not be null";
+                log.error(msg);
+                throw new IllegalArgumentException(msg);
+            }
+            // Actions bind the output object to this name, silently hiding a fact of the same name.
+            if (OUTPUT_KEYWORD.equals(name)) {
+                String msg = "'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as a "
+                        + "fact name";
+                log.error(msg);
+                throw new IllegalArgumentException(msg);
+            }
+            checkFactName(name, checks);
+        }
     }
 
     /**

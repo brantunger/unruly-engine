@@ -274,6 +274,8 @@ identifier that isn't a keyword such as `empty` or `in`. Build a new store for e
   output's public setters. Set them your own way with `.outputWriter(...)` on the builder, and tell languages the
   output's type with `.outputType(...)`.
 - `run()` returns it, or `null` when no rule matched.
+- `runWithResult()` returns the same output plus the rules that fired and a checksum of the rules the run used, so a
+  decision can be audited without a listener. `engine.rules()` reports the loaded rules and the same checksum.
 
 ### 🔀 Choosing an engine
 
