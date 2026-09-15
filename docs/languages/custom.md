@@ -133,14 +133,21 @@ public final class MyLanguage implements ExpressionLanguage {
   `output` (`ActionContext.OUTPUT_NAME`), and the engine already rejects a fact with that name.
 - **What an action returns.** An action that changes `output` in place returns `ActionResult.done()`. A language
   whose expressions compute values without side effects, such as CEL or JsonLogic, returns
-  `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. The engine sets each property in order,
-  with `put` on a `Map` output or with the output's public setter, such as `setInterestRate`, whose parameter must
-  accept the value as it is. A property it can't set, or a `null` result, fails the rule with a
+  `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. The engine sets each property in order
+  with its `OutputWriter`, by default `put` on a `Map` output or the output's public setter, such as
+  `setInterestRate`, whose parameter must accept the value as it is. The application can set its own writer with
+  `.outputWriter(...)`, so don't assume how a property is stored. A property the writer can't set, or a `null` result,
+  fails the rule with a
   `RuleExecutionException`. In an all-matches run, a later rule's properties overwrite an earlier one's. In
   `ExpressionLanguageContractTest`, return `null` from `reassignOutput()` or `declareVariable()` if your actions
   can't express them.
 - **Imports.** `CompileContext` carries the packages and classes the engine was built with, from `imports(...)`, and
   the class loader to look them up with. A language without imports ignores them.
+- **Output type and options.** `CompileContext.outputType()` is the class the engine was built with through
+  `.outputType(...)`, or `Object` when it wasn't; a typed language can check what its actions return against it.
+  `CompileContext.options()` holds your language's own settings, which the application sets with
+  `.option("my", "key", "value")`, so a language needs no constructor arguments for them. Both are empty or `Object`
+  unless the application sets them, so treat them as optional.
 - **Fact names.** Override `checkFactName` to reject a name your rules couldn't refer to, such as a keyword, with an
   `IllegalArgumentException`. By default every name is accepted. Anything else it throws is logged and becomes an
   `IllegalArgumentException` naming the fact and your language, except a fatal `Error`, which is rethrown unchanged.
@@ -152,7 +159,7 @@ public final class MyLanguage implements ExpressionLanguage {
 | Rejects `null` rules, blank conditions and actions, duplicate names and languages the engine doesn't have | Reject syntax errors when compiling, where it can |
 | Runs rules in priority order, and fires the highest-priority match (first match) or every match (all matches) | Reject a condition that assigns or declares something, where it can detect that |
 | Requires a condition to return a `Boolean`: `null`, a string or a number fails the rule | Keep an action's variables local to that action, so later rules still see the original facts |
-| Rejects a fact named `null` or `output`, and sets the properties an action returns | Bind the output object as `output` and don't let an action replace it, or return the action's results as properties |
+| Rejects a fact named `null` or `output`, and sets the properties an action returns with its `OutputWriter` | Bind the output object as `output` and don't let an action replace it, or return the action's results as properties |
 | Wraps failures in `RuleCompilationException` and `RuleExecutionException`, rethrows fatal errors, and calls listeners | Reject fact names it can't refer to |
 | Passes read-only facts, gives each run its own sessions, and closes them (see below) | Document what rules can reach: files, processes, reflection |
 

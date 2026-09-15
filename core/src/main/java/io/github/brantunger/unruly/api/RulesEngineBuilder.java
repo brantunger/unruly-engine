@@ -8,7 +8,9 @@ import org.jspecify.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -50,6 +52,9 @@ public final class RulesEngineBuilder<O> {
     private final List<String> importNames = new ArrayList<>();
     private final List<RuleListener> listenerList = new ArrayList<>();
     private int copyLimit = EngineConfiguration.UNLIMITED_COPIES;
+    private Class<? super O> outputClass = Object.class;
+    private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
+    private final Map<String, Map<String, String>> languageOptions = new LinkedHashMap<>();
 
     private RulesEngineBuilder(Supplier<O> outputFactory, boolean fireAllMatches) {
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
@@ -191,6 +196,55 @@ public final class RulesEngineBuilder<O> {
     }
 
     /**
+     * Tells expression languages the type of the output object, through
+     * {@link io.github.brantunger.unruly.api.language.CompileContext#outputType()}. A language may use it, for example
+     * to check the properties its actions return; the engine doesn't. Without this, languages are told
+     * {@link Object}.
+     *
+     * @param type The output object's class, or a supertype of it, such as {@code Map.class} for a
+     *             {@code Map<String, Object>} output
+     * @return This builder
+     * @throws NullPointerException if {@code type} is {@code null}
+     */
+    public RulesEngineBuilder<O> outputType(Class<? super O> type) {
+        this.outputClass = Objects.requireNonNull(type, "type must not be null");
+        return this;
+    }
+
+    /**
+     * Sets how the engine sets the properties an action returns with
+     * {@link io.github.brantunger.unruly.api.language.ActionResult#set(Map)} on the output object. Without this, it's
+     * {@link OutputWriter#beansAndMaps()}. Actions that change the output themselves don't use it.
+     *
+     * @param writer The writer, which runs on many threads at once
+     * @return This builder
+     * @throws NullPointerException if {@code writer} is {@code null}
+     */
+    public RulesEngineBuilder<O> outputWriter(OutputWriter<? super O> writer) {
+        this.writer = Objects.requireNonNull(writer, "writer must not be null");
+        return this;
+    }
+
+    /**
+     * Sets an option for one expression language, which the language reads from
+     * {@link io.github.brantunger.unruly.api.language.CompileContext#options()} when rules are loaded. What the options
+     * are is up to the language. Setting the same key again replaces its value.
+     *
+     * @param language The name of one of the engine's languages
+     * @param key      The option's name
+     * @param value    Its value
+     * @return This builder
+     * @throws NullPointerException if an argument is {@code null}
+     */
+    public RulesEngineBuilder<O> option(String language, String key, String value) {
+        Objects.requireNonNull(language, "language must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(value, "value must not be null");
+        languageOptions.computeIfAbsent(language, name -> new LinkedHashMap<>()).put(key, value);
+        return this;
+    }
+
+    /**
      * Keeps at most {@code maxCopies} compiled copies of the rules. Without this, an engine has no limit.
      *
      * <p>
@@ -228,8 +282,9 @@ public final class RulesEngineBuilder<O> {
      *
      * @return A new engine
      * @throws IllegalStateException    if the engine has no expression language; if it has several and no
-     *                                  {@link #defaultLanguage(String) default language}; if the default language
-     *                                  isn't one of its languages; or if a language found with
+     *                                  {@link #defaultLanguage(String) default language}; if the default language, or
+     *                                  a language given an {@link #option(String, String, String) option}, isn't one
+     *                                  of its languages; or if a language found with
      *                                  {@link java.util.ServiceLoader} has a {@code null} or blank name, or two found
      *                                  languages have the same name. Anything {@code ServiceLoader} or a language throws
      *                                  while it's found, such as a {@link java.util.ServiceConfigurationError}, is thrown
@@ -239,8 +294,8 @@ public final class RulesEngineBuilder<O> {
      *                                  is missing
      */
     public RulesEngine<O> build() {
-        EngineConfiguration configuration = new EngineConfiguration(languageList, defaultLanguageName, importNames,
-                listenerList, copyLimit);
+        EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
+                importNames, listenerList, copyLimit, outputClass, writer, languageOptions);
         return fireAllMatches
                 ? Engines.allMatches(outputFactory, configuration)
                 : Engines.firstMatch(outputFactory, configuration);

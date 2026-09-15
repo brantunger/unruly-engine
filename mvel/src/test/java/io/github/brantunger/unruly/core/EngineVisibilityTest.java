@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.OutputWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -7,6 +8,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Modifier;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,9 +41,10 @@ class EngineVisibilityTest {
     void enginesEntryPoint() {
         assertTrue(Modifier.isFinal(Engines.class.getModifiers()));
         assertEquals(0, Engines.class.getConstructors().length);
-        EngineConfiguration unlimited = new EngineConfiguration(List.of(), null, List.of(), List.of(),
-                EngineConfiguration.UNLIMITED_COPIES);
-        EngineConfiguration limited = new EngineConfiguration(List.of(), null, List.of(), List.of(), 2);
+        EngineConfiguration<Object> unlimited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
+                EngineConfiguration.UNLIMITED_COPIES, Object.class, OutputWriter.beansAndMaps(), Map.of());
+        EngineConfiguration<Object> limited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(), 2,
+                Object.class, OutputWriter.beansAndMaps(), Map.of());
 
         assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
         assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));

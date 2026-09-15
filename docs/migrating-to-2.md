@@ -181,6 +181,7 @@ block.
 | 1.x | 2.0 |
 | --- | --- |
 | `compileCondition(String source)` | `compileCondition(Expression source)`, reading `source.text()` |
+| Settings passed to a language's own constructor, such as a parser's features | `.option("my-language", "key", "value")` on the engine's builder, read from `CompileContext.options()` |
 | Parsing `Can not compile rule 'x'. Error: ...` | `getRuleName()`, `getExpressionKind()` and `issues()`, or the new message |
 | Reloading to find the next broken rule | `failures()`, which lists them all |
 | `getCause()` is MVEL's `CompileException` | `getCause().getCause()`, or `issues()` |
@@ -201,6 +202,8 @@ JsonLogic, write actions. In `ExpressionLanguageContractTest`, `reassignOutput()
 | --- | --- |
 | `void execute(ActionContext context)` | `ActionResult execute(ActionContext context, Session session)`, returning `ActionResult.done()` |
 | Writing a computed value back to the output with reflection | `return ActionResult.set(Map.of("approved", true))` |
+| An output the engine's `put`-and-setters writer can't set, such as one with builder-style methods | `.outputWriter((output, property, value) -> ...)` on the engine's builder |
+| A language that needs to know the output's type | `CompileContext.outputType()`, which the application sets with `.outputType(LoanDecision.class)` |
 
 ## 🧱 Rules are immutable and need a name
 
@@ -296,8 +299,8 @@ code.
   the hit policies they implement, and return a builder; `build()` creates the engine. A first-match engine fires the
   action of the highest-priority matching rule, and an all-matches engine fires every match in priority order, as
   before.
-- Imports, expression languages, listeners and the limit on compiled copies are set on the builder, and can't change
-  once the engine is built. `RulesEngine.addImport`, `addImports`, `registerLanguage`, `registerListener` and
+- Imports, expression languages, listeners, the limit on compiled copies, the output type, the output writer and each
+  language's options are set on the builder, and can't change once the engine is built. `RulesEngine.addImport`, `addImports`, `registerLanguage`, `registerListener` and
   `registerListeners` are removed, and so are the `stateless(supplier, maxCopies)` and `stateful(supplier, maxCopies)`
   overloads.
 - `RulesEngine.setRuleList(rules)` is renamed `load(rules)`. It still compiles the rules and swaps them in atomically,

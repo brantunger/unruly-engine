@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.language.CompileContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -46,9 +47,17 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("the builder sets languages, the default language, imports, listeners and the copy limit, then builds")
+    @DisplayName("the builder sets the languages, imports, listeners, copy limit, output and language options")
     void builderSettings() {
         assertEquals(List.of("allMatches", "build", "defaultLanguage", "firstMatch", "imports", "imports", "language",
-                "listener", "listeners", "maxCopies"), names(RulesEngineBuilder.class));
+                "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter"),
+                names(RulesEngineBuilder.class));
+    }
+
+    @Test
+    @DisplayName("a language is given the imports, the class loader, the output type and its options")
+    void compileContextSettings() {
+        assertEquals(List.of("classImports", "classLoader", "options", "outputType", "packageImports", "warn"),
+                names(CompileContext.class));
     }
 }
