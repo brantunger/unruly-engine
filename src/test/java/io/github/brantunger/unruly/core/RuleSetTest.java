@@ -42,7 +42,7 @@ class RuleSetTest {
 
     @Test
     @DisplayName("the compiled rules are never lent; a copy in use is never lent twice, and one given back is reused")
-    void copiesLentOneAtATime() {
+    void copiesLentOneAtATime() throws InterruptedException {
         AtomicInteger copies = new AtomicInteger();
         RuleSet rules = new RuleSet(List.of(RULE), Map.of(), rule -> {
             int n = copies.incrementAndGet();
@@ -50,17 +50,19 @@ class RuleSetTest {
                     new Stub("action copy " + n));
         });
 
-        List<CompiledRule> first = rules.borrow();
-        List<CompiledRule> second = rules.borrow();
+        RuleSet.Copy first = rules.borrow();
+        RuleSet.Copy second = rules.borrow();
 
-        assertEquals(new Stub("condition copy 1"), first.get(0).compiledCondition(),
+        assertEquals(new Stub("condition copy 1"), first.rules().get(0).compiledCondition(),
                 "the rules compiled by setRuleList are copied, not lent");
-        assertEquals(new Stub("condition copy 2"), second.get(0).compiledCondition());
+        assertEquals(new Stub("condition copy 2"), second.rules().get(0).compiledCondition());
+        assertTrue(first.kept() && second.kept(), "without a limit every copy is kept");
         assertEquals(List.of(RULE), rules.rules());
+        assertEquals(RuleSet.UNLIMITED, rules.limit());
 
         rules.release(second);
 
-        assertSame(second, rules.borrow());
+        assertSame(second.rules(), rules.borrow().rules());
         assertEquals(2, copies.get());
     }
 

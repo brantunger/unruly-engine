@@ -43,6 +43,26 @@ public class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
+     * Construct a StatelessRulesEngine that keeps at most {@code maxCopies} compiled copies of its rules.
+     *
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
+     *                      per run that matches a rule and must return a new, non-null object each time.
+     * @param maxCopies     The most compiled copies of the rules to keep, at least 1, as
+     *                      {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateless(Supplier, int)}
+     *                      describes
+     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
+     * @throws NullPointerException     if {@code outputFactory} is {@code null}
+     * @deprecated Create the engine with
+     *             {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateless(Supplier, int)} instead. The
+     *             engine classes are implementation details and are expected to become package-private in 2.0.
+     */
+    @Deprecated(since = "1.6.0", forRemoval = true)
+    public StatelessRulesEngine(Supplier<O> outputFactory, int maxCopies) {
+        super(maxCopies);
+        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+    }
+
+    /**
      * Run all the rules through a <b>STATELESS</b> rules engine and fire the action of a single rule. All condition
      * fields within the ruleList are evaluated in the stateless rule engine. However, only a single action is fired.
      * During conflict resolution the {@link Rule} with the highest priority value is found first. The action field of

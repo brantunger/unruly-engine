@@ -27,6 +27,22 @@ class EngineConstructorDeprecationTest {
     }
 
     @Test
+    @DisplayName("each engine's constructor with a limit on copies is @Deprecated(since = \"1.6.0\", forRemoval = true)")
+    void limitConstructorsDeprecatedForRemoval() throws NoSuchMethodException {
+        for (Class<?> engine : ENGINES) {
+            Deprecated deprecated = engine.getConstructor(Supplier.class, int.class).getAnnotation(Deprecated.class);
+
+            assertNotNull(deprecated, engine.getSimpleName() + "'s constructor isn't deprecated");
+            assertTrue(deprecated.forRemoval(), engine.getSimpleName() + "'s constructor isn't marked for removal");
+            assertEquals("1.6.0", deprecated.since(), engine.getSimpleName());
+        }
+        assertNull(RulesEngineBuilder.class.getMethod("stateless", Supplier.class, int.class)
+                .getAnnotation(Deprecated.class));
+        assertNull(RulesEngineBuilder.class.getMethod("stateful", Supplier.class, int.class)
+                .getAnnotation(Deprecated.class));
+    }
+
+    @Test
     @DisplayName("the engine classes and the builder methods that replace the constructors aren't deprecated")
     void classesAndBuilderNotDeprecated() throws NoSuchMethodException {
         for (Class<?> engine : ENGINES) {
