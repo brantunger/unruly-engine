@@ -41,6 +41,82 @@ class ExpressionLanguageRegistrationTest {
         return facts;
     }
 
+    /** A language that rejects every fact name, saying which language rejected it. */
+    private static ExpressionLanguage rejectingLanguage(String languageName) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return languageName;
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(String source) {
+                        return evaluation -> true;
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(String source) {
+                        return action -> {
+                        };
+                    }
+
+                    @Override
+                    public void checkFactName(String name) {
+                        throw new IllegalArgumentException("rejected by " + languageName);
+                    }
+                };
+            }
+        };
+    }
+
+    @ParameterizedTest(name = "{0} first")
+    @ValueSource(strings = {"a", "b"})
+    @DisplayName("fact names are checked by the languages in the order the rules use them, highest priority first")
+    void factNamesCheckedInOrderOfUse(String first) {
+        String second = "a".equals(first) ? "b" : "a";
+        engine.registerLanguage(rejectingLanguage("a"));
+        engine.registerLanguage(rejectingLanguage("b"));
+        engine.setRuleList(List.of(
+                Rule.builder().ruleName("low").language(second).priority(1).condition("c").action("a").build(),
+                Rule.builder().ruleName("high").language(first).priority(2).condition("c").action("a").build()));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(fact("x", 1)));
+
+        assertEquals("rejected by " + first, ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language registered while a rule list compiles is used from the next setRuleList, not that one")
+    void languageRegisteredWhileCompiling() {
+        engine.registerLanguage(new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return "first";
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                engine.registerLanguage(new ToyExpressionLanguage("late"));
+                return new ToyExpressionLanguage("first").newCompiler(context);
+            }
+        });
+        List<Rule> rules = List.of(
+                Rule.builder().ruleName("early").language("first").priority(2).condition("true").action("put k 1")
+                        .build(),
+                Rule.builder().ruleName("later").language("late").priority(1).condition("true").action("put k 2")
+                        .build());
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+
+        assertEquals("Rule 'later' is written in 'late', which isn't a registered expression language. "
+                + "Registered languages: [first, mvel]", ex.getMessage());
+        engine.setRuleList(rules);
+        assertEquals(Map.of("k", 2), engine.run(new FactMap<>()));
+    }
+
     @Test
     @DisplayName("one rule list can mix MVEL rules, with or without a language, and rules in another language")
     void mixedLanguages() {

@@ -18,14 +18,20 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("LoggingRuleListener rule names")
 class LoggingRuleListenerNameTest {
 
+    private static final String LISTENER_LOGGER = "io.github.brantunger.unruly.api.LoggingRuleListener - ";
+
     private static String logsOf(Rule rule) {
+        return logsOf(rule, true);
+    }
+
+    private static String logsOf(Rule rule, boolean matchResult) {
         LoggingRuleListener listener = new LoggingRuleListener();
         PrintStream original = System.err;
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8));
         try {
             listener.beforeEvaluate(rule, Map.of());
-            listener.afterEvaluate(rule, Map.of(), true);
+            listener.afterEvaluate(rule, Map.of(), matchResult);
             listener.beforeExecute(rule, new Object());
             listener.afterExecute(rule, new Object());
             listener.onError(rule, new RuleExecutionException("boom"));
@@ -55,5 +61,17 @@ class LoggingRuleListenerNameTest {
 
         assertTrue(logs.contains("Evaluating condition for rule: claim-rule"), logs);
         assertTrue(logs.contains("Failed rule: claim-rule | Error: boom"), logs);
+    }
+
+    @Test
+    @DisplayName("every callback is logged at DEBUG, and a rule that didn't match is logged with Match: false")
+    void debugLevelAndMatchResult() {
+        String logs = logsOf(Rule.builder().ruleName("r").condition("false").action("x").build(), false);
+
+        assertTrue(logs.contains("DEBUG " + LISTENER_LOGGER + "Evaluating condition for rule: r"), logs);
+        assertTrue(logs.contains("DEBUG " + LISTENER_LOGGER + "Evaluated condition for rule: r | Match: false"), logs);
+        assertTrue(logs.contains("DEBUG " + LISTENER_LOGGER + "Executing action for rule: r"), logs);
+        assertTrue(logs.contains("DEBUG " + LISTENER_LOGGER + "Executed action for rule: r"), logs);
+        assertTrue(logs.contains("DEBUG " + LISTENER_LOGGER + "Failed rule: r | Error: boom"), logs);
     }
 }

@@ -11,13 +11,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedAtError;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("a null fact name is rejected at run()")
 class NullFactNameTest {
 
     @Test
-    @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException")
+    @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException, logged at ERROR")
     void nullNameRejected() {
         StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
         engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('hit', true)")
@@ -25,7 +26,7 @@ class NullFactNameTest {
         HashFactStore facts = new HashFactStore();
         facts.put((String) null, new Fact<>("x", 1));
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(facts));
+        IllegalArgumentException ex = assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(facts));
 
         assertEquals("fact name must not be null", ex.getMessage());
     }

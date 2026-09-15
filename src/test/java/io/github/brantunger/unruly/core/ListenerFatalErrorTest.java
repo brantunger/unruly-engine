@@ -118,6 +118,32 @@ class ListenerFatalErrorTest {
     }
 
     @Test
+    @DisplayName("from beforeEvaluate, then from onError: the error from beforeEvaluate is rethrown")
+    void fromBeforeEvaluateThenOnError() {
+        OutOfMemoryError fromBefore = new OutOfMemoryError("beforeEvaluate");
+        OutOfMemoryError fromOnError = new OutOfMemoryError("onError");
+        StatefulRulesEngine<Map<String, Object>> engine = engine("true",
+                listener("L1", "beforeEvaluate", fromBefore), listener("L2", "onError", fromOnError));
+
+        assertSame(fromBefore, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
+        assertEquals(List.of("L1.beforeEvaluate", "L2.beforeEvaluate", "L1.onError", "L2.onError"), events);
+    }
+
+    @Test
+    @DisplayName("from the rule, then from onError: the rule's error is rethrown once every listener got onError")
+    void fromRuleThenOnError() {
+        OutOfMemoryError fromRule = new OutOfMemoryError("rule");
+        OutOfMemoryError fromOnError = new OutOfMemoryError("onError");
+        StatefulRulesEngine<Map<String, Object>> engine = engine("bomb.explode()",
+                listener("L1", "onError", fromOnError), listener("L2", null, null));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("bomb", new WrappedFatalErrorTest.Bomb(fromRule));
+
+        assertSame(fromRule, assertThrows(OutOfMemoryError.class, () -> engine.run(facts)));
+        assertEquals(List.of("L1.beforeEvaluate", "L2.beforeEvaluate", "L1.onError", "L2.onError"), events);
+    }
+
+    @Test
     @DisplayName("two fatal errors in one callback: every listener is called and the first error is rethrown")
     void twoFatalErrors() {
         OutOfMemoryError first = new OutOfMemoryError("first");
