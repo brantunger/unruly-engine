@@ -49,6 +49,26 @@ public class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
+     * Construct a StatefulRulesEngine that keeps at most {@code maxCopies} compiled copies of its rules.
+     *
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once
+     *                      per run that matches a rule and must return a new, non-null object each time.
+     * @param maxCopies     The most compiled copies of the rules to keep, at least 1, as
+     *                      {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateful(Supplier, int)}
+     *                      describes
+     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
+     * @throws NullPointerException     if {@code outputFactory} is {@code null}
+     * @deprecated Create the engine with
+     *             {@link io.github.brantunger.unruly.api.RulesEngineBuilder#stateful(Supplier, int)} instead. The
+     *             engine classes are implementation details and are expected to become package-private in 2.0.
+     */
+    @Deprecated(since = "1.6.0", forRemoval = true)
+    public StatefulRulesEngine(Supplier<O> outputFactory, int maxCopies) {
+        super(maxCopies);
+        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+    }
+
+    /**
      * Run all the rules through a <b>STATEFUL</b> rules engine and fire the action of every {@link Rule} whose
      * condition returns true. In the stateful rules engine the rules are sorted by priority.
      * Matching actions fire in priority order, highest first. They share one output object, so a lower-priority

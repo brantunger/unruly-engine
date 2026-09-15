@@ -64,6 +64,8 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     public static final String JIT_PROPERTY = "unruly.mvel.jit";
 
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
+    // The smallest limit on compiled copies: one run at a time.
+    private static final int MIN_COPIES = 1;
     // The language of a rule whose language is null.
     private static final String DEFAULT_LANGUAGE = MvelExpressionLanguage.LANGUAGE_NAME;
     // Registered languages by name: MVEL, unless replaced, and those from registerLanguage().
@@ -79,10 +81,34 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // fact-name checks of the languages they use, and is fully built before it is assigned, so one volatile write
     // swaps in both.
     private volatile RuleSet ruleSet;
+    // The most compiled copies of the rules that runs hold at once, or RuleSet.UNLIMITED.
+    private final int maxCopies;
     // Checks fact names before the first rule list is loaded: the default language's compiler, with no imports.
     private final Map<String, ExpressionCompiler> defaultFactChecks = Map.of(DEFAULT_LANGUAGE,
             languages.get(DEFAULT_LANGUAGE).newCompiler(
                     new EngineCompileContext(Set.of(), Set.of(), ImportResolver.LIBRARY_CLASS_LOADER)));
+
+    /**
+     * Creates an engine that makes as many compiled copies of its rules as its runs need at once.
+     */
+    public AbstractRulesEngine() {
+        this.maxCopies = RuleSet.UNLIMITED;
+    }
+
+    /**
+     * Creates an engine that keeps at most {@code maxCopies} compiled copies of its rules. A run that finds all of them
+     * in use waits for one; see {@link RuleSet}.
+     *
+     * @param maxCopies The most copies, at least 1
+     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
+     */
+    AbstractRulesEngine(int maxCopies) {
+        if (maxCopies < MIN_COPIES) {
+            throw new IllegalArgumentException(
+                    "maxCopies must be at least " + MIN_COPIES + ", but was " + maxCopies);
+        }
+        this.maxCopies = maxCopies;
+    }
 
     /**
      * Returns the rules as {@link #setRuleList(List)} compiled them, or {@code null} if it has not been called. The
@@ -105,8 +131,10 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Calls {@code run} with a compiled copy of the rules that no concurrent run is using, and keeps the copy for
      * later runs once {@code run} returns or throws. The first run after {@link #setRuleList(List)}, and a run that
-     * starts while every copy is in use, makes a new copy. MVEL's compiled expressions aren't safe to share between
-     * threads when a fact name is bound to different kinds of objects; see {@link RuleSet}.
+     * starts while every copy is in use, makes a new copy. An engine created with a limit on copies keeps at most that
+     * many: a run that finds all of them in use waits for one, unless it is nested in another run on the same thread,
+     * which gets an extra copy that isn't kept. MVEL's compiled expressions aren't safe to share between threads when
+     * a fact name is bound to different kinds of objects; see {@link RuleSet}.
      *
      * <p>
      * A missing call to {@link #setRuleList(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
@@ -122,19 +150,40 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return What {@code run} returns
      * @throws IllegalStateException if {@link #setRuleList(List)} has not been called
      * @throws RuleExecutionException if a new copy is needed and a compiled condition or action throws or returns
-     *                                {@code null} from {@code copy()}. A fatal {@link Error} is logged, then
-     *                                rethrown unchanged.
+     *                                {@code null} from {@code copy()}, or if the thread is interrupted while it waits
+     *                                for a copy, which keeps its interrupt status set. Each is logged at ERROR; a
+     *                                fatal {@link Error} from {@code copy()} is then rethrown unchanged.
      */
     protected <T> T withCompiledRules(Function<List<CompiledRule>, T> run) {
         RuleSet rules = ruleSet;
         if (rules == null) {
             throw new IllegalStateException("setRuleList() must be called before run()");
         }
-        List<CompiledRule> copy = rules.borrow();
+        RuleSet.Copy copy = borrow(rules);
         try {
-            return run.apply(copy);
+            return run.apply(copy.rules());
         } finally {
             rules.release(copy);
+        }
+    }
+
+    /**
+     * Borrows a copy of the rules for one run. An interrupt while waiting for one fails the run; the interrupt status
+     * is set again, so the caller still sees it.
+     *
+     * @param rules The rule set to borrow from
+     * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
+     * @throws RuleExecutionException if the thread is interrupted while waiting for a copy
+     */
+    private static RuleSet.Copy borrow(RuleSet rules) {
+        try {
+            return rules.borrow();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            String msg = "Interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
+                    + " were in use";
+            log.error(msg);
+            throw new RuleExecutionException(msg, e);
         }
     }
 
@@ -228,7 +277,7 @@ public abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
                 .map(rule -> compileRule(rule, compilers))
                 .collect(Collectors.toCollection(ArrayList::new));
-        this.ruleSet = new RuleSet(compiled, compilers.used(DEFAULT_LANGUAGE), AbstractRulesEngine::copy);
+        this.ruleSet = new RuleSet(compiled, compilers.used(DEFAULT_LANGUAGE), AbstractRulesEngine::copy, maxCopies);
     }
 
     /**

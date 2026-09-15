@@ -13,7 +13,7 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 | 🌱 [Spring Boot](spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
-| 🧵 [Thread safety](thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs |
+| 🧵 [Thread safety](thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
 | 📖 [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
 
 For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [RELEASING.md](../RELEASING.md) ·
