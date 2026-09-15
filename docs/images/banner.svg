@@ -44,7 +44,7 @@
 
   <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#e0e7ff">
     <rect x="262" y="206" width="104" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
-    <text x="314" y="227" text-anchor="middle">Java 17+</text>
+    <text x="314" y="227" text-anchor="middle">Java 21+</text>
     <rect x="378" y="206" width="112" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
     <text x="434" y="227" text-anchor="middle">MVEL rules</text>
     <rect x="502" y="206" width="124" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>

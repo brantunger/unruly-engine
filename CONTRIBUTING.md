@@ -22,7 +22,7 @@ Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT
 
 ## 🛠 Development setup
 
-You need a JDK (17 or later) to run Gradle. The build compiles with a **Java 17 toolchain**, which Gradle downloads
+You need a JDK (17 or later) to run Gradle. The build compiles with a **Java 21 toolchain**, which Gradle downloads
 automatically if it isn't installed.
 
 ```bash
@@ -36,7 +36,7 @@ cd unruly-engine
 | `./gradlew clean build` | Compiles, tests, and runs every quality gate: exactly what CI checks |
 | `./gradlew test` | Runs the tests only |
 | `./gradlew test --tests '*StatefulSemanticsTest*'` | Runs a single test class |
-| `./gradlew test -PtestJdk=21` | Runs the tests on JDK 21 instead of 17 |
+| `./gradlew test -PtestJdk=25` | Runs the tests on JDK 25 instead of 21 |
 | `./gradlew jacocoTestReport` | Writes the coverage report to `build/reports/jacoco/test/html/index.html` |
 | `./gradlew japicmp` | Checks the public API against the newest release up to the build's version and writes `build/reports/japicmp/report.html` |
 
@@ -50,7 +50,7 @@ cd unruly-engine
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `build.gradle`, `config/japicmp/accepted-breaks.txt` |
 
-On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 17 and JDK 21**, and a separate check
+On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21 and JDK 25**, and a separate check
 validates the PR title.
 
 > [!TIP]

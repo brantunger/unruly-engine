@@ -8,6 +8,9 @@ import org.jspecify.annotations.Nullable;
 public class RuleCompilationException extends UnrulyException {
     private static final long serialVersionUID = 1L;
 
+    /**
+     * The name of the rule that failed to compile, or {@code null} if the failure belongs to no named rule.
+     */
     private final @Nullable String ruleName;
 
     /**

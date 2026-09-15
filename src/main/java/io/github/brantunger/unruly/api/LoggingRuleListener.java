@@ -20,6 +20,13 @@ public class LoggingRuleListener implements RuleListener {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingRuleListener.class);
 
+    /**
+     * Creates a listener that logs through the SLF4J logger named after this class.
+     */
+    public LoggingRuleListener() {
+        // Nothing to set up: the logger is shared by every instance.
+    }
+
     // The same limit as the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
 
