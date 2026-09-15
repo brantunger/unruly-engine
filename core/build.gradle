@@ -1,0 +1,44 @@
+plugins {
+    id 'unruly.library'
+}
+
+// The engine without an expression language. The mvel project publishes unruly-engine, which adds MVEL.
+def artifact = 'unruly-engine-core'
+
+base {
+    archivesName = artifact
+}
+
+dependencies {
+    implementation libs.slf4j.api
+    // The public API's nullness annotations. An api dependency, so users' compilers, Kotlin and IDEs can read them.
+    api libs.jspecify
+}
+
+mavenPublishing {
+    coordinates(project.group.toString(), artifact, project.version.toString())
+
+    pom {
+        name = artifact
+        description = 'Unruly is a pure Java rules engine with pluggable expression languages. This is the engine ' +
+                'without a language; unruly-engine adds MVEL'
+    }
+}
+
+apiCheck {
+    artifactId = artifact
+    // core is internal: the module doesn't export it, and its classes are package-private except Engines, the
+    // builder's entry point.
+    excludedPackages = ['io.github.brantunger.unruly.core']
+    // Until its first release, 2.0.0, this artifact is compared with the last 1.x release of unruly-engine, the single
+    // jar that also held the MVEL language.
+    predecessor = 'io.github.brantunger:unruly-engine:(,2.0.0)'
+    predecessorExcludedPackages = ['io.github.brantunger.unruly.mvel']
+}
+
+// The Javadoc documents the API only. core's one public class, Engines, exists for RulesEngineBuilder.
+tasks.named('javadoc', Javadoc) {
+    exclude 'io/github/brantunger/unruly/core/**'
+    // Lets javadoc find the excluded classes that the documented ones use.
+    options.addPathOption('-source-path').value = [file('src/main/java')]
+}

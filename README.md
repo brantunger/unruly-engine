@@ -33,7 +33,7 @@ like.
 | 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
 | 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
 | 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Register another expression language and choose it per rule, even within one rule list. |
-| 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. |
+| 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
 
 ## 📦 Installation
 
@@ -76,22 +76,37 @@ implementation("io.github.brantunger:unruly-engine:1.8.0")
 
 </details>
 
-On the module path, the jar is the automatic module `io.github.brantunger.unruly`. Require SLF4J too: its API is
-the explicit module `org.slf4j`, which an automatic module can't add to the module graph on its own. Rules read your
+`unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/custom.md),
+depend on `unruly-engine-core` instead: the same engine and API, without MVEL.
+
+On the module path, `unruly-engine` is the module `io.github.brantunger.unruly`, and `unruly-engine-core` is
+`io.github.brantunger.unruly.core`. Require one of them: it requires SLF4J, and MVEL for `unruly-engine`. Rules read your
 classes through MVEL, so also export every package whose classes rules use: fact types, the output type, the types
 of properties rules reach through them, and imported classes.
 
 ```java
 module com.example.app {
-    requires io.github.brantunger.unruly;
-    requires org.slf4j;
+    requires io.github.brantunger.unruly; // or io.github.brantunger.unruly.core, without MVEL
     exports com.example.app.model; // or opens; either way without a "to" clause
 }
 ```
 
-- **Without `requires org.slf4j`**, creating an engine fails with `NoClassDefFoundError: org/slf4j/LoggerFactory`.
-  The engine's POM gives slf4j-api `runtime` scope, so `requires org.slf4j` only compiles if your build also
-  depends on slf4j-api. Otherwise, pass `--add-modules org.slf4j` to `java` instead.
+- **MVEL's jar has no module name**, so on the module path its name, `mvel2`, comes from the file name
+  `mvel2-2.5.4.Final.jar`. Gradle puts a jar without a module name on the class path instead, and the application
+  fails to start with `FindException: Module mvel2 not found, required by io.github.brantunger.unruly`. Give the jar
+  its name with the [extra-java-module-info](https://github.com/gradlex-org/extra-java-module-info) plugin:
+  ```groovy
+  plugins {
+      id 'org.gradlex.extra-java-module-info' version '1.14.2'
+  }
+
+  extraJavaModuleInfo {
+      automaticModule('org.mvel:mvel2', 'mvel2')
+  }
+  ```
+  The plugin also fails the build for every other jar without a module name, unless you name it the same way or set
+  `failOnMissingModuleInfo = false`. A renamed MVEL jar fails the same way. `jlink` can't use `mvel2`, which is an
+  automatic module, so only an application without MVEL can build a runtime image.
 - **Without the export**, a rule that uses one of your classes fails on its first run, for example with
   `RuleExecutionException: ... [Error: could not access field: com.example.app.model.Applicant.creditScore]`. JDK
   types and `Map` facts need no export.

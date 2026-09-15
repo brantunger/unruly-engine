@@ -1,0 +1,59 @@
+plugins {
+    id 'unruly.library'
+    id 'org.gradlex.extra-java-module-info'
+}
+
+// The MVEL language. It keeps 1.x's artifact ID and module name, so existing users change nothing: depending on it
+// still brings the whole engine.
+def artifact = 'unruly-engine'
+
+base {
+    archivesName = artifact
+}
+
+dependencies {
+    api project(':core')
+    implementation libs.mvel2
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly libs.slf4j.simple
+}
+
+// mvel2 has no module name: no module-info.class and no Automatic-Module-Name. On a module path, java derives the name
+// mvel2 from the jar's file name, which is what module-info.java requires. Gradle only puts a jar that has a module
+// name on the module path, so this gives mvel2 the same name.
+extraJavaModuleInfo {
+    automaticModule('org.mvel:mvel2', 'mvel2')
+}
+
+mavenPublishing {
+    coordinates(project.group.toString(), artifact, project.version.toString())
+
+    pom {
+        name = artifact
+        description = 'Unruly is a pure Java rules engine that evaluates rules written in MVEL or a pluggable ' +
+                'expression language'
+    }
+}
+
+apiCheck {
+    artifactId = artifact
+    // These packages moved to unruly-engine-core in 2.0.0, and are compared there.
+    excludedPackages = [
+            'io.github.brantunger.unruly.api',
+            'io.github.brantunger.unruly.api.exception',
+            'io.github.brantunger.unruly.api.language',
+            'io.github.brantunger.unruly.core',
+    ]
+}
+
+// The tests are here, not in core, because most of them run MVEL rules. They run on the class path, so the tests in
+// core's packages can use its package-private classes.
+tasks.named('test', Test) {
+    // Read by PackageDependencyTest.
+    systemProperty 'unruly.main.sources', files(
+            layout.settingsDirectory.dir('core/src/main/java'),
+            layout.projectDirectory.dir('src/main/java')).asPath
+}

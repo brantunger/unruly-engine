@@ -1,150 +1,45 @@
-import com.vanniktech.maven.publish.JavaLibrary
-import com.vanniktech.maven.publish.JavadocJar
-import com.vanniktech.maven.publish.SourcesJar
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 
 plugins {
-    id 'java-library'
-    id 'jacoco'
-    id 'com.vanniktech.maven.publish' version '0.37.0'
-    id 'checkstyle'
-    id 'pmd'
-    id 'me.champeau.gradle.japicmp' version '0.4.6'
+    id 'base'
+    id 'jvm-toolchains'
+    id 'jacoco-report-aggregation'
 }
 
-group = 'io.github.brantunger'
-version = '1.8.0' // x-release-please-version
-
-base {
-    archivesName = 'unruly-engine'
+allprojects {
+    group = 'io.github.brantunger'
+    version = '1.8.0' // x-release-please-version
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-}
-
-// A stable module name for applications on the module path. Without it, the name is derived from the jar's file
-// name, which changes if the jar is renamed.
-tasks.named('jar') {
-    manifest {
-        attributes('Automatic-Module-Name': 'io.github.brantunger.unruly')
-    }
-}
-
-checkstyle {
-    toolVersion = '10.20.1'
-    ignoreFailures = false
-    maxWarnings = 0
-}
-
-pmd {
-    toolVersion = '7.5.0'
-    ignoreFailures = false
-    sourceSets = [sourceSets.main]
-    ruleSets = []
-    ruleSetConfig = resources.text.fromString('''<?xml version="1.0"?>
-<ruleset name="Unruly PMD Ruleset"
-    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
-    <description>Unruly PMD Ruleset</description>
-    <rule ref="category/java/bestpractices.xml">
-        <exclude name="GuardLogStatement"/>
-    </rule>
-    <rule ref="category/java/errorprone.xml"/>
-</ruleset>''')
-}
-
-repositories {
-    mavenCentral()
-}
-
-// Publishes to the Maven Central Portal (central.sonatype.com).
-// Credentials are a Portal user token supplied via the mavenCentralUsername/mavenCentralPassword
-// properties; signing uses signingInMemoryKey/signingInMemoryKeyId/signingInMemoryKeyPassword.
-mavenPublishing {
-    configure(new JavaLibrary(new JavadocJar.Javadoc(), new SourcesJar.Sources()))
-    coordinates(project.group.toString(), 'unruly-engine', project.version.toString())
-
-    publishToMavenCentral()
-    signAllPublications()
-
-    pom {
-        name = 'unruly-engine'
-        description = 'Unruly is a pure Java rules engine that evaluates rules written in MVEL or a pluggable expression language'
-        url = 'https://github.com/brantunger/unruly-engine'
-        licenses {
-            license {
-                name = 'GNU GENERAL PUBLIC LICENSE v3.0'
-                url = 'https://www.gnu.org/licenses/gpl-3.0.en.html'
-            }
-        }
-        developers {
-            developer {
-                id = 'brantunger'
-                name = 'Brant Unger'
-                email = 'brant.unger@gmail.com'
-            }
-        }
-        scm {
-            connection = 'scm:git:git://github.com/brantunger/unruly-engine.git'
-            developerConnection = 'scm:git:ssh://github.com/brantunger/unruly-engine.git'
-            url = 'https://github.com/brantunger/unruly-engine'
-        }
-    }
-}
-
+// Coverage of both artifacts. The tests are in mvel, and they cover core's classes too, so the report and the
+// gate combine the classes of mvel and of the projects it depends on.
 dependencies {
-    implementation 'org.mvel:mvel2:2.5.4.Final'
-    implementation 'org.slf4j:slf4j-api:2.0.19'
-    // The public API's nullness annotations. An api dependency, so users' compilers, Kotlin and IDEs can read them.
-    api 'org.jspecify:jspecify:1.0.1'
-
-    testImplementation platform('org.junit:junit-bom:6.1.3')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.19'
+    jacocoAggregation project(':mvel')
 }
 
-// Compilation always uses the Java 21 toolchain. The tests run on the JDK given by -PtestJdk (default 21), so
-// CI can run them on each JDK in its matrix; otherwise the test task would use the 21 toolchain every time.
-def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
-
-// The tests still call Rule's and Fact's setters, which are deprecated for removal, so javac would otherwise print a
-// removal warning for every call.
-tasks.named('compileTestJava') {
-    options.compilerArgs << '-Xlint:-removal'
-}
-
-test {
-    javaLauncher = javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(testJdk)
-    }
-    useJUnitPlatform {
-        includeEngines 'junit-jupiter'
-    }
-    systemProperties = [
-            'junit.jupiter.extensions.autodetection.enabled': 'true',
-            // Lets a test confirm it really runs on the requested JDK.
-            'unruly.test.jdk': testJdk,
-            // LoggingRuleListener logs at DEBUG; enabled so its messages can be asserted.
-            'org.slf4j.simpleLogger.log.io.github.brantunger.unruly.api.LoggingRuleListener': 'debug',
-    ]
-    jacoco {
-        destinationFile = layout.buildDirectory.file('jacoco/test.exec').get().asFile
-    }
-}
-
-jacocoTestReport {
+reporting {
     reports {
-        html.required = true
-        xml.required = true
-        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/report.xml')
+        jacocoTestReport(JacocoCoverageReport) {
+            testSuiteName = 'test'
+            reportTask.configure {
+                reports {
+                    html.required = true
+                    html.outputLocation = layout.buildDirectory.dir('reports/jacoco/html')
+                    xml.required = true
+                    xml.outputLocation = layout.buildDirectory.file('reports/jacoco/report.xml')
+                }
+            }
+        }
     }
 }
 
-jacocoTestCoverageVerification {
+def coverageVerification = tasks.register('jacocoTestCoverageVerification', JacocoCoverageVerification) {
+    group = 'verification'
+    description = 'Fails unless the tests cover every instruction and branch of both artifacts.'
+    def report = tasks.named('jacocoTestReport', JacocoReport).get()
+    executionData.from(report.executionData)
+    classDirectories.from(report.classDirectories)
+    sourceDirectories.from(report.sourceDirectories)
     violationRules {
         rule {
             limit {
@@ -159,99 +54,65 @@ jacocoTestCoverageVerification {
     }
 }
 
-check.dependsOn jacocoTestCoverageVerification
-
-// API compatibility: every build compares the jar with the newest release on Maven Central that is no higher than the
-// version above, and fails on a binary- or source-incompatible change to a public or protected member, so a minor or
-// patch release can't break code compiled against an earlier one. Breaks intended for a major release are listed in
-// config/japicmp/accepted-breaks.txt.
-//
-// The baseline is resolved in a detached configuration: in one of the project's own configurations, Gradle resolves
-// the project's coordinates to the project itself, and the check would silently compare the jar with itself.
-//
-// The range, rather than latest.release, keeps each release line on its own baseline: a hotfix released from the 1.x
-// branch doesn't become the baseline of main while main still has a 1.x version, and the 1.x branch never compares
-// itself with a 2.x release. A release PR's version isn't published yet, so its baseline is the release before it.
-def apiBaseline = configurations.detachedConfiguration(
-        dependencies.create("io.github.brantunger:unruly-engine:(,${project.version}]@jar"))
-apiBaseline.transitive = false
-// Looked up on every build, so a release becomes the baseline as soon as Maven Central serves it.
-apiBaseline.resolutionStrategy.cacheDynamicVersionsFor(0, 'seconds')
-
-def apiBaselineVersion = apiBaseline.incoming.resolutionResult.rootComponent.map { root ->
-    def dependency = root.dependencies.first()
-    if (dependency instanceof org.gradle.api.artifacts.result.UnresolvedDependencyResult) {
-        throw new GradleException("Can't resolve the API baseline from Maven Central", dependency.failure)
-    }
-    dependency.selected.moduleVersion.version
+tasks.named('check') {
+    dependsOn coverageVerification
 }
-def apiBaselineMajor = apiBaselineVersion.map { version -> version.tokenize('.').first() as int }
 
-def acceptedBreakKinds = ['package', 'class', 'method', 'field']
-// Each accepted break is [major, kind, element]. The file's header describes the format.
-def acceptedBreaks = providers.fileContents(layout.projectDirectory.file('config/japicmp/accepted-breaks.txt')).asText
-        .map { text ->
-            def entries = []
-            text.readLines().eachWithIndex { raw, i ->
-                def line = raw.trim()
-                if (!line || line.startsWith('#')) {
-                    return
-                }
-                def fields = line.split(/\|/, -1)*.trim()
-                if (fields.size() != 4 || fields.any { it.isEmpty() } || !(fields[0] ==~ /[1-9][0-9]*/)
-                        || !(fields[1] in acceptedBreakKinds)) {
-                    throw new GradleException("config/japicmp/accepted-breaks.txt:${i + 1}: expected " +
-                            "'<major version> | package, class, method or field | <element> | <justification>', " +
-                            "got: $line")
-                }
-                entries << [major: fields[0] as int, kind: fields[1], element: fields[2]]
-            }
-            entries
+// One Javadoc site for both modules. The javadoc tool gets the modules rather than source files, so it documents
+// only the packages they export, and each module gets its own directory.
+def javadocLibraryPath = configurations.create('javadocModulePath') {
+    canBeConsumed = false
+    canBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
+        attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.JAR))
+        attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+        attribute(TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE,
+                objects.named(TargetJvmEnvironment, TargetJvmEnvironment.STANDARD_JVM))
+    }
+}
+
+dependencies {
+    javadocModulePath project(':mvel')
+}
+
+def moduleSources = [
+        'io.github.brantunger.unruly.core': layout.projectDirectory.dir('core/src/main/java'),
+        'io.github.brantunger.unruly'     : layout.projectDirectory.dir('mvel/src/main/java'),
+]
+
+tasks.register('javadoc', Exec) {
+    group = 'documentation'
+    description = 'Generates one Javadoc site for both modules in build/docs/javadoc.'
+
+    // Only the libraries: the two modules themselves come from their sources.
+    def libraries = javadocLibraryPath.incoming.artifactView {
+        componentFilter { it instanceof ModuleComponentIdentifier }
+    }.files
+    def destination = layout.buildDirectory.dir('docs/javadoc')
+    def title = "unruly-engine ${project.version} API"
+
+    inputs.files(moduleSources.values()).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(libraries)
+    outputs.dir(destination)
+
+    executable = javaToolchains.javadocToolFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }.get().executablePath.asFile.absolutePath
+    argumentProviders.add({
+        def arguments = ['-d', destination.get().asFile.absolutePath, '-quiet',
+                         '-encoding', 'UTF-8', '-docencoding', 'UTF-8', '-charset', 'UTF-8',
+                         '-doctitle', title, '-windowtitle', title,
+                         '--module', moduleSources.keySet().join(','),
+                         '--module-path', libraries.asPath]
+        moduleSources.each { module, sources ->
+            arguments += ['--module-source-path', "${module}=${sources.asFile.absolutePath}"]
         }
-
-def japicmp = tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
-    group = 'verification'
-    description = 'Checks the public API against the newest release on Maven Central up to this version.'
-    oldArchives.from(apiBaseline)
-    oldClasspath.from(configurations.runtimeClasspath)
-    newArchives.from(tasks.named('jar'))
-    newClasspath.from(configurations.runtimeClasspath)
-    accessModifier = 'protected'
-    onlyModified = true
-    failOnModification = true
-    failOnSourceIncompatibility = true
-
-    // A line applies while the baseline is from an earlier major version than the one the break ships in.
-    def applicable = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
-        entries.findAll { it.major > major }
-    }
-    // core is internal: its classes are package-private except Engines, the builder's entry point, so it is never
-    // compared.
-    packageExcludes = applicable.map { entries ->
-        ['io.github.brantunger.unruly.core'] + entries.findAll { it.kind == 'package' }*.element
-    }
-    classExcludes = applicable.map { entries -> entries.findAll { it.kind == 'class' }*.element }
-    methodExcludes = applicable.map { entries -> entries.findAll { it.kind == 'method' }*.element }
-    fieldExcludes = applicable.map { entries -> entries.findAll { it.kind == 'field' }*.element }
-    def ignored = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
-        entries.count { it.major <= major }
-    }
-
-    htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
-    txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
+        arguments
+    } as CommandLineArgumentProvider)
 
     doFirst {
-        if (ignored.get() > 0) {
-            logger.warn("${ignored.get()} line(s) in config/japicmp/accepted-breaks.txt are for a major version " +
-                    "that is already released, so they no longer apply against ${apiBaselineVersion.get()}. " +
-                    "Delete them.")
-        }
+        destination.get().asFile.deleteDir()
     }
-}
-
-check.dependsOn japicmp
-
-// The Javadoc documents the API only. core's one public class, Engines, exists for RulesEngineBuilder.
-tasks.named('javadoc') {
-    exclude 'io/github/brantunger/unruly/core/**'
 }

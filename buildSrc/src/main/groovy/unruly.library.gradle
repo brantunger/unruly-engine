@@ -1,0 +1,180 @@
+// Publishing, coverage and the API compatibility check, shared by the two published artifacts.
+import com.vanniktech.maven.publish.JavaLibrary
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
+import me.champeau.gradle.japicmp.JapicmpTask
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
+import unruly.conventions.ApiCheckExtension
+
+plugins {
+    id 'unruly.java-conventions'
+    id 'jacoco'
+    id 'com.vanniktech.maven.publish'
+    id 'me.champeau.gradle.japicmp'
+}
+
+// The tests in mvel also cover core's classes, so the root project's jacocoTestReport and
+// jacocoTestCoverageVerification cover both artifacts together. Each project's own tasks would see only its classes.
+tasks.named('jacocoTestReport') {
+    enabled = false
+}
+tasks.named('jacocoTestCoverageVerification') {
+    enabled = false
+}
+
+// Publishes to the Maven Central Portal (central.sonatype.com). Both artifacts go up in one deployment, so a release
+// can't publish only one of them.
+// Credentials are a Portal user token supplied via the mavenCentralUsername/mavenCentralPassword
+// properties; signing uses signingInMemoryKey/signingInMemoryKeyId/signingInMemoryKeyPassword.
+// Each project sets its coordinates and the POM's name and description.
+mavenPublishing {
+    configure(new JavaLibrary(new JavadocJar.Javadoc(), new SourcesJar.Sources()))
+
+    publishToMavenCentral()
+    signAllPublications()
+
+    pom {
+        url = 'https://github.com/brantunger/unruly-engine'
+        licenses {
+            license {
+                name = 'GNU GENERAL PUBLIC LICENSE v3.0'
+                url = 'https://www.gnu.org/licenses/gpl-3.0.en.html'
+            }
+        }
+        developers {
+            developer {
+                id = 'brantunger'
+                name = 'Brant Unger'
+                email = 'brant.unger@gmail.com'
+            }
+        }
+        scm {
+            connection = 'scm:git:git://github.com/brantunger/unruly-engine.git'
+            developerConnection = 'scm:git:ssh://github.com/brantunger/unruly-engine.git'
+            url = 'https://github.com/brantunger/unruly-engine'
+        }
+    }
+}
+
+// API compatibility: every build compares the jar with the newest release on Maven Central that is no higher than the
+// version in the root build.gradle, and fails on a binary- or source-incompatible change to a public or protected
+// member, so a minor or patch release can't break code compiled against an earlier one. Breaks intended for a major
+// release are listed in config/japicmp/accepted-breaks.txt. Each project configures its check with apiCheck { }.
+//
+// The baseline is resolved in a detached configuration: in one of the project's own configurations, Gradle resolves
+// the project's coordinates to the project itself, and the check would silently compare the jar with itself.
+//
+// The range, rather than latest.release, keeps each release line on its own baseline: a hotfix released from the 1.x
+// branch doesn't become the baseline of main while main still has a 1.x version, and the 1.x branch never compares
+// itself with a 2.x release. A release PR's version isn't published yet, so its baseline is the release before it.
+def apiCheck = extensions.create('apiCheck', ApiCheckExtension)
+
+def projectGroup = project.group.toString()
+def projectVersion = project.version.toString()
+
+def newestRelease = { String notation ->
+    def configuration = configurations.detachedConfiguration(dependencies.create("${notation}@jar"))
+    configuration.transitive = false
+    // Looked up on every build, so a release becomes the baseline as soon as Maven Central serves it.
+    configuration.resolutionStrategy.cacheDynamicVersionsFor(0, 'seconds')
+    def dependency = configuration.incoming.resolutionResult.rootComponent.get().dependencies.first()
+    [configuration: configuration, dependency: dependency]
+}
+
+// The baseline: the artifact's own newest release, or, while it has none, its predecessor's. Chosen once, when the
+// check first needs it.
+def chosenBaseline = null
+def apiBaseline = providers.provider {
+    if (chosenBaseline == null) {
+        def artifact = apiCheck.artifactId.get()
+        def own = newestRelease("${projectGroup}:${artifact}:(,${projectVersion}]")
+        if (own.dependency instanceof ResolvedDependencyResult) {
+            chosenBaseline = [archives: own.configuration, name: artifact, excludes: [], note: '',
+                              version : own.dependency.selected.moduleVersion.version]
+        } else if (!apiCheck.predecessor.present) {
+            throw new GradleException("Can't resolve the API baseline from Maven Central", own.dependency.failure)
+        } else {
+            def predecessor = newestRelease(apiCheck.predecessor.get())
+            if (!(predecessor.dependency instanceof ResolvedDependencyResult)) {
+                throw new GradleException("Can't resolve the API baseline from Maven Central: neither ${artifact} " +
+                        "nor ${apiCheck.predecessor.get()} resolved", predecessor.dependency.failure)
+            }
+            def excludes = apiCheck.predecessorExcludedPackages.get()
+            chosenBaseline = [archives: predecessor.configuration, excludes: excludes,
+                              name    : predecessor.dependency.selected.moduleVersion.module.name,
+                              version : predecessor.dependency.selected.moduleVersion.version,
+                              note    : ", without ${excludes.join(', ')}, because ${artifact} has no release up to " +
+                                      projectVersion]
+        }
+    }
+    chosenBaseline
+}
+def apiBaselineMajor = apiBaseline.map { baseline -> baseline.version.tokenize('.').first() as int }
+
+def acceptedBreakKinds = ['package', 'class', 'method', 'field']
+// Each accepted break is [major, kind, element]. The file's header describes the format.
+def acceptedBreaks = providers.fileContents(rootProject.layout.projectDirectory.file('config/japicmp/accepted-breaks.txt'))
+        .asText
+        .map { text ->
+            def entries = []
+            text.readLines().eachWithIndex { raw, i ->
+                def line = raw.trim()
+                if (!line || line.startsWith('#')) {
+                    return
+                }
+                def fields = line.split(/\|/, -1)*.trim()
+                if (fields.size() != 4 || fields.any { it.isEmpty() } || !(fields[0] ==~ /[1-9][0-9]*/)
+                        || !(fields[1] in acceptedBreakKinds)) {
+                    throw new GradleException("config/japicmp/accepted-breaks.txt:${i + 1}: expected " +
+                            "'<major version> | package, class, method or field | <element> | <justification>', " +
+                            "got: $line")
+                }
+                entries << [major: fields[0] as int, kind: fields[1], element: fields[2]]
+            }
+            entries
+        }
+
+def japicmp = tasks.register('japicmp', JapicmpTask) {
+    group = 'verification'
+    description = 'Checks the public API against the newest release on Maven Central up to this version.'
+    oldArchives.from(apiBaseline.map { baseline -> baseline.archives })
+    oldClasspath.from(configurations.runtimeClasspath)
+    newArchives.from(tasks.named('jar'))
+    newClasspath.from(configurations.runtimeClasspath)
+    accessModifier = 'protected'
+    onlyModified = true
+    failOnModification = true
+    failOnSourceIncompatibility = true
+
+    // A line applies while the baseline is from an earlier major version than the one the break ships in.
+    def applicable = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
+        entries.findAll { it.major > major }
+    }
+    def excluded = apiCheck.excludedPackages.zip(apiBaseline) { packages, baseline -> packages + baseline.excludes }
+    packageExcludes = excluded.zip(applicable) { packages, entries ->
+        packages + entries.findAll { it.kind == 'package' }*.element
+    }
+    classExcludes = applicable.map { entries -> entries.findAll { it.kind == 'class' }*.element }
+    methodExcludes = applicable.map { entries -> entries.findAll { it.kind == 'method' }*.element }
+    fieldExcludes = applicable.map { entries -> entries.findAll { it.kind == 'field' }*.element }
+    def ignored = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
+        entries.count { it.major <= major }
+    }
+
+    htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
+    txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
+
+    doFirst {
+        def baseline = apiBaseline.get()
+        logger.lifecycle("Comparing the API with ${baseline.name} ${baseline.version}${baseline.note}")
+        if (ignored.get() > 0) {
+            logger.warn("${ignored.get()} line(s) in config/japicmp/accepted-breaks.txt are for a major version " +
+                    "that is already released, so they no longer apply against ${apiBaselineMajor.get()}.x. " +
+                    "Delete them.")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn japicmp
+}

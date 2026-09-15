@@ -174,7 +174,8 @@ so it can't confirm a release. Check `repo1` instead, 30–60 minutes after publ
 ```bash
 VERSION=<version>
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.pom"
-# HTTP 200 once synced, 404 before
+curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine-core/$VERSION/unruly-engine-core-$VERSION.pom"
+# HTTP 200 once synced, 404 before. unruly-engine-core starts at 2.0.0.
 ```
 
 The Javadoc for the same version is live as soon as the `pages` job finishes:
@@ -211,8 +212,8 @@ when a release publishes, the `publish` job recreates it with only that release'
 redirect, and logs a warning. Every older `/X.Y.Z/` then returns 404 until you add it back with the script below,
 once per version.
 
-If the publish step failed, rebuild that version's directory from its `-javadoc.jar`. The GitHub Release has the
-jar as soon as the job attaches it; `repo1` has it only after the 30–60 minute sync. The script replaces
+If the publish step failed, rebuild that version's directory from its tag. The site covers both modules, but each
+artifact's `-javadoc.jar` holds only its own, so the script builds the site. The script replaces
 `pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version or a 1.x hotfix:
 
 ```bash
@@ -221,11 +222,10 @@ VERSION=<version>
 NEWEST=$(git ls-remote --tags --refs https://github.com/brantunger/unruly-engine.git 'v*' \
   | sed -n 's#^.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
 git clone --depth 1 --branch gh-pages https://github.com/brantunger/unruly-engine.git pages
-gh release download "v$VERSION" --repo brantunger/unruly-engine --pattern '*-javadoc.jar'
-# or, if the jars never reached the GitHub Release:
-# curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION-javadoc.jar"
+git clone --depth 1 --branch "v$VERSION" https://github.com/brantunger/unruly-engine.git "unruly-engine-$VERSION"
+(cd "unruly-engine-$VERSION" && ./gradlew javadoc)
 rm -rf "pages/$VERSION"
-unzip -q "unruly-engine-$VERSION-javadoc.jar" -d "pages/$VERSION" -x 'META-INF/*'
+cp -r "unruly-engine-$VERSION/build/docs/javadoc" "pages/$VERSION"
 if [ "$VERSION" = "$NEWEST" ]; then
   rm -rf pages/latest
   cp -r "pages/$VERSION" pages/latest
@@ -249,7 +249,8 @@ export ORG_GRADLE_PROJECT_signingInMemoryKey="$(gpg --batch --pinentry-mode loop
 export ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=test
 
 ./gradlew publishToMavenLocal
-ls ~/.m2/repository/io/github/brantunger/unruly-engine/<version>/
+ls ~/.m2/repository/io/github/brantunger/unruly-engine/<version>/ ~/.m2/repository/io/github/brantunger/unruly-engine-core/<version>/
 ```
 
-Expect `.jar`, `-sources.jar`, `-javadoc.jar`, `.module` and `.pom` files, each with a matching `.asc` signature.
+Expect `.jar`, `-sources.jar`, `-javadoc.jar`, `.module` and `.pom` files in each, each with a matching `.asc`
+signature.

@@ -9,6 +9,7 @@ languages on an engine, and one rule list can mix them.
 - [Writing a language](#-writing-a-language)
 - [What the engine enforces](#-what-the-engine-enforces)
 - [Thread safety](#-thread-safety)
+- [Packaging a language](#-packaging-a-language)
 - [Testing a language](#-testing-a-language)
 - [Security](#-security)
 
@@ -138,10 +139,30 @@ public final class MyLanguage implements ExpressionLanguage {
   the rule. A fatal `Error` is rethrown unchanged.
 - `checkFactName` is called by every `run()`, possibly on many threads at once, so it must be thread-safe.
 
+## 📦 Packaging a language
+
+A language in its own jar needs only `unruly-engine-core`, the engine without MVEL. So does an application whose rules
+all name other languages: it can depend on `unruly-engine-core` instead of `unruly-engine`, and leave MVEL out.
+
+The engine finds a language without `registerLanguage()` when its jar declares it as a service. The class needs a
+public no-argument constructor. Declare it both ways to support both paths:
+
+- **Class path:** a file `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` that contains
+  the class name, such as `com.example.lang.MyLanguage`.
+- **Module path:** a `provides` clause. The language's package doesn't need to be exported.
+  ```java
+  module com.example.lang {
+      requires io.github.brantunger.unruly.core;
+
+      provides io.github.brantunger.unruly.api.language.ExpressionLanguage
+              with com.example.lang.MyLanguage;
+  }
+  ```
+
 ## 🧪 Testing a language
 
 The repository's
-[`ExpressionLanguageContractTest`](../../src/test/java/io/github/brantunger/unruly/api/language/ExpressionLanguageContractTest.java)
+[`ExpressionLanguageContractTest`](../../mvel/src/test/java/io/github/brantunger/unruly/api/language/ExpressionLanguageContractTest.java)
 checks the promises above for any language. You extend it and supply expressions in your language, such as a
 condition that assigns to a fact or an action that declares a variable. MVEL and a small test-only language both pass
 it. It isn't published in a jar yet, so copy it into your own tests.

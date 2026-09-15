@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import javax.tools.JavaCompiler;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,7 +33,11 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("packages depend on each other only as designed")
 class PackageDependencyTest {
 
-    private static final Path SOURCES = Path.of("src", "main", "java", "io", "github", "brantunger", "unruly");
+    /** The library's root package in each artifact's main sources, which the build passes to the tests. */
+    private static final List<Path> SOURCE_ROOTS = Stream.of(
+                    System.getProperty("unruly.main.sources").split(Pattern.quote(File.pathSeparator)))
+            .map(sources -> Path.of(sources, "io", "github", "brantunger", "unruly"))
+            .toList();
 
     private static final String ROOT_PACKAGE = "io.github.brantunger.unruly.";
 
@@ -61,28 +66,33 @@ class PackageDependencyTest {
     private record Dependency(String from, String to) {
     }
 
-    /** A main source file: its path relative to the library's root package, its package, and the packages it uses. */
-    private record SourceFile(String path, String packageName, Set<String> uses) {
+    /**
+     * A main source file: the file, its path relative to the library's root package, its package, and the packages it
+     * uses.
+     */
+    private record SourceFile(Path file, String path, String packageName, Set<String> uses) {
     }
 
     @BeforeAll
     static void parseSources() throws IOException {
-        List<Path> paths;
-        try (Stream<Path> files = Files.walk(SOURCES)) {
-            paths = files.filter(file -> file.toString().endsWith(".java")).sorted().toList();
-        }
         JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
         List<SourceFile> parsed = new ArrayList<>();
         try (StandardJavaFileManager fileManager = javac.getStandardFileManager(null, null, StandardCharsets.UTF_8)) {
-            for (Path path : paths) {
-                JavacTask task = (JavacTask) javac.getTask(null, fileManager, null, null, null,
-                        fileManager.getJavaFileObjects(path));
-                for (CompilationUnitTree unit : task.parse()) {
-                    String packageName = unit.getPackageName().toString().substring(ROOT_PACKAGE.length());
-                    Set<String> uses = libraryPackagesUsed(unit);
-                    uses.remove(packageName);
-                    parsed.add(new SourceFile(SOURCES.relativize(path).toString().replace('\\', '/'), packageName,
-                            uses));
+            for (Path root : SOURCE_ROOTS) {
+                List<Path> paths;
+                try (Stream<Path> files = Files.walk(root)) {
+                    paths = files.filter(file -> file.toString().endsWith(".java")).sorted().toList();
+                }
+                for (Path path : paths) {
+                    JavacTask task = (JavacTask) javac.getTask(null, fileManager, null, null, null,
+                            fileManager.getJavaFileObjects(path));
+                    for (CompilationUnitTree unit : task.parse()) {
+                        String packageName = unit.getPackageName().toString().substring(ROOT_PACKAGE.length());
+                        Set<String> uses = libraryPackagesUsed(unit);
+                        uses.remove(packageName);
+                        parsed.add(new SourceFile(path, root.relativize(path).toString().replace('\\', '/'),
+                                packageName, uses));
+                    }
                 }
             }
         }
@@ -161,7 +171,7 @@ class PackageDependencyTest {
 
         List<String> found = new ArrayList<>();
         for (SourceFile file : sourceFiles) {
-            if (!file.packageName().equals("mvel") && Files.readString(SOURCES.resolve(file.path())).contains("org.mvel2")) {
+            if (!file.packageName().equals("mvel") && Files.readString(file.file()).contains("org.mvel2")) {
                 found.add(file.path());
             }
         }

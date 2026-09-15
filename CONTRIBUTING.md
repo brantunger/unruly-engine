@@ -31,24 +31,36 @@ cd unruly-engine
 ./gradlew clean build
 ```
 
+The build has three projects:
+
+| Project | Publishes | Contains |
+| --- | --- | --- |
+| `core` | `unruly-engine-core` | The API, the language SPI and the engine, without an expression language |
+| `mvel` | `unruly-engine` | The MVEL language, and all the tests: most of them run MVEL rules |
+| `module-path-test` | Nothing | Two applications that run on the module path, one with MVEL and one without |
+
+Settings shared by `core` and `mvel` are in the convention plugins in `buildSrc/src/main/groovy`.
+
 | Command | What it does |
 | --- | --- |
 | `./gradlew clean build` | Compiles, tests, and runs every quality gate: exactly what CI checks |
 | `./gradlew test` | Runs the tests only |
 | `./gradlew test --tests '*StatefulSemanticsTest*'` | Runs a single test class |
 | `./gradlew test -PtestJdk=25` | Runs the tests on JDK 25 instead of 21 |
-| `./gradlew jacocoTestReport` | Writes the coverage report to `build/reports/jacoco/test/html/index.html` |
-| `./gradlew japicmp` | Checks the public API against the newest release up to the build's version and writes `build/reports/japicmp/report.html` |
+| `./gradlew jacocoTestReport` | Writes the coverage report for both artifacts to `build/reports/jacoco/html/index.html` |
+| `./gradlew japicmp` | Checks each artifact's public API against its newest release up to the build's version and writes `core/build/reports/japicmp/report.html` and `mvel/build/reports/japicmp/report.html` |
+| `./gradlew javadoc` | Generates the Javadoc site for both modules in `build/docs/javadoc` |
 
 ## ✅ Quality gates
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit 5 suite | `src/test` |
+| 🧪 **Tests** | The JUnit 5 suite | `mvel/src/test` |
 | 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
-| 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `build.gradle` |
-| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the main sources | `build.gradle` |
-| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `build.gradle`, `config/japicmp/accepted-breaks.txt` |
+| 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of both artifacts' main sources | `build.gradle` |
+| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in `core/build.gradle` and `mvel/build.gradle`, `config/japicmp/accepted-breaks.txt` |
+| 🧭 **Module path** | Two applications run on the module path: one requires `io.github.brantunger.unruly` and runs MVEL rules, the other requires only `io.github.brantunger.unruly.core` and brings its own language | `module-path-test` |
 
 On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21 and JDK 25**, and a separate check
 validates the PR title.
@@ -60,13 +72,15 @@ validates the PR title.
 ### 🧬 API compatibility
 
 The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `feat:` release must not break code
-written or compiled against an earlier release. `./gradlew build` compares the jar with the **newest release on Maven
-Central that isn't higher than the version in `build.gradle`** using [japicmp](https://siom79.github.io/japicmp/),
+written or compiled against an earlier release. `./gradlew build` compares each artifact's jar with its **newest release on
+Maven Central that isn't higher than the version in the root `build.gradle`** using [japicmp](https://siom79.github.io/japicmp/),
 and fails when a public or protected member is removed
 or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
 interface, a new checked exception, or a changed `Rule` constructor. When you add a field to `Rule`, add it to
 the builder; don't add a constructor, because the positional constructors are deprecated. Additions such as new classes, methods and `default` methods
-pass. The report is at `build/reports/japicmp/report.html`.
+pass. The reports are at `core/build/reports/japicmp/report.html` and `mvel/build/reports/japicmp/report.html`.
+`unruly-engine-core` has no release before 2.0.0, so until then it's compared with the last 1.x `unruly-engine` jar,
+without that jar's `mvel` package.
 
 **Nullness annotations are API for Kotlin.** Kotlin reads the JSpecify annotations strictly, and japicmp doesn't
 check them. Marking a parameter non-null that accepted `null`, or a return value, generic type or listener parameter
@@ -148,7 +162,7 @@ The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` 
 
 - The **README** is the landing page: features, installation, quick start and core concepts.
 - The **guides** in [`docs/`](docs/README.md) hold the details.
-- The **Javadoc** in `src/main/java` is published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release.
+- The **Javadoc** in `core/src/main/java` and `mvel/src/main/java` is published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for both modules.
   `./gradlew clean build` doesn't generate it, so run `./gradlew javadoc` after changing it and fix any errors.
 
 When writing docs:
