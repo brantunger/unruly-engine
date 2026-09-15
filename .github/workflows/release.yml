@@ -104,8 +104,8 @@ jobs:
 
       # Only this step gets the secrets, and it skips `check`, which the step above ran.
       # Signing is done in-memory by the vanniktech plugin — no gpg keyring is imported
-      # onto the runner. Both artifacts, unruly-engine-core and unruly-engine, go up in
-      # one deployment.
+      # onto the runner. All the artifacts, unruly-engine-core, unruly-engine and
+      # unruly-engine-test, go up in one deployment.
       - name: Publish to Maven Central
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USER }}
@@ -117,7 +117,7 @@ jobs:
       - name: Attach artifacts to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" core/build/libs/*.jar mvel/build/libs/*.jar --clobber
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" core/build/libs/*.jar mvel/build/libs/*.jar test-kit/build/libs/*.jar --clobber
 
       # The gh-pages branch keeps one directory per release plus `latest`; the `pages` job below
       # deploys it. The Build step above generated the site, so this only copies it.

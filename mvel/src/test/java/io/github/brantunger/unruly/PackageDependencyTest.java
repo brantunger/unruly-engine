@@ -46,20 +46,28 @@ class PackageDependencyTest {
             Pattern.compile("^io\\.github\\.brantunger\\.unruly\\.([a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)*)\\.[A-Z]");
 
     /**
-     * The library packages each package's code may use. The SPI packages stand alone, {@code mvel} uses only them,
-     * and {@code core} finds languages with ServiceLoader rather than using {@code mvel}, so the MVEL language could
-     * become its own artifact.
+     * The library packages each package's code may use. {@code api.exception} stands alone, and {@code api.language}
+     * uses {@code core} only to seal its contexts to the engine's records, so the SPI ships with the engine in
+     * unruly-engine-core. {@code mvel} uses only the SPI packages, and {@code core} finds languages with ServiceLoader
+     * rather than using {@code mvel}, so the MVEL language is its own artifact. {@code test}, the test kit, uses the
+     * API and creates the engine's context records.
      */
     private static final Map<String, Set<String>> ALLOWED = Map.of(
             "api", Set.of("api.exception", "api.language", "core"),
             "api.exception", Set.of(),
-            "api.language", Set.of(),
+            "api.language", Set.of("core"),
             "core", Set.of("api", "api.exception", "api.language"),
-            "mvel", Set.of("api.exception", "api.language"));
+            "mvel", Set.of("api.exception", "api.language"),
+            "test", Set.of("api", "api.exception", "api.language", "core"));
 
-    /** Dependencies that only one file may have. */
-    private static final Map<Dependency, String> ONLY_FILE = Map.of(
-            new Dependency("api", "core"), "api/RulesEngineBuilder.java");
+    /** Dependencies that only the listed files may have. */
+    private static final Map<Dependency, List<String>> ONLY_FILES = Map.of(
+            new Dependency("api", "core"), List.of("api/RulesEngineBuilder.java"),
+            // Each context interface permits the engine's record.
+            new Dependency("api.language", "core"), List.of("api/language/ActionContext.java",
+                    "api/language/CompileContext.java", "api/language/EvaluationContext.java"),
+            // The test kit creates the engine's context records for a language's unit tests.
+            new Dependency("test", "core"), List.of("test/LanguageTestContexts.java"));
 
     private static List<SourceFile> sourceFiles;
 
@@ -151,16 +159,16 @@ class PackageDependencyTest {
     }
 
     @Test
-    @DisplayName("api uses core only to build the engines")
+    @DisplayName("api uses core only to build the engines, api.language to seal its contexts, and test to create them")
     void singleFileDependencies() {
-        ONLY_FILE.forEach((dependency, expected) -> {
+        ONLY_FILES.forEach((dependency, expected) -> {
             List<String> users = sourceFiles.stream()
                     .filter(file -> file.packageName().equals(dependency.from()))
                     .filter(file -> file.uses().contains(dependency.to()))
                     .map(SourceFile::path)
                     .toList();
 
-            assertEquals(List.of(expected), users, dependency.from() + " -> " + dependency.to());
+            assertEquals(expected, users, dependency.from() + " -> " + dependency.to());
         });
     }
 

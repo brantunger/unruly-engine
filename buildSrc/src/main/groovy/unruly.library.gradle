@@ -1,4 +1,4 @@
-// Publishing, coverage and the API compatibility check, shared by the two published artifacts.
+// Publishing, coverage and the API compatibility check, shared by the published artifacts.
 import com.vanniktech.maven.publish.JavaLibrary
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.SourcesJar
@@ -13,8 +13,8 @@ plugins {
     id 'me.champeau.gradle.japicmp'
 }
 
-// The tests in mvel also cover core's classes, so the root project's jacocoTestReport and
-// jacocoTestCoverageVerification cover both artifacts together. Each project's own tasks would see only its classes.
+// The tests in mvel also cover core's and test-kit's classes, so the root project's jacocoTestReport and
+// jacocoTestCoverageVerification cover the artifacts together. Each project's own tasks would see only its classes.
 tasks.named('jacocoTestReport') {
     enabled = false
 }
@@ -22,8 +22,8 @@ tasks.named('jacocoTestCoverageVerification') {
     enabled = false
 }
 
-// Publishes to the Maven Central Portal (central.sonatype.com). Both artifacts go up in one deployment, so a release
-// can't publish only one of them.
+// Publishes to the Maven Central Portal (central.sonatype.com). All the artifacts go up in one deployment, so a
+// release can't publish only some of them.
 // Credentials are a Portal user token supplied via the mavenCentralUsername/mavenCentralPassword
 // properties; signing uses signingInMemoryKey/signingInMemoryKeyId/signingInMemoryKeyPassword.
 // Each project sets its coordinates and the POM's name and description.
@@ -81,6 +81,15 @@ def newestRelease = { String notation ->
     [configuration: configuration, dependency: dependency]
 }
 
+// Whether a version such as 2.0.1 is higher than another, comparing the numbers of each part.
+def isHigher = { String version, String other ->
+    def parts = { String v -> v.tokenize('.-').collect { it.isInteger() ? it as int : 0 } }
+    def a = parts(version)
+    def b = parts(other)
+    def difference = [a, b].transpose().collect { x, y -> x <=> y }.find { it != 0 }
+    difference != null ? difference > 0 : a.size() > b.size()
+}
+
 // The baseline: the artifact's own newest release, or, while it has none, its predecessor's. Chosen once, when the
 // check first needs it.
 def chosenBaseline = null
@@ -91,6 +100,9 @@ def apiBaseline = providers.provider {
         if (own.dependency instanceof ResolvedDependencyResult) {
             chosenBaseline = [archives: own.configuration, name: artifact, excludes: [], note: '',
                               version : own.dependency.selected.moduleVersion.version]
+        } else if (apiCheck.firstRelease.present && !isHigher(projectVersion, apiCheck.firstRelease.get())) {
+            chosenBaseline = [archives: files(), name: artifact, excludes: [], version: '0', skip: true,
+                              note    : "${artifact} is new in ${apiCheck.firstRelease.get()}"]
         } else if (!apiCheck.predecessor.present) {
             throw new GradleException("Can't resolve the API baseline from Maven Central", own.dependency.failure)
         } else {
@@ -163,6 +175,14 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
 
     htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
     txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
+
+    onlyIf('the artifact has a release to compare with') {
+        def baseline = apiBaseline.get()
+        if (baseline.skip) {
+            logger.lifecycle("Skipping the API check: ${baseline.note}, and has no release to compare with")
+        }
+        !baseline.skip
+    }
 
     doFirst {
         def baseline = apiBaseline.get()

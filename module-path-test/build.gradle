@@ -3,12 +3,15 @@ plugins {
     id 'org.gradlex.extra-java-module-info'
 }
 
-// Runs two small applications on the module path, so the module declarations, and the README's module-path section,
+// Runs three small applications on the module path, so the module declarations, and the README's module-path section,
 // stay true. Each application is a named module that requires only one of the engine's modules, and fails if a check
 // fails. `check` runs both.
 // - withMvel requires io.github.brantunger.unruly, and runs MVEL rules on the application's own classes.
 // - withoutMvel requires io.github.brantunger.unruly.core, and provides its own language. mvel2 isn't on its module
 //   path.
+// - withTestKit requires io.github.brantunger.unruly and the test kit, io.github.brantunger.unruly.test. It uses the
+//   kit's contexts, which come from the package the core module exports only to the kit, and runs the kit's contract
+//   test for MVEL with JUnit.
 
 java {
     toolchain {
@@ -19,6 +22,7 @@ java {
 sourceSets {
     withMvel
     withoutMvel
+    withTestKit
 }
 
 dependencies {
@@ -27,6 +31,13 @@ dependencies {
 
     withoutMvelImplementation project(':core')
     withoutMvelRuntimeOnly libs.slf4j.simple
+
+    withTestKitImplementation project(':mvel')
+    withTestKitImplementation project(':test-kit')
+    withTestKitImplementation platform(libs.junit.bom)
+    withTestKitImplementation 'org.junit.platform:junit-platform-launcher'
+    withTestKitRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+    withTestKitRuntimeOnly libs.slf4j.simple
 }
 
 // The same name users' module paths give mvel2; see mvel/build.gradle.
@@ -37,7 +48,7 @@ extraJavaModuleInfo {
 // Like the tests, the applications run on the JDK given by -PtestJdk.
 def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
 
-['withMvel', 'withoutMvel'].each { name ->
+['withMvel', 'withoutMvel', 'withTestKit'].each { name ->
     def sourceSet = sourceSets.named(name)
     def module = "com.example.${name.toLowerCase()}"
     def run = tasks.register("run${name.capitalize()}", JavaExec) {
@@ -49,6 +60,8 @@ def testJdk = providers.gradleProperty('testJdk').getOrElse('21')
         classpath = sourceSet.get().runtimeClasspath
         mainModule = module
         mainClass = "${module}.Main"
+        // The contract test makes rules fail on purpose, and the engine logs each failure.
+        systemProperty 'org.slf4j.simpleLogger.defaultLogLevel', 'off'
     }
     tasks.named('check') {
         dependsOn run

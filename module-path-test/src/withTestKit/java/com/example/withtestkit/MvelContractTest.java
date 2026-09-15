@@ -1,11 +1,10 @@
-package io.github.brantunger.unruly.mvel;
+package com.example.withtestkit;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
-import org.junit.jupiter.api.DisplayName;
 
-@DisplayName("MVEL keeps the expression-language contract")
-class MvelExpressionLanguageContractTest extends ExpressionLanguageContractTest {
+class MvelContractTest extends ExpressionLanguageContractTest {
 
     @Override
     protected ExpressionLanguage language() {

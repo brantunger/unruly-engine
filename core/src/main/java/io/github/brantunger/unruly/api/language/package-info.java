@@ -12,8 +12,9 @@
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction} — Compiled expressions</li>
  * </ul>
  *
- * <p>Implemented by the engine, which passes them to a language. Don't implement them; in 2.0 they may be restricted
- * to the engine's own implementations:</p>
+ * <p>Implemented by the engine, which passes them to a language. They're sealed to the engine's own implementations,
+ * so a language can't implement them; a language's unit tests create them with
+ * {@code io.github.brantunger.unruly.test.LanguageTestContexts}, from the {@code unruly-engine-test} artifact:</p>
  * <ul>
  *   <li>{@link io.github.brantunger.unruly.api.language.CompileContext} — The imports and class loader a rule list is
  *   compiled with</li>
@@ -22,8 +23,8 @@
  *   an action runs against</li>
  * </ul>
  *
- * <p>A method added to any of these interfaces in a 1.x release is a {@code default} method, so a language written
- * against an earlier 1.x release keeps compiling and working.</p>
+ * <p>A method added to an interface that languages implement is a {@code default} method, so a language written
+ * against an earlier 2.x release keeps compiling and working. The sealed interfaces can gain any method.</p>
  *
  * <p>Rules are written in MVEL, the engine's default language.</p>
  *

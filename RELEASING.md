@@ -175,7 +175,8 @@ so it can't confirm a release. Check `repo1` instead, 30–60 minutes after publ
 VERSION=<version>
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.pom"
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine-core/$VERSION/unruly-engine-core-$VERSION.pom"
-# HTTP 200 once synced, 404 before. unruly-engine-core starts at 2.0.0.
+curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine-test/$VERSION/unruly-engine-test-$VERSION.pom"
+# HTTP 200 once synced, 404 before. unruly-engine-core and unruly-engine-test start at 2.0.0.
 ```
 
 The Javadoc for the same version is live as soon as the `pages` job finishes:
@@ -249,7 +250,7 @@ export ORG_GRADLE_PROJECT_signingInMemoryKey="$(gpg --batch --pinentry-mode loop
 export ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=test
 
 ./gradlew publishToMavenLocal
-ls ~/.m2/repository/io/github/brantunger/unruly-engine/<version>/ ~/.m2/repository/io/github/brantunger/unruly-engine-core/<version>/
+ls ~/.m2/repository/io/github/brantunger/unruly-engine{,-core,-test}/<version>/
 ```
 
 Expect `.jar`, `-sources.jar`, `-javadoc.jar`, `.module` and `.pom` files in each, each with a matching `.asc`

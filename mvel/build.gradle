@@ -15,6 +15,7 @@ dependencies {
     api project(':core')
     implementation libs.mvel2
 
+    testImplementation project(':test-kit')
     testImplementation platform(libs.junit.bom)
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -49,11 +50,12 @@ apiCheck {
     ]
 }
 
-// The tests are here, not in core, because most of them run MVEL rules. They run on the class path, so the tests in
+// The tests are here, not in core or test-kit, because most of them run MVEL rules. They run on the class path, so the tests in
 // core's packages can use its package-private classes.
 tasks.named('test', Test) {
     // Read by PackageDependencyTest.
     systemProperty 'unruly.main.sources', files(
             layout.settingsDirectory.dir('core/src/main/java'),
-            layout.projectDirectory.dir('src/main/java')).asPath
+            layout.projectDirectory.dir('src/main/java'),
+            layout.settingsDirectory.dir('test-kit/src/main/java')).asPath
 }

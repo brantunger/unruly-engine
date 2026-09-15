@@ -77,7 +77,8 @@ implementation("io.github.brantunger:unruly-engine:1.8.0")
 </details>
 
 `unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/custom.md),
-depend on `unruly-engine-core` instead: the same engine and API, without MVEL.
+depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
+`unruly-engine-test`; see [Testing a language](docs/languages/custom.md#-testing-a-language).
 
 On the module path, `unruly-engine` is the module `io.github.brantunger.unruly`, and `unruly-engine-core` is
 `io.github.brantunger.unruly.core`. Require one of them: it requires SLF4J, and MVEL for `unruly-engine`. Rules read your

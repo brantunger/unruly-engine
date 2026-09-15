@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 
 @DisplayName("the test-only language keeps the expression-language contract")
