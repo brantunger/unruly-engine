@@ -32,8 +32,8 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // MVEL formats every compile error with ErrorUtil, whose static initializer creates a logger. When the first
         // error in the JVM is a stack overflow, such as a deeply nested rule on a small stack, that initializer fails
         // for lack of stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then
-        // throws NoClassDefFoundError. Creating an instance initializes it here, while an engine is created on a
-        // healthy stack, so an overflow only fails the rule that caused it.
+        // throws NoClassDefFoundError. Creating an instance initializes it here, when an engine starts loading a rule
+        // list and finds its languages, before any rule is compiled, so an overflow only fails the rule that caused it.
         new ErrorUtil();
     }
 

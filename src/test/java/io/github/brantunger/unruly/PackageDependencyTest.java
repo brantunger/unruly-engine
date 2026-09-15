@@ -41,20 +41,20 @@ class PackageDependencyTest {
             Pattern.compile("^io\\.github\\.brantunger\\.unruly\\.([a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)*)\\.[A-Z]");
 
     /**
-     * The library packages each package's code may use. The SPI packages stand alone, and {@code mvel} uses only
-     * them, so the MVEL language could become its own artifact.
+     * The library packages each package's code may use. The SPI packages stand alone, {@code mvel} uses only them,
+     * and {@code core} finds languages with ServiceLoader rather than using {@code mvel}, so the MVEL language could
+     * become its own artifact.
      */
     private static final Map<String, Set<String>> ALLOWED = Map.of(
             "api", Set.of("api.exception", "api.language", "core"),
             "api.exception", Set.of(),
             "api.language", Set.of(),
-            "core", Set.of("api", "api.exception", "api.language", "mvel"),
+            "core", Set.of("api", "api.exception", "api.language"),
             "mvel", Set.of("api.exception", "api.language"));
 
     /** Dependencies that only one file may have. */
     private static final Map<Dependency, String> ONLY_FILE = Map.of(
-            new Dependency("api", "core"), "api/RulesEngineBuilder.java",
-            new Dependency("core", "mvel"), "core/AbstractRulesEngine.java");
+            new Dependency("api", "core"), "api/RulesEngineBuilder.java");
 
     private static List<SourceFile> sourceFiles;
 
@@ -141,7 +141,7 @@ class PackageDependencyTest {
     }
 
     @Test
-    @DisplayName("api uses core only to build the engines, and core uses mvel only to create the default language")
+    @DisplayName("api uses core only to build the engines")
     void singleFileDependencies() {
         ONLY_FILE.forEach((dependency, expected) -> {
             List<String> users = sourceFiles.stream()

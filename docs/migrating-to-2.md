@@ -46,3 +46,23 @@ what changed, who is affected, and what to change.
   ```
 
 Spring Boot 3 and 4 both run on Java 21. The engine is tested on Java 21 and 25.
+
+## 🔎 Expression languages are found with ServiceLoader
+
+**What changed:** the engine no longer creates MVEL itself. Each time `setRuleList()` is called, it finds expression
+languages with `java.util.ServiceLoader`, from
+`META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` files, and MVEL is one of them. A rule
+without a `language` is still written in MVEL.
+
+**Who is affected:**
+
+- **Class paths with another language listed in such a file.** That language can now be used by rules without
+  `registerLanguage()`. Two found languages with the same name fail `setRuleList()`.
+- **Applications repackaged into one jar** (a shaded or "uber" jar) that keep only one of several `META-INF/services`
+  files with the same name. If MVEL's entry is lost, a rule without a `language` fails:
+  `Rule 'prime-rate' is written in 'mvel', which isn't a registered expression language. Registered languages: []`.
+- **Class paths without `mvel2`.** Creating an engine now succeeds, and `setRuleList()` fails instead.
+
+**What to change:** usually nothing. When you repackage the library, merge service files, for example with the Maven
+Shade plugin's `ServicesResourceTransformer`, or register MVEL yourself with
+`engine.registerLanguage(new MvelExpressionLanguage())`.
