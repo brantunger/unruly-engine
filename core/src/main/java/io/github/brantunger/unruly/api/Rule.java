@@ -22,16 +22,15 @@ import java.util.Objects;
  *     <li>{@code priority}: higher values fire first. Equal priorities keep their list order, and a {@code null}
  *     priority sorts last.</li>
  *     <li>{@code description}: free text for your own use. The engine ignores it, but listeners receive it.</li>
- *     <li>{@code language}: the name of the expression language the condition and action are written in, as
- *     registered with {@link io.github.brantunger.unruly.api.RulesEngine#registerLanguage}. {@code null}, the
- *     default, means MVEL.</li>
+ *     <li>{@code language}: the name of the expression language the condition and action are written in,. {@code null}, the
+ *     default, means the engine's default language.</li>
  * </ul>
  *
  * <p>
  * A rule is immutable. Create one with {@link #builder()}, whose {@link RuleBuilder#build() build()} rejects a rule
  * without a name, a condition or an action. Copy a rule with a change with {@link #toBuilder()}, for example
  * {@code rule.toBuilder().priority(5).build()}. Because a rule can't change, the engine keeps the rules passed to
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)}, and listeners receive those same
+ * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)}, and listeners receive those same
  * instances.
  * </p>
  *
@@ -92,7 +91,7 @@ public final class Rule {
     /** Free text for your own use; the engine ignores it, but listeners receive it. */
     private final @Nullable String description;
 
-    /** The name of the expression language the condition and action are written in, or {@code null} for MVEL. */
+    /** The name of the expression language the condition and action are written in, or {@code null} for the engine's default language. */
     private final @Nullable String language;
 
     private Rule(String ruleName, String condition, String action, @Nullable Integer priority,
@@ -173,7 +172,7 @@ public final class Rule {
     /**
      * Returns the name of the expression language the condition and action are written in.
      *
-     * @return The language's name, or {@code null} for MVEL
+     * @return The language's name, or {@code null} for the engine's default language
      */
     public @Nullable String getLanguage() {
         return language;
@@ -319,7 +318,7 @@ public final class Rule {
         /**
          * Sets the name of the expression language the condition and action are written in.
          *
-         * @param language The language's name, or {@code null} for MVEL
+         * @param language The language's name, or {@code null} for the engine's default language
          * @return This builder
          */
         public RuleBuilder language(@Nullable String language) {
@@ -329,7 +328,7 @@ public final class Rule {
 
         /**
          * Creates a rule from the fields set so far. The builder can be used again afterwards. A blank condition or
-         * action is allowed here; {@link RulesEngine#setRuleList(java.util.List)} rejects it, naming the rule.
+         * action is allowed here; {@link RulesEngine#load(java.util.List)} rejects it, naming the rule.
          *
          * @return A new rule
          * @throws IllegalStateException if the name is {@code null} or blank, or the condition or action is

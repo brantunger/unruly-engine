@@ -27,12 +27,12 @@ like.
 |    | Feature | What you get |
 | -- | --- | --- |
 | 📝 | **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
-| 🔀 | **Two engine types** | A *stateless* engine fires only the highest-priority match. A *stateful* engine fires every match. |
+| 🔀 | **Two engine types** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. |
 | 🔢 | **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
 | 🛡 | **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
 | 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
 | 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
-| 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Register another expression language and choose it per rule, even within one rule list. |
+| 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Give an engine other expression languages and choose one per rule, even within one rule list. |
 | 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
 
 ## 📦 Installation
@@ -142,11 +142,11 @@ public class LoanDecision {
 ```
 
 ```java
-// 1. Create an engine. The supplier creates a fresh output object for each run.
-RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
+// 1. Build an engine. The supplier creates a fresh output object for each run.
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).build();
 
 // 2. Load the rules once. Each rule has an MVEL condition and an MVEL action.
-engine.setRuleList(List.of(
+engine.load(List.of(
         Rule.builder()
                 .ruleName("prime-rate")
                 .priority(10)
@@ -168,7 +168,7 @@ facts.setValue("applicant", new Applicant("Ada", 780));
 LoanDecision decision = engine.run(facts);   // approved = true, interestRate = 4.5, notes = [prime]
 ```
 
-Both conditions are true for a score of 780. The stateless engine fires only the highest-priority match,
+Both conditions are true for a score of 780. The first-match engine fires only the highest-priority match,
 `prime-rate`.
 
 > [!IMPORTANT]
@@ -181,8 +181,9 @@ Both conditions are true for a score of 780. The stateless engine fires only the
 flowchart LR
     subgraph startup["Once, at startup"]
         direction TB
-        B["RulesEngineBuilder<br/>.stateless() / .stateful()"] --> I["addImport()<br/><i>optional</i>"]
-        I --> S["setRuleList(rules)<br/><b>compile + validate</b>"]
+        B["RulesEngineBuilder<br/>.firstMatch() / .allMatches()"] --> I[".imports() / .listener()<br/><i>optional</i>"]
+        I --> U[".build()"]
+        U --> S["load(rules)<br/><b>compile + validate</b>"]
     end
     subgraph request["Per request, on any thread"]
         direction TB
@@ -192,7 +193,7 @@ flowchart LR
     S --> R
 ```
 
-`setRuleList()` compiles every expression up front and rejects the mistakes it can detect. Each `run()` then
+`load()` compiles every expression up front and rejects the mistakes it can detect. Each `run()` then
 follows the same path:
 
 ```mermaid
@@ -203,8 +204,8 @@ flowchart TD
     D -- no --> N(["return null"])
     D -- yes --> E["Create the output object<br/>with your Supplier"]
     E --> F{"Engine type"}
-    F -- stateless --> G["Fire <b>only</b> the first<br/>matched action"]
-    F -- stateful --> H["Fire <b>every</b> matched action<br/>in priority order"]
+    F -- first match --> G["Fire <b>only</b> the first<br/>matched action"]
+    F -- all matches --> H["Fire <b>every</b> matched action<br/>in priority order"]
     G --> R(["return output"])
     H --> R
 ```
@@ -222,12 +223,12 @@ A `Rule` is an immutable object with six fields:
 | `action` | `String` | ✅ | An expression that runs when the rule fires, usually changing `output`. |
 | `priority` | `Integer` | | Higher numbers fire first. Equal priorities keep their list order, and `null` sorts last. |
 | `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
-| `language` | `String` | | The expression language the condition and action are written in. `null` means MVEL. See [Other expression languages](docs/languages/custom.md). |
+| `language` | `String` | | The expression language the condition and action are written in. `null` means the engine's default language, MVEL unless you give the engine others. See [Other expression languages](docs/languages/custom.md). |
 
 Create a rule with `Rule.builder()`. Its `build()` throws `IllegalStateException` when the name, condition or action
 is missing, naming the field. Copy a rule with a change with `toBuilder()`, such as
 `rule.toBuilder().priority(5).build()`. A rule can't change, so the engine keeps the rules you pass to
-`setRuleList()`, and listeners receive those same instances.
+`load()`, and listeners receive those same instances.
 
 To read rules from JSON with Jackson, register one mix-in for `Rule` and one for its builder:
 
@@ -275,9 +276,9 @@ identifier that isn't a keyword such as `empty` or `in`. Build a new store for e
 
 ### 🔀 Choosing an engine
 
-|  | 🎯 Stateless | 📚 Stateful |
+|  | 🎯 First match | 📚 All matches |
 | --- | --- | --- |
-| **Create with** | `RulesEngineBuilder.stateless(...)` | `RulesEngineBuilder.stateful(...)` |
+| **Create with** | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
 | **Conditions evaluated** | All of them | All of them |
 | **Actions fired** | Only the highest-priority match | Every match, highest priority first |
 | **Output** | Shaped by exactly one rule | Shared by all matched actions, so a later, lower-priority action can overwrite an earlier one |
@@ -289,7 +290,7 @@ never causes a condition to be checked again. If a higher-priority action change
 that already matched still fires.
 
 > [!CAUTION]
-> A stateful run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
+> An all-matches run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
 > output object and to any facts they modified, and `run()` throws a `RuleExecutionException` naming only the
 > rule that failed.
 
@@ -343,8 +344,8 @@ how the name is used: `Objects.isNull(x)` fails with `unresolvable property or i
 `could not resolve class`. Common causes:
 
 - The fact wasn't added, or was added under a different name. To test whether a fact exists, use `isdef name`.
-- The rule uses a class that isn't built in to MVEL, such as `Objects` or `ArrayList`, without an import. Call
-  `engine.addImport("java.util")` **before** `setRuleList()`, or write the fully qualified name, such as
+- The rule uses a class that isn't built in to MVEL, such as `Objects` or `ArrayList`, without an import. Add
+  `.imports("java.util")` to the engine's builder, or write the fully qualified name, such as
   `java.util.Objects`. See [Classes and imports](docs/languages/mvel.md#-classes-and-imports).
 
 </details>
@@ -371,7 +372,7 @@ MVEL compares an enum to a string as `false`, with no error. Write `order.status
 <details>
 <summary><b>Can I change the rules without restarting?</b></summary>
 
-Yes. Call `setRuleList()` again at any time, even while other threads are running. A run already in progress
+Yes. Call `load()` again at any time, even while other threads are running. A run already in progress
 finishes with the old rules, and later runs use the new ones. If the new list fails to compile, the old rules stay
 in place. See [Thread safety](docs/thread-safety.md).
 
@@ -380,8 +381,8 @@ in place. See [Thread safety](docs/thread-safety.md).
 <details>
 <summary><b>Can I remove a listener?</b></summary>
 
-No. Listeners can be added but not removed. If you need to switch one off, give it an enabled flag, or build a new
-engine.
+No. An engine's listeners are set when it's built and can't change. If you need to switch one off, give it an enabled
+flag, or build a new engine.
 
 </details>
 

@@ -92,7 +92,7 @@ check them. Marking a parameter non-null that accepted `null`, or a return value
 engine), `RuleListener`, `FactStore`, `FactReference`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,
 `CompiledCondition`, `CompiledAction` and `Session`. Within 1.x, a method added to any public interface is a `default` method,
 and the check fails on an abstract one. When no generic implementation makes sense, the default throws
-`UnsupportedOperationException`, as `RulesEngine.registerLanguage` does. The engine-only `CompileContext`,
+`UnsupportedOperationException`. The engine-only `CompileContext`,
 `EvaluationContext` and `ActionContext` are sealed, so they can gain any method. Each interface's Javadoc says who
 implements it. japicmp can't see sealing, so sealing an interface needs a `!` by hand.
 
@@ -155,7 +155,7 @@ The type decides the next version:
 | `feat: add RuleListener hooks` | `1.3.0`, a minor release |
 | `feat!: remove the Factory interface` | `2.0.0`, a major release |
 | `deps: bump mvel2 to 2.5.4` | No release, and not listed in the changelog |
-| `docs: clarify stateless semantics` | No release, and not listed in the changelog |
+| `docs: clarify first-match semantics` | No release, and not listed in the changelog |
 
 The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` and `revert`. Like `deps` and
 `docs`, none of them cuts a release or appears in the changelog; their changes ship with the next `feat:` or

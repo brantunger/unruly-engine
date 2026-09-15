@@ -41,7 +41,7 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         configuration.setClassLoader(classLoader);
         if (!packages.isEmpty()) {
             // addPackageImport would first try to load each package name as a class, for every expression compiled.
-            // addImport already decided that these strings aren't classes.
+            // The engine decided when it was built that these strings aren't classes.
             configuration.setPackageImports(new LinkedHashSet<>(packages));
         }
         classes.forEach(configuration::addImport);

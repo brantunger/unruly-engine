@@ -18,15 +18,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class RulesEngineImportsTest {
 
     @Nested
-    @DisplayName("addImports")
+    @DisplayName("imports(Collection)")
     class AddImports {
 
         @Test
         @DisplayName("rules can use imported packages in conditions")
         void rulesCanUseImportedPackages() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-
-            engine.addImports(Set.of("java.util"));
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                    builder -> builder.imports(Set.of("java.util")));
 
             Rule rule = Rule.builder()
                     .ruleName("use-objects")
@@ -35,7 +34,7 @@ class RulesEngineImportsTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("name", "test");
@@ -47,15 +46,14 @@ class RulesEngineImportsTest {
     }
 
     @Nested
-    @DisplayName("addImport")
+    @DisplayName("imports(String...)")
     class AddImport {
 
         @Test
         @DisplayName("single import works for rules")
         void singleImportWorks() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-
-            engine.addImport("java.util");
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                    builder -> builder.imports("java.util"));
 
             Rule rule = Rule.builder()
                     .ruleName("use-objects")
@@ -64,7 +62,7 @@ class RulesEngineImportsTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("name", "test");
@@ -75,12 +73,10 @@ class RulesEngineImportsTest {
         }
 
         @Test
-        @DisplayName("multiple addImport calls accumulate")
+        @DisplayName("multiple imports calls accumulate")
         void multipleAddImportCallsAccumulate() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-
-            engine.addImport("java.util")
-                  .addImport("java.lang");
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                    builder -> builder.imports("java.util").imports("java.lang"));
 
             Rule rule = Rule.builder()
                     .ruleName("multi-import")
@@ -89,7 +85,7 @@ class RulesEngineImportsTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("name", "hello");

@@ -43,8 +43,8 @@ class FactStoreViewTest {
     }
 
     private static RulesEngine<Map<String, Object>> engine(String condition) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition(condition)
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(Rule.builder().ruleName("r").condition(condition)
                 .action("output.put('hit', true)").build()));
         return engine;
     }

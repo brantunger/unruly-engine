@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ActionResult;
@@ -15,6 +16,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -32,8 +34,6 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("each rule is compiled by the expression language it names")
 class ExpressionLanguageRegistrationTest {
 
-    private final StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-
     private static Rule rule(String name, String language, String condition, String action) {
         return Rule.builder().ruleName(name).language(language).condition(condition).action(action).build();
     }
@@ -42,6 +42,27 @@ class ExpressionLanguageRegistrationTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue(name, value);
         return facts;
+    }
+
+    /** An engine with exactly the given languages. */
+    private static StatefulRulesEngine<Map<String, Object>> engine(ExpressionLanguage... languages) {
+        return TestEngines.allMatches(HashMap::new, builder -> {
+            for (ExpressionLanguage language : languages) {
+                builder.language(language);
+            }
+            return builder;
+        });
+    }
+
+    /** An engine with MVEL, the language of rules without one, and the given languages. */
+    private static StatefulRulesEngine<Map<String, Object>> withMvel(ExpressionLanguage... languages) {
+        return TestEngines.allMatches(HashMap::new, builder -> {
+            builder.language(new MvelExpressionLanguage()).defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME);
+            for (ExpressionLanguage language : languages) {
+                builder.language(language);
+            }
+            return builder;
+        });
     }
 
     /** A language that rejects every fact name, saying which language rejected it. */
@@ -84,9 +105,8 @@ class ExpressionLanguageRegistrationTest {
     @DisplayName("fact names are checked by the languages in the order the rules use them, highest priority first")
     void factNamesCheckedInOrderOfUse(String first) {
         String second = "a".equals(first) ? "b" : "a";
-        engine.registerLanguage(rejectingLanguage("a"));
-        engine.registerLanguage(rejectingLanguage("b"));
-        engine.setRuleList(List.of(
+        StatefulRulesEngine<Map<String, Object>> engine = withMvel(rejectingLanguage("a"), rejectingLanguage("b"));
+        engine.load(List.of(
                 Rule.builder().ruleName("low").language(second).priority(1).condition("c").action("a").build(),
                 Rule.builder().ruleName("high").language(first).priority(2).condition("c").action("a").build()));
 
@@ -96,39 +116,10 @@ class ExpressionLanguageRegistrationTest {
     }
 
     @Test
-    @DisplayName("a language registered while a rule list compiles is used from the next setRuleList, not that one")
-    void languageRegisteredWhileCompiling() {
-        engine.registerLanguage(new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return "first";
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                engine.registerLanguage(new ToyExpressionLanguage("late"));
-                return new ToyExpressionLanguage("first").newCompiler(context);
-            }
-        });
-        List<Rule> rules = List.of(
-                Rule.builder().ruleName("early").language("first").priority(2).condition("true").action("put k 1")
-                        .build(),
-                Rule.builder().ruleName("later").language("late").priority(1).condition("true").action("put k 2")
-                        .build());
-
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
-
-        assertEquals("Rule 'later' is written in 'late', which isn't a registered expression language. "
-                + "Registered languages: [first, mvel]", ex.getMessage());
-        engine.setRuleList(rules);
-        assertEquals(Map.of("k", 2), engine.run(new FactMap<>()));
-    }
-
-    @Test
     @DisplayName("one rule list can mix MVEL rules, with or without a language, and rules in another language")
     void mixedLanguages() {
-        engine.registerLanguage(new ToyExpressionLanguage());
-        engine.setRuleList(List.of(
+        StatefulRulesEngine<Map<String, Object>> engine = withMvel(new ToyExpressionLanguage());
+        engine.load(List.of(
                 rule("default", null, "x == 1", "output.put('default', x)"),
                 rule("mvel", "mvel", "x == 1", "output.put('mvel', x)"),
                 rule("toy", "toy", "x == 1", "put toy x")));
@@ -138,84 +129,141 @@ class ExpressionLanguageRegistrationTest {
     }
 
     @Test
-    @DisplayName("a rule in a language that isn't registered is rejected, naming the rule and the language")
+    @DisplayName("a rule in a language the engine doesn't have is rejected, naming the rule and the language")
     void unknownLanguage() {
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
         List<Rule> rules = List.of(rule("prime-rate", "cel", "true", "1"));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
-        assertEquals("Rule 'prime-rate' is written in 'cel', which isn't a registered expression language. "
-                + "Registered languages: [mvel]", ex.getMessage());
+        assertEquals("Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: "
+                + "[mvel]", ex.getMessage());
     }
 
     @Test
-    @DisplayName("the message for an unregistered language lists every registered language, sorted")
+    @DisplayName("the message for an unknown language lists every language the engine has, sorted")
     void unknownLanguageListsLanguagesSorted() {
-        engine.registerLanguage(new ToyExpressionLanguage("zeta"));
-        engine.registerLanguage(new ToyExpressionLanguage("alpha"));
-        engine.registerLanguage(new ToyExpressionLanguage("beta"));
+        StatefulRulesEngine<Map<String, Object>> engine = withMvel(new ToyExpressionLanguage("zeta"),
+                new ToyExpressionLanguage("alpha"), new ToyExpressionLanguage("beta"));
         List<Rule> rules = List.of(rule("prime-rate", "cel", "true", "1"));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
-        assertEquals("Rule 'prime-rate' is written in 'cel', which isn't a registered expression language. "
-                + "Registered languages: [alpha, beta, mvel, zeta]", ex.getMessage());
+        assertEquals("Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: "
+                + "[alpha, beta, mvel, zeta]", ex.getMessage());
     }
 
     @Test
-    @DisplayName("a language registered after setRuleList is used from the next setRuleList")
-    void registeredForNextRuleList() {
-        List<Rule> rules = List.of(rule("toy", "toy", "true", "put k 1"));
-        assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+    @DisplayName("an engine given only another language compiles rules without a language in it, not in MVEL")
+    void onlyLanguageIsTheDefault() {
+        StatefulRulesEngine<Map<String, Object>> engine = engine(new ToyExpressionLanguage());
+        engine.load(List.of(rule("r", null, "x == 1", "put k x")));
 
-        engine.registerLanguage(new ToyExpressionLanguage());
-        engine.setRuleList(rules);
-
-        assertEquals(Map.of("k", 1), engine.run(new FactMap<>()));
+        assertEquals(Map.of("k", 1), engine.run(fact("x", 1)));
+        List<Rule> mvel = List.of(rule("m", null, "true", "output.put('home', System.getProperty('user.home'))"));
+        assertThrows(RuleCompilationException.class, () -> engine.load(mvel));
     }
 
     @Test
-    @DisplayName("a language named mvel replaces MVEL for rules without a language")
-    void replaceDefaultLanguage() {
-        engine.registerLanguage(new ToyExpressionLanguage("mvel"));
-        engine.setRuleList(List.of(rule("r", null, "x == 1", "put k x")));
+    @DisplayName("defaultLanguage() chooses the language of rules without one")
+    void chosenDefaultLanguage() {
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+                .language(new MvelExpressionLanguage()).language(new ToyExpressionLanguage()).defaultLanguage("toy"));
+        engine.load(List.of(rule("r", null, "x == 1", "put k x")));
 
         assertEquals(Map.of("k", 1), engine.run(fact("x", 1)));
     }
 
     @Test
-    @DisplayName("registerLanguage(null) names the argument")
-    void registerNullLanguage() {
-        NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.registerLanguage(null));
+    @DisplayName("with an empty rule list, fact names are checked against the default language")
+    void emptyRuleListChecksDefaultLanguage() {
+        StatefulRulesEngine<Map<String, Object>> toy = engine(new ToyExpressionLanguage());
+        toy.load(List.of());
+        StatefulRulesEngine<Map<String, Object>> mvel = withMvel(new ToyExpressionLanguage());
+        mvel.load(List.of());
+
+        assertNull(toy.run(fact("empty", 1)), "the toy language accepts 'empty'");
+        assertThrows(IllegalArgumentException.class, () -> mvel.run(fact("empty", 1)), "MVEL reserves 'empty'");
+    }
+
+    @Test
+    @DisplayName("an engine with several languages and no default language isn't built")
+    void severalLanguagesWithoutDefault() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new ToyExpressionLanguage("zeta")).language(new ToyExpressionLanguage("alpha"));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, builder::build);
+
+        assertEquals("The engine has several expression languages, [alpha, zeta], so name the language of rules "
+                + "without one with defaultLanguage()", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a default language the engine doesn't have isn't accepted")
+    void unknownDefaultLanguage() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new ToyExpressionLanguage()).defaultLanguage("cel");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, builder::build);
+
+        assertEquals("The default language 'cel' isn't one of the engine's expression languages: [toy]",
+                ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("language(null) names the argument")
+    void nullLanguage() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+
+        NullPointerException ex = assertThrows(NullPointerException.class, () -> builder.language(null));
 
         assertEquals("language must not be null", ex.getMessage());
     }
 
     @Test
-    @DisplayName("registerLanguage returns the engine, so calls can be chained")
-    void registerLanguageReturnsEngine() {
-        assertSame(engine, engine.registerLanguage(new ToyExpressionLanguage()));
+    @DisplayName("language() returns the builder, so calls can be chained")
+    void languageReturnsBuilder() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+
+        assertSame(builder, builder.language(new ToyExpressionLanguage()));
     }
 
     @ParameterizedTest(name = "\"{0}\"")
     @NullSource
     @ValueSource(strings = {"", "  "})
     @DisplayName("a language without a name is rejected")
-    void registerUnnamedLanguage(String name) {
+    void unnamedLanguage(String name) {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
         ToyExpressionLanguage unnamed = new ToyExpressionLanguage(name);
 
-        assertThrows(IllegalArgumentException.class, () -> engine.registerLanguage(unnamed));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> builder.language(unnamed));
+
+        assertEquals("An expression language's name must not be null or blank: " + ToyExpressionLanguage.class.getName(),
+                ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("two languages with the same name are rejected, naming both")
+    void sameNameTwice() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new ToyExpressionLanguage("mvel"));
+        MvelExpressionLanguage mvel = new MvelExpressionLanguage();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> builder.language(mvel));
+
+        assertEquals("Two expression languages are named 'mvel': " + ToyExpressionLanguage.class.getName() + " and "
+                + MvelExpressionLanguage.class.getName(), ex.getMessage());
     }
 
     @Test
     @DisplayName("fact names are only checked against the languages the rules use")
     void factNamesCheckedByLanguagesInUse() {
-        engine.registerLanguage(new ToyExpressionLanguage());
-        engine.setRuleList(List.of(rule("toy", "toy", "true", "put k empty")));
+        StatefulRulesEngine<Map<String, Object>> engine = withMvel(new ToyExpressionLanguage());
+        engine.load(List.of(rule("toy", "toy", "true", "put k empty")));
 
         assertEquals(Map.of("k", 1), engine.run(fact("empty", 1)), "MVEL reserves 'empty', but no rule is MVEL");
 
-        engine.setRuleList(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "1")));
+        engine.load(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "1")));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(fact("empty", 1)));
     }
@@ -223,8 +271,8 @@ class ExpressionLanguageRegistrationTest {
     @Test
     @DisplayName("fact names are checked by every language in use, whichever language's rule runs first")
     void factNamesCheckedByEveryLanguageInUse() {
-        engine.registerLanguage(new ToyExpressionLanguage());
-        engine.setRuleList(List.of(
+        StatefulRulesEngine<Map<String, Object>> engine = withMvel(new ToyExpressionLanguage());
+        engine.load(List.of(
                 Rule.builder().ruleName("mvel").priority(2).condition("true").action("1").build(),
                 Rule.builder().ruleName("toy").language("toy").priority(1).condition("true").action("put k 1")
                         .build()));
@@ -236,15 +284,16 @@ class ExpressionLanguageRegistrationTest {
     @DisplayName("listeners and the loaded rule have the rule's language")
     void languageInListenerCallbacks() {
         List<String> languages = new CopyOnWriteArrayList<>();
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
-                languages.add(rule.getLanguage());
-            }
-        });
-        engine.registerLanguage(new ToyExpressionLanguage());
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+                .language(new ToyExpressionLanguage())
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+                        languages.add(rule.getLanguage());
+                    }
+                }));
         Rule rule = rule("toy", "toy", "true", "put k 1");
-        engine.setRuleList(new ArrayList<>(List.of(rule)));
+        engine.load(new ArrayList<>(List.of(rule)));
 
         engine.run(new FactMap<>());
 
@@ -255,20 +304,20 @@ class ExpressionLanguageRegistrationTest {
     @Test
     @DisplayName("an action the language rejects is reported for the action, with the rejection as its cause")
     void rejectedAction() {
-        engine.registerLanguage(new ToyExpressionLanguage());
+        StatefulRulesEngine<Map<String, Object>> engine = engine(new ToyExpressionLanguage());
         List<Rule> rules = List.of(rule("r", "toy", "true", "output = 1"));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
         assertEquals("Action for rule 'r' assigns output, which an action can't replace", ex.getMessage());
         assertInstanceOf(InvalidExpressionException.class, ex.getCause());
     }
 
     @Test
-    @DisplayName("an OutOfMemoryError inside an exception a language's compiler throws is rethrown by setRuleList")
+    @DisplayName("an OutOfMemoryError inside an exception a language's compiler throws is rethrown by load")
     void fatalErrorWhileCompiling() {
         OutOfMemoryError oom = new OutOfMemoryError("simulated");
-        engine.registerLanguage(new ExpressionLanguage() {
+        StatefulRulesEngine<Map<String, Object>> engine = engine(new ExpressionLanguage() {
             @Override
             public String name() {
                 return "failing";
@@ -296,6 +345,6 @@ class ExpressionLanguageRegistrationTest {
         });
         List<Rule> rules = List.of(rule("r", "failing", "true", "1"));
 
-        assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.setRuleList(rules)));
+        assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.load(rules)));
     }
 }

@@ -30,12 +30,10 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("expression languages are found with ServiceLoader each time a rule list is loaded")
+@DisplayName("expression languages are found with ServiceLoader when an engine is built")
 class LanguageDiscoveryTest {
 
     private static final String SERVICES_FILE = "META-INF/services/" + ExpressionLanguage.class.getName();
-
-    private final RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
 
     @TempDir
     Path servicesRoot;
@@ -104,6 +102,10 @@ class LanguageDiscoveryTest {
         return Rule.builder().ruleName(name).language(language).condition(condition).action(action).build();
     }
 
+    private static RulesEngineBuilder<Map<String, Object>> builder() {
+        return RulesEngineBuilder.allMatches(HashMap::new);
+    }
+
     /** A class loader that sees the library, and a services file listing {@code languages}. */
     private URLClassLoader listing(Class<?>... languages) throws IOException {
         Path file = servicesRoot.resolve(SERVICES_FILE);
@@ -123,107 +125,106 @@ class LanguageDiscoveryTest {
         }
     }
 
-    private void load(ClassLoader contextClassLoader, List<Rule> rules) {
-        withContextClassLoader(contextClassLoader, () -> {
-            engine.setRuleList(rules);
-            return null;
-        });
-    }
-
     @Test
-    @DisplayName("a language listed in a services file the context class loader sees is used without registering it")
+    @DisplayName("a language listed in a services file the building thread's context class loader sees is used")
     void foundWithContextClassLoader() throws IOException {
         List<Rule> rules = List.of(rule("toy", "found", "true", "put k 1"),
                 rule("mvel", null, "true", "output.put('m', 2)"));
+        RulesEngine<Map<String, Object>> engine;
 
         try (URLClassLoader loader = listing(Found.class)) {
-            load(loader, rules);
+            engine = withContextClassLoader(loader, () -> builder().defaultLanguage("mvel").build());
         }
+        engine.load(rules);
 
         assertEquals(Map.of("k", 1, "m", 2), engine.run(new FactMap<>()));
     }
 
     @Test
-    @DisplayName("languages are found again for each rule list")
-    void foundForEachRuleList() throws IOException {
+    @DisplayName("languages are found once, when the engine is built, not when rules are loaded")
+    void foundWhenBuilt() throws IOException {
         List<Rule> rules = List.of(rule("toy", "found", "true", "put k 1"));
-        assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules));
+        RulesEngine<Map<String, Object>> builtWithout = builder().build();
 
         try (URLClassLoader loader = listing(Found.class)) {
-            load(loader, rules);
-        }
+            assertThrows(RuleCompilationException.class,
+                    () -> withContextClassLoader(loader, () -> {
+                        builtWithout.load(rules);
+                        return null;
+                    }), "the language is on the loading thread's class loader, but wasn't when the engine was built");
 
-        assertEquals(Map.of("k", 1), engine.run(new FactMap<>()));
+            RulesEngine<Map<String, Object>> builtWith = withContextClassLoader(loader,
+                    () -> builder().defaultLanguage("mvel").build());
+            builtWith.load(rules);
+
+            assertEquals(Map.of("k", 1), builtWith.run(new FactMap<>()));
+        }
     }
 
     @Test
     @DisplayName("MVEL is found with this library's class loader when the thread has no context class loader")
     void mvelFoundWithoutContextClassLoader() {
-        load(null, List.of(rule("mvel", null, "true", "output.put('m', 1)")));
+        RulesEngine<Map<String, Object>> engine = withContextClassLoader(null, () -> builder().build());
+        engine.load(List.of(rule("mvel", null, "true", "output.put('m', 1)")));
 
         assertEquals(Map.of("m", 1), engine.run(new FactMap<>()));
     }
 
     @Test
-    @DisplayName("a registered language replaces a found language with the same name")
-    void registeredReplacesFound() throws IOException {
-        engine.registerLanguage(new NamedLanguage("found") {
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                throw new IllegalStateException("the registered one");
-            }
-        });
+    @DisplayName("languages given to the builder are used instead of the languages found")
+    void givenLanguagesReplaceFound() throws IOException {
         List<Rule> rules = List.of(rule("toy", "found", "true", "put k 1"));
 
         try (URLClassLoader loader = listing(Found.class)) {
-            RuleCompilationException ex = withContextClassLoader(loader,
-                    () -> assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules)));
+            RulesEngine<Map<String, Object>> engine = withContextClassLoader(loader, () -> builder()
+                    .language(new NamedLanguage("found") {
+                        @Override
+                        public ExpressionCompiler newCompiler(CompileContext context) {
+                            throw new IllegalStateException("the given one");
+                        }
+                    })
+                    .build());
 
-            assertEquals("The 'found' expression language failed to create a compiler: the registered one",
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+
+            assertEquals("The 'found' expression language failed to create a compiler: the given one",
                     ex.getMessage());
+            List<Rule> mvel = List.of(rule("mvel", "mvel", "true", "output.put('m', 1)"));
+            assertThrows(RuleCompilationException.class, () -> engine.load(mvel), "MVEL wasn't found either");
         }
     }
 
     @Test
-    @DisplayName("two found languages with the same name fail setRuleList, naming both")
+    @DisplayName("two found languages with the same name fail build(), naming both")
     void sameNameTwice() throws IOException {
-        List<Rule> rules = List.of(rule("mvel", null, "true", "output.put('m', 1)"));
-
         try (URLClassLoader loader = listing(Found.class, AlsoFound.class)) {
-            RuleCompilationException ex = withContextClassLoader(loader,
-                    () -> assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules)));
+            IllegalStateException ex = withContextClassLoader(loader,
+                    () -> assertThrows(IllegalStateException.class, () -> builder().build()));
 
-            assertEquals("Failed to find the expression languages: The expression languages " + Found.class.getName()
-                    + " and " + AlsoFound.class.getName() + " found with ServiceLoader are both named 'found'",
-                    ex.getMessage());
-            assertInstanceOf(IllegalStateException.class, ex.getCause());
-            assertNull(ex.getRuleName());
+            assertEquals("The expression languages " + Found.class.getName() + " and " + AlsoFound.class.getName()
+                    + " found with ServiceLoader are both named 'found'", ex.getMessage());
         }
     }
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(classes = {BlankName.class, NoName.class})
-    @DisplayName("a found language with a null or blank name fails setRuleList")
+    @DisplayName("a found language with a null or blank name fails build()")
     void nullOrBlankName(Class<?> language) throws IOException {
-        List<Rule> rules = List.of(rule("mvel", null, "true", "output.put('m', 1)"));
-
         try (URLClassLoader loader = listing(language)) {
-            RuleCompilationException ex = withContextClassLoader(loader,
-                    () -> assertThrows(RuleCompilationException.class, () -> engine.setRuleList(rules)));
+            IllegalStateException ex = withContextClassLoader(loader,
+                    () -> assertThrows(IllegalStateException.class, () -> builder().build()));
 
-            assertEquals("Failed to find the expression languages: The expression language " + language.getName()
+            assertEquals("The expression language " + language.getName()
                     + " found with ServiceLoader has a null or blank name", ex.getMessage());
         }
     }
 
     @Test
-    @DisplayName("a found language that can't be created fails setRuleList with ServiceLoader's error, unchanged")
+    @DisplayName("a found language that can't be created fails build() with ServiceLoader's error, unchanged")
     void languageCantBeCreated() throws IOException {
-        List<Rule> rules = List.of(rule("mvel", null, "true", "output.put('m', 1)"));
-
         try (URLClassLoader loader = listing(CantBeCreated.class)) {
             ServiceConfigurationError error = withContextClassLoader(loader,
-                    () -> assertThrows(ServiceConfigurationError.class, () -> engine.setRuleList(rules)));
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
 
             assertInstanceOf(IllegalStateException.class, error.getCause());
             assertEquals("no licence for this language", error.getCause().getMessage());

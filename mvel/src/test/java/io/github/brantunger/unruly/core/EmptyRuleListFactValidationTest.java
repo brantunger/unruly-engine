@@ -24,14 +24,14 @@ class EmptyRuleListFactValidationTest {
     }
 
     private static RulesEngine<Map<String, Object>> withNoRules(RulesEngine<Map<String, Object>> engine) {
-        engine.setRuleList(List.of());
+        engine.load(List.of());
         return engine;
     }
 
     @ParameterizedTest(name = "stateless: {0}")
     @ValueSource(strings = {"output", "my-fact", "empty"})
     void statelessRejectsInvalidFact(String name) {
-        RulesEngine<Map<String, Object>> engine = withNoRules(new StatelessRulesEngine<>(HashMap::new));
+        RulesEngine<Map<String, Object>> engine = withNoRules(TestEngines.firstMatch(HashMap::new));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name)));
     }
@@ -39,7 +39,7 @@ class EmptyRuleListFactValidationTest {
     @ParameterizedTest(name = "stateful: {0}")
     @ValueSource(strings = {"output", "my-fact", "empty"})
     void statefulRejectsInvalidFact(String name) {
-        RulesEngine<Map<String, Object>> engine = withNoRules(new StatefulRulesEngine<>(HashMap::new));
+        RulesEngine<Map<String, Object>> engine = withNoRules(TestEngines.allMatches(HashMap::new));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name)));
     }
@@ -47,7 +47,7 @@ class EmptyRuleListFactValidationTest {
     @Test
     @DisplayName("valid facts with no rules still return null")
     void validFactsReturnNull() {
-        assertNull(withNoRules(new StatelessRulesEngine<>(HashMap::new)).run(fact("claim")));
-        assertNull(withNoRules(new StatefulRulesEngine<>(HashMap::new)).run(fact("claim")));
+        assertNull(withNoRules(TestEngines.firstMatch(HashMap::new)).run(fact("claim")));
+        assertNull(withNoRules(TestEngines.allMatches(HashMap::new)).run(fact("claim")));
     }
 }

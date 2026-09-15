@@ -6,6 +6,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Modifier;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,10 +39,13 @@ class EngineVisibilityTest {
     void enginesEntryPoint() {
         assertTrue(Modifier.isFinal(Engines.class.getModifiers()));
         assertEquals(0, Engines.class.getConstructors().length);
+        EngineConfiguration unlimited = new EngineConfiguration(List.of(), null, List.of(), List.of(),
+                EngineConfiguration.UNLIMITED_COPIES);
+        EngineConfiguration limited = new EngineConfiguration(List.of(), null, List.of(), List.of(), 2);
 
-        assertInstanceOf(StatelessRulesEngine.class, Engines.stateless(Object::new));
-        assertInstanceOf(StatefulRulesEngine.class, Engines.stateful(Object::new));
-        assertInstanceOf(StatelessRulesEngine.class, Engines.stateless(Object::new, 2));
-        assertInstanceOf(StatefulRulesEngine.class, Engines.stateful(Object::new, 2));
+        assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
+        assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));
+        assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, limited));
+        assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, limited));
     }
 }

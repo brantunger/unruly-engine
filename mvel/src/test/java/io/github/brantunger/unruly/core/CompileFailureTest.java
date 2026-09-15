@@ -13,6 +13,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -26,16 +27,14 @@ import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedThe
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * An expression language that fails in any way while a rule list is compiled fails {@code setRuleList()} the way MVEL
+ * An expression language that fails in any way while a rule list is compiled fails {@code load()} the way MVEL
  * does: with a logged {@link RuleCompilationException}, or a fatal {@link Error} that is logged and then rethrown.
  */
-@DisplayName("setRuleList reports a failing expression language like a rule that doesn't compile")
+@DisplayName("load reports a failing expression language like a rule that doesn't compile")
 class CompileFailureTest {
 
     private static final Supplier<CompiledCondition> TRUE = () -> (context, session) -> true;
     private static final Supplier<CompiledAction> NO_OP = () -> (context, session) -> ActionResult.done();
-
-    private final StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
 
     private static ExpressionLanguage language(String name, Supplier<ExpressionCompiler> newCompiler) {
         return new ExpressionLanguage() {
@@ -82,11 +81,18 @@ class CompileFailureTest {
         };
     }
 
-    /** Registers {@code language} and loads one rule written in it. */
-    private void load(ExpressionLanguage language) {
-        engine.registerLanguage(language);
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").language(language.name()).condition("c").action("a")
-                .build()));
+    /** An engine with only {@code language}. */
+    private static StatefulRulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
+        return TestEngines.allMatches(HashMap::new, builder -> builder.language(language));
+    }
+
+    private static List<Rule> ruleIn(ExpressionLanguage language) {
+        return List.of(Rule.builder().ruleName("r").language(language.name()).condition("c").action("a").build());
+    }
+
+    /** Builds an engine with {@code language} and loads one rule written in it. */
+    private static void load(ExpressionLanguage language) {
+        engine(language).load(ruleIn(language));
     }
 
     // #183
@@ -107,11 +113,15 @@ class CompileFailureTest {
     @Test
     @DisplayName("a language that fails to create a compiler fails the rule list, and the previous list stays loaded")
     void newCompilerThrows() {
-        engine.setRuleList(List.of(Rule.builder().ruleName("old").condition("true").action("output.put('k', 1)")
-                .build()));
         ExpressionLanguage language = language("x", throwing(new IllegalStateException("script engine not available")));
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+                .language(new MvelExpressionLanguage()).language(language)
+                .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME));
+        engine.load(List.of(Rule.builder().ruleName("old").condition("true").action("output.put('k', 1)")
+                .build()));
 
-        RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
+        RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class,
+                () -> engine.load(ruleIn(language)));
 
         assertEquals("The 'x' expression language failed to create a compiler: script engine not available",
                 ex.getMessage());
@@ -130,7 +140,7 @@ class CompileFailureTest {
     }
 
     @Test
-    @DisplayName("a language that returns no compiler is reported as such, not as unregistered")
+    @DisplayName("a language that returns no compiler is reported as such, not as a language the engine doesn't have")
     void newCompilerReturnsNull() {
         ExpressionLanguage language = language("x", () -> null);
 
@@ -142,12 +152,13 @@ class CompileFailureTest {
     @Test
     @DisplayName("an empty rule list fails when the default language can't create the compiler facts are checked with")
     void emptyListNewCompilerThrows() {
-        engine.registerLanguage(language("mvel", throwing(new IllegalStateException("broken"))));
+        StatefulRulesEngine<Map<String, Object>> engine = engine(language("default",
+                throwing(new IllegalStateException("broken"))));
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class,
-                () -> engine.setRuleList(List.of()));
+                () -> engine.load(List.of()));
 
-        assertEquals("The 'mvel' expression language failed to create a compiler: broken", ex.getMessage());
+        assertEquals("The 'default' expression language failed to create a compiler: broken", ex.getMessage());
     }
 
     // #184 item 2

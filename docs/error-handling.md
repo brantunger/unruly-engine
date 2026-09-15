@@ -35,7 +35,7 @@ classDiagram
         an invalid fact name or import
     }
     class IllegalStateException {
-        run() before setRuleList()
+        run() before load(), or a bad builder setting
     }
     class NullPointerException {
         a null argument
@@ -52,22 +52,25 @@ All of them are unchecked.
 
 | Method | Exception | When |
 | --- | --- | --- |
-| `RulesEngineBuilder.stateless()` / `stateful()` | `NullPointerException` | The output supplier is `null` |
-| | `IllegalArgumentException` | The limit on compiled copies, `maxCopies`, is less than 1 |
+| `RulesEngineBuilder.firstMatch()` / `allMatches()` | `NullPointerException` | The output supplier is `null` |
+| `language()` | `IllegalArgumentException` | The language's name is `null` or blank, or a language with the same name was added already |
+| | `NullPointerException` | The language is `null` |
+| `defaultLanguage()` | `NullPointerException` | The name is `null` |
+| `imports()` / `listener()` / `listeners()` | `NullPointerException` | The argument or an element is `null`. Nothing is added. |
+| `maxCopies()` | `IllegalArgumentException` | The limit on compiled copies is less than 1 |
+| `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or two found languages have the same name |
+| | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
+| | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |
 | `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |
-| `setRuleList(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language that isn't registered; an expression language throws while creating its compiler, or returns `null` instead of a compiler or a compiled expression |
+| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, or returns `null` instead of a compiler or a compiled expression |
+| | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError` is thrown while compiling, such as a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Before 1.2.0 it was wrapped in a `RuleCompilationException`. |
 | `run(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
-| | `IllegalStateException` | `setRuleList()` has never been called |
+| | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | An `Error` other than `StackOverflowError` or `AssertionError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. |
-| `addImport()` / `addImports()` | `IllegalArgumentException` | A string is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path. Nothing is imported. |
-| | `NullPointerException` | The argument or an element is `null` |
-| `registerLanguage()` | `IllegalArgumentException` | The language's name is `null` or blank |
-| | `NullPointerException` | The language is `null` |
-| `registerListener()` / `registerListeners()` | `NullPointerException` | The listener, list or an element is `null`. Nothing is registered. |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
@@ -80,7 +83,7 @@ When the expression language or your code threw the underlying error, it's avail
 expression the language rejected, such as a condition with an assignment or an MVEL syntax error, has an
 `InvalidExpressionException` as its cause.
 
-`setRuleList()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
+`load()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
 failed: `failures()` has each rule's own exception, and the message lists them, such as
 `2 rules failed to compile: Condition for rule 'r1' failed to compile at line 1, column 6: Malformed expression; Action for rule 'r2' ...`.
 A failure that isn't about one rule, such as a `null` rule, a duplicate name or a language that can't create its
@@ -91,29 +94,29 @@ compiler, is thrown at once.
 
 To act on the failing rule without parsing the message, for example to disable it or count failures per rule, call
 `getRuleName()` on the `RuleCompilationException` or `RuleExecutionException`. It returns the name exactly as the
-rule has it, or `null` for a rule without a name and for failures that aren't about one rule, such as a failing
+rule has it, or `null` for failures that aren't about one rule, such as a failing
 output supplier or an expression language that can't create its compiler.
 
 ## 🔍 Caught when loading or only when running?
 
-`setRuleList()` compiles every expression, but MVEL's parser is lenient, so some mistakes in MVEL rules only
+`load()` compiles every expression, but MVEL's parser is lenient, so some mistakes in MVEL rules only
 surface when a rule is evaluated. Another language decides what it catches when compiling.
 
 | Mistake | Detected by |
 | --- | --- |
-| `null` or blank condition or action | ✅ `setRuleList()` |
-| Duplicate rule name | ✅ `setRuleList()` |
-| A rule in an expression language that isn't registered | ✅ `setRuleList()` |
-| Assignment in a condition (`applicant.approved = true`, `x++`, `with`, `def`, `import_static`) | ✅ `setRuleList()` |
-| Most syntax errors (`applicant.creditScore >=`) | ✅ `setRuleList()` |
+| `null` or blank condition or action | ✅ `load()` |
+| Duplicate rule name | ✅ `load()` |
+| A rule in an expression language the engine doesn't have | ✅ `load()` |
+| Assignment in a condition (`applicant.approved = true`, `x++`, `with`, `def`, `import_static`) | ✅ `load()` |
+| Most syntax errors (`applicant.creditScore >=`) | ✅ `load()` |
 | Some malformed expressions (`true)`, `output.put("k" 1)`) | ⚠️ only `run()` |
-| A class that isn't imported (`Objects` without `addImport("java.util")`) | ⚠️ only `run()` |
+| A class that isn't imported (`Objects` without `imports("java.util")`) | ⚠️ only `run()` |
 | A misspelled fact or property name | ⚠️ only `run()` |
 | A condition that isn't a boolean (`applicant.name`) | ⚠️ only `run()` |
 | A method call that changes a fact inside a condition (`applicant.setApproved(true)`) | ❌ never |
 
 > [!TIP]
-> Don't rely on `setRuleList()` alone. Test each rule against sample facts; see
+> Don't rely on `load()` alone. Test each rule against sample facts; see
 > [Testing rules](writing-rules.md#-testing-rules).
 
 ## 🛠 Handling failures
@@ -131,9 +134,9 @@ try {
 
 Keep in mind:
 
-- **Stateful runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
+- **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
-- **A failed reload is safe.** If `setRuleList()` throws, the engine keeps the rules it had before.
+- **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before.
 - **Failures are already logged.** The engine logs each one at ERROR before throwing; see
   [Logging setup](listeners-and-logging.md#-logging-setup). The message can contain fact values, copied from the
   exception a rule caused, such as `For input string: "123-45-6789"`. With sensitive facts, turn off the

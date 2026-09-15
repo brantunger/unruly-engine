@@ -27,21 +27,21 @@ class PriorityTieTest {
     @Test
     @DisplayName("the stateless engine fires the first-listed of the top-priority rules")
     void statelessPicksFirstListed() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
 
-        engine.setRuleList(List.of(rule("low", 1), rule("a", 5), rule("b", 5)));
+        engine.load(List.of(rule("low", 1), rule("a", 5), rule("b", 5)));
         assertEquals("a", engine.run(new FactMap<>()).get("winner"));
 
-        engine.setRuleList(List.of(rule("low", 1), rule("b", 5), rule("a", 5)));
+        engine.load(List.of(rule("low", 1), rule("b", 5), rule("a", 5)));
         assertEquals("b", engine.run(new FactMap<>()).get("winner"));
     }
 
     @Test
     @DisplayName("the stateful engine fires equal priorities in list order, null priorities last")
     void statefulKeepsListOrder() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
-        engine.setRuleList(List.of(rule("n", null), rule("c", 5), rule("a", 5), rule("b", 5)));
+        engine.load(List.of(rule("n", null), rule("c", 5), rule("a", 5), rule("b", 5)));
 
         assertEquals("cabn", engine.run(new FactMap<>()).get("order"));
     }

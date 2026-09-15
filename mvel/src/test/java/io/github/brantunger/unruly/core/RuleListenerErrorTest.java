@@ -51,9 +51,9 @@ class RuleListenerErrorTest {
     };
 
     private RuleExecutionException runExpectingFailure(String condition, String action) {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.registerListener(recorder);
-        engine.setRuleList(List.of(Rule.builder()
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.listener(recorder));
+        engine.load(List.of(Rule.builder()
                 .ruleName("failing")
                 .condition(condition)
                 .action(action)
@@ -105,15 +105,15 @@ class RuleListenerErrorTest {
     @Test
     @DisplayName("a listener that throws in onError does not replace the rule's exception")
     void throwingOnErrorIsContained() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.registerListener(new RuleListener() {
+        RuleListener throwing = new RuleListener() {
             @Override
             public void onError(Rule rule, RuleExecutionException error) {
                 throw new IllegalStateException("listener bug");
             }
-        });
-        engine.registerListener(recorder);
-        engine.setRuleList(List.of(Rule.builder().ruleName("failing").condition("null")
+        };
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                builder -> builder.listener(throwing).listener(recorder));
+        engine.load(List.of(Rule.builder().ruleName("failing").condition("null")
                 .action("output.put('k', 1)").build()));
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));

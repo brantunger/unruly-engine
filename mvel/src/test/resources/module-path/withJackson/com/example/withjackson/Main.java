@@ -38,8 +38,8 @@ public final class Main {
         List<Rule> jackson3 = Jackson3Rules.read(JSON);
         check(expected.equals(jackson3), "Jackson 3 read " + jackson3);
 
-        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new)) {
-            engine.setRuleList(jackson3);
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build()) {
+            engine.load(jackson3);
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("score", 780);
             Map<String, Object> output = engine.run(facts);

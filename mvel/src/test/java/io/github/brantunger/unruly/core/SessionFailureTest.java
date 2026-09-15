@@ -34,8 +34,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a language that fails to create a session fails only the run that needed the session")
 class SessionFailureTest {
 
-    private final StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
     private final AtomicBoolean overlapping = new AtomicBoolean();
+    private final AtomicBoolean started = new AtomicBoolean();
+    private final AtomicReference<Throwable> overlappingFailure = new AtomicReference<>();
+    private StatefulRulesEngine<Map<String, Object>> engine;
 
     /** A language whose rules always match and do nothing, and whose sessions come from {@code newSession}. */
     private static ExpressionLanguage language(String name, Supplier<Session> newSession) {
@@ -71,37 +73,47 @@ class SessionFailureTest {
         return Rule.builder().ruleName(name).language(language).priority(priority).condition("c").action("a").build();
     }
 
+    /**
+     * Builds the engine with {@code languages}, and a listener that, once, from inside a run while it holds its copy of
+     * the rules, runs the engine again and keeps what that run threw.
+     */
+    private void build(ExpressionLanguage... languages) {
+        engine = TestEngines.allMatches(HashMap::new, builder -> {
+            for (ExpressionLanguage language : languages) {
+                builder.language(language);
+            }
+            return builder.defaultLanguage("x").listener(new RuleListener() {
+                @Override
+                public void beforeExecute(Rule rule, Object output) {
+                    if (started.compareAndSet(false, true)) {
+                        overlapping.set(true);
+                        try {
+                            engine.run(new FactMap<>());
+                        } catch (RuntimeException | Error e) {
+                            overlappingFailure.set(e);
+                        } finally {
+                            overlapping.set(false);
+                        }
+                    }
+                }
+            });
+        });
+    }
+
     /** Loads one rule in language {@code x}, whose newSession() calls {@code whileOverlapping} during an overlapping run. */
     private void load(Supplier<Session> whileOverlapping) {
-        engine.registerLanguage(language("x", () -> overlapping.get() ? whileOverlapping.get() : Session.none()));
-        engine.setRuleList(List.of(rule("r", "x", 1)));
+        build(language("x", () -> overlapping.get() ? whileOverlapping.get() : Session.none()));
+        engine.load(List.of(rule("r", "x", 1)));
     }
 
     /**
-     * Runs the engine, and once, from inside that run while it holds its copy of the rules, runs it again.
+     * Runs the engine, which runs it again from inside that run.
      *
      * @return What the inner run threw, or {@code null}
      */
     private Throwable overlappingRunFailure() {
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        AtomicBoolean started = new AtomicBoolean();
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void beforeExecute(Rule rule, Object output) {
-                if (started.compareAndSet(false, true)) {
-                    overlapping.set(true);
-                    try {
-                        engine.run(new FactMap<>());
-                    } catch (RuntimeException | Error e) {
-                        thrown.set(e);
-                    } finally {
-                        overlapping.set(false);
-                    }
-                }
-            }
-        });
         engine.run(new FactMap<>());
-        return thrown.get();
+        return overlappingFailure.get();
     }
 
     @Test
@@ -161,7 +173,7 @@ class SessionFailureTest {
     void earlierSessionsClosed() {
         AtomicInteger createdWhileOverlapping = new AtomicInteger();
         AtomicInteger closed = new AtomicInteger();
-        engine.registerLanguage(language("a", () -> {
+        build(language("a", () -> {
             if (overlapping.get()) {
                 createdWhileOverlapping.incrementAndGet();
             }
@@ -171,15 +183,14 @@ class SessionFailureTest {
                     closed.incrementAndGet();
                 }
             };
-        }));
-        engine.registerLanguage(language("x", () -> {
+        }), language("x", () -> {
             if (overlapping.get()) {
                 throw new IllegalStateException("no session");
             }
             return Session.none();
         }));
         // Language a is used first, so its session is created before x fails.
-        engine.setRuleList(List.of(rule("first", "a", 2), rule("second", "x", 1)));
+        engine.load(List.of(rule("first", "a", 2), rule("second", "x", 1)));
         AtomicReference<Throwable> thrown = new AtomicReference<>();
 
         logsOf(() -> thrown.set(overlappingRunFailure()));

@@ -5,14 +5,14 @@ package io.github.brantunger.unruly.api.language;
  * the sessions they run with.
  *
  * <p>
- * {@link io.github.brantunger.unruly.api.RulesEngine#setRuleList(java.util.List)} calls the compile methods on one
+ * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} calls the compile methods on one
  * thread. {@link #checkFactName(String)} and {@link #newSession()} are called by runs of the rule list, possibly on
  * many threads at once, so they must be thread-safe.
  * </p>
  *
  * <p>
  * The engine closes the compiler once it no longer needs the rule list, after closing every session the compiler
- * created: when a later {@code setRuleList()} has replaced the rule list and no run is still using it, when the engine
+ * created: when a later {@code load()} has replaced the rule list and no run is still using it, when the engine
  * is closed, or when the rule list fails to load.
  * </p>
  *

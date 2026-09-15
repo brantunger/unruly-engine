@@ -33,9 +33,9 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("a property assignment is rejected before it can change the fact")
     void propertyAssignmentRejected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
                 List.of(rule("typo", "claim.approved = true", "output.put('fired', true)"))));
 
         assertEquals("Condition for rule 'typo' contains an assignment ('=' at position 15). "
@@ -53,18 +53,18 @@ class ConditionAssignmentRejectionTest {
             "if (true) { claim.a = 1 }; true",
     })
     void otherWritesRejected(String condition) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
 
         assertThrows(RuleCompilationException.class,
-                () -> engine.setRuleList(List.of(rule("writes", condition, "output.put('k', 1)"))));
+                () -> engine.load(List.of(rule("writes", condition, "output.put('k', 1)"))));
     }
 
     @Test
     @DisplayName("import_static is rejected with its own explanation")
     void staticImportRejected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
                 List.of(rule("max", "import_static java.lang.Math.max; max(x, 1) == 5", "output.put('k', 1)"))));
 
         assertEquals("Condition for rule 'max' uses import_static (at position 0), which declares the method as a "
@@ -75,8 +75,8 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("a property named with, written on the line after the dot, is read, not rejected")
     void keywordMemberAfterLineBreak() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(rule("fluent", "claim.\n    with == 2", "output.put('k', 1)")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule("fluent", "claim.\n    with == 2", "output.put('k', 1)")));
 
         assertEquals(Map.of("k", 1), engine.run(claim(new HashMap<>(Map.of("with", 2)))));
     }
@@ -84,10 +84,10 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("a rejected rule list leaves the previous rules in place")
     void previousRulesKept() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(rule("ok", "claim.approved == true", "output.put('ok', true)")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule("ok", "claim.approved == true", "output.put('ok', true)")));
 
-        assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
+        assertThrows(RuleCompilationException.class, () -> engine.load(
                 List.of(rule("typo", "claim.approved = true", "output.put('typo', true)"))));
 
         assertEquals(Map.of("ok", true), engine.run(claim(new HashMap<>(Map.of("approved", true)))));
@@ -96,8 +96,8 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("actions may still assign local variables")
     void actionsMayAssign() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(rule("assigns", "true", "score = 10; score += 1; output.put('score', score)")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule("assigns", "true", "score = 10; score += 1; output.put('score', score)")));
 
         assertEquals(Map.of("score", 11), engine.run(new FactMap<>()));
     }
@@ -106,8 +106,8 @@ class ConditionAssignmentRejectionTest {
     @Test
     @DisplayName("known limitation: a write made by calling a method is not detected")
     void methodCallWriteNotDetected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(rule("mutates", "claim.put('status', 'DENIED') == 'OPEN'", "output.put('k', 1)")));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule("mutates", "claim.put('status', 'DENIED') == 'OPEN'", "output.put('k', 1)")));
         Map<String, Object> claim = new HashMap<>(Map.of("status", "OPEN"));
 
         engine.run(claim(claim));

@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
  *     <li>MVEL's reserved words and literals, such as {@code empty}, {@code null}, {@code this}, {@code in} or
  *     {@code with}</li>
  *     <li>names MVEL resolves to a class: its built-in class names such as {@code Math} or {@code String}, and
- *     classes registered with {@code addImport}, on their own or in a package</li>
+ *     classes the engine imports, on their own or in a package</li>
  * </ul>
  */
 final class FactNames {
@@ -43,7 +43,7 @@ final class FactNames {
     /**
      * Creates a check for the imports a rule list was compiled with.
      *
-     * @param ruleImports The packages and classes registered with {@code addImport}, and their class loader
+     * @param ruleImports The packages and classes the engine imports, and their class loader
      */
     FactNames(Imports ruleImports) {
         importedClassNames = ruleImports.classes().stream()

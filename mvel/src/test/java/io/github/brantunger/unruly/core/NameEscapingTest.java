@@ -26,7 +26,8 @@ class NameEscapingTest {
 
     private static final String FORGED = "[main] INFO com.example.Audit - forged entry";
 
-    private final RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new);
+    private final RulesEngine<Map<String, Object>> engine =
+            RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
     /** The exception {@code action} throws, and the engine's log lines while it ran. */
     private record Failure(Throwable thrown, List<String> logLines) {
@@ -46,7 +47,7 @@ class NameEscapingTest {
     @Test
     @DisplayName("a fact name with \\n or \\r\\n is logged on one line, with the line break escaped")
     void factNameWithLineBreak() {
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
         for (String lineBreak : List.of("\n", "\r\n")) {
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("a" + lineBreak + FORGED, 1);
@@ -66,7 +67,7 @@ class NameEscapingTest {
     @Test
     @DisplayName("a 10,000-character fact name is shortened in the message")
     void longFactName() {
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("-".repeat(10_000), 1);
 
@@ -79,26 +80,26 @@ class NameEscapingTest {
     @Test
     @DisplayName("a rule name with a line break is escaped in run-time and compile-time failures")
     void ruleNameWithLineBreak() {
-        engine.setRuleList(List.of(Rule.builder().ruleName("bad\n" + FORGED).condition("missing > 1").action("x")
+        engine.load(List.of(Rule.builder().ruleName("bad\n" + FORGED).condition("missing > 1").action("x")
                 .build()));
         Failure run = failure(() -> engine.run(new FactMap<>()));
         assertTrue(run.thrown().getMessage().startsWith("Failed to evaluate condition for rule 'bad\\n" + FORGED
                 + "': "), run.thrown().getMessage());
         assertNoForgedLine(run);
 
-        Failure duplicate = failure(() -> engine.setRuleList(List.of(
+        Failure duplicate = failure(() -> engine.load(List.of(
                 Rule.builder().ruleName("dup\r\n" + FORGED).condition("true").action("x").build(),
                 Rule.builder().ruleName("dup\r\n" + FORGED).condition("true").action("x").build())));
         assertInstanceOf(RuleCompilationException.class, duplicate.thrown());
         assertEquals("Duplicate rule name 'dup\\r\\n" + FORGED + "'", duplicate.thrown().getMessage());
         assertNoForgedLine(duplicate);
 
-        Failure blank = failure(() -> engine.setRuleList(List.of(
+        Failure blank = failure(() -> engine.load(List.of(
                 Rule.builder().ruleName("blank\n" + FORGED).condition(" ").action("x").build())));
         assertEquals("Rule 'blank\\n" + FORGED + "' has a blank condition expression",
                 blank.thrown().getMessage());
 
-        Failure language = failure(() -> engine.setRuleList(List.of(Rule.builder().ruleName("r")
+        Failure language = failure(() -> engine.load(List.of(Rule.builder().ruleName("r")
                 .language("lang\n" + FORGED).condition("true").action("x").build())));
         assertTrue(language.thrown().getMessage().startsWith("Rule 'r' is written in 'lang\\n" + FORGED + "', "),
                 language.thrown().getMessage());
@@ -121,7 +122,7 @@ class NameEscapingTest {
     @Test
     @DisplayName("the rule name on the exception stays unescaped")
     void exceptionKeepsRawName() {
-        engine.setRuleList(List.of(Rule.builder().ruleName("raw\nname").condition("missing > 1").action("x").build()));
+        engine.load(List.of(Rule.builder().ruleName("raw\nname").condition("missing > 1").action("x").build()));
 
         Failure failure = failure(() -> engine.run(new FactMap<>()));
 

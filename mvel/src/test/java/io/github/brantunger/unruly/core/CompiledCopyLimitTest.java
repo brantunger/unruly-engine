@@ -120,10 +120,14 @@ class CompiledCopyLimitTest {
 
     private static final Rule RULE = Rule.builder().ruleName("r").language("gate").condition("c").action("a").build();
 
-    private static RulesEngine<Map<String, Object>> engine(GateLanguage language, int maxCopies) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new, maxCopies);
-        engine.registerLanguage(language);
-        engine.setRuleList(List.of(RULE));
+    private static RulesEngine<Map<String, Object>> engine(GateLanguage language, int maxCopies,
+                                                           RuleListener... listeners) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(language)
+                .maxCopies(maxCopies)
+                .listeners(List.of(listeners))
+                .build();
+        engine.load(List.of(RULE));
         return engine;
     }
 
@@ -139,21 +143,25 @@ class CompiledCopyLimitTest {
         return threads.stream().filter(thread -> thread.getState() == Thread.State.WAITING).count();
     }
 
-    /** Runs the engine once more from inside each run, on the same thread, while the outer run holds its copy. */
-    private static void runNestedOnce(RulesEngine<Map<String, Object>> engine, List<Object> nestedOutputs) {
+    /**
+     * A listener that runs the engine once more from inside each run, on the same thread, while the outer run holds its
+     * copy. The engine is set once it's built.
+     */
+    private static RuleListener runNestedOnce(AtomicReference<RulesEngine<Map<String, Object>>> engine,
+                                              List<Object> nestedOutputs) {
         AtomicBoolean nesting = new AtomicBoolean();
-        engine.registerListener(new RuleListener() {
+        return new RuleListener() {
             @Override
             public void beforeExecute(Rule rule, Object output) {
                 if (nesting.compareAndSet(false, true)) {
                     try {
-                        nestedOutputs.add(engine.run(new FactMap<>()));
+                        nestedOutputs.add(engine.get().run(new FactMap<>()));
                     } finally {
                         nesting.set(false);
                     }
                 }
             }
-        });
+        };
     }
 
     @Test
@@ -186,9 +194,10 @@ class CompiledCopyLimitTest {
     void nestedRunGetsAnExtraCopy() {
         GateLanguage language = new GateLanguage();
         language.gate.countDown();
-        RulesEngine<Map<String, Object>> engine = engine(language, 1);
+        AtomicReference<RulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         List<Object> nestedOutputs = new ArrayList<>();
-        runNestedOnce(engine, nestedOutputs);
+        RulesEngine<Map<String, Object>> engine = engine(language, 1, runNestedOnce(self, nestedOutputs));
+        self.set(engine);
 
         assertEquals(Map.of(), engine.run(new FactMap<>()));
         assertEquals(Map.of(), engine.run(new FactMap<>()));
@@ -205,9 +214,10 @@ class CompiledCopyLimitTest {
     void nestedRunUsesAFreeCopy() {
         GateLanguage language = new GateLanguage();
         language.gate.countDown();
-        RulesEngine<Map<String, Object>> engine = engine(language, 2);
+        AtomicReference<RulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         List<Object> nestedOutputs = new ArrayList<>();
-        runNestedOnce(engine, nestedOutputs);
+        RulesEngine<Map<String, Object>> engine = engine(language, 2, runNestedOnce(self, nestedOutputs));
+        self.set(engine);
 
         engine.run(new FactMap<>());
         engine.run(new FactMap<>());
@@ -299,35 +309,37 @@ class CompiledCopyLimitTest {
     }
 
     @Test
-    @DisplayName("a limit below 1 is rejected by both builder methods")
+    @DisplayName("maxCopies rejects a limit below 1, and firstMatch and allMatches reject a null supplier")
     void limitBelowOneRejected() {
         Supplier<Map<String, Object>> output = HashMap::new;
 
         IllegalArgumentException zero = assertThrows(IllegalArgumentException.class,
-                () -> RulesEngineBuilder.stateless(output, 0));
+                () -> RulesEngineBuilder.firstMatch(output).maxCopies(0));
         IllegalArgumentException negative = assertThrows(IllegalArgumentException.class,
-                () -> RulesEngineBuilder.stateful(output, -1));
+                () -> RulesEngineBuilder.allMatches(output).maxCopies(-1));
 
         assertEquals("maxCopies must be at least 1, but was 0", zero.getMessage());
         assertEquals("maxCopies must be at least 1, but was -1", negative.getMessage());
-        assertThrows(NullPointerException.class, () -> RulesEngineBuilder.stateless(null, 1));
-        assertThrows(NullPointerException.class, () -> RulesEngineBuilder.stateful(null, 1));
+        assertThrows(NullPointerException.class, () -> RulesEngineBuilder.firstMatch(null));
+        assertThrows(NullPointerException.class, () -> RulesEngineBuilder.allMatches(null));
     }
 
     @Test
-    @DisplayName("stateless(supplier, max) and stateful(supplier, max) build engines of the right kind")
+    @DisplayName("firstMatch and allMatches with maxCopies build engines of the right kind")
     void builderMethodsBuildTheRightEngine() {
         List<Rule> rules = List.of(
                 Rule.builder().ruleName("high").priority(2).condition("true").action("output.put('high', true)").build(),
                 Rule.builder().ruleName("low").priority(1).condition("true").action("output.put('low', true)").build());
-        RulesEngine<Map<String, Object>> stateless = RulesEngineBuilder.stateless(HashMap::new, 1);
-        RulesEngine<Map<String, Object>> stateful = RulesEngineBuilder.stateful(HashMap::new, 1);
-        stateless.setRuleList(rules);
-        stateful.setRuleList(rules);
+        RulesEngine<Map<String, Object>> firstMatch = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .maxCopies(1).build();
+        RulesEngine<Map<String, Object>> allMatches = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .maxCopies(1).build();
+        firstMatch.load(rules);
+        allMatches.load(rules);
 
-        assertInstanceOf(StatelessRulesEngine.class, stateless);
-        assertInstanceOf(StatefulRulesEngine.class, stateful);
-        assertEquals(Map.of("high", true), stateless.run(new FactMap<>()));
-        assertEquals(Map.of("high", true, "low", true), stateful.run(new FactMap<>()));
+        assertInstanceOf(StatelessRulesEngine.class, firstMatch);
+        assertInstanceOf(StatefulRulesEngine.class, allMatches);
+        assertEquals(Map.of("high", true), firstMatch.run(new FactMap<>()));
+        assertEquals(Map.of("high", true, "low", true), allMatches.run(new FactMap<>()));
     }
 }

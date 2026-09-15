@@ -46,8 +46,8 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a root cause without a message is named by its class")
     void rootCauseNamed() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(Map::of);
-        engine.setRuleList(List.of(rule("a", "true", "output.put('k', null)")));
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(Map::of);
+        engine.load(List.of(rule("a", "true", "output.put('k', null)")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
@@ -59,8 +59,8 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a failure five runs deep is described once and logged once")
     void nestedRunFailure() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(rule("rec", "true",
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(rule("rec", "true",
                 "if (depth < 5) { store.setValue('depth', depth + 1); eng.run(store) } else { x.missing }")));
         FactMap<Object> facts = new FactMap<>();
         facts.setValue("eng", engine);
@@ -90,12 +90,12 @@ public class ErrorMessageCauseTest {
     @DisplayName("a condition too long to compile gets a short message")
     void expressionTooLongToCompile() throws InterruptedException {
         String condition = String.join(" || ", Collections.nCopies(20_000, "a == 1"));
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         // A small stack makes MVEL's recursive parser overflow however much stack the test JVM gives its threads.
         Thread compiler = new Thread(null, () -> {
             try {
-                engine.setRuleList(List.of(rule("long", condition, "output.put('k', 1)")));
+                engine.load(List.of(rule("long", condition, "output.put('k', 1)")));
             } catch (RuntimeException e) {
                 thrown.set(e);
             }
@@ -111,8 +111,8 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a very long exception message is cut short")
     void longMessageCut() {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(rule("a", "true", "output.put('k', boom.fail())")));
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(rule("a", "true", "output.put('k', boom.fail())")));
         FactMap<Object> facts = new FactMap<>();
         facts.setValue("boom", new Boom());
 

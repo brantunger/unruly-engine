@@ -58,9 +58,9 @@ class ListenerFatalErrorTest {
     }
 
     private static StatefulRulesEngine<Map<String, Object>> engine(String condition, RuleListener... listeners) {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.registerListeners(List.of(listeners));
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition(condition).action("output.put('k', 1)").build()));
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.listeners(List.of(listeners)));
+        engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action("output.put('k', 1)").build()));
         return engine;
     }
 

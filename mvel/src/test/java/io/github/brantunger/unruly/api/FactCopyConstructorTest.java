@@ -26,8 +26,8 @@ class FactCopyConstructorTest {
     @Test
     @DisplayName("a rule can refer to the copied fact by its name")
     void copiedFactUsableInRules() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("x == 'hi'")
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(Rule.builder().ruleName("r").condition("x == 'hi'")
                 .action("output.put('hit', true)").build()));
 
         FactMap<Object> facts = new FactMap<>(new Fact<Object>(new Fact<>("x", "hi")));

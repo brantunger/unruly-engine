@@ -9,7 +9,7 @@ package io.github.brantunger.unruly.api.language;
  * uses. A run borrows a copy that no other run is using, so a session is used by one run at a time, though possibly on
  * different threads one after another, and every condition and action of that language in the run gets the same
  * session. The engine keeps idle copies for later runs, and closes a session once it no longer needs it: when it drops
- * a copy of the rules, when {@code setRuleList()} has replaced the rules and no run is still using them, or when the
+ * a copy of the rules, when {@code load()} has replaced the rules and no run is still using them, or when the
  * engine is closed.
  * </p>
  *

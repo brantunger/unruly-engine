@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
@@ -29,14 +30,14 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("StatefulRulesEngine throws NullPointerException for null facts")
         void statefulThrowsForNullFacts() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule rule = Rule.builder()
                     .ruleName("dummy")
                     .condition("true")
                     .action("output.put(\"k\", \"v\")")
                     .priority(1)
                     .build();
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.run(null));
             assertTrue(ex.getMessage().contains("facts must not be null"));
@@ -45,14 +46,14 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("StatelessRulesEngine throws NullPointerException for null facts")
         void statelessThrowsForNullFacts() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
             Rule rule = Rule.builder()
                     .ruleName("dummy")
                     .condition("true")
                     .action("output.put(\"k\", \"v\")")
                     .priority(1)
                     .build();
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.run(null));
             assertTrue(ex.getMessage().contains("facts must not be null"));
@@ -66,7 +67,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("rules with null priority are treated as lowest priority")
         void nullPriorityTreatedAsLowest() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
             Rule withPriority = Rule.builder()
                     .ruleName("has-priority")
@@ -82,7 +83,7 @@ class AbstractRulesEngineTest {
                     // priority is null
                     .build();
 
-            engine.setRuleList(Arrays.asList(withPriority, noPriority));
+            engine.load(Arrays.asList(withPriority, noPriority));
 
             FactStore<Object> facts = new FactMap<>();
 
@@ -95,7 +96,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("multiple rules with null priority do not throw")
         void multipleNullPrioritiesDoNotThrow() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
 
             Rule rule1 = Rule.builder()
                     .ruleName("rule1")
@@ -109,7 +110,7 @@ class AbstractRulesEngineTest {
                     .action("output.put(\"source\", \"rule2\")")
                     .build();
 
-            assertDoesNotThrow(() -> engine.setRuleList(Arrays.asList(rule1, rule2)));
+            assertDoesNotThrow(() -> engine.load(Arrays.asList(rule1, rule2)));
 
             FactStore<Object> facts = new FactMap<>();
             Map<String, Object> result = engine.run(facts);
@@ -118,19 +119,15 @@ class AbstractRulesEngineTest {
     }
 
     @Nested
-    @DisplayName("addImports accumulation")
+    @DisplayName("imports accumulation")
     class ImportsAccumulation {
 
         @Test
-        @DisplayName("addImports does not discard previously added imports via addImport")
-        void addImportsDoesNotDiscardPriorAddImport() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-
-            // First add via addImport
-            engine.addImport("java.util");
-
-            // Then add more via addImports — should NOT discard java.util
-            engine.addImports(Set.of("java.time"));
+        @DisplayName("imports(Collection) does not discard imports added before with imports(String...)")
+        void collectionImportsDoNotDiscardEarlierImports() {
+            // java.util first, then java.time from a collection, which must not discard java.util
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                    builder -> builder.imports("java.util").imports(Set.of("java.time")));
 
             // This rule uses Objects from java.util — should still work
             Rule rule = Rule.builder()
@@ -140,7 +137,7 @@ class AbstractRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("name", "test");
@@ -150,12 +147,10 @@ class AbstractRulesEngineTest {
         }
 
         @Test
-        @DisplayName("multiple addImports calls accumulate")
+        @DisplayName("multiple imports(Collection) calls accumulate")
         void multipleAddImportsCallsAccumulate() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-
-            engine.addImports(Set.of("java.util"));
-            engine.addImports(Set.of("java.time"));
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                    builder -> builder.imports(Set.of("java.util")).imports(Set.of("java.time")));
 
             Rule rule = Rule.builder()
                     .ruleName("uses-objects")
@@ -164,7 +159,7 @@ class AbstractRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("name", "value");
@@ -181,7 +176,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("compilation error throws RuleCompilationException")
         void compilationErrorThrown() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
             Rule rule = Rule.builder()
                     .ruleName("bad-syntax")
@@ -191,14 +186,14 @@ class AbstractRulesEngineTest {
                     .build();
 
             RuleCompilationException ex = assertThrows(RuleCompilationException.class, 
-                    () -> engine.setRuleList(List.of(rule)));
+                    () -> engine.load(List.of(rule)));
             assertTrue(ex.getMessage().contains("bad-syntax"));
         }
 
         @Test
         @DisplayName("condition evaluation error is thrown and logged")
         void conditionEvaluationErrorThrown() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
             // This condition references a variable not in facts
             Rule rule = Rule.builder()
@@ -208,7 +203,7 @@ class AbstractRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
 
@@ -219,7 +214,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("action evaluation error is thrown and logged")
         void actionEvaluationErrorThrown() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
             Rule rule = Rule.builder()
                     .ruleName("bad-action")
@@ -228,7 +223,7 @@ class AbstractRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
 
@@ -239,7 +234,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("condition evaluating to null reports the rule, not an internal NPE")
         void nullConditionResultReportsRule() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
             Rule rule = Rule.builder()
                     .ruleName("null-condition")
@@ -248,7 +243,7 @@ class AbstractRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
 
@@ -264,8 +259,8 @@ class AbstractRulesEngineTest {
     class NonBooleanConditions {
 
         private Map<String, Object> runCondition(String condition, FactStore<Object> facts) {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            engine.setRuleList(List.of(Rule.builder()
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
+            engine.load(List.of(Rule.builder()
                     .ruleName("non-boolean")
                     .condition(condition)
                     .action("output.put(\"fired\", true)")
@@ -332,11 +327,11 @@ class AbstractRulesEngineTest {
         }
 
         @Test
-        @DisplayName("assigning a fact in a condition is rejected by setRuleList()")
+        @DisplayName("assigning a fact in a condition is rejected by load()")
         void conditionAssignmentToFactThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             // `approved = true` is a typo for `==`; it evaluates to a Boolean, so it would otherwise run.
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(List.of(
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(List.of(
                     rule("typo", 2, "approved = true", "output.put(\"typo\", true)"),
                     rule("check", 1, "approved == true", "output.put(\"check\", true)"))));
 
@@ -345,11 +340,11 @@ class AbstractRulesEngineTest {
         }
 
         @Test
-        @DisplayName("creating a new variable in a condition is rejected by setRuleList()")
+        @DisplayName("creating a new variable in a condition is rejected by load()")
         void conditionNewVariableThrows() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
 
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.setRuleList(
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
                     List.of(rule("new-var", 1, "(flag = true) == true", "output.put(\"k\", 1)"))));
             assertTrue(ex.getMessage().contains("'=' at position 6"));
         }
@@ -357,8 +352,8 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("assignments in an action are local to that action")
         void actionAssignmentIsLocal() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            engine.setRuleList(List.of(
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
+            engine.load(List.of(
                     rule("assigns", 2, "true", "score = 10; output.put(\"first\", score)"),
                     rule("reads", 1, "score == 1", "output.put(\"second\", score)")));
 
@@ -374,8 +369,8 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("a fact named 'output' is rejected")
         void outputFactNameRejected() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-            engine.setRuleList(List.of(rule("any", 1, "true", "output.put(\"k\", 1)")));
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
+            engine.load(List.of(rule("any", 1, "true", "output.put(\"k\", 1)")));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("output", "shadowed");
@@ -392,7 +387,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("facts with null values do not cause NPE in condition evaluation")
         void nullFactValueDoesNotCauseNPE() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
             Rule rule = Rule.builder()
                     .ruleName("always-true")
@@ -401,7 +396,7 @@ class AbstractRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("key", null);
@@ -416,33 +411,33 @@ class AbstractRulesEngineTest {
     class NullRuleList {
 
         @Test
-        @DisplayName("setRuleList throws NullPointerException for null ruleList")
-        void setRuleListThrowsForNull() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        @DisplayName("load throws NullPointerException for null ruleList")
+        void loadThrowsForNull() {
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 
-            NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.setRuleList(null));
+            NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.load(null));
             assertTrue(ex.getMessage().contains("ruleList must not be null"));
         }
 
         @Test
         @DisplayName("a null rule in the list throws RuleCompilationException naming its index")
         void nullRuleElementThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule good = Rule.builder().ruleName("good").condition("true").action("output.put('k', 1)").build();
 
             RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                    () -> engine.setRuleList(Arrays.asList(good, null)));
+                    () -> engine.load(Arrays.asList(good, null)));
             assertTrue(ex.getMessage().contains("index 1"));
         }
 
         @Test
         @DisplayName("validation errors can be caught as UnrulyException")
         void validationErrorsAreUnrulyExceptions() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule blank = Rule.builder().ruleName("blank").condition(" ").action("output.put('k', 1)").build();
 
             assertThrows(io.github.brantunger.unruly.api.exception.UnrulyException.class,
-                    () -> engine.setRuleList(List.of(blank)));
+                    () -> engine.load(List.of(blank)));
         }
     }
 
@@ -453,12 +448,12 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("blank condition throws RuleCompilationException naming the rule")
         void blankConditionThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("   ")
                     .action("output.put(\"k\",1)").build();
 
             RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                    () -> engine.setRuleList(List.of(rule)));
+                    () -> engine.load(List.of(rule)));
             assertTrue(ex.getMessage().contains("my-rule"));
             assertTrue(ex.getMessage().contains("condition"));
         }
@@ -466,11 +461,11 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("empty string condition throws RuleCompilationException")
         void emptyConditionThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("")
                     .action("output.put(\"k\",1)").build();
 
-            assertThrows(RuleCompilationException.class, () -> engine.setRuleList(List.of(rule)));
+            assertThrows(RuleCompilationException.class, () -> engine.load(List.of(rule)));
         }
     }
 
@@ -481,48 +476,53 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("blank action throws RuleCompilationException naming the rule")
         void blankActionThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule rule = Rule.builder().ruleName("my-rule").condition("true").action("  ").build();
 
             RuleCompilationException ex = assertThrows(RuleCompilationException.class,
-                    () -> engine.setRuleList(List.of(rule)));
+                    () -> engine.load(List.of(rule)));
             assertTrue(ex.getMessage().contains("my-rule"));
             assertTrue(ex.getMessage().contains("action"));
         }
     }
 
     @Nested
-    @DisplayName("addImport validation")
+    @DisplayName("imports validation")
     class AddImportValidation {
 
         @Test
-        @DisplayName("addImport(null) throws NullPointerException with a message")
-        void addImportNullThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        @DisplayName("imports((String[]) null) and imports(null element) throw NullPointerException with a message")
+        void nullImportsThrow() {
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+
+            NullPointerException array = assertThrows(NullPointerException.class,
+                    () -> builder.imports((String[]) null));
+            NullPointerException element = assertThrows(NullPointerException.class,
+                    () -> builder.imports((String) null));
+            assertEquals("names must not be null", array.getMessage());
+            assertEquals("names must not contain null", element.getMessage());
+        }
+
+        @Test
+        @DisplayName("imports((Collection) null) throws NullPointerException")
+        void nullImportCollectionThrows() {
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
 
             NullPointerException ex = assertThrows(NullPointerException.class,
-                    () -> engine.addImport(null));
-            assertTrue(ex.getMessage().contains("packageString must not be null"));
+                    () -> builder.imports((java.util.Collection<String>) null));
+            assertEquals("names must not be null", ex.getMessage());
         }
 
         @Test
-        @DisplayName("addImports(null) throws NullPointerException")
-        void addImportsNullSetThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-
-            assertThrows(NullPointerException.class, () -> engine.addImports(null));
-        }
-
-        @Test
-        @DisplayName("addImports with null element throws NullPointerException with a message")
-        void addImportsNullElementThrows() {
-            StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
+        @DisplayName("imports with null element throws NullPointerException with a message")
+        void nullImportElementThrows() {
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
             // Set.of() doesn't accept nulls, use Arrays.asList to allow one
             Set<String> withNull = new java.util.HashSet<>(Arrays.asList("java.util", null));
 
             NullPointerException ex = assertThrows(NullPointerException.class,
-                    () -> engine.addImports(withNull));
-            assertTrue(ex.getMessage().contains("package element must not be null"));
+                    () -> builder.imports(withNull));
+            assertEquals("names must not contain null", ex.getMessage());
         }
     }
 
@@ -533,7 +533,7 @@ class AbstractRulesEngineTest {
         @Test
         @DisplayName("without a language's checks, only a null name and output are rejected")
         void noLanguageChecks() {
-            StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
             FactStore<Object> mvelKeyword = new FactMap<>();
             mvelKeyword.setValue("empty", 1);
             FactStore<Object> output = new FactMap<>();

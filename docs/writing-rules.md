@@ -1,7 +1,8 @@
 # ✍️ Writing rules
 
 Every rule has two expressions: a **condition** that decides whether the rule matches, and an **action** that runs
-when it fires. They are written in an expression language: [MVEL](languages/mvel.md), unless the rule names another.
+when it fires. They are written in an expression language: the engine's default language, [MVEL](languages/mvel.md) unless
+you give the engine others, or the language the rule names.
 This guide covers what holds whatever the language; the [MVEL guide](languages/mvel.md) covers MVEL's syntax.
 
 [← Back to README](../README.md)
@@ -21,7 +22,7 @@ Rule.builder()
         .ruleName("prime-rate")                          // required and unique: used in errors and listeners
         .description("Best rate for excellent credit")   // free text, ignored by the engine
         .priority(10)                                    // higher fires first
-        .language("mvel")                                // optional: null means MVEL
+        .language("mvel")                                // optional: null means the engine's default language
         .condition("applicant.creditScore >= 750")       // must evaluate to a boolean
         .action("output.approved = true; output.interestRate = 4.5")
         .build();
@@ -31,7 +32,7 @@ Rule.builder()
 | --- | --- | --- |
 | **Facts, by name** | ✅ Read | ✅ Read |
 | **`output`** | ❌ Not available | ✅ Change it in place |
-| **Assignments and local variables** | ❌ Rejected by `setRuleList()` | ✅ Visible only inside this action |
+| **Assignments and local variables** | ❌ Rejected by `load()` | ✅ Visible only inside this action |
 | **Must evaluate to** | A `boolean` (not `null`, not a string) | Anything; the result is ignored |
 
 > [!TIP]
@@ -42,17 +43,17 @@ Rule.builder()
 
 | Language | How to use it | Guide |
 | --- | --- | --- |
-| ⚡ MVEL | The default: leave `language` unset, or set it to `"mvel"` | [MVEL](languages/mvel.md): syntax cheat sheet, classes and imports, comparison gotchas |
-| 🧩 Any other | `engine.registerLanguage(new MyLanguage())`, then `.language("my")` on each rule | [Other expression languages](languages/custom.md): choosing, writing and testing a language |
+| ⚡ MVEL | The default when MVEL is the engine's only language: leave `language` unset, or set it to `"mvel"` | [MVEL](languages/mvel.md): syntax cheat sheet, classes and imports, comparison gotchas |
+| 🧩 Any other | `.language(new MyLanguage())` on the engine's builder, then `.language("my")` on each rule | [Other expression languages](languages/custom.md): choosing, writing and testing a language |
 
-One rule list can mix languages. Register languages and imports **before** `setRuleList()`, which compiles every
-rule with the languages and imports registered at that moment.
+One rule list can mix languages. An engine's languages and imports are set on its builder, so every `load()`
+compiles the rules with the same ones.
 
 ## 🔏 What rules can change
 
 ### Conditions can't assign
 
-`setRuleList()` rejects, with a `RuleCompilationException`, a condition that assigns or declares something, when
+`load()` rejects, with a `RuleCompilationException`, a condition that assigns or declares something, when
 its language can detect it. That isn't a sandbox: a condition can still call methods, loop and run several
 statements, so it can change state (`System.setProperty('k', 'v') == null`) or never finish
 (`while (true) {}; true`). Keep conditions to expressions without side effects. In MVEL, these are rejected:
@@ -76,7 +77,7 @@ statements, so it can change state (`System.setProperty('k', 'v') == null`) or n
   to `output` itself, as in `output = [:]`, fails with a `RuleExecutionException`. Inside a `def` function,
   `output = ...` doesn't fail: it creates a variable local to the function, and `output.put(...)` calls after it in
   that function change the discarded object.
-- **Pass results between rules through `output`.** In a stateful engine, all matched actions share the same output
+- **Pass results between rules through `output`.** In an all-matches engine, all matched actions share the same output
   object, in priority order.
 - **Facts aren't copied.** An action that calls a method that changes a fact, such as
   `applicant.setCreditScore(0)`, affects the rules that fire after it in the same run. Conditions have already been
@@ -84,14 +85,14 @@ statements, so it can change state (`System.setProperty('k', 'v') == null`) or n
 
 ## 📐 A bigger example
 
-A stateful engine suits validation: every rule that matches adds its finding, so the output collects them all.
+An all-matches engine suits validation: every rule that matches adds its finding, so the output collects them all.
 
 ```java
 // Applicant is the record from the README's quick start; Loan is another of your types:
 // public record Loan(double amount, int termMonths) {}
 
-RulesEngine<List<String>> engine = RulesEngineBuilder.stateful(ArrayList::new);
-engine.setRuleList(List.of(
+RulesEngine<List<String>> engine = RulesEngineBuilder.<List<String>>allMatches(ArrayList::new).build();
+engine.load(List.of(
         Rule.builder()
                 .ruleName("low-credit")
                 .priority(30)
@@ -122,7 +123,7 @@ List<String> findings = engine.run(facts);
 
 ## 🧪 Testing rules
 
-`setRuleList()` catches many mistakes, but not all of them: a misspelled property, a missing import or a
+`load()` catches many mistakes, but not all of them: a misspelled property, a missing import or a
 non-boolean condition only fails when the rule runs (see
 [Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running)). Give each
 rule a test with sample facts that make it match and not match:
@@ -131,8 +132,8 @@ rule a test with sample facts that make it match and not match:
 // primeRateRule is the prime-rate Rule from the README's quick start.
 @Test
 void primeRateAppliesFrom750() {
-    RulesEngine<LoanDecision> engine = RulesEngineBuilder.stateless(LoanDecision::new);
-    engine.setRuleList(List.of(primeRateRule));
+    RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).build();
+    engine.load(List.of(primeRateRule));
 
     FactStore<Object> facts = new FactMap<>();
     facts.setValue("applicant", new Applicant("Ada", 750));

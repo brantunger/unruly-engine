@@ -28,7 +28,8 @@
  * <p>A method added to an interface that languages implement is a {@code default} method, so a language written
  * against an earlier 2.x release keeps compiling and working. The sealed interfaces can gain any method.</p>
  *
- * <p>Rules are written in MVEL, the engine's default language.</p>
+ * <p>MVEL, from the {@code unruly-engine} artifact, is one such language. An engine has the languages its builder is
+ * given, or else those found with {@link java.util.ServiceLoader}.</p>
  *
  * <p>Types in this package are non-null unless annotated {@link org.jspecify.annotations.Nullable}.</p>
  */

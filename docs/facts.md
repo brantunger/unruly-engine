@@ -78,15 +78,15 @@ record accessor (`creditScore()`) or looks up a `Map` key.
 ## 🏷 Naming rules
 
 A rule can only refer to a fact whose name reads as a single variable in its expression language. The table shows
-MVEL's rules. `run()` checks each fact against every language the loaded rules use, or against MVEL when the rule
-list is empty, and another language decides which names it rejects.
+MVEL's rules. `run()` checks each fact against every language the loaded rules use, or against the engine's
+default language when the rule list is empty, and another language decides which names it rejects.
 
 | ✅ Allowed | ❌ Rejected | Why |
 | --- | --- | --- |
 | `applicant`, `order2`, `_ctx` | `my-fact`, `2nd`, `first name` | Not a Java identifier (`my-fact` would read as `my - fact`) |
 | `claim` | `empty`, `null`, `true`, `nil`, `in`, `is`, `if`, `def`, `new`, `with`, `contains`, `foreach`, `isdef`, `this`, ... | A reserved MVEL word |
 | `math` | `Math`, `String`, `System`, `Integer`, ... | A class MVEL always resolves |
-| `date` | `Date` after `addImport("java.util")` | A class from an import |
+| `date` | `Date` on an engine built with `imports("java.util")` | A class from an import |
 | `result` | `output` | Reserved for the output object |
 
 The checks happen in two places, and both throw `IllegalArgumentException`:

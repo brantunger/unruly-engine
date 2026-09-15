@@ -8,7 +8,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Run as its own JVM by {@link ErrorUtilInitializationTest}: loads a deeply nested rule on a thread with a small stack,
- * then a rule with a syntax error on the main thread, and prints what each {@code setRuleList()} threw, by simple class
+ * then a rule with a syntax error on the main thread, and prints what each {@code load()} threw, by simple class
  * name, or {@code accepted}.
  */
 final class DeepRuleScenario {
@@ -33,8 +33,8 @@ final class DeepRuleScenario {
 
     private static String load(String name, String condition) {
         try {
-            RulesEngineBuilder.stateless(Object::new)
-                    .setRuleList(List.of(Rule.builder().ruleName(name).condition(condition).action("1").build()));
+            RulesEngineBuilder.firstMatch(Object::new).build()
+                    .load(List.of(Rule.builder().ruleName(name).condition(condition).action("1").build()));
             return "accepted";
         } catch (Throwable t) {
             return t.getClass().getSimpleName();

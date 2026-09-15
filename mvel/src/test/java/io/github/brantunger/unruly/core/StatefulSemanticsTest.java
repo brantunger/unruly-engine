@@ -37,8 +37,8 @@ public class StatefulSemanticsTest {
     @Test
     @DisplayName("all conditions are evaluated before any action fires")
     void matchThenFire() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
+        engine.load(List.of(
                 Rule.builder().ruleName("deny").priority(2)
                         .condition("claim.status == 'PENDING'")
                         .action("claim.status = 'DENIED'; output.put('denied', true)").build(),
@@ -60,8 +60,8 @@ public class StatefulSemanticsTest {
     @DisplayName("a failing action does not undo the actions that ran before it")
     void notAtomic() {
         Map<String, Object> output = new HashMap<>();
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(() -> output);
-        engine.setRuleList(List.of(
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(() -> output);
+        engine.load(List.of(
                 Rule.builder().ruleName("first").priority(2).condition("true")
                         .action("claim.status = 'CHANGED'; output.put('first', true)").build(),
                 Rule.builder().ruleName("broken").priority(1).condition("true")

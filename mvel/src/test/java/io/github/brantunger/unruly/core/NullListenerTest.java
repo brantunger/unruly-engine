@@ -3,6 +3,8 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -14,27 +16,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("null listener registration")
+@DisplayName("null listeners on the builder")
 class NullListenerTest {
 
-    private final StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
+    private final RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(HashMap::new);
 
     @Test
-    @DisplayName("registerListener(null) throws NullPointerException")
+    @DisplayName("listener(null) throws NullPointerException")
     void nullListenerRejected() {
-        NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.registerListener(null));
+        NullPointerException ex = assertThrows(NullPointerException.class, () -> builder.listener(null));
         assertTrue(ex.getMessage().contains("listener must not be null"));
     }
 
     @Test
-    @DisplayName("registerListeners(null) throws NullPointerException")
+    @DisplayName("listeners(null) throws NullPointerException")
     void nullListRejected() {
-        NullPointerException ex = assertThrows(NullPointerException.class, () -> engine.registerListeners(null));
+        NullPointerException ex = assertThrows(NullPointerException.class, () -> builder.listeners(null));
         assertTrue(ex.getMessage().contains("listeners must not be null"));
     }
 
     @Test
-    @DisplayName("a list containing null is rejected and registers nothing")
+    @DisplayName("a collection containing null is rejected and adds nothing")
     void nullElementRejectedAtomically() {
         AtomicInteger callbacks = new AtomicInteger();
         RuleListener counting = new RuleListener() {
@@ -45,11 +47,12 @@ class NullListenerTest {
         };
 
         NullPointerException ex = assertThrows(NullPointerException.class,
-                () -> engine.registerListeners(Arrays.asList(counting, null)));
-        assertTrue(ex.getMessage().contains("listener element must not be null"));
+                () -> builder.listeners(Arrays.asList(counting, null)));
+        assertTrue(ex.getMessage().contains("listeners must not contain null"));
 
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
+        RulesEngine<Map<String, Object>> engine = builder.build();
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
         assertEquals(1, engine.run(new FactMap<>()).get("k"));
-        assertEquals(0, callbacks.get(), "the valid listener before the null must not have been registered");
+        assertEquals(0, callbacks.get(), "the valid listener before the null must not have been added");
     }
 }

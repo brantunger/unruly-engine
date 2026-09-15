@@ -26,8 +26,8 @@ class ConditionDeclarationMessageTest {
             "String s; true | s",
     })
     void declarationMessage(String condition, String variable) {
-        StatelessRulesEngine<Map<String, Object>> engine = new StatelessRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("declares").condition(condition)
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(Rule.builder().ruleName("declares").condition(condition)
                 .action("output.put('k', 1)").build()));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));

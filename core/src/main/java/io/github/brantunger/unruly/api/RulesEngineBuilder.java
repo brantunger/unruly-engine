@@ -1,59 +1,205 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
+import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * A builder to construct instances of {@link RulesEngine}. This provides a clean API for consumers
- * without requiring them to directly import core engine implementations.
+ * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners and limit on compiled copies
+ * are set here and can't change once it's built; only its rules can, with {@link RulesEngine#load(List)}.
+ *
+ * {@snippet :
+ * RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+ *         .imports("java.time")
+ *         .listener(new LoggingRuleListener())
+ *         .build();
+ * engine.load(rules);
+ * }
+ *
+ * <p>
+ * <b>Languages:</b> an engine built without {@link #language(ExpressionLanguage)} has the languages found with
+ * {@link java.util.ServiceLoader}, such as MVEL from the {@code unruly-engine} artifact. An engine built with it has
+ * exactly the languages given. A rule whose language is {@code null} is written in the engine's default language:
+ * the one named with {@link #defaultLanguage(String)}, or else the engine's only language.
+ * </p>
+ *
+ * <p>
+ * A builder isn't thread-safe. {@link #build()} can be called more than once, and each call builds a new engine with
+ * the settings at that moment.
+ * </p>
+ *
+ * @param <O> The type of the output object
  */
-public final class RulesEngineBuilder {
+public final class RulesEngineBuilder<O> {
 
-    private RulesEngineBuilder() {
-        // Hide utility class constructor
+    // The smallest limit on compiled copies: one run at a time.
+    private static final int MIN_COPIES = 1;
+
+    private final Supplier<O> outputFactory;
+    private final boolean fireAllMatches;
+    private final List<ExpressionLanguage> languageList = new ArrayList<>();
+    private @Nullable String defaultLanguageName;
+    private final List<String> importNames = new ArrayList<>();
+    private final List<RuleListener> listenerList = new ArrayList<>();
+    private int copyLimit = EngineConfiguration.UNLIMITED_COPIES;
+
+    private RulesEngineBuilder(Supplier<O> outputFactory, boolean fireAllMatches) {
+        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+        this.fireAllMatches = fireAllMatches;
     }
 
     /**
-     * Creates a new STATELESS rules engine. A stateless engine evaluates all rules but only
-     * fires the action of the single highest-priority rule that matched.
+     * Starts building an engine that fires the action of the highest-priority rule whose condition is true: the first
+     * match, in DMN's terms. Rules with equal priorities keep their list order.
      *
      * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
      *                      return a new, non-null object each time.
      * @param <O>           The type of the output object
-     * @return A new stateless {@link RulesEngine}
+     * @return A new builder
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
-    public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory) {
-        return Engines.stateless(outputFactory);
+    public static <O> RulesEngineBuilder<O> firstMatch(Supplier<O> outputFactory) {
+        return new RulesEngineBuilder<>(outputFactory, false);
     }
 
     /**
-     * Creates a new STATEFUL rules engine. A stateful engine evaluates all rules and fires
-     * the actions of all matching rules in priority order, accumulating changes in the output object.
+     * Starts building an engine that fires the action of every rule whose condition is true, in priority order, all
+     * changing the same output object: DMN's rule order. Every condition is evaluated before any action runs.
      *
      * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
      *                      return a new, non-null object each time.
      * @param <O>           The type of the output object
-     * @return A new stateful {@link RulesEngine}
+     * @return A new builder
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
-    public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory) {
-        return Engines.stateful(outputFactory);
+    public static <O> RulesEngineBuilder<O> allMatches(Supplier<O> outputFactory) {
+        return new RulesEngineBuilder<>(outputFactory, true);
     }
 
     /**
-     * Creates a new STATELESS rules engine, like {@link #stateless(Supplier)}, that keeps at most {@code maxCopies}
-     * compiled copies of its rules.
+     * Adds an expression language that rules can be written in, chosen by each rule's {@code language}. Once this is
+     * called, the engine has exactly the languages added, and finds none with {@link java.util.ServiceLoader}.
+     *
+     * @param language The language
+     * @return This builder
+     * @throws IllegalArgumentException if the language's name is {@code null} or blank, or a language with the same
+     *                                  name was added already
+     * @throws NullPointerException     if {@code language} is {@code null}
+     */
+    public RulesEngineBuilder<O> language(ExpressionLanguage language) {
+        Objects.requireNonNull(language, "language must not be null");
+        String name = language.name();
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("An expression language's name must not be null or blank: "
+                    + language.getClass().getName());
+        }
+        for (ExpressionLanguage added : languageList) {
+            if (name.equals(added.name())) {
+                throw new IllegalArgumentException("Two expression languages are named '" + name + "': "
+                        + added.getClass().getName() + " and " + language.getClass().getName());
+            }
+        }
+        languageList.add(language);
+        return this;
+    }
+
+    /**
+     * Names the language of the rules whose {@code language} is {@code null}. Fact names are checked against it too
+     * when the loaded rule list is empty. Without this, the default is the engine's only language.
+     *
+     * @param name The name of one of the engine's languages
+     * @return This builder
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
+    public RulesEngineBuilder<O> defaultLanguage(String name) {
+        this.defaultLanguageName = Objects.requireNonNull(name, "name must not be null");
+        return this;
+    }
+
+    /**
+     * Adds imports that every language compiles rules with, so rule expressions can refer to classes by their simple
+     * names. Each string is a fully qualified package name ({@code "java.util"}) or class name
+     * ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). A language without imports
+     * ignores them.
+     *
+     * <p>
+     * Whether a string names a class is decided by {@link #build()}, with the building thread's context class loader,
+     * or this library's class loader if the thread has none. A string that loader doesn't find as a class, but that is
+     * a valid package name, is imported as a package. Classes in imported packages are looked up each time rules are
+     * loaded, with the loading thread's context class loader.
+     * </p>
+     *
+     * @param names Package or class names
+     * @return This builder
+     * @throws NullPointerException if {@code names} or any element is {@code null}; nothing is added
+     */
+    public RulesEngineBuilder<O> imports(String... names) {
+        Objects.requireNonNull(names, "names must not be null");
+        return imports(Arrays.asList(names));
+    }
+
+    /**
+     * Adds imports, as {@link #imports(String...)} does.
+     *
+     * @param names Package or class names
+     * @return This builder
+     * @throws NullPointerException if {@code names} or any element is {@code null}; nothing is added
+     */
+    public RulesEngineBuilder<O> imports(Collection<String> names) {
+        Objects.requireNonNull(names, "names must not be null");
+        for (String name : names) {
+            Objects.requireNonNull(name, "names must not contain null");
+        }
+        importNames.addAll(names);
+        return this;
+    }
+
+    /**
+     * Adds a listener that is told about every condition evaluated and every action run.
+     *
+     * @param listener The listener
+     * @return This builder
+     * @throws NullPointerException if {@code listener} is {@code null}
+     */
+    public RulesEngineBuilder<O> listener(RuleListener listener) {
+        listenerList.add(Objects.requireNonNull(listener, "listener must not be null"));
+        return this;
+    }
+
+    /**
+     * Adds listeners, in the order given, as {@link #listener(RuleListener)} does.
+     *
+     * @param listeners The listeners
+     * @return This builder
+     * @throws NullPointerException if {@code listeners} or any element is {@code null}; nothing is added
+     */
+    public RulesEngineBuilder<O> listeners(Collection<? extends RuleListener> listeners) {
+        Objects.requireNonNull(listeners, "listeners must not be null");
+        for (RuleListener listener : listeners) {
+            Objects.requireNonNull(listener, "listeners must not contain null");
+        }
+        listenerList.addAll(listeners);
+        return this;
+    }
+
+    /**
+     * Keeps at most {@code maxCopies} compiled copies of the rules. Without this, an engine has no limit.
      *
      * <p>
      * Each run uses a copy of the rules, one session for each expression language, that no other run is using.
-     * An engine without a limit makes a new
-     * copy whenever all of them are in use, and keeps as many as the most runs it has had in progress at once. This
-     * engine keeps at most {@code maxCopies}: a run that starts while all of them are in use waits until one is free,
-     * so at most {@code maxCopies} runs are in progress at once. A run started from inside another run on the same
-     * thread, such as from an action or a listener, doesn't wait: if no copy is free, it gets an extra copy that
-     * isn't kept.
+     * An engine without a limit makes a new copy whenever all of them are in use, and keeps as many as the most runs
+     * it has had in progress at once. An engine with a limit keeps at most {@code maxCopies}: a run that starts while
+     * all of them are in use waits until one is free, so at most {@code maxCopies} runs are in progress at once. A run
+     * started from inside another run on the same thread, such as from an action or a listener, doesn't wait: if no
+     * copy is free, it gets an extra copy that isn't kept.
      * </p>
      *
      * <p>
@@ -63,34 +209,40 @@ public final class RulesEngineBuilder {
      * set.
      * </p>
      *
-     * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
-     *                      return a new, non-null object each time.
-     * @param maxCopies     The most compiled copies of the rules to keep, and so the most runs in progress at once;
-     *                      at least 1
-     * @param <O>           The type of the output object
-     * @return A new stateless {@link RulesEngine}
+     * @param maxCopies The most compiled copies of the rules to keep, and so the most runs in progress at once; at
+     *                  least 1
+     * @return This builder
      * @throws IllegalArgumentException if {@code maxCopies} is less than 1
-     * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
-    public static <O> RulesEngine<O> stateless(Supplier<O> outputFactory, int maxCopies) {
-        return Engines.stateless(outputFactory, maxCopies);
+    public RulesEngineBuilder<O> maxCopies(int maxCopies) {
+        if (maxCopies < MIN_COPIES) {
+            throw new IllegalArgumentException("maxCopies must be at least " + MIN_COPIES + ", but was " + maxCopies);
+        }
+        this.copyLimit = maxCopies;
+        return this;
     }
 
     /**
-     * Creates a new STATEFUL rules engine, like {@link #stateful(Supplier)}, that keeps at most {@code maxCopies}
-     * compiled copies of its rules. A run that starts while all of them are in use waits until one is free, as
-     * {@link #stateless(Supplier, int)} describes.
+     * Builds an engine with this builder's settings. Load its rules with {@link RulesEngine#load(List)} before the
+     * first run.
      *
-     * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
-     *                      return a new, non-null object each time.
-     * @param maxCopies     The most compiled copies of the rules to keep, and so the most runs in progress at once;
-     *                      at least 1
-     * @param <O>           The type of the output object
-     * @return A new stateful {@link RulesEngine}
-     * @throws IllegalArgumentException if {@code maxCopies} is less than 1
-     * @throws NullPointerException     if {@code outputFactory} is {@code null}
+     * @return A new engine
+     * @throws IllegalStateException    if the engine has no expression language; if it has several and no
+     *                                  {@link #defaultLanguage(String) default language}; if the default language
+     *                                  isn't one of its languages; or if a language found with
+     *                                  {@link java.util.ServiceLoader} has a {@code null} or blank name, or two found
+     *                                  languages have the same name. Anything {@code ServiceLoader} or a language throws
+     *                                  while it's found, such as a {@link java.util.ServiceConfigurationError}, is thrown
+     *                                  unchanged.
+     * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
+     *                                  class that exists but can't be loaded, for example because a class it depends on
+     *                                  is missing
      */
-    public static <O> RulesEngine<O> stateful(Supplier<O> outputFactory, int maxCopies) {
-        return Engines.stateful(outputFactory, maxCopies);
+    public RulesEngine<O> build() {
+        EngineConfiguration configuration = new EngineConfiguration(languageList, defaultLanguageName, importNames,
+                listenerList, copyLimit);
+        return fireAllMatches
+                ? Engines.allMatches(outputFactory, configuration)
+                : Engines.firstMatch(outputFactory, configuration);
     }
 }

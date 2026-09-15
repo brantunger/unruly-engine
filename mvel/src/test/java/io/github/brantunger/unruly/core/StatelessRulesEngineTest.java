@@ -23,7 +23,7 @@ class StatelessRulesEngineTest {
 
     @BeforeEach
     void setUp() {
-        engine = new StatelessRulesEngine<>(HashMap::new);
+        engine = TestEngines.firstMatch(HashMap::new);
     }
 
     @Nested
@@ -37,13 +37,13 @@ class StatelessRulesEngineTest {
             facts.setValue("x", 10);
 
             IllegalStateException ex = assertThrows(IllegalStateException.class, () -> engine.run(facts));
-            assertTrue(ex.getMessage().contains("setRuleList() must be called before run()"));
+            assertTrue(ex.getMessage().contains("load() must be called before run()"));
         }
 
         @Test
         @DisplayName("returns null when rule list is empty")
         void returnsNullWhenRuleListIsEmpty() {
-            engine.setRuleList(Collections.emptyList());
+            engine.load(Collections.emptyList());
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 10);
@@ -61,7 +61,7 @@ class StatelessRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(List.of(rule));
+            engine.load(List.of(rule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 1);
@@ -86,7 +86,7 @@ class StatelessRulesEngineTest {
                     .priority(1)
                     .build();
 
-            engine.setRuleList(Arrays.asList(lowPriority, highPriority));
+            engine.load(Arrays.asList(lowPriority, highPriority));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 5);
@@ -116,7 +116,7 @@ class StatelessRulesEngineTest {
                     .priority(10)
                     .build();
 
-            engine.setRuleList(Arrays.asList(matchingRule, nonMatchingRule));
+            engine.load(Arrays.asList(matchingRule, nonMatchingRule));
 
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 10);
@@ -149,7 +149,7 @@ class StatelessRulesEngineTest {
                     .priority(5)
                     .build();
 
-            engine.setRuleList(Arrays.asList(rule1, rule2));
+            engine.load(Arrays.asList(rule1, rule2));
 
             FactStore<Object> facts = new FactMap<>();
 
@@ -175,7 +175,7 @@ class StatelessRulesEngineTest {
                     .priority(1)
                     .build();
 
-            assertThrows(Exception.class, () -> engine.setRuleList(List.of(rule)));
+            assertThrows(Exception.class, () -> engine.load(List.of(rule)));
         }
 
         @Test
@@ -189,7 +189,7 @@ class StatelessRulesEngineTest {
                     .build();
 
             assertThrows(Exception.class, () -> {
-                engine.setRuleList(List.of(rule));
+                engine.load(List.of(rule));
                 FactStore<Object> facts = new FactMap<>();
                 engine.run(facts);
             });

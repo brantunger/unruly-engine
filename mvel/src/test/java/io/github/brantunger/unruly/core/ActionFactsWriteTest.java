@@ -78,9 +78,9 @@ class ActionFactsWriteTest {
     @Test
     @DisplayName("a write fails the action with a message that explains the rule")
     void writeExplained() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.registerLanguage(WRITER);
-        engine.setRuleList(List.of(rule("act", 1, "write")));
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.language(WRITER));
+        engine.load(List.of(rule("act", 1, "write")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(x(1)));
 
@@ -92,9 +92,9 @@ class ActionFactsWriteTest {
     @Test
     @DisplayName("a rule that writes a fact fails the run, so no later rule in the run sees the write")
     void laterRuleNeverSeesWrite() {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.registerLanguage(WRITER);
-        engine.setRuleList(List.of(rule("writer", 2, "write"), rule("reader", 1, "read")));
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.language(WRITER));
+        engine.load(List.of(rule("writer", 2, "write"), rule("reader", 1, "read")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(x(1)),
                 "a writable map would let the reader output x=99");

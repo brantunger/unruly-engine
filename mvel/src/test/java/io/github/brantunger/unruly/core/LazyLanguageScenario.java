@@ -21,10 +21,11 @@ final class LazyLanguageScenario {
     }
 
     public static void main(String[] args) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateless(HashMap::new);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         System.out.println(BUILT);
         System.out.flush();
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
         System.out.println(LOADED);
         System.out.flush();
     }

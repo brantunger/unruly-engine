@@ -24,8 +24,8 @@ public class ErrorMessageNameTest {
     }
 
     private static RuleExecutionException run(String condition, String action) {
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition(condition).action(action).build()));
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
+        engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action(action).build()));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("claim", new Exploding());
         return assertThrows(RuleExecutionException.class, () -> engine.run(facts));

@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 /**
- * Works out what the strings passed to {@code addImport} name, and which class loader imported classes are looked up
+ * Works out what the import strings an engine is built with name, and which class loader imported classes are looked up
  * with.
  */
 final class ImportResolver {
@@ -16,11 +16,11 @@ final class ImportResolver {
 
     /**
      * Works out what an import string names. A class the context class loader can load is imported on its own, so
-     * {@code addImport("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
+     * {@code imports("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
      * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
      * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}.
      *
-     * @param name The string passed to {@code addImport}
+     * @param name An import string given to the builder
      * @return The class, or {@code null} if {@code name} is a package name
      * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name, or names a
      *                                  class that exists but can't be loaded, for example because a class it depends

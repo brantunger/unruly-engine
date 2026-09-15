@@ -31,19 +31,19 @@ class ListenerFactsWriteTest {
     @DisplayName("beforeEvaluate and afterEvaluate get a message about listeners, and the facts are unchanged")
     void listenerWriteRejected() {
         List<String> messages = new CopyOnWriteArrayList<>();
-        StatefulRulesEngine<Map<String, Object>> engine = new StatefulRulesEngine<>(HashMap::new);
-        engine.registerListener(new RuleListener() {
-            @Override
-            public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
-                messages.add(attemptWrite(facts, "z"));
-            }
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.listener(new RuleListener() {
+                    @Override
+                    public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+                        messages.add(attemptWrite(facts, "z"));
+                    }
 
-            @Override
-            public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
-                messages.add(attemptWrite(facts, "x"));
-            }
-        });
-        engine.setRuleList(List.of(Rule.builder().ruleName("r").condition("x == 1").action("output.put('k', x)").build()));
+                    @Override
+                    public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {
+                        messages.add(attemptWrite(facts, "x"));
+                    }
+                }));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("x == 1").action("output.put('k', x)").build()));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("x", 1);
 
