@@ -75,6 +75,9 @@ engine.setRuleList(rules);                            // imports take effect her
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException`, and nothing from that call is imported.
+- A class that exists but can't be loaded, for example because a class it extends is missing from the class path,
+  is rejected the same way, with the `LinkageError` as the cause. Before 1.7.0 it was imported as a package, and rules
+  that used it failed later with `unresolvable property or identifier`.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
 - An imported class name can no longer be used as a fact name. After `addImport("java.util")`, a fact named `Date`
   is rejected. See [Facts](../facts.md#-naming-rules).

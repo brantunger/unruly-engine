@@ -111,6 +111,8 @@ module com.example.app {
 A loan desk wants one rate per applicant: prime for excellent credit, standard for good credit.
 
 ```java
+package com.example.loans;
+
 // Your fact type: any object with readable properties (a record, a JavaBean, a Map, ...)
 public record Applicant(String name, int creditScore) {}
 
@@ -305,6 +307,17 @@ how the name is used: `Objects.isNull(x)` fails with `unresolvable property or i
 - The rule uses a class that isn't built in to MVEL, such as `Objects` or `ArrayList`, without an import. Call
   `engine.addImport("java.util")` **before** `setRuleList()`, or write the fully qualified name, such as
   `java.util.Objects`. See [Classes and imports](docs/languages/mvel.md#-classes-and-imports).
+
+</details>
+
+<details>
+<summary><b>What does <code>NoClassDefFoundError: applicant (wrong name: Applicant)</code> mean?</b></summary>
+
+While compiling `applicant.creditScore`, MVEL checks whether `applicant` is a class. Your classes are in the default
+package and in a class directory, as an IDE or `javac *.java` leaves them, on a case-insensitive file system (the
+default on Windows and macOS), so the lookup for `applicant.class` found `Applicant.class`. Before 1.7.0 that failed
+`setRuleList()`. From 1.7.0 the engine treats such a class file as a different class and reads `applicant` as the
+fact. On an older version, put your classes in a package; classes packaged in a jar aren't affected.
 
 </details>
 

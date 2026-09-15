@@ -93,7 +93,8 @@ final class FactNames {
      * load, found or not, for as long as the loader lives. So the class file is looked up first, which keeps nothing
      * beyond what the JDK may cache softly, and only a class file that exists is loaded.
      * Loading it also rules out a false match from a class directory on a case-insensitive file system, where
-     * {@code date.class} finds {@code Date.class}.
+     * {@code date.class} finds {@code Date.class}. A class that exists but can't be loaded isn't a class here either:
+     * MVEL's own lookup of a name in an imported package ignores every error, so it reads the name as the fact.
      */
     private boolean isClass(String pkg, String name) {
         if (classLoader.getResource(pkg.replace('.', '/') + '/' + name + ".class") == null) {

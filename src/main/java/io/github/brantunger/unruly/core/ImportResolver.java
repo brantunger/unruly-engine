@@ -22,17 +22,43 @@ final class ImportResolver {
      *
      * @param name The string passed to {@code addImport}
      * @return The class, or {@code null} if {@code name} is a package name
-     * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name
+     * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name, or names a
+     *                                  class that exists but can't be loaded, for example because a class it depends
+     *                                  on is missing
      */
     static Class<?> resolve(String name) {
         try {
             return loadImport(name, contextClassLoader());
-        } catch (ClassNotFoundException | LinkageError e) {
-            if (!isPackageName(name)) {
-                throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", e);
+        } catch (ClassNotFoundException e) {
+            return packageImport(name, e);
+        } catch (LinkageError e) {
+            // A class file found for a name that differs in case, in a class directory on a case-insensitive file
+            // system, isn't this class. Any other linkage error means the class exists, and rules couldn't use it.
+            if (!isWrongName(e)) {
+                throw new IllegalArgumentException("Can't import '" + name + "': the class exists but can't be loaded: "
+                        + e, e);
             }
-            return null;
+            return packageImport(name, e);
         }
+    }
+
+    /**
+     * Accepts a name that isn't a class as a package import.
+     *
+     * @return {@code null}, for a package name
+     * @throws IllegalArgumentException if {@code name} isn't a valid package name
+     */
+    private static Class<?> packageImport(String name, Throwable notAClass) {
+        if (!isPackageName(name)) {
+            throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", notAClass);
+        }
+        return null;
+    }
+
+    // The JVM's "wrong name" NoClassDefFoundError, as in mvel.ExactNameClassLoader.
+    private static boolean isWrongName(LinkageError error) {
+        String message = error.getMessage();
+        return error instanceof NoClassDefFoundError && message != null && message.contains("(wrong name: ");
     }
 
     /**
