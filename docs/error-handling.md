@@ -58,6 +58,7 @@ All of them are unchecked.
 | `defaultLanguage()` | `NullPointerException` | The name is `null` |
 | `imports()` / `listener()` / `listeners()` | `NullPointerException` | The argument or an element is `null`. Nothing is added. |
 | `maxCopies()` | `IllegalArgumentException` | The limit on compiled copies is less than 1 |
+| `runTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
 | `outputType()` / `outputWriter()` / `option()` | `NullPointerException` | An argument is `null` |
 | `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language, or a language given an option, isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or two found languages have the same name |
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
@@ -67,11 +68,12 @@ All of them are unchecked.
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, with the error as its cause. |
-| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; on an engine with a limit on compiled copies, the thread is interrupted while the run waits for one (the interrupt status stays set) |
+| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; the run's thread is interrupted, which keeps the interrupt status set and makes the cause an `InterruptedException`; or the run passes its [timeout](#-stopping-a-run), which makes the cause a `TimeoutException` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)) |
 | | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. Every other `Error`, including a `LinkageError` such as `NoClassDefFoundError` or `IllegalAccessError`, is reported as a `RuleExecutionException` naming the rule, with the error as its cause. |
+| `runWithResult(facts, timeout)` | | As `runWithResult(facts)`, and `IllegalArgumentException` if the timeout is zero or negative |
 | `rules()` | `IllegalStateException` | The engine is closed |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
@@ -121,6 +123,34 @@ surface when a rule is evaluated. Another language decides what it catches when 
 > Don't rely on `load()` alone. Test each rule against sample facts; see
 > [Testing rules](writing-rules.md#-testing-rules).
 
+## ⏱ Stopping a run
+
+A run stops between rules when its thread is interrupted, or when it has passed a deadline:
+
+```java
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .runTimeout(Duration.ofSeconds(2))
+        .build();
+```
+
+- The engine checks before each condition and before each action. A run that must stop throws a
+  `RuleExecutionException` whose `getRuleName()` is `null` — an interrupt or a deadline isn't that rule's fault — with
+  an `InterruptedException` or a `TimeoutException` as its cause. An interrupted run leaves the interrupt status set,
+  so an executor shutting down still sees it.
+- **Between rules only.** An expression that is already running isn't stopped: MVEL has no hook inside one, so
+  `while (true) {}` still blocks the thread for ever. A language that can stop part-way — one built on JEXL's
+  cancellation, for example — is given the run's deadline and can stop there; see
+  [Other expression languages](languages/custom.md#-stopping-a-run).
+- **Nothing is rolled back.** What ran before the run stopped keeps its effects, like any other failed run.
+- `runWithResult(facts, timeout)` gives one run a timeout instead of the engine's.
+- A stopped run is logged at **WARN**, not ERROR: the caller asked for it, and no rule failed. Listeners get
+  `beforeRun` and `onRunError`, and the rule the run stopped before gets no callback at all, because it never started.
+
+> [!TIP]
+> A caller that catches the failure and goes on to serve the next request **on the same thread** must clear the
+> interrupt status first, for example with `Thread.interrupted()`. The engine leaves it set on purpose, and every
+> later run on that thread stops at its first rule.
+
 ## 🛠 Handling failures
 
 ```java
@@ -139,7 +169,8 @@ Keep in mind:
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before.
-- **Failures are already logged.** The engine logs each one at ERROR before throwing; see
+- **Failures are already logged.** The engine logs each one at ERROR before throwing, except a run stopped by an
+  interrupt or a deadline, which is a WARN; see
   [Logging setup](listeners-and-logging.md#-logging-setup). The message can contain fact values, copied from the
   exception a rule caused, such as `For input string: "123-45-6789"`. With sensitive facts, turn off the
   `io.github.brantunger.unruly` logger and log a redacted form yourself.
@@ -148,6 +179,7 @@ Keep in mind:
   a session are thrown without calling any listener.
 - **An interrupt isn't lost.** If a rule, listener, output supplier or expression language is interrupted while it
   blocks, for example in `Thread.sleep` or `BlockingQueue.take`, the `InterruptedException` clears the thread's
-  interrupt status and reaches the engine wrapped. The engine sets the status again before it throws or carries on,
-  so an executor shutting down or `Future.cancel(true)` still sees it. An `InterruptedIOException` such as
-  `SocketTimeoutException` isn't treated as an interrupt.
+  interrupt status and reaches the engine wrapped. The engine sets the status again before it throws, and the run
+  stops at the next rule rather than carrying on, so an executor shutting down or `Future.cancel(true)` still sees
+  the interrupt and no more actions fire. A listener that swallows an interrupt doesn't hide it: the check before the
+  next rule finds it. An `InterruptedIOException` such as `SocketTimeoutException` isn't treated as an interrupt.

@@ -2,16 +2,19 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 
 /**
  * What one action runs against. <b>Internal:</b> public only because {@link ActionContext} is sealed to it.
  *
- * @param facts  The run's facts, read-only
- * @param output The output object the action changes
+ * @param facts    The run's facts, read-only
+ * @param output   The output object the action changes
+ * @param deadline When the run must stop, or {@code null} if it has none
  */
-public record EngineActionContext(Map<String, Object> facts, Object output) implements ActionContext {
+public record EngineActionContext(Map<String, Object> facts, Object output, Instant deadline)
+        implements ActionContext {
 
     /**
      * Wraps the facts in a read-only view, whose writes fail with a message about actions.
@@ -21,5 +24,10 @@ public record EngineActionContext(Map<String, Object> facts, Object output) impl
     public EngineActionContext {
         facts = ReadOnlyFacts.forActions(Objects.requireNonNull(facts, "facts"));
         Objects.requireNonNull(output, "output");
+    }
+
+    @Override
+    public boolean isCancelled() {
+        return Cancellation.isCancelled(deadline);
     }
 }

@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -55,24 +56,21 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * Matching actions fire in priority order, highest first. They share one output object, so a lower-priority
      * action can overwrite a field set by a higher-priority one.
      *
-     * @param facts The input fact store to run rules against
+     * @param facts   The input fact store to run rules against
+     * @param timeout How long the run may take, or {@code null} if it has no deadline
      * @return The accumulated output object resulting from firing the actions of all matching rules, or
      *         {@code null} if the rule list is empty or no rule matched
-     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException {@inheritDoc}
-     * @throws IllegalArgumentException {@inheritDoc}
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
-     * @throws NullPointerException {@inheritDoc}
      */
     @Override
-    public RunResult<O> runWithResult(FactStore<?> facts) {
-        return runInScope(facts, (ruleSet, copy, entryMap) -> {
+    RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
+        return runInScope(facts, timeout, (ruleSet, copy, entryMap, deadline) -> {
             List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Match the facts and data against the set of rules with the highest priority first.
-            List<CompiledRule> matchedRuleList = this.match(rules, copy, entryMap);
+            List<CompiledRule> matchedRuleList = this.match(rules, copy, entryMap, deadline);
             if (matchedRuleList.isEmpty()) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
@@ -82,7 +80,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
             // Run the action of every rule on given data, saving state each time
             List<Rule> fired = new ArrayList<>();
             for (CompiledRule rule : matchedRuleList) {
-                outputObject = this.executeRule(rule, copy, outputObject, entryMap);
+                outputObject = this.executeRule(rule, copy, outputObject, entryMap, deadline);
                 fired.add(rule.rule());
             }
 

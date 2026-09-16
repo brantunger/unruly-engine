@@ -63,7 +63,8 @@ public interface RuleListener {
     /**
      * Called when a run fails, in place of {@link #afterRun}. Unlike {@link #onError}, this reports every failure of
      * the run, including the ones that belong to no rule: a fact name no language can refer to, an output supplier
-     * that throws or returns {@code null}, and an interrupt while the run waits for a compiled copy of the rules.
+     * that throws or returns {@code null}, an interrupt while the run waits for a compiled copy of the rules, and a
+     * run stopped because its thread was interrupted or it passed its deadline.
      *
      * <p>
      * A failure inside a rule reaches that rule's {@link #onError} first, then this callback. {@code error} is what
@@ -137,6 +138,12 @@ public interface RuleListener {
      * includes an error thrown by Java code the rule calls, such as a method, a getter or a lambda held in a fact,
      * which reaches the engine as the cause of another exception.
      * Errors found while compiling rules in {@code load()} are not reported here.
+     * </p>
+     *
+     * <p>
+     * A run stopped because its thread was interrupted, or because it passed its deadline, is <b>not</b> reported
+     * here. The engine checks that before {@link #beforeEvaluate} and {@link #beforeExecute}, so the rule it would
+     * have gone on to never started and has no callback to close. Only {@link #onRunError} is called.
      * </p>
      *
      * @param rule  The rule whose condition or action failed.

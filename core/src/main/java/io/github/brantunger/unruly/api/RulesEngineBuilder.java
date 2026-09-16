@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -15,8 +16,9 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners and limit on compiled copies
- * are set here and can't change once it's built; only its rules can, with {@link RulesEngine#load(List)}.
+ * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners, limit on compiled copies
+ * and run timeout are set here and can't change once it's built; only its rules can, with
+ * {@link RulesEngine#load(List)}.
  *
  * {@snippet :
  * RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -52,6 +54,7 @@ public final class RulesEngineBuilder<O> {
     private final List<String> importNames = new ArrayList<>();
     private final List<RuleListener> listenerList = new ArrayList<>();
     private int copyLimit = EngineConfiguration.UNLIMITED_COPIES;
+    private @Nullable Duration timeout;
     private Class<? super O> outputClass = Object.class;
     private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
     private final Map<String, Map<String, String>> languageOptions = new LinkedHashMap<>();
@@ -283,6 +286,39 @@ public final class RulesEngineBuilder<O> {
     }
 
     /**
+     * Stops a run that is still going after {@code timeout}. Without this, a run has no deadline.
+     *
+     * <p>
+     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, so waiting for a compiled copy
+     * of the rules counts towards it. The engine checks it before each condition and before each action, so a run
+     * stops between rules; it doesn't stop an expression that is already running. MVEL has no hook inside an
+     * expression, so an MVEL rule that loops for ever can't be stopped, with or without a timeout: run rules you
+     * don't trust in a process of their own. A language that can stop inside an expression, such as one built on
+     * JEXL's cancellation, stops there instead, because it is given the deadline.
+     * </p>
+     *
+     * <p>
+     * A run past its deadline throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}
+     * caused by a {@link java.util.concurrent.TimeoutException}. What ran before that keeps its effects on the
+     * output object and on the facts, like any other failed run.
+     * </p>
+     *
+     * @param timeout How long a run may take; positive. {@link RulesEngine#runWithResult(FactStore, Duration)} takes
+     *                one for a single run instead.
+     * @return This builder
+     * @throws IllegalArgumentException if {@code timeout} is zero or negative
+     * @throws NullPointerException     if {@code timeout} is {@code null}
+     */
+    public RulesEngineBuilder<O> runTimeout(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout must not be null");
+        if (!timeout.isPositive()) {
+            throw new IllegalArgumentException("timeout must be positive, but was " + timeout);
+        }
+        this.timeout = timeout;
+        return this;
+    }
+
+    /**
      * Builds an engine with this builder's settings. Load its rules with {@link RulesEngine#load(List)} before the
      * first run.
      *
@@ -301,7 +337,7 @@ public final class RulesEngineBuilder<O> {
      */
     public RulesEngine<O> build() {
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
-                importNames, listenerList, copyLimit, outputClass, writer, languageOptions);
+                importNames, listenerList, copyLimit, timeout, outputClass, writer, languageOptions);
         return fireAllMatches
                 ? Engines.allMatches(outputFactory, configuration)
                 : Engines.firstMatch(outputFactory, configuration);

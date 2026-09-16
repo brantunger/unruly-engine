@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -369,7 +370,7 @@ class LanguageSessionsTest {
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
-                EngineConfiguration.UNLIMITED_COPIES, Object.class, OutputWriter.beansAndMaps(), Map.of());
+                EngineConfiguration.UNLIMITED_COPIES, null, Object.class, OutputWriter.beansAndMaps(), Map.of());
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
             @Override
             RuleSet currentRules() {
@@ -377,8 +378,8 @@ class LanguageSessionsTest {
             }
 
             @Override
-            public RunResult<String> runWithResult(FactStore<?> facts) {
-                return runInScope(facts, (rules, copy, values) ->
+            RunResult<String> runRules(FactStore<?> facts, Duration timeout) {
+                return runInScope(facts, timeout, (rules, copy, values, deadline) ->
                         RunResult.of("rules: " + rules.rules().size(), List.of(), rules.checksum()));
             }
 

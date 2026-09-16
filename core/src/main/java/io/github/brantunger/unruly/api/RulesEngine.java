@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.api;
 
 import org.jspecify.annotations.Nullable;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -18,7 +19,8 @@ import java.util.List;
  *
  * <p>
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
- * Implement {@link #load(List)}, {@link #runWithResult(FactStore)} and {@link #rules()}; {@link #run(FactStore)} and
+ * Implement {@link #load(List)}, {@link #runWithResult(FactStore)},
+ * {@link #runWithResult(FactStore, Duration)} and {@link #rules()}; {@link #run(FactStore)} and
  * {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
  * implementation keeps compiling. {@link RunResult#of(Object, List, String)} and
  * {@link RuleSetInfo#of(List, String, java.time.Instant)} create the values an implementation returns.
@@ -55,7 +57,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
      *         an action fails, a condition doesn't evaluate to a boolean, the output factory throws or returns
      *         {@code null}, or a compiled condition or action throws or returns {@code null} when it is copied for the
-     *         run
+     *         run. Also if the run must stop between rules, because its thread was interrupted, which keeps the
+     *         interrupt status set and makes the cause an {@link InterruptedException}, or because it passed the
+     *         deadline a {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
+     *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
+     *         {@code null}.
      * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
      *         language of a loaded rule can't refer to. In MVEL, that is a name that isn't a Java identifier, a
      *         reserved word such as {@code empty} or {@code in}, or a class name MVEL resolves, such as {@code Math}
@@ -83,6 +89,28 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     RunResult<O> runWithResult(FactStore<?> facts);
+
+    /**
+     * Fires the rules like {@link #runWithResult(FactStore)}, and stops this run if it is still going after
+     * {@code timeout}, instead of after the timeout the engine was built with, if any.
+     *
+     * <p>
+     * The deadline is taken from when this method is called, so waiting for a compiled copy of the rules counts
+     * towards it. The engine checks it before each condition and before each action, so a run stops between rules;
+     * see {@link RulesEngineBuilder#runTimeout(Duration)} for what that does and doesn't stop.
+     * </p>
+     *
+     * @param facts   The facts to run the rules against, as {@link #run(FactStore)} takes them
+     * @param timeout How long this run may take; positive
+     * @return What the run did, as {@link #runWithResult(FactStore)} reports it
+     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it,
+     *         and with a {@link java.util.concurrent.TimeoutException} cause if the run passes its deadline, or an
+     *         {@link InterruptedException} cause if its thread is interrupted, which keeps the interrupt status set
+     * @throws IllegalArgumentException as {@link #run(FactStore)} throws it, or if {@code timeout} is zero or negative
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     * @throws NullPointerException if an argument is {@code null}
+     */
+    RunResult<O> runWithResult(FactStore<?> facts, Duration timeout);
 
     /**
      * Returns the rules the engine has loaded, their checksum and when they were loaded. A run started before a reload

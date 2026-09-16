@@ -30,7 +30,8 @@ class EngineApiShapeTest {
     @Test
     @DisplayName("RulesEngine loads rules, runs them, reports what it loaded and closes: nothing else changes on it")
     void engineMethods() {
-        assertEquals(List.of("close", "load", "rules", "run", "runWithResult"), names(RulesEngine.class));
+        assertEquals(List.of("close", "load", "rules", "run", "runWithResult", "runWithResult"),
+                names(RulesEngine.class));
     }
 
     @Test
@@ -70,10 +71,10 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("the builder sets the languages, imports, listeners, copy limit, output and language options")
+    @DisplayName("the builder sets the languages, imports, listeners, copy limit, timeout, output and options")
     void builderSettings() {
         assertEquals(List.of("allMatches", "build", "defaultLanguage", "firstMatch", "imports", "imports", "language",
-                "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter"),
+                "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter", "runTimeout"),
                 names(RulesEngineBuilder.class));
     }
 

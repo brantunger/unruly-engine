@@ -162,7 +162,9 @@ final class RuleSet {
      *
      * @return A copy for the caller alone, to give back with {@link #release(Copy)}, or {@code null} if the rule set is
      *         closed: it was retired, and every copy was given back
-     * @throws InterruptedException   if the thread is interrupted while waiting for a copy. It then holds no copy.
+     * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use. A thread
+     *                                whose interrupt status is already set still gets a free copy; the run then stops
+     *                                at its first rule. A thread that throws holds no copy.
      * @throws RuleExecutionException if a language fails to create a session for a new copy, which is logged at ERROR.
      *                                A fatal {@link Error} is then rethrown unchanged.
      */
@@ -224,11 +226,15 @@ final class RuleSet {
         }
         int[] count = held.get();
         if (count[0] == 0) {
-            try {
-                permits.acquire();
-            } catch (InterruptedException e) {
-                held.remove();
-                throw e;
+            // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even
+            // when copies are free, and the run would fail saying every copy was in use when none was.
+            if (!permits.tryAcquire()) {
+                try {
+                    permits.acquire();
+                } catch (InterruptedException e) {
+                    held.remove();
+                    throw e;
+                }
             }
         } else if (!permits.tryAcquire()) {
             return new Copy(newSessions(), false);
