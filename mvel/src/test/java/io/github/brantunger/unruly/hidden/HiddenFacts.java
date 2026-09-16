@@ -2,8 +2,8 @@ package io.github.brantunger.unruly.hidden;
 
 /**
  * Facts whose classes aren't public, which is what a factory returning a package-private implementation hands the
- * engine. Whether such a fact can be read depends on whether anything public declares its accessor, and these cover
- * each way that can go.
+ * engine. Such a fact is read through a public type that declares its accessor, or directly where its package is
+ * open, as every package on the class path is; these cover each way that can go.
  */
 public final class HiddenFacts {
 
@@ -77,7 +77,16 @@ public final class HiddenFacts {
     }
 
     /**
-     * Returns a fact with a {@code secret} property that nothing public declares, so it can't be read.
+     * Returns a record that isn't public and implements no interface, the shape an implementation detail takes.
+     *
+     * @return The fact
+     */
+    public static Object bareRecord() {
+        return new BareRecord(7);
+    }
+
+    /**
+     * Returns a fact with a {@code secret} property that nothing public declares.
      *
      * @return The fact
      */
@@ -221,6 +230,9 @@ public final class HiddenFacts {
     }
 
     record HiddenRecord(String name) implements HasName {
+    }
+
+    record BareRecord(int score) {
     }
 
     static final class ViaInner implements Inner {

@@ -416,14 +416,17 @@ class FactPropertiesTest {
     }
 
     @Test
-    @DisplayName("a property nothing public declares says it can't be read, not that it isn't there")
-    void anUnreachableGetter() {
-        IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> FactProperties.read(HiddenFacts.withASecret(), "secret"));
+    @DisplayName("a getter nothing public declares is read directly on the class path, where every package is open")
+    void aGetterNothingPublicDeclares() {
+        assertEquals(1, FactProperties.read(HiddenFacts.withASecret(), "secret"));
+        assertEquals(Map.of("secret", 1), FactProperties.toData(HiddenFacts.withASecret(), 1));
+    }
 
-        assertTrue(thrown.getMessage().contains("has a property 'secret', but its accessor on"),
-                thrown.getMessage());
-        assertInstanceOf(IllegalAccessException.class, thrown.getCause());
+    @Test
+    @DisplayName("a record that isn't public and implements no interface is read directly on the class path")
+    void aHiddenRecordWithNoInterface() {
+        assertEquals(7, FactProperties.read(HiddenFacts.bareRecord(), "score"));
+        assertEquals(Map.of("score", 7), FactProperties.toData(HiddenFacts.bareRecord(), 1));
     }
 
     @Test
@@ -449,12 +452,9 @@ class FactPropertiesTest {
     }
 
     @Test
-    @DisplayName("an accessor a public interface only inherits from a hidden one still can't be read")
+    @DisplayName("an accessor a public interface only inherits from a hidden one is read directly on the class path")
     void aPublicInterfaceThatOnlyInheritsTheAccessor() {
-        IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> FactProperties.read(HiddenFacts.boxed(), "boxed"));
-
-        assertTrue(thrown.getMessage().contains("can't be reached from here"), thrown.getMessage());
+        assertEquals("boxed", FactProperties.read(HiddenFacts.boxed(), "boxed"));
     }
 
     @Test
@@ -487,8 +487,8 @@ class FactPropertiesTest {
 
         assertSame(anonymous, FactProperties.toData(Map.of("named", anonymous), 3).get("named"));
         // getDeep() is declared on a class that isn't public, under a superclass that isn't public either, so
-        // nothing public declares it and reading it says so.
-        assertThrows(IllegalStateException.class, () -> FactProperties.read(HiddenFacts.deeplyHidden(), "deep"));
+        // nothing public declares it, and it's read directly because the class path opens every package.
+        assertEquals("deep", FactProperties.read(HiddenFacts.deeplyHidden(), "deep"));
     }
 
     @Test
@@ -541,10 +541,8 @@ class FactPropertiesTest {
     @DisplayName("a static method named like an accessor isn't the fact's accessor")
     void aStaticMethodIsntAnAccessor() {
         // Labelled.getLabel() is static, so it isn't a way to reach the fact's own getLabel(): calling it would
-        // ignore the fact and return the interface's value. The property is refused rather than answered wrongly.
-        IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> FactProperties.read(HiddenFacts.labelled(), "label"));
-        assertFalse(String.valueOf(thrown.getMessage()).contains("the interface's own"), thrown.getMessage());
+        // ignore the fact and return the interface's value. The fact's own method is read instead.
+        assertEquals("the fact's own too", FactProperties.read(HiddenFacts.labelled(), "label"));
 
         // The instance accessor the same interface declares is found as usual.
         assertEquals("the fact's own", FactProperties.read(HiddenFacts.labelled(), "ownLabel"));
