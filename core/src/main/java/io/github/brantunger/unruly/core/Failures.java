@@ -85,8 +85,9 @@ public final class Failures {
      * Describes an exception for an error message:
      * <ul>
      *     <li>its message, or its class name if it has none (NPEs and bare RuntimeExceptions carry no message)</li>
-     *     <li>the class of its root cause when that has no message either, since MVEL copies a cause's missing message
-     *     into its own as {@code ": null"}</li>
+     *     <li>the class of its root cause when that has no message either, and the root cause's class and message
+     *     when an exception above it has none: MVEL copies a cause's missing message into its own as
+     *     {@code ": null"}, which would hide what went wrong</li>
      *     <li>at most {@value #MAX_DESCRIPTION_LENGTH} characters of the message: MVEL pads its messages with spaces up
      *     to the error's column, so a long expression produced messages hundreds of thousands of characters long</li>
      *     <li>the message {@link #escape escaped}, because the engine didn't write it: a language quotes the fact
@@ -106,11 +107,41 @@ public final class Failures {
             return "a nested run() failed: " + nested.getMessage();
         }
         String text = escape(truncate(e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
-        List<Throwable> chain = causeChain(e);
+        return text + causeNote(causeChain(e));
+    }
+
+    /**
+     * Names the root cause when a description would otherwise hide it: its class when it has no message, and its class
+     * and message when an exception above it has none and the first exception's message doesn't already include it.
+     *
+     * @param chain An exception and its causes
+     * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
+     */
+    private static String causeNote(List<Throwable> chain) {
+        if (chain.subList(1, chain.size()).isEmpty()) {
+            return "";
+        }
         Throwable root = chain.get(chain.size() - 1);
-        return chain.size() > 1 && root.getMessage() == null
-                ? text + " (caused by " + quote(root.getClass().getName()) + ")"
-                : text;
+        if (root.getMessage() == null) {
+            return " (caused by " + quote(root.getClass().getName()) + ")";
+        }
+        String first = chain.get(0).getMessage();
+        boolean hidden = chain.stream().anyMatch(t -> t.getMessage() == null)
+                && (first == null || !first.contains(root.getMessage()));
+        return hidden
+                ? " (caused by " + quote(root.getClass().getName()) + ": " + escape(truncate(root.getMessage())) + ")"
+                : "";
+    }
+
+    /**
+     * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
+     * calls outside any rule, such as the output factory: escaped and shortened like {@link #describe}.
+     *
+     * @param e The exception to describe
+     * @return Its class name, and its message if it has one
+     */
+    static String describeWithClass(Throwable e) {
+        return escape(truncate(e.toString()));
     }
 
     /**
@@ -129,15 +160,16 @@ public final class Failures {
 
     /**
      * Finds the innermost failure of a {@code run()} started by the code that threw {@code e}. That run already
-     * logged it and told its listeners.
+     * logged it and told its listeners. Only an exception an engine threw counts ({@link ReportedFailure}, of any
+     * engine): a {@link RuleExecutionException} a language or a rule throws itself was never logged.
      *
      * @param e What was caught, or {@code null}
-     * @return The innermost {@link RuleExecutionException} in {@code e}'s cause chain, or {@code null}
+     * @return The innermost {@link ReportedFailure} in {@code e}'s cause chain, or {@code null}
      */
     static RuleExecutionException nestedRunFailure(Throwable e) {
         RuleExecutionException innermost = null;
         for (Throwable t : causeChain(e)) {
-            if (t instanceof RuleExecutionException failure) {
+            if (t instanceof ReportedFailure failure) {
                 innermost = failure;
             }
         }

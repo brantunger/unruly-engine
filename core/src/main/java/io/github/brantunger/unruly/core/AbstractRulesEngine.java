@@ -102,6 +102,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // The run this thread is inside, so a run an action or a listener starts knows the run around it. Removed when
     // the outermost run ends, so a pooled thread keeps nothing.
     private final ThreadLocal<RunContext> currentRun = new ThreadLocal<>();
+    // The failure a rule's fatal Error was reported to onError with, so onRunError gets the same one, naming the rule.
+    // Set just before the error is rethrown, and removed when a run starts and ends.
+    private final ThreadLocal<RuleExecutionException> fatalFailure = new ThreadLocal<>();
 
     /**
      * Creates an engine with the builder's settings: takes or finds its languages and picks the default one, and
@@ -259,24 +262,27 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         EngineRunContext run = newRun(rules, listenerFacts, parent);
         currentRun.set(run);
         Instant outerDeadline = Cancellation.enter(deadline);
+        fatalFailure.remove();
         try {
-            notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
             RunResult<O> result;
             try {
+                // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
+                notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
                 checkFactNames(values, rules.factChecks());
                 result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline));
             } catch (RuntimeException e) {
-                notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, e));
+                notifyRunError(snapshot, run, e);
                 throw e;
             } catch (Error e) {
                 // run() rethrows the error itself; listeners see what it failed with.
-                RuleExecutionException wrapped = new RuleExecutionException("The run failed with " + e, e);
-                notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, wrapped));
+                RuleExecutionException failure = runFailure(e);
+                notifyRunError(snapshot, run, failure);
                 throw e;
             }
             notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
             return result;
         } finally {
+            fatalFailure.remove();
             Cancellation.leave(outerDeadline);
             if (parent == null) {
                 currentRun.remove();
@@ -285,6 +291,26 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
             rules.release(copy);
         }
+    }
+
+    /**
+     * Returns the exception {@code onRunError} gets for a fatal {@link Error} leaving a run: the one the rule it came
+     * from was reported to {@code onError} with, which names the rule, or else one that names no rule. A rule's is
+     * recorded just before its error is rethrown, and nothing between there and the run catches or replaces it.
+     *
+     * @param error The error the run is rethrowing
+     * @return The exception for {@code onRunError}
+     */
+    private RuleExecutionException runFailure(Error error) {
+        RuleExecutionException reported = fatalFailure.get();
+        return reported != null
+                ? reported
+                : new RuleExecutionException("The run failed with " + Failures.describeWithClass(error), error);
+    }
+
+    /** Closes a run that failed with {@code onRunError} on every listener. */
+    private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error) {
+        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error));
     }
 
     /** Creates the context one run is reported to listeners with. */
@@ -382,12 +408,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
                                                   Exception cause) {
         log.warn(msg);
-        RuleExecutionException failure = new RuleExecutionException(msg, cause);
+        RuleExecutionException failure = new ReportedFailure(msg, cause);
         // The run never started, so it opens and closes a scope of its own for listeners.
         List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(rules, listenerFacts, currentRun.get());
-        notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
-        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, failure));
+        try {
+            notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+        } catch (Error e) {
+            RuleExecutionException fatal = runFailure(e);
+            notifyRunError(snapshot, run, fatal);
+            throw e;
+        }
+        notifyRunError(snapshot, run, failure);
         return failure;
     }
 
@@ -786,7 +818,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException closedWithStop(List<RuleListener> snapshot, CompiledRule rule,
                                                   RuleExecutionException stop) {
-        Failures.throwIfPresent(notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop)));
+        Error fatal = notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop));
+        if (fatal != null) {
+            stop.addSuppressed(fatal);
+            fatalFailure.set(stop);
+            throw fatal;
+        }
         return stop;
     }
 
@@ -800,7 +837,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException cancelled(String msg, Exception cause) {
         log.warn(msg);
-        return new RuleExecutionException(msg, cause);
+        return new ReportedFailure(msg, cause);
     }
 
     /**
@@ -840,15 +877,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             output = outputFactory.get();
         } catch (Exception | Error e) {
             Failures.keepInterruptStatus(e);
-            String msg = "Output factory threw " + e;
+            String msg = "Output factory threw " + Failures.describeWithClass(e);
             log.error(msg);
             Failures.throwIfPresent(Failures.fatalError(e));
-            throw new RuleExecutionException(msg, e);
+            throw new ReportedFailure(msg, e);
         }
         if (output == null) {
             String msg = "Output factory returned null. It must return a new output object on every call.";
             log.error(msg);
-            throw new RuleExecutionException(msg);
+            throw new ReportedFailure(msg, null);
         }
         return output;
     }
@@ -933,7 +970,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
-            throw propertyFailure(snapshot, rule, property, e.getCause());
+            // A writer of its own may throw one with no cause.
+            throw propertyFailure(snapshot, rule, property, e.getCause() != null ? e.getCause() : e);
         } catch (Exception | Error e) {
             throw propertyFailure(snapshot, rule, property, e);
         }
@@ -965,8 +1003,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Error fatal = notifyListeners(snapshot, callback, call);
         if (fatal != null) {
             // Already on its way out of run(), so a second fatal error from onError can't replace it.
-            reportFailure(snapshot, rule, new RuleExecutionException(listenerFatalMessage(fatal, callback, rule), fatal,
-                    rule.rule().getRuleName()), true);
+            RuleExecutionException failure = new RuleExecutionException(listenerFatalMessage(fatal, callback, rule),
+                    fatal, rule.rule().getRuleName());
+            reportFailure(snapshot, rule, failure, true);
+            fatalFailure.set(failure);
             throw fatal;
         }
     }
@@ -1026,12 +1066,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException failure(List<RuleListener> snapshot, CompiledRule rule, ExpressionKind kind,
                                            String msg, Throwable cause) {
-        RuleExecutionException error = new RuleExecutionException(msg, cause, rule.rule().getRuleName(), kind);
+        RuleExecutionException error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
         Failures.keepInterruptStatus(cause);
         // A failed run() started by this rule has already logged its failure.
         Error listenerFatal = reportFailure(snapshot, rule, error, Failures.nestedRunFailure(cause) == null);
-        Failures.throwIfPresent(Failures.fatalError(cause));
-        Failures.throwIfPresent(listenerFatal);
+        // A fatal error in what the rule threw comes first; one from a listener's onError is rethrown otherwise.
+        Error fatal = Failures.fatalError(cause);
+        if (fatal == null && listenerFatal != null) {
+            // Not among the causes, so onRunError can still find it on the failure.
+            error.addSuppressed(listenerFatal);
+            fatal = listenerFatal;
+        }
+        if (fatal != null) {
+            fatalFailure.set(error);
+            throw fatal;
+        }
         return error;
     }
 
@@ -1171,7 +1220,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             compiled = compilation.apply(source);
         } catch (InvalidExpressionException e) {
             String reason = e.getMessage() != null
-                    ? Failures.truncate(e.getMessage())
+                    ? Failures.escape(Failures.truncate(e.getMessage()))
                     : "was rejected by its expression language";
             throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(), e.issues());
         } catch (Exception | Error e) {
