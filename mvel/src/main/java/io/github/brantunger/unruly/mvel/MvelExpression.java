@@ -91,6 +91,13 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * {@link Imports#newConfiguration()}.
      */
     private static ParserContext newParserContext(Imports imports) {
-        return new ParserContext(imports.newConfiguration());
+        ParserContext context = new ParserContext(imports.newConfiguration());
+        if (imports.stronglyTyped()) {
+            // Applied here, not only where the rule list loads, because a session compiles the expression again for
+            // its own copy: without this, only the first copy would be the one that was type-checked.
+            context.setStrongTyping(true);
+            imports.inputs().forEach(context::addInput);
+        }
+        return context;
     }
 }

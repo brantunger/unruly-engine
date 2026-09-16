@@ -8,6 +8,7 @@ any Java object.
 - [The fact types](#-the-fact-types)
 - [Adding facts](#-adding-facts)
 - [Naming rules](#-naming-rules)
+- [Declaring facts](#-declaring-facts)
 - [Null and missing facts](#-null-and-missing-facts)
 - [Generics](#-generics)
 - [Copying and sharing](#-copying-and-sharing)
@@ -96,6 +97,53 @@ The checks happen in two places, and both throw `IllegalArgumentException`:
 - **`run()`** rejects any name in the table above, whichever `FactStore` implementation you use.
 
 A `Fact` needs a name: `new Fact<>(null, value)` throws `NullPointerException`.
+
+## 📣 Declaring facts
+
+Tell the engine which facts its rules use, and what type each one is. Nothing has to be declared, and an engine that
+declares nothing behaves exactly as before.
+
+```java
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .outputType(LoanDecision.class)
+        .fact("applicant", Applicant.class)
+        .fact("amount", Integer.class)
+        .requireDeclaredFacts()
+        .build();
+```
+
+- **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
+  `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
+  declaration. A run that leaves the fact out is unaffected.
+- **`facts(map)`** declares several at once. Declaring the same name twice keeps the last type.
+- **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
+  or leaves a declared one out, fails with `IllegalArgumentException`.
+
+### 🔎 Catching a typo when the rules load
+
+`requireDeclaredFacts()` is also what lets a language check the rules themselves. MVEL compiles them with strong
+typing, so a misspelled property or an unknown fact fails `load()` with the line and column instead of failing a run:
+
+```java
+engine.load(List.of(Rule.builder().ruleName("prime-rate")
+        .condition("applicant.creditScor >= 750")   // RuleCompilationException: unqualified type ... creditScor
+        .action("output.interestRate = 6.9").build()));
+```
+
+MVEL only does this when it can check everything, which needs all of:
+
+| Needed | Why |
+| --- | --- |
+| `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
+| No fact declared as `Map` or `Object` | MVEL's strict mode rejects `order.id` on a `Map` and any property of an `Object`, so one such fact would reject working rules |
+| `outputType(...)` set to something that is neither | An action writes to `output`, so its type has to be checkable too |
+
+If any of them is missing, MVEL compiles as it always has and says at DEBUG which declaration stopped it. The
+engine's own checks on a run's facts don't depend on it, and neither does any other language: each one is told what
+was declared and uses it as it can.
+
+> [!NOTE]
+> Strong typing doesn't catch a non-boolean condition; the engine checks that itself, on every engine.
 
 ## 🕳 Null and missing facts
 

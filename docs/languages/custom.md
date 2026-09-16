@@ -148,6 +148,13 @@ public final class MyLanguage implements ExpressionLanguage {
   `CompileContext.options()` holds your language's own settings, which the application sets with
   `.option("my", "key", "value")`, so a language needs no constructor arguments for them. Both are empty or `Object`
   unless the application sets them, so treat them as optional.
+- **Declared facts.** `CompileContext.declaredFacts()` is the type of each fact the application declared with
+  `.fact(name, type)`, and `CompileContext.allFactsDeclared()` says whether `.requireDeclaredFacts()` was set. A typed
+  language can compile against them: declare them as variables, check each property, and reject an expression that
+  refers to a name that isn't there — but only when `allFactsDeclared()` is `true`, because otherwise a run may
+  legitimately supply a fact nobody declared. Both are empty and `false` unless the application declares facts, so a
+  language must work without them. The engine checks a run's values against the declared types whatever your language
+  does. MVEL's `DeclaredTypes` shows one way to decide whether the declarations are checkable at all.
 - **Fact names.** Override `checkFactName` to reject a name your rules couldn't refer to, such as a keyword, with an
   `IllegalArgumentException`. By default every name is accepted. Anything else it throws is logged and becomes an
   `IllegalArgumentException` naming the fact and your language, except a fatal `Error`, which is rethrown unchanged.

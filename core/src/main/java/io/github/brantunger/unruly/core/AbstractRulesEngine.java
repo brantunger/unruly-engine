@@ -91,6 +91,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // The output type languages are told about, and what sets the properties actions return.
     private final Class<?> outputType;
     private final OutputWriter<? super O> outputWriter;
+    // The declared type of each fact, by name, and whether a run may supply only those facts.
+    private final Map<String, Class<?>> declaredFacts;
+    private final boolean allFactsDeclared;
     // Each language's options, by language name.
     private final Map<String, Map<String, String>> options;
     // Numbers this engine's runs, so a listener can tell them apart.
@@ -139,6 +142,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.runTimeout = configuration.runTimeout();
         this.outputType = configuration.outputType();
         this.outputWriter = configuration.outputWriter();
+        this.declaredFacts = configuration.declaredFacts();
+        this.allFactsDeclared = configuration.allFactsDeclared();
         this.options = configuration.options();
     }
 
@@ -437,7 +442,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // Each language gets its own options.
         LanguageCompilers compilers = new LanguageCompilers(languages.languages(),
                 (name, language) -> newCompiler(name, language, new EngineCompileContext(packageImports, classImports,
-                        loader, outputType, options.getOrDefault(name, Map.of()))));
+                        loader, outputType, options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared)));
         RuleSet loaded;
         try {
             List<Rule> sorted = ruleList.stream()
@@ -523,10 +528,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param values The fact values by name
      * @param checks The compilers of the rule list the run uses, which check each name, by language name
-     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, or has a name a language
-     *                                  can't refer to, or if a language's check of the name throws anything else
+     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, has a name a language
+     *                                  can't refer to, isn't an instance of the type it was declared with, or, when
+     *                                  the engine requires declared facts, was declared and left out or supplied
+     *                                  without being declared; or if a language's check of the name throws anything
+     *                                  else
      */
-    private static void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
+    private void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
         for (String name : values.keySet()) {
             if (name == null) {
                 String msg = "fact name must not be null";
@@ -541,6 +549,57 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw new IllegalArgumentException(msg);
             }
             checkFactName(name, checks);
+            checkDeclaredType(name, values.get(name));
+        }
+        checkNothingWasLeftOut(values);
+    }
+
+    /**
+     * Checks one fact's value against the type it was declared with. A {@code null} value passes: nothing about it
+     * contradicts the declaration, and a language can't tell it from an absent fact either.
+     *
+     * @param name  The fact's name
+     * @param value The fact's value, which may be {@code null}
+     * @throws IllegalArgumentException if the fact was declared and its value isn't an instance of that type
+     */
+    private void checkDeclaredType(String name, Object value) {
+        Class<?> declared = declaredFacts.get(name);
+        if (declared == null || value == null || declared.isInstance(value)) {
+            return;
+        }
+        String msg = "Fact '%s' was declared as %s, but the run supplied a %s"
+                .formatted(Failures.quote(name), declared.getName(), value.getClass().getName());
+        log.error(msg);
+        throw new IllegalArgumentException(msg);
+    }
+
+    /**
+     * Checks that a run supplied every declared fact and nothing else, when the engine was built with
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#requireDeclaredFacts()}. Without it, a run may supply
+     * whatever it likes, and a declared fact only says what its type is when it's there.
+     *
+     * @param values The fact values by name
+     * @throws IllegalArgumentException if a declared fact is missing, or a fact nobody declared was supplied
+     */
+    private void checkNothingWasLeftOut(Map<String, Object> values) {
+        if (!allFactsDeclared) {
+            return;
+        }
+        for (String name : values.keySet()) {
+            if (!declaredFacts.containsKey(name)) {
+                String msg = "Fact '%s' wasn't declared, and this engine was built with requireDeclaredFacts()"
+                        .formatted(Failures.quote(name));
+                log.error(msg);
+                throw new IllegalArgumentException(msg);
+            }
+        }
+        for (String name : declaredFacts.keySet()) {
+            if (!values.containsKey(name)) {
+                String msg = ("Fact '%s' was declared, but the run didn't supply it, and this engine was built with "
+                        + "requireDeclaredFacts()").formatted(Failures.quote(name));
+                log.error(msg);
+                throw new IllegalArgumentException(msg);
+            }
         }
     }
 

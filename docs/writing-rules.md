@@ -125,8 +125,9 @@ List<String> findings = engine.run(facts);
 
 `load()` catches many mistakes, but not all of them: a misspelled property, a missing import or a
 non-boolean condition only fails when the rule runs (see
-[Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running)). Give each
-rule a test with sample facts that make it match and not match:
+[Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running)). An engine
+that [declares its facts](facts.md#-declaring-facts) catches a misspelled property and an unknown fact at `load()`
+too. Either way, give each rule a test with sample facts that make it match and not match:
 
 ```java
 // primeRateRule is the prime-rate Rule from the README's quick start.
