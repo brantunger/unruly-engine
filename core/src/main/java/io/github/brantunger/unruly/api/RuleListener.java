@@ -144,10 +144,10 @@ public interface RuleListener {
      * A run stopped <b>between</b> rules, because its thread was interrupted or it passed its deadline, is not
      * reported here. The engine checks that before {@link #beforeEvaluate} and {@link #beforeExecute}, so the rule it
      * would have gone on to never started and has no callback to close. Only {@link #onRunError} is called. A run
-     * stopped <b>while</b> a condition or action was running, which throws once the run is cancelled (a run it started
-     * stopping at the deadline it inherited, say), closes that rule's callback here: {@code error} then has no rule
-     * name and an {@link InterruptedException} or a {@link java.util.concurrent.TimeoutException} as its cause, so
-     * don't count it as the rule failing.
+     * stopped <b>while</b> a condition or action was running, which returns or throws once the run is cancelled (a
+     * run it started stopping at the deadline it inherited, say), closes that rule's callback here: {@code error}
+     * then has no rule name and an {@link InterruptedException} or a {@link java.util.concurrent.TimeoutException}
+     * as its cause, so don't count it as the rule failing.
      * </p>
      *
      * @param rule  The rule whose condition or action failed.

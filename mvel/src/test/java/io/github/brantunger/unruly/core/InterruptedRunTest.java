@@ -28,12 +28,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * An executor shutting down, or {@code Future.cancel(true)}, interrupts the thread a run is on. The engine checks the
- * interrupt status before each condition and before each action, so a run stops between rules instead of evaluating
- * every condition and firing every matching action. A rule's own expression can't be stopped part-way: MVEL has no
- * hook inside an expression.
+ * interrupt status before each condition and each action, and again when each one returns, so a run stops instead of
+ * evaluating every condition and firing every matching action. A rule's own expression can't be stopped part-way:
+ * MVEL has no hook inside an expression.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
-@DisplayName("a run stops between rules when its thread is interrupted")
+@DisplayName("a run stops between rules, or when an expression returns, once its thread is interrupted")
 class InterruptedRunTest {
 
     /** A fact whose methods interrupt the thread the run is on, so a rule can interrupt itself. */
@@ -161,7 +161,7 @@ class InterruptedRunTest {
     }
 
     @Test
-    @DisplayName("a rule that interrupts the thread in its action stops the run before the next rule")
+    @DisplayName("a rule that interrupts the thread in its action stops the run as soon as the action returns")
     void interruptedByAnAction() {
         Callbacks callbacks = new Callbacks();
         RulesEngine<Map<String, Object>> engine = allMatches(builder -> builder.listener(callbacks),
@@ -170,14 +170,14 @@ class InterruptedRunTest {
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
 
-        assertEquals("run() was interrupted before rule 'b'", thrown.getMessage());
+        assertEquals("run() was interrupted during rule 'a'", thrown.getMessage());
         assertTrue(Thread.currentThread().isInterrupted(), "the interrupt status stays set");
-        assertEquals(List.of("beforeRun", "beforeEvaluate a", "beforeEvaluate b", "beforeExecute a", "onRunError"),
-                callbacks.calls, "rule b's action never started");
+        assertEquals(List.of("beforeRun", "beforeEvaluate a", "beforeEvaluate b", "beforeExecute a", "onError a",
+                "onRunError"), callbacks.calls, "rule a's action is closed with onError, and b's never started");
     }
 
     @Test
-    @DisplayName("a rule that interrupts the thread in its condition stops the run before the next condition")
+    @DisplayName("a rule that interrupts the thread in its condition stops the run as soon as the condition returns")
     void interruptedByACondition() {
         Callbacks callbacks = new Callbacks();
         RulesEngine<Map<String, Object>> engine = allMatches(builder -> builder.listener(callbacks),
@@ -186,13 +186,13 @@ class InterruptedRunTest {
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
 
-        assertEquals("run() was interrupted before rule 'b'", thrown.getMessage());
-        assertEquals(List.of("beforeRun", "beforeEvaluate a", "onRunError"), callbacks.calls,
+        assertEquals("run() was interrupted during rule 'a'", thrown.getMessage());
+        assertEquals(List.of("beforeRun", "beforeEvaluate a", "onError a", "onRunError"), callbacks.calls,
                 "rule b's condition was never evaluated");
     }
 
     @Test
-    @DisplayName("a first-match run stops before it fires the action of the rule that matched")
+    @DisplayName("a first-match run stops as soon as the matching condition returns, before its action")
     void interruptedBeforeTheActionOfAFirstMatchRun() {
         RulesEngine<Map<String, Object>> engine =
                 RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
@@ -200,7 +200,7 @@ class InterruptedRunTest {
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
 
-        assertEquals("run() was interrupted before rule 'a'", thrown.getMessage());
+        assertEquals("run() was interrupted during rule 'a'", thrown.getMessage());
         assertTrue(Thread.currentThread().isInterrupted(), "the interrupt status stays set");
     }
 

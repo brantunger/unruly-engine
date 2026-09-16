@@ -56,8 +56,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
      *         an action fails, a condition doesn't evaluate to a boolean, the output factory throws or returns
      *         {@code null}, or a compiled condition or action throws or returns {@code null} when it is copied for the
-     *         run. Also if the run must stop between rules, because its thread was interrupted, which keeps the
-     *         interrupt status set and makes the cause an {@link InterruptedException}, or because it passed the
+     *         run. Also if the run must stop, which is checked between rules and when each condition or action
+     *         returns, because its thread was interrupted, which keeps the interrupt status set and makes the cause an {@link InterruptedException}, or because it passed the
      *         deadline a {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
      *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
      *         {@code null}.
@@ -97,8 +97,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *
      * <p>
      * A timeout's deadline is taken from when this method is called, so waiting for a compiled copy of the rules
-     * counts towards it. The engine checks it while waiting, and before each condition and each action, so a run
-     * stops between rules; see {@link RulesEngineBuilder#runTimeout(Duration)} for what that does and doesn't stop.
+     * counts towards it. The engine checks it while waiting, and before and after each condition and each action,
+     * so a run stops between rules, and when the condition or action that was running returns; see
+     * {@link RulesEngineBuilder#runTimeout(Duration)} for what that does and doesn't stop.
      * </p>
      *
      * @param facts   The facts to run the rules against, as {@link #run(FactStore)} takes them

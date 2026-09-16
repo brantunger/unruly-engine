@@ -60,7 +60,7 @@ sequenceDiagram
 A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
 failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, an
 interrupt while the run waits for a compiled copy of the rules, or a run stopped because its thread was interrupted
-or it passed its deadline — reaches `onRunError` only, because no rule was involved. The rule a stopped run would
+or it passed its deadline between rules — reaches `onRunError` only, because no rule was involved. The rule a stopped run would
 have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`, so there is no
 open callback for `onError` to close. A run stopped while a condition or action was running is different: that rule's
 callback is closed with `onError`, whose exception has no rule name and an `InterruptedException` or
@@ -123,7 +123,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 | --- | --- |
 | 🔗 **Paired callbacks** | Every `beforeRun`, `beforeEvaluate` and `beforeExecute` is followed by exactly one matching `after*`, `onError` or `onRunError`. |
 | 🧾 **Every failure of a run** | `onRunError` reports the exception `run()` throws, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. Only misuse — running before `load()`, or on a closed engine — reaches no callback. |
-| ⏱ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError` only. The rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. A listener that swallows an interrupt doesn't keep the run going — the next check finds it. |
+| ⏱ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that swallows an interrupt doesn't keep the run going — the next check finds it. |
 | 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError`, an `AssertionError` or a `LinkageError` — a missing or unreadable class, which means the rule is misconfigured rather than the JVM failing — is wrapped in the `RuleExecutionException`. A `VirtualMachineError` such as `OutOfMemoryError`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError` and then rethrown unchanged from `run()`. |
 | 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `load()`: the same instance every time. |

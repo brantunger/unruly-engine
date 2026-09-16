@@ -215,7 +215,7 @@ class RunDeadlineTest {
         return engine;
     }
 
-    /** Two rules, the first slower than {@link #SHORT}, so a deadline is checked before the second. */
+    /** Two rules, the first slower than {@link #SHORT}, so a run with that timeout stops when the first returns. */
     private static List<Rule> slowThenFast() {
         return List.of(rule("slow", "pause.longer()", "output.put('slow', true)"),
                 rule("fast", "true", "output.put('fast', true)"));
@@ -269,7 +269,9 @@ class RunDeadlineTest {
             assertEquals(List.of("beforeRun", "onRunError"), callbacks);
 
             gate.release.countDown();
-            holder.get(30, TimeUnit.SECONDS);
+            ExecutionException holderStop = assertThrows(ExecutionException.class,
+                    () -> holder.get(30, TimeUnit.SECONDS), "the holder's action returned past its deadline too");
+            assertInstanceOf(TimeoutException.class, holderStop.getCause().getCause());
         } finally {
             gate.release.countDown();
             threads.shutdownNow();
@@ -286,12 +288,13 @@ class RunDeadlineTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("nested", nested);
 
-        assertEquals(Map.of("ran", true), outer.run(facts));
+        RuleExecutionException outerStop = assertThrows(RuleExecutionException.class, () -> outer.run(facts));
+        assertTrue(outerStop.getMessage().endsWith(" during rule 'outer'"), outerStop.getMessage());
 
         RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, nested.failure.get(),
                 "the nested run ignored the outer run's deadline");
         assertInstanceOf(TimeoutException.class, failure.getCause());
-        assertTrue(failure.getMessage().endsWith(" before rule 'fast'"), failure.getMessage());
+        assertTrue(failure.getMessage().endsWith(" during rule 'slow'"), failure.getMessage());
     }
 
     @Test
@@ -332,7 +335,7 @@ class RunDeadlineTest {
         assertTrue(stop.getMessage().startsWith("run() passed its deadline of "), stop.getMessage());
         assertTrue(stop.getMessage().endsWith(" during rule 'outer'"), stop.getMessage());
         assertEquals(1, stop.getSuppressed().length, "what the action threw is kept");
-        assertTrue(chainMentions(stop.getSuppressed()[0], " before rule 'fast'"), "the inner stop isn't kept");
+        assertTrue(chainMentions(stop.getSuppressed()[0], " during rule 'slow'"), "the inner stop isn't kept");
         assertEquals(List.of("beforeEvaluate outer", "beforeExecute outer", "onError outer"), callbacks.seen);
         assertSame(stop, callbacks.errors.get(0));
         assertFalse(logs.contains("ERROR"), logs);

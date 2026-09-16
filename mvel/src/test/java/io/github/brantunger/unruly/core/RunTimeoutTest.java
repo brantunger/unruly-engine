@@ -37,11 +37,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * An engine, or one {@code run} call, can be given a timeout. The deadline it sets is checked where an interrupt is,
- * before each condition and before each action, and it is passed to the language, so a language that can stop inside
+ * before each condition and each action and when each returns, and it is passed to the language, so a language that can stop inside
  * an expression can honour it there too. MVEL can't, so a rule written in MVEL always runs to its end.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
-@DisplayName("a run stops between rules once it has passed its deadline")
+@DisplayName("a run stops between rules, or when an expression returns, once it has passed its deadline")
 class RunTimeoutTest {
 
     /** Long enough that a run stops on the rule after the slow one, and short enough to keep the tests quick. */
@@ -130,7 +130,7 @@ class RunTimeoutTest {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
     }
 
-    /** Rules whose first action waits longer than {@link #SHORT}, so the run passes its deadline before rule b. */
+    /** Rules whose first action waits longer than {@link #SHORT}, so the run passes its deadline inside rule a. */
     private static final List<Rule> SLOW_ACTION_THEN_B = List.of(
             rule("a", "true", "output.put('a', slow.pause(" + SLOW_MILLIS + ", true))"),
             rule("b", "true", "output.put('b', true)"));
@@ -150,7 +150,7 @@ class RunTimeoutTest {
     }
 
     @Test
-    @DisplayName("a run past the engine's timeout stops before the next rule, blaming no rule")
+    @DisplayName("a run past the engine's timeout stops as soon as the slow expression returns, blaming no rule")
     void pastTheEnginesTimeout() {
         Fired fired = new Fired();
         RulesEngine<Map<String, Object>> engine =
@@ -159,16 +159,16 @@ class RunTimeoutTest {
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
 
         assertTrue(thrown.getMessage().startsWith("run() passed its deadline of "), thrown.getMessage());
-        assertTrue(thrown.getMessage().endsWith(" before rule 'b'"), thrown.getMessage());
+        assertTrue(thrown.getMessage().endsWith(" during rule 'a'"), thrown.getMessage());
         assertInstanceOf(TimeoutException.class, thrown.getCause());
         assertNull(thrown.getRuleName(), "a deadline isn't that rule's failure");
-        assertEquals(List.of("a"), fired.rules, "the slow rule finished; the one after it never started");
+        assertEquals(List.of(), fired.rules, "the slow action returned past the deadline, so it isn't counted as fired");
         assertTrue(fired.runFailed, "the run itself is reported to listeners");
         assertFalse(Thread.currentThread().isInterrupted(), "a deadline doesn't interrupt the thread");
     }
 
     @Test
-    @DisplayName("a first-match run past its deadline stops before the next condition")
+    @DisplayName("a first-match run past its deadline stops as soon as the slow condition returns")
     void pastTheDeadlineInAFirstMatchRun() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .runTimeout(SHORT).build();
@@ -177,7 +177,7 @@ class RunTimeoutTest {
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
 
-        assertTrue(thrown.getMessage().endsWith(" before rule 'b'"), thrown.getMessage());
+        assertTrue(thrown.getMessage().endsWith(" during rule 'a'"), thrown.getMessage());
         assertInstanceOf(TimeoutException.class, thrown.getCause());
     }
 
@@ -201,7 +201,7 @@ class RunTimeoutTest {
         RuleExecutionException thrown =
                 assertThrows(RuleExecutionException.class, () -> patient.runWithResult(facts(),
                         RunOptions.withTimeoutOf(SHORT)));
-        assertTrue(thrown.getMessage().endsWith(" before rule 'b'"), thrown.getMessage());
+        assertTrue(thrown.getMessage().endsWith(" during rule 'a'"), thrown.getMessage());
 
         assertEquals(Map.of("a", true, "b", true),
                 hasty.runWithResult(facts(), RunOptions.withTimeoutOf(LONG)).output(),

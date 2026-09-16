@@ -128,7 +128,8 @@ surface when a rule is evaluated. Another language decides what it catches when 
 
 ## ⏱ Stopping a run
 
-A run stops between rules when its thread is interrupted, or when it has passed a deadline:
+A run stops between rules, or when the expression that was running returns, once its thread is interrupted or it
+has passed a deadline:
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -136,12 +137,13 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
         .build();
 ```
 
-- The engine checks while a run waits for a compiled copy of the rules, and before each condition and before each
-  action. A run that must stop throws a
+- The engine checks while a run waits for a compiled copy of the rules, before each condition and each action, and
+  again when each one returns. So a run whose last condition or action returns past its deadline throws, even though
+  that rule finished. What comes after that check, such as `afterExecute` listeners, isn't timed. A run that must stop throws a
   `RuleExecutionException` whose `getRuleName()` is `null` — an interrupt or a deadline isn't that rule's fault — with
   an `InterruptedException` or a `TimeoutException` as its cause. An interrupted run leaves the interrupt status set,
   so an executor shutting down still sees it.
-- **Between rules only.** An expression that is already running isn't stopped: MVEL has no hook inside one, so
+- **Not inside an expression.** An expression that is already running isn't stopped: MVEL has no hook inside one, so
   `while (true) {}` still blocks the thread for ever. A language that can stop part-way — one built on JEXL's
   cancellation, for example — is given the run's deadline and can stop there; see
   [Other expression languages](languages/custom.md#-stopping-a-run).
@@ -156,7 +158,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   up by throwing. The rule's `before*` callback is closed with `onError` and the stop exception, and what the
   expression threw is kept as a suppressed exception.
 - A stopped run is logged at **WARN**, not ERROR: the caller asked for it, and no rule failed. Listeners get
-  `beforeRun` and `onRunError`, and the rule the run stopped before gets no callback at all, because it never started.
+  `beforeRun` and `onRunError`. Stopped between rules, the rule it would have gone on to gets no callback at all,
+  because it never started; stopped when a condition or action returns or throws, that rule gets `onError`.
 
 > [!TIP]
 > A caller that catches the failure and goes on to serve the next request **on the same thread** must clear the

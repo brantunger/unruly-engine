@@ -382,7 +382,7 @@ rule. This is a behaviour change that the API compatibility check can't see, so 
 
 ## ⏱ An interrupted run stops, and a run can be given a timeout
 
-**What changed:** the engine checks before each condition and each action whether the run must stop, because its
+**What changed:** the engine checks before and after each condition and each action whether the run must stop, because its
 thread was interrupted or it has passed a deadline. In 1.x nothing in the engine looked at the interrupt status: a run
 started on an interrupted thread evaluated every condition and fired every matching action, so `Future.cancel(true)`
 and an executor shutting down had no effect until the run finished on its own.
@@ -401,7 +401,7 @@ Three things follow:
   waited. It takes a free copy and then stops at the first rule, exactly as an engine without a limit does. That
   message now appears only when a run really waited, and it starts with `run() was interrupted` too.
 
-**Between rules only.** An expression that is already running isn't stopped. MVEL has no hook inside one, so a rule
+**Not inside an expression.** An expression that is already running isn't stopped; the run stops when it returns. MVEL has no hook inside one, so a rule
 that loops for ever still blocks the thread, with or without a timeout. A language that can stop part-way is given
 the run's deadline; see [Other expression languages](languages/custom.md#-stopping-a-run).
 
