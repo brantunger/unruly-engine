@@ -85,7 +85,10 @@ public final class FactProperties {
      *
      * <p>
      * A fact whose own class isn't public is read through a public type above it that declares the accessor, which
-     * is what makes a fact from a factory, or an anonymous implementation of a public interface, readable.
+     * is what makes a fact from a factory, or an anonymous implementation of a public interface, readable. When
+     * nothing public declares it, the accessor is called directly if the class's package is open to this module:
+     * every package on the class path is, and on the module path the application opens it with {@code opens}.
+     * Exporting the package isn't enough, because calling a method of a class that isn't public is deep reflection.
      * </p>
      *
      * @param target   The fact, which must not be {@code null}
@@ -96,7 +99,8 @@ public final class FactProperties {
      *                                  engine, which fails the rule with it: a missing property is a mistake in the
      *                                  rule, and evaluating it to {@code false} or to undefined hides it
      * @throws IllegalStateException    if the property exists but can't be read, because nothing public declares its
-     *                                  accessor; or if the accessor threw, with what it threw as the cause. What an
+     *                                  accessor and its package isn't open to this module; or if the accessor
+     *                                  threw, with what it threw as the cause. What an
      *                                  accessor throws is always wrapped, so that a getter throwing
      *                                  {@link IllegalArgumentException} isn't read as a missing property
      */
@@ -338,6 +342,12 @@ public final class FactProperties {
      * class</b>: the accessor may be declared on a base class that is no more public than the fact's own, while the
      * interface that makes it public is implemented by the fact's class alone.
      *
+     * <p>
+     * When no public supertype declares it either, the method itself is made accessible where the module system
+     * allows it: {@link Method#trySetAccessible()} succeeds only when the declaring class's package is open to this
+     * module. It widens only the class's access, never the member's, because every method found here is public.
+     * </p>
+     *
      * @param type   The fact's class, which the accessor was found on
      * @param method The method found there
      * @return The same method, or the one a public supertype declares
@@ -363,8 +373,11 @@ public final class FactProperties {
                 continue;
             }
         }
-        // Nothing public declares it. It stays here so that reading it reports why, rather than claiming the fact
-        // has no such property.
+        // Nothing public declares it, so call it directly where the application lets this module reflect into its
+        // package, which is always the case on the class path. The result isn't needed: where access is refused, the
+        // method stays here so that reading it reports why, rather than claiming the fact has no such property.
+        // Access is a flag on this Method object, which this class caches and never hands out.
+        method.trySetAccessible();
         return method;
     }
 
@@ -375,9 +388,9 @@ public final class FactProperties {
      * path. Both are read through a type that is reachable, such as {@code java.util.TimeZone} itself.
      *
      * <p>
-     * A package a module only {@code opens}, rather than {@code exports}, isn't counted: reading it would mean
-     * calling {@code setAccessible}, and this class never does. An application whose facts live in such a package
-     * either exports it or gives the fact a public interface to be read through.
+     * A package a module {@code opens} to this one counts as exported to it, so a public class there is reachable
+     * too. A class that isn't public never is, whatever its package; {@link #callable} reaches its accessors
+     * directly only where the package is open to this module.
      * </p>
      *
      * @param type The type declaring the accessor
@@ -447,9 +460,9 @@ public final class FactProperties {
         } catch (IllegalAccessException e) {
             throw new IllegalStateException("A " + target.getClass().getName() + " has a property '" + property
                     + "', but its accessor on " + accessor.getDeclaringClass().getName() + " can't be reached from"
-                    + " here, and no public supertype declares it. The type that declares the accessor has to be"
-                    + " public, or implement a public interface that declares it; on the module path its package"
-                    + " must be exported as well.", e);
+                    + " here, and no public supertype declares it. Declare the accessor on a public type, or on a"
+                    + " public interface the type implements; on the module path, also export that type's package,"
+                    + " or open it to io.github.brantunger.unruly.core for a type that isn't public.", e);
         } catch (InvocationTargetException e) {
             // Always wrapped, never rethrown as it came: IllegalArgumentException is how this class says a fact has
             // no such property, so a getter that validates its state must not be mistaken for a misspelled rule.

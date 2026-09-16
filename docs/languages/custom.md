@@ -157,7 +157,10 @@ public final class MyLanguage implements ExpressionLanguage {
   engine: a missing property is a mistake in the rule, and evaluating it to `false` or to undefined hides it. A
   property that exists but whose accessor can't be called, or that throws, fails with `IllegalStateException`
   instead, so a getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't
-  public is read through a public interface it implements, if there is one.
+  public is read through a public interface it implements, if there is one, and otherwise directly where its package
+  is open to `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the
+  application `opens` the package (exporting it isn't enough). MVEL rules can't read such a fact at all, so a fact
+  that MVEL rules also read should be public or implement a public interface that declares its accessors.
   `FactProperties.toData(fact, depth)` converts a record or bean into a map, for a language that reads only maps.
   Writing is the other direction and the engine already has it: `OutputWriter.beansAndMaps()`.
   `ExpressionLanguageContractTest` runs your `factProperty(...)` condition against a record fact and a map fact, and
