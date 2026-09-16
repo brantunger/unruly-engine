@@ -410,8 +410,10 @@ public final class RulesEngineBuilder<O> {
      * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, so waiting for a compiled copy
      * of the rules counts towards it: a run that is still waiting at its deadline stops waiting. A run started from
      * inside another run on the same thread, such as one an action starts on another engine, stops at whichever of
-     * the two deadlines comes first. The engine checks it before each condition and before each action, so a run
-     * stops between rules; it doesn't stop an expression that is already running. MVEL has no hook inside an
+     * the two deadlines comes first. The engine checks it before each condition and each action, and again when each
+     * one returns, so a run whose last condition or action returns past its deadline fails even though that rule
+     * finished; it doesn't stop an
+     * expression that is already running. MVEL has no hook inside an
      * expression, so an MVEL rule that loops for ever can't be stopped, with or without a timeout: run rules you
      * don't trust in a process of their own. A language that can stop inside an expression, such as one built on
      * JEXL's cancellation, stops there instead, because it is given the deadline.

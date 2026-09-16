@@ -187,7 +187,7 @@ public final class MyLanguage implements ExpressionLanguage {
 | Requires a condition to return a `Boolean`: `null`, a string or a number fails the rule | Keep an action's variables local to that action, so later rules still see the original facts |
 | Rejects a fact named `null` or `output`, and sets the properties an action returns with its `OutputWriter` | Bind the output object as `output` and don't let an action replace it, or return the action's results as properties |
 | Wraps failures in `RuleCompilationException` and `RuleExecutionException`, rethrows fatal errors, and calls listeners | Reject fact names it can't refer to |
-| Stops a run between rules when it's interrupted or past its deadline, and tells every expression with `isCancelled()` | Stop inside an expression too, if it can (see below) |
+| Stops a run between rules, and when an expression returns, once it's interrupted or past its deadline, and tells every expression with `isCancelled()` | Stop inside an expression too, if it can (see below) |
 | Passes read-only facts, gives each run its own sessions, and closes them (see below) | Document what rules can reach: files, processes, reflection |
 
 ## ⏱ Stopping a run
@@ -219,8 +219,9 @@ public CompiledAction compileAction(Expression expression) {
 ```
 
 - `isCancelled()` is `true` while the run's thread is interrupted, or once the deadline has passed.
-- Returning when it's `true` is enough: the engine stops the run at the next check. Throwing instead fails that rule
-  like any other failure.
+- Returning when it's `true` is enough: the engine checks again as soon as the expression returns, and stops the
+  run whatever it returned. Throwing an exception once the run is cancelled stops the run the same way; an `Error`
+  is still that rule's failure.
 - `deadline()` is an `Instant`, or `null` when the run has no timeout. Use it to give a call of your own a timeout.
 - Neither is required. A language that evaluates an expression and returns needn't check anything.
 
@@ -309,6 +310,6 @@ to `org.junit.platform.commons`, so JUnit can run it.
 
 A rule's condition and action are code, and what they can reach depends on the language. MVEL rules have full access
 to the JVM. A language that can't reach the JVM, such as one that only reads facts, is safer for rules written by
-less trusted people. A run's timeout only stops it between rules unless your language honours `isCancelled()`, so a
+less trusted people. A run's timeout only stops it between rules, or when an expression returns, unless your language honours `isCancelled()`, so a
 language that allows loops and ignores it can still block `run()`. Say in your language's documentation what its
 rules can do, and whether they can be stopped part-way.

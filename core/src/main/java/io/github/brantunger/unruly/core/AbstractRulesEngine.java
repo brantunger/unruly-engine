@@ -676,8 +676,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Stops a run that must not go on to {@code rule}, because its thread has been interrupted or it has passed its
-     * deadline. Checked before each condition and before each action, which is as often as the engine gets control
-     * back: an expression that doesn't return can only be stopped by a language that can stop inside one, through
+     * deadline. Checked before each condition and before each action, and again when each returns
+     * ({@link #stopIfCancelled}), which is as often as the engine gets control back: an expression that doesn't return can only be stopped by a language that can stop inside one, through
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}.
      *
      * <p>
@@ -757,6 +757,35 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             return failed.get();
         }
         stop.addSuppressed(thrown);
+        return closedWithStop(snapshot, rule, stop);
+    }
+
+    /**
+     * Stops a run that was cancelled while a condition or action ran, once that expression has returned, so a run
+     * past its deadline or interrupted never returns a result, even when the expression was its last one.
+     *
+     * @param snapshot The listeners the rule's callbacks went to
+     * @param rule     The rule whose expression returned
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @throws RuleExecutionException if the run was cancelled
+     */
+    private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, Instant deadline) {
+        RuleExecutionException stop = cancellation("during rule '" + rule.displayName() + "'", deadline);
+        if (stop != null) {
+            throw closedWithStop(snapshot, rule, stop);
+        }
+    }
+
+    /**
+     * Closes the rule's open {@code before*} callback with {@code onError} and the exception a stopped run throws.
+     *
+     * @param snapshot The listeners the rule's callbacks went to
+     * @param rule     The rule the run stopped in
+     * @param stop     The exception the run stops with
+     * @return {@code stop}, to throw
+     */
+    private RuleExecutionException closedWithStop(List<RuleListener> snapshot, CompiledRule rule,
+                                                  RuleExecutionException stop) {
         Failures.throwIfPresent(notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop)));
         return stop;
     }
@@ -843,6 +872,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Error e) {
             throw expressionFailure(snapshot, rule, ExpressionKind.CONDITION, e);
         }
+        stopIfCancelled(snapshot, rule, facts.deadline());
 
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule.
@@ -879,6 +909,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Error e) {
             throw expressionFailure(snapshot, rule, ExpressionKind.ACTION, e);
         }
+        // Before the properties it returned are set: a run past its deadline changes the output no further.
+        stopIfCancelled(snapshot, rule, facts.deadline());
         if (result == null) {
             throw failure(snapshot, rule, ExpressionKind.ACTION, "Action for rule '" + rule.displayName()
                     + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).", null);

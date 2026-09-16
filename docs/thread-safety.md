@@ -20,8 +20,9 @@ An engine is designed to be configured once and then shared by every thread in y
 | `run()` | ✅ | From any number of threads, once `load()` has completed. |
 | `close()` | ✅ | Once the engine is no longer needed. Runs in progress finish first. |
 
-**Stopping a run:** interrupting the thread a run is on, or giving the run a timeout, stops it **between rules** —
-before each condition and before each action. It can't stop an MVEL expression that is already running, so a rule
+**Stopping a run:** interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression returns** —
+before each condition and each action, and when each one returns, so a run whose last condition or action returns
+past its deadline fails. It can't stop an MVEL expression that is already running, so a rule
 that loops for ever still blocks its thread; run rules you don't trust in a process of their own. See
 [Stopping a run](error-handling.md#-stopping-a-run).
 

@@ -318,8 +318,8 @@ higher-priority action changes a fact, a lower-priority rule that already matche
 > [!WARNING]
 > **Rules are code.** MVEL, the default language, gives a rule the same access to the JVM as your own Java code: it can start
 > processes, read files, open sockets and use reflection. The engine has **no sandbox**, and a
-> [timeout](docs/error-handling.md#-stopping-a-run) only stops a run between rules: MVEL rules can't be stopped
-> inside an expression, so `while (true) {}` blocks the calling thread forever.
+> [timeout](docs/error-handling.md#-stopping-a-run) only stops a run between rules or when an expression returns:
+> MVEL rules can't be stopped inside an expression, so `while (true) {}` blocks the calling thread forever.
 
 - Load rules only from sources you trust as much as your application code, such as your repository or a table
   only administrators can change.
