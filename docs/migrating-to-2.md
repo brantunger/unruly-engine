@@ -414,7 +414,7 @@ the run's deadline; see [Other expression languages](languages/custom.md#-stoppi
 | --- | --- |
 | Catching the `RuleExecutionException` and serving the next request on the same thread | Clear the interrupt status first, for example with `Thread.interrupted()`, or every later run on that thread stops at its first rule |
 | Matching on `"Interrupted while waiting for a compiled copy of the rules"` | The message is now `run() was interrupted while waiting for a compiled copy of the rules: all N were in use`, and it is logged at WARN, not ERROR |
-| Your own timer around `run()` | `runTimeout(Duration)` on the builder, or `runWithResult(facts, RunOptions.timeout(...))` for one run. Keep the timer as well if you need a hard limit: a timeout can't stop an MVEL expression. |
+| Your own timer around `run()` | `runTimeout(Duration)` on the builder, or `runWithResult(facts, RunOptions.withTimeoutOf(...))` for one run. Keep the timer as well if you need a hard limit: a timeout can't stop an MVEL expression. |
 | A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)`; `runWithResult(facts)` passes `RunOptions.defaults()` to it. A decorator passes the options on to the engine it wraps. |
 | A `RuleListener` that assumed a run reaching `onRunError` had failed in a rule | A run stopped between rules reaches `onRunError` with no `onError`, because the rule it would have run never started. A run stopped while a condition or action was running closes that rule with `onError`, whose exception has no rule name and a `TimeoutException` or `InterruptedException` cause, so don't count it as a rule failure |
 

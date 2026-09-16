@@ -93,7 +93,7 @@ public interface RulesEngine<O> extends AutoCloseable {
 
     /**
      * Fires the rules like {@link #runWithResult(FactStore)}, with settings for this run only, such as a
-     * {@link RunOptions#timeout(Duration) timeout} that replaces the one the engine was built with.
+     * {@link RunOptions#withTimeoutOf(Duration) timeout} that replaces the one the engine was built with.
      *
      * <p>
      * A timeout's deadline is taken from when this method is called, so waiting for a compiled copy of the rules

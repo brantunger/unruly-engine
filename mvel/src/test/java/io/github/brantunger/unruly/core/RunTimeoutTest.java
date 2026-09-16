@@ -199,10 +199,12 @@ class RunTimeoutTest {
                 SLOW_ACTION_THEN_B);
 
         RuleExecutionException thrown =
-                assertThrows(RuleExecutionException.class, () -> patient.runWithResult(facts(), RunOptions.timeout(SHORT)));
+                assertThrows(RuleExecutionException.class, () -> patient.runWithResult(facts(),
+                        RunOptions.withTimeoutOf(SHORT)));
         assertTrue(thrown.getMessage().endsWith(" before rule 'b'"), thrown.getMessage());
 
-        assertEquals(Map.of("a", true, "b", true), hasty.runWithResult(facts(), RunOptions.timeout(LONG)).output(),
+        assertEquals(Map.of("a", true, "b", true),
+                hasty.runWithResult(facts(), RunOptions.withTimeoutOf(LONG)).output(),
                 "the engine's short timeout doesn't apply to a run given its own");
     }
 
@@ -221,7 +223,7 @@ class RunTimeoutTest {
         assertEquals("options must not be null", assertThrows(NullPointerException.class,
                 () -> engine.runWithResult(new FactMap<>(), null)).getMessage());
         assertEquals("timeout must be positive, but was PT0S", assertThrows(IllegalArgumentException.class,
-                () -> RunOptions.timeout(Duration.ZERO)).getMessage());
+                () -> RunOptions.withTimeoutOf(Duration.ZERO)).getMessage());
     }
 
     @Test

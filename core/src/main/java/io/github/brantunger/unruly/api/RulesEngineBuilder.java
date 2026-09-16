@@ -423,7 +423,7 @@ public final class RulesEngineBuilder<O> {
      * output object and on the facts, like any other failed run.
      * </p>
      *
-     * @param timeout How long a run may take; positive. {@link RunOptions#timeout(Duration)} gives a single run
+     * @param timeout How long a run may take; positive. {@link RunOptions#withTimeoutOf(Duration)} gives a single run
      *                one instead.
      * @return This builder
      * @throws IllegalArgumentException if {@code timeout} is zero or negative
