@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Whether a run must stop: its thread has been interrupted, or it has passed the deadline its timeout gave it.
@@ -14,17 +15,100 @@ import java.time.Instant;
  */
 final class Cancellation {
 
+    // The deadline of the run this thread is in, whichever engine runs it, so a run started from inside it (an action
+    // that runs another engine, say) stops no later than the run that started it. A plain ThreadLocal, like
+    // RuleSet's count of runs on a thread.
+    private static final ThreadLocal<Instant> RUN_DEADLINE = new ThreadLocal<>();
+
     private Cancellation() {
     }
 
     /**
-     * Returns when a run that starts now and may take {@code timeout} must stop.
+     * Returns when a run that starts now on this thread and may take {@code timeout} must stop: after
+     * {@code timeout}, or at the deadline of the run it was started from, whichever comes first.
      *
-     * @param timeout How long the run may take, or {@code null} if it has no deadline
-     * @return The deadline, or {@code null} if {@code timeout} is {@code null}
+     * @param timeout How long the run may take, or {@code null} if it has no timeout of its own
+     * @return The deadline, or {@code null} if the run has none
      */
     static Instant deadlineFrom(Duration timeout) {
-        return timeout == null ? null : Instant.now().plus(timeout);
+        return earliest(timeout == null ? null : after(Instant.now(), timeout), RUN_DEADLINE.get());
+    }
+
+    /**
+     * Returns {@code timeout} after {@code start}, or the latest instant there is when that would be later, so a
+     * timeout long enough to mean "no real limit" doesn't overflow.
+     *
+     * @param start   When the run starts
+     * @param timeout How long it may take; positive
+     * @return The deadline
+     */
+    static Instant after(Instant start, Duration timeout) {
+        return timeout.compareTo(Duration.between(start, Instant.MAX)) < 0 ? start.plus(timeout) : Instant.MAX;
+    }
+
+    /**
+     * Returns the earlier of two deadlines.
+     *
+     * @param first  A deadline, or {@code null} for none
+     * @param second Another deadline, or {@code null} for none
+     * @return The earlier one, or {@code null} if neither is set
+     */
+    static Instant earliest(Instant first, Instant second) {
+        if (first == null) {
+            return second;
+        }
+        return second == null || first.isBefore(second) ? first : second;
+    }
+
+    /**
+     * Makes {@code deadline} the one runs started on this thread from now on inherit, until {@link #leave(Instant)}.
+     *
+     * @param deadline The deadline of the run that is starting, or {@code null} if it has none
+     * @return The deadline to put back when the run ends
+     */
+    static Instant enter(Instant deadline) {
+        Instant outer = RUN_DEADLINE.get();
+        restore(deadline);
+        return outer;
+    }
+
+    /**
+     * Puts back the deadline that applied before a run started, leaving no entry behind on a thread that is no longer
+     * running anything with a deadline.
+     *
+     * @param outer What {@link #enter(Instant)} returned
+     */
+    static void leave(Instant outer) {
+        restore(outer);
+    }
+
+    private static void restore(Instant deadline) {
+        if (deadline == null) {
+            RUN_DEADLINE.remove();
+        } else {
+            RUN_DEADLINE.set(deadline);
+        }
+    }
+
+    /**
+     * Returns how long is left before a deadline.
+     *
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @return The time left, which is zero or negative once the deadline has passed, or {@code null} if there is no
+     *         deadline
+     */
+    static Duration timeLeft(Instant deadline) {
+        return deadline == null ? null : Duration.between(Instant.now(), deadline);
+    }
+
+    /**
+     * Creates the exception a run past its deadline is caused by.
+     *
+     * @param deadline The deadline that passed
+     * @return The exception
+     */
+    static TimeoutException timedOut(Instant deadline) {
+        return new TimeoutException("The run's deadline of " + deadline + " has passed");
     }
 
     /**

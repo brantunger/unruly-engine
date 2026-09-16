@@ -408,7 +408,9 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, so waiting for a compiled copy
-     * of the rules counts towards it. The engine checks it before each condition and before each action, so a run
+     * of the rules counts towards it: a run that is still waiting at its deadline stops waiting. A run started from
+     * inside another run on the same thread, such as one an action starts on another engine, stops at whichever of
+     * the two deadlines comes first. The engine checks it before each condition and before each action, so a run
      * stops between rules; it doesn't stop an expression that is already running. MVEL has no hook inside an
      * expression, so an MVEL rule that loops for ever can't be stopped, with or without a timeout: run rules you
      * don't trust in a process of their own. A language that can stop inside an expression, such as one built on
@@ -421,8 +423,8 @@ public final class RulesEngineBuilder<O> {
      * output object and on the facts, like any other failed run.
      * </p>
      *
-     * @param timeout How long a run may take; positive. {@link RulesEngine#runWithResult(FactStore, Duration)} takes
-     *                one for a single run instead.
+     * @param timeout How long a run may take; positive. {@link RunOptions#timeout(Duration)} gives a single run
+     *                one instead.
      * @return This builder
      * @throws IllegalArgumentException if {@code timeout} is zero or negative
      * @throws NullPointerException     if {@code timeout} is {@code null}

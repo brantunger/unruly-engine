@@ -32,6 +32,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RuleSetInfo;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
@@ -200,30 +201,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Fires the rules against {@code facts}, with the timeout the engine was built with, if any.
-     *
-     * @param facts {@inheritDoc}
-     * @return {@inheritDoc}
-     */
-    @Override
-    public final RunResult<O> runWithResult(FactStore<?> facts) {
-        return runRules(facts, runTimeout);
-    }
-
-    /**
-     * Fires the rules against {@code facts}, giving this run {@code timeout} instead of the engine's.
+     * Fires the rules against {@code facts} with {@code options}: its timeout if it has one, otherwise the timeout
+     * the engine was built with, if any.
      *
      * @param facts   {@inheritDoc}
-     * @param timeout {@inheritDoc}
+     * @param options {@inheritDoc}
      * @return {@inheritDoc}
      */
     @Override
-    public final RunResult<O> runWithResult(FactStore<?> facts, Duration timeout) {
-        Objects.requireNonNull(timeout, "timeout must not be null");
-        if (!timeout.isPositive()) {
-            throw new IllegalArgumentException("timeout must be positive, but was " + timeout);
-        }
-        return runRules(facts, timeout);
+    public final RunResult<O> runWithResult(FactStore<?> facts, RunOptions options) {
+        Objects.requireNonNull(options, "options must not be null");
+        Duration timeout = options.timeout();
+        return runRules(facts, timeout == null ? runTimeout : timeout);
     }
 
     /**
@@ -247,8 +236,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * @param facts   The facts the run was given
-     * @param timeout How long the run may take, or {@code null} if it has no deadline. The deadline is taken from
-     *                when the run starts, so waiting for a copy of the rules counts towards it.
+     * @param timeout How long the run may take, or {@code null} if it has no timeout of its own. The deadline is
+     *                taken from when the run starts, so waiting for a copy of the rules counts towards it, and a run
+     *                started from inside another run on this thread stops no later than that run's deadline.
      * @param body    What the engine does once it holds a copy of the rules
      * @return What the run did
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
@@ -262,12 +252,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         RuleSet.Copy copy;
         do {
             rules = currentRules();
-            copy = borrow(rules, listenerFacts);
+            copy = borrow(rules, listenerFacts, deadline);
         } while (copy == null);
         List<RuleListener> snapshot = listenerSnapshot();
         RunContext parent = currentRun.get();
         EngineRunContext run = newRun(rules, listenerFacts, parent);
         currentRun.set(run);
+        Instant outerDeadline = Cancellation.enter(deadline);
         try {
             notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
             RunResult<O> result;
@@ -286,6 +277,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
             return result;
         } finally {
+            Cancellation.leave(outerDeadline);
             if (parent == null) {
                 currentRun.remove();
             } else {
@@ -362,23 +354,41 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
      * @throws RuleExecutionException if the thread is interrupted while it waits for a copy
      */
-    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts) {
+    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline) {
         try {
-            return rules.borrow();
+            return rules.borrow(deadline);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            String msg = "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
-                    + " were in use";
-            // WARN, like the check between rules: a run the caller stopped isn't the rules or the engine failing.
-            log.warn(msg);
-            RuleExecutionException failure = new RuleExecutionException(msg, e);
-            // The run never started, so it opens and closes a scope of its own for listeners.
-            List<RuleListener> snapshot = listenerSnapshot();
-            EngineRunContext run = newRun(rules, listenerFacts, currentRun.get());
-            notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
-            notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, failure));
-            throw failure;
+            throw stoppedWaiting(rules, listenerFacts,
+                    "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
+                            + " were in use", e);
+        } catch (TimeoutException e) {
+            throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
+                    + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e);
         }
+    }
+
+    /**
+     * Reports a run that stopped before it got a copy of the rules, because it was interrupted or passed its deadline
+     * while waiting. Logged at WARN, like the check between rules: a run the caller stopped isn't the rules or the
+     * engine failing.
+     *
+     * @param rules         The rule set the run was waiting on
+     * @param listenerFacts The run's facts, as listeners see them
+     * @param msg           What to log and what the exception says
+     * @param cause         An {@link InterruptedException} or a {@link TimeoutException}
+     * @return The exception to throw
+     */
+    private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
+                                                  Exception cause) {
+        log.warn(msg);
+        RuleExecutionException failure = new RuleExecutionException(msg, cause);
+        // The run never started, so it opens and closes a scope of its own for listeners.
+        List<RuleListener> snapshot = listenerSnapshot();
+        EngineRunContext run = newRun(rules, listenerFacts, currentRun.get());
+        notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, failure));
+        return failure;
     }
 
     /**
@@ -681,15 +691,74 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the run must stop
      */
     private void checkNotCancelled(CompiledRule rule, Instant deadline) {
+        RuleExecutionException stop = cancellation("before rule '" + rule.displayName() + "'", deadline);
+        if (stop != null) {
+            throw stop;
+        }
+    }
+
+    /**
+     * Returns the exception a cancelled run stops with, or {@code null} if the run may go on.
+     *
+     * @param when     Where the run stopped, such as {@code "before rule 'x'"}
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @return The exception, already logged, or {@code null}
+     */
+    private RuleExecutionException cancellation(String when, Instant deadline) {
         // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
         if (Thread.currentThread().isInterrupted()) {
-            throw cancelled("run() was interrupted before rule '" + rule.displayName() + "'",
-                    new InterruptedException());
+            return cancelled("run() was interrupted " + when, new InterruptedException());
         }
         if (Cancellation.hasPassed(deadline)) {
-            throw cancelled("run() passed its deadline of " + deadline + " before rule '" + rule.displayName() + "'",
-                    new TimeoutException("The run's deadline of " + deadline + " has passed"));
+            return cancelled("run() passed its deadline of " + deadline + " " + when, Cancellation.timedOut(deadline));
         }
+        return null;
+    }
+
+    /**
+     * Reports a condition or action that threw as its rule's failure.
+     *
+     * @param snapshot The listeners the rule's callbacks went to
+     * @param rule     The rule whose expression threw
+     * @param kind     Whether the condition or the action threw
+     * @param thrown   What it threw
+     * @return The exception to throw
+     */
+    private RuleExecutionException expressionFailure(List<RuleListener> snapshot, CompiledRule rule,
+                                                     ExpressionKind kind, Throwable thrown) {
+        String what = kind == ExpressionKind.CONDITION ? "Failed to evaluate condition" : "Failed to execute action";
+        return failure(snapshot, rule, kind, what + " for rule '" + rule.displayName() + "': "
+                + Failures.describe(thrown), thrown);
+    }
+
+    /**
+     * Decides what a condition or action that threw means. When the run has been cancelled by then, the throw is
+     * taken as the expression giving up, as a run started from inside it does when it stops at the deadline it
+     * inherited, so the run stops the way a cancelled run always does: no rule name, logged at WARN, with an
+     * {@link InterruptedException} or a {@link TimeoutException} as the cause and what the expression threw kept as a
+     * suppressed exception. The rule's open callback is closed with {@code onError}. Otherwise the rule failed, and a
+     * fatal {@link Error} in what it threw is rethrown as for any failure.
+     *
+     * @param snapshot The listeners the rule's callbacks went to
+     * @param rule     The rule whose expression threw
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param thrown   What the expression threw
+     * @param failed   Reports the rule's failure, when the run wasn't cancelled
+     * @return The exception to throw
+     */
+    private RuleExecutionException stoppedOrFailed(List<RuleListener> snapshot, CompiledRule rule, Instant deadline,
+                                                   Exception thrown, Supplier<RuleExecutionException> failed) {
+        // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and a
+        // fatal Error inside what it threw is rethrown as it always is, cancelled or not.
+        Failures.keepInterruptStatus(thrown);
+        RuleExecutionException stop = Failures.fatalError(thrown) == null
+                ? cancellation("during rule '" + rule.displayName() + "'", deadline) : null;
+        if (stop == null) {
+            return failed.get();
+        }
+        stop.addSuppressed(thrown);
+        Failures.throwIfPresent(notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop)));
+        return stop;
     }
 
     /**
@@ -768,9 +837,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             evaluated = rule.compiledCondition().evaluate(facts.evaluation(),
                     copy.sessions().get(rule.language()));
-        } catch (Exception | Error e) {
-            throw failure(snapshot, rule, ExpressionKind.CONDITION, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
-                    + Failures.describe(e), e);
+        } catch (Exception e) {
+            throw stoppedOrFailed(snapshot, rule, facts.deadline(), e, () -> expressionFailure(snapshot, rule,
+                    ExpressionKind.CONDITION, e));
+        } catch (Error e) {
+            throw expressionFailure(snapshot, rule, ExpressionKind.CONDITION, e);
         }
 
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
@@ -802,9 +873,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         ActionResult result;
         try {
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
-        } catch (Exception | Error e) {
-            throw failure(snapshot, rule, ExpressionKind.ACTION, "Failed to execute action for rule '"
-                    + rule.displayName() + "': " + Failures.describe(e), e);
+        } catch (Exception e) {
+            throw stoppedOrFailed(snapshot, rule, facts.deadline(), e, () -> expressionFailure(snapshot, rule,
+                    ExpressionKind.ACTION, e));
+        } catch (Error e) {
+            throw expressionFailure(snapshot, rule, ExpressionKind.ACTION, e);
         }
         if (result == null) {
             throw failure(snapshot, rule, ExpressionKind.ACTION, "Action for rule '" + rule.displayName()

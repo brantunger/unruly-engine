@@ -62,7 +62,9 @@ failure that belongs to no rule — a fact name no language can refer to, an out
 interrupt while the run waits for a compiled copy of the rules, or a run stopped because its thread was interrupted
 or it passed its deadline — reaches `onRunError` only, because no rule was involved. The rule a stopped run would
 have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`, so there is no
-open callback for `onError` to close. A run started from inside an action has the run around it as its `parent()`, so nested runs stay apart
+open callback for `onError` to close. A run stopped while a condition or action was running is different: that rule's
+callback is closed with `onError`, whose exception has no rule name and an `InterruptedException` or
+`TimeoutException` cause, so don't count it as a rule failure. A run started from inside an action has the run around it as its `parent()`, so nested runs stay apart
 without a `ThreadLocal`. `RunContext` is sealed to the engine, so test a listener by running an engine rather than by
 constructing a context.
 

@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.api;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,14 +20,12 @@ class RulesEngineDefaultMethodTest {
             throw new AssertionError("not called");
         }
 
-        @Override
-        public RunResult<Object> runWithResult(FactStore<?> facts) {
-            return RunResult.of("output", List.of(), CHECKSUM);
-        }
+        private RunOptions received;
 
         @Override
-        public RunResult<Object> runWithResult(FactStore<?> facts, Duration timeout) {
-            return runWithResult(facts);
+        public RunResult<Object> runWithResult(FactStore<?> facts, RunOptions options) {
+            received = options;
+            return RunResult.of("output", List.of(), CHECKSUM);
         }
 
         @Override
@@ -41,6 +38,15 @@ class RulesEngineDefaultMethodTest {
     @DisplayName("run() returns the result's output by default, so an implementation only writes runWithResult()")
     void runDelegatesToRunWithResult() {
         assertEquals("output", new MinimalEngine().run(new FactMap<>()));
+    }
+
+    @Test
+    @DisplayName("runWithResult(facts) passes the default options, so an implementation writes one run method")
+    void runWithResultPassesTheDefaultOptions() {
+        MinimalEngine engine = new MinimalEngine();
+
+        assertEquals("output", engine.runWithResult(new FactMap<>()).output());
+        assertSame(RunOptions.defaults(), engine.received);
     }
 
     @Test

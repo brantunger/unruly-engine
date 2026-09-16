@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
@@ -198,10 +199,10 @@ class RunTimeoutTest {
                 SLOW_ACTION_THEN_B);
 
         RuleExecutionException thrown =
-                assertThrows(RuleExecutionException.class, () -> patient.runWithResult(facts(), SHORT));
+                assertThrows(RuleExecutionException.class, () -> patient.runWithResult(facts(), RunOptions.timeout(SHORT)));
         assertTrue(thrown.getMessage().endsWith(" before rule 'b'"), thrown.getMessage());
 
-        assertEquals(Map.of("a", true, "b", true), hasty.runWithResult(facts(), LONG).output(),
+        assertEquals(Map.of("a", true, "b", true), hasty.runWithResult(facts(), RunOptions.timeout(LONG)).output(),
                 "the engine's short timeout doesn't apply to a run given its own");
     }
 
@@ -217,10 +218,10 @@ class RunTimeoutTest {
                 () -> builder.runTimeout(Duration.ZERO)).getMessage());
         assertEquals("timeout must be positive, but was PT-1S", assertThrows(IllegalArgumentException.class,
                 () -> builder.runTimeout(Duration.ofSeconds(-1))).getMessage());
-        assertEquals("timeout must not be null", assertThrows(NullPointerException.class,
+        assertEquals("options must not be null", assertThrows(NullPointerException.class,
                 () -> engine.runWithResult(new FactMap<>(), null)).getMessage());
         assertEquals("timeout must be positive, but was PT0S", assertThrows(IllegalArgumentException.class,
-                () -> engine.runWithResult(new FactMap<>(), Duration.ZERO)).getMessage());
+                () -> RunOptions.timeout(Duration.ZERO)).getMessage());
     }
 
     @Test

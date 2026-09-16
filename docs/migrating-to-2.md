@@ -392,8 +392,10 @@ Three things follow:
 - A run whose thread is interrupted, before it starts or while it is going, throws a `RuleExecutionException` caused
   by an `InterruptedException`. `getRuleName()` is `null`: an interrupt isn't that rule's failure. The interrupt
   status stays set.
-- `RulesEngineBuilder.runTimeout(Duration)` and `runWithResult(facts, timeout)` are new. A run past its deadline
-  fails the same way, with a `TimeoutException` as the cause.
+- `RulesEngineBuilder.runTimeout(Duration)`, `RunOptions` and `runWithResult(facts, options)` are new. A run past its
+  deadline fails the same way, with a `TimeoutException` as the cause, including while it waits for a compiled copy
+  of the rules. A run started from inside another run on the same thread stops no later than the outer run's
+  deadline.
 - An engine **with** a copy limit no longer fails a run whose thread was already interrupted with
   `Interrupted while waiting for a compiled copy of the rules: all N were in use` when nothing was in use and nothing
   waited. It takes a free copy and then stops at the first rule, exactly as an engine without a limit does. That
@@ -412,9 +414,9 @@ the run's deadline; see [Other expression languages](languages/custom.md#-stoppi
 | --- | --- |
 | Catching the `RuleExecutionException` and serving the next request on the same thread | Clear the interrupt status first, for example with `Thread.interrupted()`, or every later run on that thread stops at its first rule |
 | Matching on `"Interrupted while waiting for a compiled copy of the rules"` | The message is now `run() was interrupted while waiting for a compiled copy of the rules: all N were in use`, and it is logged at WARN, not ERROR |
-| Your own timer around `run()` | `runTimeout(Duration)` on the builder, or `runWithResult(facts, timeout)` for one run. Keep the timer as well if you need a hard limit: a timeout can't stop an MVEL expression. |
-| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, Duration)` too. Delegating to `runWithResult(facts)` is fine for a decorator that has no timeout of its own. |
-| A `RuleListener` that assumed a run reaching `onRunError` had failed in a rule | A stopped run reaches `onRunError` with no `onError`, because the rule it would have run never started |
+| Your own timer around `run()` | `runTimeout(Duration)` on the builder, or `runWithResult(facts, RunOptions.timeout(...))` for one run. Keep the timer as well if you need a hard limit: a timeout can't stop an MVEL expression. |
+| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)`; `runWithResult(facts)` passes `RunOptions.defaults()` to it. A decorator passes the options on to the engine it wraps. |
+| A `RuleListener` that assumed a run reaching `onRunError` had failed in a rule | A run stopped between rules reaches `onRunError` with no `onError`, because the rule it would have run never started. A run stopped while a condition or action was running closes that rule with `onError`, whose exception has no rule name and a `TimeoutException` or `InterruptedException` cause, so don't count it as a rule failure |
 
 ## 📊 A run reports what it did, and an engine reports its rules
 
@@ -442,7 +444,7 @@ compile unchanged.
 
 | 1.x | 2.0 |
 | --- | --- |
-| A class that implements `RulesEngine` | Implement `runWithResult` and `rules()`; `run` now has a default that delegates to `runWithResult`. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return. |
+| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)` and `rules()`; `run` and `runWithResult(facts)` have defaults that delegate to it. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return. |
 | A listener with a `ThreadLocal` to group callbacks into a run | `beforeRun` / `afterRun`, and `RunContext.runId()` or the context itself |
 | A listener that counts failures in `onError` | `onRunError` also reports failures that belong to no rule |
 | Recording which rules produced a decision with a shared listener | `runWithResult(facts).firedRules()` |

@@ -73,7 +73,8 @@ All of them are unchecked.
 | | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. Every other `Error`, including a `LinkageError` such as `NoClassDefFoundError` or `IllegalAccessError`, is reported as a `RuleExecutionException` naming the rule, with the error as its cause. |
-| `runWithResult(facts, timeout)` | | As `runWithResult(facts)`, and `IllegalArgumentException` if the timeout is zero or negative |
+| `RunOptions.timeout()` / `withTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
+| `runWithResult(facts, options)` | | As `runWithResult(facts)` |
 | `rules()` | `IllegalStateException` | The engine is closed |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
@@ -135,7 +136,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
         .build();
 ```
 
-- The engine checks before each condition and before each action. A run that must stop throws a
+- The engine checks while a run waits for a compiled copy of the rules, and before each condition and before each
+  action. A run that must stop throws a
   `RuleExecutionException` whose `getRuleName()` is `null` — an interrupt or a deadline isn't that rule's fault — with
   an `InterruptedException` or a `TimeoutException` as its cause. An interrupted run leaves the interrupt status set,
   so an executor shutting down still sees it.
@@ -144,7 +146,15 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   cancellation, for example — is given the run's deadline and can stop there; see
   [Other expression languages](languages/custom.md#-stopping-a-run).
 - **Nothing is rolled back.** What ran before the run stopped keeps its effects, like any other failed run.
-- `runWithResult(facts, timeout)` gives one run a timeout instead of the engine's.
+- `runWithResult(facts, RunOptions.timeout(Duration.ofMillis(200)))` gives one run a timeout instead of the engine's.
+  A run can be given a longer timeout than the engine's, but not none at all.
+- **A run started from inside another run** on the same thread, such as one an action starts on another engine,
+  stops at whichever deadline comes first: its own, or the outer run's. A run started on another thread doesn't
+  inherit it.
+- **A condition or action that throws once the run is cancelled** stops the run the same way, instead of failing its
+  rule. That's what happens when a run an action started stops at the deadline it inherited, or when a language gives
+  up by throwing. The rule's `before*` callback is closed with `onError` and the stop exception, and what the
+  expression threw is kept as a suppressed exception.
 - A stopped run is logged at **WARN**, not ERROR: the caller asked for it, and no rule failed. Listeners get
   `beforeRun` and `onRunError`, and the rule the run stopped before gets no callback at all, because it never started.
 
