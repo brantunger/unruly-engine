@@ -186,13 +186,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         /**
          * Runs the rules.
          *
-         * @param rules    The rule set the run uses
-         * @param copy     The run's copy of the rules
-         * @param facts    The run's fact values, already checked
-         * @param deadline When the run must stop, or {@code null} if it has none
+         * @param rules The rule set the run uses
+         * @param copy  The run's copy of the rules
+         * @param facts The run's fact values, already checked, and the views built over them
          * @return What the run did
          */
-        RunResult<O> run(RuleSet rules, RuleSet.Copy copy, Map<String, Object> facts, Instant deadline);
+        RunResult<O> run(RuleSet rules, RuleSet.Copy copy, RunFacts facts);
     }
 
     /**
@@ -269,7 +268,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RunResult<O> result;
             try {
                 checkFactNames(values, rules.factChecks());
-                result = body.run(rules, copy, values, deadline);
+                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline));
             } catch (RuntimeException e) {
                 notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, e));
                 throw e;
@@ -582,31 +581,28 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 based on when condition expression parses to
      *                 true
      * @param copy     The run's copy of the rules, whose sessions the conditions run with
-     * @param entryMap The pre-built map of unwrapped facts to use as execution context.
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param facts    The run's facts and the views built over them
      * @return List of {@link CompiledRule} objects where their condition evaluated
-     *         to <b>true</b>
+     *         to <b>true</b>. The list is the engine's own and isn't published, so it isn't copied.
      */
-    List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap,
-                             Instant deadline) {
+    List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, RunFacts facts) {
         return ruleList.stream()
-                .filter(rule -> matches(rule, copy, entryMap, deadline))
+                .filter(rule -> matches(rule, copy, facts))
                 .toList();
     }
 
     /**
      * Evaluates one rule's condition, telling the listeners about it.
      *
-     * @param rule     The rule whose condition to evaluate
-     * @param copy     The run's copy of the rules, whose sessions the condition runs with
-     * @param entryMap The run's facts
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param rule  The rule whose condition to evaluate
+     * @param copy  The run's copy of the rules, whose sessions the condition runs with
+     * @param facts The run's facts and the views built over them
      * @return Whether the condition was true
      * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    boolean matches(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap, Instant deadline) {
-        checkNotCancelled(rule, deadline);
-        return parseCondition(rule, copy, entryMap, deadline);
+    boolean matches(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+        checkNotCancelled(rule, facts.deadline());
+        return parseCondition(rule, copy, facts);
     }
 
     /**
@@ -658,18 +654,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                     the rule for
      * @param copy         The run's copy of the rules, whose session the action runs with
      * @param outputObject an empty output object to set output data into
-     * @param entryMap     The pre-built map of unwrapped facts to use as execution context.
-     * @param deadline     When the run must stop, or {@code null} if it has none
+     * @param facts        The run's facts and the views built over them
      * @return {@code outputObject}, which the action changed in place or whose properties were set from the action's
      *         result. An action can't replace it:
      *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
      *         {@code def} function, where it creates a variable local to the function.
      * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, Map<String, Object> entryMap,
-                  Instant deadline) {
-        checkNotCancelled(rule, deadline);
-        return parseAction(rule, copy, outputObject, entryMap, deadline);
+    O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, RunFacts facts) {
+        checkNotCancelled(rule, facts.deadline());
+        return parseAction(rule, copy, outputObject, facts);
     }
 
     /**
@@ -702,11 +696,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return output;
     }
 
-    private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap,
-                                   Instant deadline) {
-        // The evaluation context makes its own read-only view, whose messages are about conditions, so a listener
-        // that writes to the facts isn't told about conditions.
-        Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
+    private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+        // The run's evaluation context has its own read-only view, whose messages are about conditions, so a
+        // listener that writes to the facts isn't told about conditions.
+        Map<String, Object> listenerFacts = facts.forListeners();
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
 
@@ -714,7 +707,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(entryMap, deadline),
+            evaluated = rule.compiledCondition().evaluate(facts.evaluation(),
                     copy.sessions().get(rule.language()));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, ExpressionKind.CONDITION, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
@@ -739,14 +732,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return result;
     }
 
-    private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, Map<String, Object> entryMap,
-                          Instant deadline) {
+    private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
-        ActionContext context = new EngineActionContext(entryMap, outputResult, deadline);
+        // Not shared like the evaluation context: a first-match engine builds a fresh output object per rule.
+        ActionContext context = new EngineActionContext(facts.values(), outputResult, facts.deadline());
         ActionResult result;
         try {
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
