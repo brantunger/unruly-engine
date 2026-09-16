@@ -78,7 +78,7 @@ expressions run lives in a *session*, and a copy of the rules is one session for
 `run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first run after
 `load()` does), and gives it back when it finishes. The copies stay in memory until the next `load()` or `close()`,
 and an engine keeps as many as the most runs it has had in progress at once — except that runs on **virtual threads**
-are limited, by default, to one copy for each processor. See [Limiting the copies](#limiting-the-copies).
+are limited, by default, to one copy for every two processors. See [Limiting the copies](#limiting-the-copies).
 
 MVEL's session compiles each MVEL expression again the first time it runs it, except the first session, which takes
 the expression `load()` compiled. A language whose expressions several threads can run at once keeps nothing
@@ -99,9 +99,10 @@ that copy alone. A thread pool bounds the number of copies, because runs can't o
 threads don't bound anything: when each request runs on its own virtual thread, thousands of runs overlap, and the
 engine makes and keeps a copy for each.
 
-So an engine limits **runs on virtual threads** to one copy for each processor. The number of processors is read once,
-by `build()`, so an engine's limit doesn't change while it runs. Runs on platform threads aren't limited: the pool
-they come from already bounds how many copies exist. Set your own limit, or turn the default off:
+So an engine limits **runs on virtual threads** to one copy for every two processors, and at least one. The number
+of processors is read once, by `build()`, so an engine's limit doesn't change while it runs. Runs on platform threads
+aren't limited: the pool they come from already bounds how many copies exist. Set your own limit, or turn the default
+off:
 
 ```java
 // A limit on runs from every kind of thread, virtual and platform
@@ -113,6 +114,15 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 
 - A run that starts while every copy is in use waits until one is free, so at most that many runs make progress at
   once. On a virtual thread, a waiting run doesn't hold a platform thread.
+- With more than one processor, the default is **below the number of processors**, which is how many platform threads
+  carry virtual threads. On JDK 21 to 23, a virtual thread that waits to enter a monitor, or waits while holding one,
+  keeps its carrier. MVEL's expressions contend on a monitor shared by the whole JVM, so with one copy for each
+  processor every carrier could be held and the runs deadlocked. The lower default makes that less likely but doesn't
+  prevent it: each engine, and each rule list still in use after a reload, has its own limit, and a run that waited
+  five seconds without a copy coming back takes an extra copy on its own thread (see below). On JDK 21 to 23, use JDK
+  24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491); otherwise run
+  MVEL rules on platform threads, or keep the copies of all your engines together below
+  `jdk.virtualThreadScheduler.parallelism` (the number of processors unless you set it).
 - The default is **sized for rules that compute**. A rule that waits — on a database, a service, a file — holds its
   copy while it waits, so a limit caps how many such runs can overlap: 64 threads running a rule that waits 5 ms are
   about 8× slower with a limit of 8 than with none. Build those engines with `unlimitedCopies()`, or with a
@@ -120,7 +130,8 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
   `InterruptedException`, and the thread's interrupt status stays set. A run whose thread was **already** interrupted
   doesn't wait: it takes a free copy and then stops at its first rule, exactly as it does without a limit.
-- While `load()` swaps in a new list, runs still using the old list can hold up to that many copies more.
+- While `load()` swaps in a new list, runs still using the old list can hold up to that many copies more. Each list
+  still in use has its own limit, so several reloads in a row can add that many again for each list.
 - A rule list that needs no copy at all is never limited. When every language of the list returns `Session.none()`,
   nothing a copy holds changes while the rules run, so every run shares one set of sessions, waits for nothing, and
   counts against no limit.

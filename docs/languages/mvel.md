@@ -111,6 +111,26 @@ MVEL compares values more loosely than Java, which can make a condition match, o
 | ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, so `x == null` can't test for it | `isdef x && x > 1` |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
 
+## 🧵 Virtual threads
+
+On JDK 21 to 23, MVEL rules run from many virtual threads can **deadlock**: MVEL's property cache is guarded by one
+monitor for the whole JVM, and a virtual thread that waits on a monitor keeps the platform thread carrying it. Once
+every carrier is held, no run completes again. The engine's default limit on virtual threads (one copy for every two
+processors) makes that less likely, but doesn't prevent it:
+
+- each engine has its own limit, and so does each rule list still in use after a reload;
+- a run that waited five seconds without a copy coming back takes an extra copy on its own thread;
+- with one processor, the limit of one copy equals the one carrier;
+- `unlimitedCopies()`, or a `maxCopies(...)` at or above the number of carriers, leaves no carrier free.
+
+So on JDK 21 to 23:
+
+- use JDK 24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491);
+- otherwise run MVEL rules on platform threads, or keep the copies of all your engines together below
+  `jdk.virtualThreadScheduler.parallelism`, which is the number of processors unless you set it.
+
+See [Limiting the copies](../thread-safety.md#limiting-the-copies).
+
 ## 🔒 Security
 
 An MVEL rule has the same access to the JVM as your own Java code: it can start processes, read files, open sockets
