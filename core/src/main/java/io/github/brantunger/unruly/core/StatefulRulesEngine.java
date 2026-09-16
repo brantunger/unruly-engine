@@ -63,14 +63,14 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      */
     @Override
     RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
-        return runInScope(facts, timeout, (ruleSet, copy, entryMap, deadline) -> {
+        return runInScope(facts, timeout, (ruleSet, copy, runFacts) -> {
             List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Match the facts and data against the set of rules with the highest priority first.
-            List<CompiledRule> matchedRuleList = this.match(rules, copy, entryMap, deadline);
+            List<CompiledRule> matchedRuleList = this.match(rules, copy, runFacts);
             if (matchedRuleList.isEmpty()) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
@@ -80,7 +80,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
             // Run the action of every rule on given data, saving state each time
             List<Rule> fired = new ArrayList<>();
             for (CompiledRule rule : matchedRuleList) {
-                outputObject = this.executeRule(rule, copy, outputObject, entryMap, deadline);
+                outputObject = this.executeRule(rule, copy, outputObject, runFacts);
                 fired.add(rule.rule());
             }
 

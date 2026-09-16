@@ -5,9 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -57,7 +55,7 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      */
     @Override
     RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
-        return runInScope(facts, timeout, (ruleSet, copy, entryMap, deadline) -> {
+        return runInScope(facts, timeout, (ruleSet, copy, runFacts) -> {
             List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
@@ -65,13 +63,13 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
             // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
             // broken lower-priority condition can't fail a run that is already decided.
-            CompiledRule resolvedRule = this.firstMatch(rules, copy, entryMap, deadline);
+            CompiledRule resolvedRule = this.firstMatch(rules, copy, runFacts);
             if (null == resolvedRule) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Run the action of the selected rule on given data and return the output.
-            O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), entryMap, deadline);
+            O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), runFacts);
             return RunResult.of(output, List.of(resolvedRule.rule()), ruleSet.checksum());
         });
     }
@@ -86,14 +84,12 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      *
      * @param ruleList The rules, in evaluation order
      * @param copy     The run's copy of the rules, whose sessions the conditions run with
-     * @param entryMap The run's facts
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param facts    The run's facts and the views built over them
      * @return The first matching rule, or {@code null} if none matched
      */
-    private CompiledRule firstMatch(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap,
-                                    Instant deadline) {
+    private CompiledRule firstMatch(List<CompiledRule> ruleList, RuleSet.Copy copy, RunFacts facts) {
         for (CompiledRule rule : ruleList) {
-            if (this.matches(rule, copy, entryMap, deadline)) {
+            if (this.matches(rule, copy, facts)) {
                 return rule;
             }
         }

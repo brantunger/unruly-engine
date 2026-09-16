@@ -7,8 +7,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * What one condition is evaluated against. <b>Internal:</b> public only because {@link EvaluationContext} is sealed
- * to it.
+ * What a run's conditions are evaluated against. <b>Internal:</b> public only because {@link EvaluationContext} is
+ * sealed to it.
+ *
+ * <p>
+ * One context serves every condition of a run. Nothing here identifies the rule being evaluated, so there is nothing
+ * to build per condition, and at a thousand rules building one per condition was a measurable share of what a run
+ * allocated. {@link #isCancelled()} still answers for the moment it's called.
+ * </p>
  *
  * @param facts    The run's facts, read-only
  * @param deadline When the run must stop, or {@code null} if it has none
