@@ -191,8 +191,8 @@ class RunCallbacksTest {
         assertThrows(OutOfMemoryError.class, () -> engine.run(facts));
 
         assertTrue(recorder.calls.contains("onError r"), recorder.calls.toString());
-        assertTrue(recorder.calls.stream().anyMatch(call -> call.startsWith("onRunError: The run failed with ")),
-                recorder.calls.toString());
+        assertTrue(recorder.calls.stream().anyMatch(call -> call.startsWith("onRunError: Failed to execute action for "
+                + "rule 'r': ")), recorder.calls.toString());
         assertFalse(recorder.calls.contains("afterRun"), recorder.calls.toString());
     }
 
@@ -213,7 +213,8 @@ class RunCallbacksTest {
         OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>()));
 
         assertEquals("listener", thrown.getMessage());
-        assertEquals(List.of("beforeRun"), recorder.calls, "the other listener still got the callback");
+        assertEquals(List.of("beforeRun", "onRunError: The run failed with java.lang.OutOfMemoryError: listener"),
+                recorder.calls, "the other listener still got the callback, and its run was closed");
     }
 
     @Test

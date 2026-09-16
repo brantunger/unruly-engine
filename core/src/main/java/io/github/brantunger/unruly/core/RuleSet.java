@@ -529,12 +529,12 @@ final class RuleSet {
             String msg = failed + "failed to create a session: " + Failures.describe(e);
             log.error(msg);
             Failures.throwIfPresent(Failures.fatalError(e));
-            throw new RuleExecutionException(msg, e);
+            throw new ReportedFailure(msg, e);
         }
         if (session == null) {
             String msg = failed + "returned no session";
             log.error(msg);
-            throw new RuleExecutionException(msg);
+            throw new ReportedFailure(msg, null);
         }
         return session;
     }

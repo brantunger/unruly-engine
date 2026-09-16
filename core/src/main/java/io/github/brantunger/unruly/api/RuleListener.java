@@ -68,8 +68,12 @@ public interface RuleListener {
      *
      * <p>
      * A failure inside a rule reaches that rule's {@link #onError} first, then this callback. {@code error} is what
-     * {@code run()} throws; when a fatal {@link Error} is rethrown instead, {@code error} is the
-     * {@link RuleExecutionException} that wraps it, as {@link #onError} describes.
+     * {@code run()} throws; when a fatal {@link Error} is rethrown instead, {@code error} is a
+     * {@link RuleExecutionException} that carries it, as a cause or, when a listener's {@link #onError} threw it, as a
+     * suppressed exception. When the error came while a rule's callback was open, from the rule, a listener's
+     * {@code before*} callback or a listener's {@link #onError}, that is the exception {@link #onError} got, which
+     * names the rule unless the run was stopped; for one from anywhere else, such as a listener's {@link #beforeRun},
+     * {@link #afterEvaluate} or {@link #afterExecute}, it names no rule.
      * </p>
      *
      * @param run   The run that {@link #beforeRun} opened

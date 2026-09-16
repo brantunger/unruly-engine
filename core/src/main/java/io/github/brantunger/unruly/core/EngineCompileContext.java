@@ -63,6 +63,6 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(issue, "issue");
         log.warn("{} has a warning{}: {}", Failures.expression(source.kind(), source.ruleName()),
-                Failures.position(issue), issue.message());
+                Failures.position(issue), Failures.escape(Failures.truncate(issue.message())));
     }
 }

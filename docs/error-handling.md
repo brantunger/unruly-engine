@@ -84,7 +84,12 @@ Messages about a specific rule name it, for example
 `Failed to evaluate condition for rule 'prime-rate': ...`. In a
 message, line breaks and other control characters are escaped (`\n`) in a rule, fact or language name **and in the
 text copied from the underlying exception**, so neither a name nor a fact value that a language quoted can start a
-log line of its own. A name longer than 200 characters is shortened, and the copied text at 1,000 characters.
+log line of its own. That includes a compile error or warning a language reports, and what the output supplier
+throws. A name longer than 200 characters is shortened, and the copied text at 1,000 characters. When an exception in
+the chain has no message, the message also names the root cause: its class, and its message unless the copied text
+already includes it, such as `... (caused by java.lang.RuntimeException: static init boom)`. A condition or action
+that starts a `run()` of its own, which fails, says `a nested run() failed: ...` and isn't logged a second time; a
+`RuleExecutionException` that a language or your code throws itself is logged like any other exception.
 The underlying exception itself is never changed: when the expression language or your code threw it, it's available
 from `getCause()` and reads exactly as it was written, line breaks and all. An
 expression the language rejected, such as a condition with an assignment or an MVEL syntax error, has an
