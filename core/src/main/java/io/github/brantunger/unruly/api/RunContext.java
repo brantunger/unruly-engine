@@ -14,6 +14,12 @@ import java.util.Map;
  * test a listener through an engine, as the listener guide shows. Because only the engine implements it, a later
  * release can add methods to it without breaking listeners.
  * </p>
+ *
+ * <p>
+ * <b>Identity:</b> a context equals only itself, so it can key a map from {@code beforeRun} to {@code afterRun} or
+ * {@code onRunError}, however the facts change during the run and whatever another engine's runs look like. Its
+ * {@code toString()} names the run, its parent, the match policy and the checksum, never the facts.
+ * </p>
  */
 public sealed interface RunContext permits io.github.brantunger.unruly.core.EngineRunContext {
 

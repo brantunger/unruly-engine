@@ -30,4 +30,15 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Inst
     public boolean isCancelled() {
         return Cancellation.isCancelled(deadline);
     }
+
+    /**
+     * Describes the context without its facts or its output object, so logging it can't leak their values.
+     *
+     * @return The description, such as {@code ActionContext(output=java.util.HashMap, deadline=none)}
+     */
+    @Override
+    public String toString() {
+        return "ActionContext(output=" + output.getClass().getName() + ", deadline="
+                + (deadline == null ? "none" : deadline) + ")";
+    }
 }

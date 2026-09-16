@@ -34,4 +34,14 @@ public record EngineEvaluationContext(Map<String, Object> facts, Instant deadlin
     public boolean isCancelled() {
         return Cancellation.isCancelled(deadline);
     }
+
+    /**
+     * Describes the context without its facts, so logging it can't leak a fact value.
+     *
+     * @return The description, such as {@code EvaluationContext(deadline=2026-09-16T12:00:00Z)}
+     */
+    @Override
+    public String toString() {
+        return "EvaluationContext(deadline=" + (deadline == null ? "none" : deadline) + ")";
+    }
 }
