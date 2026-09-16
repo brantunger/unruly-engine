@@ -1,0 +1,35 @@
+plugins {
+    id 'unruly.java-conventions'
+}
+
+// Benchmarks of the engine itself. Nothing here is published: the project exists so a change to the engine can be
+// measured rather than argued about. It isn't wired into `check`, because identical configurations differed by up to
+// 1.6x between sweeps on a shared machine, so a pass/fail threshold in CI would only be flaky (see #293).
+
+dependencies {
+    implementation project(':mvel')
+    implementation libs.jmh.core
+    annotationProcessor libs.jmh.generator.annprocess
+    // Without a provider, SLF4J prints a warning into every benchmark's output.
+    runtimeOnly libs.slf4j.simple
+}
+
+// JMH generates the code that runs each @Benchmark. It's machine-written, so it isn't held to the warning settings
+// the hand-written sources are; Checkstyle and PMD read the source set, which doesn't include it.
+tasks.named('compileJava', JavaCompile) {
+    options.compilerArgs.removeAll(['-Xlint:all', '-Werror'])
+    options.compilerArgs.add('-Xlint:none')
+}
+
+tasks.register('jmh', JavaExec) {
+    group = 'benchmark'
+    description = 'Runs the JMH benchmarks. Pass JMH arguments with -PjmhArgs="...", for example ' +
+            '-PjmhArgs="-f 1 -wi 2 -i 3 -p rules=100 -prof gc".'
+    mainClass = 'org.openjdk.jmh.Main'
+    classpath = sourceSets.main.runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(providers.gradleProperty('benchmarkJdk').getOrElse('21'))
+    }
+    // JMH writes its report as it goes, so the output belongs on the console rather than in a file Gradle captures.
+    args = (providers.gradleProperty('jmhArgs').getOrElse('') as String).split('\\s+').findAll { !it.isEmpty() }
+}
