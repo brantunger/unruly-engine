@@ -44,7 +44,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     public ExpressionCompiler newCompiler(CompileContext context) {
         ErrorReporting.initialize();
         return new MvelExpressionCompiler(new Imports(Set.copyOf(context.packageImports()),
-                Set.copyOf(context.classImports()), context.classLoader()));
+                Set.copyOf(context.classImports()), context.classLoader(), DeclaredTypes.inputsFor(context)));
     }
 
     /**

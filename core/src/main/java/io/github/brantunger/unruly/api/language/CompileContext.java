@@ -52,6 +52,32 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
     Class<?> outputType();
 
     /**
+     * Returns the facts the engine was declared with, through
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Class)}, by fact name. A language may
+     * check its expressions against them, for example to reject a misspelled property when the rules load, or ignore
+     * them; the engine checks a run's values against them whatever the language does.
+     *
+     * <p>
+     * A declared type is what a run's value must be an instance of. It isn't a promise that the fact is present,
+     * unless {@link #allFactsDeclared()} is {@code true}.
+     * </p>
+     *
+     * @return The declared type of each fact, by name, empty if the engine was told none; unmodifiable
+     */
+    Map<String, Class<?>> declaredFacts();
+
+    /**
+     * Returns whether a run may supply only the facts in {@link #declaredFacts()}, which the engine was told with
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#requireDeclaredFacts()}. When it's {@code true}, every
+     * name a rule can legitimately refer to is declared, so a language may reject an expression that refers to
+     * anything else. When it's {@code false}, a run may supply facts nobody declared, so an undeclared name isn't a
+     * mistake.
+     *
+     * @return {@code true} if every fact a run may supply is declared
+     */
+    boolean allFactsDeclared();
+
+    /**
      * Returns this language's options, set with
      * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#option(String, String, String)}. What an option means
      * is up to the language.

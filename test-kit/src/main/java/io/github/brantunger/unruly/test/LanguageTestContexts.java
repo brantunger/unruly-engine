@@ -70,7 +70,31 @@ public final class LanguageTestContexts {
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options) {
-        return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options);
+        return compile(packageImports, classImports, classLoader, outputType, options, Map.of(), false);
+    }
+
+    /**
+     * Creates a compile context for an engine that was told which facts its rules use, so a language's tests can
+     * check what it makes of the declarations.
+     *
+     * @param packageImports   The imported packages, such as {@code java.util}; copied
+     * @param classImports     The classes imported one by one; copied
+     * @param classLoader      The class loader to look up classes in the imported packages with
+     * @param outputType       The type of the output object, as the engine's builder was told; {@code Object.class}
+     *                         when it wasn't
+     * @param options          The language's options, as the engine's builder was given them; copied
+     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
+     * @param allFactsDeclared Whether a run may supply only the declared facts, as
+     *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
+     * @return The context
+     * @throws NullPointerException if an argument, or an element of a set, of the options or of the declarations, is
+     *                              {@code null}
+     */
+    public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
+                                         ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
+                                         Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
+        return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options, declaredFacts,
+                allFactsDeclared);
     }
 
     /**

@@ -66,6 +66,8 @@ public final class RulesEngineBuilder<O> {
     // was created.
     private @Nullable CopyLimit copies;
     private @Nullable Duration timeout;
+    private final Map<String, Class<?>> factTypes = new LinkedHashMap<>();
+    private boolean allFactsDeclared;
     private Class<? super O> outputClass = Object.class;
     private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
     private final Map<String, Map<String, String>> languageOptions = new LinkedHashMap<>();
@@ -265,6 +267,79 @@ public final class RulesEngineBuilder<O> {
     }
 
     /**
+     * Declares a fact's name and type, so the engine checks a run's value against the type and a language can check
+     * its expressions against it.
+     *
+     * <p>
+     * The engine fails a run with {@link IllegalArgumentException} when the fact is present and its value isn't an
+     * instance of {@code type}. A {@code null} value passes: nothing about it contradicts the declaration. A run that
+     * doesn't supply the fact at all is unaffected, unless {@link #requireDeclaredFacts()} is also set. Declaring a
+     * fact twice replaces the first declaration.
+     * </p>
+     *
+     * <p>
+     * Languages are told what was declared, and use it as they can: MVEL compiles against the declared types, so a
+     * misspelled property fails {@link RulesEngine#load(List)} rather than a run; see
+     * {@link #requireDeclaredFacts()} for what it takes to turn that on. A language that ignores types is unaffected,
+     * and the engine's own check happens whatever the language does.
+     * </p>
+     *
+     * @param name The fact's name, as rules refer to it
+     * @param type The type a run's value must be an instance of. Declaring {@link Object} or a {@link java.util.Map}
+     *             says the fact's shape isn't fixed, which no language can type-check
+     * @return This builder
+     * @throws NullPointerException if {@code name} or {@code type} is {@code null}
+     */
+    public RulesEngineBuilder<O> fact(String name, Class<?> type) {
+        Objects.requireNonNull(name, "name must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        factTypes.put(name, type);
+        return this;
+    }
+
+    /**
+     * Declares several facts at once, as {@link #fact(String, Class)} does one.
+     *
+     * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
+     * @return This builder
+     * @throws NullPointerException if {@code types}, a name or a type is {@code null}
+     */
+    public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
+        Objects.requireNonNull(types, "types must not be null");
+        types.forEach(this::fact);
+        return this;
+    }
+
+    /**
+     * Rejects a run that supplies a fact nobody declared, or leaves a declared fact out. Without this, declaring a
+     * fact only says what its type is when it's there.
+     *
+     * <p>
+     * It says that {@link #fact(String, Class)} lists <b>every</b> fact a run may supply, which is what lets a
+     * language reject an expression that refers to anything else. MVEL compiles the rules with strong typing, so a
+     * misspelled property or an unknown fact fails {@link RulesEngine#load(List)} with the line and column, when all
+     * of this holds:
+     * </p>
+     *
+     * <ul>
+     *     <li>this is set, and at least one fact is declared;</li>
+     *     <li>no fact is declared as {@link Object} or a {@link java.util.Map}, whose members MVEL can't check;</li>
+     *     <li>{@link #outputType(Class)} was given a type that is neither, because an action writes to the output.</li>
+     * </ul>
+     *
+     * <p>
+     * Otherwise MVEL compiles as it always has, and the engine logs at DEBUG which declaration stopped it. The
+     * engine's own checks on a run's facts don't depend on any of that.
+     * </p>
+     *
+     * @return This builder
+     */
+    public RulesEngineBuilder<O> requireDeclaredFacts() {
+        this.allFactsDeclared = true;
+        return this;
+    }
+
+    /**
      * Keeps at most {@code maxCopies} compiled copies of the rules, for runs on <b>every</b> kind of thread, instead
      * of the default limit on runs from virtual threads.
      *
@@ -381,7 +456,7 @@ public final class RulesEngineBuilder<O> {
     public RulesEngine<O> build() {
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
                 importNames, listenerList, copies != null ? copies : CopyLimit.forVirtualThreads(), timeout,
-                outputClass, writer, languageOptions);
+                outputClass, writer, languageOptions, factTypes, allFactsDeclared);
         return fireAllMatches
                 ? Engines.allMatches(outputFactory, configuration)
                 : Engines.firstMatch(outputFactory, configuration);

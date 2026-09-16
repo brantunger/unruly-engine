@@ -24,13 +24,16 @@ import java.util.Objects;
  * @param runTimeout      How long a run may take, or {@code null} if runs have no deadline
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
+ * @param declaredFacts   The declared type of each fact, by name, empty if none were declared
+ * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param <O>             The type of the output object
  */
 public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
                                      List<RuleListener> listeners, CopyLimit copyLimit, Duration runTimeout,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
-                                     Map<String, Map<String, String>> options) {
+                                     Map<String, Map<String, String>> options,
+                                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
 
     /**
      * Keeps unmodifiable copies of the lists and options, so later changes to the builder don't change an engine.
@@ -45,6 +48,7 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
         Objects.requireNonNull(copyLimit, "copyLimit");
         Objects.requireNonNull(outputType, "outputType");
         Objects.requireNonNull(outputWriter, "outputWriter");
+        declaredFacts = Map.copyOf(declaredFacts);
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();
         options.forEach((language, values) -> copied.put(language, Map.copyOf(values)));
         options = Collections.unmodifiableMap(copied);

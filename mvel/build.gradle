@@ -16,6 +16,9 @@ base {
 dependencies {
     api project(':core')
     implementation libs.mvel2
+    // MVEL says at DEBUG when it can't compile a rule list against the engine's declared facts. SLF4J is already a
+    // runtime dependency through core, so this adds no artifact for users.
+    implementation libs.slf4j.api
 
     testImplementation project(':test-kit')
     // The Jackson mix-ins the docs show for reading rules from JSON are tested with Jackson 2 and Jackson 3.

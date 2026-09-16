@@ -17,11 +17,15 @@ import java.util.Set;
  * @param packageImports Package names, imported with all their classes
  * @param classImports   Classes imported one by one
  * @param classLoader    The class loader that finds the classes in {@code packageImports}
- * @param outputType     The type of the output object, or {@link Object} if the engine wasn't told one
- * @param options        This language's options, by name
+ * @param outputType       The type of the output object, or {@link Object} if the engine wasn't told one
+ * @param options          This language's options, by name
+ * @param declaredFacts    The declared type of each fact, by name
+ * @param allFactsDeclared Whether a run may supply only the declared facts
  */
 public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
-                                   Class<?> outputType, Map<String, String> options) implements CompileContext {
+                                   Class<?> outputType, Map<String, String> options,
+                                   Map<String, Class<?>> declaredFacts,
+                                   boolean allFactsDeclared) implements CompileContext {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
@@ -36,6 +40,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(classLoader, "classLoader");
         Objects.requireNonNull(outputType, "outputType");
         options = Map.copyOf(options);
+        declaredFacts = Map.copyOf(declaredFacts);
     }
 
     /**
@@ -47,7 +52,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException if an argument, or an element of a set, is {@code null}
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader) {
-        this(packageImports, classImports, classLoader, Object.class, Map.of());
+        this(packageImports, classImports, classLoader, Object.class, Map.of(), Map.of(), false);
     }
 
     /**

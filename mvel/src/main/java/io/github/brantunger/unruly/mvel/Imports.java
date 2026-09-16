@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.mvel;
 import org.mvel2.ParserConfiguration;
 
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,8 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * @param classLoader The class loader that finds the classes in {@code packages}, as an {@link ExactNameClassLoader}
  * @param notClasses  Names found not to be a class in any of {@code packages}, shared by the configurations created
  *                    with {@link #newConfiguration()}
+ * @param inputs      The type of each name an expression may refer to, for compiling with strong typing, or an empty
+ *                    map to compile as MVEL does by default. See {@link DeclaredTypes}.
  */
-record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses) {
+record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
+               Map<String, Class<?>> inputs) {
 
     /**
      * Creates the imports for one rule list, with nothing known yet about which names aren't classes. The class loader
@@ -28,7 +32,30 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * @param classLoader The application's class loader that finds the classes in {@code packages}
      */
     Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader) {
-        this(packages, classes, new ExactNameClassLoader(classLoader), ConcurrentHashMap.newKeySet());
+        this(packages, classes, classLoader, Map.of());
+    }
+
+    /**
+     * Creates the imports for one rule list, with the types its expressions are compiled against.
+     *
+     * @param packages    Package names, imported with all their classes
+     * @param classes     Classes imported one by one
+     * @param classLoader The application's class loader that finds the classes in {@code packages}
+     * @param inputs      The type of each name an expression may refer to, or an empty map for no strong typing
+     */
+    Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Map<String, Class<?>> inputs) {
+        this(packages, classes, new ExactNameClassLoader(classLoader), ConcurrentHashMap.newKeySet(),
+                Map.copyOf(inputs));
+    }
+
+    /**
+     * Returns whether expressions are compiled with strong typing, which they are exactly when the engine declared
+     * types MVEL can check.
+     *
+     * @return {@code true} if every name an expression may refer to has a declared type
+     */
+    boolean stronglyTyped() {
+        return !inputs.isEmpty();
     }
 
     /**
