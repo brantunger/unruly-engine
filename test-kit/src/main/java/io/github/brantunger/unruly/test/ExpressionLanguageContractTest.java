@@ -148,6 +148,51 @@ public abstract class ExpressionLanguageContractTest {
      */
     protected abstract @Nullable String unusableFactName();
 
+    /**
+     * Returns a condition that compares one property of a fact with a value, as {@code applicant.creditScore == 750}
+     * does in MVEL. The same condition is run against a record fact and against a {@link Map} fact.
+     *
+     * @param fact     The fact's name
+     * @param property The property to read
+     * @param value    The value it must equal
+     * @return The condition
+     */
+    protected abstract String factProperty(String fact, String property, int value);
+
+    /**
+     * Returns a condition that reads a property the fact doesn't have, which the language must reject when it loads
+     * or runs the rule, rather than evaluate to {@code false}. It's usually {@link #factProperty} with the same
+     * arguments.
+     *
+     * <p>
+     * A language whose own semantics read a missing property as {@code null} or undefined, as JsonLogic reads a
+     * {@code var} that isn't there, returns {@code null}. Such a language can't tell a misspelled property from an
+     * absent one, whether it reads the fact directly or as the map {@code FactProperties.toData} makes of it, so the
+     * check would fail it for being faithful to its own rules.
+     * </p>
+     *
+     * @param fact     The fact's name
+     * @param property The property the fact doesn't have
+     * @param value    The value to compare it with
+     * @return The condition, or {@code null} if the language reads a missing property as {@code null} or undefined,
+     *         which skips the check
+     */
+    protected abstract @Nullable String missingFactProperty(String fact, String property, int value);
+
+    /** The fact name and property the property checks use. */
+    private static final String APPLICANT = "applicant";
+    private static final String CREDIT_SCORE = "creditScore";
+
+    /**
+     * An applicant, so a language's tests can run a rule against a record fact. It's a record because a record is
+     * what languages most often get wrong: its component is a method, so a language that looks only for a getter or
+     * a field reads nothing.
+     *
+     * @param creditScore The applicant's credit score, the property the contract test reads
+     */
+    public record Applicant(int creditScore) {
+    }
+
     private Rule rule(String name, int priority, String condition, String action) {
         return Rule.builder().ruleName(name).priority(priority).condition(condition).action(action)
                 .language(language().name()).build();
@@ -248,6 +293,36 @@ public abstract class ExpressionLanguageContractTest {
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, alwaysTrue(), putFact(SEEN, "x")));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 1)));
+    }
+
+    @Test
+    @DisplayName("a condition reads a property of a record fact and of a map fact the same way")
+    void conditionReadsProperties() {
+        RulesEngine<Map<String, Object>> engine =
+                engine(rule("r", 1, factProperty(APPLICANT, CREDIT_SCORE, 750), putFact(SEEN, APPLICANT)));
+
+        assertNotNull(engine.run(fact(APPLICANT, new Applicant(750))), "a record fact's component wasn't read");
+        assertNotNull(engine.run(fact(APPLICANT, Map.of(CREDIT_SCORE, 750))), "a map fact's key wasn't read");
+        assertNull(engine.run(fact(APPLICANT, new Applicant(700))), "the record's component was read as 750");
+        assertNull(engine.run(fact(APPLICANT, Map.of(CREDIT_SCORE, 700))), "the map's key was read as 750");
+    }
+
+    @Test
+    @DisplayName("a property the fact doesn't have fails the run, rather than being false or undefined")
+    void missingPropertyFailsTheRun() {
+        String condition = missingFactProperty(APPLICANT, "creditScor", 750);
+        assumeTrue(condition != null, "the language reads a missing property as null or undefined");
+        Rule misspelled = rule("r", 1, condition, putFact(SEEN, APPLICANT));
+
+        // Silently evaluating to false is the failure this catches: the rule never fires and nothing says why. A
+        // language may reject the property when it compiles the rule rather than when it runs it, so loading is
+        // inside the check too, and either failure counts.
+        //
+        // Only the record: a missing key of a map is a different question, and languages answer it differently on
+        // purpose. JsonLogic, JEXL and SpEL read a missing key as null or empty, which is what their users expect,
+        // and a faithful adapter for one of them shouldn't fail a contract written around a record's components.
+        assertThrows(UnrulyException.class, () -> engine(misspelled).run(fact(APPLICANT, new Applicant(750))),
+                "a misspelled property of a record fact didn't fail");
     }
 
     @Test

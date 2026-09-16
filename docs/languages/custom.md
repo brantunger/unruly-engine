@@ -148,6 +148,22 @@ public final class MyLanguage implements ExpressionLanguage {
   `CompileContext.options()` holds your language's own settings, which the application sets with
   `.option("my", "key", "value")`, so a language needs no constructor arguments for them. Both are empty or `Object`
   unless the application sets them, so treat them as optional.
+- **Reading a fact's property.** Rules everywhere are written `applicant.creditScore`, where the fact may be a
+  record, a JavaBean or a `Map`. The engine hands you the objects as they are, so making all three work is your
+  language's job, and it's the thing adapters most often get wrong: a record's component is a method, so a language
+  that looks only for a getter or a field reads nothing and the condition is silently `false`. Use
+  `FactProperties.read(fact, property)`, which reads a record component, a `getX`/`isX` getter or a map key, caches
+  the lookup per class, and **throws `IllegalArgumentException` when the property isn't there**. Let that reach the
+  engine: a missing property is a mistake in the rule, and evaluating it to `false` or to undefined hides it. A
+  property that exists but whose accessor can't be called, or that throws, fails with `IllegalStateException`
+  instead, so a getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't
+  public is read through a public interface it implements, if there is one.
+  `FactProperties.toData(fact, depth)` converts a record or bean into a map, for a language that reads only maps.
+  Writing is the other direction and the engine already has it: `OutputWriter.beansAndMaps()`.
+  `ExpressionLanguageContractTest` runs your `factProperty(...)` condition against a record fact and a map fact, and
+  your `missingFactProperty(...)` condition against a misspelled property, so a language that gets any of it wrong
+  fails the contract test. A language whose own semantics read a missing property as `null`, as JsonLogic does,
+  returns `null` from `missingFactProperty(...)` to skip that check.
 - **Declared facts.** `CompileContext.declaredFacts()` is the type of each fact the application declared with
   `.fact(name, type)`, and `CompileContext.allFactsDeclared()` says whether `.requireDeclaredFacts()` was set. A typed
   language can compile against them: declare them as variables, check each property, and reject an expression that

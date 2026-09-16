@@ -55,4 +55,14 @@ class MvelContractTest extends ExpressionLanguageContractTest {
     protected String unusableFactName() {
         return "empty";
     }
+
+    @Override
+    protected String factProperty(String fact, String property, int value) {
+        return fact + "." + property + " == " + value;
+    }
+
+    @Override
+    protected String missingFactProperty(String fact, String property, int value) {
+        return factProperty(fact, property, value);
+    }
 }

@@ -19,7 +19,8 @@ import java.util.Objects;
  *     <li>An action is statements separated by {@code ;}: {@code let NAME = OPERAND} declares a variable, and
  *     {@code put KEY OPERAND} puts a value into the output map, or, for a language that returns properties, into the
  *     action's {@link ActionResult}.</li>
- *     <li>An operand is an integer, {@code true}, {@code false}, {@code null}, or the name of a variable or fact.</li>
+ *     <li>An operand is an integer, {@code true}, {@code false}, {@code null}, the name of a variable or fact, or
+ *     {@code fact.property}, which {@link FactProperties#read} reads from a record, a bean or a map.</li>
  * </ul>
  *
  * <p>
@@ -158,6 +159,14 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
         }
         if (facts.containsKey(token)) {
             return facts.get(token);
+        }
+        int dot = token.indexOf('.');
+        if (dot > 0) {
+            // A record component, a getter or a map key, without this language knowing which: that's the point of
+            // the helper. A property that isn't there throws, so a misspelling can't read as false.
+            Object fact = value(token.substring(0, dot), facts, locals);
+            return FactProperties.read(Objects.requireNonNull(fact, "fact '" + token + "' is null"),
+                    token.substring(dot + 1));
         }
         throw new IllegalStateException("unknown name '" + token + "'");
     }
