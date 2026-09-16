@@ -75,9 +75,9 @@ So concurrent runs never share MVEL's compiled form of an expression. The engine
 `load()` loads it, and every run shares those compiled rules. What an expression language changes while its
 expressions run lives in a *session*, and a copy of the rules is one session for each language the rules use. Each
 `run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first run after
-`load()` does), and gives it back when it finishes. By default the engine keeps as many copies as the most runs
-it has had in progress at once: the first time N runs overlap, N copies are made, and they stay in memory until the
-next `load()` or `close()`. To bound that number, [limit the copies](#limiting-the-copies).
+`load()` does), and gives it back when it finishes. The copies stay in memory until the next `load()` or `close()`,
+and an engine keeps as many as the most runs it has had in progress at once — except that runs on **virtual threads**
+are limited, by default, to one copy for each processor. See [Limiting the copies](#limiting-the-copies).
 
 MVEL's session compiles each MVEL expression again the first time it runs it, except the first session, which takes
 the expression `load()` compiled. A language whose expressions several threads can run at once keeps nothing
@@ -94,28 +94,50 @@ try-with-resources block. A failure to close a session or a compiler is logged a
 ### Limiting the copies
 
 A copy isn't free: every MVEL expression in it is compiled again, and as it runs, MVEL generates accessor classes for
-that copy alone. A thread pool bounds the number of copies, because runs can't overlap more than its threads. Without
-one, for example when each request runs on its own virtual thread, thousands of runs can overlap, and the engine
-makes and keeps a copy for each.
+that copy alone. A thread pool bounds the number of copies, because runs can't overlap more than its threads. Virtual
+threads don't bound anything: when each request runs on its own virtual thread, thousands of runs overlap, and the
+engine makes and keeps a copy for each.
 
-Give the engine a limit when you build it:
+So an engine limits **runs on virtual threads** to one copy for each processor. The number of processors is read once,
+by `build()`, so an engine's limit doesn't change while it runs. Runs on platform threads aren't limited: the pool
+they come from already bounds how many copies exist. Set your own limit, or turn the default off:
 
 ```java
+// A limit on runs from every kind of thread, virtual and platform
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).maxCopies(64).build();
+
+// As many copies as the runs in progress need, on any thread, which is what 1.x did
+RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision::new).unlimitedCopies().build();
 ```
 
-- At most 64 copies are made, so at most 64 runs are in progress at once. A run that starts while all of them are in
-  use waits until one is free. On a virtual thread, a waiting run doesn't hold a platform thread.
-- A run started from inside another run on the same thread, such as from an action or a listener, doesn't wait: the
-  copy it would wait for may be its own. If no copy is free, it gets an extra copy, whose sessions are closed when it
-  returns.
+- A run that starts while every copy is in use waits until one is free, so at most that many runs make progress at
+  once. On a virtual thread, a waiting run doesn't hold a platform thread.
+- The default is **sized for rules that compute**. A rule that waits — on a database, a service, a file — holds its
+  copy while it waits, so a limit caps how many such runs can overlap: 64 threads running a rule that waits 5 ms are
+  about 8× slower with a limit of 8 than with none. Build those engines with `unlimitedCopies()`, or with a
+  `maxCopies(...)` sized for how many waiting runs you want at once.
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
   `InterruptedException`, and the thread's interrupt status stays set. A run whose thread was **already** interrupted
   doesn't wait: it takes a free copy and then stops at its first rule, exactly as it does without a limit.
 - While `load()` swaps in a new list, runs still using the old list can hold up to that many copies more.
+- A rule list that needs no copy at all is never limited. When every language of the list returns `Session.none()`,
+  nothing a copy holds changes while the rules run, so every run shares one set of sessions, waits for nothing, and
+  counts against no limit.
 
-Choose a limit close to the number of runs that can make progress at once: around the number of processors for rules
-that only compute, higher for rules that wait on I/O.
+#### Runs that don't wait
+
+Two kinds of run never wait for a copy, so a limit can't deadlock an engine:
+
+- **A run nested in another run on the same thread**, started from an action or a listener. The copy it would wait for
+  may be the one its own thread is holding. This covers a run on any engine and any rule list, including rules a
+  `load()` has since replaced.
+- **A run that has waited five seconds without one single copy being given back.** That's what waiting for a run of
+  this engine on *another* thread looks like: a fan-out from an action, `executor.submit(engine::run).get()`, or two
+  engines whose actions run each other. An engine that is merely busy keeps giving copies back, so such a run keeps
+  waiting and the limit holds. Giving up is logged at WARN once for each rule list, naming `unlimitedCopies()`.
+
+Either gets an extra copy that isn't kept: its sessions are closed when the run gives it back. So a limit bounds the
+runs that can make progress, rather than the copies that can exist at one instant.
 
 This works with any MVEL optimizer, so the engine leaves MVEL's global optimizer setting alone. MVEL's default JIT
 optimizer stays in effect (unless you pass `-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use

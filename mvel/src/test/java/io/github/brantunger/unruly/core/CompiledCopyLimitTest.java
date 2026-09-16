@@ -139,8 +139,13 @@ class CompiledCopyLimitTest {
         }
     }
 
-    private static long waiting(List<Thread> threads) {
-        return threads.stream().filter(thread -> thread.getState() == Thread.State.WAITING).count();
+    /**
+     * Whether every one of {@code threads} is parked. A run waiting for a copy and a run held by the gate both park
+     * with a timeout, so the two can't be told apart by their state: with two runs in progress, the other four are
+     * waiting for a copy.
+     */
+    private static boolean allParked(List<Thread> threads) {
+        return threads.stream().allMatch(thread -> thread.getState() == Thread.State.TIMED_WAITING);
     }
 
     /**
@@ -177,7 +182,11 @@ class CompiledCopyLimitTest {
             thread.start();
         }
 
-        await(() -> language.inProgress.get() == 2 && waiting(threads) == 4, "2 runs are in progress and 4 wait");
+        // The gate opens as soon as the four runs are waiting, well within the five seconds a waiting run gives the
+        // copies to come back before it makes an extra one instead.
+        // The gate opens as soon as the four runs are waiting, well within the five seconds a waiting run gives
+        // the copies to come back before it makes an extra one instead.
+        await(() -> language.inProgress.get() == 2 && allParked(threads), "2 runs are in progress and 4 wait");
         assertEquals(2, language.sessionsMade.get(), "sessions made while four runs wait");
         language.gate.countDown();
         for (Thread thread : threads) {
@@ -249,7 +258,7 @@ class CompiledCopyLimitTest {
         String logs = logsOf(() -> {
             try {
                 waiter.start();
-                await(() -> waiter.getState() == Thread.State.WAITING, "the second run waits");
+                await(() -> waiter.getState() == Thread.State.TIMED_WAITING, "the second run waits for a copy");
                 waiter.interrupt();
                 waiter.join();
             } catch (InterruptedException e) {

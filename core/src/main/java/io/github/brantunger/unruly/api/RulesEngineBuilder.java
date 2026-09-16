@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.core.CopyLimit;
 import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
 import org.jspecify.annotations.Nullable;
@@ -19,6 +20,14 @@ import java.util.function.Supplier;
  * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners, limit on compiled copies
  * and run timeout are set here and can't change once it's built; only its rules can, with
  * {@link RulesEngine#load(List)}.
+ *
+ * <p>
+ * <b>Compiled copies:</b> a run uses a copy of the rules that no other run is using, and an engine keeps as many as
+ * the most runs it has had in progress at once. A thread pool bounds that; virtual threads don't, so by default an
+ * engine limits <b>runs on virtual threads</b> to one copy for each processor. {@link #maxCopies(int)} sets a limit
+ * for every kind of thread, and {@link #unlimitedCopies()} turns it off. See
+ * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/thread-safety.md">Thread safety</a>.
+ * </p>
  *
  * {@snippet :
  * RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -53,7 +62,9 @@ public final class RulesEngineBuilder<O> {
     private @Nullable String defaultLanguageName;
     private final List<String> importNames = new ArrayList<>();
     private final List<RuleListener> listenerList = new ArrayList<>();
-    private int copyLimit = EngineConfiguration.UNLIMITED_COPIES;
+    // null until the engine is built, so the default reads the number of processors then, not when the builder
+    // was created.
+    private @Nullable CopyLimit copies;
     private @Nullable Duration timeout;
     private Class<? super O> outputClass = Object.class;
     private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
@@ -254,26 +265,39 @@ public final class RulesEngineBuilder<O> {
     }
 
     /**
-     * Keeps at most {@code maxCopies} compiled copies of the rules. Without this, an engine has no limit.
+     * Keeps at most {@code maxCopies} compiled copies of the rules, for runs on <b>every</b> kind of thread, instead
+     * of the default limit on runs from virtual threads.
      *
      * <p>
-     * Each run uses a copy of the rules, one session for each expression language, that no other run is using.
-     * An engine without a limit makes a new copy whenever all of them are in use, and keeps as many as the most runs
-     * it has had in progress at once. An engine with a limit keeps at most {@code maxCopies}: a run that starts while
-     * all of them are in use waits until one is free, so at most {@code maxCopies} runs are in progress at once. A run
-     * started from inside another run on the same thread, such as from an action or a listener, doesn't wait: if no
-     * copy is free, it gets an extra copy that isn't kept.
+     * Each run uses a copy of the rules, one session for each expression language, that no other run is using. An
+     * engine without a limit makes a new copy whenever all of them are in use, and keeps as many as the most runs it
+     * has had in progress at once. With a limit, a run that starts while all of them are in use waits until one is
+     * free, so at most {@code maxCopies} runs make progress at once. Two kinds of run don't wait:
+     * </p>
+     *
+     * <ul>
+     *     <li>a run started from inside another run <b>on the same thread</b>, such as from an action or a listener,
+     *     whatever engine the run around it belongs to;</li>
+     *     <li>a run that has waited five seconds without one single copy being given back, which is what waiting
+     *     for a run of this engine on <b>another</b> thread looks like. It's logged at WARN once for each rule
+     *     list.</li>
+     * </ul>
+     *
+     * <p>
+     * Each gets an extra copy that isn't kept, so a rule or listener that waits for another thread's run can't
+     * deadlock the engine. A busy engine keeps giving copies back, so it keeps waiting and the limit holds.
      * </p>
      *
      * <p>
-     * Use a limit when runs can come from many more threads than you want copies, for example from virtual threads.
      * If a thread is interrupted while its run waits for a copy, the run throws a
      * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} and the thread's interrupt status stays
-     * set.
+     * set. A rule list whose languages all keep their state in the engine, rather than in a
+     * {@link io.github.brantunger.unruly.api.language.Session}, needs no copies: every run shares one, and no limit
+     * applies.
      * </p>
      *
-     * @param maxCopies The most compiled copies of the rules to keep, and so the most runs in progress at once; at
-     *                  least 1
+     * @param maxCopies The most compiled copies of the rules to keep, and so the most runs making progress at once;
+     *                  at least 1
      * @return This builder
      * @throws IllegalArgumentException if {@code maxCopies} is less than 1
      */
@@ -281,7 +305,26 @@ public final class RulesEngineBuilder<O> {
         if (maxCopies < MIN_COPIES) {
             throw new IllegalArgumentException("maxCopies must be at least " + MIN_COPIES + ", but was " + maxCopies);
         }
-        this.copyLimit = maxCopies;
+        this.copies = CopyLimit.of(maxCopies);
+        return this;
+    }
+
+    /**
+     * Makes as many compiled copies of the rules as the runs in progress need, on any kind of thread, instead of the
+     * default limit on runs from virtual threads.
+     *
+     * <p>
+     * This is what an engine did before 2.0, and what rules that wait — on I/O, a database or another service —
+     * usually want: such a run holds a copy while it waits, so a limit caps how many of them can overlap. The cost is
+     * that nothing bounds the copies: a run for each of ten thousand virtual threads makes ten thousand copies, each
+     * of which recompiles every expression and generates its own accessor classes. With a thread pool, the pool's
+     * size bounds them instead.
+     * </p>
+     *
+     * @return This builder
+     */
+    public RulesEngineBuilder<O> unlimitedCopies() {
+        this.copies = CopyLimit.none();
         return this;
     }
 
@@ -337,7 +380,8 @@ public final class RulesEngineBuilder<O> {
      */
     public RulesEngine<O> build() {
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
-                importNames, listenerList, copyLimit, timeout, outputClass, writer, languageOptions);
+                importNames, listenerList, copies != null ? copies : CopyLimit.forVirtualThreads(), timeout,
+                outputClass, writer, languageOptions);
         return fireAllMatches
                 ? Engines.allMatches(outputFactory, configuration)
                 : Engines.firstMatch(outputFactory, configuration);
