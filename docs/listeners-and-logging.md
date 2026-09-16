@@ -65,8 +65,10 @@ have gone on to gets no callback either: the check runs before `beforeEvaluate` 
 open callback for `onError` to close. A run stopped while a condition or action was running is different: that rule's
 callback is closed with `onError`, whose exception has no rule name and an `InterruptedException` or
 `TimeoutException` cause, so don't count it as a rule failure. A run started from inside an action has the run around it as its `parent()`, so nested runs stay apart
-without a `ThreadLocal`. `RunContext` is sealed to the engine, so test a listener by running an engine rather than by
-constructing a context.
+without a `ThreadLocal`. A context equals only itself, so it can key a map from `beforeRun` to `afterRun` or
+`onRunError`, even when facts change during the run or another engine runs with equal facts; its `toString()` names
+the run but never the facts. `RunContext` is sealed to the engine, so test a listener by running an engine rather than
+by constructing a context.
 
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
