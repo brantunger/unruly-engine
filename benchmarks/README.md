@@ -21,7 +21,7 @@ them by hand when a change could affect speed or allocation, and put the before 
 ```
 
 Everything after `-PjmhArgs=` goes to JMH, so `-h` lists what it accepts. `-prof gc` is the one to remember:
-`gc.alloc.rate.norm` is **bytes allocated per run**, and unlike latency it's stable enough to compare across machines.
+`gc.alloc.rate.norm` is **bytes allocated per run**. Use `-f 5` whenever you mean to compare two versions; see below.
 
 ## 🎛️ What's measured
 
@@ -50,7 +50,10 @@ numbers — at 100 rules, MVEL is most of both the time and the allocation.
 
 - **Latency between machines means nothing.** Compare a before and an after measured in the same sweep, on the same
   machine, with nothing else running. Differences under about 15% are noise.
-- **Allocation is stable.** `gc.alloc.rate.norm` is reproducible, so it's the figure to quote for a change that means
-  to allocate less.
+- **Allocation is reproducible within a fork, but not across forks.** `gc.alloc.rate.norm` repeats to within a byte
+  across the iterations of one JVM, and can differ by about a kilobyte per run between forks of the *same* build,
+  because each JVM makes its own inlining decisions and escape analysis follows them. A single `-f 1` run therefore
+  produces a number that looks exact and isn't comparable. **Use `-f 5` for any before-and-after claim**, measure the
+  baseline from a worktree of the other commit with identical flags, and quote the error bar.
 - **The first run after `load()` is not measured here.** It builds the first compiled copy, which costs far more than
   a steady-state run. JMH's warmup absorbs it.
