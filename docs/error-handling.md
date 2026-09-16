@@ -81,9 +81,11 @@ All of them are unchecked.
 
 Messages about a specific rule name it, for example
 `Failed to evaluate condition for rule 'prime-rate': ...`. In a
-message, line breaks and other control characters in a rule, fact or language name are escaped (`\n`), and a name
-longer than 200 characters is shortened, so a name can't start a log line of its own.
-When the expression language or your code threw the underlying error, it's available from `getCause()`. An
+message, line breaks and other control characters are escaped (`\n`) in a rule, fact or language name **and in the
+text copied from the underlying exception**, so neither a name nor a fact value that a language quoted can start a
+log line of its own. A name longer than 200 characters is shortened, and the copied text at 1,000 characters.
+The underlying exception itself is never changed: when the expression language or your code threw it, it's available
+from `getCause()` and reads exactly as it was written, line breaks and all. An
 expression the language rejected, such as a condition with an assignment or an MVEL syntax error, has an
 `InvalidExpressionException` as its cause.
 

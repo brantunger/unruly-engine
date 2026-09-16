@@ -153,7 +153,9 @@ condition or action fails, the listener logs a line such as
 `Failed rule: prime-rate | Error: Failed to execute action for rule 'prime-rate': ...` in place of the closing line.
 
 Rule names appear as the engine's error messages show them: line breaks and other control characters are escaped
-(`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own.
+(`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own. The failure
+message on that line is escaped the same way and isn't shortened, because it carries text the engine didn't write,
+such as the fact values a language quotes in its own message.
 
 ## 🔧 Logging setup
 

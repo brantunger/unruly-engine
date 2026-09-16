@@ -14,8 +14,10 @@ import java.util.Set;
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
  * unchanged, and how an exception is described in an error message. Nothing here logs, so every failure is still
  * logged under the engine's logger name, {@code io.github.brantunger.unruly.engine}.
+ * <b>Internal:</b> this class may change in any release. It's public only so that {@code api.LoggingRuleListener}
+ * can escape text the way the engine does, rather than keeping a copy of the escaping that could drift.
  */
-final class Failures {
+public final class Failures {
 
     /** How much of an exception's message an error message includes; see {@link #describe}. */
     static final int MAX_DESCRIPTION_LENGTH = 1_000;
@@ -87,7 +89,11 @@ final class Failures {
      *     into its own as {@code ": null"}</li>
      *     <li>at most {@value #MAX_DESCRIPTION_LENGTH} characters of the message: MVEL pads its messages with spaces up
      *     to the error's column, so a long expression produced messages hundreds of thousands of characters long</li>
+     *     <li>the message {@link #escape escaped}, because the engine didn't write it: a language quotes the fact
+     *     values a failing expression read, and those come from request data far more often than names do</li>
      * </ul>
+     * The message is shortened before it's escaped, so the count of what was left out counts the exception's own
+     * characters. The exception is never changed: its {@code getMessage()} still reads as the language wrote it.
      * A failure of a {@code run()} started from a condition or action is described by that run's innermost failure
      * only, so a failure nested many runs deep isn't repeated once per level.
      *
@@ -99,11 +105,11 @@ final class Failures {
         if (nested != null) {
             return "a nested run() failed: " + nested.getMessage();
         }
-        String text = truncate(e.getMessage() != null ? e.getMessage() : e.getClass().getName());
+        String text = escape(truncate(e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
         List<Throwable> chain = causeChain(e);
         Throwable root = chain.get(chain.size() - 1);
         return chain.size() > 1 && root.getMessage() == null
-                ? text + " (caused by " + root.getClass().getName() + ")"
+                ? text + " (caused by " + quote(root.getClass().getName()) + ")"
                 : text;
     }
 
@@ -139,39 +145,55 @@ final class Failures {
     }
 
     /**
-     * Makes a fact, rule or language name safe to put in a message the engine logs. Line breaks, tabs and other
-     * control characters, including the Unicode line and paragraph separators, are escaped ({@code \n}, {@code \r},
-     * {@code \t}, or a backslash, {@code u} and four hex digits), so a name from request data can't start a forged
-     * log line. A name longer than {@value #MAX_NAME_LENGTH} characters is shortened. {@code mvel.FactNames} and
-     * {@code api.LoggingRuleListener} keep a copy, because those packages can't use this one.
+     * Makes a fact, rule or language name safe to put in a message the engine logs: {@link #escape escaped}, and
+     * shortened to {@value #MAX_NAME_LENGTH} characters. {@code mvel.FactNames} keeps a copy of this, because the
+     * {@code mvel} package may not use this one.
      *
      * @param name The name
      * @return The name, escaped and shortened if it was longer
      */
-    static String quote(String name) {
-        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
-        StringBuilder quoted = new StringBuilder(shown);
-        for (int i = 0; i < shown; i++) {
-            char c = name.charAt(i);
+    public static String quote(String name) {
+        if (name.length() <= MAX_NAME_LENGTH) {
+            return escape(name);
+        }
+        return escape(name.substring(0, MAX_NAME_LENGTH)) + "... (" + (name.length() - MAX_NAME_LENGTH)
+                + " more characters)";
+    }
+
+    /**
+     * Makes text the engine didn't write safe to put in a message it logs, without shortening it. Line breaks, tabs
+     * and other control characters, including the Unicode line and paragraph separators, are escaped ({@code \n},
+     * {@code \r}, {@code \t}, or a backslash, {@code u} and four hex digits), so neither a name nor a fact value that
+     * reached the message from request data can start a log line of its own.
+     *
+     * <p>
+     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control character, so
+     * a caller that can't tell whether a message has been through here may escape it again.
+     * </p>
+     *
+     * @param text The text
+     * @return The text, with every character that could start a line escaped
+     */
+    public static String escape(String text) {
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
             switch (c) {
-                case '\n' -> quoted.append("\\n");
-                case '\r' -> quoted.append("\\r");
-                case '\t' -> quoted.append("\\t");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
                 default -> {
                     int type = Character.getType(c);
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
                             || type == Character.PARAGRAPH_SEPARATOR) {
-                        quoted.append(String.format("\\u%04x", (int) c));
+                        escaped.append(String.format("\\u%04x", (int) c));
                     } else {
-                        quoted.append(c);
+                        escaped.append(c);
                     }
                 }
             }
         }
-        if (name.length() > MAX_NAME_LENGTH) {
-            quoted.append("... (").append(name.length() - MAX_NAME_LENGTH).append(" more characters)");
-        }
-        return quoted.toString();
+        return escaped.toString();
     }
 
     /**

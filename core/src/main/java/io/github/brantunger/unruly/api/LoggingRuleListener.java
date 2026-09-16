@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.core.Failures;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +14,9 @@ import java.util.Map;
  *
  * <p>
  * Rule names are logged as the engine's error messages show them: line breaks and other control characters are
- * escaped, so a name can't start a log line of its own, and a name longer than 200 characters is shortened.
+ * escaped, so a name can't start a log line of its own, and a name longer than 200 characters is shortened. A failed
+ * rule's message is escaped the same way and not shortened, because it carries text the engine didn't write, such as
+ * the fact values a language quotes in its own message.
  * </p>
  */
 public class LoggingRuleListener implements RuleListener {
@@ -27,39 +30,9 @@ public class LoggingRuleListener implements RuleListener {
         // Nothing to set up: the logger is shared by every instance.
     }
 
-    // The same limit as the engine's messages.
-    private static final int MAX_NAME_LENGTH = 200;
-
     /** Names a rule the way the engine's error messages do. */
     private static String nameOf(Rule rule) {
-        return quote(rule.getRuleName());
-    }
-
-    /** Escapes and shortens a name as the engine's {@code core.Failures.quote} does. */
-    private static String quote(String name) {
-        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
-        StringBuilder quoted = new StringBuilder(shown);
-        for (int i = 0; i < shown; i++) {
-            char c = name.charAt(i);
-            switch (c) {
-                case '\n' -> quoted.append("\\n");
-                case '\r' -> quoted.append("\\r");
-                case '\t' -> quoted.append("\\t");
-                default -> {
-                    int type = Character.getType(c);
-                    if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR) {
-                        quoted.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        quoted.append(c);
-                    }
-                }
-            }
-        }
-        if (name.length() > MAX_NAME_LENGTH) {
-            quoted.append("... (").append(name.length() - MAX_NAME_LENGTH).append(" more characters)");
-        }
-        return quoted.toString();
+        return Failures.quote(rule.getRuleName());
     }
 
     @Override
@@ -84,6 +57,9 @@ public class LoggingRuleListener implements RuleListener {
 
     @Override
     public void onError(Rule rule, RuleExecutionException error) {
-        log.debug("Failed rule: {} | Error: {}", nameOf(rule), error.getMessage());
+        // The engine's own messages arrive escaped, and escaping them again changes nothing; an engine of your own
+        // may not have escaped its message, and its fact values are the ones most likely to come from request data.
+        String message = error.getMessage();
+        log.debug("Failed rule: {} | Error: {}", nameOf(rule), message == null ? null : Failures.escape(message));
     }
 }

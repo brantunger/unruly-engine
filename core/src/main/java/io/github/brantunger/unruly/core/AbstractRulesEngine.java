@@ -547,7 +547,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Checks a fact name with the language of each rule in use. A language rejects a name with an
-     * {@link IllegalArgumentException}, which is logged and thrown as is. Anything else a language throws is logged
+     * {@link IllegalArgumentException}, whose message is logged escaped, and which is thrown as is. Anything else a language throws is logged
      * and thrown as an {@code IllegalArgumentException} naming the fact and the language, except a fatal
      * {@link Error}, thrown or among the causes of what the language throws, which is rethrown after logging.
      *
@@ -560,7 +560,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 check.getValue().checkFactName(name);
             } catch (IllegalArgumentException e) {
-                log.error(e.getMessage());
+                // The language wrote this message and it names the fact, so it's escaped before it's logged. The
+                // exception is thrown as it came, so a caller still reads exactly what the language said.
+                log.error(Failures.describe(e));
                 throw e;
             } catch (Exception | Error e) {
                 Failures.keepInterruptStatus(e);

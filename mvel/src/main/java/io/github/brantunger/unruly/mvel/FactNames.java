@@ -71,7 +71,9 @@ final class FactNames {
     }
 
     /**
-     * Escapes and shortens a fact name for a message, as the engine's {@code core.Failures.quote} does. Fact names can
+     * Escapes and shortens a fact name for a message, as the engine's {@code core.Failures.quote} does, which the
+     * {@code mvel} package may not use. {@code FactNamesQuoteTest} and {@code QuoteCopiesTest} run the same cases on
+     * both, so the two can't drift apart. Fact names can
      * come from request data, and the engine logs these messages, so a line break in a name mustn't start a log line.
      * Only a name that isn't an identifier can contain one.
      */
@@ -142,6 +144,7 @@ final class FactNames {
         }
     }
 
+    // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together.
     static boolean isIdentifier(String name) {
         if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
             return false;

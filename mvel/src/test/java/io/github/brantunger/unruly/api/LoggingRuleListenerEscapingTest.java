@@ -47,6 +47,21 @@ class LoggingRuleListenerEscapingTest {
     }
 
     @Test
+    @DisplayName("a failed rule's message is escaped too, and a message the engine never set stays null")
+    void failureMessageEscaped() {
+        Rule rule = Rule.builder().ruleName("r").condition("true").action("x").build();
+        LoggingRuleListener listener = new LoggingRuleListener();
+
+        String escaped = logsOf(() -> listener.onError(rule,
+                new RuleExecutionException("failed on 1\n[main] INFO com.example.Audit - forged")));
+        String none = logsOf(() -> listener.onError(rule, new RuleExecutionException(null)));
+
+        assertEquals(1, escaped.lines().count(), escaped);
+        assertTrue(escaped.contains("failed on 1\\n[main] INFO com.example.Audit - forged"), escaped);
+        assertTrue(none.contains("Failed rule: r | Error: null"), none);
+    }
+
+    @Test
     @DisplayName("a rule name over 200 characters is shortened")
     void longNameShortened() {
         Rule rule = Rule.builder().ruleName("n".repeat(250)).condition("true").action("x").build();

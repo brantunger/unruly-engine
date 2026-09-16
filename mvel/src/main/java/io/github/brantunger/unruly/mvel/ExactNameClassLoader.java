@@ -42,6 +42,7 @@ final class ExactNameClassLoader extends ClassLoader {
      * @param error The error a class lookup threw
      * @return {@code true} for the JVM's "wrong name" {@code NoClassDefFoundError}
      */
+    // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together.
     static boolean isWrongName(LinkageError error) {
         String message = error.getMessage();
         return error instanceof NoClassDefFoundError && message != null && message.contains("(wrong name: ");
