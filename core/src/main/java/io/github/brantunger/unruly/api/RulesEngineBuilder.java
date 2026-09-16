@@ -24,8 +24,8 @@ import java.util.function.Supplier;
  * <p>
  * <b>Compiled copies:</b> a run uses a copy of the rules that no other run is using, and an engine keeps as many as
  * the most runs it has had in progress at once. A thread pool bounds that; virtual threads don't, so by default an
- * engine limits <b>runs on virtual threads</b> to one copy for each processor. {@link #maxCopies(int)} sets a limit
- * for every kind of thread, and {@link #unlimitedCopies()} turns it off. See
+ * engine limits <b>runs on virtual threads</b> to one copy for every two processors. {@link #maxCopies(int)} sets a
+ * limit for every kind of thread, and {@link #unlimitedCopies()} turns it off. See
  * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/thread-safety.md">Thread safety</a>.
  * </p>
  *

@@ -5,11 +5,20 @@ package io.github.brantunger.unruly.core;
  * <b>Internal:</b> this record may change in any release.
  *
  * <p>
- * An engine built without a limit of its own limits <b>runs on virtual threads</b> to one copy for each processor.
- * A copy is expensive — for MVEL it recompiles every expression, and each copy generates its own accessor classes —
- * and a platform thread pool already bounds how many runs overlap, while virtual threads don't: a run for each of
- * ten thousand virtual threads made ten thousand copies. Limiting only virtual threads leaves a thread pool's
- * throughput as it was, and bounds the case that has no bound of its own.
+ * An engine built without a limit of its own limits <b>runs on virtual threads</b> to one copy for every two
+ * processors, and at least one. A copy is expensive — for MVEL it recompiles every expression, and each copy
+ * generates its own accessor classes — and a platform thread pool already bounds how many runs overlap, while virtual
+ * threads don't: a run for each of ten thousand virtual threads made ten thousand copies. Limiting only virtual
+ * threads leaves a thread pool's throughput as it was, and bounds the case that has no bound of its own.
+ * </p>
+ *
+ * <p>
+ * With more than one processor, the limit is below the number of processors, which is how many platform threads carry
+ * virtual threads unless the scheduler is configured otherwise. On JDK 21 to 23 a virtual thread that waits to enter
+ * a monitor, or waits while holding one, stays on its carrier. When a language's expressions contend on a monitor, as
+ * MVEL's do, a limit of one copy for each processor let every carrier wait, and the runs deadlocked. A lower limit
+ * makes that less likely but can't rule it out: the limit is per rule list, and a run that gives up waiting takes an
+ * extra copy.
  * </p>
  *
  * @param maxCopies          The most copies runs the limit applies to may hold at once, or {@link RuleSet#UNLIMITED}
@@ -37,13 +46,13 @@ public record CopyLimit(int maxCopies, boolean virtualThreadsOnly) {
     }
 
     /**
-     * Returns the default limit: one copy for each processor, for runs on virtual threads only. The number of
-     * processors is read once, here, so an engine's limit doesn't change while it runs.
+     * Returns the default limit: one copy for every two processors, and at least one, for runs on virtual threads
+     * only. The number of processors is read once, here, so an engine's limit doesn't change while it runs.
      *
      * @return The limit
      */
     public static CopyLimit forVirtualThreads() {
-        return new CopyLimit(Runtime.getRuntime().availableProcessors(), true);
+        return new CopyLimit(Math.max(1, Runtime.getRuntime().availableProcessors() / 2), true);
     }
 
     /**

@@ -34,13 +34,17 @@ import static org.junit.jupiter.api.Assertions.*;
  * A copy of the rules is expensive: MVEL recompiles every expression and generates accessor classes for it. A thread
  * pool bounds how many runs overlap, and so how many copies an engine makes; virtual threads don't, and a run for
  * each of ten thousand of them made ten thousand copies. So an engine limits <b>runs on virtual threads</b> to one
- * copy for each processor unless it's told otherwise, and leaves runs on platform threads alone.
+ * copy for every two processors unless it's told otherwise, and leaves runs on platform threads alone. With more
+ * than one processor, the limit is below the number of processors, the default number of carrier threads: on JDK 21
+ * to 23, MVEL runs holding every carrier deadlocked (#365).
  */
 @Timeout(value = 60, unit = TimeUnit.SECONDS)
 @DisplayName("by default an engine limits the copies runs on virtual threads make, and no others")
 class DefaultCopyLimitTest {
 
     private static final int PROCESSORS = Runtime.getRuntime().availableProcessors();
+    /** The default limit on runs on virtual threads. */
+    private static final int LIMIT = Math.max(1, PROCESSORS / 2);
     /** More runs than the default limit, so the runs above it have to wait for a copy. */
     private static final int EXTRA_RUNS = 4;
 
@@ -152,20 +156,33 @@ class DefaultCopyLimitTest {
     }
 
     @Test
-    @DisplayName("runs on virtual threads are limited to one copy for each processor")
+    @DisplayName("runs on virtual threads are limited to one copy for every two processors")
     void virtualThreadRunsAreLimited() throws InterruptedException {
         Gate gate = new Gate();
         RulesEngine<Map<String, Object>> engine = engine(UnaryOperator.identity(), List.of(RULE));
 
-        start(PROCESSORS + EXTRA_RUNS, true, engine, gate);
+        start(LIMIT + EXTRA_RUNS, true, engine, gate);
         // The runs above the limit wait for a copy; the gate opens well inside the five seconds they give the copies
         // to come back before making an extra one.
-        await(() -> gate.inProgress.get() == PROCESSORS && allParked(),
-                PROCESSORS + " runs are in progress and " + EXTRA_RUNS + " wait for a copy");
+        await(() -> gate.inProgress.get() == LIMIT && allParked(),
+                LIMIT + " runs are in progress and " + EXTRA_RUNS + " wait for a copy");
         gate.open.countDown();
         joinTheRuns();
 
-        assertEquals(PROCESSORS, gate.mostInProgress.get(), "no more runs than processors were ever in progress");
+        assertEquals(LIMIT, gate.mostInProgress.get(), "no more runs than the limit were ever in progress");
+    }
+
+    @Test
+    @DisplayName("with more than one processor, the default limit is below the number of carrier threads")
+    void defaultLeavesACarrierFree() {
+        CopyLimit limit = CopyLimit.forVirtualThreads();
+
+        assertTrue(limit.virtualThreadsOnly());
+        assertEquals(LIMIT, limit.maxCopies());
+        if (PROCESSORS > 1) {
+            assertTrue(limit.maxCopies() < PROCESSORS, limit.maxCopies() + " copies could hold all " + PROCESSORS
+                    + " carriers");
+        }
     }
 
     @Test
