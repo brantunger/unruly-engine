@@ -20,6 +20,11 @@ An engine is designed to be configured once and then shared by every thread in y
 | `run()` | ✅ | From any number of threads, once `load()` has completed. |
 | `close()` | ✅ | Once the engine is no longer needed. Runs in progress finish first. |
 
+**Stopping a run:** interrupting the thread a run is on, or giving the run a timeout, stops it **between rules** —
+before each condition and before each action. It can't stop an MVEL expression that is already running, so a rule
+that loops for ever still blocks its thread; run rules you don't trust in a process of their own. See
+[Stopping a run](error-handling.md#-stopping-a-run).
+
 ## 🔄 Reloading rules while running
 
 `load()` compiles the whole new list first, then swaps it in with a single atomic write, together with the
@@ -105,7 +110,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   copy it would wait for may be its own. If no copy is free, it gets an extra copy, whose sessions are closed when it
   returns.
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
-  `InterruptedException`, and the thread's interrupt status stays set.
+  `InterruptedException`, and the thread's interrupt status stays set. A run whose thread was **already** interrupted
+  doesn't wait: it takes a free copy and then stops at its first rule, exactly as it does without a limit.
 - While `load()` swaps in a new list, runs still using the old list can hold up to that many copies more.
 
 Choose a limit close to the number of runs that can make progress at once: around the number of processors for rules

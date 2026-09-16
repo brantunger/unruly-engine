@@ -260,10 +260,11 @@ class CompiledCopyLimitTest {
         holder.join();
 
         RuleExecutionException ex = assertInstanceOf(RuleExecutionException.class, thrown.get());
-        assertEquals("Interrupted while waiting for a compiled copy of the rules: all 1 were in use", ex.getMessage());
+        assertEquals("run() was interrupted while waiting for a compiled copy of the rules: all 1 were in use",
+                ex.getMessage());
         assertInstanceOf(InterruptedException.class, ex.getCause());
         assertTrue(interruptStatus.get(), "the thread's interrupt status is set after run() throws");
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + ex.getMessage()), logs);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + ex.getMessage()), logs);
         assertEquals(Map.of(), engine.run(new FactMap<>()), "a later run gets the copy");
         assertEquals(1, language.sessionsMade.get());
     }

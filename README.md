@@ -317,14 +317,15 @@ higher-priority action changes a fact, a lower-priority rule that already matche
 
 > [!WARNING]
 > **Rules are code.** MVEL, the default language, gives a rule the same access to the JVM as your own Java code: it can start
-> processes, read files, open sockets and use reflection. The engine has **no sandbox and no timeout**, so
-> `while (true) {}` blocks the calling thread forever.
+> processes, read files, open sockets and use reflection. The engine has **no sandbox**, and a
+> [timeout](docs/error-handling.md#-stopping-a-run) only stops a run between rules: MVEL rules can't be stopped
+> inside an expression, so `while (true) {}` blocks the calling thread forever.
 
 - Load rules only from sources you trust as much as your application code, such as your repository or a table
   only administrators can change.
 - Never build rules from end-user input. Facts are the safe way to pass user data in.
-- If less trusted people must write rules, run the engine in a separate, restricted process and enforce your own
-  time limit around `run()`.
+- If less trusted people must write rules, run the engine in a separate, restricted process. `runTimeout` isn't a
+  defence against a rule that never returns.
 - A rule in another expression language can reach whatever that language allows. Check the language's own
   documentation before relying on it as a sandbox.
 

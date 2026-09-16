@@ -380,6 +380,42 @@ rule. This is a behaviour change that the API compatibility check can't see, so 
 | Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false` |
 | Needing every condition evaluated, for example to detect more than one match | Use `allMatches(...)` |
 
+## ⏱ An interrupted run stops, and a run can be given a timeout
+
+**What changed:** the engine checks before each condition and each action whether the run must stop, because its
+thread was interrupted or it has passed a deadline. In 1.x nothing in the engine looked at the interrupt status: a run
+started on an interrupted thread evaluated every condition and fired every matching action, so `Future.cancel(true)`
+and an executor shutting down had no effect until the run finished on its own.
+
+Three things follow:
+
+- A run whose thread is interrupted, before it starts or while it is going, throws a `RuleExecutionException` caused
+  by an `InterruptedException`. `getRuleName()` is `null`: an interrupt isn't that rule's failure. The interrupt
+  status stays set.
+- `RulesEngineBuilder.runTimeout(Duration)` and `runWithResult(facts, timeout)` are new. A run past its deadline
+  fails the same way, with a `TimeoutException` as the cause.
+- An engine **with** a copy limit no longer fails a run whose thread was already interrupted with
+  `Interrupted while waiting for a compiled copy of the rules: all N were in use` when nothing was in use and nothing
+  waited. It takes a free copy and then stops at the first rule, exactly as an engine without a limit does. That
+  message now appears only when a run really waited, and it starts with `run() was interrupted` too.
+
+**Between rules only.** An expression that is already running isn't stopped. MVEL has no hook inside one, so a rule
+that loops for ever still blocks the thread, with or without a timeout. A language that can stop part-way is given
+the run's deadline; see [Other expression languages](languages/custom.md#-stopping-a-run).
+
+**Who is affected:** anyone who runs the engine on a pool whose threads get interrupted, anyone who implements
+`RulesEngine`, and any expression language, which now compiles against two new methods it doesn't have to use.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| Catching the `RuleExecutionException` and serving the next request on the same thread | Clear the interrupt status first, for example with `Thread.interrupted()`, or every later run on that thread stops at its first rule |
+| Matching on `"Interrupted while waiting for a compiled copy of the rules"` | The message is now `run() was interrupted while waiting for a compiled copy of the rules: all N were in use`, and it is logged at WARN, not ERROR |
+| Your own timer around `run()` | `runTimeout(Duration)` on the builder, or `runWithResult(facts, timeout)` for one run. Keep the timer as well if you need a hard limit: a timeout can't stop an MVEL expression. |
+| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, Duration)` too. Delegating to `runWithResult(facts)` is fine for a decorator that has no timeout of its own. |
+| A `RuleListener` that assumed a run reaching `onRunError` had failed in a rule | A stopped run reaches `onRunError` with no `onError`, because the rule it would have run never started |
+
 ## 📊 A run reports what it did, and an engine reports its rules
 
 **What changed:**

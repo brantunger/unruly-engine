@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.api;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,6 +24,11 @@ class RulesEngineDefaultMethodTest {
         @Override
         public RunResult<Object> runWithResult(FactStore<?> facts) {
             return RunResult.of("output", List.of(), CHECKSUM);
+        }
+
+        @Override
+        public RunResult<Object> runWithResult(FactStore<?> facts, Duration timeout) {
+            return runWithResult(facts);
         }
 
         @Override

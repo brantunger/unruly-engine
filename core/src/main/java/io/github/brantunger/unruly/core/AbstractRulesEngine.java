@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -15,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -83,6 +86,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Object lifecycle = new Object();
     // The most compiled copies of the rules that runs hold at once, or RuleSet.UNLIMITED.
     private final int maxCopies;
+    // How long a run may take, or null if runs have no deadline. A run() call can pass one of its own.
+    private final Duration runTimeout;
     // The output type languages are told about, and what sets the properties actions return.
     private final Class<?> outputType;
     private final OutputWriter<? super O> outputWriter;
@@ -131,6 +136,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.classImports = Collections.unmodifiableSet(classes);
         this.listeners = configuration.listeners();
         this.maxCopies = configuration.maxCopies();
+        this.runTimeout = configuration.runTimeout();
         this.outputType = configuration.outputType();
         this.outputWriter = configuration.outputWriter();
         this.options = configuration.options();
@@ -139,7 +145,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Returns the rules as {@link #load(List)} compiled them, or {@code null} if it has not been called or the
      * engine is closed. Every run shares them, each with its own sessions, from
-     * {@link #runInScope(FactStore, RunBody)}.
+     * {@link #runInScope(FactStore, Duration, RunBody)}.
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
@@ -180,13 +186,50 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         /**
          * Runs the rules.
          *
-         * @param rules The rule set the run uses
-         * @param copy  The run's copy of the rules
-         * @param facts The run's fact values, already checked
+         * @param rules    The rule set the run uses
+         * @param copy     The run's copy of the rules
+         * @param facts    The run's fact values, already checked
+         * @param deadline When the run must stop, or {@code null} if it has none
          * @return What the run did
          */
-        RunResult<O> run(RuleSet rules, RuleSet.Copy copy, Map<String, Object> facts);
+        RunResult<O> run(RuleSet rules, RuleSet.Copy copy, Map<String, Object> facts, Instant deadline);
     }
+
+    /**
+     * Fires the rules against {@code facts}, with the timeout the engine was built with, if any.
+     *
+     * @param facts {@inheritDoc}
+     * @return {@inheritDoc}
+     */
+    @Override
+    public final RunResult<O> runWithResult(FactStore<?> facts) {
+        return runRules(facts, runTimeout);
+    }
+
+    /**
+     * Fires the rules against {@code facts}, giving this run {@code timeout} instead of the engine's.
+     *
+     * @param facts   {@inheritDoc}
+     * @param timeout {@inheritDoc}
+     * @return {@inheritDoc}
+     */
+    @Override
+    public final RunResult<O> runWithResult(FactStore<?> facts, Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout must not be null");
+        if (!timeout.isPositive()) {
+            throw new IllegalArgumentException("timeout must be positive, but was " + timeout);
+        }
+        return runRules(facts, timeout);
+    }
+
+    /**
+     * Fires the rules the way this engine fires them.
+     *
+     * @param facts   The facts the run was given
+     * @param timeout How long the run may take, or {@code null} if it has no deadline
+     * @return What the run did
+     */
+    abstract RunResult<O> runRules(FactStore<?> facts, Duration timeout);
 
     /**
      * Runs one run inside its listener scope: every listener gets {@link RuleListener#beforeRun}, then the rule
@@ -199,13 +242,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * own. Failing because no rules are loaded, or because the engine is closed, is misuse and reaches no listener.
      * </p>
      *
-     * @param facts The facts the run was given
-     * @param body  What the engine does once it holds a copy of the rules
+     * @param facts   The facts the run was given
+     * @param timeout How long the run may take, or {@code null} if it has no deadline. The deadline is taken from
+     *                when the run starts, so waiting for a copy of the rules counts towards it.
+     * @param body    What the engine does once it holds a copy of the rules
      * @return What the run did
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      */
-    RunResult<O> runInScope(FactStore<?> facts, RunBody<O> body) {
+    RunResult<O> runInScope(FactStore<?> facts, Duration timeout, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
+        Instant deadline = Cancellation.deadlineFrom(timeout);
         Map<String, Object> values = factValues(facts);
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
         RuleSet rules;
@@ -223,7 +269,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RunResult<O> result;
             try {
                 checkFactNames(values, rules.factChecks());
-                result = body.run(rules, copy, values);
+                result = body.run(rules, copy, values, deadline);
             } catch (RuntimeException e) {
                 notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, e));
                 throw e;
@@ -305,20 +351,22 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Borrows a copy of the rules for one run. An interrupt while waiting for one fails the run; the interrupt status
-     * is set again, so the caller still sees it.
+     * is set again, so the caller still sees it. A thread whose status is already set doesn't wait, and gets a free
+     * copy: the run then stops at its first rule, the same way it does without a limit on copies.
      *
      * @param rules The rule set to borrow from
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
-     * @throws RuleExecutionException if the thread is interrupted while waiting for a copy
+     * @throws RuleExecutionException if the thread is interrupted while it waits for a copy
      */
     private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts) {
         try {
             return rules.borrow();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            String msg = "Interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
+            String msg = "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
                     + " were in use";
-            log.error(msg);
+            // WARN, like the check between rules: a run the caller stopped isn't the rules or the engine failing.
+            log.warn(msg);
             RuleExecutionException failure = new RuleExecutionException(msg, e);
             // The run never started, so it opens and closes a scope of its own for listeners.
             List<RuleListener> snapshot = listenerSnapshot();
@@ -533,12 +581,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 true
      * @param copy     The run's copy of the rules, whose sessions the conditions run with
      * @param entryMap The pre-built map of unwrapped facts to use as execution context.
+     * @param deadline When the run must stop, or {@code null} if it has none
      * @return List of {@link CompiledRule} objects where their condition evaluated
      *         to <b>true</b>
      */
-    List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap) {
+    List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap,
+                             Instant deadline) {
         return ruleList.stream()
-                .filter(rule -> matches(rule, copy, entryMap))
+                .filter(rule -> matches(rule, copy, entryMap, deadline))
                 .toList();
     }
 
@@ -548,10 +598,54 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param rule     The rule whose condition to evaluate
      * @param copy     The run's copy of the rules, whose sessions the condition runs with
      * @param entryMap The run's facts
+     * @param deadline When the run must stop, or {@code null} if it has none
      * @return Whether the condition was true
+     * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    boolean matches(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap) {
-        return parseCondition(rule, copy, entryMap);
+    boolean matches(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap, Instant deadline) {
+        checkNotCancelled(rule, deadline);
+        return parseCondition(rule, copy, entryMap, deadline);
+    }
+
+    /**
+     * Stops a run that must not go on to {@code rule}, because its thread has been interrupted or it has passed its
+     * deadline. Checked before each condition and before each action, which is as often as the engine gets control
+     * back: an expression that doesn't return can only be stopped by a language that can stop inside one, through
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}.
+     *
+     * <p>
+     * No listener is told about the rule, because nothing was started for it: the check runs before
+     * {@code beforeEvaluate} and {@code beforeExecute}, so no callback is open to close with {@code onError}. The
+     * run's own {@code onRunError} is called, like any other failure of a run.
+     * </p>
+     *
+     * @param rule     The rule the run would go on to
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @throws RuleExecutionException if the run must stop
+     */
+    private void checkNotCancelled(CompiledRule rule, Instant deadline) {
+        // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
+        if (Thread.currentThread().isInterrupted()) {
+            throw cancelled("run() was interrupted before rule '" + rule.displayName() + "'",
+                    new InterruptedException());
+        }
+        if (Cancellation.hasPassed(deadline)) {
+            throw cancelled("run() passed its deadline of " + deadline + " before rule '" + rule.displayName() + "'",
+                    new TimeoutException("The run's deadline of " + deadline + " has passed"));
+        }
+    }
+
+    /**
+     * Reports a run that stopped because it was cancelled. Logged at WARN, not ERROR: nothing failed, and the caller
+     * asked for it, whether by interrupting the thread or by setting a timeout.
+     *
+     * @param msg   What to log and what the exception says
+     * @param cause An {@link InterruptedException} or a {@link TimeoutException}, so a caller can tell which happened
+     * @return The exception to throw, which belongs to no rule
+     */
+    private RuleExecutionException cancelled(String msg, Exception cause) {
+        log.warn(msg);
+        return new RuleExecutionException(msg, cause);
     }
 
     /**
@@ -563,13 +657,17 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param copy         The run's copy of the rules, whose session the action runs with
      * @param outputObject an empty output object to set output data into
      * @param entryMap     The pre-built map of unwrapped facts to use as execution context.
+     * @param deadline     When the run must stop, or {@code null} if it has none
      * @return {@code outputObject}, which the action changed in place or whose properties were set from the action's
      *         result. An action can't replace it:
      *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
      *         {@code def} function, where it creates a variable local to the function.
+     * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, Map<String, Object> entryMap) {
-        return parseAction(rule, copy, outputObject, entryMap);
+    O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, Map<String, Object> entryMap,
+                  Instant deadline) {
+        checkNotCancelled(rule, deadline);
+        return parseAction(rule, copy, outputObject, entryMap, deadline);
     }
 
     /**
@@ -602,7 +700,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return output;
     }
 
-    private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap) {
+    private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, Map<String, Object> entryMap,
+                                   Instant deadline) {
         // The evaluation context makes its own read-only view, whose messages are about conditions, so a listener
         // that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(entryMap);
@@ -613,7 +712,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // condition like `status` (a non-empty string) would silently match instead of failing.
         Object evaluated;
         try {
-            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(entryMap),
+            evaluated = rule.compiledCondition().evaluate(new EngineEvaluationContext(entryMap, deadline),
                     copy.sessions().get(rule.language()));
         } catch (Exception | Error e) {
             throw failure(snapshot, rule, ExpressionKind.CONDITION, "Failed to evaluate condition for rule '" + rule.displayName() + "': "
@@ -638,13 +737,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return result;
     }
 
-    private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, Map<String, Object> entryMap) {
+    private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, Map<String, Object> entryMap,
+                          Instant deadline) {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
-        ActionContext context = new EngineActionContext(entryMap, outputResult);
+        ActionContext context = new EngineActionContext(entryMap, outputResult, deadline);
         ActionResult result;
         try {
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));

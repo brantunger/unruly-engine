@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -42,7 +43,7 @@ class ContextRecordsTest {
     @DisplayName("an evaluation context's facts reject writes as a condition's do")
     void evaluationFactsReadOnly() {
         Map<String, Object> facts = new HashMap<>(Map.of("x", 1));
-        EngineEvaluationContext context = new EngineEvaluationContext(facts);
+        EngineEvaluationContext context = new EngineEvaluationContext(facts, null);
 
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> context.facts().put("y", 2));
@@ -55,7 +56,7 @@ class ContextRecordsTest {
     @DisplayName("an action context's facts reject writes as an action's do")
     void actionFactsReadOnly() {
         Map<String, Object> facts = new HashMap<>(Map.of("x", 1));
-        EngineActionContext context = new EngineActionContext(facts, new HashMap<>());
+        EngineActionContext context = new EngineActionContext(facts, new HashMap<>(), null);
 
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> context.facts().put("y", 2));
@@ -66,6 +67,34 @@ class ContextRecordsTest {
     @Test
     @DisplayName("an action context needs an output object")
     void actionContextNeedsOutput() {
-        assertThrows(NullPointerException.class, () -> new EngineActionContext(Map.of(), null));
+        assertThrows(NullPointerException.class, () -> new EngineActionContext(Map.of(), null, null));
+    }
+
+    @Test
+    @DisplayName("a context without a deadline is cancelled only while the thread's interrupt status is set")
+    void cancelledWithoutADeadline() {
+        EngineEvaluationContext context = new EngineEvaluationContext(Map.of(), null);
+
+        assertNull(context.deadline());
+        assertFalse(context.isCancelled());
+        try {
+            Thread.currentThread().interrupt();
+            assertTrue(context.isCancelled(), "an interrupted run must stop");
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("a context is cancelled once its deadline has passed")
+    void cancelledByADeadline() {
+        Instant passed = Instant.now().minusSeconds(1);
+        Instant ahead = Instant.now().plusSeconds(60);
+
+        assertTrue(new EngineEvaluationContext(Map.of(), passed).isCancelled());
+        assertFalse(new EngineEvaluationContext(Map.of(), ahead).isCancelled());
+        assertTrue(new EngineActionContext(Map.of(), new HashMap<>(), passed).isCancelled());
+        assertFalse(new EngineActionContext(Map.of(), new HashMap<>(), ahead).isCancelled());
+        assertEquals(ahead, new EngineActionContext(Map.of(), new HashMap<>(), ahead).deadline());
     }
 }

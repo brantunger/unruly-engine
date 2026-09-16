@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,14 +20,16 @@ import java.util.Objects;
  * @param imports         The package and class names to import, not yet resolved
  * @param listeners       The listeners, in the order they're called
  * @param maxCopies       The most compiled copies of the rules, or {@link #UNLIMITED_COPIES}
+ * @param runTimeout      How long a run may take, or {@code null} if runs have no deadline
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
  * @param options         Each language's options, by language name
  * @param <O>             The type of the output object
  */
 public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
-                                     List<RuleListener> listeners, int maxCopies, Class<? super O> outputType,
-                                     OutputWriter<? super O> outputWriter, Map<String, Map<String, String>> options) {
+                                     List<RuleListener> listeners, int maxCopies, Duration runTimeout,
+                                     Class<? super O> outputType, OutputWriter<? super O> outputWriter,
+                                     Map<String, Map<String, String>> options) {
 
     /** The {@code maxCopies} of an engine that makes as many copies as its runs need. */
     public static final int UNLIMITED_COPIES = RuleSet.UNLIMITED;
@@ -34,7 +37,8 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
     /**
      * Keeps unmodifiable copies of the lists and options, so later changes to the builder don't change an engine.
      *
-     * @throws NullPointerException if an argument other than {@code defaultLanguage}, or an element, is {@code null}
+     * @throws NullPointerException if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
+     *                              element, is {@code null}
      */
     public EngineConfiguration {
         languages = List.copyOf(languages);

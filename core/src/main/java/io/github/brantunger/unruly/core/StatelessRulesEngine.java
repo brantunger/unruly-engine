@@ -4,6 +4,8 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -48,17 +50,14 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * run stops at the first match, so the rules below it are never evaluated: they are neither matched nor unmatched.
      * The output object is therefore shaped by only one rule, the matching rule with the highest priority value.
      *
-     * @param facts The key/value fact store to run the rule engine against.
+     * @param facts   The key/value fact store to run the rule engine against.
+     * @param timeout How long the run may take, or {@code null} if it has no deadline
      * @return The object that is the result of the action getting fired against the given {@link Rule}, or
      *         {@code null} if the rule list is empty or no rule matched
-     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException {@inheritDoc}
-     * @throws IllegalArgumentException {@inheritDoc}
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
-     * @throws NullPointerException {@inheritDoc}
      */
     @Override
-    public RunResult<O> runWithResult(FactStore<?> facts) {
-        return runInScope(facts, (ruleSet, copy, entryMap) -> {
+    RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
+        return runInScope(facts, timeout, (ruleSet, copy, entryMap, deadline) -> {
             List<CompiledRule> rules = ruleSet.rules();
             if (rules.isEmpty()) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
@@ -66,13 +65,13 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
             // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
             // broken lower-priority condition can't fail a run that is already decided.
-            CompiledRule resolvedRule = this.firstMatch(rules, copy, entryMap);
+            CompiledRule resolvedRule = this.firstMatch(rules, copy, entryMap, deadline);
             if (null == resolvedRule) {
                 return RunResult.of(null, List.of(), ruleSet.checksum());
             }
 
             // Run the action of the selected rule on given data and return the output.
-            O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), entryMap);
+            O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), entryMap, deadline);
             return RunResult.of(output, List.of(resolvedRule.rule()), ruleSet.checksum());
         });
     }
@@ -88,11 +87,13 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * @param ruleList The rules, in evaluation order
      * @param copy     The run's copy of the rules, whose sessions the conditions run with
      * @param entryMap The run's facts
+     * @param deadline When the run must stop, or {@code null} if it has none
      * @return The first matching rule, or {@code null} if none matched
      */
-    private CompiledRule firstMatch(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap) {
+    private CompiledRule firstMatch(List<CompiledRule> ruleList, RuleSet.Copy copy, Map<String, Object> entryMap,
+                                    Instant deadline) {
         for (CompiledRule rule : ruleList) {
-            if (this.matches(rule, copy, entryMap)) {
+            if (this.matches(rule, copy, entryMap, deadline)) {
                 return rule;
             }
         }

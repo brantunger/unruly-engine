@@ -254,7 +254,8 @@ class RunCallbacksTest {
         assertEquals(1, thrown.size(), "the waiting run should have failed");
         assertInstanceOf(RuleExecutionException.class, thrown.get(0));
         assertEquals(List.of(true), interrupted, "the interrupt status stays set");
-        assertEquals(List.of("beforeRun", "onRunError: Interrupted while waiting for a compiled copy of the rules: "
+        assertEquals(List.of("beforeRun", "onRunError: run() was interrupted while waiting for a compiled copy "
+                + "of the rules: "
                 + "all 1 were in use"), recorder.calls.stream().filter(call -> call.startsWith("beforeRun")
                 || call.startsWith("onRunError")).toList(), recorder.calls.toString());
     }

@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineEvaluationContext;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -80,7 +81,22 @@ public final class LanguageTestContexts {
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts) {
-        return new EngineEvaluationContext(new LinkedHashMap<String, Object>(facts));
+        return evaluation(facts, null);
+    }
+
+    /**
+     * Creates the context a condition is evaluated against, for a run with a deadline.
+     *
+     * @param facts    The facts by name, whose values can be {@code null}; copied
+     * @param deadline When the run must stop, or {@code null} if it has none, as an engine built without
+     *                 {@code runTimeout} gives it
+     * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run: {@code true} once
+     *         the deadline has passed, or while the calling thread's interrupt status is set.
+     * @throws NullPointerException if {@code facts} is {@code null}
+     */
+    public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
+                                               @Nullable Instant deadline) {
+        return new EngineEvaluationContext(new LinkedHashMap<String, Object>(facts), deadline);
     }
 
     /**
@@ -92,6 +108,21 @@ public final class LanguageTestContexts {
      * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output) {
-        return new EngineActionContext(new LinkedHashMap<String, Object>(facts), output);
+        return action(facts, output, null);
+    }
+
+    /**
+     * Creates the context an action runs against, for a run with a deadline.
+     *
+     * @param facts    The facts by name, whose values can be {@code null}; copied
+     * @param output   The output object, which the action changes in place
+     * @param deadline When the run must stop, or {@code null} if it has none, as an engine built without
+     *                 {@code runTimeout} gives it
+     * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run.
+     * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
+     */
+    public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output,
+                                       @Nullable Instant deadline) {
+        return new EngineActionContext(new LinkedHashMap<String, Object>(facts), output, deadline);
     }
 }
