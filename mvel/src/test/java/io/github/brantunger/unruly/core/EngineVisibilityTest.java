@@ -42,9 +42,9 @@ class EngineVisibilityTest {
         assertTrue(Modifier.isFinal(Engines.class.getModifiers()));
         assertEquals(0, Engines.class.getConstructors().length);
         EngineConfiguration<Object> unlimited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
-                EngineConfiguration.UNLIMITED_COPIES, null, Object.class, OutputWriter.beansAndMaps(), Map.of());
-        EngineConfiguration<Object> limited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(), 2,
-                null, Object.class, OutputWriter.beansAndMaps(), Map.of());
+                CopyLimit.none(), null, Object.class, OutputWriter.beansAndMaps(), Map.of());
+        EngineConfiguration<Object> limited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
+                CopyLimit.of(2), null, Object.class, OutputWriter.beansAndMaps(), Map.of());
 
         assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
         assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));

@@ -14,7 +14,11 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 /**
  * One loaded rule list: the rules as {@code load()} compiled them, the compilers of the languages they use, and
@@ -32,11 +36,27 @@ import java.util.concurrent.atomic.AtomicInteger;
  * </p>
  *
  * <p>
- * With a limit, at most that many copies are kept, and a run that finds all of them in use waits for one. A run nested
- * in another run on the same thread, for example started from an action or a listener, doesn't wait, because the copy
- * it would wait for may be the one its own thread holds: if no copy is free, it gets an extra copy, whose sessions are
- * closed when it's given back. The limit is per rule set, so while a reload replaces one rule set with another, runs
- * still using the old one can hold up to that many copies more.
+ * With a limit, at most that many copies are kept, and a run that finds all of them in use waits for one. Two
+ * kinds of run don't wait, because the copy they would wait for may be one that has to finish first:
+ * </p>
+ *
+ * <ul>
+ *     <li>a run nested in another run <b>on the same thread</b>, started from an action or a listener, whatever
+ *     engine or rule list the run around it uses;</li>
+ *     <li>a run that has waited five seconds without one single copy being given back, which is what a run
+ *     waiting for another thread's run of this engine looks like. An overloaded engine keeps giving copies
+ *     back, so it keeps waiting and the limit holds.</li>
+ * </ul>
+ *
+ * <p>
+ * Either gets an extra copy, whose sessions are closed when it's given back, so the limit is a limit on runs that
+ * can make progress rather than a hard ceiling. The limit is per rule set, so while a reload replaces one rule set
+ * with another, runs still using the old one can hold up to that many copies more.
+ * </p>
+ *
+ * <p>
+ * A rule list whose languages all return {@link Session#none()} keeps nothing between runs, so there is nothing to
+ * copy: every run shares one set of sessions, waits for nothing and counts against no limit.
  * </p>
  *
  * <p>
@@ -53,6 +73,14 @@ final class RuleSet {
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
     // The number of users once the rule set is closed.
     private static final int CLOSED = -1;
+    // How long a run waits without one copy being given back before it decides they aren't coming back. Long
+    // enough that only a rule slower than this, or a run waiting for another thread's run, reaches it.
+    private static final long STALL_WINDOW_MILLIS = 5000;
+    // Runs in progress on this thread, whatever engine or rule list they use, so a nested run never waits for a copy
+    // its own thread may be holding. Removed when the outermost run ends, so a pooled thread keeps nothing.
+    // A plain ThreadLocal, not withInitial(): a lambda in a static initializer has to be bootstrapped while the
+    // class is being initialized, which deadlocks when several threads load this class at once.
+    private static final ThreadLocal<int[]> RUNS_ON_THREAD = new ThreadLocal<>();
 
     private final List<CompiledRule> compiledRules;
     private final Map<String, ExpressionCompiler> compilers;
@@ -60,24 +88,48 @@ final class RuleSet {
     private final String ruleChecksum;
     private final Instant loadTime;
     private final Queue<Map<String, Session>> idle = new ConcurrentLinkedQueue<>();
-    private final int copyLimit;
-    private final boolean limited;
-    // With a limit, one permit for each kept copy that a run holds.
+    private final CopyLimit copyLimit;
+    // With a limit, one permit for each kept copy that a limited run holds.
     private final Semaphore permits;
-    // How many kept copies the current thread holds, which tells a nested run apart. The entry is removed when the
-    // count drops to zero, so pooled threads don't keep one for every rule set they have run.
-    private final ThreadLocal<int[]> held = ThreadLocal.withInitial(() -> new int[1]);
+    private final long stallWindow;
+    // How many permits have been given back, so a run that is waiting can tell an engine that is busy from one whose
+    // copies are never coming back.
+    private final AtomicLong permitsReturned = new AtomicLong();
+    // Whether the "more copies than the limit" warning has been logged for this rule list.
+    private final AtomicBoolean warnedAboutOverflow = new AtomicBoolean();
+    // The sessions every run shares, once a copy has shown that no language keeps state between runs.
+    private volatile Map<String, Session> sharedSessions;
     // How many copies runs hold, or CLOSED.
     private final AtomicInteger users = new AtomicInteger();
     private volatile boolean retired;
+
+    /** What {@link #release(Copy)} does with a copy when the run that borrowed it gives it back. */
+    enum Kind {
+        /** Kept for a later run, unless the rule set has been retired. */
+        KEPT,
+        /** An extra copy made above the limit: its sessions are closed. */
+        EXTRA,
+        /** The sessions every run shares, because no language keeps state between runs: nothing to do. */
+        SHARED
+    }
 
     /**
      * A copy of the rules lent to one run.
      *
      * @param sessions The sessions of the languages the rules use, by language name
-     * @param kept     Whether {@link #release(Copy)} keeps the copy for a later run
+     * @param kind     What happens to it when it's given back
+     * @param permit   Whether the run holds a permit for it
      */
-    record Copy(Map<String, Session> sessions, boolean kept) {
+    record Copy(Map<String, Session> sessions, Kind kind, boolean permit) {
+
+        /**
+         * Returns whether the copy is kept for a later run.
+         *
+         * @return {@code true} if it goes back into the idle queue
+         */
+        boolean kept() {
+            return kind == Kind.KEPT;
+        }
     }
 
     /**
@@ -88,7 +140,7 @@ final class RuleSet {
      *                      fact names
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers) {
-        this(compiledRules, compilers, UNLIMITED);
+        this(compiledRules, compilers, CopyLimit.none());
     }
 
     /**
@@ -97,16 +149,30 @@ final class RuleSet {
      * @param compiledRules The compiled rules, in the order they run
      * @param compilers     The compilers of the languages the rules use, by language name, in the order they check
      *                      fact names
-     * @param limit         The most copies to keep, or {@link #UNLIMITED}
+     * @param limit         How many copies runs may hold at once, and which runs that applies to
      */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, int limit) {
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit) {
+        this(compiledRules, compilers, limit, STALL_WINDOW_MILLIS);
+    }
+
+    /**
+     * Creates a rule set whose runs give up waiting for a copy after {@code stallWindowMillis}, for tests that would
+     * otherwise wait the whole stall window.
+     *
+     * @param compiledRules     The compiled rules, in the order they run
+     * @param compilers         The compilers of the languages the rules use, by language name
+     * @param limit             How many copies runs may hold at once, and which runs that applies to
+     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
+     */
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
+            long stallWindowMillis) {
         this.compiledRules = List.copyOf(compiledRules);
         this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
         this.ruleChecksum = Checksums.ofRules(this.compiledRules);
         this.loadTime = Instant.now();
         this.copyLimit = limit;
-        this.limited = limit != UNLIMITED;
-        this.permits = new Semaphore(limit);
+        this.permits = new Semaphore(limit.maxCopies());
+        this.stallWindow = stallWindowMillis;
     }
 
     /**
@@ -147,12 +213,12 @@ final class RuleSet {
     }
 
     /**
-     * Returns the most copies this rule set keeps.
+     * Returns the most copies the runs the limit applies to hold at once.
      *
      * @return The limit, or {@link #UNLIMITED}
      */
     int limit() {
-        return copyLimit;
+        return copyLimit.maxCopies();
     }
 
     /**
@@ -176,6 +242,8 @@ final class RuleSet {
         try {
             Copy borrowed = lend();
             lent = true;
+            // Counted only once the copy is the caller's, so a failed borrow leaves nothing behind.
+            runsOnThread()[0]++;
             return borrowed;
         } finally {
             if (!lent) {
@@ -192,17 +260,56 @@ final class RuleSet {
      */
     void release(Copy borrowed) {
         try {
-            if (borrowed.kept() && !retired) {
-                // Added before the permit is released, so a run that was waiting finds this copy.
-                idle.add(borrowed.sessions());
-            } else {
+            if (borrowed.kind() == Kind.KEPT) {
+                // Kept before the permit is released, so a run that was waiting finds this copy.
+                keep(borrowed.sessions());
+            } else if (borrowed.kind() == Kind.EXTRA) {
                 Closing.sessions(borrowed.sessions());
             }
+            // A shared copy needs nothing: its sessions belong to every run, and are closed with the rule set.
         } finally {
-            if (borrowed.kept() && limited) {
+            endRunOnThread();
+            if (borrowed.permit()) {
                 giveBack();
             }
             leave();
+        }
+    }
+
+    private void keep(Map<String, Session> sessions) {
+        if (retired) {
+            Closing.sessions(sessions);
+        } else {
+            idle.add(sessions);
+        }
+    }
+
+    /**
+     * Whether this thread is already running rules. Read rather than {@link #runsOnThread()} so that a borrow which
+     * fails leaves no entry behind on a thread that isn't running anything. An entry exists only while the count is
+     * above zero, because {@link #endRunOnThread()} removes it when the outermost run ends.
+     *
+     * @return {@code true} if a run on this thread is in progress
+     */
+    private static boolean nestedRun() {
+        return RUNS_ON_THREAD.get() != null;
+    }
+
+    /** How many runs this thread has in progress, whatever engine or rule list they use. */
+    private static int[] runsOnThread() {
+        int[] runs = RUNS_ON_THREAD.get();
+        if (runs == null) {
+            runs = new int[1];
+            RUNS_ON_THREAD.set(runs);
+        }
+        return runs;
+    }
+
+    private static void endRunOnThread() {
+        int[] runs = runsOnThread();
+        runs[0]--;
+        if (runs[0] == 0) {
+            RUNS_ON_THREAD.remove();
         }
     }
 
@@ -221,34 +328,96 @@ final class RuleSet {
     }
 
     private Copy lend() throws InterruptedException {
-        if (!limited) {
-            return new Copy(take(), true);
+        Map<String, Session> shared = sharedSessions;
+        if (shared != null) {
+            return new Copy(shared, Kind.SHARED, false);
         }
-        int[] count = held.get();
-        if (count[0] == 0) {
-            // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even
-            // when copies are free, and the run would fail saying every copy was in use when none was.
-            if (!permits.tryAcquire()) {
-                try {
-                    permits.acquire();
-                } catch (InterruptedException e) {
-                    held.remove();
-                    throw e;
-                }
+        if (!copyLimit.appliesToCurrentThread()) {
+            return keptCopy(false);
+        }
+        // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
+        boolean nested = nestedRun();
+        if (nested ? !permits.tryAcquire() : !awaitPermit(permits, permitsReturned::get, stallWindow)) {
+            if (!nested) {
+                warnAboutOverflow();
             }
-        } else if (!permits.tryAcquire()) {
-            return new Copy(newSessions(), false);
+            return new Copy(newSessions(), Kind.EXTRA, false);
         }
-        count[0]++;
-        boolean lent = false;
+        return keptCopy(true);
+    }
+
+    /**
+     * Waits for a permit while copies are still being given back. A run that waits a whole {@code window} without one
+     * single permit coming back gives up: either every copy is held by a run that is itself waiting for this one, or
+     * the rules are so slow that an extra copy costs less than waiting.
+     *
+     * @param permits  The permits to wait for
+     * @param returned How many permits have been given back so far
+     * @param window   How long to wait for progress, in milliseconds
+     * @return {@code true} if a permit was taken, {@code false} if nothing came back within one window
+     * @throws InterruptedException if the thread is interrupted while it waits
+     */
+    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window) throws InterruptedException {
+        // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even when
+        // copies are free, and the run would fail saying every copy was in use when none was.
+        if (permits.tryAcquire()) {
+            return true;
+        }
+        long seen = returned.getAsLong();
+        while (!permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
+            long now = returned.getAsLong();
+            if (now == seen) {
+                return false;
+            }
+            seen = now;
+        }
+        return true;
+    }
+
+    /**
+     * Takes a copy the run keeps until it gives it back. The first copy decides whether the rules need copies at all:
+     * when no language keeps state between runs, its sessions become the ones every run shares.
+     *
+     * @param permit Whether the run took a permit for this copy
+     * @return The copy
+     */
+    private Copy keptCopy(boolean permit) {
+        Map<String, Session> sessions;
+        boolean taken = false;
         try {
-            Copy borrowed = new Copy(take(), true);
-            lent = true;
-            return borrowed;
+            sessions = take();
+            taken = true;
         } finally {
-            if (!lent) {
+            if (!taken && permit) {
                 giveBack();
             }
+        }
+        if (statelessSessions(sessions)) {
+            // Nothing in the rules changes while they run, so one set of sessions serves every run at once.
+            sharedSessions = sessions;
+            if (permit) {
+                giveBack();
+            }
+            return new Copy(sessions, Kind.SHARED, false);
+        }
+        return new Copy(sessions, Kind.KEPT, permit);
+    }
+
+    /** Whether every language of these rules returned {@link Session#none()}, so a copy holds nothing of its own. */
+    // Session.none() is one shared instance, and identity is the question: a session that merely equals it still
+    // belongs to one run at a time.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static boolean statelessSessions(Map<String, Session> sessions) {
+        return sessions.values().stream().allMatch(session -> session == Session.none());
+    }
+
+    private void warnAboutOverflow() {
+        if (warnedAboutOverflow.compareAndSet(false, true)) {
+            log.warn("All {} compiled copies of the rules were in use for {} ms without one being given back, so this"
+                            + " run made an extra copy instead of waiting for ever. A rule or listener that waits for"
+                            + " a run of this engine on another thread causes that; so does a rule slower than the"
+                            + " wait. Build the engine with unlimitedCopies() if it is meant to work that way.",
+                    copyLimit.maxCopies(), stallWindow);
         }
     }
 
@@ -268,9 +437,22 @@ final class RuleSet {
         if (users.compareAndSet(0, CLOSED)) {
             try {
                 closeIdle();
+                closeShared();
             } finally {
                 Closing.compilers(compilers);
             }
+        }
+    }
+
+    /**
+     * Closes the sessions every run shared, once no run holds them. Unlike an idle copy, a shared copy is in use
+     * while runs are in progress, so retiring the rule set can't close it: the last run to finish does.
+     */
+    private void closeShared() {
+        // Called once, from the transition to CLOSED, so the sessions can't be closed twice.
+        Map<String, Session> shared = sharedSessions;
+        if (shared != null) {
+            Closing.sessions(shared);
         }
     }
 
@@ -280,14 +462,11 @@ final class RuleSet {
         }
     }
 
-    // Releases a kept copy's permit, which the current thread holds.
+    // Releases a copy's permit, and tells a run that is waiting that copies are still coming back. Counted
+    // before the permit is released, so a run whose wait ends between the two still sees that one came back.
     private void giveBack() {
+        permitsReturned.incrementAndGet();
         permits.release();
-        int[] count = held.get();
-        count[0]--;
-        if (count[0] == 0) {
-            held.remove();
-        }
     }
 
     private Map<String, Session> take() {

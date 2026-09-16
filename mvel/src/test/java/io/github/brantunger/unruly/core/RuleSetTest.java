@@ -16,7 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -109,7 +112,7 @@ class RuleSetTest {
     void nestedCopyNotKept() throws InterruptedException {
         AtomicInteger sessions = new AtomicInteger();
         RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                1);
+                CopyLimit.of(1));
 
         RuleSet.Copy outer = rules.borrow();
         RuleSet.Copy nested = rules.borrow();
@@ -124,6 +127,74 @@ class RuleSetTest {
 
         assertSame(outer.sessions(), rules.borrow().sessions(), "the kept copy is reused");
         assertEquals(2, sessions.get(), "sessions created");
+    }
+
+    @Test
+    @DisplayName("a run that waits keeps waiting while copies are given back, however long that takes")
+    void waitingWhileCopiesComeBack() throws InterruptedException {
+        Semaphore permits = new Semaphore(0);
+        AtomicLong copiesReturned = new AtomicLong();
+        // Reports one copy coming back after the first window, and frees a permit with it, so the run waits again
+        // instead of making an extra copy, and the second window finds the permit.
+        LongSupplier returned = () -> {
+            long value = copiesReturned.getAndIncrement();
+            if (value == 1) {
+                permits.release();
+            }
+            return value;
+        };
+
+        assertTrue(RuleSet.awaitPermit(permits, returned, 10), "the run should have taken the freed permit");
+        assertEquals(0, permits.availablePermits(), "it took the permit it waited for");
+    }
+
+    @Test
+    @DisplayName("a run gives up waiting when a whole window passes with no copy given back")
+    void givingUpWhenNothingComesBack() throws InterruptedException {
+        Semaphore permits = new Semaphore(0);
+
+        assertFalse(RuleSet.awaitPermit(permits, () -> 7L, 10), "nothing came back, so the run makes an extra copy");
+    }
+
+    @Test
+    @DisplayName("a run that finds a free copy takes it without waiting at all")
+    void takingAFreeCopy() throws InterruptedException {
+        Semaphore permits = new Semaphore(1);
+
+        assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10));
+        assertEquals(0, permits.availablePermits());
+    }
+
+    @Test
+    @DisplayName("more copies than the limit are warned about once for each rule list")
+    void overflowWarnedOnce() throws Exception {
+        AtomicInteger sessions = new AtomicInteger();
+        // A window of one millisecond, so the two runs that overflow don't wait the five seconds a real one does.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
+                CopyLimit.of(1), 1);
+        RuleSet.Copy held = rules.borrow();
+
+        String logs = EngineLoggingTest.logsOf(() -> {
+            try {
+                // Another thread, so the runs aren't nested: a nested run doesn't wait, and doesn't warn.
+                Thread other = new Thread(() -> {
+                    try {
+                        rules.release(rules.borrow());
+                        rules.release(rules.borrow());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+                other.start();
+                other.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        rules.release(held);
+        assertEquals(1, logs.lines().filter(line -> line.contains("made an extra copy")).count(), logs);
+        assertEquals(3, sessions.get(), "the copy held, and one for each overflowing run");
     }
 
     @Test

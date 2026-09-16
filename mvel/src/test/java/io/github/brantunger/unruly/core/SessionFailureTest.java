@@ -69,6 +69,12 @@ class SessionFailureTest {
         };
     }
 
+    /** A session of a language that has state of its own, so each copy of the rules needs one. */
+    private static Session aSession() {
+        return new Session() {
+        };
+    }
+
     private static Rule rule(String name, String language, int priority) {
         return Rule.builder().ruleName(name).language(language).priority(priority).condition("c").action("a").build();
     }
@@ -102,7 +108,7 @@ class SessionFailureTest {
 
     /** Loads one rule in language {@code x}, whose newSession() calls {@code whileOverlapping} during an overlapping run. */
     private void load(Supplier<Session> whileOverlapping) {
-        build(language("x", () -> overlapping.get() ? whileOverlapping.get() : Session.none()));
+        build(language("x", () -> overlapping.get() ? whileOverlapping.get() : aSession()));
         engine.load(List.of(rule("r", "x", 1)));
     }
 

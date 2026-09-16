@@ -84,8 +84,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private volatile RuleSet ruleSet;
     private volatile boolean closed;
     private final Object lifecycle = new Object();
-    // The most compiled copies of the rules that runs hold at once, or RuleSet.UNLIMITED.
-    private final int maxCopies;
+    // How many compiled copies of the rules runs hold at once, and which runs that applies to.
+    private final CopyLimit copyLimit;
     // How long a run may take, or null if runs have no deadline. A run() call can pass one of its own.
     private final Duration runTimeout;
     // The output type languages are told about, and what sets the properties actions return.
@@ -135,7 +135,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.packageImports = Collections.unmodifiableSet(packages);
         this.classImports = Collections.unmodifiableSet(classes);
         this.listeners = configuration.listeners();
-        this.maxCopies = configuration.maxCopies();
+        this.copyLimit = configuration.copyLimit();
         this.runTimeout = configuration.runTimeout();
         this.outputType = configuration.outputType();
         this.outputWriter = configuration.outputWriter();
@@ -458,7 +458,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 }
             }
             throwIfAnyFailed(failures);
-            loaded = new RuleSet(compiled, compilers.used(languages.defaultLanguage()), maxCopies);
+            loaded = new RuleSet(compiled, compilers.used(languages.defaultLanguage()), copyLimit);
         } catch (RuntimeException | Error e) {
             Closing.compilers(compilers.created());
             throw e;

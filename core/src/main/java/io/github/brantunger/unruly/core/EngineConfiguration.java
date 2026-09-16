@@ -19,7 +19,8 @@ import java.util.Objects;
  * @param defaultLanguage The name of the default language, or {@code null} to use the only language
  * @param imports         The package and class names to import, not yet resolved
  * @param listeners       The listeners, in the order they're called
- * @param maxCopies       The most compiled copies of the rules, or {@link #UNLIMITED_COPIES}
+ * @param copyLimit       How many compiled copies of the rules runs may hold at once, and which runs that
+ *                        applies to
  * @param runTimeout      How long a run may take, or {@code null} if runs have no deadline
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
@@ -27,12 +28,9 @@ import java.util.Objects;
  * @param <O>             The type of the output object
  */
 public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
-                                     List<RuleListener> listeners, int maxCopies, Duration runTimeout,
+                                     List<RuleListener> listeners, CopyLimit copyLimit, Duration runTimeout,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
                                      Map<String, Map<String, String>> options) {
-
-    /** The {@code maxCopies} of an engine that makes as many copies as its runs need. */
-    public static final int UNLIMITED_COPIES = RuleSet.UNLIMITED;
 
     /**
      * Keeps unmodifiable copies of the lists and options, so later changes to the builder don't change an engine.
@@ -44,6 +42,7 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
         languages = List.copyOf(languages);
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
+        Objects.requireNonNull(copyLimit, "copyLimit");
         Objects.requireNonNull(outputType, "outputType");
         Objects.requireNonNull(outputWriter, "outputWriter");
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();

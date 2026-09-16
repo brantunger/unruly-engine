@@ -448,6 +448,40 @@ compile unchanged.
 | Recording which rules produced a decision with a shared listener | `runWithResult(facts).firedRules()` |
 | Recording which version of the rules produced a decision | `runWithResult(facts).ruleSetChecksum()`, and `engine.rules().checksum()` for the engine's current rules |
 
+## 🧵 Compiled copies are limited on virtual threads
+
+**What changed:** each run borrows a compiled copy of the rules, and 1.x made a new one whenever every copy was in
+use, with no upper bound unless you asked for one. 2.0 limits **runs on virtual threads** to one copy for each
+processor, read once by `build()`. Runs on platform threads aren't limited: the pool they come from already bounds
+how many copies exist, so they keep the throughput they had.
+
+A limited run that starts while every copy is in use waits for one, and two kinds of run never wait, so a limit can't
+deadlock an engine:
+
+- a run nested in another run on the same thread, started from an action or a listener — whatever engine or rule list
+  the run around it uses, including rules a `load()` has since replaced;
+- a run that has waited five seconds without one single copy being given back, which is what waiting for a run of this
+  engine on *another* thread looks like. It's logged at WARN once for each rule list.
+
+Either gets an extra copy that isn't kept. In 1.x only the first case skipped the wait, and only on the same rule
+list, so a run nested on another thread, on another engine, or after a reload could wait for ever.
+
+`maxCopies(int)` still limits runs from every kind of thread, and the new `unlimitedCopies()` restores the 1.x
+default. A rule list whose languages all return `Session.none()` needs no copies, so no limit applies to it.
+
+**Who is affected:** applications that run rules on virtual threads, and applications with a limit whose rules wait on
+I/O. This is a behaviour change that the API compatibility check can't see, so there's no compiler error to catch it.
+
+**What to change:**
+
+| 1.x | 2.0 |
+| --- | --- |
+| Runs from virtual threads, with as many copies as runs | At most one copy for each processor; the runs above that wait. `.unlimitedCopies()` keeps the 1.x behaviour |
+| Rules that wait on a database, a service or a file, run from virtual threads | `.unlimitedCopies()`, or `.maxCopies(n)` sized for how many waiting runs you want at once: the default is sized for rules that compute |
+| An action that runs the same engine on another thread and waits for it | It no longer hangs: the nested run waits five seconds, then takes an extra copy, and the engine warns |
+| Sizing memory from the number of copies | One for each processor for virtual-thread runs, plus an extra for each run that doesn't wait, plus the copies of a rule list being replaced |
+| `maxCopies(...)` as the only way to bound the copies | Still available, and still applies to every thread; it's now a change to the default rather than a way out of no limit |
+
 ## 🔒 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in
