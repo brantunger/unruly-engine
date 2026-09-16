@@ -21,12 +21,13 @@ import java.util.function.UnaryOperator;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * When the engine declares every fact its rules may use, MVEL compiles them with strong typing, so a misspelled
- * property or an unknown fact fails {@code load()} instead of a run. It's off unless the whole picture is known:
- * MVEL's strict mode rejects property access on a {@code Map} or an {@code Object}, so one dynamic declaration would
- * turn working rules into compile errors.
+ * With its {@code strongTyping} option on, MVEL compiles against the declared facts, so a misspelled property or an
+ * unknown fact fails {@code load()} instead of a run. It's an option because strong typing also rejects rules that
+ * work without it (#362), and it fails loading when it can't apply: MVEL's strict mode rejects property access on a
+ * {@code Map}, a {@code Collection} or an {@code Object}, so one dynamic declaration would turn working rules into
+ * compile errors.
  */
-@DisplayName("MVEL compiles against declared facts, so a typo fails when the rules load")
+@DisplayName("with strongTyping on, MVEL compiles against declared facts, so a typo fails when the rules load")
 class MvelStrongTypingTest {
 
     /** An applicant as a record, whose components MVEL reads as properties. */
@@ -51,22 +52,30 @@ class MvelStrongTypingTest {
         return Rule.builder().ruleName("r").condition(condition).action(action).build();
     }
 
-    /** An engine that knows everything MVEL needs: declared facts, a real output type, and a complete list. */
-    private static RulesEngine<Decision> typedEngine() {
-        return typedEngine(UnaryOperator.identity());
-    }
-
-    private static RulesEngine<Decision> typedEngine(UnaryOperator<RulesEngineBuilder<Decision>> extra) {
+    /** A builder with everything strong typing needs: the option, declared facts, an output type, a complete list. */
+    private static RulesEngineBuilder<Decision> strongTyping(UnaryOperator<RulesEngineBuilder<Decision>> extra) {
         return extra.apply(RulesEngineBuilder.allMatches(Decision::new)
                 .outputType(Decision.class)
                 .fact("applicant", Applicant.class)
-                .requireDeclaredFacts()).build();
+                .requireDeclaredFacts()
+                .option("mvel", "strongTyping", "true"));
+    }
+
+    private static RulesEngine<Decision> typedEngine() {
+        return strongTyping(UnaryOperator.identity()).build();
     }
 
     private static FactStore<Object> applicant() {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("applicant", new Applicant(760, "Alex"));
         return facts;
+    }
+
+    private static void assertCantApply(RulesEngineBuilder<?> builder, String action, String because) {
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> builder.build().load(List.of(rule("true", action))));
+        assertTrue(thrown.getMessage().contains("MVEL's strongTyping option is on, but strong typing can't apply, "
+                + "because " + because), thrown.getMessage());
     }
 
     @Test
@@ -128,46 +137,125 @@ class MvelStrongTypingTest {
     }
 
     @Test
-    @DisplayName("a fact declared as a Map turns typing off, because MVEL can't check a map's members")
-    void aMapFactTurnsTypingOff() {
-        RulesEngine<Decision> engine = typedEngine(builder -> builder.fact("order", Map.class));
+    @DisplayName("the strong-typing forms docs/languages/mvel.md suggests load and run")
+    void documentedFormsWork() {
+        RulesEngine<Decision> engine = typedEngine();
+        engine.load(List.of(
+                Rule.builder().ruleName("loop").priority(2).condition("true")
+                        .action("total = 0; foreach (int n : [1, 2, 3]) { total += n }; output.score = total")
+                        .build(),
+                Rule.builder().ruleName("map").priority(1).condition("true")
+                        .action("m = ['a': 1]; output.score = output.score + m['a']").build()));
 
-        // The same typo that fails above now compiles: nothing is type-checked.
-        assertDoesNotThrow(() -> engine.load(List.of(rule("applicant.creditScor >= 750", "output.score = 1"))));
+        assertEquals(7, engine.run(applicant()).getScore());
     }
 
     @Test
-    @DisplayName("a fact declared as Object turns typing off as well")
-    void anObjectFactTurnsTypingOff() {
-        RulesEngine<Decision> engine = typedEngine(builder -> builder.fact("thing", Object.class));
+    @DisplayName("an array of records is type-checked")
+    void anArrayOfRecordsIsChecked() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.fact("others", Applicant[].class)).build();
 
-        assertDoesNotThrow(() -> engine.load(List.of(rule("applicant.creditScor >= 750", "output.score = 1"))));
+        assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule("others[0].creditScor >= 750", "output.score = 1"))));
     }
 
     @Test
-    @DisplayName("without an output type, typing stays off: an action writes to the output")
-    void noOutputTypeTurnsTypingOff() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .fact("applicant", Applicant.class).requireDeclaredFacts().build();
-
-        assertDoesNotThrow(() -> engine.load(List.of(rule("applicant.creditScor >= 750", "output.put('k', 1)"))));
-    }
-
-    @Test
-    @DisplayName("without requireDeclaredFacts, typing stays off: a run may supply facts nobody declared")
-    void withoutRequiringDeclaredFactsTypingIsOff() {
+    @DisplayName("without the strongTyping option, rules load as MVEL compiles them, even with every fact declared")
+    void strongTypingIsOffByDefault() {
         RulesEngine<Decision> engine = RulesEngineBuilder.allMatches(Decision::new)
-                .outputType(Decision.class).fact("applicant", Applicant.class).build();
+                .outputType(Decision.class).fact("applicant", Applicant.class).requireDeclaredFacts().build();
+
+        // An untyped foreach variable and a def function, which strong typing rejects, and a typo it would catch.
+        assertDoesNotThrow(() -> engine.load(List.of(
+                rule("applicant.creditScor >= 750", "output.score = 1"),
+                Rule.builder().ruleName("loop").condition("true")
+                        .action("total = 0; foreach (n : [1, 2, 3]) { total += n }; output.score = total").build(),
+                Rule.builder().ruleName("def").condition("true")
+                        .action("def bonus(s) { s / 100 }; output.score = bonus(applicant.creditScore)").build())));
+    }
+
+    @Test
+    @DisplayName("strongTyping=false is the same as leaving the option out")
+    void strongTypingFalse() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.option("mvel", "strongTyping", "false")).build();
 
         assertDoesNotThrow(() -> engine.load(List.of(rule("applicant.creditScor >= 750", "output.score = 1"))));
     }
 
     @Test
-    @DisplayName("declaring nothing leaves MVEL exactly as it was")
-    void noDeclarationsAtAll() {
-        RulesEngine<Decision> engine = RulesEngineBuilder.allMatches(Decision::new)
-                .outputType(Decision.class).requireDeclaredFacts().build();
+    @DisplayName("with strongTyping on, a fact declared as a Map fails load(): MVEL can't check a map's members")
+    void aMapFactFailsLoading() {
+        assertCantApply(strongTyping(builder -> builder.fact("order", HashMap.class)), "output.score = 1",
+                "fact 'order' is declared as java.util.HashMap, whose members MVEL can't check");
+    }
 
-        assertDoesNotThrow(() -> engine.load(List.of(rule("applicant.creditScor >= 750", "output.score = 1"))));
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as Object fails load()")
+    void anObjectFactFailsLoading() {
+        assertCantApply(strongTyping(builder -> builder.fact("thing", Object.class)), "output.score = 1",
+                "fact 'thing' is declared as java.lang.Object");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as a List fails load(): MVEL has no type for its elements")
+    void aListFactFailsLoading() {
+        assertCantApply(strongTyping(builder -> builder.fact("items", List.class)), "output.score = 1",
+                "fact 'items' is declared as java.util.List");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as an array of Object fails load()")
+    void anObjectArrayFactFailsLoading() {
+        assertCantApply(strongTyping(builder -> builder.fact("things", Object[].class)), "output.score = 1",
+                "fact 'things' is declared as [Ljava.lang.Object;");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, no output type fails load(): an action writes to the output")
+    void noOutputTypeFailsLoading() {
+        assertCantApply(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                        .fact("applicant", Applicant.class).requireDeclaredFacts()
+                        .option("mvel", "strongTyping", "true"), "output.put('k', 1)",
+                "the output type is java.lang.Object");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, leaving out requireDeclaredFacts fails load(): a run may supply other facts")
+    void withoutRequiringDeclaredFactsFailsLoading() {
+        assertCantApply(RulesEngineBuilder.allMatches(Decision::new).outputType(Decision.class)
+                        .fact("applicant", Applicant.class).option("mvel", "strongTyping", "true"), "output.score = 1",
+                "the engine wasn't built with requireDeclaredFacts()");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, declaring no fact fails load()")
+    void noDeclarationsFailsLoading() {
+        assertCantApply(RulesEngineBuilder.allMatches(Decision::new).outputType(Decision.class)
+                        .requireDeclaredFacts().option("mvel", "strongTyping", "true"), "output.score = 1",
+                "no facts were declared");
+    }
+
+    @Test
+    @DisplayName("a strongTyping value other than true or false fails load(), so a typo doesn't leave it off")
+    void aBadValueFailsLoading() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.option("mvel", "strongTyping", "yes")).build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule("true", "output.score = 1"))));
+
+        assertTrue(thrown.getMessage().contains("MVEL's strongTyping option must be true or false, but was 'yes'"),
+                thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("an option MVEL doesn't have fails load(), so a misspelled key isn't silently ignored")
+    void anUnknownOptionFailsLoading() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.option("mvel", "strongTypng", "true")).build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule("true", "output.score = 1"))));
+
+        assertTrue(thrown.getMessage().contains("MVEL has no option 'strongTypng'; its only option is strongTyping"),
+                thrown.getMessage());
     }
 }

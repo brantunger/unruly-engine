@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.core.CopyLimit;
+import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
 import org.jspecify.annotations.Nullable;
@@ -278,22 +279,26 @@ public final class RulesEngineBuilder<O> {
      * </p>
      *
      * <p>
-     * Languages are told what was declared, and use it as they can: MVEL compiles against the declared types, so a
-     * misspelled property fails {@link RulesEngine#load(List)} rather than a run; see
-     * {@link #requireDeclaredFacts()} for what it takes to turn that on. A language that ignores types is unaffected,
-     * and the engine's own check happens whatever the language does.
+     * A primitive type is declared as its wrapper, so {@code fact("age", int.class)} accepts an {@link Integer}, and
+     * languages are told {@code Integer}. {@link RulesEngine#load(List)} checks every declared name with the language
+     * of each rule, as a run checks the names it's given, so a name no language can refer to fails loading rather than
+     * every run.
+     * </p>
+     *
+     * <p>
+     * Languages are told what was declared, and use it as they can, for example to check their expressions when the
+     * rules load; the engine's own check happens whatever the language does. See each language's documentation.
      * </p>
      *
      * @param name The fact's name, as rules refer to it
      * @param type The type a run's value must be an instance of. Declaring {@link Object} or a {@link java.util.Map}
      *             says the fact's shape isn't fixed, which no language can type-check
      * @return This builder
-     * @throws NullPointerException if {@code name} or {@code type} is {@code null}
+     * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
+     * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
      */
     public RulesEngineBuilder<O> fact(String name, Class<?> type) {
-        Objects.requireNonNull(name, "name must not be null");
-        Objects.requireNonNull(type, "type must not be null");
-        factTypes.put(name, type);
+        factTypes.put(name, EngineCompileContext.declaredType(name, type));
         return this;
     }
 
@@ -302,7 +307,8 @@ public final class RulesEngineBuilder<O> {
      *
      * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
      * @return This builder
-     * @throws NullPointerException if {@code types}, a name or a type is {@code null}
+     * @throws NullPointerException     if {@code types}, a name or a type is {@code null}
+     * @throws IllegalArgumentException if a name is {@code output}
      */
     public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
         Objects.requireNonNull(types, "types must not be null");
@@ -316,20 +322,9 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * It says that {@link #fact(String, Class)} lists <b>every</b> fact a run may supply, which is what lets a
-     * language reject an expression that refers to anything else. MVEL compiles the rules with strong typing, so a
-     * misspelled property or an unknown fact fails {@link RulesEngine#load(List)} with the line and column, when all
-     * of this holds:
-     * </p>
-     *
-     * <ul>
-     *     <li>this is set, and at least one fact is declared;</li>
-     *     <li>no fact is declared as {@link Object} or a {@link java.util.Map}, whose members MVEL can't check;</li>
-     *     <li>{@link #outputType(Class)} was given a type that is neither, because an action writes to the output.</li>
-     * </ul>
-     *
-     * <p>
-     * Otherwise MVEL compiles as it always has, and the engine logs at DEBUG which declaration stopped it. The
-     * engine's own checks on a run's facts don't depend on any of that.
+     * language reject an expression that refers to anything else, when the language offers that and it's turned on:
+     * for MVEL, its {@code strongTyping} option, which also needs this. The engine's own checks on a run's facts don't
+     * depend on any language.
      * </p>
      *
      * @return This builder

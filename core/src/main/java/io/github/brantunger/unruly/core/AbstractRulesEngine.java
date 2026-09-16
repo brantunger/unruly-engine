@@ -453,6 +453,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * <p>
+     * Every declared fact name is checked with the same languages a run checks names with, so a declared name no
+     * language can refer to fails here rather than every run.
+     * </p>
+     *
+     * <p>
      * The rule list it replaces is closed once no run is using it: its languages' sessions and compilers are closed. A
      * rule list that fails to load closes the compilers it created.
      * </p>
@@ -504,7 +509,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 }
             }
             throwIfAnyFailed(failures);
-            loaded = new RuleSet(compiled, compilers.used(languages.defaultLanguage()), copyLimit);
+            Map<String, ExpressionCompiler> used = compilers.used(languages.defaultLanguage());
+            checkDeclaredNames(used);
+            loaded = new RuleSet(compiled, used, copyLimit);
         } catch (RuntimeException | Error e) {
             Closing.compilers(compilers.created());
             throw e;
@@ -590,7 +597,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 log.error(msg);
                 throw new IllegalArgumentException(msg);
             }
-            checkFactName(name, checks);
+            IllegalArgumentException rejected = factNameRejection(name, checks, true);
+            if (rejected != null) {
+                throw rejected;
+            }
             checkDeclaredType(name, values.get(name));
         }
         checkNothingWasLeftOut(values);
@@ -646,33 +656,58 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Checks every declared fact name with the languages of a rule list being loaded, which are the ones its runs check
+     * names with.
+     *
+     * @param checks The compilers to check the names with, by language name
+     * @throws RuleCompilationException if a language rejects a declared name or fails to check it
+     */
+    private void checkDeclaredNames(Map<String, ExpressionCompiler> checks) {
+        for (String name : declaredFacts.keySet()) {
+            IllegalArgumentException rejected = factNameRejection(name, checks, false);
+            if (rejected != null) {
+                throw compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
+                        + Failures.describe(rejected), rejected, null);
+            }
+        }
+    }
+
+    /**
      * Checks a fact name with the language of each rule in use. A language rejects a name with an
-     * {@link IllegalArgumentException}, whose message is logged escaped, and which is thrown as is. Anything else a language throws is logged
-     * and thrown as an {@code IllegalArgumentException} naming the fact and the language, except a fatal
-     * {@link Error}, thrown or among the causes of what the language throws, which is rethrown after logging.
+     * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws is returned as an
+     * {@code IllegalArgumentException} naming the fact and the language, except a fatal {@link Error}, thrown or among
+     * the causes of what the language throws, which is logged and rethrown.
      *
      * @param name   The fact's name
      * @param checks The compilers to check it with, by language name
-     * @throws IllegalArgumentException if a language rejects the name or fails to check it
+     * @param logged Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own message
+     * @return The exception a language rejected the name with, or {@code null} if every language accepts it
      */
-    private static void checkFactName(String name, Map<String, ExpressionCompiler> checks) {
+    private static IllegalArgumentException factNameRejection(String name, Map<String, ExpressionCompiler> checks,
+                                                              boolean logged) {
         for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
             try {
                 check.getValue().checkFactName(name);
             } catch (IllegalArgumentException e) {
                 // The language wrote this message and it names the fact, so it's escaped before it's logged. The
-                // exception is thrown as it came, so a caller still reads exactly what the language said.
-                log.error(Failures.describe(e));
-                throw e;
+                // exception is returned as it came, so a caller still reads exactly what the language said.
+                if (logged) {
+                    log.error(Failures.describe(e));
+                }
+                return e;
             } catch (Exception | Error e) {
                 Failures.keepInterruptStatus(e);
                 String msg = "The '%s' expression language failed to check fact name '%s': %s"
                         .formatted(Failures.quote(check.getKey()), Failures.quote(name), Failures.describe(e));
-                log.error(msg);
-                Failures.throwIfPresent(Failures.fatalError(e));
-                throw new IllegalArgumentException(msg, e);
+                Error fatal = Failures.fatalError(e);
+                if (logged || fatal != null) {
+                    log.error(msg);
+                }
+                Failures.throwIfPresent(fatal);
+                return new IllegalArgumentException(msg, e);
             }
         }
+        return null;
     }
 
     /**

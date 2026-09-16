@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -129,5 +130,57 @@ class DeclaredFactsTest {
         assertThrows(NullPointerException.class, () -> builder.fact(null, Applicant.class));
         assertThrows(NullPointerException.class, () -> builder.fact("a", null));
         assertThrows(NullPointerException.class, () -> builder.facts(null));
+    }
+
+    // ---- #361: a declaration no run could satisfy fails before the first run ----
+
+    @Test
+    @DisplayName("a primitive type is declared as its wrapper, so a run's boxed value passes")
+    void primitiveTypeIsWrapped() {
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("age", int.class));
+
+        assertEquals(Map.of("ok", true), engine.run(facts("age", 30)));
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(facts("age", "thirty")));
+        assertEquals("Fact 'age' was declared as java.lang.Integer, but the run supplied a java.lang.String",
+                thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("declaring a fact named output is rejected: actions use that name for the output object")
+    void outputCannotBeDeclared() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> builder.fact("output", String.class));
+        assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
+                thrown.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> builder.facts(Map.of("output", String.class)));
+    }
+
+    @Test
+    @DisplayName("a compile context made outside an engine, as the test kit does, wraps primitives and rejects output")
+    void compileContextDeclarationsMatchAnEngine() {
+        EngineCompileContext context = new EngineCompileContext(java.util.Set.of(), java.util.Set.of(),
+                ClassLoader.getSystemClassLoader(), Object.class, Map.of(), Map.of("age", int.class), true);
+
+        assertEquals(Map.of("age", Integer.class), context.declaredFacts());
+        assertThrows(IllegalArgumentException.class, () -> new EngineCompileContext(java.util.Set.of(),
+                java.util.Set.of(), ClassLoader.getSystemClassLoader(), Object.class, Map.of(),
+                Map.of("output", String.class), true));
+    }
+
+    @Test
+    @DisplayName("a declared name no language can refer to fails load(), naming the fact")
+    void unusableDeclaredNameFailsLoading() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .fact("not a name", String.class).build();
+
+        RuleCompilationException thrown = assertThrows(
+                RuleCompilationException.class,
+                () -> engine.load(List.of(RULE)));
+
+        assertTrue(thrown.getMessage().startsWith("Declared fact 'not a name' can't be used: "), thrown.getMessage());
+        assertInstanceOf(IllegalArgumentException.class, thrown.getCause());
     }
 }

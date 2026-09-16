@@ -1,11 +1,14 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodType;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -30,9 +33,13 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
     /**
-     * Keeps unmodifiable copies of the imports and options, so the context can't change after it's created.
+     * Keeps unmodifiable copies of the imports, options and declarations, so the context can't change after it's
+     * created. A declared primitive type is kept as its wrapper, as {@link #declaredType(String, Class)} says, so a
+     * language sees the same declarations from the test kit as from an engine.
      *
-     * @throws NullPointerException if an argument, or an element of a set or of the options, is {@code null}
+     * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
+     *                                  is {@code null}
+     * @throws IllegalArgumentException if a fact is declared with the name {@code output}
      */
     public EngineCompileContext {
         packageImports = Set.copyOf(packageImports);
@@ -40,7 +47,29 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(classLoader, "classLoader");
         Objects.requireNonNull(outputType, "outputType");
         options = Map.copyOf(options);
-        declaredFacts = Map.copyOf(declaredFacts);
+        Map<String, Class<?>> declared = new LinkedHashMap<>();
+        declaredFacts.forEach((name, type) -> declared.put(name, declaredType(name, type)));
+        declaredFacts = Map.copyOf(declared);
+    }
+
+    /**
+     * Returns the type a fact is declared with: {@code type}, or its wrapper if it's primitive, so a run's boxed value
+     * is an instance of it.
+     *
+     * @param name The fact's name
+     * @param type The type it was declared with
+     * @return The type to check a run's value against and to tell languages
+     * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
+     * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
+     */
+    public static Class<?> declaredType(String name, Class<?> type) {
+        Objects.requireNonNull(name, "name must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        if (ActionContext.OUTPUT_NAME.equals(name)) {
+            throw new IllegalArgumentException("'" + ActionContext.OUTPUT_NAME
+                    + "' is reserved for the output object and cannot be declared as a fact");
+        }
+        return MethodType.methodType(type).wrap().returnType();
     }
 
     /**

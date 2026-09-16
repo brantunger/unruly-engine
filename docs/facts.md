@@ -114,33 +114,47 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 
 - **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
-  declaration. A run that leaves the fact out is unaffected.
+  declaration. A run that leaves the fact out is unaffected. A primitive type is declared as its wrapper, so
+  `fact("age", int.class)` accepts an `Integer`. Declaring `output` fails at once, and `load()` fails for a declared
+  name the rules' languages can't refer to.
 - **`facts(map)`** declares several at once. Declaring the same name twice keeps the last type.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
   or leaves a declared one out, fails with `IllegalArgumentException`.
 
 ### 🔎 Catching a typo when the rules load
 
-`requireDeclaredFacts()` is also what lets a language check the rules themselves. MVEL compiles them with strong
-typing, so a misspelled property or an unknown fact fails `load()` with the line and column instead of failing a run:
+`requireDeclaredFacts()` is also what lets a language check the rules themselves. MVEL does it when you turn on its
+`strongTyping` option: it compiles the rules with strong typing, so a misspelled property or an unknown fact fails
+`load()` with the line and column instead of failing a run:
 
 ```java
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .outputType(LoanDecision.class)
+        .fact("applicant", Applicant.class)
+        .requireDeclaredFacts()
+        .option("mvel", "strongTyping", "true")
+        .build();
+
 engine.load(List.of(Rule.builder().ruleName("prime-rate")
         .condition("applicant.creditScor >= 750")   // RuleCompilationException: unqualified type ... creditScor
         .action("output.interestRate = 6.9").build()));
 ```
 
-MVEL only does this when it can check everything, which needs all of:
+Strong typing only works when MVEL can check everything, so with the option on, `load()` fails, saying why, unless
+all of these hold:
 
 | Needed | Why |
 | --- | --- |
 | `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
-| No fact declared as `Map` or `Object` | MVEL's strict mode rejects `order.id` on a `Map` and any property of an `Object`, so one such fact would reject working rules |
-| `outputType(...)` set to something that is neither | An action writes to `output`, so its type has to be checkable too |
+| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
+| `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
 
-If any of them is missing, MVEL compiles as it always has and says at DEBUG which declaration stopped it. The
-engine's own checks on a run's facts don't depend on it, and neither does any other language: each one is told what
-was declared and uses it as it can.
+Strong typing also rejects some rules that work without it: a `foreach` variable needs a type
+(`foreach (int n : list) { ... }`), a map's entries are read by key (`m['a']`, not `m.a`), and `def` functions can't be
+used. See
+[MVEL](languages/mvel.md#-strong-typing). The option is off by default, so declaring facts never changes what compiles.
+The engine's own checks on a run's facts don't depend on it, and neither does any other language: each one is told
+what was declared and uses it as it can.
 
 > [!NOTE]
 > Strong typing doesn't catch a non-boolean condition; the engine checks that itself, on every engine.
