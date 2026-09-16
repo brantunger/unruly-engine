@@ -43,8 +43,8 @@ Every example below was checked against the engine. For the full language, see t
 | --- | --- |
 | Run several statements | `output.approved = true; output.interestRate = 4.5` |
 | Branch | `if (applicant.creditScore > 700) { output.tier = 'high' } else { output.tier = 'low' }` |
-| Loop | `total = 0; foreach (n : [1, 2, 3]) { total += n }; output.total = total` |
-| Define a function | `def bonus(score) { score / 100 }; output.bonus = bonus(applicant.creditScore)` |
+| Loop | `total = 0; foreach (n : [1, 2, 3]) { total += n }; output.total = total` (with [strong typing](#-strong-typing), `foreach (int n : ...)`) |
+| Define a function | `def bonus(score) { score / 100 }; output.bonus = bonus(applicant.creditScore)` (not with [strong typing](#-strong-typing)) |
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
 A condition may also run several statements, branch or loop, as long as nothing in it assigns; see
@@ -110,6 +110,35 @@ MVEL compares values more loosely than Java, which can make a condition match, o
 | 🕳 **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, so `x == null` can't test for it | `isdef x && x > 1` |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
+
+## 🛡 Strong typing
+
+MVEL can compile rules against the facts an engine declares, so a misspelled property or an unknown fact fails
+`load()` with its line and column rather than a run. Turn it on with MVEL's one option:
+
+```java
+RulesEngineBuilder.firstMatch(LoanDecision::new)
+        .outputType(LoanDecision.class)
+        .fact("applicant", Applicant.class)
+        .requireDeclaredFacts()
+        .option("mvel", "strongTyping", "true")   // "true" or "false"; the default is false
+        .build();
+```
+
+- It needs `requireDeclaredFacts()`, at least one declared fact, an `outputType(...)`, and no fact or output type
+  declared as `Object`, a `Map`, a `Collection` or an array of one of them. With the option on and any of that missing,
+  `load()` fails saying which. See [Declaring facts](../facts.md#-catching-a-typo-when-the-rules-load).
+- It rejects some rules that work without it:
+
+  | Without strong typing | With it |
+  | --- | --- |
+  | `total = 0; foreach (n : [1, 2, 3]) { total += n }` | `total = 0; foreach (int n : [1, 2, 3]) { total += n }`: give the loop variable a type |
+  | `m = ['a': 1]; output.score = m.a` | `m = ['a': 1]; output.score = m['a']`: read a map's entries by key |
+  | `def bonus(score) { score / 100 }` | Not possible: write the expression inline |
+
+- Any other option for `mvel`, or a value other than `true` or `false`, fails `load()` once MVEL compiles the rule list
+  (a rule written in MVEL, including one that names no language when MVEL is the default, or an empty rule list with
+  MVEL as the default), so a typo can't leave strong typing silently off.
 
 ## 🧵 Virtual threads
 

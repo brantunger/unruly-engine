@@ -55,7 +55,8 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * Returns the facts the engine was declared with, through
      * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Class)}, by fact name. A language may
      * check its expressions against them, for example to reject a misspelled property when the rules load, or ignore
-     * them; the engine checks a run's values against them whatever the language does.
+     * them; the engine checks a run's values against them whatever the language does. A fact declared with a primitive
+     * type, such as {@code int}, is given as its wrapper, {@link Integer}.
      *
      * <p>
      * A declared type is what a run's value must be an instance of. It isn't a promise that the fact is present,

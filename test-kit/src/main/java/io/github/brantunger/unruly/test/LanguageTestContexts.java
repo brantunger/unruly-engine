@@ -86,9 +86,10 @@ public final class LanguageTestContexts {
      * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
      * @param allFactsDeclared Whether a run may supply only the declared facts, as
      *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
-     * @return The context
-     * @throws NullPointerException if an argument, or an element of a set, of the options or of the declarations, is
-     *                              {@code null}
+     * @return The context. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
+     * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
+     *                                  is {@code null}
+     * @throws IllegalArgumentException if a fact is declared with the name {@code output}, which an engine rejects too
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,

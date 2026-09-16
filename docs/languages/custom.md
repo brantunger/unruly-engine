@@ -60,7 +60,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | Interface | You implement | Called |
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | Once per `load()` that uses the language |
-| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each fact of each `run()`; `newSession` for each copy of the rules |
+| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | For each rule; `checkFactName` for each declared fact at `load()`, where a rejection fails loading, and for each fact of each `run()`; `newSession` for each copy of the rules |
 | `CompiledCondition` / `CompiledAction` | `evaluate(EvaluationContext, Session)` / `execute(ActionContext, Session)`, which returns an `ActionResult` | Each time a rule is evaluated or fires |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | One per language for each copy of the rules |
 
@@ -173,7 +173,9 @@ public final class MyLanguage implements ExpressionLanguage {
   refers to a name that isn't there — but only when `allFactsDeclared()` is `true`, because otherwise a run may
   legitimately supply a fact nobody declared. Both are empty and `false` unless the application declares facts, so a
   language must work without them. The engine checks a run's values against the declared types whatever your language
-  does. MVEL's `DeclaredTypes` shows one way to decide whether the declarations are checkable at all.
+  does. MVEL's `DeclaredTypes` shows one way to decide whether the declarations are checkable at all, behind an
+  option (`strongTyping`), because typed compilation can also reject rules that work untyped. A fact declared with a
+  primitive type is given to you as its wrapper.
 - **Fact names.** Override `checkFactName` to reject a name your rules couldn't refer to, such as a keyword, with an
   `IllegalArgumentException`. By default every name is accepted. Anything else it throws is logged and becomes an
   `IllegalArgumentException` naming the fact and your language, except a fatal `Error`, which is rethrown unchanged.
