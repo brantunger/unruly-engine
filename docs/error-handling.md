@@ -73,7 +73,7 @@ All of them are unchecked.
 | | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. Every other `Error`, including a `LinkageError` such as `NoClassDefFoundError` or `IllegalAccessError`, is reported as a `RuleExecutionException` naming the rule, with the error as its cause. |
-| `RunOptions.timeout()` / `withTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
+| `RunOptions.withTimeoutOf()` / `withTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
 | `runWithResult(facts, options)` | | As `runWithResult(facts)` |
 | `rules()` | `IllegalStateException` | The engine is closed |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
@@ -146,7 +146,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   cancellation, for example — is given the run's deadline and can stop there; see
   [Other expression languages](languages/custom.md#-stopping-a-run).
 - **Nothing is rolled back.** What ran before the run stopped keeps its effects, like any other failed run.
-- `runWithResult(facts, RunOptions.timeout(Duration.ofMillis(200)))` gives one run a timeout instead of the engine's.
+- `runWithResult(facts, RunOptions.withTimeoutOf(Duration.ofMillis(200)))` gives one run a timeout instead of the engine's.
   A run can be given a longer timeout than the engine's, but not none at all.
 - **A run started from inside another run** on the same thread, such as one an action starts on another engine,
   stops at whichever deadline comes first: its own, or the outer run's. A run started on another thread doesn't

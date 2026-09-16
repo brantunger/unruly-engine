@@ -29,7 +29,7 @@ class RunOptionsTest {
         assertNotSame(shared, timed);
         assertNull(shared.timeout());
         assertEquals(Duration.ofMillis(200), timed.timeout());
-        assertEquals(Duration.ofSeconds(1), RunOptions.timeout(Duration.ofSeconds(1)).timeout());
+        assertEquals(Duration.ofSeconds(1), RunOptions.withTimeoutOf(Duration.ofSeconds(1)).timeout());
         assertEquals("RunOptions(timeout=PT0.2S)", timed.toString());
     }
 
@@ -37,9 +37,9 @@ class RunOptionsTest {
     @DisplayName("a timeout must be a positive duration")
     void timeoutMustBePositive() {
         assertEquals("timeout must not be null",
-                assertThrows(NullPointerException.class, () -> RunOptions.timeout(null)).getMessage());
-        assertEquals("timeout must be positive, but was PT0S",
-                assertThrows(IllegalArgumentException.class, () -> RunOptions.timeout(Duration.ZERO)).getMessage());
+                assertThrows(NullPointerException.class, () -> RunOptions.withTimeoutOf(null)).getMessage());
+        assertEquals("timeout must be positive, but was PT0S", assertThrows(IllegalArgumentException.class,
+                () -> RunOptions.withTimeoutOf(Duration.ZERO)).getMessage());
         assertEquals("timeout must be positive, but was PT-1S", assertThrows(IllegalArgumentException.class,
                 () -> RunOptions.defaults().withTimeout(Duration.ofSeconds(-1))).getMessage());
     }

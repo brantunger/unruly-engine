@@ -10,7 +10,7 @@ import java.util.Objects;
  * what the engine was built with.
  *
  * <pre>{@code
- * RunResult<Decision> result = engine.runWithResult(facts, RunOptions.timeout(Duration.ofMillis(200)));
+ * RunResult<Decision> result = engine.runWithResult(facts, RunOptions.withTimeoutOf(Duration.ofMillis(200)));
  * }</pre>
  *
  * <p>
@@ -47,7 +47,7 @@ public final class RunOptions {
      * @throws NullPointerException     if {@code timeout} is {@code null}
      * @throws IllegalArgumentException if {@code timeout} is zero or negative
      */
-    public static RunOptions timeout(Duration timeout) {
+    public static RunOptions withTimeoutOf(Duration timeout) {
         return NO_SETTINGS.withTimeout(timeout);
     }
 
