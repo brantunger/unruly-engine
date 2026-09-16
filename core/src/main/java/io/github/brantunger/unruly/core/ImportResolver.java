@@ -113,6 +113,7 @@ final class ImportResolver {
         return true;
     }
 
+    // mvel.FactNames keeps a copy of this: the mvel package may not use this one. Fix both together.
     private static boolean isIdentifier(String name) {
         if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
             return false;
