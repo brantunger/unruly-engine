@@ -19,9 +19,8 @@ import java.util.List;
  *
  * <p>
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
- * Implement {@link #load(List)}, {@link #runWithResult(FactStore)},
- * {@link #runWithResult(FactStore, Duration)} and {@link #rules()}; {@link #run(FactStore)} and
- * {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
+ * Implement {@link #load(List)}, {@link #runWithResult(FactStore, RunOptions)} and {@link #rules()};
+ * {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
  * implementation keeps compiling. {@link RunResult#of(Object, List, String)} and
  * {@link RuleSetInfo#of(List, String, java.time.Instant)} create the values an implementation returns.
  * </p>
@@ -88,29 +87,31 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      * @throws NullPointerException if {@code facts} is {@code null}
      */
-    RunResult<O> runWithResult(FactStore<?> facts);
+    default RunResult<O> runWithResult(FactStore<?> facts) {
+        return runWithResult(facts, RunOptions.defaults());
+    }
 
     /**
-     * Fires the rules like {@link #runWithResult(FactStore)}, and stops this run if it is still going after
-     * {@code timeout}, instead of after the timeout the engine was built with, if any.
+     * Fires the rules like {@link #runWithResult(FactStore)}, with settings for this run only, such as a
+     * {@link RunOptions#timeout(Duration) timeout} that replaces the one the engine was built with.
      *
      * <p>
-     * The deadline is taken from when this method is called, so waiting for a compiled copy of the rules counts
-     * towards it. The engine checks it before each condition and before each action, so a run stops between rules;
-     * see {@link RulesEngineBuilder#runTimeout(Duration)} for what that does and doesn't stop.
+     * A timeout's deadline is taken from when this method is called, so waiting for a compiled copy of the rules
+     * counts towards it. The engine checks it while waiting, and before each condition and each action, so a run
+     * stops between rules; see {@link RulesEngineBuilder#runTimeout(Duration)} for what that does and doesn't stop.
      * </p>
      *
      * @param facts   The facts to run the rules against, as {@link #run(FactStore)} takes them
-     * @param timeout How long this run may take; positive
+     * @param options The settings for this run; {@link RunOptions#defaults()} changes nothing
      * @return What the run did, as {@link #runWithResult(FactStore)} reports it
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it,
      *         and with a {@link java.util.concurrent.TimeoutException} cause if the run passes its deadline, or an
      *         {@link InterruptedException} cause if its thread is interrupted, which keeps the interrupt status set
-     * @throws IllegalArgumentException as {@link #run(FactStore)} throws it, or if {@code timeout} is zero or negative
+     * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      * @throws NullPointerException if an argument is {@code null}
      */
-    RunResult<O> runWithResult(FactStore<?> facts, Duration timeout);
+    RunResult<O> runWithResult(FactStore<?> facts, RunOptions options);
 
     /**
      * Returns the rules the engine has loaded, their checksum and when they were loaded. A run started before a reload

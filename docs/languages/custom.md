@@ -192,7 +192,8 @@ public final class MyLanguage implements ExpressionLanguage {
 
 ## ⏱ Stopping a run
 
-A run can be interrupted, or given a [timeout](../error-handling.md#-stopping-a-run). The engine checks between
+A run can be interrupted, or given a [timeout](../error-handling.md#-stopping-a-run). A run your language starts
+from inside an expression, on the same thread, stops no later than the run around it. The engine checks between
 rules, so what your language can do decides whether a rule that is already running can be stopped:
 
 | Language | Can it stop inside an expression? |

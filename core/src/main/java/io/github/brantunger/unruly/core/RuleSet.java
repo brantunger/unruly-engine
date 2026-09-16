@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -15,6 +16,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -228,19 +230,22 @@ final class RuleSet {
      *
      * @return A copy for the caller alone, to give back with {@link #release(Copy)}, or {@code null} if the rule set is
      *         closed: it was retired, and every copy was given back
+     * @param deadline When the run must stop, or {@code null} if it has none. Waiting for a copy stops there.
      * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use. A thread
      *                                whose interrupt status is already set still gets a free copy; the run then stops
      *                                at its first rule. A thread that throws holds no copy.
+     * @throws TimeoutException       if the deadline passes while the thread waits for a copy that is in use, which
+     *                                likewise leaves it holding none
      * @throws RuleExecutionException if a language fails to create a session for a new copy, which is logged at ERROR.
      *                                A fatal {@link Error} is then rethrown unchanged.
      */
-    Copy borrow() throws InterruptedException {
+    Copy borrow(Instant deadline) throws InterruptedException, TimeoutException {
         if (!enter()) {
             return null;
         }
         boolean lent = false;
         try {
-            Copy borrowed = lend();
+            Copy borrowed = lend(deadline);
             lent = true;
             // Counted only once the copy is the caller's, so a failed borrow leaves nothing behind.
             runsOnThread()[0]++;
@@ -253,7 +258,7 @@ final class RuleSet {
     }
 
     /**
-     * Gives back a copy taken with {@link #borrow()}. A kept copy is kept for a later run, unless the rule set is
+     * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set is
      * retired; any other copy's sessions are closed.
      *
      * @param borrowed The copy, which the caller must no longer use
@@ -327,7 +332,7 @@ final class RuleSet {
         }
     }
 
-    private Copy lend() throws InterruptedException {
+    private Copy lend(Instant deadline) throws InterruptedException, TimeoutException {
         Map<String, Session> shared = sharedSessions;
         if (shared != null) {
             return new Copy(shared, Kind.SHARED, false);
@@ -337,7 +342,7 @@ final class RuleSet {
         }
         // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
         boolean nested = nestedRun();
-        if (nested ? !permits.tryAcquire() : !awaitPermit(permits, permitsReturned::get, stallWindow)) {
+        if (nested ? !permits.tryAcquire() : !awaitPermit(permits, permitsReturned::get, stallWindow, deadline)) {
             if (!nested) {
                 warnAboutOverflow();
             }
@@ -349,29 +354,44 @@ final class RuleSet {
     /**
      * Waits for a permit while copies are still being given back. A run that waits a whole {@code window} without one
      * single permit coming back gives up: either every copy is held by a run that is itself waiting for this one, or
-     * the rules are so slow that an extra copy costs less than waiting.
+     * the rules are so slow that an extra copy costs less than waiting. A run with a deadline never waits past it.
      *
      * @param permits  The permits to wait for
      * @param returned How many permits have been given back so far
      * @param window   How long to wait for progress, in milliseconds
+     * @param deadline When the run must stop, or {@code null} if it has none
      * @return {@code true} if a permit was taken, {@code false} if nothing came back within one window
      * @throws InterruptedException if the thread is interrupted while it waits
+     * @throws TimeoutException     if the deadline comes before a permit does
      */
-    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window) throws InterruptedException {
+    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window, Instant deadline)
+            throws InterruptedException, TimeoutException {
         // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even when
         // copies are free, and the run would fail saying every copy was in use when none was.
         if (permits.tryAcquire()) {
             return true;
         }
+        Duration windowLength = Duration.ofMillis(window);
         long seen = returned.getAsLong();
-        while (!permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
+        while (true) {
+            Duration left = Cancellation.timeLeft(deadline);
+            if (left != null && left.compareTo(windowLength) < 0) {
+                // The deadline comes before the window ends, so this is the last wait: a whole window never passes,
+                // and a run past its deadline makes no extra copy either.
+                if (permits.tryAcquire(Math.max(0, left.toNanos()), TimeUnit.NANOSECONDS)) {
+                    return true;
+                }
+                throw Cancellation.timedOut(deadline);
+            }
+            if (permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
+                return true;
+            }
             long now = returned.getAsLong();
             if (now == seen) {
                 return false;
             }
             seen = now;
         }
-        return true;
     }
 
     /**
