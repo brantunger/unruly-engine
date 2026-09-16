@@ -150,8 +150,7 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Returns a condition that compares one property of a fact with a value, as {@code applicant.creditScore == 750}
-     * does in MVEL. The same condition is run against a record fact and against a {@link Map} fact, and against a
-     * fact that has no such property.
+     * does in MVEL. The same condition is run against a record fact and against a {@link Map} fact.
      *
      * @param fact     The fact's name
      * @param property The property to read
@@ -159,6 +158,26 @@ public abstract class ExpressionLanguageContractTest {
      * @return The condition
      */
     protected abstract String factProperty(String fact, String property, int value);
+
+    /**
+     * Returns a condition that reads a property the fact doesn't have, which the language must reject when it loads
+     * or runs the rule, rather than evaluate to {@code false}. It's usually {@link #factProperty} with the same
+     * arguments.
+     *
+     * <p>
+     * A language whose own semantics read a missing property as {@code null} or undefined, as JsonLogic reads a
+     * {@code var} that isn't there, returns {@code null}. Such a language can't tell a misspelled property from an
+     * absent one, whether it reads the fact directly or as the map {@code FactProperties.toData} makes of it, so the
+     * check would fail it for being faithful to its own rules.
+     * </p>
+     *
+     * @param fact     The fact's name
+     * @param property The property the fact doesn't have
+     * @param value    The value to compare it with
+     * @return The condition, or {@code null} if the language reads a missing property as {@code null} or undefined,
+     *         which skips the check
+     */
+    protected abstract @Nullable String missingFactProperty(String fact, String property, int value);
 
     /** The fact name and property the property checks use. */
     private static final String APPLICANT = "applicant";
@@ -291,7 +310,9 @@ public abstract class ExpressionLanguageContractTest {
     @Test
     @DisplayName("a property the fact doesn't have fails the run, rather than being false or undefined")
     void missingPropertyFailsTheRun() {
-        Rule misspelled = rule("r", 1, factProperty(APPLICANT, "creditScor", 750), putFact(SEEN, APPLICANT));
+        String condition = missingFactProperty(APPLICANT, "creditScor", 750);
+        assumeTrue(condition != null, "the language reads a missing property as null or undefined");
+        Rule misspelled = rule("r", 1, condition, putFact(SEEN, APPLICANT));
 
         // Silently evaluating to false is the failure this catches: the rule never fires and nothing says why. A
         // language may reject the property when it compiles the rule rather than when it runs it, so loading is

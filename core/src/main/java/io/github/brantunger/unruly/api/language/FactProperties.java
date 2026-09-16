@@ -79,7 +79,7 @@ public final class FactProperties {
      *     though {@link #toData} gives those keys a string form.</li>
      *     <li>A record: the component of that name, or one of its own getters when no component matches.</li>
      *     <li>Anything else: the public no-argument {@code getProperty()}, or {@code isProperty()} when it returns a
-     *     {@code boolean}. A class declaring both resolves to {@code getProperty()}, so the choice never depends on
+     *     {@code boolean} or a {@link Boolean}. A class declaring both resolves to {@code getProperty()}, so the choice never depends on
      *     the order reflection reports methods in. Public fields aren't read.</li>
      * </ul>
      *
@@ -422,9 +422,10 @@ public final class FactProperties {
         if (name.startsWith("get") && name.length() > 3) {
             return decapitalize(name.substring(3));
         }
-        // Only a boolean isX() is a getter: isNotAProperty() returning a String isn't one. A list's isEmpty()
-        // does qualify, so a list read directly has a property named empty; what keeps lists from contributing one
-        // to a conversion is the platform-package rule in hasProperties, not this.
+        // Only an isX() returning boolean or Boolean is a getter: isNotAProperty() returning a String isn't one. A
+        // list's isEmpty() does qualify, so a list read directly has a property named empty; what keeps a list from
+        // contributing one to a conversion is that convert() turns a collection into a list, and that
+        // isPlatformValue() leaves the platform's classes alone, not this.
         boolean returnsBoolean = method.getReturnType() == boolean.class || method.getReturnType() == Boolean.class;
         if (returnsBoolean && name.startsWith("is") && name.length() > 2) {
             return decapitalize(name.substring(2));

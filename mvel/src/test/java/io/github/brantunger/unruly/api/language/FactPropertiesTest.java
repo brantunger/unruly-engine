@@ -226,7 +226,7 @@ class FactPropertiesTest {
     }
 
     @Test
-    @DisplayName("what a getter throws reaches the caller, and a checked exception is wrapped")
+    @DisplayName("what a getter throws is always wrapped as its cause, so it's never mistaken for a missing property")
     void anAccessorThatThrows() {
         IllegalStateException unchecked = assertThrows(IllegalStateException.class,
                 () -> FactProperties.read(new Broken(), "boom"));
@@ -289,7 +289,7 @@ class FactPropertiesTest {
     }
 
     @Test
-    @DisplayName("a collection that holds itself still ends, because a container costs a level too")
+    @DisplayName("a collection that holds itself still ends, because it's left as it is when met again on its own path")
     void aSelfReferencingCollection() {
         List<Object> loop = new ArrayList<>();
         loop.add(loop);
@@ -370,8 +370,8 @@ class FactPropertiesTest {
     }
 
     @Test
-    @DisplayName("depth stops a cycle between two facts")
-    void cycleStopsAtTheDepthLimit() {
+    @DisplayName("a cycle between two facts stops where it comes back to a fact already being converted")
+    void cycleStopsWhereItComesBack() {
         Loop first = new Loop("first");
         Loop second = new Loop("second");
         first.link(second);
