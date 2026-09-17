@@ -20,14 +20,14 @@ manual act. The version bump, changelog, git tag, GitHub Release, Maven Central 
 
 ```mermaid
 flowchart LR
-    A["🔀 Merge a feat: or<br/>fix: PR"] --> B["🤖 release-please opens<br/>chore(main): release X.Y.Z"]
-    B --> C["👀 Review and<br/>squash-merge it"]
-    C --> D["🏷 Tag vX.Y.Z +<br/>GitHub Release"]
-    D --> E["🔨 publish job<br/>build, check, sign"]
-    E --> F["📦 Central<br/>Portal"]
-    F -. "30–60 min" .-> G["🌍 repo1.maven.org"]
-    E --> P["📄 pages job<br/>deploy gh-pages"]
-    P --> H["📖 Javadoc on<br/>GitHub Pages"]
+    A["Merge a feat: or<br/>fix: PR"] --> B["release-please opens<br/>chore(main): release X.Y.Z"]
+    B --> C["Review and<br/>squash-merge it"]
+    C --> D["Tag vX.Y.Z +<br/>GitHub Release"]
+    D --> E["publish job<br/>build, check, sign"]
+    E --> F["Central<br/>Portal"]
+    F -. "30–60 min" .-> G["repo1.maven.org"]
+    E --> P["pages job<br/>deploy gh-pages"]
+    P --> H["Javadoc on<br/>GitHub Pages"]
 ```
 
 1. Merge PRs to `main` with [Conventional Commit](CONTRIBUTING.md#-commit-and-pr-titles) titles. `feat:` bumps the
@@ -38,7 +38,7 @@ flowchart LR
 3. Review the proposed version and changelog, then **squash-merge the release PR**.
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD, the
-   coverage gate and the [API compatibility check](CONTRIBUTING.md#-api-compatibility) against the previous
+   coverage gate and the [API compatibility check](CONTRIBUTING.md#api-compatibility) against the previous
    release), publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to
    the `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
 
@@ -46,7 +46,7 @@ Central Portal validation is synchronous, so a green `publish` job means the rel
 `repo1.maven.org` takes a further **30–60 minutes**. The workflow doesn't wait for it, so the release queue isn't
 held up; see [Checking a release by hand](#-checking-a-release-by-hand) to confirm the sync.
 
-## 🎛 Forcing a release
+## 🚦 Forcing a release
 
 Only `feat:`, `fix:` and breaking (`!`) commits open a release PR. Every other type (`deps`, `perf`, `refactor`,
 `revert`, `docs`, `chore`, `build`, `ci`, `test`) is hidden in `release-please-config.json`, so it never cuts a
@@ -54,7 +54,7 @@ release on its own and never appears in the changelog. That's by design, so week
 a version; they go out with the next release. To release pending dependency bumps sooner, merge a `fix:` PR. The
 bumps ship in that release without their own changelog entries.
 
-> [!NOTE]
+> [!WARNING]
 > `Release-As:` footers do **not** work here. The repository squash-merges with the PR title only, so commit bodies
 > never reach `main`.
 
@@ -186,7 +186,7 @@ curl -sI "https://brantunger.github.io/unruly-engine/$VERSION/index.html"
 # HTTP 200 once the pages job has deployed gh-pages
 ```
 
-## 📖 The Javadoc site
+## ☕ The Javadoc site
 
 The `publish` job copies the Javadoc it built to the `gh-pages` branch, and the `pages` job
 ([`pages.yml`](.github/workflows/pages.yml)) deploys that branch to <https://brantunger.github.io/unruly-engine/>.
@@ -237,7 +237,7 @@ git -C pages push origin HEAD:gh-pages
 gh workflow run pages.yml --repo brantunger/unruly-engine --ref main   # deploy the updated branch
 ```
 
-## ✍ Verifying signing locally
+## 🧾 Verifying signing locally
 
 `./gradlew clean build` needs no credentials. Publishing, even to a local Maven repository, signs every artifact,
 so `publishToMavenLocal` fails with `No configured signatory` unless a signing key is supplied. A throwaway key in

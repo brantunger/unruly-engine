@@ -1,11 +1,15 @@
-# ✍️ Writing rules
+# 📜 Writing rules
+
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/writing-rules.md).
 
 Every rule has two expressions: a **condition** that decides whether the rule matches, and an **action** that runs
 when it fires. They are written in an expression language: the engine's default language, [MVEL](languages/mvel.md) unless
 you give the engine others, or the language the rule names.
 This guide covers what holds whatever the language; the [MVEL guide](languages/mvel.md) covers MVEL's syntax.
 
-[← Back to README](../README.md)
+[← Documentation index](README.md)
 
 - [Anatomy of a rule](#-anatomy-of-a-rule)
 - [Choosing a language](#-choosing-a-language)
@@ -28,7 +32,7 @@ Rule.builder()
         .build();
 ```
 
-|  | Condition | Action |
+| Topic | Condition | Action |
 | --- | --- | --- |
 | **Facts, by name** | ✅ Read | ✅ Read |
 | **`output`** | ❌ Not available | ✅ Change it in place |
@@ -65,7 +69,7 @@ statements, so it can change state (`System.setProperty('k', 'v') == null`) or n
 | `x = 5; x > 1` | Declares a local variable |
 | `with (applicant) { ... }`, `def f() { ... }` | A `with` block or function |
 
-> [!NOTE]
+> [!WARNING]
 > MVEL's check reads the condition's text, so it can't see a method call that changes a fact, such as
 > `applicant.setApproved(true)`. Keep method calls in conditions free of side effects.
 

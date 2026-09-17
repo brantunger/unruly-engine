@@ -1,9 +1,13 @@
 # 🌱 Spring Boot
 
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/spring-boot.md).
+
 unruly-engine has no Spring dependency, but it fits naturally into a Spring application: build each engine as a
 singleton bean, load its rules at startup, and call `run()` from your request handlers.
 
-[← Back to README](../README.md)
+[← Documentation index](README.md)
 
 - [Configure the engine](#-configure-the-engine)
 - [Rules from configuration](#-rules-from-configuration)
@@ -14,7 +18,7 @@ singleton bean, load its rules at startup, and call `run()` from your request ha
 
 ---
 
-## ⚙ Configure the engine
+## 🔧 Configure the engine
 
 ```java
 @Configuration
@@ -35,7 +39,7 @@ public class RulesEngineConfiguration {
 `LoanDecision` is your output type and `RuleRepository` is your own component. Rules can come from anywhere that
 can produce a `List<Rule>`: a database table, a YAML file, a config service, or plain code.
 
-> [!WARNING]
+> [!CAUTION]
 > Rules are code: a rule can do anything your application code can. Whoever can change the table, file or service
 > the rules come from can run code in your application, so protect it like your source code. See
 > [Security](../README.md#-security).
@@ -60,7 +64,7 @@ public class RuleRepository {
 > If a rule doesn't compile, `load()` throws a `RuleCompilationException`, so the bean fails to be created
 > and the application refuses to start. That's usually what you want: broken rules never reach production traffic.
 
-## 🗂️ Rules from configuration
+## 📜 Rules from configuration
 
 `Rule` is immutable and has no setters, so `@ConfigurationProperties` can't bind it. Bind your own record, and build
 the rules from it:
@@ -187,7 +191,7 @@ public LoanController(@Qualifier("pricingEngine") RulesEngine<LoanDecision> pric
 }
 ```
 
-## 📝 Logging
+## 🪵 Logging
 
 Spring Boot includes Logback, so the engine's SLF4J messages appear without extra setup. To see every rule
 evaluation from `LoggingRuleListener`, add this to `application.properties`:

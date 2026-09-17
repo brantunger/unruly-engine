@@ -24,16 +24,16 @@ like.
 
 ## ✨ Features
 
-|    | Feature | What you get |
-| -- | --- | --- |
-| 📝 | **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
-| 🔀 | **Two engine types** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. |
-| 🔢 | **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
-| 🛡 | **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
-| 🧵 | **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
-| 👂 | **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
-| 🧩 | **Pluggable languages** | Rules are written in MVEL by default. Give an engine other expression languages and choose one per rule, even within one rule list. |
-| 🪶 | **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
+| Feature | What you get |
+| --- | --- |
+| 📝 **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
+| 🔀 **Two match policies** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. |
+| 🔢 **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
+| 🛡️ **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
+| 🧵 **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
+| 👂 **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
+| 🧩 **Pluggable languages** | Rules are written in MVEL by default. Give an engine other expression languages and choose one per rule, even within one rule list. |
+| 🪶 **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
 
 ## 📦 Installation
 
@@ -277,9 +277,9 @@ identifier that isn't a keyword such as `empty` or `in`. Build a new store for e
 - `runWithResult()` returns the same output plus the rules that fired and a checksum of the rules the run used, so a
   decision can be audited without a listener. `engine.rules()` reports the loaded rules and the same checksum.
 
-### 🔀 Choosing an engine
+### Choosing an engine
 
-|  | 🎯 First match | 📚 All matches |
+| Compared | First match | All matches |
 | --- | --- | --- |
 | **Create with** | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
 | **Conditions evaluated** | Until the first match; the rules below it aren't evaluated | All of them |
@@ -293,7 +293,7 @@ lower-priority rule can't fail a run that's already decided. An **all-matches** 
 every condition is evaluated before any action runs, and an action never causes a condition to be checked again. If a
 higher-priority action changes a fact, a lower-priority rule that already matched still fires.
 
-> [!CAUTION]
+> [!WARNING]
 > An all-matches run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
 > output object and to any facts they modified, and `run()` throws a `RuleExecutionException` naming only the
 > rule that failed.
@@ -302,20 +302,21 @@ higher-priority action changes a fact, a lower-priority rule that already matche
 
 | Guide | Covers |
 | --- | --- |
-| ✍️ [Writing rules](docs/writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, and testing rules |
+| 📜 [Writing rules](docs/writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, and testing rules |
 | ⚡ [MVEL](docs/languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Other expression languages](docs/languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
-| 🗂️ [Facts](docs/facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
+| 📁 [Facts](docs/facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
 | 🌱 [Spring Boot](docs/spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](docs/error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
 | 🟣 [Kotlin](docs/kotlin.md) | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](docs/thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
-| 📖 [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
+| 📖 [Glossary](docs/glossary.md) | Short definitions of the terms the guides use, each linked to the page that explains it |
+| ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
 
 ## 🔒 Security
 
-> [!WARNING]
+> [!CAUTION]
 > **Rules are code.** MVEL, the default language, gives a rule the same access to the JVM as your own Java code: it can start
 > processes, read files, open sockets and use reflection. The engine has **no sandbox**, and a
 > [timeout](docs/error-handling.md#-stopping-a-run) only stops a run between rules or when an expression returns:

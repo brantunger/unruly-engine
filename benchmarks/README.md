@@ -4,7 +4,7 @@ JMH benchmarks of the engine. This project isn't published, and it isn't part of
 differed by up to 1.6x between sweeps on a shared machine, so a pass/fail threshold in CI would only be flaky. Run
 them by hand when a change could affect speed or allocation, and put the before and after numbers in the pull request.
 
-## ▶️ Running them
+## 🏃 Running them
 
 ```bash
 # The whole matrix: 48 run configurations and 6 load configurations. Takes about an hour.
@@ -23,7 +23,7 @@ them by hand when a change could affect speed or allocation, and put the before 
 Everything after `-PjmhArgs=` goes to JMH, so `-h` lists what it accepts. `-prof gc` is the one to remember:
 `gc.alloc.rate.norm` is **bytes allocated per run**. Use `-f 5` whenever you mean to compare two versions; see below.
 
-## 🎛️ What's measured
+## 🔬 What's measured
 
 `RunBenchmark.run` is one `run()` with a fresh five-fact store, as a request handler would build it. Its parameters:
 
@@ -46,7 +46,7 @@ an action returns one property. Running the same rule list through it and throug
 costs** from **what an expression language costs**. Without that split, a change to the engine disappears into MVEL's
 numbers — at 100 rules, MVEL is most of both the time and the allocation.
 
-## ⚠️ Reading the numbers
+## 🚧 Reading the numbers
 
 - **Latency between machines means nothing.** Compare a before and an after measured in the same sweep, on the same
   machine, with nothing else running. Differences under about 15% are noise.

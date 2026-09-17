@@ -1,4 +1,4 @@
-# ⬆️ Migrating from 1.x to 2.0
+# 🔼 Migrating from 1.x to 2.0
 
 2.0 is a breaking release. This guide lists every change that can affect code written for 1.x. Each section says
 what changed, who is affected, and what to change.
@@ -16,13 +16,13 @@ what changed, who is affected, and what to change.
 **Who is affected:** projects built with, or running on, Java 17, 18, 19 or 20.
 
 - A JDK 17 compiler can't read the engine's classes:
-  ```
+  ```text
   error: cannot access RulesEngineBuilder
     bad class file: .../io/github/brantunger/unruly/api/RulesEngineBuilder.class
       class file has wrong version 65.0, should be 61.0
   ```
 - An application built with a newer JDK but run on Java 17 fails when it first uses the engine:
-  ```
+  ```text
   java.lang.UnsupportedClassVersionError: io/github/brantunger/unruly/api/RulesEngineBuilder has been compiled by a
   more recent version of the Java Runtime (class file version 65.0), this version of the Java Runtime only recognizes
   class file versions up to 61.0
@@ -91,7 +91,7 @@ each module.
 
 - **Gradle applications on the module path.** Gradle puts MVEL's jar, which has no module name, on the class path, so
   the application fails to start:
-  ```
+  ```text
   java.lang.module.FindException: Module mvel2 not found, required by io.github.brantunger.unruly
   ```
 - **Module-path applications that required SLF4J only for the engine.** `requires org.slf4j` and
@@ -116,7 +116,7 @@ creates the contexts for unit tests.
 **Who is affected:** authors of an expression language whose tests implement a context, or who copied
 `ExpressionLanguageContractTest` from the repository. A class that implements a context no longer compiles:
 
-```
+```text
 error: class is not allowed to extend sealed class: EvaluationContext (as it is not listed in its 'permits' clause)
 ```
 
@@ -186,7 +186,7 @@ block.
 | Reloading to find the next broken rule | `failures()`, which lists them all |
 | `getCause()` is MVEL's `CompileException` | `getCause().getCause()`, or `issues()` |
 
-## ↩️ Actions return a result
+## 🔙 Actions return a result
 
 **What changed:** `CompiledAction.execute` returns an `ActionResult`. `ActionResult.done()` means the action changed
 the output itself, as before. `ActionResult.set(properties)` returns values for the engine to set on the output: with
@@ -258,7 +258,7 @@ List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
 JSON with a rule that has no name, condition or action now fails while it's read, instead of when `load()`
 loads it.
 
-## 🗂️ Facts are immutable, and a FactStore isn't a Map
+## 📁 Facts are immutable, and a FactStore isn't a Map
 
 **What changed:**
 
@@ -291,7 +291,7 @@ code.
 | Kotlin: `engine.run(FactMap<Any>())` didn't compile | It compiles. A listener's `facts` parameter is still `Map<String, Any?>`. |
 | Kotlin: a fact's `name` is a `String?` | It's a `String` |
 
-## 🏗️ Engines are configured on a builder, and renamed
+## 🔧 Engines are configured on a builder, and renamed
 
 **What changed:**
 
@@ -380,7 +380,7 @@ rule. This is a behaviour change that the API compatibility check can't see, so 
 | Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false` |
 | Needing every condition evaluated, for example to detect more than one match | Use `allMatches(...)` |
 
-## ⏱ An interrupted run stops, and a run can be given a timeout
+## ⏳ An interrupted run stops, and a run can be given a timeout
 
 **What changed:** the engine checks before and after each condition and each action whether the run must stop, because its
 thread was interrupted or it has passed a deadline. In 1.x nothing in the engine looked at the interrupt status: a run
@@ -484,7 +484,7 @@ I/O. This is a behaviour change that the API compatibility check can't see, so t
 | Sizing memory from the number of copies | One for every two processors for virtual-thread runs, plus an extra for each run that doesn't wait. The limit is per engine and holds across reloads |
 | `maxCopies(...)` as the only way to bound the copies | Still available, and still applies to every thread; it's now a change to the default rather than a way out of no limit |
 
-## 🔒 Engines are created only with RulesEngineBuilder
+## 🧰 Engines are created only with RulesEngineBuilder
 
 **What changed:** `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in
 `io.github.brantunger.unruly.core` are no longer public. Their constructors, deprecated since 1.3.0 and 1.6.0, are
