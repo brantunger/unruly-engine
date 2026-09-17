@@ -200,7 +200,7 @@ try {
         // A rule failed at run time. The message names the rule; getCause() holds the underlying error.
     } else if (e.getCause() instanceof TimeoutException || e.getCause() instanceof InterruptedException) {
         // The run was stopped: it passed its deadline, or its thread was interrupted.
-        // A rule's own exception thrown as the run stopped is in e.getSuppressed().
+        // A rule's own exception, or a wrong result, as the run stopped is in e.getSuppressed().
     } else {
         // A failure that belongs to no rule, such as an output supplier that threw.
     }
@@ -213,8 +213,8 @@ try {
 
 - **Tell a stop from a failure by its cause.** A stopped run's exception names no rule and has an
   `InterruptedException` or `TimeoutException` cause.
-- **A bug near the deadline is reported as a stop.** What the rule threw is only in `getSuppressed()`; see
-  [What stops a run](stopping-runs.md#-what-stops-a-run).
+- **A bug near the deadline is reported as a stop.** What the rule threw, or why what it returned was wrong, is only in
+  `getSuppressed()`; see [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before.

@@ -74,9 +74,11 @@ the first one that finds either:
 
 Each message starts with `run() passed its deadline of <instant>` or `run() was interrupted`.
 
-- **A check when an expression returns ignores what it returned.** So a run whose last condition or action returns
-  past its deadline throws, although that rule finished. An action stopped there doesn't have the properties it
-  returned set on the output.
+- **A check when an expression returns stops the run, whatever it returned.** So a run whose last condition or action
+  returns past its deadline throws, although that rule finished. An action stopped there doesn't have the properties
+  it returned set on the output. When what it returned would have failed the rule, such as a condition that evaluated
+  to a string or an action that returned `null`, that failure is kept in `getSuppressed()` as a
+  `RuleExecutionException` naming the rule.
 - **An exception thrown once the run must stop is a stop too,** not that rule's failure. What the expression threw is
   kept in `getSuppressed()`. This is how a language gives up part-way, and how a [nested run](#-nested-runs) that
   stopped stops the run around it. An `Error` thrown then is still that rule's failure.
@@ -148,7 +150,7 @@ failure, stops included.
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A bug near the deadline** | A condition or action that throws an exception once the run must stop is reported as a stop: no rule name, WARN, and the bug only in `getSuppressed()` | Check `getSuppressed()` before you dismiss a stop |
+| **A bug near the deadline** | A condition or action that throws an exception, or returns a wrong result, once the run must stop is reported as a stop: no rule name, WARN, and the bug only in `getSuppressed()` | Check `getSuppressed()` before you dismiss a stop |
 | **An interrupted pooled thread** | The engine leaves the interrupt status set, so an executor shutting down or `Future.cancel(true)` still sees it, and every later run on that thread stops before its first rule | Call `Thread.interrupted()` after catching the stop, before the thread serves more work |
 | **A sleeping rule** | A timeout doesn't wake it: `Thread.sleep` or a blocking call runs to its end | Give the call its own timeout. A language can read `EvaluationContext.deadline()` |
 | **A slow listener after the last rule** | The run returns normally although it passed its deadline | Time the listener's work yourself |
