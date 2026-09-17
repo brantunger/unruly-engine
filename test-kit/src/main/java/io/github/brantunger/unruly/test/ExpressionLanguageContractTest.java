@@ -20,11 +20,13 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -52,6 +54,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * <p>
  * Each check runs rules through an engine, so a language passes only if it works with the engine as users will run
  * it. On the module path, the package of the extending test must be open to {@code org.junit.platform.commons}.
+ * </p>
+ *
+ * <p>
+ * The checks compare numbers in the output by value, so a language whose whole numbers are {@code Long}s, as CEL's
+ * are, or {@code Double}s, as JsonLogic's and JavaScript's are, passes as it is.
  * </p>
  */
 // A test class: each check makes several assertions, and their failure messages show the values compared. The engines
@@ -150,7 +157,7 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Returns a condition that compares one property of a fact with a value, as {@code applicant.creditScore == 750}
-     * does in MVEL. The same condition is run against a record fact and against a {@link Map} fact.
+     * does in MVEL. The same condition is run against a record fact, a JavaBean fact and a {@link Map} fact.
      *
      * @param fact     The fact's name
      * @param property The property to read
@@ -193,6 +200,32 @@ public abstract class ExpressionLanguageContractTest {
     public record Applicant(int creditScore) {
     }
 
+    /**
+     * An applicant as a JavaBean, so a language's tests can run a rule against a fact whose property is a getter.
+     */
+    public static final class ApplicantBean {
+
+        private final int creditScore;
+
+        /**
+         * Creates the applicant.
+         *
+         * @param creditScore The applicant's credit score, the property the contract test reads
+         */
+        public ApplicantBean(int creditScore) {
+            this.creditScore = creditScore;
+        }
+
+        /**
+         * Returns the applicant's credit score.
+         *
+         * @return The credit score
+         */
+        public int getCreditScore() {
+            return creditScore;
+        }
+    }
+
     private Rule rule(String name, int priority, String condition, String action) {
         return Rule.builder().ruleName(name).priority(priority).condition(condition).action(action)
                 .language(language().name()).build();
@@ -218,12 +251,56 @@ public abstract class ExpressionLanguageContractTest {
         return facts;
     }
 
+    /**
+     * Asserts that a run's output, or a list of outputs, is what was expected, comparing numbers by value: {@code 1},
+     * {@code 1L} and {@code 1.0} are the same output. Everything else is compared with {@code equals}.
+     *
+     * @param expected The expected output
+     * @param actual   The output the engine returned
+     */
+    private static void assertSameOutput(@Nullable Object expected, @Nullable Object actual) {
+        if (!sameValue(expected, actual)) {
+            fail("expected: <" + expected + "> but was: <" + actual + ">");
+        }
+    }
+
+    private static boolean sameValue(@Nullable Object expected, @Nullable Object actual) {
+        if (expected instanceof Number left && actual instanceof Number right) {
+            return sameNumber(left, right);
+        }
+        if (expected instanceof Map<?, ?> left && actual instanceof Map<?, ?> right) {
+            return left.keySet().equals(right.keySet())
+                    && left.keySet().stream().allMatch(key -> sameValue(left.get(key), right.get(key)));
+        }
+        if (expected instanceof List<?> left && actual instanceof List<?> right) {
+            if (left.size() != right.size()) {
+                return false;
+            }
+            for (int i = 0; i < left.size(); i++) {
+                if (!sameValue(left.get(i), right.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return Objects.equals(expected, actual);
+    }
+
+    private static boolean sameNumber(Number left, Number right) {
+        try {
+            return new BigDecimal(left.toString()).compareTo(new BigDecimal(right.toString())) == 0;
+        } catch (NumberFormatException e) {
+            // NaN or an infinity, which have no BigDecimal form.
+            return left.toString().equals(right.toString());
+        }
+    }
+
     @Test
     @DisplayName("a condition reads the facts, and its rule fires only when the condition is true")
     void conditionReadsFacts() {
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")));
 
-        assertEquals(Map.of(SEEN, 1), engine.run(fact("x", 1)));
+        assertSameOutput(Map.of(SEEN, 1), engine.run(fact("x", 1)));
         assertNull(engine.run(fact("x", 2)));
     }
 
@@ -268,8 +345,8 @@ public abstract class ExpressionLanguageContractTest {
                 rule("declares", 2, alwaysTrue(), declare),
                 rule("reads", 1, alwaysTrue(), putFact(SEEN, "x")));
 
-        assertEquals(Map.of(SEEN, 1), engine.run(fact("x", 1)));
-        assertEquals(Map.of(SEEN, 3), engine.run(fact("x", 3)));
+        assertSameOutput(Map.of(SEEN, 1), engine.run(fact("x", 1)));
+        assertSameOutput(Map.of(SEEN, 3), engine.run(fact("x", 3)));
     }
 
     @Test
@@ -296,14 +373,16 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a condition reads a property of a record fact and of a map fact the same way")
+    @DisplayName("a condition reads a property of a record fact, a JavaBean fact and a map fact the same way")
     void conditionReadsProperties() {
         RulesEngine<Map<String, Object>> engine =
                 engine(rule("r", 1, factProperty(APPLICANT, CREDIT_SCORE, 750), putFact(SEEN, APPLICANT)));
 
         assertNotNull(engine.run(fact(APPLICANT, new Applicant(750))), "a record fact's component wasn't read");
+        assertNotNull(engine.run(fact(APPLICANT, new ApplicantBean(750))), "a JavaBean fact's getter wasn't read");
         assertNotNull(engine.run(fact(APPLICANT, Map.of(CREDIT_SCORE, 750))), "a map fact's key wasn't read");
         assertNull(engine.run(fact(APPLICANT, new Applicant(700))), "the record's component was read as 750");
+        assertNull(engine.run(fact(APPLICANT, new ApplicantBean(700))), "the JavaBean's getter was read as 750");
         assertNull(engine.run(fact(APPLICANT, Map.of(CREDIT_SCORE, 700))), "the map's key was read as 750");
     }
 
@@ -333,11 +412,11 @@ public abstract class ExpressionLanguageContractTest {
         RulesEngine<Map<String, Object>> engine = engine(countingCloses(language, closes));
 
         engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-        assertEquals(Map.of(SEEN, 1), engine.run(fact("x", 1)));
+        assertSameOutput(Map.of(SEEN, 1), engine.run(fact("x", 1)));
         engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
 
         assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
-        assertEquals(Map.of(SEEN, 2), engine.run(fact("x", 2)));
+        assertSameOutput(Map.of(SEEN, 2), engine.run(fact("x", 2)));
 
         engine.close();
         engine.close();
@@ -421,7 +500,7 @@ public abstract class ExpressionLanguageContractTest {
 
             for (Future<List<List<Map<String, Object>>>> result : results) {
                 List<List<Map<String, Object>>> runs = result.get(30, TimeUnit.SECONDS);
-                assertEquals(runs.get(0), runs.get(1));
+                assertSameOutput(runs.get(0), runs.get(1));
             }
         } finally {
             workers.shutdownNow();

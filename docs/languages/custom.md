@@ -163,9 +163,10 @@ public final class MyLanguage implements ExpressionLanguage {
   that MVEL rules also read should be public or implement a public interface that declares its accessors.
   `FactProperties.toData(fact, depth)` converts a record or bean into a map, for a language that reads only maps.
   Writing is the other direction and the engine already has it: `OutputWriter.beansAndMaps()`.
-  `ExpressionLanguageContractTest` runs your `factProperty(...)` condition against a record fact and a map fact, and
-  your `missingFactProperty(...)` condition against a misspelled property, so a language that gets any of it wrong
-  fails the contract test. A language whose own semantics read a missing property as `null`, as JsonLogic does,
+  `ExpressionLanguageContractTest` runs your `factProperty(...)` condition against a record, a JavaBean and a map
+  fact, and your `missingFactProperty(...)` condition against a misspelled property, so a language that gets any of it
+  wrong fails the contract test. It compares numbers in the output by value, so whole numbers that your language
+  returns as `Long` or `Double` pass as they are. A language whose own semantics read a missing property as `null`, as JsonLogic does,
   returns `null` from `missingFactProperty(...)` to skip that check.
 - **Declared facts.** `CompileContext.declaredFacts()` is the type of each fact the application declared with
   `.fact(name, type)`, and `CompileContext.allFactsDeclared()` says whether `.requireDeclaredFacts()` was set. A typed
