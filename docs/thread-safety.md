@@ -147,9 +147,11 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 
 Two kinds of run never wait for a copy, so a limit can't deadlock an engine:
 
-- **A run nested in another run on the same thread**, started from an action or a listener. The copy it would wait for
-  may be the one its own thread is holding. This covers a run on any engine and any rule list, including rules a
-  `load()` has since replaced.
+- **A run started on a thread that is already holding a copy**, from an action or a listener of the run that holds it.
+  The copy it would wait for may be that one. This covers a run on any engine and any rule list, including rules a
+  `load()` has since replaced. A run that stopped while waiting for a copy holds none, so a run started from its
+  callbacks isn't covered by this rule, but it doesn't wait either: it inherits that run's passed deadline, or sees
+  the same interrupt, so it takes a free copy or fails at once.
 - **A run that has waited five seconds without one single copy being given back.** That's what waiting for a run of
   this engine on *another* thread looks like: a fan-out from an action, `executor.submit(engine::run).get()`, or two
   engines whose actions run each other. An engine that is merely busy keeps giving copies back, so such a run keeps
