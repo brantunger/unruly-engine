@@ -87,6 +87,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Object lifecycle = new Object();
     // How many compiled copies of the rules runs hold at once, and which runs that applies to.
     private final CopyLimit copyLimit;
+    // The permits for copyLimit, which every rule list this engine loads shares, so a reload can't raise the limit.
+    private final CopyPermits copyPermits;
     // How long a run may take, or null if runs have no deadline. A run() call can pass one of its own.
     private final Duration runTimeout;
     // The output type languages are told about, and what sets the properties actions return.
@@ -143,6 +145,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.classImports = Collections.unmodifiableSet(classes);
         this.listeners = configuration.listeners();
         this.copyLimit = configuration.copyLimit();
+        this.copyPermits = new CopyPermits(copyLimit.maxCopies());
         this.runTimeout = configuration.runTimeout();
         this.outputType = configuration.outputType();
         this.outputWriter = configuration.outputWriter();
@@ -257,6 +260,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             rules = currentRules();
             copy = borrow(rules, listenerFacts, deadline);
         } while (copy == null);
+        // The copy is given back however the run ends, even when setting it up fails: the engine's permits outlive
+        // its rule lists, so a permit that isn't returned would lower its limit for good.
+        try {
+            return runWithCopy(rules, copy, values, listenerFacts, deadline, body);
+        } finally {
+            rules.release(copy);
+        }
+    }
+
+    /** Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. */
+    private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, Map<String, Object> values,
+                                     Map<String, Object> listenerFacts, Instant deadline, RunBody<O> body) {
         List<RuleListener> snapshot = listenerSnapshot();
         RunContext parent = currentRun.get();
         EngineRunContext run = newRun(rules, listenerFacts, parent);
@@ -289,7 +304,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             } else {
                 currentRun.set(parent);
             }
-            rules.release(copy);
         }
     }
 
@@ -511,7 +525,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throwIfAnyFailed(failures);
             Map<String, ExpressionCompiler> used = compilers.used(languages.defaultLanguage());
             checkDeclaredNames(used);
-            loaded = new RuleSet(compiled, used, copyLimit);
+            loaded = new RuleSet(compiled, used, copyLimit, copyPermits);
         } catch (RuntimeException | Error e) {
             Closing.compilers(compilers.created());
             throw e;

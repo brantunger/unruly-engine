@@ -19,7 +19,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
@@ -52,8 +51,9 @@ import java.util.function.LongSupplier;
  *
  * <p>
  * Either gets an extra copy, whose sessions are closed when it's given back, so the limit is a limit on runs that
- * can make progress rather than a hard ceiling. The limit is per rule set, so while a reload replaces one rule set
- * with another, runs still using the old one can hold up to that many copies more.
+ * can make progress rather than a hard ceiling. The engine's rule sets share one set of {@link CopyPermits}, so while a
+ * reload replaces one rule set with another, runs still using the old one count against the same limit as runs on
+ * the new one.
  * </p>
  *
  * <p>
@@ -91,12 +91,9 @@ final class RuleSet {
     private final Instant loadTime;
     private final Queue<Map<String, Session>> idle = new ConcurrentLinkedQueue<>();
     private final CopyLimit copyLimit;
-    // With a limit, one permit for each kept copy that a limited run holds.
-    private final Semaphore permits;
+    // With a limit, one permit for each kept copy that a limited run holds, shared with the engine's other rule sets.
+    private final CopyPermits permits;
     private final long stallWindow;
-    // How many permits have been given back, so a run that is waiting can tell an engine that is busy from one whose
-    // copies are never coming back.
-    private final AtomicLong permitsReturned = new AtomicLong();
     // Whether the "more copies than the limit" warning has been logged for this rule list.
     private final AtomicBoolean warnedAboutOverflow = new AtomicBoolean();
     // The sessions every run shares, once a copy has shown that no language keeps state between runs.
@@ -154,7 +151,21 @@ final class RuleSet {
      * @param limit         How many copies runs may hold at once, and which runs that applies to
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit) {
-        this(compiledRules, compilers, limit, STALL_WINDOW_MILLIS);
+        this(compiledRules, compilers, limit, new CopyPermits(limit.maxCopies()));
+    }
+
+    /**
+     * Creates a rule set with no copies yet, whose limited runs take the permits of the engine that loaded it.
+     *
+     * @param compiledRules The compiled rules, in the order they run
+     * @param compilers     The compilers of the languages the rules use, by language name, in the order they check
+     *                      fact names
+     * @param limit         How many copies runs may hold at once, and which runs that applies to
+     * @param permits       The engine's permits for {@code limit}, which its other rule sets share
+     */
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
+            CopyPermits permits) {
+        this(compiledRules, compilers, limit, permits, STALL_WINDOW_MILLIS);
     }
 
     /**
@@ -168,12 +179,26 @@ final class RuleSet {
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
             long stallWindowMillis) {
+        this(compiledRules, compilers, limit, new CopyPermits(limit.maxCopies()), stallWindowMillis);
+    }
+
+    /**
+     * Creates a rule set whose limited runs take the given permits and give up waiting after {@code stallWindowMillis}.
+     *
+     * @param compiledRules     The compiled rules, in the order they run
+     * @param compilers         The compilers of the languages the rules use, by language name
+     * @param limit             How many copies runs may hold at once, and which runs that applies to
+     * @param permits           The permits for {@code limit}, which other rule sets may share
+     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
+     */
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
+            CopyPermits permits, long stallWindowMillis) {
         this.compiledRules = List.copyOf(compiledRules);
         this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
         this.ruleChecksum = Checksums.ofRules(this.compiledRules);
         this.loadTime = Instant.now();
         this.copyLimit = limit;
-        this.permits = new Semaphore(limit.maxCopies());
+        this.permits = permits;
         this.stallWindow = stallWindowMillis;
     }
 
@@ -342,11 +367,20 @@ final class RuleSet {
         }
         // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
         boolean nested = nestedRun();
-        if (nested ? !permits.tryAcquire() : !awaitPermit(permits, permitsReturned::get, stallWindow, deadline)) {
+        if (nested ? !permits.available().tryAcquire()
+                : !awaitPermit(permits.available(), permits::returned, stallWindow, deadline)) {
+            // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of
+            // these rules has learned whether they need copies at all. An extra copy can learn it too, and then
+            // nothing overflowed.
+            Map<String, Session> sessions = newSessions();
+            if (statelessSessions(sessions)) {
+                sharedSessions = sessions;
+                return new Copy(sessions, Kind.SHARED, false);
+            }
             if (!nested) {
                 warnAboutOverflow();
             }
-            return new Copy(newSessions(), Kind.EXTRA, false);
+            return new Copy(sessions, Kind.EXTRA, false);
         }
         return keptCopy(true);
     }
@@ -482,11 +516,9 @@ final class RuleSet {
         }
     }
 
-    // Releases a copy's permit, and tells a run that is waiting that copies are still coming back. Counted
-    // before the permit is released, so a run whose wait ends between the two still sees that one came back.
+    // Releases a copy's permit, and tells a run that is waiting that copies are still coming back.
     private void giveBack() {
-        permitsReturned.incrementAndGet();
-        permits.release();
+        permits.giveBack();
     }
 
     private Map<String, Session> take() {
