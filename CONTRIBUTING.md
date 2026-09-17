@@ -8,19 +8,20 @@ Thank you for considering a contribution! Bug reports, documentation fixes and c
 - [Making a change](#-making-a-change)
 - [Commit and PR titles](#-commit-and-pr-titles)
 - [Documentation](#-documentation)
+- [License](#-license)
 
 Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## 💡 Ways to contribute
 
-| | |
+| If you | Do this |
 | --- | --- |
 | 🐛 **Found a bug?** | [Search the issues](https://github.com/brantunger/unruly-engine/issues) to see if it's known, then [open a bug report](https://github.com/brantunger/unruly-engine/issues/new/choose). |
 | ✨ **Have an idea?** | [Open a feature request](https://github.com/brantunger/unruly-engine/issues/new/choose) describing your use case. |
 | 🔒 **Found a vulnerability?** | Don't open an issue. Follow [SECURITY.md](SECURITY.md). |
-| 📖 **Spotted a doc problem?** | Fixes to the README, `docs/` and Javadoc are as welcome as code. |
+| 🩹 **Spotted a doc problem?** | Fixes to the README, `docs/` and Javadoc are as welcome as code. |
 
-## 🛠 Development setup
+## 💻 Development setup
 
 You need a JDK (17 or later) to run Gradle. The build compiles with a **Java 21 toolchain**, which Gradle downloads
 automatically if it isn't installed.
@@ -72,7 +73,7 @@ caches from `main`, so a pull request only rebuilds what it changed.
 > Coverage is the gate that most often fails. When it does, run `./gradlew jacocoTestReport` and open the HTML
 > report to find the uncovered lines and branches.
 
-### 🧬 API compatibility
+### API compatibility
 
 The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `feat:` release must not break code
 written or compiled against an earlier release. `./gradlew build` compares each artifact's jar with its **newest release on
@@ -118,12 +119,12 @@ day; pass `-PapiCheck.refresh` to look it up again, as the release workflow does
 
 ```mermaid
 flowchart LR
-    A["🍴 Fork and<br/>branch"] --> B["✍️ Change<br/>+ tests"]
-    B --> C["🧪 ./gradlew<br/>clean build"]
-    C --> D["📬 Open a PR with a<br/>Conventional title"]
-    D --> E["🤖 CI and<br/>title check"]
-    E --> F["🔀 Squash-merged<br/>by a maintainer"]
-    F --> G["🚀 Released<br/>automatically"]
+    A["Fork and<br/>branch"] --> B["Change<br/>+ tests"]
+    B --> C["./gradlew<br/>clean build"]
+    C --> D["Open a PR with a<br/>Conventional title"]
+    D --> E["CI and<br/>title check"]
+    E --> F["Squash-merged<br/>by a maintainer"]
+    F --> G["Released<br/>automatically"]
 ```
 
 1. **Fork** the repository and create a branch with a descriptive name, such as `fix/null-priority` or
@@ -163,20 +164,15 @@ The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` 
 `fix:` release. Only `feat` and `fix` may carry the breaking-change `!`: release-please would read `deps!:` or
 `chore!:` as a major release too, so the title check rejects it. A malformed title fails the title check, so it's caught before it can silently skip a release.
 
-## 📖 Documentation
+## 📚 Documentation
 
 - The **README** is the landing page: features, installation, quick start and core concepts.
 - The **guides** in [`docs/`](docs/README.md) hold the details.
 - The **Javadoc** in each published project's `src/main/java` is published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for all the modules.
   `./gradlew clean build` doesn't generate it, so run `./gradlew javadoc` after changing it and fix any errors.
 
-When writing docs:
-
-- Make sure every Java snippet compiles and behaves as described against the current API.
-- Draw diagrams in [Mermaid](https://mermaid.js.org/), which GitHub renders natively, and keep images as SVG in
-  `docs/images/`.
-- Don't change the version numbers in the README's install snippets. release-please updates everything between the
-  `x-release-please-start-version` and `x-release-please-end` markers.
+When writing docs, follow the [docs style guide](docs/STYLE.md): the page template, emojis, callouts, diagrams,
+examples and Javadoc conventions, and a checklist to run before you open a pull request.
 
 ## 📜 License
 

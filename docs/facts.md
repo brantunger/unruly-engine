@@ -1,9 +1,13 @@
-# 🗂️ Facts
+# 📁 Facts
+
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/facts.md).
 
 Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**, which is
 any Java object.
 
-[← Back to README](../README.md)
+[← Documentation index](README.md)
 
 - [The fact types](#-the-fact-types)
 - [Adding facts](#-adding-facts)
@@ -76,7 +80,7 @@ variable declared as `FactMap` has the `Map` methods too, such as `remove` and `
 Any readable property works in a rule. `applicant.creditScore` calls a JavaBean getter (`getCreditScore()`), a
 record accessor (`creditScore()`) or looks up a `Map` key.
 
-## 🏷 Naming rules
+## 🔤 Naming rules
 
 A rule can only refer to a fact whose name reads as a single variable in its expression language. The table shows
 MVEL's rules. `run()` checks each fact against every language the loaded rules use, or against the engine's
@@ -121,7 +125,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
   or leaves a declared one out, fails with `IllegalArgumentException`.
 
-### 🔎 Catching a typo when the rules load
+### Catching a typo when the rules load
 
 `requireDeclaredFacts()` is also what lets a language check the rules themselves. MVEL does it when you turn on its
 `strongTyping` option: it compiles the rules with strong typing, so a misspelled property or an unknown fact fails
@@ -159,7 +163,7 @@ what was declared and uses it as it can.
 > [!NOTE]
 > Strong typing doesn't catch a non-boolean condition; the engine checks that itself, on every engine.
 
-## 🕳 Null and missing facts
+## 🚫 Null and missing facts
 
 | Situation | In a rule |
 | --- | --- |

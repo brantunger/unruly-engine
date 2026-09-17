@@ -33,14 +33,14 @@ access to the JVM as your own Java code, and the engine deliberately provides no
 in another expression language can reach depends on that language. The README's
 [Security](README.md#-security) section explains how to deploy it safely.
 
-### ✅ In scope
+### In scope
 
 - A way for the **value of a fact** to be executed as code, or to change which rule logic runs.
 - A bypass of a documented guarantee, such as a condition assignment that `setRuleList()` should reject, or an
   action's local variables leaking into another rule, where that leads to a security impact.
 - A vulnerability in a dependency (MVEL, SLF4J) that is reachable through the engine's API.
 
-### ❌ Out of scope
+### Out of scope
 
 - Anything a rule can do because rules run with full JVM access: running processes, reading files, reflection,
   `System.exit()`, and so on.

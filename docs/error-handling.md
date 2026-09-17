@@ -1,12 +1,17 @@
 # 🚨 Error handling
 
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/error-handling.md).
+
 The engine throws its own exceptions for rule problems and standard JDK exceptions for misuse of the API.
 
-[← Back to README](../README.md)
+[← Documentation index](README.md)
 
 - [Exception types](#-exception-types)
 - [Exceptions by method](#-exceptions-by-method)
 - [Caught when loading or only when running?](#-caught-when-loading-or-only-when-running)
+- [Stopping a run](#-stopping-a-run)
 - [Handling failures](#-handling-failures)
 
 ---
@@ -44,7 +49,7 @@ classDiagram
 
 All of them are unchecked.
 
-> [!NOTE]
+> [!WARNING]
 > `catch (UnrulyException e)` doesn't catch `IllegalArgumentException`, `IllegalStateException` or
 > `NullPointerException`. Those signal a programming error rather than a problem with a rule.
 
@@ -66,7 +71,7 @@ All of them are unchecked.
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
 | | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |
 | `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |
-| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](facts.md#-catching-a-typo-when-the-rules-load), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
+| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](facts.md#catching-a-typo-when-the-rules-load), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, with the error as its cause. |
@@ -133,7 +138,7 @@ surface when a rule is evaluated. Another language decides what it catches when 
 > Don't rely on `load()` alone. Test each rule against sample facts; see
 > [Testing rules](writing-rules.md#-testing-rules).
 
-## ⏱ Stopping a run
+## ⏳ Stopping a run
 
 A run stops between rules, or when the expression that was running returns, once its thread is interrupted or it
 has passed a deadline:
@@ -168,12 +173,12 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   `beforeRun` and `onRunError`. Stopped between rules, the rule it would have gone on to gets no callback at all,
   because it never started; stopped when a condition or action returns or throws, that rule gets `onError`.
 
-> [!TIP]
+> [!WARNING]
 > A caller that catches the failure and goes on to serve the next request **on the same thread** must clear the
 > interrupt status first, for example with `Thread.interrupted()`. The engine leaves it set on purpose, and every
 > later run on that thread stops at its first rule.
 
-## 🛠 Handling failures
+## 🧯 Handling failures
 
 ```java
 try {

@@ -1,9 +1,13 @@
 # 👂 Listeners & logging
 
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/listeners-and-logging.md).
+
 Add a `RuleListener` to an engine to trace which rules matched, time each rule, or audit decisions. The engine also logs
 its own failures through SLF4J.
 
-[← Back to README](../README.md)
+[← Documentation index](README.md)
 
 - [Callbacks](#-callbacks)
 - [Writing a listener](#-writing-a-listener)
@@ -72,7 +76,7 @@ by constructing a context.
 
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
-## ✍ Writing a listener
+## 📝 Writing a listener
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -125,7 +129,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 | --- | --- |
 | 🔗 **Paired callbacks** | Every `beforeRun`, `beforeEvaluate` and `beforeExecute` is followed by exactly one matching `after*`, `onError` or `onRunError`. |
 | 🧾 **Every failure of a run** | `onRunError` reports the exception `run()` throws, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. Only misuse — running before `load()`, or on a closed engine — reaches no callback. |
-| ⏱ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that swallows an interrupt doesn't keep the run going — the next check finds it. |
+| ⏱️ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that swallows an interrupt doesn't keep the run going — the next check finds it. |
 | 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback; if it came from `beforeRun`, every listener gets `onRunError`. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError`, an `AssertionError` or a `LinkageError` — a missing or unreadable class, which means the rule is misconfigured rather than the JVM failing — is wrapped in the `RuleExecutionException`. A `VirtualMachineError` such as `OutOfMemoryError`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError`, and `onRunError` gets the same exception, naming the rule, before the error is rethrown unchanged from `run()`. |
 | 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `load()`: the same instance every time. |
@@ -175,19 +179,18 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 > [!NOTE]
 > The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice.
+> Lower the engine logger's level if you prefer to handle logging yourself.
 
 > [!CAUTION]
 > Failure messages can contain fact values. The JDK, MVEL and your own code put values into exception messages, such
 > as `For input string: "123-45-6789"` or `uncomparable values <<123-45-6789>> and <<5>>`, and the engine copies the
 > message into its ERROR log line and into `LoggingRuleListener`'s DEBUG line. If your facts hold sensitive data, turn
 > off the `io.github.brantunger.unruly` logger and log a redacted form of the failure yourself.
-> Lower the engine logger's level if you prefer to handle logging yourself.
 
-> [!IMPORTANT]
-> The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. In 1.x it
-> was `io.github.brantunger.unruly.core.AbstractRulesEngine`. The parent logger **`io.github.brantunger.unruly`** covers
-> the engine and `LoggingRuleListener`: Logback, Log4j 2 and Spring Boot apply a logger's level to every logger under
-> its name, and a more specific setting still takes precedence, as the `LoggingRuleListener` line below shows.
+The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. In 1.x it
+was `io.github.brantunger.unruly.core.AbstractRulesEngine`. The parent logger **`io.github.brantunger.unruly`** covers
+the engine and `LoggingRuleListener`: Logback, Log4j 2 and Spring Boot apply a logger's level to every logger under
+its name, and a more specific setting still takes precedence, as the `LoggingRuleListener` line below shows.
 
 **Logback** (`logback.xml`):
 

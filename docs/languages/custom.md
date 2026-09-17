@@ -1,13 +1,18 @@
 # 🧩 Other expression languages
 
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/languages/custom.md).
+
 A rule is written in the expression language it names, or in the engine's default language, which is [MVEL](mvel.md)
 unless you give the engine others. An engine can have any number of languages, and one rule list can mix them.
 
-[← Writing rules](../writing-rules.md) · [← Back to README](../../README.md)
+[← Documentation index](../README.md)
 
 - [Choosing a language per rule](#-choosing-a-language-per-rule)
 - [Writing a language](#-writing-a-language)
 - [What the engine enforces](#-what-the-engine-enforces)
+- [Stopping a run](#-stopping-a-run)
 - [Thread safety](#-thread-safety)
 - [Packaging a language](#-packaging-a-language)
 - [Testing a language](#-testing-a-language)
@@ -53,7 +58,7 @@ engine.load(List.of(
 - `run()` checks each fact's name against every language the loaded rules use, so a name one of them can't refer to
   is rejected. A rule list without rules is checked against the default language.
 
-## 🛠 Writing a language
+## 🔨 Writing a language
 
 Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
@@ -195,7 +200,7 @@ public final class MyLanguage implements ExpressionLanguage {
 | Stops a run between rules, and when an expression returns, once it's interrupted or past its deadline, and tells every expression with `isCancelled()` | Stop inside an expression too, if it can (see below) |
 | Passes read-only facts, gives each run its own sessions, and closes them (see below) | Document what rules can reach: files, processes, reflection |
 
-## ⏱ Stopping a run
+## ⏳ Stopping a run
 
 A run can be interrupted, or given a [timeout](../error-handling.md#-stopping-a-run). A run your language starts
 from inside an expression, on the same thread, stops no later than the run around it. The engine checks between

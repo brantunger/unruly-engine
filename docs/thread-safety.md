@@ -1,8 +1,12 @@
 # 🧵 Thread safety
 
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/thread-safety.md).
+
 An engine is designed to be configured once and then shared by every thread in your application.
 
-[← Back to README](../README.md)
+[← Documentation index](README.md)
 
 - [At a glance](#-at-a-glance)
 - [Reloading rules while running](#-reloading-rules-while-running)
@@ -64,7 +68,7 @@ The engine protects its own state. These parts are yours:
   several runs at once.
 - **Listeners:** the same listener instance is called from every thread running the engine.
 
-## ⚡ Compiled rules and concurrent runs
+## 📑 Compiled rules and concurrent runs
 
 MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact
 name to a different class, for example when `applicant` is an interface with several implementations, or is a

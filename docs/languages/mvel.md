@@ -1,13 +1,19 @@
 # ⚡ MVEL
 
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/languages/mvel.md).
+
 MVEL is the engine's default expression language: a rule is written in MVEL when its `language` is unset or
 `"mvel"`. MVEL looks like Java, with some extra operators and looser typing.
 
-[← Writing rules](../writing-rules.md) · [← Back to README](../../README.md)
+[← Documentation index](../README.md)
 
 - [MVEL cheat sheet](#-mvel-cheat-sheet)
 - [Classes and imports](#-classes-and-imports)
 - [Comparison gotchas](#-comparison-gotchas)
+- [Strong typing](#-strong-typing)
+- [Virtual threads](#-virtual-threads)
 - [Security](#-security)
 
 ---
@@ -33,7 +39,7 @@ Every example below was checked against the engine. For the full language, see t
 | Check that a fact was supplied | `isdef coapplicant` |
 | Use a class without importing it | `java.time.LocalDate.now().getYear() >= 2026` |
 
-> [!WARNING]
+> [!IMPORTANT]
 > MVEL has no `in` membership test: `780 in [700, 780]` doesn't compile. To check whether a collection holds a
 > value, write `[700, 780] contains 780`.
 
@@ -63,7 +69,7 @@ Everything else needs an import or a fully qualified name, including most of `ja
 the rule uses the class: `new IllegalStateException()` fails with `could not resolve class`, and a bare
 `IllegalStateException` with `unresolvable property or identifier`.
 
-> [!NOTE]
+> [!CAUTION]
 > Imports are a convenience, not access control. A rule can reach any class by its fully qualified name, such as
 > `java.lang.Runtime`, or through reflection on any object. See [Security](#-security).
 
@@ -107,11 +113,11 @@ MVEL compares values more loosely than Java, which can make a condition match, o
 | 🔤 **Enums vs strings** | `order.status == 'SHIPPED'` is always `false` when `status` is an enum, with no error | `order.status.name() == 'SHIPPED'` |
 | 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
 | 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
-| 🕳 **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
+| 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, so `x == null` can't test for it | `isdef x && x > 1` |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
 
-## 🛡 Strong typing
+## 🦺 Strong typing
 
 MVEL can compile rules against the facts an engine declares, so a misspelled property or an unknown fact fails
 `load()` with its line and column rather than a run. Turn it on with MVEL's one option:
@@ -127,7 +133,7 @@ RulesEngineBuilder.firstMatch(LoanDecision::new)
 
 - It needs `requireDeclaredFacts()`, at least one declared fact, an `outputType(...)`, and no fact or output type
   declared as `Object`, a `Map`, a `Collection` or an array of one of them. With the option on and any of that missing,
-  `load()` fails saying which. See [Declaring facts](../facts.md#-catching-a-typo-when-the-rules-load).
+  `load()` fails saying which. See [Declaring facts](../facts.md#catching-a-typo-when-the-rules-load).
 - It rejects some rules that work without it:
 
   | Without strong typing | With it |
