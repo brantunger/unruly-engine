@@ -135,9 +135,9 @@ can't be named `null` or `output`, or have a name the rules' languages can't ref
 
 ### Fact store
 
-The facts for one run: a `FactStore`, of which `FactMap` is the built-in implementation. The engine reads it through
-`asMap()` when the run starts and never changes it; build a new one for each request. See
-[Facts](facts.md#-the-fact-types).
+The facts for a run: a `FactStore`, of which `FactMap` is the built-in implementation. A run copies its entries through
+`asMap()` once, when it starts, and never changes it, so a store can serve one run after another; a new one for each
+request is the simplest. See [Reusing and sharing a store](facts.md#-reusing-and-sharing-a-store).
 
 ### Fatal error
 
@@ -186,7 +186,8 @@ Which matching rules fire, fixed when the engine is built: `firstMatch` fires th
 A name that isn't in the [fact store](#fact-store) at all, unlike a [null reference](#null-reference). In MVEL,
 referring to it fails the rule with `unresolvable property or identifier`, or `unable to resolve variable` when the
 run's [compiled copy](#compiled-copy) already ran the rule with it, so test for it with `isdef`; another language
-decides for itself. See [Null and missing facts](facts.md#-null-and-missing-facts).
+decides for itself. See [Null and missing facts](facts.md#-null-and-missing-facts) and
+[in MVEL](languages/mvel.md#null-and-missing-facts).
 
 ### Nested run
 
@@ -197,9 +198,9 @@ waits for a compiled copy, and it stops at the outer run's deadline if that come
 
 ### Null reference
 
-A fact whose value is `null`, or a `null` `FactReference` in the store. The name is bound to `null`, so a condition such
-as `coapplicant == null` is `true`, unlike a [missing fact](#missing-fact). See
-[Null and missing facts](facts.md#-null-and-missing-facts).
+A fact whose value is `null`, or a `null` `FactReference` in the store. The name is bound to `null`, so in MVEL a
+condition such as `coapplicant == null` is `true`, unlike for a [missing fact](#missing-fact). See
+[Null and missing facts](facts.md#-null-and-missing-facts) and [in MVEL](languages/mvel.md#null-and-missing-facts).
 
 ### Output object
 
@@ -223,7 +224,7 @@ and `null` sorts after every number. See [Rule order](engines-and-runs.md#-rule-
 A map of facts that throws `UnsupportedOperationException` on a write. Conditions, actions, the listener callbacks
 that receive facts, and `RunContext.facts()` all get one, and `FactStore.asMap()` returns an unmodifiable map of the
 store. A fact object's own methods can still change it. See
-[Guarantees](listeners-and-logging.md#-guarantees).
+[Who sees facts](facts.md#-who-sees-facts).
 
 ### Resolved language
 

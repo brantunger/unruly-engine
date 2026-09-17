@@ -11,6 +11,7 @@ MVEL is the engine's default expression language: a rule is written in MVEL when
 
 - [MVEL cheat sheet](#-mvel-cheat-sheet)
 - [Classes and imports](#-classes-and-imports)
+- [Facts in MVEL](#-facts-in-mvel)
 - [Comparison gotchas](#-comparison-gotchas)
 - [Strong typing](#-strong-typing)
 - [Virtual threads](#-virtual-threads)
@@ -27,7 +28,7 @@ Every example below was checked against the engine. For the full language, see t
 
 | To | Write |
 | --- | --- |
-| Read a property (getter, record accessor or `Map` key) | `applicant.creditScore` |
+| Read a property (getter, record accessor, public field or `Map` key) | `applicant.creditScore` |
 | Call a method | `applicant.name.length() > 2` |
 | Compare | `applicant.name == 'Ada'`, `applicant.creditScore >= 650` |
 | Combine | `applicant.creditScore > 700 && applicant.name != empty` |
@@ -95,8 +96,8 @@ engine.load(rules);
 
 > [!IMPORTANT]
 > An engine's imports are set when it's built, and every `load()` compiles with them. A rule that needs a missing
-> import is still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
-> `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
+> import is still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it calls,
+> such as `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException` from `build()`, and no engine is built.
@@ -104,14 +105,86 @@ engine.load(rules);
   is rejected the same way, with the `LinkageError` as the cause. Before 1.6.1 it was imported as a package, and rules
   that used it failed later with `unresolvable property or identifier`.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can no longer be used as a fact name. On an engine built with `imports("java.util")`, a fact named `Date`
-  is rejected. See [Facts](../facts.md#-naming-rules).
+- An imported class name can no longer be used as a fact name. On an engine built with `imports("java.util")`, a fact
+  named `Date` is rejected. See [Fact names MVEL rejects](#fact-names-mvel-rejects).
 - A single-class import such as `"java.time.LocalDate"` is resolved by `build()`, with the building thread's
   context class loader. A string that loader can't load as a class, but that is a valid package name, is imported as
   a package.
 - Classes in imported packages are looked up with the context class loader of the thread that calls `load()`.
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
 - A thread without a context class loader uses this library's own class loader instead.
+
+## 📁 Facts in MVEL
+
+A rule refers to a fact by its name, as a variable. [Facts](../facts.md) covers what holds for every language; this
+section covers what MVEL adds.
+
+### Fact names MVEL rejects
+
+`run()` rejects a fact whose name MVEL can't read as that fact, with an `IllegalArgumentException`. A declared fact
+with such a name fails `load()` instead, with a `RuleCompilationException`
+(`Declared fact 'Math' can't be used: ...`).
+
+A name must be a Java identifier. `my-fact` would read as `my - fact`, so it, `2nd` and `first name` are rejected with:
+
+```text
+'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java identifier
+```
+
+These identifiers are rejected too, because MVEL reads them as something else before it looks at the facts:
+
+| Kind | Names |
+| --- | --- |
+| Literals | `true` `false` `null` `nil` `empty` |
+| Primitive type names | `boolean` `byte` `char` `double` `float` `int` `long` `short` |
+| Built-in class names | The 22 in [Classes and imports](#-classes-and-imports), such as `Math`, `String` and `Thread` |
+| Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
+| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")` |
+
+```text
+'Math' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would never see the fact
+```
+
+- The check is case-sensitive: `date` is accepted with `imports("java.util")`, and `Date` is accepted when nothing
+  imports it.
+- Names such as `$x`, `_` and `café` are identifiers, so they're accepted, and rules can refer to them.
+- A class in an imported package is looked up with the class loader `load()` captured, as the
+  [imports](#-classes-and-imports) are.
+
+### Null and missing facts
+
+MVEL treats a fact whose value is `null` differently from one that isn't in the store:
+
+| Condition | Fact `x` is `null` | No fact `x` |
+| --- | --- | --- |
+| `x == null` | `true` | Fails the run |
+| `isdef x` | `true` | `false` |
+| `isdef x && x != null` | `false` | `false` |
+
+A fact with a `null` value and a `null` `FactReference` behave the same. Referring to a missing fact fails the rule with
+a `RuleExecutionException` whose message has one of these, the second when the run's
+[compiled copy](../glossary.md#compiled-copy) has already run the rule with the fact present:
+
+```text
+[Error: unresolvable property or identifier: x]
+unable to resolve token: unable to resolve variable 'x'
+```
+
+So check with `isdef` before using a fact that may be left out, and for `null` too before reading its property:
+
+```java
+.condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
+```
+
+A `Map` fact works the same way. A key that isn't in the map is an error, not `null`, and this is intended: a missing
+key is usually a misspelled rule.
+
+| Condition, for an `order` map with no `missing` key | Result |
+| --- | --- |
+| `order.missing == null` | Fails the run: `could not access: missing; in class: java.util.HashMap` |
+| `order['missing'] == null` | `true` |
+| `order.containsKey('missing')` | `false` |
+| `order.note == null`, when `note` is in the map with the value `null` | `true` |
 
 ## 🚧 Comparison gotchas
 
@@ -123,7 +196,8 @@ MVEL compares values more loosely than Java, which can make a condition match, o
 | 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
 | 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
-| ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, or `unable to resolve variable 'x'` when the run's compiled copy already ran the rule with it, so `x == null` can't test for it | `isdef x && x > 1` |
+| ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](#null-and-missing-facts) | `isdef x && x > 1` |
+| 🔑 **A key missing from a `Map` fact** | `order.missing == null` fails the run with `could not access: missing`, rather than being `true` | `order['missing'] == null`, or `order.containsKey('missing')` |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
 
 ## 🦺 Strong typing
@@ -140,9 +214,19 @@ RulesEngineBuilder.firstMatch(LoanDecision::new)
         .build();
 ```
 
-- It needs `requireDeclaredFacts()`, at least one declared fact, an `outputType(...)`, and no fact or output type
-  declared as `Object`, a `Map`, a `Collection` or an array of one of them. With the option on and any of that missing,
-  `load()` fails saying which. See [Declaring facts](../facts.md#catching-a-typo-when-the-rules-load).
+A misspelled name then fails `load()`, such as `.condition("applicant.creditScor >= 750")` with
+`RuleCompilationException: unqualified type ... creditScor`. Strong typing only works when MVEL can check everything,
+so with the option on, `load()` fails, saying why, unless all of these hold:
+
+| Needed | Why |
+| --- | --- |
+| `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
+| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
+| `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
+
+See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
+doesn't catch a condition that isn't a boolean; the engine checks that itself, whatever the language.
+
 - It rejects some rules that work without it:
 
   | Without strong typing | With it |

@@ -17,7 +17,15 @@ which types are nullable.
 
 ## 🚀 Using the engine from Kotlin
 
+`Applicant`, `LoanDecision` and the two rules, here `rules`, are from the [Quick start](../README.md#-quick-start).
+
 ```kotlin
+import io.github.brantunger.unruly.api.FactMap
+import io.github.brantunger.unruly.api.Rule
+import io.github.brantunger.unruly.api.RuleListener
+import io.github.brantunger.unruly.api.RulesEngine
+import io.github.brantunger.unruly.api.RulesEngineBuilder
+
 val engine: RulesEngine<LoanDecision> = RulesEngineBuilder.firstMatch(::LoanDecision)
     .listener(object : RuleListener {
         override fun afterEvaluate(rule: Rule, facts: Map<String, Any?>, matchResult: Boolean) {
@@ -37,11 +45,16 @@ val decision: LoanDecision? = engine.run(facts)   // null when no rule matched
 | --- | --- |
 | `RulesEngine.run(facts)` | takes `FactStore<*>`, so any `FactMap`; returns `O?` |
 | `FactStore.getValue(name)`, `FactMap.getValue(name)` | `T?` |
-| `RuleListener.beforeEvaluate` / `afterEvaluate` facts | `Map<String, Any?>` |
+| `RuleListener.beforeEvaluate` / `afterEvaluate` facts, `RunContext.facts()` | `Map<String, Any?>` |
+| `RunResult.output()` | `O?`: `null` when no rule fired |
+| `RunContext.parent()` | `RunContext?`: `null` unless another run of the same engine started this one |
+| `RuleSetInfo.loadedAt()` | `Instant?`: `null` before the first `load()` |
+| `RunOptions.timeout()` | `Duration?`: `null` when the run uses the engine's timeout |
 | `Rule.priority`, `description`, `language` | `Int?`, `String?`, `String?` |
 | `Rule.ruleName`, `Rule.condition`, `Rule.action`, and the builder's `ruleName()`, `condition()` and `action()` | `String` |
 | `FactReference.name` | `String` |
 | `RuleCompilationException.ruleName`, `RuleExecutionException.ruleName` | `String?` |
+| `RuleCompilationException.expressionKind`, `RuleExecutionException.expressionKind` | `ExpressionKind?` |
 
 ## 🔼 Upgrading Kotlin code from 1.4 or earlier
 

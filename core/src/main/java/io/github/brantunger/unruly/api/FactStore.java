@@ -9,7 +9,9 @@ import java.util.Map;
  * implementation.
  *
  * <p>
- * The engine reads the facts through {@link #asMap()}, and never changes the store.
+ * The engine reads the facts through {@link #asMap()} once, when a run starts, and each {@link FactReference}'s value
+ * once too, and never changes the store. A fact added, replaced or removed while that run is going isn't seen by it; a
+ * change inside the object a fact's value was at the start is. So one store can serve one run after another.
  * </p>
  *
  * @param <T> The object/value type of the fact. A fact's value, and a {@code FactReference} in the store, can be
@@ -46,7 +48,8 @@ public interface FactStore<T extends @Nullable Object> {
     @Nullable FactReference<T> put(FactReference<T> ref);
 
     /**
-     * Returns a read-only view of the facts, keyed by name. The view follows later changes to the store.
+     * Returns a read-only view of the facts, keyed by name. The view follows later changes to the store. A run copies
+     * its entries once, when it starts, binding each fact's value to its key.
      *
      * @return an unmodifiable map of each name to its {@link FactReference}
      */

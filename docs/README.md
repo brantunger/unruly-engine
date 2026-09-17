@@ -14,7 +14,7 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 | 🔀 [Engines and runs](engines-and-runs.md) | Rule order, first match or all matches, the output object, what a run reports, checksums for auditing, and reloading |
 | ⚡ [MVEL](languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Other expression languages](languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
-| 📁 [Facts](facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
+| 📁 [Facts](facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
 | 🌱 [Spring Boot](spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
