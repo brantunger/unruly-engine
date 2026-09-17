@@ -71,5 +71,7 @@ tasks.named('test', Test) {
             'unruly.test.jdk': testJdk,
             // LoggingRuleListener logs at DEBUG; enabled so its messages can be asserted.
             'org.slf4j.simpleLogger.log.io.github.brantunger.unruly.api.LoggingRuleListener': 'debug',
+            // The engine logs a listener's stack trace at DEBUG; enabled so it can be asserted.
+            'org.slf4j.simpleLogger.log.io.github.brantunger.unruly.engine': 'debug',
     ]
 }

@@ -1114,7 +1114,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 if (found != null) {
                     fatal = found;
                 } else {
-                    log.warn("Listener threw exception in {}", callback, e);
+                    // Escaped, like every message the engine logs: a listener's message can quote request data. The
+                    // stack trace, which prints the message as it is, goes to DEBUG for whoever debugs the listener.
+                    log.warn("Listener threw exception in {}: {}", callback, Failures.describeWithClass(e));
+                    log.debug("Listener threw exception in {}", callback, e);
                 }
             }
         }
