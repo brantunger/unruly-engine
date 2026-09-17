@@ -162,9 +162,12 @@ failure, stops included.
 > This section is for runs started from inside other runs. You can skip it if you don't start any.
 
 A nested run is a run started on the same thread while another run is in progress: from a condition, an action, or a
-listener callback up to and including `afterRun` and `onRunError`. The `beforeRun` and `onRunError` a run gets when
-it stops while waiting for a compiled copy are the exception: that run never started, so a run started from them isn't
-nested in it.
+listener callback up to and including `afterRun` and `onRunError`. That includes the `beforeRun` and `onRunError` of a
+run that stopped while waiting for a compiled copy: it never ran a rule, but a run started from its callbacks still
+inherits its deadline, if it had one, and names it as its `parent()` on the same engine. Such a run holds no copy,
+so a run started from its callbacks isn't covered by the rule that a nested run never waits — but it doesn't wait
+either: with that run's deadline already passed, or the same interrupt on the thread, it takes a free copy or fails at
+once.
 
 - **It stops at whichever deadline comes first,** its own or the outer run's, on any engine. It sees the same
   interrupt, because the interrupt status belongs to the thread.
@@ -177,7 +180,9 @@ nested in it.
   the stop is in its cause chain.
 - **`parent()` names the outer run only on the same engine.** A run on another engine has no parent, although it
   still inherits the deadline; see [Callbacks](listeners-and-logging.md#-callbacks).
-- **A nested run never waits for a copy;** see [Runs that don't wait](thread-safety.md#runs-that-dont-wait).
+- **A nested run never waits for a copy** while a run on its thread holds one; a run started from the callbacks of a
+  run that stopped while waiting holds none, and fails at once instead. See
+  [Runs that don't wait](thread-safety.md#runs-that-dont-wait).
 
 ## ❓ Questions you might not think to ask
 

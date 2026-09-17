@@ -401,11 +401,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Thread.currentThread().interrupt();
             throw stoppedWaiting(rules, listenerFacts,
                     "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
-                            + " were in use", e, null);
+                            + " were in use", e, deadline, null);
         } catch (TimeoutException e) {
             throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
                     + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e,
-                    deadline);
+                    deadline, deadline);
         }
     }
 
@@ -418,25 +418,40 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param listenerFacts The run's facts, as listeners see them
      * @param msg           What to log and what the exception says
      * @param cause         An {@link InterruptedException} or a {@link TimeoutException}
-     * @param deadline      The deadline the run passed, or {@code null} if it was interrupted
+     * @param deadline      When the run had to stop, or {@code null} if it had no deadline
+     * @param passed        The deadline the run passed, or {@code null} if it was interrupted instead
      * @return The exception to throw
      */
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
-                                                  Exception cause, Instant deadline) {
+                                                  Exception cause, Instant deadline, Instant passed) {
         log.warn(msg);
-        RuleExecutionException failure = ReportedFailure.stop(msg, cause, deadline);
-        // The run never started, so it opens and closes a scope of its own for listeners.
+        RuleExecutionException failure = ReportedFailure.stop(msg, cause, passed);
+        // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
+        // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
+        // from any other callback of a run that stopped.
         List<RuleListener> snapshot = listenerSnapshot();
-        EngineRunContext run = newRun(rules, listenerFacts, currentRun.get());
+        RunContext parent = currentRun.get();
+        EngineRunContext run = newRun(rules, listenerFacts, parent);
+        currentRun.set(run);
+        Instant outerDeadline = Cancellation.enter(deadline);
         try {
-            notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
-        } catch (Error e) {
-            RuleExecutionException fatal = runFailure(e);
-            notifyRunError(snapshot, run, fatal);
-            throw e;
+            try {
+                notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+            } catch (Error e) {
+                RuleExecutionException fatal = runFailure(e);
+                notifyRunError(snapshot, run, fatal);
+                throw e;
+            }
+            notifyRunError(snapshot, run, failure);
+            return failure;
+        } finally {
+            Cancellation.leave(outerDeadline);
+            if (parent == null) {
+                currentRun.remove();
+            } else {
+                currentRun.set(parent);
+            }
         }
-        notifyRunError(snapshot, run, failure);
-        return failure;
     }
 
     /**
