@@ -7,15 +7,22 @@
 Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**, which is
 any Java object.
 
+**Who it's for:** rule authors and application developers.
+**You'll be able to:** give a run its facts, name them so rules can see them, tell a `null` fact from a missing one,
+declare the facts an engine expects, and reuse or implement a fact store safely.
+**Before you start:** the [Quick start](../README.md#-quick-start).
+
 [← Documentation index](README.md)
 
 - [The fact types](#-the-fact-types)
 - [Adding facts](#-adding-facts)
 - [Naming rules](#-naming-rules)
-- [Declaring facts](#-declaring-facts)
 - [Null and missing facts](#-null-and-missing-facts)
-- [Generics](#-generics)
-- [Copying and sharing](#-copying-and-sharing)
+- [Reading a fact's properties](#-reading-a-facts-properties)
+- [Who sees facts](#-who-sees-facts)
+- [Reusing and sharing a store](#-reusing-and-sharing-a-store)
+- [Declaring facts](#-declaring-facts)
+- [Implementing FactStore](#-implementing-factstore)
 
 ---
 
@@ -52,9 +59,10 @@ classDiagram
 | `FactReference<T>` | interface | A named value |
 | `Fact<T>` | final class | The built-in `FactReference`. Its name and value can't change. |
 | `FactStore<T>` | interface | Facts keyed by name: `getValue`, `setValue`, `put`, and a read-only `asMap()` view |
-| `FactMap<T>` | class | The built-in `FactStore`, backed by a `HashMap`. It's also a `Map<String, FactReference<T>>`. |
+| `FactMap<T>` | class | The built-in `FactStore`, backed by a `HashMap` and not synchronised. It's also a `Map<String, FactReference<T>>`. |
 
-The engine reads the store through `asMap()`: each **key** is a variable name, bound to its fact's **value**.
+The engine reads the store through `asMap()`, once, when the run starts: each **key** is a variable name, bound to its
+fact's **value**. See [Reusing and sharing a store](#-reusing-and-sharing-a-store).
 
 ## ➕ Adding facts
 
@@ -77,30 +85,143 @@ Applicant applicant = (Applicant) facts.getValue("applicant");
 A `FactStore` isn't a `Map`. To read every fact, use `facts.asMap()`, a read-only view that follows later changes. A
 variable declared as `FactMap` has the `Map` methods too, such as `remove` and `clear`.
 
-Any readable property works in a rule. `applicant.creditScore` calls a JavaBean getter (`getCreditScore()`), a
-record accessor (`creditScore()`) or looks up a `Map` key.
+`run()` accepts a `FactStore` of any type, so a `FactMap<Applicant>` works as well as a `FactStore<Object>`.
+
+### Copies of a FactMap
+
+- `setValue` always stores a **new** `Fact`. A `FactMap` copied from another (`new FactMap<>(other)`) can
+  therefore be changed with `setValue` without affecting the original.
+- The copy is **shallow**. `Fact` objects added with `put` and the values themselves are shared. A `Fact` can't
+  change, so sharing one is safe, but a value such as an `Applicant` is the same object in both maps.
 
 ## 🔤 Naming rules
 
-A rule can only refer to a fact whose name reads as a single variable in its expression language. The table shows
-MVEL's rules. `run()` checks each fact against every language the loaded rules use, or against the engine's
-default language when the rule list is empty, and another language decides which names it rejects.
+A rule can only refer to a fact whose name its expression language can read as a variable. Two rules hold for every
+language, and each language adds its own.
 
-| ✅ Allowed | ❌ Rejected | Why |
+| Name | Every language | Why |
 | --- | --- | --- |
-| `applicant`, `order2`, `_ctx` | `my-fact`, `2nd`, `first name` | Not a Java identifier (`my-fact` would read as `my - fact`) |
-| `claim` | `empty`, `null`, `true`, `nil`, `in`, `is`, `if`, `def`, `new`, `with`, `contains`, `foreach`, `isdef`, `this`, ... | A reserved MVEL word |
-| `math` | `Math`, `String`, `System`, `Integer`, ... | A class MVEL always resolves |
-| `date` | `Date` on an engine built with `imports("java.util")` | A class from an import |
-| `result` | `output` | Reserved for the output object |
+| `null` (only a custom `FactStore` can hold one) | ❌ rejected | `fact name must not be null` |
+| `output` | ❌ rejected | `'output' is reserved for the output object and cannot be used as a fact name` |
+| `Output`, `OUTPUT` | ✅ allowed | The check is exact and case-sensitive |
+| Anything else | The rules' languages decide | Each language rejects the names it can't refer to |
 
-The checks happen in two places, and both throw `IllegalArgumentException`:
+`run()` checks each fact's name, and throws `IllegalArgumentException` for the first one that breaks a rule:
 
-- **`FactMap`** rejects a `null` name, a key that differs from the fact's own name
-  (`put("claim", new Fact<>("other", 1))`), and two facts with the same name in its constructor.
-- **`run()`** rejects any name in the table above, whichever `FactStore` implementation you use.
+- It checks against every language the loaded rules use, or the engine's default language when the rule list is
+  empty. A language that has no rules in the list isn't asked.
+- The check comes after listeners get `beforeRun` and before any condition runs, so it reaches `onRunError`, and no
+  output object is created.
+- **`FactMap`** already rejects a `null` name, a key that differs from the fact's own name
+  (`put("claim", new Fact<>("other", 1))`), and two facts with the same name in its constructor, each with
+  `IllegalArgumentException`.
 
 A `Fact` needs a name: `new Fact<>(null, value)` throws `NullPointerException`.
+
+**In MVEL,** a name must be a Java identifier, and can't be a reserved word such as `empty` or `in`, or a class name
+MVEL resolves, such as `Math` or a class you import. See
+[Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) for the full list and the messages.
+
+## 🚫 Null and missing facts
+
+A fact whose value is `null` and a fact that isn't there are different things to the engine:
+
+| In the store | The run's facts | Declared type check | With `requireDeclaredFacts()` |
+| --- | --- | --- | --- |
+| A value `null`: `setValue("x", null)` | Key `x`, value `null` | Passes | Counts as supplied |
+| A null `FactReference`: `put("x", null)` on a `FactMap` | Key `x`, value `null` | Passes | Counts as supplied |
+| No entry named `x` | No key `x` | Not checked | Fails: `Fact 'x' was declared, but the run didn't supply it, ...` |
+
+A language tells the first two from the third with `facts().containsKey(name)`. `FactStore.getValue(name)` can't:
+it returns `null` in all three cases.
+
+**In MVEL,** `x == null` is `true` for the first two, and fails the run for a missing fact. Use `isdef x` to check
+that a fact was supplied. See [Null and missing facts in MVEL](languages/mvel.md#null-and-missing-facts) for the
+messages and for a `Map` fact without a key.
+
+## 🔍 Reading a fact's properties
+
+The engine hands each language the fact values as they are. It doesn't read properties itself: when a rule writes
+`applicant.creditScore`, the rule's language decides what that means and what happens when the property isn't there.
+
+| Fact | MVEL | A language using `FactProperties` |
+| --- | --- | --- |
+| Public record or JavaBean | ✅ accessor or getter | ✅ component or getter |
+| `Map` with the key | ✅ | ✅ exact `String` key |
+| `Map` without the key | ❌ `could not access: <key>` | ❌ `IllegalArgumentException` |
+| Public field, no getter | ✅ | ❌ not a property |
+| Class that isn't public | ⚠️ only through a public interface declaring the accessor, even on the class path | ✅ through a public interface, or where its package is open |
+
+`FactProperties` is a helper a language may use, and MVEL doesn't. Its rules are in
+[Writing a language](languages/custom.md#-writing-a-language); MVEL's are in
+[Facts in MVEL](languages/mvel.md#-facts-in-mvel). Check another language's own documentation.
+
+## 👀 Who sees facts
+
+Everything that sees a run's facts gets the values the engine copied when the run started, as a read-only view:
+
+| Who | Gets the facts | How |
+| --- | :---: | --- |
+| Conditions | ✅ | `EvaluationContext.facts()` |
+| Actions | ✅ | `ActionContext.facts()`, and `output` |
+| `beforeRun`, `afterRun`, `onRunError` | ✅ | `run.facts()` on the `RunContext` |
+| `beforeEvaluate`, `afterEvaluate` | ✅ | The `facts` argument, the same view as `run.facts()` |
+| `beforeExecute`, `afterExecute` | ❌ | Only the rule and the output object |
+| `onError` | ❌ | Only the rule and the exception |
+
+- A write to a view throws `UnsupportedOperationException`. Putting a fact names it, for example
+  `The facts passed to an action are read-only; 'applicant' can't be changed. Put the result in the output object
+  instead.`
+- A view doesn't stop a method call that changes a fact's value, such as `applicant.setCreditScore(0)`. Every rule
+  after it in the run, the listeners and your own code see the change. See
+  [What rules can change](writing-rules.md#-what-rules-can-change).
+- A listener that needs the facts in `beforeExecute` or `afterExecute` can keep `run.facts()` from `beforeRun`: rule
+  callbacks come on the run's own thread, between its `beforeRun` and its `afterRun` or `onRunError`.
+
+## 🔁 Reusing and sharing a store
+
+A run copies the store's entries **once, when it starts**, and never reads the store again. The engine promises this:
+
+- **One run after another** can use the same store. Change it between runs, and the next run sees the change.
+- **A fact added, replaced or removed during a run**, by a listener, an action or another thread, isn't seen by that
+  run.
+- **A change inside a fact's value** is seen. The engine reads each fact's value once, when the run starts, and every
+  rule and listener gets that same object, so an `Applicant` changed by its setter is changed for every later rule,
+  listener and the caller. A `FactReference` that would return a different object later in the run isn't asked
+  again.
+
+```mermaid
+sequenceDiagram
+    participant App as Your code
+    participant E as Engine
+    participant L as Listeners
+    participant R as Rules
+    App->>E: run(store)
+    E->>App: store.asMap(), copied once
+    E->>L: beforeRun(run)
+    E->>E: check each name and declared type
+    alt a check fails
+        E->>L: onRunError(run, exception)
+        E-->>App: throws IllegalArgumentException
+    else every check passes
+        E->>R: conditions and actions read the copy
+        E->>L: afterRun(run, result)
+        E-->>App: the output, or null
+    end
+```
+
+The copy is taken before the run waits for a [compiled copy](glossary.md#compiled-copy) of the rules, and before
+`beforeRun`. The run then checks every fact against the engine's and the languages' naming rules and the declared
+types; a failure reaches `onRunError` and `run()` throws `IllegalArgumentException`. Otherwise conditions and actions
+read the copy, listeners get `afterRun`, and `run()` returns.
+
+> [!WARNING]
+> A `FactMap` is an unsynchronised `HashMap`. Never change one while another thread's run may be copying it: that run
+> can miss or mix up facts, or throw `ConcurrentModificationException`.
+
+A new store for each request is the simplest way to stay safe. Two concurrent runs may read the same store if nothing
+changes it, but they also share every value in it, so a value one run's rules change is changed for the other. See
+[Thread safety](thread-safety.md).
 
 ## 📣 Declaring facts
 
@@ -119,80 +240,32 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 - **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
   declaration. A run that leaves the fact out is unaffected. A primitive type is declared as its wrapper, so
-  `fact("age", int.class)` accepts an `Integer`. Declaring `output` fails at once, and `load()` fails for a declared
-  name the rules' languages can't refer to.
-- **`facts(map)`** declares several at once. Declaring the same name twice keeps the last type.
+  `fact("age", int.class)` accepts an `Integer`. Declaring the same name twice keeps the last type. Declaring `output`
+  fails at once, and `load()` fails for a declared name the rules' languages can't refer to.
+- **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
+- **`facts(map)`** declares several at once, as `fact()` does each one.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
   or leaves a declared one out, fails with `IllegalArgumentException`.
 
 ### Catching a typo when the rules load
 
-`requireDeclaredFacts()` is also what lets a language check the rules themselves. MVEL does it when you turn on its
-`strongTyping` option: it compiles the rules with strong typing, so a misspelled property or an unknown fact fails
-`load()` with the line and column instead of failing a run:
+`requireDeclaredFacts()` is also what lets a language check the rules themselves: every language is told what was
+declared and uses it as it can, and the engine's own checks on a run's facts don't depend on it. In MVEL, turn on
+the `strongTyping` option, and a misspelled property or an unknown fact fails `load()` with its line and column
+instead of failing a run; see [MVEL strong typing](languages/mvel.md#-strong-typing) for what it needs and the rules
+it rejects. The option is off by default, so declaring facts never changes what compiles.
 
-```java
-RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
-        .outputType(LoanDecision.class)
-        .fact("applicant", Applicant.class)
-        .requireDeclaredFacts()
-        .option("mvel", "strongTyping", "true")
-        .build();
+## 🪛 Implementing FactStore
 
-engine.load(List.of(Rule.builder().ruleName("prime-rate")
-        .condition("applicant.creditScor >= 750")   // RuleCompilationException: unqualified type ... creditScor
-        .action("output.interestRate = 6.9").build()));
-```
+Most applications use `FactMap`. If you write your own `FactStore`, this is what the engine relies on:
 
-Strong typing only works when MVEL can check everything, so with the option on, `load()` fails, saying why, unless
-all of these hold:
-
-| Needed | Why |
-| --- | --- |
-| `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
-| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
-| `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
-
-Strong typing also rejects some rules that work without it: a `foreach` variable needs a type
-(`foreach (int n : list) { ... }`), a map's entries are read by key (`m['a']`, not `m.a`), and `def` functions can't be
-used. See
-[MVEL](languages/mvel.md#-strong-typing). The option is off by default, so declaring facts never changes what compiles.
-The engine's own checks on a run's facts don't depend on it, and neither does any other language: each one is told
-what was declared and uses it as it can.
-
-> [!NOTE]
-> Strong typing doesn't catch a non-boolean condition; the engine checks that itself, on every engine.
-
-## 🚫 Null and missing facts
-
-| Situation | In a rule |
-| --- | --- |
-| A fact whose value is `null` | The variable is `null`, so `coapplicant == null` is `true` |
-| No fact with that name in the store | In MVEL, referring to it throws `unresolvable property or identifier` |
-
-In MVEL, the message can also be `unable to resolve token: unable to resolve variable 'coapplicant'`: MVEL gives it
-when the [compiled copy](glossary.md#compiled-copy) the run uses has already run the rule with the fact present.
-
-To check whether a fact was supplied at all, use `isdef`. It is also `true` for a fact whose value is `null`, so
-check for `null` too before reading a property:
-
-```java
-.condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
-```
-
-## 🔣 Generics
-
-`run()` accepts a `FactStore` of any type, so a `FactMap<Applicant>` works as well as a `FactStore<Object>`.
-
-## 📋 Copying and sharing
-
-- `setValue` always stores a **new** `Fact`. A `FactMap` copied from another (`new FactMap<>(other)`) can
-  therefore be changed with `setValue` without affecting the original.
-- The copy is **shallow**. `Fact` objects added with `put` and the values themselves are shared. A `Fact` can't
-  change, so sharing one is safe, but a value such as an `Applicant` is the same object in both maps.
-- The engine doesn't copy fact values either. If an action calls a method that changes a fact, such as
-  `applicant.setCreditScore(0)`, rules that fire later in the same run see the change.
-
-> [!IMPORTANT]
-> Build a fresh `FactStore` for each request and don't share one between threads. The engine itself is safe to
-> share; see [Thread safety](thread-safety.md).
+- **Only `asMap()`.** A run calls it once, when it starts, iterates the entries, and calls each `FactReference`'s
+  `getValue()` once. It never calls the store's own `getValue`, `setValue` or `put`, and never writes to the map, so
+  `asMap()` may return an unmodifiable map.
+- **The keys are the names rules use.** A fact is bound under its key, even when its `getName()` says something else.
+- **A `null` entry** (a null `FactReference`) binds its key to `null`, like a fact whose value is `null`.
+- **A `null` key** fails the run with `IllegalArgumentException` (`fact name must not be null`), after `beforeRun`, so
+  it reaches `onRunError`.
+- **`asMap()` must not return `null` or throw.** If it does, `run()` throws that exception, or a
+  `NullPointerException`, before any listener callback: no `beforeRun`, no `onRunError`.
+- **Iterating must be safe** while other threads use the store. The run copies the entries on its own thread.

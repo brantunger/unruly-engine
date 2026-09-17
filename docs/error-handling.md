@@ -77,7 +77,7 @@ reports it as the cause of a `RuleCompilationException`.
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
 | | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |
 | `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |
-| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition its language rejects (in MVEL, an assignment or `import_static`); an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](facts.md#catching-a-typo-when-the-rules-load), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
+| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition its language rejects (in MVEL, an assignment or `import_static`); an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](languages/mvel.md#-strong-typing), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, with the error as its cause. |
@@ -137,7 +137,7 @@ surface when a rule is evaluated. Another language decides what it catches when 
 | Most syntax errors (`applicant.creditScore >=`) | ✅ `load()` |
 | Some malformed expressions (`true)`, `output.put("k" 1)`) | ⚠️ only `run()` |
 | A class that isn't imported (`Objects` without `imports("java.util")`) | ⚠️ only `run()` |
-| A misspelled fact or property name | ⚠️ only `run()`, unless MVEL's [strong typing](facts.md#catching-a-typo-when-the-rules-load) is on: then `load()` |
+| A misspelled fact or property name | ⚠️ only `run()`, unless MVEL's [strong typing](languages/mvel.md#-strong-typing) is on: then `load()` |
 | A condition that isn't a boolean (`applicant.name`) | ⚠️ only `run()` |
 | A method call that changes a fact inside a condition (`applicant.setApproved(true)`) | ❌ never |
 
