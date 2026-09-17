@@ -401,10 +401,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Thread.currentThread().interrupt();
             throw stoppedWaiting(rules, listenerFacts,
                     "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
-                            + " were in use", e);
+                            + " were in use", e, null);
         } catch (TimeoutException e) {
             throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
-                    + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e);
+                    + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e,
+                    deadline);
         }
     }
 
@@ -417,12 +418,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param listenerFacts The run's facts, as listeners see them
      * @param msg           What to log and what the exception says
      * @param cause         An {@link InterruptedException} or a {@link TimeoutException}
+     * @param deadline      The deadline the run passed, or {@code null} if it was interrupted
      * @return The exception to throw
      */
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
-                                                  Exception cause) {
+                                                  Exception cause, Instant deadline) {
         log.warn(msg);
-        RuleExecutionException failure = new ReportedFailure(msg, cause);
+        RuleExecutionException failure = ReportedFailure.stop(msg, cause, deadline);
         // The run never started, so it opens and closes a scope of its own for listeners.
         List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(rules, listenerFacts, currentRun.get());
@@ -772,7 +774,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the run must stop
      */
     private void checkNotCancelled(CompiledRule rule, Instant deadline) {
-        RuleExecutionException stop = cancellation("before rule '" + rule.displayName() + "'", deadline);
+        RuleExecutionException stop = cancellation("before rule '" + rule.displayName() + "'", deadline, null);
         if (stop != null) {
             throw stop;
         }
@@ -783,15 +785,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param when     Where the run stopped, such as {@code "before rule 'x'"}
      * @param deadline When the run must stop, or {@code null} if it has none
-     * @return The exception, already logged, or {@code null}
+     * @param thrown   What the expression threw, or {@code null}: when a run it started stopped for the same reason,
+     *                 that run logged the stop, and it isn't logged again
+     * @return The exception, or {@code null}
      */
-    private RuleExecutionException cancellation(String when, Instant deadline) {
+    private RuleExecutionException cancellation(String when, Instant deadline, Throwable thrown) {
         // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
         if (Thread.currentThread().isInterrupted()) {
-            return cancelled("run() was interrupted " + when, new InterruptedException());
+            return cancelled("run() was interrupted " + when, new InterruptedException(), null, thrown);
         }
         if (Cancellation.hasPassed(deadline)) {
-            return cancelled("run() passed its deadline of " + deadline + " " + when, Cancellation.timedOut(deadline));
+            return cancelled("run() passed its deadline of " + deadline + " " + when, Cancellation.timedOut(deadline),
+                    deadline, thrown);
         }
         return null;
     }
@@ -833,7 +838,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // fatal Error inside what it threw is rethrown as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
         RuleExecutionException stop = Failures.fatalError(thrown) == null
-                ? cancellation("during rule '" + rule.displayName() + "'", deadline) : null;
+                ? cancellation("during rule '" + rule.displayName() + "'", deadline, thrown) : null;
         if (stop == null) {
             return failed.get();
         }
@@ -851,7 +856,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the run was cancelled
      */
     private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, Instant deadline) {
-        RuleExecutionException stop = cancellation("during rule '" + rule.displayName() + "'", deadline);
+        RuleExecutionException stop = cancellation("during rule '" + rule.displayName() + "'", deadline, null);
         if (stop != null) {
             throw closedWithStop(snapshot, rule, stop);
         }
@@ -880,13 +885,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Reports a run that stopped because it was cancelled. Logged at WARN, not ERROR: nothing failed, and the caller
      * asked for it, whether by interrupting the thread or by setting a timeout.
      *
-     * @param msg   What to log and what the exception says
-     * @param cause An {@link InterruptedException} or a {@link TimeoutException}, so a caller can tell which happened
+     * @param msg      What to log and what the exception says
+     * @param cause    An {@link InterruptedException} or a {@link TimeoutException}, so a caller can tell which
+     *                 happened
+     * @param deadline The deadline the run passed, or {@code null} if it was interrupted
+     * @param thrown   What the expression threw, or {@code null}. A run it started that stopped for the same reason
+     *                 has logged the stop already, so it isn't logged a second time.
      * @return The exception to throw, which belongs to no rule
      */
-    private RuleExecutionException cancelled(String msg, Exception cause) {
-        log.warn(msg);
-        return new ReportedFailure(msg, cause);
+    private RuleExecutionException cancelled(String msg, Exception cause, Instant deadline, Throwable thrown) {
+        if (!Failures.nestedRunStopped(thrown, deadline)) {
+            log.warn(msg);
+        }
+        return ReportedFailure.stop(msg, cause, deadline);
     }
 
     /**
