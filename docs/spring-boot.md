@@ -99,7 +99,7 @@ loan:
 Enable the record with `@EnableConfigurationProperties(LoanRulesProperties.class)`, then pass
 `properties.rules().stream().map(RuleProperties::toRule).toList()` to `load()`. A rule without a name, condition
 or action makes `toRule()` throw, so the application refuses to start. To read rules from JSON instead, register the
-Jackson mix-ins shown under [Rules](../README.md#rules).
+Jackson mix-ins shown in [Loading rules from data](writing-rules.md#-loading-rules-from-data).
 
 ## 🌐 Use it in a controller
 

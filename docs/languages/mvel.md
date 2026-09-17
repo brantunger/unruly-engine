@@ -53,6 +53,15 @@ Every example below was checked against the engine. For the full language, see t
 | Define a function | `def bonus(score) { score / 100 }; output.bonus = bonus(applicant.creditScore)` (not with [strong typing](#-strong-typing)) |
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
+An action changes `output` in place, as in `output.approved = true`, `output.setInterestRate(4.5)` or
+`output.put(...)`, and the value the action evaluates to is ignored, so `output.approved = true; 42` is fine. Assigning
+to `output` itself, as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
+Inside a `def` function, `output = ...` doesn't fail: it creates a variable local to the function, and `output.put(...)`
+calls after it in that function change the discarded object.
+
+Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates a variable local to the action:
+the fact keeps its value, and later rules still see it.
+
 A condition may also run several statements, branch or loop, as long as nothing in it assigns; see
 [What rules can change](../writing-rules.md#-what-rules-can-change).
 

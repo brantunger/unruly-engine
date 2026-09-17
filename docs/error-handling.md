@@ -133,7 +133,7 @@ surface when a rule is evaluated. Another language decides what it catches when 
 | `null` or blank condition or action | ✅ `load()` |
 | Duplicate rule name | ✅ `load()` |
 | A rule in an expression language the engine doesn't have | ✅ `load()` |
-| Assignment in a condition (`applicant.approved = true`, `x++`, `with`, `def`, `import_static`) | ✅ `load()` |
+| Assignment in a condition, which every conforming language rejects (in MVEL: `applicant.approved = true`, `x++`, `with`, `def`, `import_static`) | ✅ `load()` |
 | Most syntax errors (`applicant.creditScore >=`) | ✅ `load()` |
 | Some malformed expressions (`true)`, `output.put("k" 1)`) | ⚠️ only `run()` |
 | A class that isn't imported (`Objects` without `imports("java.util")`) | ⚠️ only `run()` |

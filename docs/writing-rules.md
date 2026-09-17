@@ -5,8 +5,8 @@
 > [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/writing-rules.md).
 
 Every rule has two expressions: a **condition** that decides whether the rule matches, and an **action** that runs
-when it fires. They are written in an expression language: the engine's default language, [MVEL](languages/mvel.md) unless
-you give the engine others, or the language the rule names.
+when it fires. They are written in the expression language the rule names or, for a rule that names none, in the
+engine's default language, which is [MVEL](languages/mvel.md) when MVEL is the only language found.
 This guide covers what holds whatever the language; the [MVEL guide](languages/mvel.md) covers MVEL's syntax.
 
 [← Documentation index](README.md)
@@ -14,6 +14,7 @@ This guide covers what holds whatever the language; the [MVEL guide](languages/m
 - [Anatomy of a rule](#-anatomy-of-a-rule)
 - [Choosing a language](#-choosing-a-language)
 - [What rules can change](#-what-rules-can-change)
+- [Loading rules from data](#-loading-rules-from-data)
 - [A bigger example](#-a-bigger-example)
 - [Testing rules](#-testing-rules)
 
@@ -35,9 +36,19 @@ Rule.builder()
 | Topic | Condition | Action |
 | --- | --- | --- |
 | **Facts, by name** | ✅ Read | ✅ Read |
-| **`output`** | ❌ Not available | ✅ Change it in place |
-| **Assignments and local variables** | ❌ Rejected by `load()` | ✅ Visible only inside this action |
-| **Must evaluate to** | A `boolean` (not `null`, not a string) | Anything; the result is ignored |
+| **`output`** | ❌ Not available: a condition that uses it fails when the rule runs | ✅ Change it |
+| **Assignments** | ❌ Rejected: an assignment to a fact by `load()`, and any write to the facts when the rule runs | ✅ To the action's own variables, visible only inside it |
+| **What it produces** | A `boolean` (not `null`, not a string) | Changes to `output`, made in place or returned as properties for the engine to set. In MVEL, the value the expression evaluates to is ignored |
+
+- **Names are unique by exact match.** `Rate`, `rate` and `rate ` (with a trailing space) are three different names.
+  Two rules with the same name fail `load()` at once with `Duplicate rule name 'rate'`, before any rule is compiled,
+  so it's the only failure reported. A blank name fails `build()`.
+- **Blank expressions fail at `load()`.** `build()` accepts an empty or whitespace-only condition or action, and
+  `load()` rejects it (`Rule 'prime-rate' has a blank condition expression`). It's reported in one
+  `RuleCompilationException` together with every other rule that fails to compile, one entry for each in
+  `failures()`.
+- **Order and output** belong to the engine: see [Rule order](engines-and-runs.md#-rule-order) and
+  [The output object](engines-and-runs.md#-the-output-object).
 
 > [!TIP]
 > Rules are usually Java string literals, so in MVEL use **single quotes** for strings inside them:
@@ -45,22 +56,23 @@ Rule.builder()
 
 ## 🌐 Choosing a language
 
-| Language | How to use it | Guide |
-| --- | --- | --- |
-| ⚡ MVEL | The default when MVEL is the engine's only language: leave `language` unset, or set it to `"mvel"` | [MVEL](languages/mvel.md): syntax cheat sheet, classes and imports, comparison gotchas |
-| 🧩 Any other | `.language(new MyLanguage())` on the engine's builder, then `.language("my")` on each rule | [Other expression languages](languages/custom.md): choosing, writing and testing a language |
-
-One rule list can mix languages. An engine's languages and imports are set on its builder, so every `load()`
-compiles the rules with the same ones.
+A rule is written in the language its `language` names, or in the engine's default language when that is `null`, and
+one rule list can mix languages. An engine's languages and imports are set on its builder, so every `load()` compiles
+the rules with the same ones. To give an engine several languages and choose one for each rule, see
+[Choosing a language per rule](languages/custom.md#-choosing-a-language-per-rule).
 
 ## 🔏 What rules can change
 
 ### Conditions can't assign
 
-`load()` rejects, with a `RuleCompilationException`, a condition that assigns or declares something, when
-its language can detect it. That isn't a sandbox: a condition can still call methods, loop and run several
-statements, so it can change state (`System.setProperty('k', 'v') == null`) or never finish
-(`while (true) {}; true`). Keep conditions to expressions without side effects. In MVEL, these are rejected:
+A condition can't change the facts. Every language that passes the
+[contract test kit](languages/custom.md#-testing-a-language) rejects a condition that assigns to a fact when `load()`
+compiles it, with a `RuleCompilationException`. The engine also rejects any write to the facts while a condition runs,
+failing the rule with `Cannot assign or declare 'x' in a condition`.
+
+That isn't a sandbox: a condition can still call methods, loop and run several statements, so it can change state
+(`System.setProperty('k', 'v') == null`) or never finish (`while (true) {}; true`). Keep conditions to expressions
+without side effects. In MVEL, these are rejected by `load()`:
 
 | Rejected condition | Why it's usually a mistake |
 | --- | --- |
@@ -70,22 +82,52 @@ statements, so it can change state (`System.setProperty('k', 'v') == null`) or n
 | `with (applicant) { ... }`, `def f() { ... }` | A `with` block or function |
 
 > [!WARNING]
-> MVEL's check reads the condition's text, so it can't see a method call that changes a fact, such as
-> `applicant.setApproved(true)`. Keep method calls in conditions free of side effects.
+> Neither check sees a method call that changes a fact object, such as `applicant.setApproved(true)`. Every condition
+> and action after it in the same run sees the change, even on a first-match engine, and so does your own code. Keep
+> method calls in conditions free of side effects.
 
 ### Actions change the output
 
-- **Local variables stay local.** `score = 10; output.put('score', score)` works, but `score` is visible only
-  inside that action. Other rules still see the original facts.
-- **Change `output` in place.** Use `output.approved = true`, `output.setRate(4.5)` or `output.put(...)`. Assigning
-  to `output` itself, as in `output = [:]`, fails with a `RuleExecutionException`. Inside a `def` function,
-  `output = ...` doesn't fail: it creates a variable local to the function, and `output.put(...)` calls after it in
-  that function change the discarded object.
+- **Local variables stay local.** A variable an action declares is visible only inside that action. Other rules still
+  see the original facts.
+- **Change `output`; don't replace it.** An action changes the output object in place, or returns properties for the
+  engine to set on it. It can't put another object in its place. In MVEL, see
+  [Mostly in actions](languages/mvel.md#mostly-in-actions).
+- **The facts stay as they were.** A language that writes to the facts it's given (`ActionContext.facts()`) fails the
+  rule with `The facts passed to an action are read-only`. In MVEL, assigning to a fact's name creates a variable local
+  to the action instead; see [Mostly in actions](languages/mvel.md#mostly-in-actions).
 - **Pass results between rules through `output`.** In an all-matches engine, all matched actions share the same output
   object, in priority order.
 - **Facts aren't copied.** An action that calls a method that changes a fact, such as
   `applicant.setCreditScore(0)`, affects the rules that fire after it in the same run. Conditions have already been
   evaluated by then, so it never changes which rules match.
+
+## 💾 Loading rules from data
+
+Conditions and actions are strings, so rules can live in a database, a YAML file or a configuration service. To read
+rules from JSON with Jackson, register one mix-in for `Rule` and one for its builder:
+
+```java
+@JsonDeserialize(builder = Rule.RuleBuilder.class)
+abstract class RuleMixIn {
+}
+
+@JsonPOJOBuilder(withPrefix = "")
+abstract class RuleBuilderMixIn {
+}
+
+ObjectMapper mapper = JsonMapper.builder()
+        .addMixIn(Rule.class, RuleMixIn.class)
+        .addMixIn(Rule.RuleBuilder.class, RuleBuilderMixIn.class)
+        .build();
+List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
+```
+
+The code is the same for Jackson 2 and Jackson 3, which Spring Boot 4 uses; only the imports differ
+(`com.fasterxml.jackson` or `tools.jackson`). A rule without a name, condition or action fails while it's read.
+
+Rules are code, so load them only from sources you trust as much as your application code; see
+[Security](../README.md#-security).
 
 ## 📐 A bigger example
 
@@ -147,6 +189,21 @@ void primeRateAppliesFrom750() {
 
     facts.setValue("applicant", new Applicant("Ada", 749));
     assertNull(engine.run(facts));
+}
+```
+
+To check the order the engine evaluates the rules in, assert on `rules().rules()`, which lists them in
+[evaluation order](engines-and-runs.md#-rule-order):
+
+```java
+// rules is the list your application loads.
+@Test
+void rulesAreEvaluatedInPriorityOrder() {
+    RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).build();
+    engine.load(rules);
+
+    assertEquals(List.of("prime-rate", "standard-rate"),
+            engine.rules().rules().stream().map(Rule::getRuleName).toList());
 }
 ```
 

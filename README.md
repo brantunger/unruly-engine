@@ -16,9 +16,13 @@ Write each rule's condition and action as an [MVEL](https://github.com/mvel/mvel
 language of your own, load the rules once, and evaluate them against your Java objects from as many threads as you
 like.
 
-[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Guides](#-guides) · [FAQ](#-faq) · [Javadoc](https://brantunger.github.io/unruly-engine/latest/) · [Changelog](CHANGELOG.md)
+[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Where next](#-where-next) · [FAQ](#-faq) · [Javadoc](https://brantunger.github.io/unruly-engine/latest/) · [Changelog](CHANGELOG.md)
 
 </div>
+
+> [!NOTE]
+> Describes 2.0.0, which isn't released yet. For 1.8.0, see
+> [the README at tag v1.8.0](https://github.com/brantunger/unruly-engine/tree/v1.8.0).
 
 ---
 
@@ -29,10 +33,10 @@ like.
 | 📝 **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
 | 🔀 **Two match policies** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. |
 | 🔢 **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
-| 🛡️ **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. |
+| 🛡️ **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. Fact and property names are checked when a rule runs, unless MVEL's [strong typing](docs/languages/mvel.md#-strong-typing) is on. |
 | 🧵 **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
 | 👂 **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
-| 🧩 **Pluggable languages** | Rules are written in MVEL by default. Give an engine other expression languages and choose one per rule, even within one rule list. |
+| 🧩 **Pluggable languages** | Rules are written in MVEL, or in other expression languages you give the engine, chosen per rule, even within one rule list. |
 | 🪶 **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
 
 ## 📦 Installation
@@ -80,6 +84,9 @@ implementation("io.github.brantunger:unruly-engine:1.8.0")
 depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
 `unruly-engine-test`; see [Testing a language](docs/languages/custom.md#-testing-a-language).
 
+<details>
+<summary><b>On the module path</b></summary>
+
 On the module path, `unruly-engine` is the module `io.github.brantunger.unruly`, and `unruly-engine-core` is
 `io.github.brantunger.unruly.core`. Require one of them: it requires SLF4J, and MVEL for `unruly-engine`. Rules read your
 classes through MVEL, so also export every package whose classes rules use: fact types, the output type, the types
@@ -118,62 +125,107 @@ module com.example.app {
   reflective accessors. Exporting only `to io.github.brantunger.unruly` doesn't work either: MVEL reads the classes,
   not the engine.
 
+</details>
+
 > [!TIP]
 > The engine logs through the SLF4J API. Add an SLF4J 2.x provider such as Logback if your application doesn't
 > already have one, or its messages go nowhere. See [Listeners & logging](docs/listeners-and-logging.md#-logging-setup).
 
 ## 🚀 Quick start
 
-A loan desk wants one rate per applicant: prime for excellent credit, standard for good credit.
+A loan desk wants one rate per applicant: prime for excellent credit, standard for good credit. The rules read an
+`Applicant` fact and change a `LoanDecision` output object, each in its own file:
 
 ```java
+// Applicant.java
 package com.example.loans;
 
 // Your fact type: any object with readable properties (a record, a JavaBean, a Map, ...)
 public record Applicant(String name, int creditScore) {}
+```
 
-// Your output type: mutable, because actions change it in place
+```java
+// LoanDecision.java
+package com.example.loans;
+
+import java.util.ArrayList;
+import java.util.List;
+
+// Your output type: mutable, because MVEL actions change it in place
 public class LoanDecision {
     private boolean approved;
     private double interestRate;
     private final List<String> notes = new ArrayList<>();
-    // getters and setters ...
+
+    public boolean isApproved() { return approved; }
+    public void setApproved(boolean approved) { this.approved = approved; }
+    public double getInterestRate() { return interestRate; }
+    public void setInterestRate(double interestRate) { this.interestRate = interestRate; }
+    public List<String> getNotes() { return notes; }
 }
 ```
 
 ```java
-// 1. Build an engine. The supplier creates a fresh output object for each run.
-RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).build();
+// LoanDesk.java
+package com.example.loans;
 
-// 2. Load the rules once. Each rule has an MVEL condition and an MVEL action.
-engine.load(List.of(
-        Rule.builder()
-                .ruleName("prime-rate")
-                .priority(10)
-                .condition("applicant.creditScore >= 750")
-                .action("output.approved = true; output.interestRate = 4.5; output.notes.add('prime')")
-                .build(),
-        Rule.builder()
-                .ruleName("standard-rate")
-                .priority(5)
-                .condition("applicant.creditScore >= 650")
-                .action("output.approved = true; output.interestRate = 6.9; output.notes.add('standard')")
-                .build()));
+import io.github.brantunger.unruly.api.FactMap;
+import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 
-// 3. Put your facts in a store. Rules refer to each fact by its name.
-FactStore<Object> facts = new FactMap<>();
-facts.setValue("applicant", new Applicant("Ada", 780));
+import java.util.List;
 
-// 4. Run the rules.
-LoanDecision decision = engine.run(facts);   // approved = true, interestRate = 4.5, notes = [prime]
+public class LoanDesk {
+
+    public static void main(String[] args) {
+        // 1. Build an engine. The supplier creates a fresh output object for each run.
+        RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).build();
+
+        // 2. Load the rules once. Each rule has an MVEL condition and an MVEL action.
+        engine.load(List.of(
+                Rule.builder()
+                        .ruleName("prime-rate")
+                        .priority(10)
+                        .condition("applicant.creditScore >= 750")
+                        .action("output.approved = true; output.interestRate = 4.5; output.notes.add('prime')")
+                        .build(),
+                Rule.builder()
+                        .ruleName("standard-rate")
+                        .priority(5)
+                        .condition("applicant.creditScore >= 650")
+                        .action("output.approved = true; output.interestRate = 6.9; output.notes.add('standard')")
+                        .build()));
+
+        // 3. Put your facts in a store. Rules refer to each fact by its name.
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("applicant", new Applicant("Ada", 780));
+
+        // 4. Run the rules.
+        LoanDecision decision = engine.run(facts);   // approved = true, interestRate = 4.5, notes = [prime]
+    }
+}
 ```
 
 Both conditions are true for a score of 780. The first-match engine fires only the highest-priority match,
-`prime-rate`.
+`prime-rate`. For a score of 600, no rule matches and `decision` is `null`.
+
+In an application, build one engine and reuse it for every run, from any number of threads, and call `close()` on it
+when the application shuts down.
 
 > [!IMPORTANT]
-> `run()` returns **`null`** when no rule matches. For an applicant with a score of 600, `decision` is `null`,
-> so always check for it.
+> `run()` returns **`null`** when no rule fires, so always check for it. See
+> [What a run reports](docs/engines-and-runs.md#-what-a-run-reports).
+
+Three more things people get wrong on day one:
+
+- The output supplier must return a new object on every call: a shared one collects every run's results. See
+  [The output object](docs/engines-and-runs.md#-the-output-object).
+- `load()` doesn't catch a misspelled fact or property name: the first run that evaluates the rule fails. See
+  [Caught when loading or only when running?](docs/error-handling.md#-caught-when-loading-or-only-when-running)
+- A timeout doesn't interrupt a rule that is running. See
+  [What a timeout doesn't do](docs/stopping-runs.md#-what-a-timeout-doesnt-do).
 
 ## 🧭 How it works
 
@@ -198,127 +250,97 @@ follows the same path:
 
 ```mermaid
 flowchart TD
-    A(["run(facts)"]) --> B["Check fact names"]
-    B --> C["Evaluate conditions,<br/>highest priority first"]
-    C --> D{"Any match?"}
-    D -- no --> N(["return null"])
-    D -- yes --> E["Create the output object<br/>with your Supplier"]
-    E --> F{"Engine type"}
-    F -- first match --> G["Stop at the first match<br/>and fire its action"]
-    F -- all matches --> H["Evaluate the rest, then fire<br/><b>every</b> matched action in priority order"]
-    G --> R(["return output"])
-    H --> R
+    A(["run(facts)"]) -- "starts" --> B["Check the facts"]
+    B -- "valid" --> C{"Match policy"}
+    C -- "first match" --> D["Evaluate conditions in priority order<br/>until one is true"]
+    C -- "all matches" --> E["Evaluate every condition"]
+    D -- "none is true" --> N(["return null"])
+    E -- "none is true" --> N
+    D -- "one is true" --> F["Create the output with your supplier,<br/>then fire that rule's action"]
+    E -- "some are true" --> G["Create the output with your supplier,<br/>then fire every match in priority order"]
+    F -- "done" --> R(["return the output"])
+    G -- "done" --> R
+    class B,D,E step
+    class C decision
+    class F,G yours
+    class N,R ok
+    classDef step     fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef decision fill:#fef3c7,stroke:#d97706,color:#451a03
+    classDef ok       fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef yours    fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-dasharray:4 3
 ```
+
+A run first checks the facts: a fact name the rules can't use throws `IllegalArgumentException`. A first-match engine
+then evaluates conditions in priority order and stops at the first true one. An all-matches engine evaluates every
+condition before it fires any action. Either way, the output supplier is called only once a rule has matched, and a
+run in which no rule matches, or whose rule list is empty, returns `null`. A condition or action that fails fails the
+run: `run()` throws a `RuleExecutionException`, and no result is returned. See
+[Engines and runs](docs/engines-and-runs.md).
 
 ## 🧩 Core concepts
 
 ### Rules
 
-A `Rule` is an immutable object with six fields:
+A `Rule` is immutable. It has a `ruleName`, a `condition` and an `action`, and an optional `priority`, `description`
+and `language`. Create one with `Rule.builder()`, whose `build()` throws `IllegalStateException` when the name,
+condition or action is missing.
 
-| Field | Type | Required | Purpose |
-| --- | --- | :---: | --- |
-| `ruleName` | `String` | ✅ | Names the rule in error messages, exceptions and listener callbacks. Must not be blank, and must be unique within a rule list. |
-| `condition` | `String` | ✅ | An expression that must evaluate to a `boolean`. It can't assign or declare anything, but it can call methods; see [What rules can change](docs/writing-rules.md#-what-rules-can-change). |
-| `action` | `String` | ✅ | An expression that runs when the rule fires, usually changing `output`. |
-| `priority` | `Integer` | | Higher numbers fire first. Equal priorities keep their list order, and `null` sorts last. |
-| `description` | `String` | | Free text for your own use. The engine ignores it, but listeners receive it. |
-| `language` | `String` | | The expression language the condition and action are written in. `null` means the engine's default language, MVEL unless you give the engine others. See [Other expression languages](docs/languages/custom.md). |
+- **The name** must be unique within a rule list. It names the rule in errors, exceptions and listener callbacks.
+- **The condition** must evaluate to a `boolean`. It can't assign to a fact, but it can call methods; see
+  [What rules can change](docs/writing-rules.md#-what-rules-can-change).
+- **The action** runs when the rule fires, usually changing `output`.
+- **The priority** sets the order: higher first. See [Rule order](docs/engines-and-runs.md#-rule-order).
+- **The language:** a rule without one is written in the engine's default language, which is MVEL when MVEL is the
+  only language found. See [Other expression languages](docs/languages/custom.md).
 
-Create a rule with `Rule.builder()`. Its `build()` throws `IllegalStateException` when the name, condition or action
-is missing, naming the field. Copy a rule with a change with `toBuilder()`, such as
-`rule.toBuilder().priority(5).build()`. A rule can't change, so the engine keeps the rules you pass to
-`load()`, and listeners receive those same instances.
-
-To read rules from JSON with Jackson, register one mix-in for `Rule` and one for its builder:
-
-```java
-@JsonDeserialize(builder = Rule.RuleBuilder.class)
-abstract class RuleMixIn {
-}
-
-@JsonPOJOBuilder(withPrefix = "")
-abstract class RuleBuilderMixIn {
-}
-
-ObjectMapper mapper = JsonMapper.builder()
-        .addMixIn(Rule.class, RuleMixIn.class)
-        .addMixIn(Rule.RuleBuilder.class, RuleBuilderMixIn.class)
-        .build();
-List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
-```
-
-The code is the same for Jackson 2 and Jackson 3, which Spring Boot 4 uses; only the imports differ
-(`com.fasterxml.jackson` or `tools.jackson`). A rule without a name, condition or action fails while it's read.
+[Writing rules](docs/writing-rules.md) covers each field, and how to read rules from JSON.
 
 ### Facts
 
-Facts are the inputs. Put them in a `FactStore`; `FactMap` is the built-in implementation. Each fact's name is
-the variable that rules use:
-
-```java
-FactStore<Object> facts = new FactMap<>();
-facts.setValue("applicant", new Applicant("Ada", 780));   // rules can now use applicant.creditScore
-```
-
-A fact name can't be `output`, and must be a name the rules' languages can refer to: in MVEL, a valid Java
-identifier that isn't a keyword such as `empty` or `in`. Build a new store for each request. See the [Facts guide](docs/facts.md) for the details.
+Facts are the inputs. Put them in a `FactStore`, such as the built-in `FactMap`; each fact's name is the variable rules
+use. A fact name can't be `output`, and must be a name the rules' languages can refer to: in MVEL, a Java identifier
+that isn't a reserved word such as `empty` or `in`, or a class name MVEL resolves, such as `Math`. `run()` throws
+`IllegalArgumentException` for a name that breaks these rules. Build a new store for each request. See
+[Naming rules](docs/facts.md#-naming-rules).
 
 ### The output object
 
-- Your `Supplier` creates it, once per run that matches at least one rule. It must return a **new** object each
-  time, never a shared instance.
-- Actions see it as `output` and change it in place, for example with `output.approved = true` or
-  `output.put('discount', 10)`. An action can't replace it with `output = ...`, so the output type must be mutable.
-  In a language whose actions return values instead, the engine sets them with `put` on a `Map` output, or with the
-  output's public setters. Set them your own way with `.outputWriter(...)` on the builder, and tell languages the
-  output's type with `.outputType(...)`.
-- `run()` returns it, or `null` when no rule matched.
-- `runWithResult()` returns the same output plus the rules that fired and a checksum of the rules the run used, so a
-  decision can be audited without a listener. `engine.rules()` reports the loaded rules and the same checksum.
+The output supplier creates it once in a run, after a rule has matched, and must return a new object on every call.
+Actions see it as `output` and change it. `run()` returns it, or `null` exactly when no rule fired. `runWithResult()`
+also reports the rules that fired and a checksum of the rules the run used. See
+[The output object](docs/engines-and-runs.md#-the-output-object).
 
 ### Choosing an engine
 
-| Compared | First match | All matches |
+| Compared | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
 | --- | --- | --- |
-| **Create with** | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
-| **Conditions evaluated** | Until the first match; the rules below it aren't evaluated | All of them |
-| **Actions fired** | Only the highest-priority match | Every match, highest priority first |
-| **Output** | Shaped by exactly one rule | Shared by all matched actions, so a later, lower-priority action can overwrite an earlier one |
+| **Conditions evaluated** | Until the first match; the rules below it aren't evaluated | All of them, before any action runs |
+| **Actions fired** | Only the highest-priority match | Every match, highest priority first, on one output object |
 | **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation |
-| **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` |
-
-A **first-match** engine evaluates conditions in priority order and stops at the first match, so a broken
-lower-priority rule can't fail a run that's already decided. An **all-matches** engine **matches first, then fires**:
-every condition is evaluated before any action runs, and an action never causes a condition to be checked again. If a
-higher-priority action changes a fact, a lower-priority rule that already matched still fires.
 
 > [!WARNING]
 > An all-matches run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
 > output object and to any facts they modified, and `run()` throws a `RuleExecutionException` naming only the
-> rule that failed.
+> rule that failed. A failing condition changes nothing, because no action has run yet.
 
-## 📚 Guides
+The full comparison, including what happens when an action changes a fact, is in
+[First match or all matches](docs/engines-and-runs.md#-first-match-or-all-matches).
 
-| Guide | Covers |
-| --- | --- |
-| 📜 [Writing rules](docs/writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, and testing rules |
-| ⚡ [MVEL](docs/languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
-| 🧩 [Other expression languages](docs/languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
-| 📁 [Facts](docs/facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |
-| 🌱 [Spring Boot](docs/spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
-| 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
-| 🚨 [Error handling](docs/error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
-| ⏳ [Stopping a run](docs/stopping-runs.md) | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
-| 🟣 [Kotlin](docs/kotlin.md) | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
-| 🧵 [Thread safety](docs/thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
-| 📖 [Glossary](docs/glossary.md) | Short definitions of the terms the guides use, each linked to the page that explains it |
-| ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
+## 📚 Where next
+
+- **Write your first rules:** [Writing rules](docs/writing-rules.md), then [Facts](docs/facts.md).
+- **Take rules to production:** [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md)
+  and [Thread safety](docs/thread-safety.md).
+- **Use or write another expression language:** [Other expression languages](docs/languages/custom.md).
+- **Upgrade from 1.x:** [Migrating to 2.0](docs/migrating-to-2.md).
+
+Every guide is listed in the [documentation index](docs/README.md), and the API in the
+[Javadoc](https://brantunger.github.io/unruly-engine/latest/).
 
 ## 🔒 Security
 
 > [!CAUTION]
-> **Rules are code.** MVEL, the default language, gives a rule the same access to the JVM as your own Java code: it can start
+> **Rules are code.** A rule written in MVEL has the same access to the JVM as your own Java code: it can start
 > processes, read files, open sockets and use reflection. The engine has **no sandbox**, and a
 > [timeout](docs/stopping-runs.md#-what-a-timeout-doesnt-do) only stops a run between rules or when an expression
 > returns: MVEL rules can't be stopped inside an expression, so `while (true) {}` blocks the calling thread forever.
@@ -338,8 +360,9 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 <details>
 <summary><b>Why does <code>run()</code> return <code>null</code>?</b></summary>
 
-No rule matched, or the rule list is empty. The output supplier isn't even called in that case. Check for `null`,
-or add a lowest-priority catch-all rule with the condition `true`.
+No rule fired: no condition was true, or the rule list is empty. The output supplier isn't even called in that case.
+Check for `null`, or, on a first-match engine, add a lowest-priority catch-all rule with the condition `true`. See
+[What a run reports](docs/engines-and-runs.md#-what-a-run-reports).
 
 </details>
 
@@ -383,7 +406,8 @@ MVEL compares an enum to a string as `false`, with no error. Write `order.status
 
 Yes. Call `load()` again at any time, even while other threads are running. A run already in progress
 finishes with the old rules, and later runs use the new ones. If the new list fails to compile, the old rules stay
-in place. See [Thread safety](docs/thread-safety.md).
+in place. See [Reloading rules](docs/engines-and-runs.md#-reloading-rules) and
+[Thread safety](docs/thread-safety.md).
 
 </details>
 

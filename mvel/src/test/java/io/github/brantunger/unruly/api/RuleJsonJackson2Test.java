@@ -17,8 +17,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Reads rules with Jackson 2 through exactly the mix-ins the README, the {@link Rule} Javadoc and the migration guide
- * show. Keep them in step.
+ * Reads rules with Jackson 2 through exactly the mix-ins docs/writing-rules.md, the {@link Rule} Javadoc and the
+ * migration guide show. Keep them in step.
  */
 @DisplayName("reading rules from JSON with Jackson 2")
 class RuleJsonJackson2Test {
