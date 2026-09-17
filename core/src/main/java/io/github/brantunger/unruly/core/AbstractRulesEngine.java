@@ -850,14 +850,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Stops a run that was cancelled while a condition or action ran, once that expression has returned, so a run
      * past its deadline or interrupted never returns a result, even when the expression was its last one.
      *
-     * @param snapshot The listeners the rule's callbacks went to
-     * @param rule     The rule whose expression returned
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param snapshot    The listeners the rule's callbacks went to
+     * @param rule        The rule whose expression returned
+     * @param kind        Whether the condition or the action returned
+     * @param deadline    When the run must stop, or {@code null} if it has none
+     * @param wrongResult Why what the expression returned would have failed the rule, or {@code null} if it wouldn't.
+     *                    A stopped run keeps it as a suppressed exception, as it keeps what an expression threw.
      * @throws RuleExecutionException if the run was cancelled
      */
-    private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, Instant deadline) {
+    private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, ExpressionKind kind,
+                                 Instant deadline, String wrongResult) {
         RuleExecutionException stop = cancellation("during rule '" + rule.displayName() + "'", deadline, null);
         if (stop != null) {
+            if (wrongResult != null) {
+                stop.addSuppressed(new RuleExecutionException(wrongResult, null, rule.rule().getRuleName(), kind));
+            }
             throw closedWithStop(snapshot, rule, stop);
         }
     }
@@ -969,18 +976,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Error e) {
             throw expressionFailure(snapshot, rule, ExpressionKind.CONDITION, e);
         }
-        stopIfCancelled(snapshot, rule, facts.deadline());
-
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule.
-        if (evaluated == null) {
-            throw failure(snapshot, rule, ExpressionKind.CONDITION, "Condition for rule '" + rule.displayName()
-                    + "' evaluated to null. A condition expression must evaluate to a boolean.", null);
-        }
-
+        String wrongResult = evaluated instanceof Boolean ? null : "Condition for rule '" + rule.displayName()
+                + "' evaluated to " + (evaluated == null ? "null" : "a " + evaluated.getClass().getName())
+                + ". A condition expression must evaluate to a boolean.";
+        stopIfCancelled(snapshot, rule, ExpressionKind.CONDITION, facts.deadline(), wrongResult);
         if (!(evaluated instanceof Boolean result)) {
-            throw failure(snapshot, rule, ExpressionKind.CONDITION, "Condition for rule '" + rule.displayName() + "' evaluated to a "
-                    + evaluated.getClass().getName() + ". A condition expression must evaluate to a boolean.", null);
+            throw failure(snapshot, rule, ExpressionKind.CONDITION, wrongResult, null);
         }
 
         notifyAfter(snapshot, rule, "afterEvaluate",
@@ -1006,11 +1009,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Error e) {
             throw expressionFailure(snapshot, rule, ExpressionKind.ACTION, e);
         }
+        String wrongResult = result != null ? null : "Action for rule '" + rule.displayName()
+                + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).";
         // Before the properties it returned are set: a run past its deadline changes the output no further.
-        stopIfCancelled(snapshot, rule, facts.deadline());
+        stopIfCancelled(snapshot, rule, ExpressionKind.ACTION, facts.deadline(), wrongResult);
         if (result == null) {
-            throw failure(snapshot, rule, ExpressionKind.ACTION, "Action for rule '" + rule.displayName()
-                    + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).", null);
+            throw failure(snapshot, rule, ExpressionKind.ACTION, wrongResult, null);
         }
         for (Map.Entry<String, Object> property : result.properties().entrySet()) {
             setProperty(snapshot, rule, outputResult, property.getKey(), property.getValue());
