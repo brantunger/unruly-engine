@@ -48,7 +48,7 @@ class PackageDependencyTest {
     /**
      * The library packages each package's code may use. {@code api.exception} stands alone, and {@code api.language}
      * uses it for the kinds and issues of expressions, and {@code core} only to seal its contexts to the engine's
-     * records, so the SPI ships with the engine in
+     * records and to share how accessors are reached, so the SPI ships with the engine in
      * unruly-engine-core. {@code mvel} uses only the SPI packages, and {@code core} finds languages with ServiceLoader
      * rather than using {@code mvel}, so the MVEL language is its own artifact. {@code test}, the test kit, uses the
      * API and creates the engine's context records.
@@ -63,12 +63,14 @@ class PackageDependencyTest {
 
     /** Dependencies that only the listed files may have. */
     private static final Map<Dependency, List<String>> ONLY_FILES = Map.of(
-            // The builder creates the engines, and RunContext permits the engine's record.
-            new Dependency("api", "core"), List.of("api/LoggingRuleListener.java", "api/RulesEngineBuilder.java",
-                    "api/RunContext.java"),
-            // Each context interface permits the engine's record.
+            // The builder creates the engines, RunContext permits the engine's record, and the default writer reaches
+            // setters the way FactProperties reaches getters.
+            new Dependency("api", "core"), List.of("api/BeansAndMapsWriter.java", "api/LoggingRuleListener.java",
+                    "api/RulesEngineBuilder.java", "api/RunContext.java"),
+            // Each context interface permits the engine's record, and FactProperties shares how accessors are reached.
             new Dependency("api.language", "core"), List.of("api/language/ActionContext.java",
-                    "api/language/CompileContext.java", "api/language/EvaluationContext.java"),
+                    "api/language/CompileContext.java", "api/language/EvaluationContext.java",
+                    "api/language/FactProperties.java"),
             // The test kit creates the engine's context records for a language's unit tests.
             new Dependency("test", "core"), List.of("test/LanguageTestContexts.java"));
 
@@ -162,7 +164,7 @@ class PackageDependencyTest {
     }
 
     @Test
-    @DisplayName("api uses core only to build the engines, api.language to seal its contexts, and test to create them")
+    @DisplayName("api and api.language use core only where they must, and test only to create the context records")
     void singleFileDependencies() {
         ONLY_FILES.forEach((dependency, expected) -> {
             List<String> users = sourceFiles.stream()
