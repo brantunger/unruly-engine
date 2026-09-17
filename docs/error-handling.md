@@ -100,7 +100,7 @@ start a log line of its own:
 | Part of a message | What the engine does with it |
 | --- | --- |
 | A rule, fact or language name | Escaped, and shortened to 200 characters |
-| Text copied from an exception, such as a language's compile error or warning, or what the output supplier threw | Shortened to 1,000 characters, then escaped |
+| Text copied from an exception, such as a language's compile error or warning, or what the output supplier or a listener threw | Shortened to 1,000 characters, then escaped |
 | An exception in the chain with no message | The message also names the root cause's class, and its message unless already there: `... (caused by java.lang.RuntimeException: boom)` |
 | A `run()` a condition or action started, which failed | `a nested run() failed: ...`, and it isn't logged a second time |
 | A `RuleExecutionException` a language or your code throws itself | Logged like any other exception |
@@ -169,7 +169,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
 | The run is stopped when a condition or action returns or throws an exception | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
 | The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
-| A listener throws an exception, or an `Error` that isn't fatal | Nothing: the run goes on | Every other listener still gets that callback | WARN, with the stack trace |
+| A listener throws an exception, or an `Error` that isn't fatal | Nothing: the run goes on | Every other listener still gets that callback | WARN, with the message escaped and shortened; the stack trace at DEBUG |
 | A fatal error from a rule | The error itself | `onError`, then `onRunError`, with a `RuleExecutionException` that names the rule | ERROR |
 | A fatal error from `beforeRun`, a `before*` or an `after*` callback | The error itself | Every listener gets that callback first, then `onRunError` | ERROR, naming the listener's error |
 | A fatal error from `onError`, closing a failure that isn't fatal itself | The error itself; the reported exception keeps it in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | Only the failure's own line: ERROR, or WARN for a stop |

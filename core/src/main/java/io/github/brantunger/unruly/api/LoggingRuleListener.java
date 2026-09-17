@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 /**
  * An out-of-the-box {@link RuleListener} that logs lifecycle events via SLF4J at the DEBUG level.
@@ -55,11 +56,28 @@ public class LoggingRuleListener implements RuleListener {
         log.debug("Executed action for rule: {}", nameOf(rule));
     }
 
+    /**
+     * Logs a rule's failure as {@code Failed rule: <name> | Error: <message>}, or, when the run stopped during the rule
+     * because its thread was interrupted or it passed its deadline, as {@code Stopped rule: <name> | <message>}. A stop
+     * is recognised as the engine documents it: no rule name, and an {@link InterruptedException} or a
+     * {@link TimeoutException} as the cause.
+     */
     @Override
     public void onError(Rule rule, RuleExecutionException error) {
         // The engine's own messages arrive escaped, and escaping them again changes nothing; an engine of your own
         // may not have escaped its message, and its fact values are the ones most likely to come from request data.
         String message = error.getMessage();
-        log.debug("Failed rule: {} | Error: {}", nameOf(rule), message == null ? null : Failures.escape(message));
+        String escaped = message == null ? null : Failures.escape(message);
+        if (isStop(error)) {
+            log.debug("Stopped rule: {} | {}", nameOf(rule), escaped);
+        } else {
+            log.debug("Failed rule: {} | Error: {}", nameOf(rule), escaped);
+        }
+    }
+
+    private static boolean isStop(RuleExecutionException error) {
+        Throwable cause = error.getCause();
+        return error.getRuleName() == null
+                && (cause instanceof InterruptedException || cause instanceof TimeoutException);
     }
 }

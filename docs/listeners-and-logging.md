@@ -141,7 +141,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 | 🧾 **Every failure of a run** | `onRunError` reports what the run failed with, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. |
 | 🛑 **Runs that never start** | Misuse — `null` facts, running before `load()`, or on a closed engine — and a language that fails to create a session reach no callback. |
 | ⏱️ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that throws an `InterruptedException`, or an exception caused by one, doesn't hide the interrupt: the engine sets it again, and the next check, if a condition or action is still to come, finds it. |
-| 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN, with its stack trace, and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback; if it came from `beforeRun`, every listener gets `onRunError`. |
+| 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN with its class and message, escaped and shortened, its stack trace is logged at DEBUG, and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback; if it came from `beforeRun`, every listener gets `onRunError`. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError`, an `AssertionError` or a `LinkageError` — a missing or unreadable class, which means the rule is misconfigured rather than the JVM failing — is wrapped in the `RuleExecutionException`. A `VirtualMachineError` such as `OutOfMemoryError`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError`, and `onRunError` gets the same exception, naming the rule, before the error is rethrown unchanged from `run()`. |
 | 🔚 **A fatal error from `afterRun`** | Every listener gets `afterRun`, then the error leaves `run()`, although the run succeeded. No listener gets `onRunError`. |
 | 🆘 **A fatal error from `onRunError`** | Every listener gets `onRunError`, then that error leaves `run()` in place of the exception the run failed with. |
@@ -174,6 +174,8 @@ A first-match engine stops at the first match, so `standard-rate` is never evalu
 all-matches engine evaluates every condition first, so it would log both rules before firing either action. When a
 condition or action fails, the listener logs a line such as
 `Failed rule: prime-rate | Error: Failed to execute action for rule 'prime-rate': ...` in place of the closing line.
+When the run stops during a rule, because its thread was interrupted or it passed its deadline, the line reads
+`Stopped rule: prime-rate | run() passed its deadline of ...` instead.
 
 Rule names appear as the engine's error messages show them: line breaks and other control characters are escaped
 (`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own. The failure
@@ -193,11 +195,12 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 | `io.github.brantunger.unruly.engine` | `ERROR` | A fact `run()` rejects, or a fact name a language failed to check |
 | `io.github.brantunger.unruly.engine` | `ERROR` | An output supplier that fails, or a language that fails to create a session for a run |
 | `io.github.brantunger.unruly.engine` | `ERROR` | A listener that throws a fatal `Error` from a callback other than `onError`, such as `A listener threw java.lang.OutOfMemoryError in afterRun` |
-| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception, logged with its stack trace |
+| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception: `Listener threw exception in <callback>: <class>: <message>`, escaped and shortened to 1,000 characters (no `: <message>` when it has none) |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run stopped because its thread was interrupted or it passed its deadline, once when a nested run's stop reaches the run around it for the same interrupt or deadline |
 | `io.github.brantunger.unruly.engine` | `WARN` | A warning a language reports through `CompileContext.warn` while `load()` compiles |
 | `io.github.brantunger.unruly.engine` | `WARN` | A language failed to close a session or a compiler |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run waited five seconds for a compiled copy and made an extra one, once for each rule list |
+| `io.github.brantunger.unruly.engine` | `DEBUG` | The stack trace of an exception a listener threw, which prints its message unescaped |
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
 
 Each failure is logged just before its exception is thrown. Misuse isn't logged: a `null` argument, `run()` before
@@ -210,8 +213,9 @@ Each failure is logged just before its exception is thrown. Misuse isn't logged:
 > [!CAUTION]
 > Failure messages can contain fact values. The JDK, MVEL and your own code put values into exception messages, such
 > as `For input string: "123-45-6789"` or `uncomparable values <<123-45-6789>> and <<5>>`, and the engine copies the
-> message into its ERROR log line and into `LoggingRuleListener`'s DEBUG line. If your facts hold sensitive data, turn
-> off the `io.github.brantunger.unruly` logger and log a redacted form of the failure yourself.
+> message into its ERROR and WARN lines, including a listener's exception, and into DEBUG lines: `LoggingRuleListener`'s,
+> and a listener's stack trace, unescaped. If your facts hold sensitive data, turn off the `io.github.brantunger.unruly`
+> logger and log a redacted form of the failure yourself.
 
 The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. In 1.x it
 was `io.github.brantunger.unruly.core.AbstractRulesEngine`. The parent logger **`io.github.brantunger.unruly`** covers
