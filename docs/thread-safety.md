@@ -22,7 +22,7 @@ An engine is designed to be configured once and then shared by every thread in y
 | `RulesEngineBuilder` methods and `build()` | ❌ | During setup, on one thread. The engine a builder builds is thread-safe, and its imports, languages and listeners can't change afterwards. |
 | `load()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish wins. |
 | `run()` | ✅ | From any number of threads, once `load()` has completed. |
-| `close()` | ✅ | Once the engine is no longer needed. Runs in progress finish first. |
+| `close()` | ✅ | Once the engine is no longer needed. It returns at once, and runs already going finish with their rules. |
 
 **Stopping a run:** interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression returns** —
 before each condition and each action, and when each one returns, so a run whose last condition or action returns
@@ -54,8 +54,7 @@ sequenceDiagram
 - A run already in progress finishes with the rules it started with.
 - Runs that start after the swap use the new rules.
 - If the new list fails to compile, nothing is swapped and the old rules stay in place.
-- A run that starts during the swap may check its fact names with the languages the other list's rules use. Only
-  that run is affected, and only in whether it accepts a name one of the lists can't use.
+- A run checks its fact names with the languages of the rules it runs, whichever list that is.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
   affect another rule or a later reload.
 
@@ -133,7 +132,8 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
   `maxCopies(...)` sized for how many waiting runs you want at once.
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
   `InterruptedException`, and the thread's interrupt status stays set. A run whose thread was **already** interrupted
-  doesn't wait: it takes a free copy and then stops at its first rule, exactly as it does without a limit.
+  doesn't wait: it takes a free copy and then stops at its first rule, exactly as it does without a limit. When no
+  copy is free, `run()` fails at once, with the same exception.
 - The limit belongs to the engine, not to one rule list: while `load()` swaps in a new list, runs still using the old
   list count against the same limit as runs on the new one, so a reload never raises it. Right after a reload, a run
   on the new rules may wait for runs on the old rules to finish, when together they already hold every copy.

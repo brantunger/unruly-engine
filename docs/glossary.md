@@ -183,7 +183,8 @@ Which matching rules fire, fixed when the engine is built: `firstMatch` fires th
 ### Missing fact
 
 A name that isn't in the [fact store](#fact-store) at all, unlike a [null reference](#null-reference). In MVEL,
-referring to it fails the rule with `unresolvable property or identifier`, so test for it with `isdef`; another language
+referring to it fails the rule with `unresolvable property or identifier`, or `unable to resolve variable` when the
+run's [compiled copy](#compiled-copy) already ran the rule with it, so test for it with `isdef`; another language
 decides for itself. See [Null and missing facts](facts.md#-null-and-missing-facts).
 
 ### Nested run

@@ -29,14 +29,15 @@ and fixed, and credited in the release notes if you'd like.
 ## Threat model
 
 Rules are **code**, not data. MVEL, the default expression language, gives a rule's condition and action the same
-access to the JVM as your own Java code, and the engine deliberately provides no sandbox and no timeout. What a rule
-in another expression language can reach depends on that language. The README's
+access to the JVM as your own Java code, and the engine deliberately provides no sandbox. A run's timeout stops it
+only between rules or when an expression returns, so it can't stop an MVEL rule that never returns. What a rule in
+another expression language can reach depends on that language. The README's
 [Security](README.md#-security) section explains how to deploy it safely.
 
 ### In scope
 
 - A way for the **value of a fact** to be executed as code, or to change which rule logic runs.
-- A bypass of a documented guarantee, such as a condition assignment that `setRuleList()` should reject, or an
+- A bypass of a documented guarantee, such as a condition assignment that `load()` should reject, or an
   action's local variables leaking into another rule, where that leads to a security impact.
 - A vulnerability in a dependency (MVEL, SLF4J) that is reachable through the engine's API.
 
@@ -44,7 +45,7 @@ in another expression language can reach depends on that language. The README's
 
 - Anything a rule can do because rules run with full JVM access: running processes, reading files, reflection,
   `System.exit()`, and so on.
-- What an expression language you register with `registerLanguage()` lets its rules do. Report that to the
+- What an expression language you add with the builder's `language(...)` lets its rules do. Report that to the
   language's maintainers.
 - Denial of service caused by a rule, such as an infinite loop or excessive memory use.
 - Applications that build rules from untrusted input. This is documented as unsafe.

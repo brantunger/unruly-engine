@@ -25,12 +25,12 @@ Every method has an empty default implementation, so override only the ones you 
 | --- | --- | --- |
 | `beforeRun(run)` | When a run starts, before any condition | The `RunContext`: the run's number, its parent run, the match policy, the checksum of the rules it uses, and its facts |
 | `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, and the rules' checksum |
-| `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus the exception `run()` is about to throw, **including failures that belong to no rule** |
+| `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus what the run failed with, **including failures that belong to no rule**. See below the diagram |
 | `beforeEvaluate(rule, facts)` | Before a condition is evaluated | The rule, and a read-only view of the fact values |
 | `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched |
 | `beforeExecute(rule, output)` | Before an action runs | The rule and the output object |
 | `afterExecute(rule, output)` | After an action completes | The rule and the output object |
-| `onError(rule, error)` | Instead of `afterEvaluate` or `afterExecute`, when the condition or action fails | The rule and the `RuleExecutionException` that `run()` is about to throw |
+| `onError(rule, error)` | Instead of `afterEvaluate` or `afterExecute`, when the condition or action fails | The rule and the `RuleExecutionException` the run fails with |
 
 ```mermaid
 sequenceDiagram
@@ -38,7 +38,7 @@ sequenceDiagram
     participant E as RulesEngine
     participant L as RuleListener
     E->>L: beforeRun(run)
-    Note over E,L: Phase 1: evaluate every rule's condition
+    Note over E,L: Phase 1: evaluate conditions in order (first-match stops at the first match)
     E->>L: beforeEvaluate(rule, facts)
     alt condition evaluates to a boolean
         E->>L: afterEvaluate(rule, facts, matched)
@@ -64,15 +64,24 @@ sequenceDiagram
 A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
 failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, an
 interrupt while the run waits for a compiled copy of the rules, or a run stopped because its thread was interrupted
-or it passed its deadline between rules — reaches `onRunError` only, because no rule was involved. The rule a stopped run would
-have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`, so there is no
-open callback for `onError` to close. A run stopped while a condition or action was running is different: that rule's
-callback is closed with `onError`, whose exception has no rule name and an `InterruptedException` or
-`TimeoutException` cause, so don't count it as a rule failure. A run started from inside an action has the run around it as its `parent()`, so nested runs stay apart
-without a `ThreadLocal`. A context equals only itself, so it can key a map from `beforeRun` to `afterRun` or
-`onRunError`, even when facts change during the run or another engine runs with equal facts; its `toString()` names
-the run but never the facts. `RunContext` is sealed to the engine, so test a listener by running an engine rather than
-by constructing a context.
+or it passed its deadline between rules — reaches `onRunError` only, because no rule was involved. The rule a stopped
+run would have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`, so
+there is no open callback for `onError` to close.
+
+A run stopped while a condition or action was running is different: that rule's callback is closed with `onError`,
+whose exception has no rule name and an `InterruptedException` or `TimeoutException` cause, so don't count it as a
+rule failure. [What happens on each failure](error-handling.md#-what-happens-on-each-failure) lists every case.
+
+`onRunError`'s `error` is a `RuleExecutionException`, or an `IllegalArgumentException` for a fact the engine or a
+language rejects. When `run()` rethrows a fatal `Error`, such as an `OutOfMemoryError`, `error` is a
+`RuleExecutionException` that carries it, not the error `run()` throws.
+
+A run of the same engine started on the same thread, from inside an action or a listener, has the run around it as
+its `parent()`, so nested runs stay apart without a `ThreadLocal`. A run of another engine started there has no
+`parent()`. A context equals only itself, so it can key a map from `beforeRun` to `afterRun` or `onRunError`, even when
+facts change during the run or another engine runs with equal facts; its `toString()` names the run but never the
+facts. `RunContext` is sealed to the engine, so test a listener by running an engine rather than by constructing a
+context.
 
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
@@ -128,17 +137,22 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 | Guarantee | Detail |
 | --- | --- |
 | 🔗 **Paired callbacks** | Every `beforeRun`, `beforeEvaluate` and `beforeExecute` is followed by exactly one matching `after*`, `onError` or `onRunError`. |
-| 🧾 **Every failure of a run** | `onRunError` reports the exception `run()` throws, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. Only misuse — running before `load()`, or on a closed engine — reaches no callback. |
+| 🧾 **Every failure of a run** | `onRunError` reports what the run failed with, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. |
+| 🛑 **Runs that never start** | Misuse — `null` facts, running before `load()`, or on a closed engine — and a language that fails to create a session reach no callback. |
 | ⏱️ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that swallows an interrupt doesn't keep the run going — the next check finds it. |
-| 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback; if it came from `beforeRun`, every listener gets `onRunError`. |
+| 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN, with its stack trace, and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback; if it came from `beforeRun`, every listener gets `onRunError`. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError`, an `AssertionError` or a `LinkageError` — a missing or unreadable class, which means the rule is misconfigured rather than the JVM failing — is wrapped in the `RuleExecutionException`. A `VirtualMachineError` such as `OutOfMemoryError`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError`, and `onRunError` gets the same exception, naming the rule, before the error is rethrown unchanged from `run()`. |
+| 🔚 **A fatal error from `afterRun`** | Every listener gets `afterRun`, then the error leaves `run()`, although the run succeeded. No listener gets `onRunError`. |
+| 🆘 **A fatal error from `onRunError`** | Every listener gets `onRunError`, then that error leaves `run()` in place of the exception the run failed with. |
+| 📋 **Registration order** | Every callback goes to the listeners in the order they were added, and each one gets it even when an earlier one threw. |
 | 📄 **The rules you loaded** | A `Rule` is immutable, so each callback receives the rule you passed to `load()`: the same instance every time. |
 | 🔏 **Read-only facts** | The `facts` map holds fact values, not the `FactStore`. Writing to it throws `UnsupportedOperationException`. |
 | 🧵 **Concurrency** | An engine shared across threads calls the same listener from every thread, possibly at the same time. **Listeners must be thread-safe.** |
 
 ## 🪵 LoggingRuleListener
 
-A ready-made listener that logs every lifecycle event at **DEBUG** level:
+A ready-made listener that logs each rule's callbacks at **DEBUG** level: `beforeEvaluate`, `afterEvaluate`,
+`beforeExecute`, `afterExecute` and `onError`. It doesn't log the run callbacks.
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -173,9 +187,20 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 | Logger | Level | Messages |
 | --- | --- | --- |
-| `io.github.brantunger.unruly.engine` | `ERROR` | Every rule list `load()` rejects, fact `run()` rejects, rule failure and output-supplier failure, logged just before the exception is thrown. That includes a fatal `Error` from compiling or running a rule, which is logged and then rethrown. Misuse isn't logged: a `null` argument, `run()` before `load()`, or an invalid builder setting, such as an import that is neither a class nor a package name. |
-| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception |
-| `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Lifecycle events, if you added the listener |
+| `io.github.brantunger.unruly.engine` | `ERROR` | A rule list `load()` rejects, including a fatal `Error` from compiling, which is logged and then rethrown |
+| `io.github.brantunger.unruly.engine` | `ERROR` | A rule that fails at run time, including with a fatal `Error`, which is logged and then rethrown |
+| `io.github.brantunger.unruly.engine` | `ERROR` | A fact `run()` rejects, or a fact name a language failed to check |
+| `io.github.brantunger.unruly.engine` | `ERROR` | An output supplier that fails, or a language that fails to create a session for a run |
+| `io.github.brantunger.unruly.engine` | `ERROR` | A listener that throws a fatal `Error` from a callback other than `onError`, such as `A listener threw java.lang.OutOfMemoryError in afterRun` |
+| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception, logged with its stack trace |
+| `io.github.brantunger.unruly.engine` | `WARN` | A run stopped because its thread was interrupted or it passed its deadline |
+| `io.github.brantunger.unruly.engine` | `WARN` | A warning a language reports through `CompileContext.warn` while `load()` compiles |
+| `io.github.brantunger.unruly.engine` | `WARN` | A language failed to close a session or a compiler |
+| `io.github.brantunger.unruly.engine` | `WARN` | A run waited five seconds for a compiled copy and made an extra one, once for each rule list |
+| `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
+
+Each failure is logged just before its exception is thrown. Misuse isn't logged: a `null` argument, `run()` before
+`load()`, or an invalid builder setting, such as an import that is neither a class nor a package name.
 
 > [!NOTE]
 > The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice.
