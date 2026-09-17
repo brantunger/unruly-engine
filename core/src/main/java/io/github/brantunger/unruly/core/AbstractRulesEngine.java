@@ -1066,10 +1066,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                               Consumer<RuleListener> call) {
         Error fatal = notifyListeners(snapshot, callback, call);
         if (fatal != null) {
-            // Already on its way out of run(), so a second fatal error from onError can't replace it.
             RuleExecutionException failure = new RuleExecutionException(listenerFatalMessage(fatal, callback, rule),
                     fatal, rule.rule().getRuleName());
-            reportFailure(snapshot, rule, failure, true);
+            // Already on its way out of run(), so a second fatal error from onError can't replace it, but it's kept.
+            keepSecondFatal(failure, reportFailure(snapshot, rule, failure, true));
             fatalFailure.set(failure);
             throw fatal;
         }
@@ -1104,24 +1104,75 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The first fatal {@link Error} a listener threw, or {@code null}
      */
     private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+        return notifyListeners(snapshot, callback, call, null);
+    }
+
+    /**
+     * Calls every listener, ignoring what the run already reports: a listener that rethrows the reported exception, or
+     * the fatal {@link Error} in it, has added nothing, so it doesn't count as the first fatal error, whichever
+     * listener rethrows it. What a listener wrapped it in is still logged, because its own message says something.
+     *
+     * @param reported The exception listeners were told about, whose fatal {@link Error} the run is already
+     *                 reporting, or {@code null}
+     * @return The first fatal {@link Error} a listener threw that the run isn't reporting, or {@code null}
+     */
+    // Rethrowing the very same instance is what makes it nothing new; an equal one would still be news.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
+                                  RuleExecutionException reported) {
+        Error reportedFatal = reported == null ? null : Failures.fatalError(reported);
         Error fatal = null;
         for (RuleListener listener : snapshot) {
             try {
                 call.accept(listener);
             } catch (Exception | Error e) {
                 Failures.keepInterruptStatus(e);
-                Error found = fatal == null ? Failures.fatalError(e) : null;
-                if (found != null) {
+                Error found = Failures.fatalError(e);
+                if (found != null && found == reportedFatal) {
+                    if (e != reported && e != reportedFatal) {
+                        logListenerException(callback, e);
+                    }
+                } else if (found != null && fatal == null) {
                     fatal = found;
                 } else {
-                    // Escaped, like every message the engine logs: a listener's message can quote request data. The
-                    // stack trace, which prints the message as it is, goes to DEBUG for whoever debugs the listener.
-                    log.warn("Listener threw exception in {}: {}", callback, Failures.describeWithClass(e));
-                    log.debug("Listener threw exception in {}", callback, e);
+                    // A non-fatal exception, or a second fatal error in this callback, which the caller can't rethrow.
+                    logListenerException(callback, e);
                 }
             }
         }
         return fatal;
+    }
+
+    /**
+     * Logs what a listener threw, where it isn't the error {@code run()} goes on to throw.
+     *
+     * @param callback The callback the listener threw from
+     * @param thrown   What it threw
+     */
+    private static void logListenerException(String callback, Throwable thrown) {
+        // Escaped, like every message the engine logs: a listener's message can quote request data. The stack trace,
+        // which prints the message as it is, goes to DEBUG for whoever debugs the listener.
+        log.warn("Listener threw exception in {}: {}", callback, Failures.describeWithClass(thrown));
+        log.debug("Listener threw exception in {}", callback, thrown);
+    }
+
+    /**
+     * Keeps a fatal {@link Error} a listener's {@link RuleListener#onError} threw while it closed a failure that is
+     * fatal itself. The failure's own error is still the one {@code run()} rethrows, so this one is logged like a
+     * second fatal error in one callback, and added to the exception listeners were told about, where
+     * {@link RuleListener#onRunError} finds it. The rethrown error isn't changed.
+     *
+     * @param reported     The exception every listener's {@code onError} got
+     * @param fromListener The fatal error a listener threw from {@code onError}, or {@code null}
+     */
+    private static void keepSecondFatal(RuleExecutionException reported, Error fromListener) {
+        if (fromListener != null) {
+            reported.addSuppressed(fromListener);
+            // Says which one onRunError can see: the loop has already logged any later fatal error.
+            log.warn("Listener threw exception in onError, kept on the failure: {}",
+                    Failures.describeWithClass(fromListener));
+            log.debug("Listener threw exception in onError", fromListener);
+        }
     }
 
     /**
@@ -1143,6 +1194,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // Not among the causes, so onRunError can still find it on the failure.
             error.addSuppressed(listenerFatal);
             fatal = listenerFatal;
+        } else if (listenerFatal != null) {
+            keepSecondFatal(error, listenerFatal);
         }
         if (fatal != null) {
             fatalFailure.set(error);
@@ -1161,7 +1214,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (logged) {
             log.error(error.getMessage());
         }
-        return notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), error));
+        return notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), error), error);
     }
 
     /**
