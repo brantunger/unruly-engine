@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.core.Accessors;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Array;
@@ -8,13 +9,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.RecordComponent;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Deque;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -310,7 +308,7 @@ public final class FactProperties {
         Map<String, Method> accessors = new LinkedHashMap<>();
         if (type.isRecord()) {
             for (RecordComponent component : type.getRecordComponents()) {
-                accessors.put(component.getName(), callable(type, component.getAccessor()));
+                accessors.put(component.getName(), Accessors.callable(type, component.getAccessor()));
             }
         }
         // Sorted, because Class.getMethods() promises no order, and a conversion whose keys moved between runs of
@@ -332,101 +330,8 @@ public final class FactProperties {
                 getters.putIfAbsent(property, method);
             }
         }
-        getters.forEach((property, method) -> accessors.putIfAbsent(property, callable(type, method)));
+        getters.forEach((property, method) -> accessors.putIfAbsent(property, Accessors.callable(type, method)));
         return Collections.unmodifiableMap(accessors);
-    }
-
-    /**
-     * Returns an accessor that can be called from here. A public method declared on a class that isn't itself public
-     * can't be invoked from another package, so the same method is looked up on a public type above <b>the fact's
-     * class</b>: the accessor may be declared on a base class that is no more public than the fact's own, while the
-     * interface that makes it public is implemented by the fact's class alone.
-     *
-     * <p>
-     * When no public supertype declares it either, the method itself is made accessible where the module system
-     * allows it: {@link Method#trySetAccessible()} succeeds only when the declaring class's package is open to this
-     * module. It widens only the class's access, never the member's, because every method found here is public.
-     * </p>
-     *
-     * @param type   The fact's class, which the accessor was found on
-     * @param method The method found there
-     * @return The same method, or the one a public supertype declares
-     */
-    private static Method callable(Class<?> type, Method method) {
-        if (reachable(method.getDeclaringClass())) {
-            return method;
-        }
-        for (Class<?> supertype : supertypesOf(type)) {
-            if (!reachable(supertype)) {
-                continue;
-            }
-            try {
-                Method declared = supertype.getMethod(method.getName());
-                // A reachable type can inherit the method from one that isn't, and invoking it would fail the same
-                // way, so what matters is where the method we found is declared. An interface may also declare a
-                // static method of the same name, which isn't the fact's accessor at all: invoking it would ignore
-                // the fact and return something else.
-                if (reachable(declared.getDeclaringClass()) && !Modifier.isStatic(declared.getModifiers())) {
-                    return declared;
-                }
-            } catch (NoSuchMethodException e) {
-                continue;
-            }
-        }
-        // Nothing public declares it, so call it directly where the application lets this module reflect into its
-        // package, which is always the case on the class path. The result isn't needed: where access is refused, the
-        // method stays here so that reading it reports why, rather than claiming the fact has no such property.
-        // Access is a flag on this Method object, which this class caches and never hands out.
-        method.trySetAccessible();
-        return method;
-    }
-
-    /**
-     * Whether a method declared on this type can be invoked from here. Being public isn't enough: a public class in
-     * a package its module doesn't export isn't reflectively reachable either, which is how {@code TimeZone}'s own
-     * {@code sun.util.calendar.ZoneInfo} behaves, and how an application's internal package behaves on the module
-     * path. Both are read through a type that is reachable, such as {@code java.util.TimeZone} itself.
-     *
-     * <p>
-     * A package a module {@code opens} to this one counts as exported to it, so a public class there is reachable
-     * too. A class that isn't public never is, whatever its package; {@link #callable} reaches its accessors
-     * directly only where the package is open to this module.
-     * </p>
-     *
-     * @param type The type declaring the accessor
-     * @return {@code true} if this class can invoke its methods
-     */
-    private static boolean reachable(Class<?> type) {
-        return Modifier.isPublic(type.getModifiers())
-                && type.getModule().isExported(type.getPackageName(), FactProperties.class.getModule());
-    }
-
-    /**
-     * Every type above {@code type}, nearest first: its interfaces, the interfaces those extend, its superclasses,
-     * and their interfaces. Walking the whole graph is what finds the public interface behind one that isn't.
-     *
-     * @param type The class to walk up from
-     * @return Its supertypes, each once
-     */
-    private static List<Class<?>> supertypesOf(Class<?> type) {
-        List<Class<?>> supertypes = new ArrayList<>();
-        Set<Class<?>> seen = new HashSet<>();
-        Deque<Class<?>> queue = new ArrayDeque<>();
-        queue.add(type);
-        while (!queue.isEmpty()) {
-            Class<?> next = queue.remove();
-            if (!seen.add(next)) {
-                continue;
-            }
-            if (next != type) {
-                supertypes.add(next);
-            }
-            queue.addAll(List.of(next.getInterfaces()));
-            if (next.getSuperclass() != null) {
-                queue.add(next.getSuperclass());
-            }
-        }
-        return supertypes;
     }
 
     /** The property a getter reads, or {@code null} if the method isn't one. */

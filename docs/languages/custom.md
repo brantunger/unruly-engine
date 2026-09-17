@@ -135,7 +135,9 @@ public final class MyLanguage implements ExpressionLanguage {
   whose expressions compute values without side effects, such as CEL or JsonLogic, returns
   `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. The engine sets each property in order
   with its `OutputWriter`, by default `put` on a `Map` output or the output's public setter, such as
-  `setInterestRate`, whose parameter must accept the value as it is. The application can set its own writer with
+  `setInterestRate`, whose parameter must accept the value as it is. The setter is reached the same way
+  `FactProperties` reaches a getter, so an output class that isn't public works through a public interface, or
+  directly where its package is open to the engine. The application can set its own writer with
   `.outputWriter(...)`, so don't assume how a property is stored. A property the writer can't set, or a `null` result,
   fails the rule with a
   `RuleExecutionException`. In an all-matches run, a later rule's properties overwrite an earlier one's. In

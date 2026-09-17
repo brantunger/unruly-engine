@@ -36,6 +36,13 @@ public interface OutputWriter<O> {
      * {@code interestRate}. Values aren't converted, so a setter taking a {@code double} doesn't accept an
      * {@link Integer}. An output without such a setter fails with {@link IllegalArgumentException}.
      *
+     * <p>
+     * The setter is reached the way {@link io.github.brantunger.unruly.api.language.FactProperties} reaches a getter:
+     * through a public, exported type that declares it, such as an interface the output class implements, or directly
+     * where the class's package is open to {@code io.github.brantunger.unruly.core}, which every package on the class
+     * path is. A setter it can't reach fails with {@link IllegalStateException}, saying what to export or open.
+     * </p>
+     *
      * @param <O> The type of the output objects
      * @return The writer
      */
