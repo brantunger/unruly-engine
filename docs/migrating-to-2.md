@@ -406,6 +406,7 @@ Three things follow:
 **Not inside an expression.** An expression that is already running isn't stopped; the run stops when it returns. MVEL has no hook inside one, so a rule
 that loops for ever still blocks the thread, with or without a timeout. A language that can stop part-way is given
 the run's deadline; see [Other expression languages](languages/custom.md#-stopping-a-run).
+[Stopping a run](stopping-runs.md) describes how stopping works in 2.0.
 
 **Who is affected:** anyone who runs the engine on a pool whose threads get interrupted, anyone who implements
 `RulesEngine`, and any expression language, which now compiles against two new methods it doesn't have to use.

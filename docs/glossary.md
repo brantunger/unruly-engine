@@ -93,7 +93,7 @@ loads shares it and a reload never raises it. See [Limiting the copies](thread-s
 
 The instant a run must stop, taken from its [timeout](#timeout) when `run()` is called. A [nested run](#nested-run)
 stops at whichever comes first, its own deadline or the outer run's. See
-[Stopping a run](error-handling.md#-stopping-a-run).
+[Nested runs](stopping-runs.md#-nested-runs).
 
 ### Declared fact
 
@@ -191,7 +191,8 @@ decides for itself. See [Null and missing facts](facts.md#-null-and-missing-fact
 
 A run started on the same thread from inside another run, such as from an action or a listener, on any engine. It never
 waits for a compiled copy, and it stops at the outer run's deadline if that comes first. On the same engine,
-`RunContext.parent()` names the outer run. See [Runs that don't wait](thread-safety.md#runs-that-dont-wait).
+`RunContext.parent()` names the outer run. See [Nested runs](stopping-runs.md#-nested-runs) and
+[Runs that don't wait](thread-safety.md#runs-that-dont-wait).
 
 ### Null reference
 
@@ -255,7 +256,7 @@ The `RunContext` that identifies one run to listeners: `runId()`, `parent()`, `m
 
 A `RunOptions` passed to `runWithResult(facts, options)` for one run. Today it holds only a timeout, from
 `RunOptions.withTimeoutOf(duration)`, that replaces the engine's; `RunOptions.defaults()` changes nothing. See
-[Stopping a run](error-handling.md#-stopping-a-run).
+[Stopping a run](stopping-runs.md#-quick-start).
 
 ### Run result
 
@@ -273,11 +274,11 @@ set of sessions. See [Thread safety](languages/custom.md#-thread-safety).
 
 A run ended because its thread was interrupted or it passed its [deadline](#deadline). Unlike a rule failure, it throws
 a `RuleExecutionException` whose `getRuleName()` is `null`, with an `InterruptedException` or `TimeoutException` cause,
-and it's logged at WARN rather than ERROR. See [Stopping a run](error-handling.md#-stopping-a-run).
+and it's logged at WARN rather than ERROR. See [What stops a run](stopping-runs.md#-what-stops-a-run).
 
 ### Timeout
 
 How long a run may take: `runTimeout(duration)` on the builder, or `RunOptions.withTimeoutOf(duration)` for one run. The
 engine never interrupts the thread: it checks before and after each condition and action, and while a run waits for a
 copy, so an expression that is already running isn't stopped unless its language checks `isCancelled()`. See
-[Stopping a run](error-handling.md#-stopping-a-run).
+[What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).

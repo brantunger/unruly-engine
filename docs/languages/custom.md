@@ -202,7 +202,7 @@ public final class MyLanguage implements ExpressionLanguage {
 
 ## ⏳ Stopping a run
 
-A run can be interrupted, or given a [timeout](../error-handling.md#-stopping-a-run). A run your language starts
+A run can be interrupted, or given a [timeout](../stopping-runs.md). A run your language starts
 from inside an expression, on the same thread, stops no later than the run around it. The engine checks between
 rules, so what your language can do decides whether a rule that is already running can be stopped:
 
@@ -234,6 +234,12 @@ public CompiledAction compileAction(Expression expression) {
   is still that rule's failure.
 - `deadline()` is an `Instant`, or `null` when the run has no timeout. Use it to give a call of your own a timeout.
 - Neither is required. A language that evaluates an expression and returns needn't check anything.
+
+A runtime that clears the thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does before it
+throws `JexlException.Cancel`, hides the caller's interrupt from the engine, which sees an interrupt only in that
+status or as an `InterruptedException` in the cause chain of what an expression throws. Unless the deadline has passed
+too, a throw is then reported as that rule's failure, logged at ERROR, and a return lets the run go on. Call
+`Thread.currentThread().interrupt()` before you throw or return, or throw with an `InterruptedException` as the cause.
 
 ## 🧵 Thread safety
 

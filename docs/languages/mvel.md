@@ -171,6 +171,6 @@ See [Limiting the copies](../thread-safety.md#limiting-the-copies).
 ## 🔒 Security
 
 An MVEL rule has the same access to the JVM as your own Java code: it can start processes, read files, open sockets
-and use reflection. The engine has no sandbox. A [timeout](../error-handling.md#-stopping-a-run) stops a run only
-between rules or when an expression returns: MVEL can't be stopped inside an expression, so `while (true) {}` blocks
-the thread for ever. See [Security](../../README.md#-security).
+and use reflection. The engine has no sandbox. A [timeout](../stopping-runs.md#-what-a-timeout-doesnt-do) stops a
+run only between rules or when an expression returns: MVEL can't be stopped inside an expression, so
+`while (true) {}` blocks the thread for ever. See [Security](../../README.md#-security).
