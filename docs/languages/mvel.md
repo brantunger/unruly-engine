@@ -160,7 +160,9 @@ processors) makes that less likely, but doesn't prevent it:
 
 So on JDK 21 to 23:
 
-- use JDK 24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491);
+- use JDK 24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491). A
+  virtual thread still keeps its carrier while the JVM looks up a class, which MVEL does whenever it compiles an
+  expression, including each time a run makes a new compiled copy;
 - otherwise run MVEL rules on platform threads, or keep the copies of all your engines together below
   `jdk.virtualThreadScheduler.parallelism`, which is the number of processors unless you set it.
 

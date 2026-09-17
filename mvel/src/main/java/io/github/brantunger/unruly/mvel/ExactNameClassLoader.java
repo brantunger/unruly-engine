@@ -11,8 +11,20 @@ package io.github.brantunger.unruly.mvel;
  * doesn't catch it, so the rule would fail to compile. Reported as a {@link ClassNotFoundException}, it tells MVEL
  * that {@code applicant} isn't a class, so it reads it as the fact. Any other linkage error is passed on unchanged.
  * </p>
+ *
+ * <p>
+ * It's registered as parallel-capable. Otherwise the JVM would hold this loader's lock through every class lookup made
+ * with it, so the threads compiling the rule list's expressions would look up even different names one at a time,
+ * each waiting virtual thread pinned to its carrier. The application's class loader still decides what waits: the
+ * JDK's own loaders serialize lookups of the same name, a loader that isn't parallel-capable serializes every lookup,
+ * and a virtual thread stays on its carrier while the JVM loads a class.
+ * </p>
  */
 final class ExactNameClassLoader extends ClassLoader {
+
+    static {
+        registerAsParallelCapable();
+    }
 
     /**
      * Creates a class loader that asks {@code parent} for every class.
