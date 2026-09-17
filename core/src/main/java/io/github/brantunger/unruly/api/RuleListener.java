@@ -14,6 +14,10 @@ import java.util.Map;
  * {@code run()} once every listener has received the same callback, also when it is the cause of an exception the
  * listener throws. If it came from a {@code before*} callback, the condition
  * or action doesn't run, and every listener first gets {@link #onError} to close that callback.
+ * When {@link #onError} closes a failure that is fatal itself, whether the rule or a {@code before*} callback threw
+ * that error, and a listener throws another {@link VirtualMachineError} there, the failure's own error is still the
+ * one {@code run()} throws: the first such error, other than that failure's own, is suppressed on the exception
+ * {@link #onRunError} gets, and any later one is only logged.
  *
  * <p>
  * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every
@@ -69,8 +73,11 @@ public interface RuleListener {
      * <p>
      * A failure inside a rule reaches that rule's {@link #onError} first, then this callback. {@code error} is what
      * {@code run()} throws; when a fatal {@link Error} is rethrown instead, {@code error} is a
-     * {@link RuleExecutionException} that carries it, as a cause or, when a listener's {@link #onError} threw it, as a
-     * suppressed exception. When the error came while a rule's callback was open, from the rule, a listener's
+     * {@link RuleExecutionException} that carries it: as a cause, unless a listener's {@link #onError} threw it and
+     * there is no fatal cause, in which case as a suppressed exception.
+     * The first fatal error a listener's {@link #onError} throws while closing a failure that is fatal itself, other
+     * than that failure's own error, is suppressed too, but isn't the one {@code run()} rethrows; any later one is
+     * only logged. When the error came while a rule's callback was open, from the rule, a listener's
      * {@code before*} callback or a listener's {@link #onError}, that is the exception {@link #onError} got, which
      * names the rule unless the run was stopped; for one from anywhere else, such as a listener's {@link #beforeRun},
      * {@link #afterEvaluate} or {@link #afterExecute}, it names no rule.
