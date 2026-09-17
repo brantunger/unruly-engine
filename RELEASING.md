@@ -70,7 +70,7 @@ release-please opens **chore(1.x): release 1.X.Y** against `1.x`, and merging th
 
    ```bash
    git fetch origin --tags
-   git push origin 'v1.6.0^{commit}:refs/heads/1.x'
+   git push origin 'v1.8.0^{commit}:refs/heads/1.x'
    ```
 
 2. Allow the branch in both deployment environments. They only accept `main` (and `gh-pages`), so the `publish` and
