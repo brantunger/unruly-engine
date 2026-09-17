@@ -17,7 +17,7 @@ package io.github.brantunger.unruly.core;
  * virtual threads unless the scheduler is configured otherwise. On JDK 21 to 23 a virtual thread that waits to enter
  * a monitor, or waits while holding one, stays on its carrier. When a language's expressions contend on a monitor, as
  * MVEL's do, a limit of one copy for each processor let every carrier wait, and the runs deadlocked. A lower limit
- * makes that less likely but can't rule it out: the limit is per rule list, and a run that gives up waiting takes an
+ * makes that less likely but can't rule it out: the limit is per engine, and a run that gives up waiting takes an
  * extra copy.
  * </p>
  *

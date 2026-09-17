@@ -118,7 +118,7 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
   carry virtual threads. On JDK 21 to 23, a virtual thread that waits to enter a monitor, or waits while holding one,
   keeps its carrier. MVEL's expressions contend on a monitor shared by the whole JVM, so with one copy for each
   processor every carrier could be held and the runs deadlocked. The lower default makes that less likely but doesn't
-  prevent it: each engine, and each rule list still in use after a reload, has its own limit, and a run that waited
+  prevent it: each engine has its own limit, so the limits of several engines add up, and a run that waited
   five seconds without a copy coming back takes an extra copy on its own thread (see below). On JDK 21 to 23, use JDK
   24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491); otherwise run
   MVEL rules on platform threads, or keep the copies of all your engines together below
@@ -130,11 +130,14 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 - If the thread is interrupted while its run waits, `run()` throws a `RuleExecutionException` caused by the
   `InterruptedException`, and the thread's interrupt status stays set. A run whose thread was **already** interrupted
   doesn't wait: it takes a free copy and then stops at its first rule, exactly as it does without a limit.
-- While `load()` swaps in a new list, runs still using the old list can hold up to that many copies more. Each list
-  still in use has its own limit, so several reloads in a row can add that many again for each list.
+- The limit belongs to the engine, not to one rule list: while `load()` swaps in a new list, runs still using the old
+  list count against the same limit as runs on the new one, so a reload never raises it. Right after a reload, a run
+  on the new rules may wait for runs on the old rules to finish, when together they already hold every copy.
 - A rule list that needs no copy at all is never limited. When every language of the list returns `Session.none()`,
   nothing a copy holds changes while the rules run, so every run shares one set of sessions, waits for nothing, and
-  counts against no limit.
+  counts against no limit. The engine learns this from the list's first copy, so right after a reload from rules that
+  need copies, runs of such a list that start before the first of them gets a copy may wait for runs on the old
+  rules; later runs don't.
 
 #### Runs that don't wait
 

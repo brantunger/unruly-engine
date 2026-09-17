@@ -147,7 +147,7 @@ monitor for the whole JVM, and a virtual thread that waits on a monitor keeps th
 every carrier is held, no run completes again. The engine's default limit on virtual threads (one copy for every two
 processors) makes that less likely, but doesn't prevent it:
 
-- each engine has its own limit, and so does each rule list still in use after a reload;
+- each engine has its own limit, so the limits of several engines add up;
 - a run that waited five seconds without a copy coming back takes an extra copy on its own thread;
 - with one processor, the limit of one copy equals the one carrier;
 - `unlimitedCopies()`, or a `maxCopies(...)` at or above the number of carriers, leaves no carrier free.

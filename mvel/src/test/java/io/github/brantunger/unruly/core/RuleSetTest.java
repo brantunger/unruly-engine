@@ -217,6 +217,44 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("a rule list that needs no copies learns it from an extra copy when the shared permits are all held")
+    void statelessListLearnsFromAnExtraCopy() throws Exception {
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet needsCopies = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1), permits, 1);
+        ExpressionCompiler stateless = new ExpressionCompiler() {
+            @Override
+            public CompiledCondition compileCondition(Expression expression) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public CompiledAction compileAction(Expression expression) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public Session newSession() {
+                return Session.none();
+            }
+        };
+        // The rule list a reload loaded, sharing the engine's permits with the one it replaced.
+        RuleSet noCopies = new RuleSet(List.of(RULE), Map.of("n", stateless), CopyLimit.of(1), permits, 1);
+        RuleSet.Copy held = needsCopies.borrow(null);
+
+        // The only permit is held, so the first run of the new list can't take one and makes an extra copy.
+        RuleSet.Copy first = noCopies.borrow(null);
+        RuleSet.Copy second = noCopies.borrow(null);
+
+        assertEquals(RuleSet.Kind.SHARED, first.kind(), "the extra copy showed the rules need none");
+        assertEquals(RuleSet.Kind.SHARED, second.kind(), "later runs share the sessions without a permit");
+        assertSame(first.sessions(), second.sessions());
+        noCopies.release(second);
+        noCopies.release(first);
+        needsCopies.release(held);
+    }
+
+    @Test
     @DisplayName("more copies than the limit are warned about once for each rule list")
     void overflowWarnedOnce() throws Exception {
         AtomicInteger sessions = new AtomicInteger();
