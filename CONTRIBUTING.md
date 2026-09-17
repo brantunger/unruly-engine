@@ -31,13 +31,14 @@ cd unruly-engine
 ./gradlew clean build
 ```
 
-The build has three projects:
+The build has four projects:
 
 | Project | Publishes | Contains |
 | --- | --- | --- |
 | `core` | `unruly-engine-core` | The API, the language SPI and the engine, without an expression language |
 | `mvel` | `unruly-engine` | The MVEL language, and all the tests: most of them run MVEL rules |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
+| `benchmarks` | — | JMH benchmarks; not published and not included in `check` |
 
 Settings shared by the published projects are in the convention plugins in `buildSrc/src/main/groovy`.
 
@@ -55,7 +56,7 @@ Settings shared by the published projects are in the convention plugins in `buil
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit 5 suite | `mvel/src/test` |
+| 🧪 **Tests** | The JUnit suite | `mvel/src/test` |
 | 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning in main or test sources (`-Xlint:all -Werror`), and no Javadoc warning (`-Xdoclint:all -Werror`) in the site or any `-javadoc.jar` | `buildSrc/src/main/groovy/unruly.java-conventions.gradle`, `buildSrc/src/main/groovy/unruly/conventions/ModuleJavadoc.groovy` |

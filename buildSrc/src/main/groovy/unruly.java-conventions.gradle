@@ -1,4 +1,4 @@
-// Compilation, tests and static analysis, shared by the core and mvel projects.
+// Compilation, tests and static analysis, shared by every project.
 plugins {
     id 'java-library'
     id 'checkstyle'
