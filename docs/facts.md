@@ -168,7 +168,10 @@ what was declared and uses it as it can.
 | Situation | In a rule |
 | --- | --- |
 | A fact whose value is `null` | The variable is `null`, so `coapplicant == null` is `true` |
-| No fact with that name in the store | Referring to it throws `unresolvable property or identifier` |
+| No fact with that name in the store | In MVEL, referring to it throws `unresolvable property or identifier` |
+
+In MVEL, the message can also be `unable to resolve token: unable to resolve variable 'coapplicant'`: MVEL gives it
+when the [compiled copy](glossary.md#compiled-copy) the run uses has already run the rule with the fact present.
 
 To check whether a fact was supplied at all, use `isdef`. It is also `true` for a fact whose value is `null`, so
 check for `null` too before reading a property:

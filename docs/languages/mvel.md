@@ -114,7 +114,7 @@ MVEL compares values more loosely than Java, which can make a condition match, o
 | 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
 | 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
-| ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, so `x == null` can't test for it | `isdef x && x > 1` |
+| ❓ **Missing facts** | A fact that isn't in the store throws `unresolvable property or identifier`, or `unable to resolve variable 'x'` when the run's compiled copy already ran the rule with it, so `x == null` can't test for it | `isdef x && x > 1` |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
 
 ## 🦺 Strong typing
@@ -171,4 +171,6 @@ See [Limiting the copies](../thread-safety.md#limiting-the-copies).
 ## 🔒 Security
 
 An MVEL rule has the same access to the JVM as your own Java code: it can start processes, read files, open sockets
-and use reflection. The engine has no sandbox and no timeout. See [Security](../../README.md#-security).
+and use reflection. The engine has no sandbox. A [timeout](../error-handling.md#-stopping-a-run) stops a run only
+between rules or when an expression returns: MVEL can't be stopped inside an expression, so `while (true) {}` blocks
+the thread for ever. See [Security](../../README.md#-security).

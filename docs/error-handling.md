@@ -12,6 +12,7 @@ The engine throws its own exceptions for rule problems and standard JDK exceptio
 - [Exceptions by method](#-exceptions-by-method)
 - [Caught when loading or only when running?](#-caught-when-loading-or-only-when-running)
 - [Stopping a run](#-stopping-a-run)
+- [What happens on each failure](#-what-happens-on-each-failure)
 - [Handling failures](#-handling-failures)
 
 ---
@@ -24,6 +25,7 @@ classDiagram
     RuntimeException <|-- UnrulyException
     UnrulyException <|-- RuleCompilationException
     UnrulyException <|-- RuleExecutionException
+    UnrulyException <|-- InvalidExpressionException
     RuntimeException <|-- IllegalArgumentException
     RuntimeException <|-- IllegalStateException
     RuntimeException <|-- NullPointerException
@@ -36,8 +38,11 @@ classDiagram
     class RuleExecutionException {
         a rule failed while running
     }
+    class InvalidExpressionException {
+        a language rejected an expression
+    }
     class IllegalArgumentException {
-        an invalid fact name or import
+        a rejected fact, or an invalid import
     }
     class IllegalStateException {
         run() before load(), or a bad builder setting
@@ -47,7 +52,8 @@ classDiagram
     }
 ```
 
-All of them are unchecked.
+All of them are unchecked. A language throws `InvalidExpressionException` to reject an expression, and `load()`
+reports it as the cause of a `RuleCompilationException`.
 
 > [!WARNING]
 > `catch (UnrulyException e)` doesn't catch `IllegalArgumentException`, `IllegalStateException` or
@@ -71,7 +77,7 @@ All of them are unchecked.
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
 | | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |
 | `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |
-| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition contains an assignment or `import_static`; an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](facts.md#catching-a-typo-when-the-rules-load), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
+| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition its language rejects (in MVEL, an assignment or `import_static`); an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](facts.md#catching-a-typo-when-the-rules-load), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, with the error as its cause. |
@@ -87,20 +93,21 @@ All of them are unchecked.
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 
-Messages about a specific rule name it, for example
-`Failed to evaluate condition for rule 'prime-rate': ...`. In a
-message, line breaks and other control characters are escaped (`\n`) in a rule, fact or language name **and in the
-text copied from the underlying exception**, so neither a name nor a fact value that a language quoted can start a
-log line of its own. That includes a compile error or warning a language reports, and what the output supplier
-throws. A name longer than 200 characters is shortened, and the copied text at 1,000 characters. When an exception in
-the chain has no message, the message also names the root cause: its class, and its message unless the copied text
-already includes it, such as `... (caused by java.lang.RuntimeException: static init boom)`. A condition or action
-that starts a `run()` of its own, which fails, says `a nested run() failed: ...` and isn't logged a second time; a
-`RuleExecutionException` that a language or your code throws itself is logged like any other exception.
+Messages about a specific rule name it, for example `Failed to evaluate condition for rule 'prime-rate': ...`. Line
+breaks and other control characters are escaped (`\n`), so neither a name nor a fact value that a language quoted can
+start a log line of its own:
+
+| Part of a message | What the engine does with it |
+| --- | --- |
+| A rule, fact or language name | Escaped, and shortened to 200 characters |
+| Text copied from an exception, such as a language's compile error or warning, or what the output supplier threw | Shortened to 1,000 characters, then escaped |
+| An exception in the chain with no message | The message also names the root cause's class, and its message unless already there: `... (caused by java.lang.RuntimeException: boom)` |
+| A `run()` a condition or action started, which failed | `a nested run() failed: ...`, and it isn't logged a second time |
+| A `RuleExecutionException` a language or your code throws itself | Logged like any other exception |
+
 The underlying exception itself is never changed: when the expression language or your code threw it, it's available
-from `getCause()` and reads exactly as it was written, line breaks and all. An
-expression the language rejected, such as a condition with an assignment or an MVEL syntax error, has an
-`InvalidExpressionException` as its cause.
+from `getCause()` and reads exactly as it was written, line breaks and all. An expression the language rejected, such
+as a condition with an assignment or an MVEL syntax error, has an `InvalidExpressionException` as its cause.
 
 `load()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
 failed: `failures()` has each rule's own exception, and the message lists them, such as
@@ -113,8 +120,8 @@ compiler, is thrown at once.
 
 To act on the failing rule without parsing the message, for example to disable it or count failures per rule, call
 `getRuleName()` on the `RuleCompilationException` or `RuleExecutionException`. It returns the name exactly as the
-rule has it, or `null` for failures that aren't about one rule, such as a failing
-output supplier or an expression language that can't create its compiler.
+rule has it, or `null` for failures that aren't about one rule, such as a failing output supplier, an expression
+language that can't create its compiler, or a stopped run.
 
 ## 🔍 Caught when loading or only when running?
 
@@ -130,7 +137,7 @@ surface when a rule is evaluated. Another language decides what it catches when 
 | Most syntax errors (`applicant.creditScore >=`) | ✅ `load()` |
 | Some malformed expressions (`true)`, `output.put("k" 1)`) | ⚠️ only `run()` |
 | A class that isn't imported (`Objects` without `imports("java.util")`) | ⚠️ only `run()` |
-| A misspelled fact or property name | ⚠️ only `run()` |
+| A misspelled fact or property name | ⚠️ only `run()`, unless MVEL's [strong typing](facts.md#catching-a-typo-when-the-rules-load) is on: then `load()` |
 | A condition that isn't a boolean (`applicant.name`) | ⚠️ only `run()` |
 | A method call that changes a fact inside a condition (`applicant.setApproved(true)`) | ❌ never |
 
@@ -178,6 +185,44 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 > interrupt status first, for example with `Thread.interrupted()`. The engine leaves it set on purpose, and every
 > later run on that thread stops at its first rule.
 
+## 🧾 What happens on each failure
+
+What `run()` throws, which [listener](listeners-and-logging.md) callbacks each failure reaches, and how the engine logs
+it. The listener column leaves out `beforeRun`, except where a run never gets it. "Names the rule" means
+`getRuleName()` returns the rule's name; "no rule" means it returns `null`. A
+[fatal error](glossary.md#fatal-error) is a `VirtualMachineError` other than `StackOverflowError`, such as
+`OutOfMemoryError`.
+
+| Failure | `run()` throws | Listeners get | Logged |
+| --- | --- | --- | --- |
+| A condition or action throws | `RuleExecutionException` that names the rule | `onError`, then `onRunError`, with that exception | ERROR |
+| A condition returns `null` or a non-boolean, an action returns `null`, or a property can't be set | `RuleExecutionException` that names the rule | `onError`, then `onRunError`, with that exception | ERROR |
+| The output supplier throws or returns `null` | `RuleExecutionException`, no rule | The conditions' callbacks, then `onRunError`; no `onError` | ERROR |
+| A fact name the engine or a language rejects, or a fact that doesn't match its [declaration](facts.md#-declaring-facts) | `IllegalArgumentException` | `onRunError` with that `IllegalArgumentException` | ERROR |
+| A language fails to create a session for the run | `RuleExecutionException`, no rule | Nothing, not even `beforeRun`: the run fails before it starts | ERROR |
+| The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
+| The run is stopped when a condition or action returns or throws an exception | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
+| The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
+| A listener throws an exception, or an `Error` that isn't fatal | Nothing: the run goes on | Every other listener still gets that callback | WARN, with the stack trace |
+| A fatal error from a rule | The error itself | `onError`, then `onRunError`, with a `RuleExecutionException` that names the rule | ERROR |
+| A fatal error from `beforeRun`, a `before*` or an `after*` callback | The error itself | Every listener gets that callback first, then `onRunError` | ERROR, naming the listener's error |
+| A fatal error from `onError`, closing a failure that isn't fatal itself | The error itself; the reported exception keeps it in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | Only the failure's own line: ERROR, or WARN for a stop |
+| A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
+| A fatal error from `onRunError` | That error, in place of the exception the run failed with | Every listener gets `onRunError` | ERROR |
+| `run()` before `load()`, on a closed engine, or with `null` facts | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
+
+> [!NOTE]
+> A stack trace or `getClass()` may show `io.github.brantunger.unruly.core.ReportedFailure`. It's an internal subclass
+> of `RuleExecutionException` that the engine throws for the failures above. Catch `RuleExecutionException`, and
+> never match on the class name.
+
+- **A fatal error from the output supplier** is rethrown the same way; `onRunError` gets a `RuleExecutionException`
+  that names no rule. One from a language creating a session reaches no listener, like any other session failure.
+- **A `before*` callback that throws a fatal error** is closed with `onError` on every listener, and its condition or
+  action doesn't run. The rest of what listeners see is in [Guarantees](listeners-and-logging.md#-guarantees).
+- **A run of an empty rule list evaluates nothing**, so an interrupt or a passed deadline can only stop it while it
+  waits for a compiled copy. Otherwise it returns normally.
+
 ## 🧯 Handling failures
 
 ```java
@@ -185,14 +230,26 @@ try {
     LoanDecision decision = engine.run(facts);
     // ...
 } catch (RuleExecutionException e) {
-    // A rule failed at run time. The message names the rule; getCause() holds the underlying error.
+    if (e.getRuleName() != null) {
+        // A rule failed at run time. The message names the rule; getCause() holds the underlying error.
+    } else if (e.getCause() instanceof TimeoutException || e.getCause() instanceof InterruptedException) {
+        // The run was stopped: it passed its deadline, or its thread was interrupted.
+        // A rule's own exception thrown as the run stopped is in e.getSuppressed().
+    } else {
+        // A failure that belongs to no rule, such as an output supplier that threw.
+    }
 } catch (IllegalArgumentException e) {
-    // A fact has a name that rules can't use.
+    // A fact has a name that rules can't use, or doesn't match what the engine declared.
 }
 ```
 
-Keep in mind:
+`TimeoutException` is `java.util.concurrent.TimeoutException`. Keep in mind:
 
+- **Tell a stop from a failure by its cause.** A stopped run's exception names no rule and has an
+  `InterruptedException` or `TimeoutException` cause.
+- **A bug near the deadline is reported as a stop.** When a condition or action throws an exception, not an `Error`,
+  after the run was interrupted or passed its deadline, the run stops instead of failing that rule. What the rule
+  threw is only in `getSuppressed()`, and only the stop is logged, at WARN.
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before.
@@ -201,9 +258,10 @@ Keep in mind:
   [Logging setup](listeners-and-logging.md#-logging-setup). The message can contain fact values, copied from the
   exception a rule caused, such as `For input string: "123-45-6789"`. With sensitive facts, turn off the
   `io.github.brantunger.unruly` logger and log a redacted form yourself.
-- **Listeners hear about it first.** When a condition or action fails, `onError` receives the same exception before
-  `run()` throws it. A failing output supplier, a rejected fact name and an expression language that fails to create
-  a session are thrown without calling any listener.
+- **Listeners hear about it first.** When a condition or action fails, `onError` and then `onRunError` receive the
+  same exception before `run()` throws it. A failing output supplier and a rejected fact name don't reach `onError`,
+  because no rule is involved, but they do reach `onRunError`. An expression language that fails to create a session
+  fails the run before `beforeRun`, so no listener hears about it.
 - **An interrupt isn't lost.** If a rule, listener, output supplier or expression language is interrupted while it
   blocks, for example in `Thread.sleep` or `BlockingQueue.take`, the `InterruptedException` clears the thread's
   interrupt status and reaches the engine wrapped. The engine sets the status again before it throws, and the run

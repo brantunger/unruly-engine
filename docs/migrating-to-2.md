@@ -390,8 +390,10 @@ and an executor shutting down had no effect until the run finished on its own.
 Three things follow:
 
 - A run whose thread is interrupted, before it starts or while it is going, throws a `RuleExecutionException` caused
-  by an `InterruptedException`. `getRuleName()` is `null`: an interrupt isn't that rule's failure. The interrupt
-  status stays set.
+  by an `InterruptedException` at the next check: before or after a condition or action, or while it waits for a
+  copy. `getRuleName()` is `null`: an interrupt isn't that rule's failure. The interrupt status stays set. A run of
+  an empty rule list evaluates nothing, so it's only stopped while it waits for a copy, and otherwise returns
+  normally.
 - `RulesEngineBuilder.runTimeout(Duration)`, `RunOptions` and `runWithResult(facts, options)` are new. A run past its
   deadline fails the same way, with a `TimeoutException` as the cause, including while it waits for a compiled copy
   of the rules. A run started from inside another run on the same thread stops no later than the outer run's
@@ -481,7 +483,7 @@ I/O. This is a behaviour change that the API compatibility check can't see, so t
 | Runs from virtual threads, with as many copies as runs | At most one copy for every two processors; the runs above that wait. `.unlimitedCopies()` keeps the 1.x behaviour. On JDK 21 to 23, MVEL rules with unlimited copies can deadlock every carrier: see [Limiting the copies](thread-safety.md#limiting-the-copies) |
 | Rules that wait on a database, a service or a file, run from virtual threads | `.unlimitedCopies()`, or `.maxCopies(n)` sized for how many waiting runs you want at once: the default is sized for rules that compute |
 | An action that runs the same engine on another thread and waits for it | It no longer hangs: the nested run waits five seconds, then takes an extra copy, and the engine warns |
-| Sizing memory from the number of copies | One for every two processors for virtual-thread runs, plus an extra for each run that doesn't wait. The limit is per engine and holds across reloads |
+| Sizing memory from the number of copies | Up to one for every two processors for virtual-thread runs, plus, without `maxCopies(...)`, one for each platform-thread run at your peak, plus an extra for each run that doesn't wait. Kept copies stay until the next `load()` or `close()`. The limit is per engine and holds across reloads |
 | `maxCopies(...)` as the only way to bound the copies | Still available, and still applies to every thread; it's now a change to the default rather than a way out of no limit |
 
 ## 🧰 Engines are created only with RulesEngineBuilder
