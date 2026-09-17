@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/brantunger/unruly-engine/security/advisories/new
     about: Report it privately through GitHub, not in a public issue. SECURITY.md lists the other options.
   - name: 📚 Read the guides and FAQ
-    url: https://github.com/brantunger/unruly-engine#-guides
+    url: https://github.com/brantunger/unruly-engine/blob/main/docs/README.md
     about: Many questions about MVEL rules, facts and errors are answered there.

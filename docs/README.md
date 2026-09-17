@@ -10,7 +10,8 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 
 | Guide | Covers |
 | --- | --- |
-| 📜 [Writing rules](writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, and testing rules |
+| 📜 [Writing rules](writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, loading rules from data, and testing rules |
+| 🔀 [Engines and runs](engines-and-runs.md) | Rule order, first match or all matches, the output object, what a run reports, checksums for auditing, and reloading |
 | ⚡ [MVEL](languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Other expression languages](languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
 | 📁 [Facts](facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, copying and sharing |

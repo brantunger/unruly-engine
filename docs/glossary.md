@@ -47,8 +47,8 @@ carrier, which is why MVEL rules on many virtual threads can deadlock. See [MVEL
 
 A lowercase hex SHA-256 that identifies a loaded rule list: each rule's name, priority,
 [resolved language](#resolved-language), condition and action, in [evaluation order](#evaluation-order), but not its
-description. `RuleSetInfo.checksum()` gives the engine's current one, and `RunResult.ruleSetChecksum()` the one a run
-used. See [Migrating to 2.0](migrating-to-2.md#-a-run-reports-what-it-did-and-an-engine-reports-its-rules).
+description, and not the match policy. `RuleSetInfo.checksum()` gives the engine's current one, and
+`RunResult.ruleSetChecksum()` the one a run used. See [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
 
 ### Close
 
@@ -73,7 +73,8 @@ engine closes it after a later `load()` or `close()` replaces the rule list, onc
 ### Condition
 
 The expression that decides whether a rule [matches](#match-and-fire). It must evaluate to a boolean; `null` or any
-other type fails the rule. A language rejects assignments in a condition where it can detect them, as MVEL does. See
+other type fails the rule. It can't assign to a fact: a language that passes the [contract test kit](#contract-test-kit)
+rejects that at `load()`, and the engine rejects any write to the facts at run time. See
 [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
 ### Contract test kit
@@ -111,7 +112,8 @@ language. `build()` fails when an engine has several languages and no default. S
 ### Evaluation order
 
 The order a run evaluates rules in: highest [priority](#priority) first, equal priorities in their list order, and a
-`null` priority last. `rules().rules()` lists the loaded rules in this order. See [Rules](../README.md#rules).
+`null` priority after every number. `rules().rules()` lists the loaded rules in this order. See
+[Rule order](engines-and-runs.md#-rule-order).
 
 ### Expression language
 
@@ -158,27 +160,26 @@ from every thread. See [Callbacks](listeners-and-logging.md#-callbacks).
 
 `load(rules)` compiles a whole [rule list](#rule-list), then swaps it in with one atomic write. If it fails, `load()`
 throws a `RuleCompilationException` and the old rules stay in place; runs already going finish with the rules they
-started with. See [Reloading rules while running](thread-safety.md#-reloading-rules-while-running).
+started with. See [Reloading rules](engines-and-runs.md#-reloading-rules).
 
 ### Loaded rules
 
 The rules an engine runs now, reported by `rules()` as a `RuleSetInfo`: `rules()` in
 [evaluation order](#evaluation-order), `checksum()` and `loadedAt()`. Before the first `load()` it has no rules, the
-checksum of an empty list and a `null` load time. See
-[Migrating to 2.0](migrating-to-2.md#-a-run-reports-what-it-did-and-an-engine-reports-its-rules).
+checksum of an empty list and a `null` load time. See [The loaded rules](engines-and-runs.md#the-loaded-rules).
 
 ### Match and fire
 
 A rule *matches* when its condition evaluates to `true`, and *fires* when its action runs. Every rule that fires has
 matched, but on a first-match engine only the first match fires. See
-[Choosing an engine](../README.md#choosing-an-engine).
+[First match or all matches](engines-and-runs.md#-first-match-or-all-matches).
 
 ### Match policy
 
 Which matching rules fire, fixed when the engine is built: `firstMatch` fires the first match in evaluation order, and
 `allMatches` evaluates every condition, then fires every match in priority order. `RunContext.matchPolicy()` returns
 `"firstMatch"` or `"allMatches"`. 1.x called them *stateless* and *stateful*. See
-[Choosing an engine](../README.md#choosing-an-engine).
+[First match or all matches](engines-and-runs.md#-first-match-or-all-matches).
 
 ### Missing fact
 
@@ -204,18 +205,18 @@ as `coapplicant == null` is `true`, unlike a [missing fact](#missing-fact). See
 
 The object a run's actions change, which rules see as `output`. The [output supplier](#output-supplier) creates it once
 per run that matches a rule, and `run()` returns it, or `null` when no rule fired. See
-[The output object](../README.md#the-output-object).
+[The output object](engines-and-runs.md#-the-output-object).
 
 ### Output supplier
 
 The `Supplier` given to `firstMatch(...)` or `allMatches(...)` that creates the [output object](#output-object). It must
 return a new, non-`null` object on every call. Javadoc calls it the output factory. See
-[The output object](../README.md#the-output-object).
+[The output object](engines-and-runs.md#-the-output-object).
 
 ### Priority
 
 An optional `Integer` on a rule. Higher numbers are evaluated and fire first, equal priorities keep their list order,
-and `null` sorts last. See [Rules](../README.md#rules).
+and `null` sorts after every number. See [Rule order](engines-and-runs.md#-rule-order).
 
 ### Read-only view
 
@@ -233,19 +234,18 @@ The [checksum](#checksum) uses it, so the same rules on engines with different d
 ### Rule
 
 An immutable `Rule`, created with `Rule.builder()`: a unique name, a condition, an action, and an optional priority,
-description and language. See [Rules](../README.md#rules).
+description and language. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
 ### Rule list
 
 The `List<Rule>` you pass to `load()`. Its order only matters between rules with equal priorities; the engine keeps the
-rules sorted into [evaluation order](#evaluation-order). See
-[Reloading rules while running](thread-safety.md#-reloading-rules-while-running).
+rules sorted into [evaluation order](#evaluation-order). See [Rule order](engines-and-runs.md#-rule-order).
 
 ### Run
 
 One call of `run(facts)` or `runWithResult(...)`: check the facts, evaluate conditions, create the output object if a
 rule matched, fire actions and return. `run()` throws `IllegalStateException` before the first `load()`. See
-[How it works](../README.md#-how-it-works).
+[Engines and runs](engines-and-runs.md).
 
 ### Run context
 
@@ -262,7 +262,7 @@ A `RunOptions` passed to `runWithResult(facts, options)` for one run. Today it h
 
 The `RunResult` that `runWithResult(...)` returns: `output()`, `firedRules()` in firing order, and `ruleSetChecksum()`.
 Its output is `null` exactly when no rule fired; a failed run throws instead of returning one. See
-[The output object](../README.md#the-output-object).
+[What a run reports](engines-and-runs.md#-what-a-run-reports).
 
 ### Session
 

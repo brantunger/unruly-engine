@@ -16,8 +16,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Reads rules with Jackson 3, which Spring Boot 4 uses, through exactly the mix-ins the README, the {@link Rule}
- * Javadoc and the migration guide show. Only the imports differ from Jackson 2. Keep them in step.
+ * Reads rules with Jackson 3, which Spring Boot 4 uses, through exactly the mix-ins docs/writing-rules.md, the
+ * {@link Rule} Javadoc and the migration guide show. Only the imports differ from Jackson 2. Keep them in step.
  */
 @DisplayName("reading rules from JSON with Jackson 3")
 class RuleJsonJackson3Test {
