@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -167,7 +168,24 @@ public final class Failures {
      * @return The innermost {@link ReportedFailure} in {@code e}'s cause chain, or {@code null}
      */
     static RuleExecutionException nestedRunFailure(Throwable e) {
-        RuleExecutionException innermost = null;
+        return innermostReported(e);
+    }
+
+    /**
+     * Tells whether a {@code run()} started by the code that threw {@code e} stopped for the same reason as the run
+     * around it, and so already logged that stop.
+     *
+     * @param e        What was caught
+     * @param deadline The deadline the run around it passed, or {@code null} if its thread was interrupted
+     * @return {@code true} if the innermost {@link ReportedFailure} in {@code e}'s cause chain is that same stop
+     */
+    static boolean nestedRunStopped(Throwable e, Instant deadline) {
+        ReportedFailure innermost = innermostReported(e);
+        return innermost != null && innermost.isStopFor(deadline);
+    }
+
+    private static ReportedFailure innermostReported(Throwable e) {
+        ReportedFailure innermost = null;
         for (Throwable t : causeChain(e)) {
             if (t instanceof ReportedFailure failure) {
                 innermost = failure;

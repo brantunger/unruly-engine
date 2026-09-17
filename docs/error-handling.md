@@ -176,9 +176,11 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   rule. That's what happens when a run an action started stops at the deadline it inherited, or when a language gives
   up by throwing. The rule's `before*` callback is closed with `onError` and the stop exception, and what the
   expression threw is kept as a suppressed exception.
-- A stopped run is logged at **WARN**, not ERROR: the caller asked for it, and no rule failed. Listeners get
-  `beforeRun` and `onRunError`. Stopped between rules, the rule it would have gone on to gets no callback at all,
-  because it never started; stopped when a condition or action returns or throws, that rule gets `onError`.
+- A stopped run is logged at **WARN**, not ERROR: the caller asked for it, and no rule failed. When a run a condition
+  or action started stops, and its exception reaches the run around it stopped by the same interrupt or deadline, only
+  the nested run logs it. Listeners get `beforeRun` and `onRunError`. Stopped between rules, the rule it would have
+  gone on to gets no callback at all, because it never started; stopped when a condition or action returns or throws,
+  that rule gets `onError`.
 
 > [!WARNING]
 > A caller that catches the failure and goes on to serve the next request **on the same thread** must clear the
