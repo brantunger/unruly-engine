@@ -5,10 +5,12 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashMap;
@@ -38,8 +40,43 @@ class ConditionAssignmentRejectionTest {
         RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
                 List.of(rule("typo", "claim.approved = true", "output.put('fired', true)"))));
 
-        assertEquals("Condition for rule 'typo' contains an assignment ('=' at position 15). "
+        assertEquals("Condition for rule 'typo' contains an assignment ('=' at line 1, column 16). "
                 + "Conditions can't change facts or declare variables; use == to compare.", ex.getMessage());
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 1,
+                16, "contains an assignment ('=')")), ex.issues());
+    }
+
+    @Test
+    @DisplayName("an assignment on a later line is reported at its line and column, counting from 1")
+    void assignmentOnALaterLineHasItsPosition() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
+                List.of(rule("second-line", "claim.amount > 1 &&\n  claim.count += 1", "output.put('k', 1)"))));
+
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 2,
+                15, "contains an assignment ('+=')")), ex.issues());
+        assertTrue(ex.getMessage().contains("('+=' at line 2, column 15)"), ex.getMessage());
+        InvalidExpressionException cause = assertInstanceOf(InvalidExpressionException.class, ex.getCause());
+        assertEquals(ex.issues(), cause.issues());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', value = {
+            "a Windows line break and a tab | claim.a > 1 &&\\r\\n\\tclaim.x = 1 | 2 | 10 | contains an assignment ('=')",
+            "import_static on a later line | true;\\nimport_static java.lang.Math.max; max(x, 1) == 5 | 2 | 1 "
+                    + "| uses import_static, which declares the method as a variable",
+    })
+    @DisplayName("the line and column count a Windows line break as one line and a tab as one column")
+    void positionsOnLaterLines(String name, String condition, int line, int column, String description) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        String source = condition.replace("\\r", "\r").replace("\\n", "\n").replace("\\t", "\t");
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule(name, source, "output.put('k', 1)"))));
+
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR,
+                line, column, description)), ex.issues());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -67,9 +104,11 @@ class ConditionAssignmentRejectionTest {
         RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
                 List.of(rule("max", "import_static java.lang.Math.max; max(x, 1) == 5", "output.put('k', 1)"))));
 
-        assertEquals("Condition for rule 'max' uses import_static (at position 0), which declares the method as a "
-                + "variable, and conditions can't declare variables. Call the method through its class instead, such "
-                + "as Math.max(a, b).", ex.getMessage());
+        assertEquals("Condition for rule 'max' uses import_static (at line 1, column 1), which declares the method as "
+                + "a variable, and conditions can't declare variables. Call the method through its class instead, "
+                + "such as Math.max(a, b).", ex.getMessage());
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 1,
+                1, "uses import_static, which declares the method as a variable")), ex.issues());
     }
 
     @Test

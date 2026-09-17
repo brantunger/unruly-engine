@@ -21,6 +21,7 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     private static final Pattern ERROR = Pattern.compile("^\\[Error: (.*)]$", Pattern.MULTILINE);
     // Where MVEL found the error, such as [Line: 1, Column: 11].
     private static final Pattern POSITION = Pattern.compile("\\[Line: (\\d+), Column: (\\d+)]");
+    private static final char NEW_LINE = '\n';
 
     private final Imports imports;
     private final FactNames factNames;
@@ -43,16 +44,38 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     @Override
     public CompiledCondition compileCondition(Expression source) {
         ConditionAssignments.Write write = ConditionAssignments.find(source.text());
-        if (write != null && write.isStaticImport()) {
-            throw new InvalidExpressionException("uses import_static (at position " + write.position()
-                    + "), which declares the method as a variable, and conditions can't declare variables. Call the "
-                    + "method through its class instead, such as Math.max(a, b).");
-        }
         if (write != null) {
-            throw new InvalidExpressionException("contains an assignment (" + write
-                    + "). Conditions can't change facts or declare variables; use == to compare.");
+            throw rejected(source.text(), write);
         }
         return compile(source);
+    }
+
+    /**
+     * Reports an assignment or {@code import_static} found in a condition, with one issue that says where it starts:
+     * the line and column, counting from 1, as MVEL's own compile errors say.
+     *
+     * @param condition The condition's source text
+     * @param write     What was found, and where
+     * @return The exception to throw
+     */
+    private static InvalidExpressionException rejected(String condition, ConditionAssignments.Write write) {
+        String before = condition.substring(0, write.position());
+        int line = 1 + (int) before.chars().filter(ch -> ch == NEW_LINE).count();
+        int column = write.position() - (before.lastIndexOf(NEW_LINE) + 1) + 1;
+        String where = "at line " + line + ", column " + column;
+        String description;
+        String message;
+        if (write.isStaticImport()) {
+            description = "uses import_static, which declares the method as a variable";
+            message = "uses import_static (" + where + "), which declares the method as a variable, and conditions "
+                    + "can't declare variables. Call the method through its class instead, such as Math.max(a, b).";
+        } else {
+            description = "contains an assignment ('" + write.text() + "')";
+            message = "contains an assignment ('" + write.text() + "' " + where
+                    + "). Conditions can't change facts or declare variables; use == to compare.";
+        }
+        return new InvalidExpressionException(message, List.of(new InvalidExpressionException.Issue(
+                InvalidExpressionException.Issue.Severity.ERROR, line, column, description)));
     }
 
     @Override

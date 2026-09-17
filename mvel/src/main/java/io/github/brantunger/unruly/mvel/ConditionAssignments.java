@@ -35,7 +35,7 @@ final class ConditionAssignments {
      * An assignment found in a condition.
      *
      * @param text     The operator or keyword, such as {@code +=} or {@code with}
-     * @param position Where it starts in the condition
+     * @param position Where it starts in the condition, as an index into its text counting from 0
      */
     record Write(String text, int position) {
 
@@ -46,12 +46,6 @@ final class ConditionAssignments {
          */
         boolean isStaticImport() {
             return STATIC_IMPORT.equals(text);
-        }
-
-        /** Describes the assignment, such as {@code "'+=' at position 13"}. */
-        @Override
-        public String toString() {
-            return "'" + text + "' at position " + position;
         }
     }
 

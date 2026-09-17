@@ -336,7 +336,7 @@ class AbstractRulesEngineTest {
                     rule("check", 1, "approved == true", "output.put(\"check\", true)"))));
 
             assertTrue(ex.getMessage().contains("'typo'"));
-            assertTrue(ex.getMessage().contains("'=' at position 9"));
+            assertTrue(ex.getMessage().contains("'=' at line 1, column 10"));
         }
 
         @Test
@@ -346,7 +346,7 @@ class AbstractRulesEngineTest {
 
             RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
                     List.of(rule("new-var", 1, "(flag = true) == true", "output.put(\"k\", 1)"))));
-            assertTrue(ex.getMessage().contains("'=' at position 6"));
+            assertTrue(ex.getMessage().contains("'=' at line 1, column 7"));
         }
 
         @Test
