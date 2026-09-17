@@ -39,7 +39,9 @@ class ConditionAssignmentsTest {
             "import_static java.lang.Math.max; max(x, 1) == 5 | 'import_static' at position 0",
     })
     void findsAssignments(String condition, String expected) {
-        assertEquals(expected, String.valueOf(ConditionAssignments.find(condition)));
+        ConditionAssignments.Write write = ConditionAssignments.find(condition);
+        assertNotNull(write, condition);
+        assertEquals(expected, "'" + write.text() + "' at position " + write.position());
     }
 
     @ParameterizedTest(name = "{0}")
