@@ -81,7 +81,7 @@ reports it as the cause of a `RuleCompilationException`.
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, with the error as its cause. |
-| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; the run's thread is interrupted, which keeps the interrupt status set and makes the cause an `InterruptedException`; or the run passes its [timeout](#-stopping-a-run), which makes the cause a `TimeoutException` |
+| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; the run's thread is interrupted, which keeps the interrupt status set and makes the cause an `InterruptedException`; or the run passes its [timeout](stopping-runs.md), which makes the cause a `TimeoutException` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)); or a [declared fact](facts.md#-declaring-facts) isn't an instance of its type, and, with `requireDeclaredFacts()`, a declared fact is missing or an undeclared one was supplied |
 | | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
@@ -147,45 +147,9 @@ surface when a rule is evaluated. Another language decides what it catches when 
 
 ## ⏳ Stopping a run
 
-A run stops between rules, or when the expression that was running returns, once its thread is interrupted or it
-has passed a deadline:
-
-```java
-RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
-        .runTimeout(Duration.ofSeconds(2))
-        .build();
-```
-
-- The engine checks while a run waits for a compiled copy of the rules, before each condition and each action, and
-  again when each one returns. So a run whose last condition or action returns past its deadline throws, even though
-  that rule finished. What comes after that check, such as `afterExecute` listeners, isn't timed. A run that must stop throws a
-  `RuleExecutionException` whose `getRuleName()` is `null` — an interrupt or a deadline isn't that rule's fault — with
-  an `InterruptedException` or a `TimeoutException` as its cause. An interrupted run leaves the interrupt status set,
-  so an executor shutting down still sees it.
-- **Not inside an expression.** An expression that is already running isn't stopped: MVEL has no hook inside one, so
-  `while (true) {}` still blocks the thread for ever. A language that can stop part-way — one built on JEXL's
-  cancellation, for example — is given the run's deadline and can stop there; see
-  [Other expression languages](languages/custom.md#-stopping-a-run).
-- **Nothing is rolled back.** What ran before the run stopped keeps its effects, like any other failed run.
-- `runWithResult(facts, RunOptions.withTimeoutOf(Duration.ofMillis(200)))` gives one run a timeout instead of the engine's.
-  A run can be given a longer timeout than the engine's, but not none at all.
-- **A run started from inside another run** on the same thread, such as one an action starts on another engine,
-  stops at whichever deadline comes first: its own, or the outer run's. A run started on another thread doesn't
-  inherit it.
-- **A condition or action that throws once the run is cancelled** stops the run the same way, instead of failing its
-  rule. That's what happens when a run an action started stops at the deadline it inherited, or when a language gives
-  up by throwing. The rule's `before*` callback is closed with `onError` and the stop exception, and what the
-  expression threw is kept as a suppressed exception.
-- A stopped run is logged at **WARN**, not ERROR: the caller asked for it, and no rule failed. When a run a condition
-  or action started stops, and its exception reaches the run around it stopped by the same interrupt or deadline, only
-  the nested run logs it. Listeners get `beforeRun` and `onRunError`. Stopped between rules, the rule it would have
-  gone on to gets no callback at all, because it never started; stopped when a condition or action returns or throws,
-  that rule gets `onError`.
-
-> [!WARNING]
-> A caller that catches the failure and goes on to serve the next request **on the same thread** must clear the
-> interrupt status first, for example with `Thread.interrupted()`. The engine leaves it set on purpose, and every
-> later run on that thread stops at its first rule.
+A run stops once its thread is interrupted or it passes its timeout: before each condition and action, when one
+returns, or while it waits for a compiled copy. [Stopping a run](stopping-runs.md) covers timeouts, what they can't
+stop, nested runs and what listeners see.
 
 ## 🧾 What happens on each failure
 
@@ -249,9 +213,8 @@ try {
 
 - **Tell a stop from a failure by its cause.** A stopped run's exception names no rule and has an
   `InterruptedException` or `TimeoutException` cause.
-- **A bug near the deadline is reported as a stop.** When a condition or action throws an exception, not an `Error`,
-  after the run was interrupted or passed its deadline, the run stops instead of failing that rule. What the rule
-  threw is only in `getSuppressed()`, and only the stop is logged, at WARN.
+- **A bug near the deadline is reported as a stop.** What the rule threw is only in `getSuppressed()`; see
+  [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before.
@@ -264,9 +227,6 @@ try {
   same exception before `run()` throws it. A failing output supplier and a rejected fact name don't reach `onError`,
   because no rule is involved, but they do reach `onRunError`. An expression language that fails to create a session
   fails the run before `beforeRun`, so no listener hears about it.
-- **An interrupt isn't lost.** If a rule, listener, output supplier or expression language is interrupted while it
-  blocks, for example in `Thread.sleep` or `BlockingQueue.take`, the `InterruptedException` clears the thread's
-  interrupt status and reaches the engine wrapped. The engine sets the status again before it throws, and the run
-  stops at the next rule rather than carrying on, so an executor shutting down or `Future.cancel(true)` still sees
-  the interrupt and no more actions fire. A listener that swallows an interrupt doesn't hide it: the check before the
-  next rule finds it. An `InterruptedIOException` such as `SocketTimeoutException` isn't treated as an interrupt.
+- **An interrupt isn't lost.** When a rule, listener, output supplier or expression language throws an exception
+  caused by an `InterruptedException`, the engine sets the interrupt status again; see
+  [What stops a run](stopping-runs.md#-what-stops-a-run).

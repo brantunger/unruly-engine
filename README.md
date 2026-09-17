@@ -309,6 +309,7 @@ higher-priority action changes a fact, a lower-priority rule that already matche
 | 🌱 [Spring Boot](docs/spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](docs/listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](docs/error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
+| ⏳ [Stopping a run](docs/stopping-runs.md) | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
 | 🟣 [Kotlin](docs/kotlin.md) | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](docs/thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
 | 📖 [Glossary](docs/glossary.md) | Short definitions of the terms the guides use, each linked to the page that explains it |
@@ -319,8 +320,8 @@ higher-priority action changes a fact, a lower-priority rule that already matche
 > [!CAUTION]
 > **Rules are code.** MVEL, the default language, gives a rule the same access to the JVM as your own Java code: it can start
 > processes, read files, open sockets and use reflection. The engine has **no sandbox**, and a
-> [timeout](docs/error-handling.md#-stopping-a-run) only stops a run between rules or when an expression returns:
-> MVEL rules can't be stopped inside an expression, so `while (true) {}` blocks the calling thread forever.
+> [timeout](docs/stopping-runs.md#-what-a-timeout-doesnt-do) only stops a run between rules or when an expression
+> returns: MVEL rules can't be stopped inside an expression, so `while (true) {}` blocks the calling thread forever.
 
 - Load rules only from sources you trust as much as your application code, such as your repository or a table
   only administrators can change.

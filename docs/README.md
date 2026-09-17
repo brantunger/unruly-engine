@@ -17,6 +17,7 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 | 🌱 [Spring Boot](spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
+| ⏳ [Stopping a run](stopping-runs.md) | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
 | 🟣 [Kotlin](kotlin.md) | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
 | 📖 [Glossary](glossary.md) | Short definitions of the terms the guides use, each linked to the page that explains it |

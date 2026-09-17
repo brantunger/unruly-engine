@@ -63,14 +63,15 @@ sequenceDiagram
 
 A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
 failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, an
-interrupt while the run waits for a compiled copy of the rules, or a run stopped because its thread was interrupted
-or it passed its deadline between rules — reaches `onRunError` only, because no rule was involved. The rule a stopped
-run would have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`, so
-there is no open callback for `onError` to close.
+interrupt or a passed deadline while the run waits for a compiled copy of the rules, or a run stopped because its
+thread was interrupted or it passed its deadline between rules — reaches `onRunError` only, because no rule was
+involved. The rule a stopped run would have gone on to gets no callback either: the check runs before `beforeEvaluate`
+and `beforeExecute`, so there is no open callback for `onError` to close.
 
 A run stopped while a condition or action was running is different: that rule's callback is closed with `onError`,
 whose exception has no rule name and an `InterruptedException` or `TimeoutException` cause, so don't count it as a
-rule failure. [What happens on each failure](error-handling.md#-what-happens-on-each-failure) lists every case.
+rule failure. [What happens on each failure](error-handling.md#-what-happens-on-each-failure) lists every case, and
+[Stopping a run](stopping-runs.md#-what-listeners-see) explains where a run stops.
 
 `onRunError`'s `error` is a `RuleExecutionException`, or an `IllegalArgumentException` for a fact the engine or a
 language rejects. When `run()` rethrows a fatal `Error`, such as an `OutOfMemoryError`, `error` is a
@@ -139,7 +140,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 | 🔗 **Paired callbacks** | Every `beforeRun`, `beforeEvaluate` and `beforeExecute` is followed by exactly one matching `after*`, `onError` or `onRunError`. |
 | 🧾 **Every failure of a run** | `onRunError` reports what the run failed with, including the failures no rule causes. A failure inside a rule reaches that rule's `onError` first. |
 | 🛑 **Runs that never start** | Misuse — `null` facts, running before `load()`, or on a closed engine — and a language that fails to create a session reach no callback. |
-| ⏱️ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that swallows an interrupt doesn't keep the run going — the next check finds it. |
+| ⏱️ **A stopped run** | A run stopped because its thread was interrupted, or because it passed its deadline, reaches `onRunError`. Stopped between rules, the rule it would have gone on to gets nothing: the check runs before `beforeEvaluate` and `beforeExecute`, so no callback is open. Stopped when a condition or action returns or throws, that rule gets `onError` with the stop exception. A listener that throws an `InterruptedException`, or an exception caused by one, doesn't hide the interrupt: the engine sets it again, and the next check, if a condition or action is still to come, finds it. |
 | 🧯 **Listener failures are contained** | An exception thrown by a listener, including a `StackOverflowError`, an `AssertionError` or a missing class (`NoClassDefFoundError`), is logged at WARN, with its stack trace, and the run continues. A `VirtualMachineError` such as `OutOfMemoryError` propagates out of `run()` once every listener has received the same callback, also when it's the cause of an exception the listener throws. If it came from a `before*` callback, the condition or action doesn't run, and every listener first gets `onError` to close that callback; if it came from `beforeRun`, every listener gets `onRunError`. |
 | 💥 **Errors in rules** | A rule that throws a `StackOverflowError`, an `AssertionError` or a `LinkageError` — a missing or unreadable class, which means the rule is misconfigured rather than the JVM failing — is wrapped in the `RuleExecutionException`. A `VirtualMachineError` such as `OutOfMemoryError`, including one thrown by a method, a getter or a lambda the rule calls, is wrapped for `onError`, and `onRunError` gets the same exception, naming the rule, before the error is rethrown unchanged from `run()`. |
 | 🔚 **A fatal error from `afterRun`** | Every listener gets `afterRun`, then the error leaves `run()`, although the run succeeded. No listener gets `onRunError`. |
