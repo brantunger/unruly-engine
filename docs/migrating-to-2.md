@@ -187,6 +187,7 @@ block.
 | Settings passed to a language's own constructor, such as a parser's features | `.option("my-language", "key", "value")` on the engine's builder, read from `CompileContext.options()` |
 | Parsing `Can not compile rule 'x'. Error: ...` | `getRuleName()`, `getExpressionKind()` and `issues()`, or the new message |
 | Reloading to find the next broken rule | `failures()`, which lists them all |
+| A throwaway engine to check rules before loading them | `validate(rules)`, which returns every problem and loads nothing |
 | `getCause()` is MVEL's `CompileException` | `getCause().getCause()`, or `issues()` |
 
 ## 🔙 Actions return a result
@@ -333,7 +334,7 @@ code.
 | A rule without a `language` on an engine given only other languages | It's written in the default language: set `language` on the rule, or choose the default with `defaultLanguage(...)` |
 | A listener or import added to an engine that is already running | Build a new engine with it, and load the rules into it |
 | `RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.stateful(HashMap::new)` | `RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build()`: in a chained call, Java needs the output type |
-| A class that implements `RulesEngine` | Implement `load` and `run`, and remove `setRuleList`, `addImport`, `addImports`, `registerLanguage`, `registerListener` and `registerListeners` |
+| A class that implements `RulesEngine` | Implement `load`, `validate`, `runWithResult(FactStore, RunOptions)` and `rules()`, and remove `setRuleList`, `addImport`, `addImports`, `registerLanguage`, `registerListener` and `registerListeners` |
 
 ## 🔗 A missing class is reported like any other failure
 
@@ -450,7 +451,7 @@ compile unchanged.
 
 | 1.x | 2.0 |
 | --- | --- |
-| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)` and `rules()`; `run` and `runWithResult(facts)` have defaults that delegate to it. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return. |
+| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)`, `rules()` and `validate(rules)`; `run` and `runWithResult(facts)` have defaults that delegate to it. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return. |
 | A listener with a `ThreadLocal` to group callbacks into a run | `beforeRun` / `afterRun`, and `RunContext.runId()` or the context itself |
 | A listener that counts failures in `onError` | `onRunError` also reports failures that belong to no rule |
 | Recording which rules produced a decision with a shared listener | `runWithResult(facts).firedRules()` |

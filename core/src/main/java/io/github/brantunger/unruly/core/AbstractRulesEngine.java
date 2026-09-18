@@ -505,56 +505,22 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @Override
     public void load(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
-        // Checked before sorting, which would otherwise fail with a bare NPE from Rule::getPriority.
-        Set<String> ruleNames = new HashSet<>();
-        for (int i = 0; i < ruleList.size(); i++) {
-            Rule rule = ruleList.get(i);
-            if (rule == null) {
-                throw compilationFailure("Rule at index " + i + " of the rule list is null", null, null);
-            }
-            // Duplicate names would make error messages, exceptions and listener logs ambiguous.
-            if (!ruleNames.add(rule.getRuleName())) {
-                throw compilationFailure("Duplicate rule name '" + Failures.quote(rule.getRuleName()) + "'", null,
-                        rule.getRuleName());
-            }
+        // A null rule or a duplicate name stops the load before anything is compiled: duplicate names would make
+        // error messages, exceptions and listener logs ambiguous.
+        List<RuleCompilationException> listProblems = listProblems(ruleList, true);
+        if (!listProblems.isEmpty()) {
+            RuleCompilationException first = listProblems.get(0);
+            log.error(first.getMessage());
+            throw first;
         }
-        ClassLoader loader = ImportResolver.contextClassLoader();
-        // Each language gets its own options.
-        LanguageCompilers compilers = new LanguageCompilers(languages.languages(),
-                (name, language) -> newCompiler(name, language, new EngineCompileContext(packageImports, classImports,
-                        loader, outputType, options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared)));
+        Compilation compilation = new Compilation(true);
         RuleSet loaded;
         try {
-            List<Rule> sorted = ruleList.stream()
-                    .sorted(Comparator.comparing(
-                            Rule::getPriority,
-                            Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                    .toList();
-            List<CompiledRule> compiled = new ArrayList<>();
-            List<RuleCompilationException> failures = new ArrayList<>();
-            for (Rule rule : sorted) {
-                String language = languageOf(rule);
-                // A language that can't create its compiler is reported once, for the first rule that needed it. The
-                // rules written in it can't be compiled, and asking the language again would only repeat the failure.
-                if (compilers.failed(language)) {
-                    continue;
-                }
-                try {
-                    compiled.add(compileRule(rule, compilers.forLanguage(language), compilers));
-                } catch (RuleCompilationException e) {
-                    failures.add(e);
-                }
-            }
-            // The compilers every fact is checked with: the ones the rules used, or the default language's for an empty
-            // list. When rules failed, only the compilers already created check the declared names.
-            Map<String, ExpressionCompiler> used = failures.isEmpty()
-                    ? compilers.used(languages.defaultLanguage())
-                    : compilers.created();
-            failures.addAll(declaredNameFailures(used));
-            throwIfAnyFailed(failures);
-            loaded = new RuleSet(compiled, used, copyLimit, copyPermits);
+            compilation.compile(ruleList);
+            throwIfAnyFailed(compilation.failures);
+            loaded = new RuleSet(compilation.compiled, compilation.used, copyLimit, copyPermits);
         } catch (RuntimeException | Error e) {
-            Closing.compilers(compilers.created());
+            compilation.closeCompilers();
             throw e;
         }
         RuleSet replaced;
@@ -591,6 +557,137 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         if (replaced != null) {
             replaced.retire();
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The rules are compiled by the same code as {@code load()}, so the two can't disagree. The compilers created are
+     * closed before this returns, and no session is ever made.
+     * </p>
+     */
+    @Override
+    public List<RuleCompilationException> validate(List<Rule> ruleList) {
+        Objects.requireNonNull(ruleList, "ruleList must not be null");
+        if (closed) {
+            throw new IllegalStateException(CLOSED_MESSAGE);
+        }
+        List<RuleCompilationException> problems = listProblems(ruleList, false);
+        Compilation compilation = new Compilation(false);
+        try {
+            compilation.compile(ruleList.stream().filter(Objects::nonNull).toList());
+        } finally {
+            compilation.closeCompilers();
+        }
+        problems.addAll(compilation.failures);
+        return Collections.unmodifiableList(problems);
+    }
+
+    /**
+     * Finds what makes a rule list unusable before any rule is compiled: a {@code null} entry, and a name a rule
+     * shares with an earlier one.
+     *
+     * @param ruleList  The list to check
+     * @param firstOnly Whether to stop at the first problem, which is all {@code load()} reports
+     * @return One failure for each such entry, in list order; none when the list is usable
+     */
+    private static List<RuleCompilationException> listProblems(List<Rule> ruleList, boolean firstOnly) {
+        List<RuleCompilationException> problems = new ArrayList<>();
+        Set<String> ruleNames = new HashSet<>();
+        for (int i = 0; i < ruleList.size(); i++) {
+            Rule rule = ruleList.get(i);
+            if (rule == null) {
+                problems.add(compilationFailure("Rule at index " + i + " of the rule list is null", null, null));
+            } else if (!ruleNames.add(rule.getRuleName())) {
+                problems.add(compilationFailure("Duplicate rule name '" + Failures.quote(rule.getRuleName()) + "'",
+                        null, rule.getRuleName()));
+            }
+            if (firstOnly && !problems.isEmpty()) {
+                return problems;
+            }
+        }
+        return problems;
+    }
+
+    /**
+     * One compilation of a rule list, for {@code load()} or {@code validate()}: compiles every rule with the languages'
+     * compilers, checks the declared fact names, and collects every failure rather than throwing the first.
+     */
+    private final class Compilation {
+
+        private final boolean logged;
+        private final LanguageCompilers compilers;
+        private final List<CompiledRule> compiled = new ArrayList<>();
+        private final List<RuleCompilationException> failures = new ArrayList<>();
+        private Map<String, ExpressionCompiler> used = Map.of();
+
+        /**
+         * Prepares a compilation with a compiler registry for the engine's languages.
+         *
+         * @param logged Whether each failure, and each warning a language reports, is logged: {@code load()} logs,
+         *               {@code validate()} doesn't
+         */
+        Compilation(boolean logged) {
+            this.logged = logged;
+            ClassLoader loader = ImportResolver.contextClassLoader();
+            // Each language gets its own options.
+            compilers = new LanguageCompilers(languages.languages(), (name, language) -> newCompiler(name, language,
+                    new EngineCompileContext(packageImports, classImports, loader, outputType,
+                            options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared, logged)));
+        }
+
+        /**
+         * Compiles the rules in priority order, then checks the declared fact names. The list has no {@code null}
+         * entry.
+         *
+         * @param ruleList The rules
+         */
+        void compile(List<Rule> ruleList) {
+            List<Rule> sorted = ruleList.stream()
+                    .sorted(Comparator.comparing(
+                            Rule::getPriority,
+                            Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
+                    .toList();
+            for (Rule rule : sorted) {
+                String language = languageOf(rule);
+                // A language that can't create its compiler is reported once, for the first rule that needed it. The
+                // rules written in it can't be compiled, and asking the language again would only repeat the failure.
+                if (compilers.failed(language)) {
+                    continue;
+                }
+                try {
+                    compiled.add(compileRule(rule, compilers.forLanguage(language), compilers));
+                } catch (RuleCompilationException e) {
+                    failed(e);
+                }
+            }
+            // The compilers every fact is checked with: the ones the rules used, or the default language's for an empty
+            // list. When rules failed, only the compilers already created check the declared names.
+            if (failures.isEmpty()) {
+                try {
+                    used = compilers.used(languages.defaultLanguage());
+                } catch (RuleCompilationException e) {
+                    failed(e);
+                    used = compilers.created();
+                }
+            } else {
+                used = compilers.created();
+            }
+            declaredNameFailures(used).forEach(this::failed);
+        }
+
+        private void failed(RuleCompilationException failure) {
+            if (logged) {
+                log.error(failure.getMessage());
+            }
+            failures.add(failure);
+        }
+
+        /** Closes the compilers created, when the rule list isn't kept. */
+        void closeCompilers() {
+            Closing.compilers(compilers.created());
         }
     }
 
@@ -1269,12 +1366,17 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param issues   Where and what the language found wrong
      * @return The exception to throw, caused by {@code cause}
      */
+    // Not logged here: load() logs each failure as it collects it, and validate() logs nothing. A fatal error is
+    // the exception: it's logged, then rethrown, whichever is compiling.
     private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName,
                                                                ExpressionKind kind,
                                                                List<InvalidExpressionException.Issue> issues) {
-        log.error(msg);
         Failures.keepInterruptStatus(cause);
-        Failures.throwIfPresent(Failures.fatalError(cause));
+        Error fatal = Failures.fatalError(cause);
+        if (fatal != null) {
+            log.error(msg);
+            throw fatal;
+        }
         return new RuleCompilationException(msg, cause, ruleName, kind, issues);
     }
 

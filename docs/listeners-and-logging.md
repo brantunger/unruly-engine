@@ -190,7 +190,7 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 
 | Logger | Level | Messages |
 | --- | --- | --- |
-| `io.github.brantunger.unruly.engine` | `ERROR` | A rule list `load()` rejects, including a fatal `Error` from compiling, which is logged and then rethrown |
+| `io.github.brantunger.unruly.engine` | `ERROR` | A rule list `load()` rejects, including a fatal `Error` from compiling, which is logged and then rethrown. `validate()` logs only that fatal `Error`; the problems it returns aren't logged |
 | `io.github.brantunger.unruly.engine` | `ERROR` | A rule that fails at run time, including with a fatal `Error`, which is logged and then rethrown |
 | `io.github.brantunger.unruly.engine` | `ERROR` | A fact `run()` rejects, or a fact name a language failed to check |
 | `io.github.brantunger.unruly.engine` | `ERROR` | An output supplier that fails, or a language that fails to create a session for a run |
@@ -207,7 +207,8 @@ Each failure is logged just before its exception is thrown. Misuse isn't logged:
 `load()`, or an invalid builder setting, such as an import that is neither a class nor a package name.
 
 > [!NOTE]
-> The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice.
+> The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice. The
+> problems `validate()` returns are the one case the engine doesn't log: log those yourself if you want them.
 > Lower the engine logger's level if you prefer to handle logging yourself.
 
 > [!CAUTION]

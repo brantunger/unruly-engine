@@ -28,9 +28,9 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("RulesEngine loads rules, runs them, reports what it loaded and closes: nothing else changes on it")
+    @DisplayName("RulesEngine loads or validates rules, runs them, reports what it loaded and closes: nothing else")
     void engineMethods() {
-        assertEquals(List.of("close", "load", "rules", "run", "runWithResult", "runWithResult"),
+        assertEquals(List.of("close", "load", "rules", "run", "runWithResult", "runWithResult", "validate"),
                 names(RulesEngine.class));
     }
 

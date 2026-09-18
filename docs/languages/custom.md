@@ -60,13 +60,13 @@ sequenceDiagram
 | Method | When | Thread | Concurrent with itself? |
 | --- | --- | --- | --- |
 | `name()` | `language(...)`, `build()`, and when `ServiceLoader` finds the language | The building thread | Keep it constant |
-| `newCompiler` | During `load()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The `load()` thread | Yes: concurrent `load()` calls, and engines sharing one instance |
-| `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` thread | No |
-| `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()`, then run threads | Yes |
+| `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
+| `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
+| `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
 | `newSession` | A run that finds no idle copy of the rules | The run's thread | Yes |
 | `evaluate`, `execute` | Each rule the run reaches | The run's thread | Yes, each with its own session |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below) | Depends on the case | Yes, alongside other sessions |
-| `ExpressionCompiler.close()` | Once, after its last session has closed, or at once when the `load()` fails | The last thread to finish with the rule list, or the `load()` caller | Never while any method above runs |
+| `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
 
 Who closes a session depends on its copy. An extra copy, or a kept copy in use when the rules are retired: its run,
 when it ends. An idle copy: the `load()` or `close()` caller that retires the rules. A copy shared by every run holds
@@ -154,7 +154,8 @@ a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even wrapped 
 returns anything but a `Boolean`, including `null`, fails the rule: the engine coerces nothing.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the packages and classes from
-`imports(...)` with `classLoader()`, the context class loader of the `load()` thread; `outputType()`, or `Object`;
+`imports(...)` with `classLoader()`, the context class loader of the `load()` or `validate()` thread; `outputType()`,
+or `Object`;
 `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, primitives as wrappers, with
 `allFactsDeclared()`. Reject a name nobody declared only when that is `true`: otherwise a run may supply undeclared
 facts.
@@ -165,7 +166,8 @@ engine logs `Condition for rule 'prime-rate' has a warning at line 2, column 5: 
 
 ## 🚨 Errors when rules load
 
-What your compiler throws or returns decides what the user sees from `load()`:
+What your compiler throws or returns decides what the user sees from `load()`, or gets back from `validate()`, which
+compiles the same way but returns the failures and logs nothing, not even your warnings:
 
 | You throw or return | The user sees | Reported |
 | --- | --- | --- |

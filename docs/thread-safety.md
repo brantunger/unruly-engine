@@ -31,6 +31,7 @@ one run does.
 | --- | :---: | --- |
 | `RulesEngineBuilder` methods and `build()` | ❌ | During setup, on one thread. The engine it builds is thread-safe, and everything but the rules is fixed from then on. |
 | `load()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish compiling wins. |
+| `validate()` | ✅ | At any time, from any thread. It compiles and discards, and changes nothing. |
 | `run()`, `runWithResult()` | ✅ | From any number of threads, once `load()` has returned. |
 | `rules()` | ✅ | At any time. Before the first `load()` it reports no rules; after `close()` it throws. |
 | `close()` | ✅ | Once the engine is no longer needed. It returns at once, and runs already going finish with their rules. |
@@ -87,7 +88,8 @@ stateDiagram-v2
 | Closed | `IllegalStateException`, at once | Compiles the list, then throws `IllegalStateException` without loading it | `IllegalStateException` |
 
 A `run()` before the first `load()` fails **at once**: it doesn't wait for a `load()` that is still compiling on
-another thread. Load your rules before the application accepts traffic.
+another thread. Load your rules before the application accepts traffic. `validate()` works in every state but
+Closed, and changes none of them.
 
 ### Closing
 
@@ -113,7 +115,8 @@ sequenceDiagram
 ```
 
 - A run already in progress finishes normally and returns its result.
-- Every new `run()`, `runWithResult()` and `rules()` throws `IllegalStateException("The engine is closed")` at once.
+- Every new `run()`, `runWithResult()`, `validate()` and `rules()` throws `IllegalStateException("The engine is
+  closed")` at once.
 - `load()` compiles the whole list first: a list that doesn't compile throws `RuleCompilationException`, and one that
   does is compiled, then dropped with the same `IllegalStateException`.
 - A **nested run** started from an action or a listener of a run that is still going throws it too: a nested run reads

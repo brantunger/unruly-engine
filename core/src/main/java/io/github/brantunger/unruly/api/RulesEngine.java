@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
@@ -19,8 +20,8 @@ import java.util.List;
  *
  * <p>
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
- * Implement {@link #load(List)}, {@link #runWithResult(FactStore, RunOptions)} and {@link #rules()};
- * {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
+ * Implement {@link #load(List)}, {@link #validate(List)}, {@link #runWithResult(FactStore, RunOptions)} and
+ * {@link #rules()}; {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
  * implementation keeps compiling. {@link RunResult#of(Object, List, String)} and
  * {@link RuleSetInfo#of(List, String, java.time.Instant)} create the values an implementation returns.
  * </p>
@@ -45,6 +46,31 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      */
     void load(List<Rule> ruleList);
+
+    /**
+     * Compiles a rule list exactly as {@link #load(List)} would, with this engine's languages, imports, options and
+     * declared facts, without loading it, and returns every problem {@code load()} would have thrown instead of
+     * throwing. The rules loaded, if any, are unchanged, and the compiled result is discarded: a later {@code load()}
+     * compiles the list again. Nothing about the rules is logged, not even a language's compile warnings; a fatal
+     * {@link Error} is logged at ERROR before it's rethrown, and a compiler that fails to close at WARN, as always.
+     *
+     * <p>
+     * The problems come in the order {@code load()} finds them: a {@code null} entry or a duplicate name, in list
+     * order; then each rule that doesn't compile, in priority order, with a language that can't create its compiler
+     * in place of the first rule that needed it; then each declared fact name the languages reject. Unlike
+     * {@code load()}, a {@code null} entry or a duplicate name doesn't stop the check: every other rule is still
+     * compiled.
+     * </p>
+     *
+     * @param ruleList The list of {@link Rule} objects
+     * @return One exception for each problem, as {@code load()} would have reported it; empty if the list would load
+     * @throws IllegalStateException if the engine is closed
+     * @throws NullPointerException  if the list itself is {@code null}
+     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
+     *                               compiling, also as the cause of another exception, is logged and then rethrown
+     *                               unchanged
+     */
+    List<RuleCompilationException> validate(List<Rule> ruleList);
 
     /**
      * Fire rules engine against the rules supplied by the rules list.

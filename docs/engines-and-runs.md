@@ -314,11 +314,32 @@ stateDiagram-v2
 - **Built:** `run()` throws `IllegalStateException` (`load() must be called before run()`), and `rules()` reports no
   rules.
 - **Loaded:** runs and reloads, from any number of threads.
-- **Closed:** `run()`, `runWithResult()`, `load()` and `rules()` throw `IllegalStateException`
+- **Closed:** `run()`, `runWithResult()`, `load()`, `validate()` and `rules()` throw `IllegalStateException`
   (`The engine is closed`). `close()` returns at once, runs in progress finish, and closing again does nothing.
 
 Runs in flight during a reload, two loads at once, and what `close()` releases are in
 [Thread safety](thread-safety.md#-reloading-rules-while-running) and [Closing](thread-safety.md#closing).
+
+### Checking a list before loading it
+
+`validate(rules)` compiles a list exactly as `load()` would, with the engine's languages, imports, options and
+declared facts, and returns every problem instead of throwing: one `RuleCompilationException` for each, in the order
+`load()` would find them, or an empty list when the rules would load. Nothing is loaded and nothing about the rules
+is logged, not even a language's compile warnings, so a rule editor or an admin endpoint can call it as often as it
+likes.
+
+```java
+List<RuleCompilationException> problems = engine.validate(newRules);
+if (problems.isEmpty()) {
+    engine.load(newRules);                          // compiles the list again, then swaps it in
+} else {
+    problems.forEach(problem -> log.warn("{}", problem.getMessage()));
+}
+```
+
+Unlike `load()`, a `null` entry or a duplicate name doesn't stop the check: every other rule is still compiled, so
+one call lists everything. `getRuleName()` names the rule a problem belongs to, and is `null` for a `null` entry, a
+language that couldn't create its compiler, or a declared fact name the languages reject.
 
 ## ❓ Questions you might not think to ask
 
