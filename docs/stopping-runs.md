@@ -83,10 +83,10 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   kept in `getSuppressed()`. This is how a language gives up part-way, and how a [nested run](#-nested-runs) that
   stopped stops the run around it. An `Error` thrown then is still that rule's failure.
 - **A thread that is already interrupted** stops before its first rule, or fails at once if it would have to wait
-  for a copy; see [Limiting the copies](thread-safety.md#limiting-the-copies).
+  for a copy; see [Limiting the copies](compiled-copies.md#-limiting-the-copies).
 - **A wait for a copy** happens only when the engine limits copies and all of them are in use. The run stops waiting
   at its deadline. But when no copy comes back for five seconds and the deadline is further away than that, it makes
-  an extra copy and goes on instead; see [Runs that don't wait](thread-safety.md#runs-that-dont-wait).
+  an extra copy and goes on instead; see [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 - **An interrupt that a rule, listener, output supplier or language throws is put back.** When an
   `InterruptedException` is anywhere in the cause chain of what they throw, the engine sets the interrupt status again.
   A condition or action that throws it stops the run. A listener's exception is logged, and the next check stops the
@@ -182,7 +182,7 @@ once.
   still inherits the deadline; see [Callbacks](listeners-and-logging.md#-callbacks).
 - **A nested run never waits for a copy** while a run on its thread holds one; a run started from the callbacks of a
   run that stopped while waiting holds none, and fails at once instead. See
-  [Runs that don't wait](thread-safety.md#runs-that-dont-wait).
+  [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ## ❓ Questions you might not think to ask
 

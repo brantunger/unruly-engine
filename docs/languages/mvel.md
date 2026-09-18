@@ -242,7 +242,7 @@ doesn't catch a condition that isn't a boolean; the engine checks that itself, w
 
 ## 📑 Compiled copies
 
-[Thread safety](../thread-safety.md#-compiled-copies) explains what a compiled copy is for every language. This is why
+[Compiled copies](../compiled-copies.md) explains what a compiled copy is for every language. This is why
 MVEL needs one, and what it costs.
 
 MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact name
@@ -261,7 +261,7 @@ A copy is built lazily, one expression at a time:
 
 So an [extra copy](../glossary.md#extra-copy) — one a run makes because no copy is free, rather than one it borrows —
 pays that price and then throws it away when the run ends. A rule that keeps making them, by starting a run of the
-same engine on another thread under a full [copy limit](../thread-safety.md#limiting-the-copies), recompiles and
+same engine on another thread under a full [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and
 regenerates accessors over and over, costing CPU and metaspace churn.
 
 Because a session's expressions belong to one run at a time, they're safe with any MVEL optimizer, and the engine
@@ -293,7 +293,7 @@ So on JDK 21 to 23:
 - otherwise run MVEL rules on platform threads, or keep the copies of all your engines together below
   `jdk.virtualThreadScheduler.parallelism`, which is the number of processors unless you set it.
 
-See [Limiting the copies](../thread-safety.md#limiting-the-copies).
+See [Limiting the copies](../compiled-copies.md#-limiting-the-copies).
 
 ## 🔒 Security
 

@@ -83,7 +83,7 @@ documentation lives.
 ## 😀 Emojis
 
 - **Exactly one emoji on the H1 and on each H2, and none on an H3 or below.** Links to an H3 then never depend on an
-  emoji: `### Limiting the copies` is `#limiting-the-copies`.
+  emoji: `### Memory sizing` is `#memory-sizing`.
 - **Never in prose or in code.** In a table, an emoji may start each cell of the first column, but only when every
   row has one. Status cells may use ✅ yes, ❌ no and ⚠️ sometimes.
 - **No emoji inside mermaid labels.**
