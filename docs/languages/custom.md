@@ -62,7 +62,7 @@ sequenceDiagram
 | `name()` | `language(...)`, `build()`, and when `ServiceLoader` finds the language | The building thread | Keep it constant |
 | `newCompiler` | During `load()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The `load()` thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` thread | No |
-| `checkFactName` | Each declared fact, once every rule has compiled; then each fact of each run | `load()`, then run threads | Yes |
+| `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()`, then run threads | Yes |
 | `newSession` | A run that finds no idle copy of the rules | The run's thread | Yes |
 | `evaluate`, `execute` | Each rule the run reaches | The run's thread | Yes, each with its own session |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below) | Depends on the case | Yes, alongside other sessions |
@@ -173,9 +173,9 @@ What your compiler throws or returns decides what the user sees from `load()`:
 | Any other exception | `Condition for rule 'prime-rate' failed to compile: ` + its description; no issues; your exception as the cause | Per rule |
 | Anything with a `StackOverflowError` as a cause | `... failed to compile: the expression is too long or too deeply nested to compile` | Per rule |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
-| An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | At once: the load stops there |
+| An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; the rules written in it aren't compiled |
 | A [fatal error](../glossary.md#fatal-error), thrown or as a cause | Logged, then rethrown unchanged | At once |
-| `IllegalArgumentException` from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | At once, after every rule has compiled |
+| `IllegalArgumentException` from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine copies your message the way
@@ -200,9 +200,8 @@ The `RuleCompilationException` carries the same issues; for several rules its me
 > the condition is fixed and the rules are loaded again. One load reports every broken *rule*, not every broken
 > expression.
 
-Two more failures hide others the same way: a `newCompiler` failure stops the load at once, dropping the failures of
-the rules already found broken in that load; and a declared fact name your `checkFactName` rejects is checked only
-once every rule has compiled, so a broken rule hides it until the next `load()`.
+When failures other than a rule's are among them, the message reads `2 failures while loading the rules: ...`
+instead of `2 rules failed to compile: ...`.
 
 ## 📁 Reading facts
 
@@ -258,7 +257,8 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 - for every fact of every run, on the run's thread, after `beforeRun`, so a rejection reaches `onRunError`. `run()`
   throws your exception as it is, logged at ERROR. Anything else you throw becomes an `IllegalArgumentException`
   reading `The 'my' expression language failed to check fact name 'x': ...`, except a fatal error, which is rethrown;
-- for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has compiled. A rejection fails
+- for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has been compiled or has failed,
+  by the compilers that were created; when none was, the names wait for the next `load()`. A rejection fails
   the load with `Declared fact 'empty' can't be used: ` followed by your message.
 
 Only the languages the loaded rules use are asked, in the order the rules first used them, or the default language
@@ -451,7 +451,6 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
 | **A condition that doesn't compile** | Its action isn't compiled, so the action's errors appear only after the next `load()` | Expect a second failure after fixing a condition |
-| **`newCompiler` that throws** | The load stops at once, and the failures of rules already found broken aren't reported | Keep `newCompiler` free of work that can fail |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause |
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 

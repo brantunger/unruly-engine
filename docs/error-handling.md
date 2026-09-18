@@ -112,8 +112,10 @@ as a condition with an assignment or an MVEL syntax error, has an `InvalidExpres
 `load()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
 failed: `failures()` has each rule's own exception, and the message lists them, such as
 `2 rules failed to compile: Condition for rule 'r1' failed to compile at line 1, column 6: Malformed expression; Action for rule 'r2' ...`.
-A failure that isn't about one rule, such as a `null` rule, a duplicate name or a language that can't create its
-compiler, is thrown at once.
+
+A language that can't create its compiler, and a declared fact name the languages reject, are listed with them, with
+no rule name; the message then counts `failures while loading the rules` instead of rules. A `null` rule or a
+duplicate name is thrown at once, before anything is compiled.
 
 `getExpressionKind()` on either exception says whether the rule's condition or its action failed. `issues()` on a
 `RuleCompilationException` says where the language found each problem, with a line and column when it knows them.
