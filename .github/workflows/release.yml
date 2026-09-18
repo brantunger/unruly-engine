@@ -97,11 +97,11 @@ jobs:
 
       # The full build runs first, without the signing key or the Portal token, so the
       # release artifacts clear Checkstyle, PMD, the coverage gate and the API check, and
-      # none of the tests, checks or build logic they run can read the secrets. It also
-      # builds the combined Javadoc site, which the Central step doesn't.
+      # none of the tests, checks or build logic they run can read the secrets. `check`
+      # also builds the combined Javadoc site, which the Central step doesn't.
       - name: Build
         # Without the build cache, so the published jars are built from scratch, and with a fresh API baseline.
-        run: ./gradlew clean build javadoc --no-daemon --no-build-cache -PapiCheck.refresh
+        run: ./gradlew clean build --no-daemon --no-build-cache -PapiCheck.refresh
 
       # Only this step gets the secrets, and it skips `check`, which the step above ran.
       # Signing is done in-memory by the vanniktech plugin — no gpg keyring is imported

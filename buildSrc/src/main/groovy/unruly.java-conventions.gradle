@@ -58,6 +58,11 @@ tasks.withType(Javadoc).configureEach {
     options.addBooleanOption('Werror', true)
 }
 
+// Part of `check`, so `./gradlew build` finds a broken doc comment locally, not first in CI.
+tasks.named('check') {
+    dependsOn tasks.named('javadoc')
+}
+
 tasks.named('test', Test) {
     javaLauncher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(testJdk)

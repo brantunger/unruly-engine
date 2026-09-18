@@ -250,7 +250,8 @@ Yes. An all-matches run isn't atomic. See [Choosing an engine](../README.md#choo
   Javadoc owns each method's part of it.
 - Use `{@snippet :}` for examples.
 - Javadoc in `unruly-engine-core` names MVEL only as an example, as in "a language such as MVEL".
-- `./gradlew clean build` doesn't build the Javadoc. Run `./gradlew javadoc` after changing it, and fix any errors.
+- `./gradlew clean build` builds the Javadoc too and fails on any warning; `./gradlew javadoc` runs only the Javadoc
+  tasks.
 
 ## ✅ Checklist
 

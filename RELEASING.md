@@ -33,7 +33,7 @@ flowchart LR
 1. Merge PRs to `main` with [Conventional Commit](CONTRIBUTING.md#-commit-and-pr-titles) titles. `feat:` bumps the
    minor version, `fix:` the patch version, and a `!` suffix the major version.
 2. [release-please](https://github.com/googleapis/release-please) opens a PR titled
-   **chore(main): release X.Y.Z**. It bumps `build.gradle`, the README install snippets,
+   **chore(main): release X.Y.Z**. It bumps `gradle.properties`, the README install snippets,
    `.release-please-manifest.json` and `CHANGELOG.md`, and updates the PR as further commits land.
 3. Review the proposed version and changelog, then **squash-merge the release PR**.
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job

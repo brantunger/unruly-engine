@@ -5,6 +5,7 @@ import com.vanniktech.maven.publish.SourcesJar
 import me.champeau.gradle.japicmp.JapicmpTask
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import unruly.conventions.ApiCheckExtension
+import unruly.conventions.Jars
 
 plugins {
     id 'unruly.java-conventions'
@@ -64,7 +65,7 @@ mavenPublishing {
 }
 
 // API compatibility: every build compares the jar with the newest release on Maven Central that is no higher than the
-// version in the root build.gradle, and fails on a binary- or source-incompatible change to a public or protected
+// version in gradle.properties, and fails on a binary- or source-incompatible change to a public or protected
 // member, so a minor or patch release can't break code compiled against an earlier one. Breaks intended for a major
 // release are listed in config/japicmp/accepted-breaks.txt. Each project configures its check with apiCheck { }.
 //
@@ -79,6 +80,21 @@ def apiCheck = extensions.create('apiCheck', ApiCheckExtension)
 def projectGroup = project.group.toString()
 def projectVersion = project.version.toString()
 def refreshBaseline = providers.gradleProperty('apiCheck.refresh').present
+
+// The module descriptor carries the artifact's version, so `java --list-modules`, a jlink image and module-aware
+// stack traces show which engine is running. javac accepts only a version ModuleDescriptor.Version parses, so a
+// build with a version such as -Pversion=local compiles without one rather than failing.
+def moduleVersion = providers.provider {
+    try {
+        java.lang.module.ModuleDescriptor.Version.parse(projectVersion)
+        projectVersion
+    } catch (IllegalArgumentException e) {
+        null
+    }
+}
+tasks.withType(JavaCompile).configureEach {
+    options.javaModuleVersion = moduleVersion
+}
 
 def newestRelease = { String notation ->
     def configuration = configurations.detachedConfiguration(dependencies.create("${notation}@jar"))
@@ -100,6 +116,16 @@ def isHigher = { String version, String other ->
     difference != null ? difference > 0 : a.size() > b.size()
 }
 
+// The classpath of a baseline, resolved for the exact release chosen: the release itself and its dependencies, which
+// is what its types are loaded against. The current runtime classpath would miss a dependency the baseline had and
+// this version doesn't, and japicmp would then quietly leave out the members it can't load. The release's own jar is
+// on it because japicmp loads an excluded package's classes from the classpath, not from the archive: without it,
+// the 1.x jar's API classes were being loaded from this build's core jar.
+def baselineClasspath = { ResolvedDependencyResult dependency ->
+    def release = dependency.selected.moduleVersion
+    configurations.detachedConfiguration(dependencies.create("${release.group}:${release.name}:${release.version}"))
+}
+
 // The baseline: the artifact's own newest release, or, while it has none, its predecessor's. Chosen once, when the
 // check first needs it.
 def chosenBaseline = null
@@ -108,10 +134,12 @@ def apiBaseline = providers.provider {
         def artifact = apiCheck.artifactId.get()
         def own = newestRelease("${projectGroup}:${artifact}:(,${projectVersion}]")
         if (own.dependency instanceof ResolvedDependencyResult) {
-            chosenBaseline = [archives: own.configuration, name: artifact, excludes: [], note: '',
+            chosenBaseline = [archives: own.configuration, classpath: baselineClasspath(own.dependency),
+                              name    : artifact, excludes: [], note: '', ownRelease: true,
                               version : own.dependency.selected.moduleVersion.version]
         } else if (apiCheck.firstRelease.present && !isHigher(projectVersion, apiCheck.firstRelease.get())) {
-            chosenBaseline = [archives: files(), name: artifact, excludes: [], version: '0', skip: true,
+            chosenBaseline = [archives: files(), classpath: files(), name: artifact, excludes: [], version: '0',
+                              skip    : true, ownRelease: false,
                               note    : "${artifact} is new in ${apiCheck.firstRelease.get()}"]
         } else if (!apiCheck.predecessor.present) {
             throw new GradleException("Can't resolve the API baseline from Maven Central", own.dependency.failure)
@@ -122,7 +150,8 @@ def apiBaseline = providers.provider {
                         "nor ${apiCheck.predecessor.get()} resolved", predecessor.dependency.failure)
             }
             def excludes = apiCheck.predecessorExcludedPackages.get()
-            chosenBaseline = [archives: predecessor.configuration, excludes: excludes,
+            chosenBaseline = [archives: predecessor.configuration, classpath: baselineClasspath(predecessor.dependency),
+                              excludes: excludes, ownRelease: false,
                               name    : predecessor.dependency.selected.moduleVersion.module.name,
                               version : predecessor.dependency.selected.moduleVersion.version,
                               note    : ", without ${excludes.join(', ')}, because ${artifact} has no release up to " +
@@ -135,7 +164,7 @@ def apiBaselineMajor = apiBaseline.map { baseline -> baseline.version.tokenize('
 
 def acceptedBreakKinds = ['package', 'class', 'method', 'field']
 // Each accepted break is [major, kind, element]. The file's header describes the format.
-def acceptedBreaks = providers.fileContents(rootProject.layout.projectDirectory.file('config/japicmp/accepted-breaks.txt'))
+def acceptedBreaks = providers.fileContents(layout.settingsDirectory.file('config/japicmp/accepted-breaks.txt'))
         .asText
         .map { text ->
             def entries = []
@@ -160,7 +189,7 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
     group = 'verification'
     description = 'Checks the public API against the newest release on Maven Central up to this version.'
     oldArchives.from(apiBaseline.map { baseline -> baseline.archives })
-    oldClasspath.from(configurations.runtimeClasspath)
+    oldClasspath.from(apiBaseline.map { baseline -> baseline.classpath })
     newArchives.from(tasks.named('jar'))
     newClasspath.from(configurations.runtimeClasspath)
     accessModifier = 'protected'
@@ -182,6 +211,12 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
     def ignored = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
         entries.count { it.major <= major }
     }
+    // Like the accepted breaks, an exclusion that no longer applies is reported rather than kept for ever: a package
+    // excluded because it moved to another artifact is dead once neither the baseline nor the new jar has it, and a
+    // predecessor is dead once the artifact has a release of its own. A wildcard exclusion isn't checked.
+    def configuredExcludes = excluded.map { packages -> packages.findAll { !it.contains('*') } }
+    def predecessorConfigured = apiCheck.predecessor.map { true }.orElse(false)
+    def buildFile = "${project.name}/build.gradle"
 
     htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
     txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
@@ -202,6 +237,18 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
             task.logger.warn("${ignored.get()} line(s) in config/japicmp/accepted-breaks.txt are for a major version " +
                     "that is already released, so they no longer apply against ${apiBaselineMajor.get()}.x. " +
                     "Delete them.")
+        }
+        def present = Jars.packagesIn(task.oldArchives.files + task.newArchives.files)
+        def dead = configuredExcludes.get().findAll { !(it in present) }
+        if (dead) {
+            task.logger.warn("${buildFile} excludes ${dead.join(', ')} from the API check, but " +
+                    "neither ${baseline.name} ${baseline.version} nor this jar has that package. Delete the " +
+                    "exclusion, or fix its spelling.")
+        }
+        if (predecessorConfigured.get() && baseline.ownRelease) {
+            task.logger.warn("${buildFile} names a predecessor for the API check, but " +
+                    "${baseline.name} ${baseline.version} is the artifact's own release. Delete predecessor and " +
+                    "predecessorExcludedPackages.")
         }
     }
 }

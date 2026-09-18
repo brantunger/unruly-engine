@@ -45,13 +45,16 @@ Settings shared by the published projects are in the convention plugins in `buil
 
 | Command | What it does |
 | --- | --- |
-| `./gradlew clean build` | Compiles, tests, and runs every quality gate: exactly what CI checks |
+| `./gradlew clean build` | Compiles, tests, generates the Javadoc, and runs every quality gate: exactly what CI checks |
 | `./gradlew test` | Runs the tests only |
 | `./gradlew test --tests '*StatefulSemanticsTest*'` | Runs a single test class |
 | `./gradlew test -PtestJdk=25` | Runs the tests on JDK 25 instead of 21 |
 | `./gradlew jacocoTestReport` | Writes the coverage report for both artifacts to `build/reports/jacoco/html/index.html` |
 | `./gradlew japicmp` | Checks each artifact's public API against its newest release up to the build's version and writes `build/reports/japicmp/report.html` in `core`, `mvel` and `test-kit` |
 | `./gradlew javadoc` | Generates the Javadoc site for all the modules in `build/docs/javadoc` |
+
+Skipping the tests with `-x test` fails the coverage gate on purpose: it would have nothing to measure. Skip the gate
+too with `-x jacocoTestCoverageVerification`, or run `./gradlew build -x check` to only compile and package.
 
 ## ✅ Quality gates
 
@@ -65,7 +68,7 @@ Settings shared by the published projects are in the convention plugins in `buil
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in each published project's `build.gradle`, `config/japicmp/accepted-breaks.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, one runs the test kit's contract test with JUnit, and one reads rules from JSON through the documented Jackson 2 and Jackson 3 mix-ins | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |
 
-On every pull request, CI runs `./gradlew build jacocoTestReport javadoc` on **JDK 21**, and the tests again on
+On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21**, and the tests again on
 **JDK 25** with `./gradlew :mvel:test -PtestJdk=25`. A separate check validates the PR title. CI restores Gradle's
 caches from `main`, so a pull request only rebuilds what it changed.
 
@@ -77,7 +80,7 @@ caches from `main`, so a pull request only rebuilds what it changed.
 
 The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `feat:` release must not break code
 written or compiled against an earlier release. `./gradlew build` compares each artifact's jar with its **newest release on
-Maven Central that isn't higher than the version in the root `build.gradle`** using [japicmp](https://siom79.github.io/japicmp/),
+Maven Central that isn't higher than the version in `gradle.properties`** using [japicmp](https://siom79.github.io/japicmp/),
 and fails when a public or protected member is removed
 or changes incompatibly. Examples: a changed method signature, a class made `final`, a new abstract method on an
 interface, a new checked exception, or a changed method of `Rule`. When you add a field to `Rule`, add it to
@@ -169,7 +172,7 @@ The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` 
 - The **README** is the landing page: features, installation, quick start and core concepts.
 - The **guides** in [`docs/`](docs/README.md) hold the details.
 - The **Javadoc** in each published project's `src/main/java` is published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for all the modules.
-  `./gradlew clean build` doesn't generate it, so run `./gradlew javadoc` after changing it and fix any errors.
+  `./gradlew clean build` generates it too, and fails on any warning; `./gradlew javadoc` runs only the Javadoc tasks.
 
 When writing docs, follow the [docs style guide](docs/STYLE.md): the page template, emojis, callouts, diagrams,
 examples and Javadoc conventions, and a checklist to run before you open a pull request.
