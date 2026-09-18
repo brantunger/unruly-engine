@@ -88,6 +88,9 @@ reports it as the cause of a `RuleCompilationException`.
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. Every other `Error`, including a `LinkageError` such as `NoClassDefFoundError` or `IllegalAccessError`, is reported as a `RuleExecutionException` naming the rule, with the error as its cause. |
 | `RunOptions.withTimeoutOf()` / `withTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
 | `runWithResult(facts, options)` | | As `runWithResult(facts)` |
+| `validate(rules)` | `IllegalStateException` | The engine is closed |
+| | `NullPointerException` | The list itself is `null`. A `null` entry is returned as a problem, not thrown |
+| | `Error` (rethrown) | As `load(rules)`. Everything else `load()` would throw is returned as a `RuleCompilationException` in the list |
 | `rules()` | `IllegalStateException` | The engine is closed |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |

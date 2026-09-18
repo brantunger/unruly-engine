@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +18,11 @@ class RulesEngineDefaultMethodTest {
 
         @Override
         public void load(List<Rule> ruleList) {
+            throw new AssertionError("not called");
+        }
+
+        @Override
+        public List<RuleCompilationException> validate(List<Rule> ruleList) {
             throw new AssertionError("not called");
         }
 

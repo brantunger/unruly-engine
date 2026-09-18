@@ -90,7 +90,9 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
     /**
      * Reports a problem that doesn't stop an expression compiling, such as use of a deprecated function. The engine
      * logs it at WARN, naming the rule, whether the expression is its condition or its action, and where the problem
-     * is, and loading carries on. To stop the expression compiling, throw an {@link InvalidExpressionException} instead.
+     * is, and loading carries on. While the rules are only validated, with
+     * {@link io.github.brantunger.unruly.api.RulesEngine#validate(java.util.List)}, the warning is discarded. To stop
+     * the expression compiling, throw an {@link InvalidExpressionException} instead.
      *
      * @param source The expression the problem is in
      * @param issue  The problem, reported as a warning whatever its severity
