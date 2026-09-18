@@ -2,13 +2,16 @@ package unruly.conventions
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.ProjectLayout
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
@@ -27,11 +30,19 @@ import javax.inject.Inject
 @CacheableTask
 abstract class ModuleJavadoc extends DefaultTask {
 
-    /** The source directory of each module, by module name. */
+    /**
+     * The source directory of each module, by module name, as a path relative to {@link #getRoot()}. Relative, so
+     * the build-cache key holds no absolute path and an entry is reused from another checkout directory, and a
+     * map, so the key changes when a directory is given to another module.
+     */
     @Input
     abstract MapProperty<String, String> getModuleSourcePaths()
 
-    /** The modules' sources, as files, so a change reruns the task. */
+    /** The directory the source paths are relative to: the settings directory, unless set. */
+    @Internal
+    abstract DirectoryProperty getRoot()
+
+    /** The modules' sources, as files, so a change reruns the task. Derived from the paths. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getSources()
@@ -52,18 +63,29 @@ abstract class ModuleJavadoc extends DefaultTask {
     @Inject
     protected abstract ExecOperations getExecOperations()
 
+    @Inject
+    protected abstract ProjectLayout getLayout()
+
+    ModuleJavadoc() {
+        getRoot().convention(getLayout().settingsDirectory)
+        getSources().from(getModuleSourcePaths().map { paths -> paths.values().collect { getRoot().dir(it).get() } })
+    }
+
     @TaskAction
     void generate() {
         File destination = getDestination().get().asFile
         destination.deleteDir()
+        Map<String, String> modules = getModuleSourcePaths().get()
+        Directory root = getRoot().get()
         // A warning fails the task, like the projects' own Javadoc tasks.
         List<String> arguments = ['-d', destination.absolutePath, '-quiet', '-Xdoclint:all', '-Werror',
                                   '-encoding', 'UTF-8', '-docencoding', 'UTF-8', '-charset', 'UTF-8',
                                   '-doctitle', getTitle().get(), '-windowtitle', getTitle().get(),
-                                  '--module', getModuleSourcePaths().get().keySet().join(','),
+                                  '--module', modules.keySet().join(','),
                                   '--module-path', getModulePath().asPath]
-        getModuleSourcePaths().get().each { module, path ->
-            arguments += ['--module-source-path', "${module}=${path}".toString()]
+        // The absolute paths are resolved here, at execution, where they don't reach the cache key.
+        modules.each { module, path ->
+            arguments += ['--module-source-path', "${module}=${root.dir(path).asFile.absolutePath}".toString()]
         }
         getExecOperations().exec { spec ->
             spec.executable = getJavadocTool().get().executablePath.asFile.absolutePath

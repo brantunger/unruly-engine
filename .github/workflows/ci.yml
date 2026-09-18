@@ -41,11 +41,11 @@ jobs:
           cache-provider: basic
 
       # `build` runs `check`: Checkstyle, PMD, the 100% JaCoCo gate, the API compatibility check of every artifact,
-      # and the tests, including the applications ModulePathTest runs on the module path. `javadoc` runs in the same
-      # build, so a broken Javadoc comment fails here, not first in the release's publish job after tagging.
+      # the Javadoc site and each project's Javadoc, so a broken doc comment fails here, and the tests, including the
+      # applications ModulePathTest runs on the module path.
       - name: Build & Test
         if: matrix.java-version == '21'
-        run: ./gradlew build jacocoTestReport javadoc --no-daemon
+        run: ./gradlew build jacocoTestReport --no-daemon
 
       # Compilation always uses the Java 21 toolchain, so only the tests depend on this JDK; -PtestJdk runs them on it.
       - name: Test on JDK ${{ matrix.java-version }}

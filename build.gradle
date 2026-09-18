@@ -7,11 +7,6 @@ plugins {
     id 'jacoco-report-aggregation'
 }
 
-allprojects {
-    group = 'io.github.brantunger'
-    version = '1.8.0' // x-release-please-version
-}
-
 // The same JaCoCo version as the projects' test agents, from gradle/libs.versions.toml.
 jacoco {
     toolVersion = libs.versions.jacoco.get()
@@ -46,6 +41,19 @@ def coverageVerification = tasks.register('jacocoTestCoverageVerification', Jaco
     group = 'verification'
     description = 'Fails unless the tests cover every instruction and branch of the published artifacts.'
     executionData.from(coverageReport.map { report -> report.executionData })
+    // JaCoCo's own tasks skip themselves when no execution data file exists, which turned this gate into a no-op
+    // whenever the tests didn't run (`-x test`, or a rewired aggregation). A gate that can't measure fails instead.
+    setOnlyIf('the coverage gate always runs') { true }
+    doFirst { task ->
+        if (!task.executionData.files.any { it.exists() }) {
+            throw new GradleException('No JaCoCo execution data: the coverage gate would measure nothing. Run the ' +
+                    'tests first, or skip the gate with -x jacocoTestCoverageVerification.')
+        }
+        // A limit is a ratio, and JaCoCo passes a NaN ratio, so no classes at all would pass the gate vacuously.
+        if (task.classDirectories.asFileTree.isEmpty()) {
+            throw new GradleException('No class files: the coverage gate would pass vacuously.')
+        }
+    }
     // The test kit's ExpressionLanguageContractTest is a test class. Its lambdas that always throw leave instructions
     // JaCoCo can't reach, and the tests run it for MVEL and for a test language, so it isn't gated.
     classDirectories.from(coverageReport.map { report ->
@@ -70,6 +78,8 @@ def coverageVerification = tasks.register('jacocoTestCoverageVerification', Jaco
 
 tasks.named('check') {
     dependsOn coverageVerification
+    // The Javadoc site too, so `./gradlew build` fails on a broken doc comment, like each project's own javadoc.
+    dependsOn 'javadoc'
 }
 
 // One Javadoc site for all the modules. The javadoc tool gets the modules rather than source files, so it documents
@@ -94,17 +104,14 @@ dependencies {
     javadocModulePath libs.apiguardian.api
 }
 
-def moduleSources = [
-        'io.github.brantunger.unruly.core': layout.projectDirectory.dir('core/src/main/java'),
-        'io.github.brantunger.unruly'     : layout.projectDirectory.dir('mvel/src/main/java'),
-        'io.github.brantunger.unruly.test': layout.projectDirectory.dir('test-kit/src/main/java'),
-]
-
 tasks.register('javadoc', ModuleJavadoc) {
     group = 'documentation'
     description = 'Generates one Javadoc site for all the modules in build/docs/javadoc.'
-    moduleSourcePaths = moduleSources.collectEntries { module, sources -> [module, sources.asFile.absolutePath] }
-    sources.from(moduleSources.values())
+    moduleSourcePaths = [
+            'io.github.brantunger.unruly.core': 'core/src/main/java',
+            'io.github.brantunger.unruly'     : 'mvel/src/main/java',
+            'io.github.brantunger.unruly.test': 'test-kit/src/main/java',
+    ]
     // Only the libraries: the modules themselves come from their sources.
     modulePath.from(javadocLibraryPath.map { configuration ->
         configuration.incoming.artifactView { componentFilter { it instanceof ModuleComponentIdentifier } }.files

@@ -10,11 +10,14 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.File;
+import java.lang.module.ModuleDescriptor;
+import java.lang.module.ModuleFinder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -41,9 +44,18 @@ class ModulePathTest {
     @TempDir
     private Path work;
 
-    private static boolean isMvel(Path jar) {
+    /**
+     * Whether the jar is the unruly-engine artifact, {@code unruly-engine-<version>.jar}, whatever the version, and
+     * not unruly-engine-core or unruly-engine-test.
+     */
+    private static boolean isEngineJar(Path jar) {
         String name = jar.getFileName().toString();
-        return name.startsWith("mvel2-") || name.matches("unruly-engine-\\d.*\\.jar");
+        return name.startsWith("unruly-engine-") && name.endsWith(".jar")
+                && !name.startsWith("unruly-engine-core-") && !name.startsWith("unruly-engine-test-");
+    }
+
+    private static boolean isMvel(Path jar) {
+        return jar.getFileName().toString().startsWith("mvel2-") || isEngineJar(jar);
     }
 
     /**
@@ -83,6 +95,26 @@ class ModulePathTest {
         assertTrue(process.waitFor(120, TimeUnit.SECONDS), "the application didn't finish:\n" + output);
         assertEquals(0, process.exitValue(), "the application failed:\n" + output);
         return output;
+    }
+
+    @Test
+    @DisplayName("each engine module carries the artifact's version, so --list-modules and a jlink image show it")
+    void modulesCarryTheVersion() {
+        // The expected version is the one in the jar's name, so the test needs nothing else from the build.
+        String engineJar = MODULE_PATH.stream()
+                .filter(ModulePathTest::isEngineJar)
+                .map(jar -> jar.getFileName().toString())
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no unruly-engine jar on " + MODULE_PATH));
+        String expected = engineJar.substring("unruly-engine-".length(), engineJar.length() - ".jar".length());
+        ModuleFinder finder = ModuleFinder.of(MODULE_PATH.toArray(Path[]::new));
+
+        for (String module : List.of("io.github.brantunger.unruly.core", "io.github.brantunger.unruly",
+                "io.github.brantunger.unruly.test")) {
+            ModuleDescriptor descriptor = finder.find(module).orElseThrow().descriptor();
+
+            assertEquals(Optional.of(expected), descriptor.rawVersion(), module);
+        }
     }
 
     @Test

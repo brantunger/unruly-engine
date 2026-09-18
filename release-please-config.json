@@ -10,7 +10,7 @@
       "draft": false,
       "prerelease": false,
       "extra-files": [
-        { "type": "generic", "path": "build.gradle" },
+        { "type": "generic", "path": "gradle.properties" },
         { "type": "generic", "path": "README.md" }
       ],
       "changelog-sections": [
