@@ -78,7 +78,7 @@ transitive dependencies. With only `unruly-engine-<version>.jar`, the API classe
 
 **What to change:** usually nothing. A Maven or Gradle dependency on `unruly-engine` brings `unruly-engine-core` with
 it. An application whose rules all name other languages can depend on `unruly-engine-core` alone; see
-[Packaging a language](languages/custom.md#-packaging-a-language).
+[Packaging](languages/custom.md#-packaging).
 
 ## 🧭 The jars are named modules
 
@@ -126,9 +126,11 @@ error: class is not allowed to extend sealed class: EvaluationContext (as it is 
 - Replace a test's own contexts with `LanguageTestContexts.compile()`, `evaluation(facts)` and
   `action(facts, output)`.
 - Delete a copied contract test, and extend `io.github.brantunger.unruly.test.ExpressionLanguageContractTest`
-  instead. Its abstract methods didn't change.
+  instead. It has two abstract methods a 1.x copy didn't: `factProperty(...)` and `missingFactProperty(...)`, which
+  run a condition such as `applicant.creditScore == 750` against a record, a JavaBean and a map fact, and against a
+  misspelled property. A language that reads facts with `FactProperties.read` passes them.
 
-See [Testing a language](languages/custom.md#-testing-a-language).
+See [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit).
 
 ## 🔁 Languages keep run state in sessions, and engines can be closed
 
@@ -191,8 +193,8 @@ block.
 **What changed:** `CompiledAction.execute` returns an `ActionResult`. `ActionResult.done()` means the action changed
 the output itself, as before. `ActionResult.set(properties)` returns values for the engine to set on the output: with
 `put` on a `Map`, or with the output's public setters. This lets languages without side effects, such as CEL or
-JsonLogic, write actions. In `ExpressionLanguageContractTest`, `reassignOutput()` and `declareVariable()` may return
-`null` to skip their checks.
+JsonLogic, write actions. In `ExpressionLanguageContractTest`, four hooks may return `null` to skip their checks:
+`reassignOutput()`, `declareVariable()`, `unusableFactName()` and `missingFactProperty()`.
 
 **Who is affected:** authors of expression languages. Rule authors change nothing.
 
@@ -405,7 +407,7 @@ Three things follow:
 
 **Not inside an expression.** An expression that is already running isn't stopped; the run stops when it returns. MVEL has no hook inside one, so a rule
 that loops for ever still blocks the thread, with or without a timeout. A language that can stop part-way is given
-the run's deadline; see [Other expression languages](languages/custom.md#-stopping-a-run).
+the run's deadline; see [Writing a language](languages/custom.md#-stopping-a-run).
 [Stopping a run](stopping-runs.md) describes how stopping works in 2.0.
 
 **Who is affected:** anyone who runs the engine on a pool whose threads get interrupted, anyone who implements

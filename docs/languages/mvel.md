@@ -14,6 +14,7 @@ MVEL is the engine's default expression language: a rule is written in MVEL when
 - [Facts in MVEL](#-facts-in-mvel)
 - [Comparison gotchas](#-comparison-gotchas)
 - [Strong typing](#-strong-typing)
+- [Errors when rules load](#-errors-when-rules-load)
 - [Compiled copies](#-compiled-copies)
 - [Virtual threads](#-virtual-threads)
 - [Security](#-security)
@@ -239,6 +240,41 @@ doesn't catch a condition that isn't a boolean; the engine checks that itself, w
 - Any other option for `mvel`, or a value other than `true` or `false`, fails `load()` once MVEL compiles the rule list
   (a rule written in MVEL, including one that names no language when MVEL is the default, or an empty rule list with
   MVEL as the default), so a typo can't leave strong typing silently off.
+
+## 🚨 Errors when rules load
+
+MVEL rejects an expression it can't compile with an `InvalidExpressionException`, which `load()` reports as a
+`RuleCompilationException` naming the expression and the rule. How the engine collects and orders those failures is
+in [Errors when rules load](custom.md#-errors-when-rules-load); this is what MVEL puts in them. The message has
+MVEL's description and, when MVEL gives one, the line and column:
+
+```text
+Condition for rule 'prime-rate' failed to compile at line 1, column 26: Malformed expression
+Action for rule 'prime-rate' failed to compile at line 1, column 11: unbalanced braces ( ... )
+```
+
+for the condition `applicant.creditScore >= ` and the action `output.put('rate', `. Each failure carries one `Issue`
+with severity `ERROR`, that line and column counting from 1, and the description. When MVEL gives no position, both
+are 0 and the message has no `at line`.
+
+**The line is reliable; the column is where MVEL gave up**, which isn't always the mistake. For `Malformed expression`
+it's the token after the one MVEL choked on, or one past the end of the line: `applicant.creditScore == == 750` reports
+column 29, the `750`, and `applicant.creditScore >= ` column 26. `unbalanced braces` points at the brace.
+
+**An assignment in a condition** is found by MVEL's own scan of the text, before anything is compiled, and reported at
+the operator or keyword, with one issue at that position: `Condition for rule 'prime-rate' contains an assignment ('='
+at line 1, column 23). Conditions can't change facts or declare variables; use == to compare.`
+
+**`import_static` in a condition** gets its own message from the same scan, at the keyword: `uses import_static (at line
+1, column 1), which declares the method as a variable, and conditions can't declare variables. Call the method through
+its class instead, such as Math.max(a, b).` What the scan catches is in
+[What rules can change](../writing-rules.md#-what-rules-can-change).
+
+**A condition that doesn't compile hides its action's errors** until the next `load()`, whatever the language; see
+[Errors when rules load](custom.md#-errors-when-rules-load).
+
+**What `load()` doesn't catch:** a missing import or an unknown identifier passes `load()` and fails at `run()`, as
+[Classes and imports](#-classes-and-imports) explains, unless [strong typing](#-strong-typing) is on.
 
 ## 📑 Compiled copies
 

@@ -24,7 +24,7 @@ for the engine to set on it. A language keeps an action's own variables local to
 
 What a compiled action returns to the engine: `ActionResult.done()` when it changed the output itself, or
 `ActionResult.set(properties)` for properties the engine sets on the output, in order, once the action returns. Only
-language authors deal with it. See [Other expression languages](languages/custom.md#-writing-a-language).
+language authors deal with it. See [Actions and results](languages/custom.md#-actions-and-results).
 
 ### All-matches engine
 
@@ -36,7 +36,7 @@ See [match policy](#match-policy).
 The engine is published as three jars in the `io.github.brantunger` group: `unruly-engine`
 (the MVEL language, which brings in the engine), `unruly-engine-core` (the engine without a language) and
 `unruly-engine-test` (the [contract test kit](#contract-test-kit)). The `benchmarks` project isn't published. See
-[Installation](../README.md#-installation) and [Packaging a language](languages/custom.md#-packaging-a-language).
+[Installation](../README.md#-installation) and [Packaging](languages/custom.md#-packaging).
 
 ### Carrier thread
 
@@ -68,7 +68,7 @@ no other run is using, or makes a new one, and gives it back when it ends; the e
 An `ExpressionCompiler`: what an [expression language](#expression-language) creates for each rule list that uses it,
 when `load()` compiles the list. It compiles conditions and actions, checks fact names and creates sessions. The
 engine closes it after a later `load()` or `close()` replaces the rule list, once no run still uses it. See
-[Other expression languages](languages/custom.md#-writing-a-language).
+[Lifecycle at a glance](languages/custom.md#-lifecycle-at-a-glance).
 
 ### Condition
 
@@ -81,7 +81,7 @@ rejects that at `load()`, and the engine rejects any write to the facts at run t
 
 `ExpressionLanguageContractTest`, in the `unruly-engine-test` artifact, which a language's own test extends to check the
 promises every language must keep. The same artifact has `LanguageTestContexts` for testing a compiler without an
-engine. See [Testing a language](languages/custom.md#-testing-a-language).
+engine. See [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit).
 
 ### Copy limit
 
@@ -107,7 +107,7 @@ the fact is present and its value isn't of that type. A `null` value passes. A m
 
 The language of a rule whose `language` is `null`: the one named with `defaultLanguage(name)`, or else the engine's only
 language. `build()` fails when an engine has several languages and no default. See
-[Choosing a language per rule](languages/custom.md#-choosing-a-language-per-rule).
+[How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language).
 
 ### Evaluation order
 
@@ -119,7 +119,7 @@ The order a run evaluates rules in: highest [priority](#priority) first, equal p
 
 A plug-in, `ExpressionLanguage`, that compiles and runs conditions and actions. MVEL, from the `unruly-engine` artifact,
 is one; an engine finds languages with `ServiceLoader` unless you give it some with `language(...)`. See
-[Choosing a language](writing-rules.md#-choosing-a-language).
+[Expression languages](languages/README.md).
 
 ### Extra copy
 
@@ -149,6 +149,12 @@ that rule's failure. See [Exceptions by method](error-handling.md#-exceptions-by
 
 An engine built with `RulesEngineBuilder.firstMatch(...)`, which evaluates conditions in order and fires only the first
 match. See [match policy](#match-policy).
+
+### Issue
+
+An `InvalidExpressionException.Issue`: one problem a language found in an expression, with a severity, a line and a
+column counting from 1 (0 when unknown), and a message. A `RuleCompilationException` carries the issues of the
+expression that failed. See [Errors when rules load](languages/custom.md#-errors-when-rules-load).
 
 ### Listener
 
@@ -230,7 +236,7 @@ store. A fact object's own methods can still change it. See
 
 The language a rule is compiled in: its `language`, or the [default language](#default-language) when that is `null`.
 The [checksum](#checksum) uses it, so the same rules on engines with different defaults have different checksums. See
-[Choosing a language per rule](languages/custom.md#-choosing-a-language-per-rule).
+[Choosing a language per rule](languages/README.md#-choosing-a-language-per-rule).
 
 ### Rule
 
