@@ -151,8 +151,8 @@ class CompileFailureDetailsTest {
     }
 
     @Test
-    @DisplayName("a language that can't create its compiler fails the rule list at once, however many rules failed before")
-    void languageFailureThrownAtOnce() {
+    @DisplayName("a language that can't create its compiler is reported with the rules that failed before it (#404)")
+    void languageFailureReportedWithTheOthers() {
         RulesEngine<Map<String, Object>> mixed = withMvel(new ExpressionLanguage() {
             @Override
             public String name() {
@@ -170,9 +170,14 @@ class CompileFailureDetailsTest {
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> mixed.load(rules));
 
-        assertEquals("The 'broken' expression language failed to create a compiler: no interpreter", ex.getMessage());
-        assertNull(ex.getExpressionKind());
-        assertEquals(List.of(ex), ex.failures());
+        assertEquals(2, ex.failures().size(), ex.getMessage());
+        assertEquals("r1", ex.failures().get(0).getRuleName());
+        RuleCompilationException language = ex.failures().get(1);
+        assertEquals("The 'broken' expression language failed to create a compiler: no interpreter",
+                language.getMessage());
+        assertNull(language.getRuleName());
+        assertNull(language.getExpressionKind());
+        assertTrue(ex.getMessage().startsWith("2 failures while loading the rules: "), ex.getMessage());
     }
 
     @Test

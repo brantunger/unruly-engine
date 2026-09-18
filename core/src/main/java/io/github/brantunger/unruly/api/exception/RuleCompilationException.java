@@ -9,8 +9,10 @@ import java.util.List;
  *
  * <p>
  * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} compiles every rule before it throws,
- * so one exception reports every broken rule: {@link #failures()} has one exception for each, and the name, expression
- * kind and issues of this exception are those of the first.
+ * so one exception reports everything that failed: {@link #failures()} has one exception for each broken rule, for
+ * a language that couldn't create its compiler and for each declared fact name the languages reject, and the name,
+ * expression kind and issues of this exception are those of the first. A failure that isn't a rule's has no rule
+ * name.
  * </p>
  */
 public class RuleCompilationException extends UnrulyException {
@@ -86,11 +88,11 @@ public class RuleCompilationException extends UnrulyException {
     }
 
     /**
-     * Constructs an exception for several rules that failed to compile. Its rule name, expression kind and issues are
-     * those of the first failure, which is also its cause.
+     * Constructs an exception for several failures while loading a rule list. Its rule name, expression kind and
+     * issues are those of the first failure, which is also its cause.
      *
      * @param message  the detail message.
-     * @param failures each rule's failure, in the order the rules were compiled; copied
+     * @param failures each failure, in the order they were found; copied
      * @throws IllegalArgumentException if {@code failures} is empty
      * @throws NullPointerException     if {@code failures} or one of its elements is {@code null}
      */
@@ -145,9 +147,11 @@ public class RuleCompilationException extends UnrulyException {
     }
 
     /**
-     * Returns the failure of every rule that failed to compile, in the order the rules were compiled.
+     * Returns every failure of the load, in the order they were found: each broken rule's, in priority order; a
+     * language that couldn't create its compiler, in place of the first rule that needed it; and each declared fact
+     * name the languages reject, last. Only a rule's failure has a {@link #getRuleName() rule name}.
      *
-     * @return one exception for each broken rule, or only this exception if one rule failed; unmodifiable
+     * @return one exception for each failure, or only this exception if there was one; unmodifiable
      */
     public List<RuleCompilationException> failures() {
         return ruleFailures.isEmpty() ? List.of(this) : ruleFailures;

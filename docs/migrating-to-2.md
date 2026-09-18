@@ -169,7 +169,8 @@ block.
 - `InvalidExpressionException` can carry `issues()`, each with a severity, a line, a column and a message.
   `CompileContext.warn(Expression, Issue)` reports a warning, which is logged at WARN and doesn't fail loading.
 - `load()` compiles every rule, then throws once. `RuleCompilationException.failures()` has each broken rule's
-  exception, and `getExpressionKind()` and `issues()` say what failed and where. `RuleExecutionException` has
+  exception, a language that couldn't create its compiler and each rejected declared fact name, and
+  `getExpressionKind()` and `issues()` say what failed and where. `RuleExecutionException` has
   `getExpressionKind()` too.
 - Compile error messages name the expression. `Can not compile rule 'r'. Error: ...` is now
   `Condition for rule 'r' failed to compile: ...` or `Action for rule 'r' failed to compile: ...`. An MVEL syntax

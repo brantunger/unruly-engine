@@ -477,15 +477,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * <p>
-     * Every rule is compiled before a failure is thrown, so one {@link RuleCompilationException} reports every broken
-     * rule: its {@code failures()} has each rule's failure, and its message lists them. A failure that isn't about one
-     * rule, such as a {@code null} rule, a duplicate name or a language that can't create its compiler, is thrown at
-     * once.
+     * Every rule is compiled before a failure is thrown, so one {@link RuleCompilationException} reports everything
+     * that failed: each broken rule, in priority order; a language that can't create its compiler, once, in place of
+     * the first rule that needed it (the rules written in it aren't compiled, and get no failure of their own); and
+     * each declared fact name the languages reject, last. Its {@code failures()} has each, and its message lists
+     * them. A {@code null} rule or a duplicate name is thrown at once, before anything is compiled.
      * </p>
      *
      * <p>
      * Every declared fact name is checked with the same languages a run checks names with, so a declared name no
-     * language can refer to fails here rather than every run.
+     * language can refer to fails here rather than every run. When rules failed, the compilers that were created
+     * still check the names; a language whose compiler couldn't be created doesn't, and when no compiler was created
+     * the names aren't checked until the next {@code load()}.
      * </p>
      *
      * <p>
@@ -499,7 +502,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws IllegalStateException if the engine is closed
      */
     // The rule set closes the compilers, or this method does if the rule list fails to load.
-    @SuppressWarnings("PMD.CloseResource")
     @Override
     public void load(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
@@ -531,17 +533,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             List<CompiledRule> compiled = new ArrayList<>();
             List<RuleCompilationException> failures = new ArrayList<>();
             for (Rule rule : sorted) {
-                // A language that can't create its compiler fails the rule list at once, not every rule written in it.
-                ExpressionCompiler compiler = compilers.forLanguage(languageOf(rule));
+                String language = languageOf(rule);
+                // A language that can't create its compiler is reported once, for the first rule that needed it. The
+                // rules written in it can't be compiled, and asking the language again would only repeat the failure.
+                if (compilers.failed(language)) {
+                    continue;
+                }
                 try {
-                    compiled.add(compileRule(rule, compiler, compilers));
+                    compiled.add(compileRule(rule, compilers.forLanguage(language), compilers));
                 } catch (RuleCompilationException e) {
                     failures.add(e);
                 }
             }
+            // The compilers every fact is checked with: the ones the rules used, or the default language's for an empty
+            // list. When rules failed, only the compilers already created check the declared names.
+            Map<String, ExpressionCompiler> used = failures.isEmpty()
+                    ? compilers.used(languages.defaultLanguage())
+                    : compilers.created();
+            failures.addAll(declaredNameFailures(used));
             throwIfAnyFailed(failures);
-            Map<String, ExpressionCompiler> used = compilers.used(languages.defaultLanguage());
-            checkDeclaredNames(used);
             loaded = new RuleSet(compiled, used, copyLimit, copyPermits);
         } catch (RuntimeException | Error e) {
             Closing.compilers(compilers.created());
@@ -688,19 +698,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Checks every declared fact name with the languages of a rule list being loaded, which are the ones its runs check
-     * names with.
+     * names with, and returns a failure for each name a language rejects or fails to check.
      *
      * @param checks The compilers to check the names with, by language name
-     * @throws RuleCompilationException if a language rejects a declared name or fails to check it
+     * @return One failure for each declared name that can't be used; none when every name passes
      */
-    private void checkDeclaredNames(Map<String, ExpressionCompiler> checks) {
+    private List<RuleCompilationException> declaredNameFailures(Map<String, ExpressionCompiler> checks) {
+        List<RuleCompilationException> failures = new ArrayList<>();
         for (String name : declaredFacts.keySet()) {
             IllegalArgumentException rejected = factNameRejection(name, checks, false);
             if (rejected != null) {
-                throw compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
-                        + Failures.describe(rejected), rejected, null);
+                failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
+                        + Failures.describe(rejected), rejected, null));
             }
         }
+        return failures;
     }
 
     /**
@@ -1267,19 +1279,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Throws the failure of the one rule that failed to compile, or one exception for several, whose message lists
-     * each. Every failure was logged when it happened.
+     * Throws the one failure there is, or one exception for several, whose message lists each. The message counts
+     * rules when every failure is a rule's, and failures otherwise: a language that couldn't create its compiler and a
+     * rejected declared fact name have no rule. Every failure was logged when it happened.
      *
-     * @param failures The failures, in the order the rules were compiled
+     * @param failures The failures, in the order they were found
      * @throws RuleCompilationException if there are any
      */
     private static void throwIfAnyFailed(List<RuleCompilationException> failures) {
         if (failures.isEmpty()) {
             return;
         }
-        throw failures.size() == 1
-                ? failures.get(0)
-                : new RuleCompilationException(failures.size() + " rules failed to compile: "
+        throw failures.size() == 1 ? failures.get(0) : combined(failures);
+    }
+
+    private static RuleCompilationException combined(List<RuleCompilationException> failures) {
+        String what = failures.stream().allMatch(failure -> failure.getRuleName() != null)
+                ? " rules failed to compile: "
+                : " failures while loading the rules: ";
+        return new RuleCompilationException(failures.size() + what
                 + failures.stream().map(Throwable::getMessage).collect(Collectors.joining("; ")), failures);
     }
 
