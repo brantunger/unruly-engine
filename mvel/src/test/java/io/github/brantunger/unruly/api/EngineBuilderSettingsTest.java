@@ -234,10 +234,15 @@ class EngineBuilderSettingsTest {
             engine.run(new FactMap<>());
             assertEquals(List.of(), calls);
         }
+    }
+
+    @Nested
+    @DisplayName("what a built engine keeps when the builder changes")
+    class FixedAtBuild {
 
         @Test
         @DisplayName("a listener added to the builder after build() doesn't reach the engine already built")
-        void fixedAtBuild() {
+        void listenersFixedAtBuild() {
             List<String> calls = new ArrayList<>();
             RulesEngineBuilder<Map<String, Object>> builder = builder();
             RulesEngine<Map<String, Object>> engine = builder.build();
@@ -247,6 +252,43 @@ class EngineBuilderSettingsTest {
             engine.run(new FactMap<>());
 
             assertEquals(List.of(), calls);
+        }
+
+        @Test
+        @DisplayName("a fact declared on the builder after build() isn't checked by the engine already built")
+        void declaredFactsFixedAtBuild() {
+            RulesEngineBuilder<Map<String, Object>> builder = builder();
+            RulesEngine<Map<String, Object>> engine = builder.build();
+            builder.fact("count", Integer.class);
+            engine.load(List.of(rule("r", null, "true", "output.put('k', 1)")));
+
+            // A String where the late declaration says Integer: the engine that was built declares nothing, so
+            // nothing about this run's facts contradicts a declaration.
+            assertEquals(Map.of("k", 1), engine.run(fact("count", "not a number")));
+        }
+
+        @Test
+        @DisplayName("an option for a language the builder had no options for doesn't reach the engine already built")
+        void newLanguageOptionsFixedAtBuild() {
+            RulesEngineBuilder<Map<String, Object>> builder = builder();
+            RulesEngine<Map<String, Object>> engine = builder.build();
+            builder.option("mvel", "strongTyping", "true");
+
+            // Strong typing can't apply to an engine that declares no facts, so an engine that had the option on
+            // would reject these rules as it loaded them.
+            assertDoesNotThrow(() -> engine.load(List.of(rule("r", null, "true", "output.put('k', 1)"))));
+            assertEquals(Map.of("k", 1), engine.run(new FactMap<>()));
+        }
+
+        @Test
+        @DisplayName("an option changed on the builder after build() doesn't change the engine already built")
+        void optionValuesFixedAtBuild() {
+            RulesEngineBuilder<Map<String, Object>> builder = builder().option("mvel", "strongTyping", "false");
+            RulesEngine<Map<String, Object>> engine = builder.build();
+            builder.option("mvel", "strongTyping", "true");
+
+            assertDoesNotThrow(() -> engine.load(List.of(rule("r", null, "true", "output.put('k', 1)"))));
+            assertEquals(Map.of("k", 1), engine.run(new FactMap<>()));
         }
     }
 

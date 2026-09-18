@@ -47,6 +47,6 @@ class LazyLanguageTest {
                 .count();
 
         assertEquals(List.of(), mvelBeforeBuilt);
-        assertTrue(mvelWhileLoading > 0, "no MVEL class loaded by setRuleList");
+        assertTrue(mvelWhileLoading > 0, "no MVEL class loaded by load()");
     }
 }

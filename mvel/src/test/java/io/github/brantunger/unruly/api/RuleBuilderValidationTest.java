@@ -49,7 +49,7 @@ class RuleBuilderValidationTest {
     }
 
     @Test
-    @DisplayName("a blank condition or action is built, and setRuleList() rejects it, naming the rule")
+    @DisplayName("a blank condition or action is built, and load() rejects it, naming the rule")
     void blankExpressionsLeftToTheEngine() {
         Rule rule = complete().condition(" ").action("").build();
 

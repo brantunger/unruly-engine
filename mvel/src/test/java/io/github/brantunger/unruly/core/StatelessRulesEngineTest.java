@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,9 +15,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("StatelessRulesEngine")
+@DisplayName("an engine that fires the first matching rule")
 class StatelessRulesEngineTest {
 
     private StatelessRulesEngine<Map<String, Object>> engine;
@@ -31,7 +33,7 @@ class StatelessRulesEngineTest {
     class Run {
 
         @Test
-        @DisplayName("throws IllegalStateException when setRuleList() was never called")
+        @DisplayName("throws IllegalStateException when load() was never called")
         void throwsWhenNoRulesSet() {
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 10);
@@ -129,7 +131,7 @@ class StatelessRulesEngineTest {
     }
 
     @Nested
-    @DisplayName("stateless behavior")
+    @DisplayName("one matching rule only")
     class StatelessBehavior {
 
         @Test
@@ -166,7 +168,7 @@ class StatelessRulesEngineTest {
     class ExpressionErrors {
 
         @Test
-        @DisplayName("throws exception for invalid condition expression")
+        @DisplayName("a condition that isn't MVEL fails load(), naming the rule")
         void throwsForInvalidCondition() {
             Rule rule = Rule.builder()
                     .ruleName("bad-condition")
@@ -174,12 +176,18 @@ class StatelessRulesEngineTest {
                     .action("output.put(\"x\", 1)")
                     .priority(1)
                     .build();
+            List<Rule> rules = List.of(rule);
 
-            assertThrows(Exception.class, () -> engine.load(List.of(rule)));
+            RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                    () -> logsOf(() -> engine.load(rules)));
+
+            assertEquals("bad-condition", thrown.getRuleName());
+            assertTrue(thrown.getMessage().startsWith("Condition for rule 'bad-condition' failed to compile at line "),
+                    thrown.getMessage());
         }
 
         @Test
-        @DisplayName("throws exception for invalid action expression at compile or run time")
+        @DisplayName("an action that isn't MVEL fails load(), naming the rule")
         void throwsForInvalidAction() {
             Rule rule = Rule.builder()
                     .ruleName("bad-action")
@@ -187,12 +195,14 @@ class StatelessRulesEngineTest {
                     .action("output.nonExistentMethod(!!!)")
                     .priority(1)
                     .build();
+            List<Rule> rules = List.of(rule);
 
-            assertThrows(Exception.class, () -> {
-                engine.load(List.of(rule));
-                FactStore<Object> facts = new FactMap<>();
-                engine.run(facts);
-            });
+            RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                    () -> logsOf(() -> engine.load(rules)));
+
+            assertEquals("bad-action", thrown.getRuleName());
+            assertTrue(thrown.getMessage().startsWith("Action for rule 'bad-action' failed to compile at line "),
+                    thrown.getMessage());
         }
     }
 }

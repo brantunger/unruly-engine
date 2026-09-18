@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
@@ -128,6 +129,84 @@ class InterruptStatusTest {
                 }
             });
         }
+    }
+
+    /**
+     * A language whose expression interrupts its own thread and then asks whether the run was cancelled, which is how
+     * a language decides to give up. Asking is a question, not an answer to the interrupt: the status stays set for
+     * the engine's own check and for the caller.
+     */
+    private record PollingLanguage(Where where) implements ExpressionLanguage {
+
+        private void interruptAndAsk(BooleanSupplier cancelled, Where place) {
+            if (where == place) {
+                Thread.currentThread().interrupt();
+                if (!cancelled.getAsBoolean()) {
+                    throw new IllegalStateException("the expression wasn't told the run was cancelled");
+                }
+            }
+        }
+
+        @Override
+        public String name() {
+            return "polling";
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            return new ExpressionCompiler() {
+                @Override
+                public CompiledCondition compileCondition(Expression expression) {
+                    return (evaluation, session) -> {
+                        interruptAndAsk(evaluation::isCancelled, Where.CONDITION);
+                        return true;
+                    };
+                }
+
+                @Override
+                public CompiledAction compileAction(Expression expression) {
+                    return (action, session) -> {
+                        interruptAndAsk(action::isCancelled, Where.ACTION);
+                        return ActionResult.done();
+                    };
+                }
+
+                @Override
+                public Session newSession() {
+                    return Session.none();
+                }
+            };
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Where.class, names = {"CONDITION", "ACTION"})
+    @DisplayName("a language that asks isCancelled() on an interrupted thread leaves the interrupt to be seen")
+    void askingWhetherTheRunWasCancelledKeepsTheInterrupt(Where where) throws InterruptedException {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new PollingLanguage(where)).build();
+        engine.load(List.of(Rule.builder().ruleName("first").language("polling").condition("c").action("a").build(),
+                Rule.builder().ruleName("second").language("polling").condition("c").action("a").build()));
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean status = new AtomicBoolean();
+        Thread thread = new Thread(() -> {
+            logsOf(() -> {
+                try {
+                    engine.run(new FactMap<>());
+                } catch (RuntimeException e) {
+                    thrown.set(e);
+                }
+            });
+            status.set(Thread.currentThread().isInterrupted());
+        });
+
+        thread.start();
+        thread.join();
+
+        RuleExecutionException stopped = assertInstanceOf(RuleExecutionException.class, thrown.get(),
+                "the run carried on although its thread was interrupted");
+        assertTrue(stopped.getMessage().contains("was interrupted"), stopped.getMessage());
+        assertTrue(status.get(), "the caller's interrupt was answered by the question, and cleared");
     }
 
     @ParameterizedTest(name = "{0}")

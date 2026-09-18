@@ -19,7 +19,7 @@ class DuplicateRuleNameTest {
     }
 
     @Test
-    @DisplayName("setRuleList() rejects two rules with the same name")
+    @DisplayName("load() rejects two rules with the same name")
     void duplicateNamesRejected() {
         StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 

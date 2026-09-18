@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -326,6 +327,74 @@ class LanguageSessionsTest {
                 + "to close its compiler: "), logs);
         assertTrue(logs.contains("compiler stuck"), logs);
         assertEquals(Map.of("b", 2), engine.run(new FactMap<>()));
+    }
+
+    @Test
+    @DisplayName("what a close failure says is escaped, and an interrupt inside it is left for the caller to see")
+    void closeFailureEscapedAndInterruptKept() {
+        ConfinedLanguage confined = new ConfinedLanguage("confined");
+        // A message from a language the engine didn't write: it must not be able to start a log line of its own,
+        // and the InterruptedException in it is the caller's to answer, not the engine's to swallow.
+        confined.closeFailure = new IllegalStateException("stuck\nWARN forged line",
+                new InterruptedException("interrupted while closing"));
+        RulesEngine<Map<String, Object>> engine = stateful(confined);
+        engine.load(List.of(rule("a", "confined")));
+        engine.run(new FactMap<>());
+
+        String logs;
+        boolean interrupted;
+        try {
+            logs = logsOf(engine::close);
+        } finally {
+            // Read, and cleared, whatever close() did: a thread left interrupted would fail every later test that
+            // waits.
+            interrupted = Thread.interrupted();
+        }
+
+        assertTrue(logs.contains("failed to close a session: stuck\\nWARN forged line"), logs);
+        assertTrue(interrupted, "the interrupt inside the close failure was swallowed");
+    }
+
+    @Test
+    @DisplayName("a run that gives up waiting for a copy still lets the engine close its compilers")
+    void compilersClosedAfterAWaitGivesUp() throws Exception {
+        ConfinedLanguage confined = new ConfinedLanguage("confined");
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        confined.duringAction = () -> {
+            holding.countDown();
+            await(release);
+        };
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(confined).maxCopies(1).runTimeout(Duration.ofMillis(200)).build();
+        engine.load(List.of(rule("a", "confined")));
+        ExecutorService threads = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> holder = threads.submit(() -> engine.run(new FactMap<>()));
+            assertTrue(holding.await(30, TimeUnit.SECONDS), "the holder never took the only copy");
+
+            Future<?> waiter = threads.submit(() -> engine.run(new FactMap<>()));
+            // The waiting run reaches its deadline before a copy comes back, so it never holds one.
+            ExecutionException stopped = assertThrows(ExecutionException.class,
+                    () -> waiter.get(30, TimeUnit.SECONDS));
+            assertTrue(String.valueOf(stopped.getCause()).contains("while waiting for a compiled copy of the rules"),
+                    String.valueOf(stopped.getCause()));
+            release.countDown();
+            try {
+                holder.get(30, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
+                // The holder's action ran past its own deadline too, which is the only way it may have failed.
+                assertTrue(String.valueOf(e.getCause()).contains("passed its deadline"), String.valueOf(e.getCause()));
+            }
+        } finally {
+            release.countDown();
+            threads.shutdownNow();
+            // Closed whatever happened above, so a failure here leaves no compiler open for the tests after it.
+            logsOf(engine::close);
+        }
+
+        assertEquals(1, confined.compilersClosed.get(),
+                "the run that gave up waiting left the rule list counted as in use");
     }
 
     @Test

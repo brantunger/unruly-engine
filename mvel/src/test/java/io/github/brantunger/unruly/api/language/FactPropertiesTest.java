@@ -112,6 +112,14 @@ class FactPropertiesTest {
         }
     }
 
+    /** A record with a getter named after one of its components, which the component wins over. */
+    public record Boxed(int quantity) {
+
+        public int getQuantity() {
+            return quantity * 100;
+        }
+    }
+
     /** A fact that holds a lambda, which is an implementation rather than data. */
     public record Holder(IntSupplier score) {
     }
@@ -262,6 +270,33 @@ class FactPropertiesTest {
         assertEquals(List.of("creditScore", "name", "address"), List.copyOf(data.keySet()));
         assertEquals(750, data.get("creditScore"));
         assertSame(address, data.get("address"));
+        // A new modifiable map, as the method promises: the caller may add to what it was given, and a second
+        // conversion isn't affected by that.
+        data.put("nickname", "Al");
+        assertFalse(FactProperties.toData(new Applicant(750, "Alex", address), 1).containsKey("nickname"));
+    }
+
+    @Test
+    @DisplayName("a record's component is read, not a getter of the same name")
+    void aComponentWinsOverAGetterOfTheSameName() {
+        assertEquals(2, FactProperties.read(new Boxed(2), "quantity"));
+        assertEquals(Map.of("quantity", 2), FactProperties.toData(new Boxed(2), 1));
+    }
+
+    @Test
+    @DisplayName("a value two sibling properties hold is converted in both of them")
+    void aValueOnTwoSiblingPaths() {
+        Address shared = new Address("Oslo");
+        Map<String, Object> places = new LinkedHashMap<>();
+        places.put("home", shared);
+        places.put("work", shared);
+
+        Map<String, Object> data = FactProperties.toData(places, 2);
+
+        assertEquals(Map.of("city", "Oslo"), data.get("home"));
+        // The first path is finished before the second starts, so the value isn't still on the path that would
+        // leave it as it is: only a value that holds itself, further up the same path, is.
+        assertEquals(Map.of("city", "Oslo"), data.get("work"));
     }
 
     @Test
@@ -388,9 +423,13 @@ class FactPropertiesTest {
     }
 
     @Test
-    @DisplayName("a depth below 1, and a value with no properties, are rejected")
+    @DisplayName("a depth below 1 or above 20, and a value with no properties, are rejected")
     void rejectedConversions() {
         assertThrows(IllegalArgumentException.class, () -> FactProperties.toData(new Loan(), 0));
+        assertDoesNotThrow(() -> FactProperties.toData(new Loan(), 20), "20 levels are documented as the most");
+        assertEquals("depth must be between 1 and 20, but was 21",
+                assertThrows(IllegalArgumentException.class, () -> FactProperties.toData(new Loan(), 21))
+                        .getMessage());
         assertThrows(IllegalArgumentException.class, () -> FactProperties.toData("Alex", 1));
         assertThrows(IllegalArgumentException.class, () -> FactProperties.toData(Status.OPEN, 1));
     }

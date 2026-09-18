@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.UnaryOperator;
 
+import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -150,6 +151,16 @@ class DefaultCopyLimitTest {
         }
     }
 
+    /** {@link #await}, where an {@link InterruptedException} can't be thrown on, such as inside a lambda. */
+    private static void awaitUninterruptibly(BooleanSupplier condition, String what) {
+        try {
+            await(condition, what);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** Whether every run has parked, either at the gate or waiting for a copy: both park with a timeout. */
     private boolean allParked() {
         return threads.stream().allMatch(thread -> thread.getState() == Thread.State.TIMED_WAITING);
@@ -191,12 +202,19 @@ class DefaultCopyLimitTest {
         Gate gate = new Gate();
         RulesEngine<Map<String, Object>> engine = engine(UnaryOperator.identity(), List.of(RULE));
 
-        start(PROCESSORS + EXTRA_RUNS, false, engine, gate);
-        await(() -> gate.inProgress.get() == PROCESSORS + EXTRA_RUNS, "every run is in progress at once");
+        // A run that had to wait for a copy would reach the gate as well, five seconds later and with an extra
+        // copy of its own, so that every run being in progress says nothing on its own. What says these runs
+        // weren't limited is that none of them waited: the engine warns the first time it gives a wait up.
+        String logs = logsOf(() -> {
+            start(PROCESSORS + EXTRA_RUNS, false, engine, gate);
+            awaitUninterruptibly(() -> gate.inProgress.get() == PROCESSORS + EXTRA_RUNS,
+                    "every run is in progress at once");
+        });
         gate.open.countDown();
         joinTheRuns();
 
         assertEquals(PROCESSORS + EXTRA_RUNS, gate.mostInProgress.get());
+        assertFalse(logs.contains("made an extra copy"), logs);
     }
 
     @Test

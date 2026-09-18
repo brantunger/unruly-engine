@@ -14,7 +14,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * A declaration without {@code =} passes the text check in {@code setRuleList()} and is only caught when the
+ * A declaration without {@code =} passes the text check in {@code load()} and is only caught when the
  * condition runs, so the run-time message has to describe declarations, not just assignments.
  */
 @DisplayName("a declaration in a condition gets an error that says so")

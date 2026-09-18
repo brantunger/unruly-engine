@@ -76,6 +76,12 @@ class RuleSetInfoTest {
                 checksumOf(List.of(HIGH.toBuilder().condition("false").build(), LOW)));
         assertNotEquals(checksumOf(List.of(HIGH, LOW)),
                 checksumOf(List.of(HIGH.toBuilder().priority(9).build(), LOW)));
+        assertNotEquals(checksumOf(List.of(HIGH, LOW)),
+                checksumOf(List.of(HIGH.toBuilder().action("output.put('high', 2)").build(), LOW)),
+                "a rule whose action alone changed is a different rule list");
+        assertNotEquals(checksumOf(List.of(HIGH, LOW)),
+                checksumOf(List.of(HIGH.toBuilder().ruleName("other").build(), LOW)),
+                "so is one whose name alone changed");
         assertNotEquals(checksumOf(List.of(HIGH, LOW)), checksumOf(List.of(HIGH)));
     }
 
