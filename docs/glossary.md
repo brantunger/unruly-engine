@@ -61,7 +61,7 @@ Afterwards `run()`, `runWithResult()`, `load()` and `rules()` throw `IllegalStat
 
 The per-run state of a loaded rule list: one [session](#session) for each language its rules use. A run borrows a copy
 no other run is using, or makes a new one, and gives it back when it ends; the engine keeps copies until the next
-`load()` or `close()`. See [Thread safety](thread-safety.md#-compiled-rules-and-concurrent-runs).
+`load()` or `close()`. See [Compiled copies](thread-safety.md#-compiled-copies).
 
 ### Compiler
 
