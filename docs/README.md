@@ -15,12 +15,12 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 | ⚡ [MVEL](languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Other expression languages](languages/custom.md) | Choosing a language per rule, and writing, registering and testing your own |
 | 📁 [Facts](facts.md) | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
-| 🌱 [Spring Boot](spring-boot.md) | Configuring engines as beans, loading rules, reloading them, and using several engines |
+| 🌱 [Spring Boot](spring-boot.md) | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Every exception by method, what's caught when rules load and what only at run time |
 | ⏳ [Stopping a run](stopping-runs.md) | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
 | 🟣 [Kotlin](kotlin.md) | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
-| 🧵 [Thread safety](thread-safety.md) | Concurrency guarantees, reloading rules while running, and compiled copies for concurrent runs and how to limit them |
+| 🧵 [Thread safety](thread-safety.md) | What's shared, the engine's lifecycle and closing, reloading rules under traffic, and compiled copies: sizing them, limiting them, and virtual threads |
 | 📖 [Glossary](glossary.md) | Short definitions of the terms the guides use, each linked to the page that explains it |
 | ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | The API reference |
 

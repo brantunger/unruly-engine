@@ -14,6 +14,7 @@ MVEL is the engine's default expression language: a rule is written in MVEL when
 - [Facts in MVEL](#-facts-in-mvel)
 - [Comparison gotchas](#-comparison-gotchas)
 - [Strong typing](#-strong-typing)
+- [Compiled copies](#-compiled-copies)
 - [Virtual threads](#-virtual-threads)
 - [Security](#-security)
 
@@ -238,6 +239,39 @@ doesn't catch a condition that isn't a boolean; the engine checks that itself, w
 - Any other option for `mvel`, or a value other than `true` or `false`, fails `load()` once MVEL compiles the rule list
   (a rule written in MVEL, including one that names no language when MVEL is the default, or an empty rule list with
   MVEL as the default), so a typo can't leave strong typing silently off.
+
+## 📑 Compiled copies
+
+[Thread safety](../thread-safety.md#-compiled-copies) explains what a compiled copy is for every language. This is why
+MVEL needs one, and what it costs.
+
+MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact name
+to a different class — for example when `applicant` is an interface with several implementations, or is a `Map` in one
+run and a record in another — MVEL replaces that accessor without synchronization. Two threads running the same
+compiled expression could then fail intermittently with a `RuleExecutionException` caused by a `ClassCastException`. So
+concurrent runs never share MVEL's compiled form of an expression: each copy holds its own in its session.
+
+A copy is built lazily, one expression at a time:
+
+- A session compiles an expression again the **first time that copy runs it**, so a copy only pays for the rules it
+  reaches, not for the whole list.
+- The first session to run a given expression takes the form `load()` compiled, so the rule list's own compilation
+  isn't wasted.
+- As it runs, MVEL generates accessor classes for that session alone.
+
+So an [extra copy](../glossary.md#extra-copy) — one a run makes because no copy is free, rather than one it borrows —
+pays that price and then throws it away when the run ends. A rule that keeps making them, by starting a run of the
+same engine on another thread under a full [copy limit](../thread-safety.md#limiting-the-copies), recompiles and
+regenerates accessors over and over, costing CPU and metaspace churn.
+
+Because a session's expressions belong to one run at a time, they're safe with any MVEL optimizer, and the engine
+leaves MVEL's global optimizer setting alone. MVEL's default JIT optimizer stays in effect (unless you pass
+`-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use MVEL aren't affected.
+
+> [!NOTE]
+> Earlier versions switched MVEL to its slower reflective optimizer for the whole JVM when the engine class loaded,
+> unless the JVM was started with `-Dunruly.mvel.jit=true`. Later 1.x releases ignored that property, and 2.0 removes
+> the `AbstractRulesEngine.JIT_PROPERTY` constant that named it.
 
 ## 🧵 Virtual threads
 
