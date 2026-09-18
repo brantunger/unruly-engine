@@ -335,11 +335,13 @@ The full comparison, including what happens when an action changes a fact, is in
 ## 📚 Where next
 
 - **Write your first rules:** [Writing rules](docs/writing-rules.md), then [Facts](docs/facts.md).
-- **Take rules to production:** [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md),
+- **Take rules to production:** [Before you go to production](docs/production.md), then
+  [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md),
   [Thread safety](docs/thread-safety.md) and [Compiled copies](docs/compiled-copies.md).
 - **Use or write another expression language:** [Expression languages](docs/languages/README.md), then
   [Writing a language](docs/languages/custom.md).
 - **Upgrade from 1.x:** [Migrating to 2.0](docs/migrating-to-2.md).
+- **Something's wrong?** [Troubleshooting](docs/troubleshooting.md).
 
 Every guide is listed in the [documentation index](docs/README.md), and the API in the
 [Javadoc](https://brantunger.github.io/unruly-engine/latest/).
@@ -364,47 +366,14 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## ❓ FAQ
 
+Symptoms and exception messages are in [Troubleshooting](docs/troubleshooting.md).
+
 <details>
 <summary><b>Why does <code>run()</code> return <code>null</code>?</b></summary>
 
 No rule fired: no condition was true, or the rule list is empty. The output supplier isn't even called in that case.
 Check for `null`, or, on a first-match engine, add a lowest-priority catch-all rule with the condition `true`. See
 [What a run reports](docs/engines-and-runs.md#-what-a-run-reports).
-
-</details>
-
-<details>
-<summary><b>What do <code>unresolvable property or identifier</code> and <code>could not resolve class</code> mean?</b></summary>
-
-The rule used a name that is neither a fact in the store nor a class MVEL knows. Which message you get depends on
-how the name is used: `Objects.isNull(x)` fails with `unresolvable property or identifier`, and `new ArrayList()` with
-`could not resolve class`. A missing fact can also fail with
-`unable to resolve token: unable to resolve variable 'x'`, when the compiled copy the run uses has already run the rule
-with the fact present. Common causes:
-
-- The fact wasn't added, or was added under a different name. To test whether a fact exists, use `isdef name`.
-- The rule uses a class that isn't built in to MVEL, such as `Objects` or `ArrayList`, without an import. Add
-  `.imports("java.util")` to the engine's builder, or write the fully qualified name, such as
-  `java.util.Objects`. See [Classes and imports](docs/languages/mvel.md#-classes-and-imports).
-
-</details>
-
-<details>
-<summary><b>What does <code>NoClassDefFoundError: applicant (wrong name: Applicant)</code> mean?</b></summary>
-
-While compiling `applicant.creditScore`, MVEL checks whether `applicant` is a class. Your classes are in the default
-package and in a class directory, as an IDE or `javac *.java` leaves them, on a case-insensitive file system (the
-default on Windows and macOS), so the lookup for `applicant.class` found `Applicant.class`. Before 1.6.1 that failed
-`setRuleList()`. From 1.6.1 the engine treats such a class file as a different class and reads `applicant` as the
-fact. On an older version, put your classes in a package; classes packaged in a jar aren't affected.
-
-</details>
-
-<details>
-<summary><b>My enum comparison never matches</b></summary>
-
-MVEL compares an enum to a string as `false`, with no error. Write `order.status.name() == 'SHIPPED'`. See
-[Comparison gotchas](docs/languages/mvel.md#-comparison-gotchas).
 
 </details>
 

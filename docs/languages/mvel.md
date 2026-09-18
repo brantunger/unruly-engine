@@ -59,6 +59,11 @@ Every example below was checked against the engine. For the full language, see t
 An action changes `output` in place, as in `output.approved = true`, `output.setInterestRate(4.5)` or
 `output.put(...)`, and the value the action evaluates to is ignored, so `output.approved = true; 42` is fine. Assigning
 to `output` itself, as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
+
+So does setting a property the output has no setter or public field for, such as a record's component, on an output
+that isn't a `Map`: `output.approved = true` fails with `could not access property (approved) in: java.lang.Boolean`,
+which names the value's type, not the output's.
+
 Inside a `def` function, `output = ...` doesn't fail: it creates a variable local to the function, and `output.put(...)`
 calls after it in that function change the discarded object.
 
@@ -116,10 +121,17 @@ engine.load(rules);
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
 - A thread without a context class loader uses this library's own class loader instead.
 
+While compiling `applicant.creditScore`, MVEL checks whether `applicant` is a class. In a class directory on a
+case-insensitive file system, the lookup for `applicant.class` finds `Applicant.class`, and the JVM reports
+`NoClassDefFoundError: applicant (wrong name: Applicant)`. That counts as no class, so `applicant` is read as the fact.
+Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the rule.
+
 ## 📁 Facts in MVEL
 
 A rule refers to a fact by its name, as a variable. [Facts](../facts.md) covers what holds for every language; this
-section covers what MVEL adds.
+section covers what MVEL adds. `applicant.creditScore` reads a public getter, a record accessor or a public field. A
+misspelled property, or a private field with no getter, fails the run with
+`could not access: creditScor; in class: com.example.Applicant`.
 
 ### Fact names MVEL rejects
 

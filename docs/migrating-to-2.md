@@ -3,11 +3,56 @@
 2.0 is a breaking release. This guide lists every change that can affect code written for 1.x. Each section says
 what changed, who is affected, and what to change.
 
+[← Documentation index](README.md)
+
+- [Should you upgrade?](#-should-you-upgrade)
+- [Which sections apply to you?](#-which-sections-apply-to-you)
+- [Java 21 is required](#-java-21-is-required)
+- [Expression languages are found with ServiceLoader](#-expression-languages-are-found-with-serviceloader)
+- [MVEL is a separate jar](#-mvel-is-a-separate-jar)
+- [The jars are named modules](#-the-jars-are-named-modules)
+- [A language's contexts are sealed, and its tests use the test kit](#-a-languages-contexts-are-sealed-and-its-tests-use-the-test-kit)
+- [Languages keep run state in sessions, and engines can be closed](#-languages-keep-run-state-in-sessions-and-engines-can-be-closed)
+- [Languages compile an Expression, and every broken rule is reported](#-languages-compile-an-expression-and-every-broken-rule-is-reported)
+- [Actions return a result](#-actions-return-a-result)
+- [Rules are immutable and need a name](#-rules-are-immutable-and-need-a-name)
+- [Facts are immutable, and a FactStore isn't a Map](#-facts-are-immutable-and-a-factstore-isnt-a-map)
+- [Engines are configured on a builder, and renamed](#-engines-are-configured-on-a-builder-and-renamed)
+- [A missing class is reported like any other failure](#-a-missing-class-is-reported-like-any-other-failure)
+- [A first-match engine stops at the first match](#-a-first-match-engine-stops-at-the-first-match)
+- [An interrupted run stops, and a run can be given a timeout](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout)
+- [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules)
+- [Compiled copies are limited on virtual threads](#-compiled-copies-are-limited-on-virtual-threads)
+- [Engines are created only with RulesEngineBuilder](#-engines-are-created-only-with-rulesenginebuilder)
+- [The engine logs under a fixed name](#-the-engine-logs-under-a-fixed-name)
+- [New in 2.0, optional](#-new-in-20-optional)
+
+---
+
 ## 🤔 Should you upgrade?
 
 - **2.0 requires Java 21.** On Java 17 to 20, stay on 1.x.
 - **Upgrade to 1.8.0 first**, the last 1.x release, and fix its deprecation warnings. Each deprecated member names
   its replacement, so most of the work can be done while you're still on 1.x.
+
+## 📍 Which sections apply to you?
+
+| You... | Read |
+| --- | --- |
+| Call the engine from an application | [Java 21](#-java-21-is-required), [Rules](#-rules-are-immutable-and-need-a-name), [Facts](#-facts-are-immutable-and-a-factstore-isnt-a-map), [The builder](#-engines-are-configured-on-a-builder-and-renamed), [RulesEngineBuilder only](#-engines-are-created-only-with-rulesenginebuilder), [The logger name](#-the-engine-logs-under-a-fixed-name) |
+| Run on the module path or shade the jar | [ServiceLoader](#-expression-languages-are-found-with-serviceloader), [MVEL's jar](#-mvel-is-a-separate-jar), [Named modules](#-the-jars-are-named-modules) |
+| Write a `RuleListener` | [First match stops](#-a-first-match-engine-stops-at-the-first-match), [Interrupts and timeouts](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout), [Run callbacks](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules), [A missing class](#-a-missing-class-is-reported-like-any-other-failure) |
+| Implement `RulesEngine`, as a decorator or a test double | [Facts](#-facts-are-immutable-and-a-factstore-isnt-a-map), [The builder](#-engines-are-configured-on-a-builder-and-renamed), [Interrupts and timeouts](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout), [Run results](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
+| Write an expression language | [Sealed contexts](#-a-languages-contexts-are-sealed-and-its-tests-use-the-test-kit), [Sessions](#-languages-keep-run-state-in-sessions-and-engines-can-be-closed), [Expression and failures](#-languages-compile-an-expression-and-every-broken-rule-is-reported), [ActionResult](#-actions-return-a-result) |
+| Use Kotlin | [Facts](#-facts-are-immutable-and-a-factstore-isnt-a-map), then [Upgrading Kotlin code](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier) |
+
+Four changes your compiler won't catch:
+
+> [!WARNING]
+> - [A first-match engine stops early](#-a-first-match-engine-stops-at-the-first-match): fewer condition callbacks.
+> - [Compiled copies are limited on virtual threads](#-compiled-copies-are-limited-on-virtual-threads): runs may wait.
+> - [A missing class is a rule failure](#-a-missing-class-is-reported-like-any-other-failure): no raw `LinkageError`.
+> - [An interrupted run stops](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout): pooled threads now fail.
 
 ## ☕ Java 21 is required
 
@@ -347,8 +392,8 @@ unchanged, so a `LinkageError` escaped `run()` and `load()` raw, with no rule na
 Every other `Error` is reported like an exception, naming the rule and keeping the error as its cause. That covers
 every `LinkageError`: `NoClassDefFoundError`, `IllegalAccessError`, `IncompatibleClassChangeError`,
 `ExceptionInInitializerError`, `VerifyError`. A missing or unreadable class means one rule is misconfigured, not that
-the JVM is failing — for example a fact class exported only to `mvel2` on the module path, or a class directory on a
-case-insensitive file system.
+the JVM is failing — for example a fact class exported only to `mvel2` on the module path, or a class whose own
+dependency is missing from the class path.
 
 **Who is affected:** anyone catching a `LinkageError` around `load()` or `run()`, and listeners that see one thrown by
 another listener. This reverses a 1.x decision, and the API compatibility check can't see it.
@@ -530,3 +575,22 @@ release.
 
 - Logback: `<logger name="io.github.brantunger.unruly.engine" level="OFF"/>`
 - Spring Boot: `logging.level.io.github.brantunger.unruly.engine=off`
+
+## 🆕 New in 2.0, optional
+
+Features 1.x didn't have. A caller needs none of them to upgrade. A class that implements `RulesEngine` must add
+`runWithResult(FactStore, RunOptions)`, `rules()` and `validate(rules)`; see
+[Engines are configured on a builder, and renamed](#-engines-are-configured-on-a-builder-and-renamed).
+
+| New in 2.0 | See |
+| --- | --- |
+| `runWithResult()`, with `firedRules()`, `evaluations()` and `ruleSetChecksum()` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
+| `rules()` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
+| `validate(rules)` | [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it) |
+| `runTimeout(...)` and `RunOptions` | [An interrupted run stops, and a run can be given a timeout](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout) |
+| Declared facts: `fact(...)`, `facts(...)` and `requireDeclaredFacts()` | [Declaring facts](facts.md#-declaring-facts) |
+| `outputType(...)` and `outputWriter(...)` | [Actions return a result](#-actions-return-a-result) |
+| The run callbacks `beforeRun`, `afterRun` and `onRunError` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
+| `uniqueMatch(...)` | [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none) |
+| `unlimitedCopies()` | [Compiled copies are limited on virtual threads](#-compiled-copies-are-limited-on-virtual-threads) |
+| `close()` | [Languages keep run state in sessions, and engines can be closed](#-languages-keep-run-state-in-sessions-and-engines-can-be-closed) |

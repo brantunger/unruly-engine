@@ -64,6 +64,7 @@ public class RuleRepository {
 
 If a rule doesn't compile, `load()` throws a `RuleCompilationException`, so the bean fails to be created and the
 application refuses to start. That's usually what you want: broken rules never reach production traffic.
+[Before you go to production](production.md) lists what else to settle before the first request.
 
 ## 📜 Rules from configuration
 
