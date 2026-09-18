@@ -23,8 +23,9 @@ Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT
 
 ## 💻 Development setup
 
-You need a JDK (17 or later) to run Gradle. The build compiles with a **Java 21 toolchain**, which Gradle downloads
-automatically if it isn't installed.
+You need **JDK 21** installed: the build compiles with a Java 21 toolchain, and Gradle doesn't download one, so a
+missing JDK fails the build naming the version it needs. Running the tests on JDK 25 (`-PtestJdk=25`) needs JDK 25
+installed too.
 
 ```bash
 git clone https://github.com/<your-username>/unruly-engine.git
@@ -45,7 +46,7 @@ Settings shared by the published projects are in the convention plugins in `buil
 
 | Command | What it does |
 | --- | --- |
-| `./gradlew clean build` | Compiles, tests, generates the Javadoc, and runs every quality gate: exactly what CI checks |
+| `./gradlew clean build` | Compiles, tests, generates the Javadoc, and runs every quality gate, and fails on a Gradle deprecation: exactly what CI checks |
 | `./gradlew test` | Runs the tests only |
 | `./gradlew test --tests '*StatefulSemanticsTest*'` | Runs a single test class |
 | `./gradlew test -PtestJdk=25` | Runs the tests on JDK 25 instead of 21 |
