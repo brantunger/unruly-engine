@@ -2,6 +2,7 @@
 import com.vanniktech.maven.publish.JavaLibrary
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.SourcesJar
+import java.lang.module.ModuleDescriptor
 import me.champeau.gradle.japicmp.JapicmpTask
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import unruly.conventions.ApiCheckExtension
@@ -33,7 +34,8 @@ tasks.named('jacocoTestCoverageVerification') {
 // Publishes to the Maven Central Portal (central.sonatype.com). All the artifacts go up in one deployment, so a
 // release can't publish only some of them.
 // Credentials are a Portal user token supplied via the mavenCentralUsername/mavenCentralPassword
-// properties; signing uses signingInMemoryKey/signingInMemoryKeyId/signingInMemoryKeyPassword.
+// properties; signing uses signingInMemoryKey/signingInMemoryKeyPassword, and signingInMemoryKeyId only when the
+// exported key ring holds more than one key (see RELEASING.md).
 // Each project sets its coordinates and the POM's name and description.
 mavenPublishing {
     configure(new JavaLibrary(new JavadocJar.Javadoc(), new SourcesJar.Sources()))
@@ -86,7 +88,7 @@ def refreshBaseline = providers.gradleProperty('apiCheck.refresh').present
 // build with a version such as -Pversion=local compiles without one rather than failing.
 def moduleVersion = providers.provider {
     try {
-        java.lang.module.ModuleDescriptor.Version.parse(projectVersion)
+        ModuleDescriptor.Version.parse(projectVersion)
         projectVersion
     } catch (IllegalArgumentException e) {
         null
@@ -107,13 +109,16 @@ def newestRelease = { String notation ->
     [configuration: configuration, dependency: dependency]
 }
 
-// Whether a version such as 2.0.1 is higher than another, comparing the numbers of each part.
+// Whether the build's version, such as 2.0.1, is higher than another. ModuleDescriptor.Version orders the numbers of
+// each part and puts a pre-release, such as 2.0.0-RC1, below its release. A build version it can't parse, such as
+// -Pversion=local, isn't higher than anything; the other version is configured, so it must parse.
 def isHigher = { String version, String other ->
-    def parts = { String v -> v.tokenize('.-').collect { it.isInteger() ? it as int : 0 } }
-    def a = parts(version)
-    def b = parts(other)
-    def difference = [a, b].transpose().collect { x, y -> x <=> y }.find { it != 0 }
-    difference != null ? difference > 0 : a.size() > b.size()
+    def parsedOther = ModuleDescriptor.Version.parse(other)
+    try {
+        ModuleDescriptor.Version.parse(version) > parsedOther
+    } catch (IllegalArgumentException e) {
+        false
+    }
 }
 
 // The classpath of a baseline, resolved for the exact release chosen: the release itself and its dependencies, which
