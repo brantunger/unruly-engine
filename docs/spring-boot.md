@@ -236,7 +236,7 @@ Nothing changes while the property is off, because the default doesn't apply to 
 
 If your rules are written in MVEL and you run on JDK 21 to 23, read
 [MVEL on virtual threads](languages/mvel.md#-virtual-threads) before you raise the limit. See
-[Limiting the copies](thread-safety.md#limiting-the-copies) for the whole picture.
+[Limiting the copies](compiled-copies.md#-limiting-the-copies) for the whole picture.
 
 ## 🔀 Several engines
 
@@ -260,7 +260,7 @@ public LoanController(@Qualifier("pricingEngine") RulesEngine<LoanDecision> pric
 A `@Bean` method's name is the bean's name, so `pricingEngine()` above registers a bean called `pricingEngine`.
 
 > [!NOTE]
-> Each engine has its own [copy limit](thread-safety.md#limiting-the-copies), so two engine beans allow twice as many
+> Each engine has its own [copy limit](compiled-copies.md#-limiting-the-copies), so two engine beans allow twice as many
 > compiled copies as one. That matters if you raise the limit, and on virtual threads.
 
 ## 🛑 Shutting down

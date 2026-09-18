@@ -329,8 +329,8 @@ The full comparison, including what happens when an action changes a fact, is in
 ## 📚 Where next
 
 - **Write your first rules:** [Writing rules](docs/writing-rules.md), then [Facts](docs/facts.md).
-- **Take rules to production:** [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md)
-  and [Thread safety](docs/thread-safety.md).
+- **Take rules to production:** [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md),
+  [Thread safety](docs/thread-safety.md) and [Compiled copies](docs/compiled-copies.md).
 - **Use or write another expression language:** [Other expression languages](docs/languages/custom.md).
 - **Upgrade from 1.x:** [Migrating to 2.0](docs/migrating-to-2.md).
 

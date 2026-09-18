@@ -250,7 +250,7 @@ too, a throw is then reported as that rule's failure, logged at ERROR, and a ret
 - Return `Session.none()` when your compiled expressions keep no state while they run. Return a new session when they
   do, such as a single-threaded interpreter context. MVEL's session holds its own compiled copy of each expression.
   A rule list whose languages all return `Session.none()` needs no copies at all: every run shares one set of sessions,
-  and no [copy limit](../thread-safety.md#limiting-the-copies) applies to it.
+  and no [copy limit](../compiled-copies.md#-limiting-the-copies) applies to it.
 - `newSession()` can be called from several threads at once. One that throws or returns `null` fails the run that
   needed the session with a `RuleExecutionException`, and the sessions other languages already made for that copy are
   closed. A fatal `Error` is rethrown unchanged.

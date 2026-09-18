@@ -61,7 +61,7 @@ Afterwards `run()`, `runWithResult()`, `load()` and `rules()` throw `IllegalStat
 
 The per-run state of a loaded rule list: one [session](#session) for each language its rules use. A run borrows a copy
 no other run is using, or makes a new one, and gives it back when it ends; the engine keeps copies until the next
-`load()` or `close()`. See [Compiled copies](thread-safety.md#-compiled-copies).
+`load()` or `close()`. See [Compiled copies](compiled-copies.md).
 
 ### Compiler
 
@@ -88,7 +88,7 @@ engine. See [Testing a language](languages/custom.md#-testing-a-language).
 The most [compiled copies](#compiled-copy) an engine keeps, and so the most runs that make progress at once. By default
 an engine limits runs on virtual threads only, to one copy for every two processors and at least one; `maxCopies(n)`
 limits every thread and `unlimitedCopies()` removes the limit. The limit belongs to the engine, so every rule list it
-loads shares it and a reload never raises it. See [Limiting the copies](thread-safety.md#limiting-the-copies).
+loads shares it and a reload never raises it. See [Limiting the copies](compiled-copies.md#-limiting-the-copies).
 
 ### Deadline
 
@@ -125,7 +125,7 @@ is one; an engine finds languages with `ServiceLoader` unless you give it some w
 
 A [compiled copy](#compiled-copy) made above the [copy limit](#copy-limit) for a run that doesn't wait: a
 [nested run](#nested-run), or a run that waited five seconds without any copy being given back. It isn't kept: its
-sessions are closed when the run ends. See [Runs that don't wait](thread-safety.md#runs-that-dont-wait).
+sessions are closed when the run ends. See [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ### Fact
 
@@ -194,7 +194,7 @@ decides for itself. See [Null and missing facts](facts.md#-null-and-missing-fact
 A run started on the same thread from inside another run, such as from an action or a listener, on any engine. It never
 waits for a compiled copy, and it stops at the outer run's deadline if that comes first. On the same engine,
 `RunContext.parent()` names the outer run. See [Nested runs](stopping-runs.md#-nested-runs) and
-[Runs that don't wait](thread-safety.md#runs-that-dont-wait).
+[Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ### Null reference
 
