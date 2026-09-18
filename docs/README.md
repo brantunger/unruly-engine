@@ -64,5 +64,6 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 📖 [Glossary](glossary.md) | Everyone | Short definitions of the terms the guides use, each linked to the page that explains it |
 | ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | Everyone | The API reference |
 
-For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [Docs style guide](STYLE.md) ·
-[RELEASING.md](../RELEASING.md) · [SECURITY.md](../SECURITY.md) · [Code of Conduct](../CODE_OF_CONDUCT.md)
+For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [API compatibility](contributing/api-compatibility.md) ·
+[Build and gates](contributing/build-and-gates.md) · [Docs style guide](STYLE.md) · [RELEASING.md](../RELEASING.md) ·
+[SECURITY.md](../SECURITY.md) · [Code of Conduct](../CODE_OF_CONDUCT.md)

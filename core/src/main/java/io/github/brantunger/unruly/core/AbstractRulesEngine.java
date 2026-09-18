@@ -49,16 +49,14 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
 /**
- * The AbstractRulesEngine is an abstract implementation of the
- * {@link RulesEngine} interface. The RulesEngine fires the
- * action expression from a list of {@link Rule} objects when their conditions
- * evaluate to <strong>true</strong>.
+ * What every engine shares, whatever its match policy: loading and compiling rules, borrowing a compiled copy for
+ * each run, evaluating conditions and running actions, listener callbacks, cancellation and failure reporting. A
+ * subclass supplies the match policy in {@link #runRules(FactStore, Duration)} and names it in
+ * {@link #matchPolicy()}.
  *
  * <p>
- * <b>MVEL optimizer:</b> the engine leaves MVEL's global optimizer setting alone. Concurrent
- * {@code run()} calls never share a session, and MVEL's session holds the run's own compiled expressions, because MVEL
- * replaces the accessors cached in one without synchronization when a fact's runtime class changes, so they are safe
- * with any optimizer, including MVEL's default JIT optimizer.
+ * The engine changes no global setting of any language: a session is used by one run at a time, so a language keeps
+ * whatever changes while its expressions run there; see {@link RuleSet}.
  * </p>
  *
  * @param <O> The output object to instantiate
@@ -174,8 +172,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * using, and gives the copy back once {@code run} returns or throws. The first run after {@link #load(List)},
      * and a run that starts while every copy is in use, makes a new copy. An engine created with a limit on copies
      * keeps at most that many: a run that finds all of them in use waits for one, unless it is nested in another run on
-     * the same thread, which gets an extra copy that isn't kept. MVEL's compiled expressions aren't safe to share
-     * between threads when a fact name is bound to different kinds of objects; see {@link RuleSet}. A run that reads a
+     * the same thread, which gets an extra copy that isn't kept. A language such as MVEL keeps state in its compiled
+     * expressions that isn't safe to share between threads; see {@link RuleSet}. A run that reads a
      * rule set just as a reload or {@link #close()} closes it reads the rules again.
      *
      * <p>
@@ -1088,9 +1086,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param outputObject an empty output object to set output data into
      * @param facts        The run's facts and the views built over them
      * @return {@code outputObject}, which the action changed in place or whose properties were set from the action's
-     *         result. An action can't replace it:
-     *         assigning to {@code output} fails with a {@link RuleExecutionException}, except inside a
-     *         {@code def} function, where it creates a variable local to the function.
+     *         result. An action can't replace it: the engine keeps its own reference, and a language such as MVEL
+     *         fails the rule with a {@link RuleExecutionException} when an action assigns to {@code output}, except
+     *         inside a {@code def} function, where the assignment creates a variable local to the function.
      * @throws RuleExecutionException if the run was cancelled before this rule
      */
     O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, RunFacts facts) {
@@ -1105,9 +1103,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param outputFactory The factory supplied to the engine's constructor
      * @return The new output object, never {@code null}
-     * @throws RuleExecutionException if the factory throws or returns {@code null}. An {@link Error} other than
-     *                                {@link StackOverflowError} or {@link AssertionError} is logged, then rethrown
-     *                                unchanged, also when it is the cause of what the factory throws.
+     * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
+     *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
+     *                                when it is the cause of what the factory throws; any other {@link Error} is
+     *                                wrapped like an exception.
      */
     O createOutput(Supplier<O> outputFactory) {
         O output;

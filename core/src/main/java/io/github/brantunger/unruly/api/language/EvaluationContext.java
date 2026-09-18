@@ -34,8 +34,8 @@ public sealed interface EvaluationContext
      * language that evaluates an expression and returns needn't. A language whose expressions can stop part-way polls
      * it, or maps it to its own cancellation, so a long-running expression stops too. Returning any value is enough:
      * the engine stops the run as soon as the expression returns, whatever it returned. Throwing an exception once the
-     * run is cancelled stops the run the same way; an {@link Error} is still that rule's failure. MVEL has no hook
-     * inside an expression, so a rule written in MVEL runs to its end, and the run stops when it returns.
+     * run is cancelled stops the run the same way; an {@link Error} is still that rule's failure. A language that
+     * can't stop inside an expression runs it to its end, and the run stops when it returns.
      * </p>
      *
      * @return {@code true} if the run must stop

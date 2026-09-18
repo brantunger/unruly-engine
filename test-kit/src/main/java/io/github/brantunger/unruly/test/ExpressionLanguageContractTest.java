@@ -42,14 +42,14 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * What the engine promises for rules in any expression language. A language's test extends this class and supplies
  * the expressions each check needs, written in that language:
  *
- * <pre>{@code
+ * {@snippet :
  * class MyLanguageContractTest extends ExpressionLanguageContractTest {
  *     protected ExpressionLanguage language() { return new MyLanguage(); }
  *     protected String alwaysTrue() { return "true"; }
  *     protected String factEquals(String fact, int value) { return fact + " == " + value; }
  *     // ... one method for each expression the checks need
  * }
- * }</pre>
+ * }
  *
  * <p>
  * Each check runs rules through an engine, so a language passes only if it works with the engine as users will run
@@ -60,6 +60,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * The checks compare numbers in the output by value, so a language whose whole numbers are {@code Long}s, as CEL's
  * are, or {@code Double}s, as JsonLogic's and JavaScript's are, passes as it is.
  * </p>
+ *
+ * @see <a href=
+ * "https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md#-testing-with-the-contract-kit">
+ * Testing with the contract kit</a>
  */
 // A test class: each check makes several assertions, and their failure messages show the values compared. The engines
 // the checks build are discarded with the check, except where a check is about closing.

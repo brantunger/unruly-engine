@@ -16,22 +16,24 @@ import java.util.Map;
  *
  * @param <T> The object/value type of the fact. A fact's value, and a {@code FactReference} in the store, can be
  *            {@code null}.
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md">Facts</a>
  */
 public interface FactStore<T extends @Nullable Object> {
 
     /**
-     * Gets the value of the {@link FactReference} object associated with the specified name.
+     * Gets the value of the fact stored under a name.
      *
-     * @param name the name of the {@link FactReference} object
-     * @return the value of type {@code T} associated with the name, or {@code null} if not found
+     * @param name The fact's name
+     * @return The value, or {@code null} either if there is no fact with that name or if the fact's value is
+     *         {@code null}. To tell the two apart, ask {@link #asMap()} whether it {@code containsKey(name)}.
      */
     @Nullable T getValue(String name);
 
     /**
      * Sets the value of the named fact.
      *
-     * @param name the name
-     * @param obj  the value
+     * @param name The name
+     * @param obj  The value
      * @throws IllegalArgumentException if the store rejects {@code name}, as {@link FactMap} does for {@code null}
      */
     void setValue(String name, T obj);
@@ -39,8 +41,8 @@ public interface FactStore<T extends @Nullable Object> {
     /**
      * Stores a {@link FactReference} under its name.
      *
-     * @param ref the {@link FactReference} to store
-     * @return the previous {@link FactReference} stored under the fact's name, or {@code null} if there was
+     * @param ref The {@link FactReference} to store
+     * @return The previous {@link FactReference} stored under the fact's name, or {@code null} if there was
      *         none, as with {@link java.util.Map#put(Object, Object)}
      * @throws IllegalArgumentException if the store rejects the fact's name, as {@link FactMap} does for
      *         {@code null}
@@ -51,7 +53,7 @@ public interface FactStore<T extends @Nullable Object> {
      * Returns a read-only view of the facts, keyed by name. The view follows later changes to the store. A run copies
      * its entries once, when it starts, binding each fact's value to its key.
      *
-     * @return an unmodifiable map of each name to its {@link FactReference}
+     * @return An unmodifiable map of each name to its {@link FactReference}
      */
     Map<String, @Nullable FactReference<T>> asMap();
 }

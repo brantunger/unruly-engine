@@ -11,11 +11,9 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * A StatefulRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
- * <strong>STATEFUL</strong> implementation the rules engine fires the action of every {@link Rule} whose condition
- * returns true. In the stateful rules engine, the rules are sorted by priority.
- * Matching actions fire in priority order, highest first. They share one output object, so a lower-priority action
- * can overwrite a field set by a higher-priority one.
+ * The all-matches engine: every condition is evaluated, in priority order, and then the action of every {@link Rule}
+ * whose condition was true fires, in the same order, highest priority first. The actions share one output object, so
+ * a lower-priority action can overwrite a field set by a higher-priority one.
  *
  * <p>
  * <b>Match, then fire:</b> every condition is evaluated before any action runs, and actions never cause
@@ -29,7 +27,7 @@ import java.util.function.Supplier;
  * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} for the failing rule only.
  * </p>
  *
- * @param <O> The output object type to instantiate when the rule's action expression is fired.
+ * @param <O> The output object type to instantiate when the rule's action expression is fired
  */
 final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
@@ -51,9 +49,8 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
-     * Run all the rules through a <b>STATEFUL</b> rules engine and fire the action of every {@link Rule} whose
-     * condition returns true. In the stateful rules engine the rules are sorted by priority.
-     * Matching actions fire in priority order, highest first. They share one output object, so a lower-priority
+     * Evaluates every condition, in priority order, and then fires the action of every {@link Rule} whose condition
+     * was true, in the same order, highest priority first. The actions share one output object, so a lower-priority
      * action can overwrite a field set by a higher-priority one.
      *
      * @param facts   The input fact store to run rules against

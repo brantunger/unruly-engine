@@ -28,10 +28,10 @@ and fixed, and credited in the release notes if you'd like.
 
 ## Threat model
 
-Rules are **code**, not data. MVEL, the default expression language, gives a rule's condition and action the same
-access to the JVM as your own Java code, and the engine deliberately provides no sandbox. A run's timeout stops it
-only between rules or when an expression returns, so it can't stop an MVEL rule that never returns. What a rule in
-another expression language can reach depends on that language. The README's
+Rules are **code**, not data. A condition and an action have whatever access their language gives them; in MVEL,
+the same access to the JVM as your own Java code. Either way the engine deliberately provides no sandbox. A
+run's timeout stops it only between rules or when an expression returns, so it can't stop an MVEL rule that never
+returns. What a rule in another expression language can reach depends on that language. The README's
 [Security](README.md#-security) section explains how to deploy it safely.
 
 ### In scope

@@ -5,10 +5,10 @@ import org.jspecify.annotations.Nullable;
 import java.util.Objects;
 
 /**
- * A Rule is an object that guides the {@link io.github.brantunger.unruly.api.RulesEngine}. When the condition
- * expression evaluates to <strong>true</strong>, the {@link io.github.brantunger.unruly.api.RulesEngine} fires the
- * action expression during execution of the {@link io.github.brantunger.unruly.api.RulesEngine#run(FactStore)}
- * method.
+ * A rule: a condition that decides whether it fires, and an action that runs when it does, with a name, a priority
+ * and the language they're written in. A {@link io.github.brantunger.unruly.api.RulesEngine} evaluates the condition
+ * during {@link io.github.brantunger.unruly.api.RulesEngine#run(FactStore)}, and fires the action when the condition
+ * is {@code true} and the engine's match policy selects the rule.
  *
  * <p>
  * Fields:
@@ -22,8 +22,8 @@ import java.util.Objects;
  *     <li>{@code priority}: higher values fire first. Equal priorities keep their list order, and a {@code null}
  *     priority sorts last.</li>
  *     <li>{@code description}: free text for your own use. The engine ignores it, but listeners receive it.</li>
- *     <li>{@code language}: the name of the expression language the condition and action are written in,. {@code null}, the
- *     default, means the engine's default language.</li>
+ *     <li>{@code language}: the name of the expression language the condition and action are written in.
+ *     {@code null}, the default, means the engine's default language.</li>
  * </ul>
  *
  * <p>
@@ -63,10 +63,14 @@ import java.util.Objects;
  * </p>
  *
  * <p>
- * <b>Security:</b> conditions and actions are code. In MVEL, the default language, they have the same access to the
- * JVM as Java code, including processes, files and reflection; what a rule in another language can reach depends on
- * that language. The engine applies no sandbox and no timeout, so only use rules from trusted sources.
+ * <b>Security:</b> conditions and actions are code, and what a rule can reach depends on its language: in MVEL, a
+ * rule has the same access to the JVM as Java code, including processes, files and reflection. The engine applies no
+ * sandbox. A {@link RulesEngineBuilder#runTimeout(java.time.Duration) timeout} stops a run between rules and when an
+ * expression returns, but can't stop inside an expression that its language doesn't interrupt. Only use rules from
+ * trusted sources.
  * </p>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/writing-rules.md">Writing rules</a>
  */
 public final class Rule {
 

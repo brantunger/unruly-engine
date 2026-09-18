@@ -35,6 +35,6 @@ class ConditionDeclarationMessageTest {
         assertTrue(ex.getMessage().contains("rule 'declares'"), ex.getMessage());
         assertTrue(ex.getMessage().contains("Cannot assign or declare '" + variable + "' in a condition"),
                 ex.getMessage());
-        assertTrue(ex.getMessage().contains("move variables and functions into the action"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("Move assignments and declarations into the action"), ex.getMessage());
     }
 }

@@ -1,5 +1,10 @@
 # 🚀 Releasing unruly-engine
 
+> [!NOTE]
+> This page is for the maintainer. A contributor has nothing to do here: once a `feat:` or `fix:` PR is
+> squash-merged, release-please opens the release PR, and the maintainer's merge of it publishes the release.
+> [CONTRIBUTING.md](CONTRIBUTING.md) is the page for contributors.
+
 Releases are automated. Merging a PR to `main` (or to `1.x`, for a [hotfix](#-hotfix-releases-from-1x)) is the only
 manual act. The version bump, changelog, git tag, GitHub Release, Maven Central publish and
 [Javadoc site](#-the-javadoc-site) all follow from it.
@@ -38,7 +43,7 @@ flowchart LR
 3. Review the proposed version and changelog, then **squash-merge the release PR**.
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD, the
-   coverage gate and the [API compatibility check](CONTRIBUTING.md#api-compatibility) against the previous
+   coverage gate and the [API compatibility check](docs/contributing/api-compatibility.md) against the previous
    release), publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to
    the `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
 

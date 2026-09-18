@@ -17,9 +17,12 @@ package io.github.brantunger.unruly.api.language;
  * </p>
  *
  * <p>
- * <b>Implemented by</b> expression languages. A method added to this interface in a 1.x release is a {@code default}
- * method, so an existing language keeps compiling and working.
+ * <b>Implemented by</b> expression languages. A method added to this interface in a later 2.x release is a
+ * {@code default} method, so an existing language keeps compiling and working.
  * </p>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md">Writing an expression
+ *      language</a>
  */
 public interface ExpressionLanguage {
 

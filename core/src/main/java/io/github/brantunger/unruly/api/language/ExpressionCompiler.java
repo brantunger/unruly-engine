@@ -20,6 +20,9 @@ package io.github.brantunger.unruly.api.language;
  * <b>Implemented by</b> expression languages. A method added to this interface is a {@code default} method, so an
  * existing language keeps compiling and working.
  * </p>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md">Writing an expression
+ *      language</a>
  */
 public interface ExpressionCompiler extends AutoCloseable {
 
@@ -38,7 +41,9 @@ public interface ExpressionCompiler extends AutoCloseable {
     CompiledCondition compileCondition(Expression source);
 
     /**
-     * Compiles an action, which changes the output object it sees as {@value ActionContext#OUTPUT_NAME}.
+     * Compiles an action. When it runs, the action either changes the output object it sees as
+     * {@value ActionContext#OUTPUT_NAME} and returns {@link ActionResult#done()}, or returns
+     * {@link ActionResult#set(java.util.Map)} with the properties for the engine to set on the output object.
      *
      * @param source The action: the name of its rule, {@code ACTION}, and its text, which isn't blank
      * @return The compiled action, which every run of the rule list shares. Keep what changes while it runs in a

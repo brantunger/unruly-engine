@@ -6,16 +6,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * A read-only view of the unwrapped facts, handed to condition expressions, actions and listeners.
- * MVEL writes assignments straight back into the map it evaluates against, so without
- * this a condition such as {@code approved = true} (a typo for {@code ==}) would change
- * the fact for every later rule in the run. Rejecting the write names the variable,
- * which a plain {@link Collections#unmodifiableMap(Map)} would not.
+ * A read-only view of the unwrapped facts, handed to condition expressions, actions and listeners. A language that
+ * writes assignments straight back into the map it evaluates against, as MVEL does, would otherwise change a fact for
+ * every later rule in the run: a condition such as {@code approved = true} (a typo for {@code ==}) would set it.
+ * Rejecting the write names the variable, which a plain {@link Collections#unmodifiableMap(Map)} would not.
  *
  * <p>
- * {@code load()} already rejects conditions whose text contains an assignment (the MVEL language
- * scans the condition's text for them). This view is the run-time backstop for any write that check doesn't recognize.
- * It only covers the variables themselves: a write to a fact's property goes through the fact object.
+ * A language that can see an assignment in a condition rejects it when {@code load()} compiles the condition, as MVEL
+ * does by scanning the condition's text. This view is the run-time backstop for any write that check doesn't
+ * recognize, whatever the language. It only covers the variables themselves: a write to a fact's property goes
+ * through the fact object.
  * </p>
  */
 final class ReadOnlyFacts extends AbstractMap<String, Object> {
@@ -30,16 +30,17 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
     }
 
     /**
-     * Creates the view a condition is evaluated against. By the time a condition runs, the text check in
-     * {@code load()} has already rejected visible assignments, so a write that reaches this view is usually a
-     * declaration such as {@code int y;}, which MVEL also stores through the map. The message covers both.
+     * Creates the view a condition is evaluated against. By the time a condition runs, its language has rejected the
+     * assignments it can see at {@code load()}, so a write that reaches this view is usually one the language
+     * couldn't see, or a declaration such as {@code int y;}, which a language such as MVEL also stores through the
+     * map. The message covers both.
      *
      * @param facts The unwrapped facts
      * @return A view that rejects writes with a message about conditions
      */
     static Map<String, Object> forConditions(Map<String, Object> facts) {
         return new ReadOnlyFacts(facts, "Cannot assign or declare '%s' in a condition: conditions can't change "
-                + "facts or create variables. Use == to compare, and move variables and functions into the action.");
+                + "facts or create variables. Move assignments and declarations into the action.");
     }
 
     /**
@@ -54,8 +55,9 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
     }
 
     /**
-     * Creates the view an action runs against. MVEL keeps an action's assignments in the action, so a write that
-     * reaches this view comes from another expression language, whose action should change the output object instead.
+     * Creates the view an action runs against. A language such as MVEL keeps an action's assignments local to the
+     * action, so a write that reaches this view comes from a language that doesn't, whose action should change the
+     * output object instead.
      *
      * @param facts The unwrapped facts
      * @return A view that rejects writes with a message about actions

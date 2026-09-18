@@ -5,14 +5,17 @@ import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.ProjectLayout
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -54,6 +57,12 @@ abstract class ModuleJavadoc extends DefaultTask {
     @Input
     abstract Property<String> getTitle()
 
+    /** The site's front page, an HTML file javadoc gets with {@code -overview}. Without it, the front page lists the modules. */
+    @InputFile
+    @PathSensitive(PathSensitivity.RELATIVE)
+    @Optional
+    abstract RegularFileProperty getOverview()
+
     @Nested
     abstract Property<JavadocTool> getJavadocTool()
 
@@ -86,6 +95,9 @@ abstract class ModuleJavadoc extends DefaultTask {
         // The absolute paths are resolved here, at execution, where they don't reach the cache key.
         modules.each { module, path ->
             arguments += ['--module-source-path', "${module}=${root.dir(path).asFile.absolutePath}".toString()]
+        }
+        if (getOverview().isPresent()) {
+            arguments += ['-overview', getOverview().get().asFile.absolutePath]
         }
         getExecOperations().exec { spec ->
             spec.executable = getJavadocTool().get().executablePath.asFile.absolutePath

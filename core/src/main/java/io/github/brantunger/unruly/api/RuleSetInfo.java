@@ -12,6 +12,13 @@ import java.util.Objects;
  * rules a run used ({@link RunResult#ruleSetChecksum()}).
  *
  * <p>
+ * Before the first successful {@link RulesEngine#load(List)}, the engine's {@code rules()} has no rules, the checksum
+ * of an empty rule list, and a {@code null} {@link #loadedAt() load time}. A run started before a reload finishes with
+ * the rules it started with, so its {@link RunResult#ruleSetChecksum()} can differ from the {@link #checksum()} the
+ * engine reports afterwards.
+ * </p>
+ *
+ * <p>
  * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
  * against this one.
  * </p>

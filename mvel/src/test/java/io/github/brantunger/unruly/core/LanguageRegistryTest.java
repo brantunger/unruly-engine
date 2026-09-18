@@ -26,8 +26,8 @@ class LanguageRegistryTest {
         try (URLClassLoader loader = noLanguages()) {
             IllegalStateException ex = assertThrows(IllegalStateException.class,
                     () -> LanguageRegistry.resolve(List.of(), null, List.of(loader)));
-            assertEquals("The engine has no expression language: add one with language(), or put a language's jar "
-                    + "on the class path", ex.getMessage());
+            assertEquals("The engine has no expression language: add one with language(), or put a language on the "
+                    + "class path or, with a provides clause, on the module path", ex.getMessage());
 
             ex = assertThrows(IllegalStateException.class,
                     () -> LanguageRegistry.resolve(List.of(), "mvel", List.of(loader)));

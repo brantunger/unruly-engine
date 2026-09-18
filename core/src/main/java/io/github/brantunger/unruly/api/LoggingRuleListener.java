@@ -10,8 +10,10 @@ import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 /**
- * An out-of-the-box {@link RuleListener} that logs lifecycle events via SLF4J at the DEBUG level.
- * Useful for auditing or tracing which rules evaluate to true and when their actions execute.
+ * A {@link RuleListener} that logs each rule's callbacks through SLF4J at DEBUG: {@code beforeEvaluate},
+ * {@code afterEvaluate}, {@code beforeExecute}, {@code afterExecute} and {@code onError}. It doesn't log the run
+ * callbacks, {@code beforeRun}, {@code afterRun} and {@code onRunError}. The logger is named after this class,
+ * {@code io.github.brantunger.unruly.api.LoggingRuleListener}.
  *
  * <p>
  * Rule names are logged as the engine's error messages show them: line breaks and other control characters are
@@ -19,6 +21,14 @@ import java.util.concurrent.TimeoutException;
  * rule's message is escaped the same way and not shortened, because it carries text the engine didn't write, such as
  * the fact values a language quotes in its own message.
  * </p>
+ *
+ * <p>
+ * <b>Threads:</b> it holds no state, so one instance is thread-safe and can be given to several engines.
+ * </p>
+ *
+ * @see <a href=
+ *      "https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md#-loggingrulelistener">
+ *      LoggingRuleListener in the listener guide</a>
  */
 public class LoggingRuleListener implements RuleListener {
 

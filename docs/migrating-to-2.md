@@ -106,7 +106,8 @@ without a `language` is written in the engine's default language, which is MVEL 
   language of rules without one. Two found languages with the same name fail `build()`.
 - **Applications repackaged into one jar** (a shaded or "uber" jar) that keep only one of several `META-INF/services`
   files with the same name. If MVEL's entry is lost and no other language is found, building an engine fails:
-  `The engine has no expression language: add one with language(), or put a language's jar on the class path`.
+  `The engine has no expression language: add one with language(), or put a language on the class path or, with a
+  provides clause, on the module path`.
 - **Class paths without `mvel2`.** Building an engine now succeeds, and loading MVEL rules fails instead.
 
 **What to change:** usually nothing. When you repackage the library, merge service files, for example with the Maven

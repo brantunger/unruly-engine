@@ -26,13 +26,35 @@ body:
       required: true
 
   - type: dropdown
-    id: engine
+    id: artifacts
     attributes:
-      label: Engine type
+      label: Artifact(s)
+      description: The jar(s) your build depends on.
+      multiple: true
       options:
-        - Stateless
-        - Stateful
-        - Both, or not engine-specific
+        - unruly-engine
+        - unruly-engine-core
+        - unruly-engine-test
+    validations:
+      required: true
+
+  - type: input
+    id: language
+    attributes:
+      label: Expression language
+      placeholder: e.g. MVEL 2.5.4, or your own
+    validations:
+      required: true
+
+  - type: dropdown
+    id: match-policy
+    attributes:
+      label: Match policy
+      options:
+        - firstMatch
+        - allMatches
+        - uniqueMatch
+        - Not engine-specific
     validations:
       required: true
 
