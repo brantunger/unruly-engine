@@ -58,7 +58,8 @@ public interface RuleListener {
      * Called when a run has finished, after the last {@code after*} callback.
      *
      * @param run    The run that {@link #beforeRun} opened
-     * @param result What the run did: the output object, the rules that fired, and the rules' checksum
+     * @param result What the run did: the output object, the rules that fired, each rule's outcome, and the rules'
+     *               checksum
      */
     default void afterRun(RunContext run, RunResult<?> result) {
         // default empty implementation
@@ -67,8 +68,9 @@ public interface RuleListener {
     /**
      * Called when a run fails, in place of {@link #afterRun}. Unlike {@link #onError}, this reports every failure of
      * the run, including the ones that belong to no rule: a fact name no language can refer to, an output supplier
-     * that throws or returns {@code null}, an interrupt while the run waits for a compiled copy of the rules, and a
-     * run stopped because its thread was interrupted or it passed its deadline.
+     * that throws or returns {@code null}, more than one rule matching on a unique-match engine, an interrupt while
+     * the run waits for a compiled copy of the rules, and a run stopped because its thread was interrupted or it
+     * passed its deadline.
      *
      * <p>
      * A failure inside a rule reaches that rule's {@link #onError} first, then this callback. {@code error} is what

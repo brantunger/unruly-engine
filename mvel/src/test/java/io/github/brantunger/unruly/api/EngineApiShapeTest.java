@@ -42,14 +42,16 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("a run's result and the loaded rules are final classes, and a run's context is sealed to the engine")
+    @DisplayName("a run's result, its evaluations and the loaded rules are final classes, and a run's context is sealed to the engine")
     // Loaded by name, so this test compiles against a release that doesn't have these types yet.
     void runTypes() throws ClassNotFoundException {
         Class<?> runResult = Class.forName("io.github.brantunger.unruly.api.RunResult");
+        Class<?> ruleEvaluation = Class.forName("io.github.brantunger.unruly.api.RuleEvaluation");
         Class<?> ruleSetInfo = Class.forName("io.github.brantunger.unruly.api.RuleSetInfo");
         Class<?> runContext = Class.forName("io.github.brantunger.unruly.api.RunContext");
 
         assertTrue(Modifier.isFinal(runResult.getModifiers()), "RunResult isn't final");
+        assertTrue(Modifier.isFinal(ruleEvaluation.getModifiers()), "RuleEvaluation isn't final");
         assertTrue(Modifier.isFinal(ruleSetInfo.getModifiers()), "RuleSetInfo isn't final");
         assertTrue(runContext.isSealed(), "RunContext isn't sealed");
         assertEquals(List.of("io.github.brantunger.unruly.core.EngineRunContext"),
@@ -58,9 +60,9 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("RulesEngineBuilder.firstMatch and allMatches return a builder; stateless and stateful are gone")
+    @DisplayName("RulesEngineBuilder.firstMatch, allMatches and uniqueMatch return a builder; stateless and stateful are gone")
     void builderFactories() throws NoSuchMethodException {
-        for (String factory : List.of("firstMatch", "allMatches")) {
+        for (String factory : List.of("firstMatch", "allMatches", "uniqueMatch")) {
             Method method = RulesEngineBuilder.class.getMethod(factory, Supplier.class);
             assertTrue(Modifier.isStatic(method.getModifiers()), factory + " isn't static");
             assertEquals(RulesEngineBuilder.class, method.getReturnType(), factory);
@@ -76,7 +78,7 @@ class EngineApiShapeTest {
     void builderSettings() {
         assertEquals(List.of("allMatches", "build", "defaultLanguage", "fact", "facts", "firstMatch", "imports",
                 "imports", "language", "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter",
-                "requireDeclaredFacts", "runTimeout", "unlimitedCopies"),
+                "requireDeclaredFacts", "runTimeout", "uniqueMatch", "unlimitedCopies"),
                 names(RulesEngineBuilder.class));
     }
 

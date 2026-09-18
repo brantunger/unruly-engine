@@ -27,7 +27,7 @@ public final class EngineRunContext implements RunContext {
      *
      * @param runId           The run's identifier within its engine
      * @param parent          The run this one started from, or {@code null}
-     * @param matchPolicy     {@code "firstMatch"} or {@code "allMatches"}
+     * @param matchPolicy     {@code "firstMatch"}, {@code "allMatches"} or {@code "uniqueMatch"}
      * @param ruleSetChecksum The checksum of the rules the run uses
      * @param facts           The run's fact values, already read-only
      * @throws NullPointerException if {@code matchPolicy}, {@code ruleSetChecksum} or {@code facts} is {@code null}

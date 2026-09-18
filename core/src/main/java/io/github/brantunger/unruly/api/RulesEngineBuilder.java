@@ -57,8 +57,14 @@ public final class RulesEngineBuilder<O> {
     // The smallest limit on compiled copies: one run at a time.
     private static final int MIN_COPIES = 1;
 
+    /** Creates an engine with one match policy from the output factory and the builder's settings. */
+    @FunctionalInterface
+    private interface EngineFactory<O> {
+        RulesEngine<O> create(Supplier<O> outputFactory, EngineConfiguration<O> configuration);
+    }
+
     private final Supplier<O> outputFactory;
-    private final boolean fireAllMatches;
+    private final EngineFactory<O> engineFactory;
     private final List<ExpressionLanguage> languageList = new ArrayList<>();
     private @Nullable String defaultLanguageName;
     private final List<String> importNames = new ArrayList<>();
@@ -73,9 +79,9 @@ public final class RulesEngineBuilder<O> {
     private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
     private final Map<String, Map<String, String>> languageOptions = new LinkedHashMap<>();
 
-    private RulesEngineBuilder(Supplier<O> outputFactory, boolean fireAllMatches) {
+    private RulesEngineBuilder(Supplier<O> outputFactory, EngineFactory<O> engineFactory) {
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
-        this.fireAllMatches = fireAllMatches;
+        this.engineFactory = engineFactory;
     }
 
     /**
@@ -84,8 +90,9 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * Conditions are evaluated in that order, and the run stops at the first match, so the rules below it are never
-     * evaluated: they're neither matched nor unmatched, and a broken condition among them can't fail a run that's
-     * already decided. Use {@link #allMatches(Supplier)} when every condition must be evaluated.
+     * evaluated: they're neither matched nor unmatched, the run's {@link RunResult#evaluations() result} reports them
+     * as not evaluated, and a broken condition among them can't fail a run that's already decided. Use
+     * {@link #allMatches(Supplier)} or {@link #uniqueMatch(Supplier)} when every condition must be evaluated.
      * </p>
      *
      * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
@@ -95,7 +102,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngineBuilder<O> firstMatch(Supplier<O> outputFactory) {
-        return new RulesEngineBuilder<>(outputFactory, false);
+        return new RulesEngineBuilder<>(outputFactory, Engines::firstMatch);
     }
 
     /**
@@ -109,7 +116,29 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngineBuilder<O> allMatches(Supplier<O> outputFactory) {
-        return new RulesEngineBuilder<>(outputFactory, true);
+        return new RulesEngineBuilder<>(outputFactory, Engines::allMatches);
+    }
+
+    /**
+     * Starts building an engine that fires the action of the one rule whose condition is true, and fails the run when
+     * more than one is: DMN's unique match, for a decision table whose rows must not overlap. Every condition is
+     * evaluated, in priority order, before anything fires, so the failure names every rule that matched.
+     *
+     * <p>
+     * No match returns {@code null}, like the other engines. More than one match fires nothing, doesn't call the output
+     * factory, and throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} that names each
+     * matched rule in priority order and belongs to no rule: listeners get {@code afterEvaluate} for every rule, then
+     * {@code onRunError}. It depends on nothing language-specific: it counts the conditions that were true.
+     * </p>
+     *
+     * @param outputFactory Creates the output object. It is called once per run that matches exactly one rule and
+     *                      must return a new, non-null object each time.
+     * @param <O>           The type of the output object
+     * @return A new builder
+     * @throws NullPointerException if {@code outputFactory} is {@code null}
+     */
+    public static <O> RulesEngineBuilder<O> uniqueMatch(Supplier<O> outputFactory) {
+        return new RulesEngineBuilder<>(outputFactory, Engines::uniqueMatch);
     }
 
     /**
@@ -456,8 +485,6 @@ public final class RulesEngineBuilder<O> {
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
                 importNames, listenerList, copies != null ? copies : CopyLimit.forVirtualThreads(), timeout,
                 outputClass, writer, languageOptions, factTypes, allFactsDeclared);
-        return fireAllMatches
-                ? Engines.allMatches(outputFactory, configuration)
-                : Engines.firstMatch(outputFactory, configuration);
+        return engineFactory.create(outputFactory, configuration);
     }
 }

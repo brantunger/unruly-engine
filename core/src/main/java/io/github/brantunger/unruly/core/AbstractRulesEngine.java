@@ -28,6 +28,7 @@ import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RuleSetInfo;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -347,9 +348,22 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Returns which rules this engine fires, for {@link RunContext#matchPolicy()}.
      *
-     * @return {@code "firstMatch"} or {@code "allMatches"}
+     * @return {@code "firstMatch"}, {@code "allMatches"} or {@code "uniqueMatch"}
      */
     abstract String matchPolicy();
+
+    /**
+     * Reports a run that failed for a reason that belongs to no rule and no listener callback is open for, such as
+     * more than one rule matching on an engine that allows one. Logged at ERROR, as the engine logs every failure it
+     * throws; the caller throws the exception from the run's body, so the run's listeners get {@code onRunError}.
+     *
+     * @param msg What failed
+     * @return The exception to throw, which belongs to no rule
+     */
+    static RuleExecutionException failedRun(String msg) {
+        log.error(msg);
+        return new ReportedFailure(msg, null);
+    }
 
     /**
      * Returns the rules this engine has loaded, their checksum and when they were loaded.
@@ -851,20 +865,53 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Evaluates the rules' conditions one after another, in list order, and keeps the rules that matched.
+     * What evaluating the conditions found: the rules that matched, in evaluation order, and every rule's outcome.
      *
-     * @param ruleList This is a list of {@link CompiledRule} objects to filter
-     *                 based on when condition expression parses to
-     *                 true
-     * @param copy     The run's copy of the rules, whose sessions the conditions run with
-     * @param facts    The run's facts and the views built over them
-     * @return List of {@link CompiledRule} objects where their condition evaluated
-     *         to <b>true</b>. The list is the engine's own and isn't published, so it isn't copied.
+     * @param matched     The rules whose condition was true, in evaluation order. The list is the engine's own and
+     *                    isn't published, so it isn't copied.
+     * @param evaluations One evaluation for every rule, in evaluation order; immutable, for the run's result
      */
-    List<CompiledRule> match(List<CompiledRule> ruleList, RuleSet.Copy copy, RunFacts facts) {
-        return ruleList.stream()
-                .filter(rule -> matches(rule, copy, facts))
-                .toList();
+    record Matches(List<CompiledRule> matched, List<RuleEvaluation> evaluations) {
+    }
+
+    /**
+     * Evaluates the rules' conditions one after another, in list order, recording each rule's outcome, and keeps the
+     * rules that matched. An engine that fires only the first match stops evaluating there: the rules after it are
+     * recorded as not evaluated, so a broken condition among them can't fail a run that is already decided.
+     *
+     * @param ruleList   The rules, in evaluation order
+     * @param copy       The run's copy of the rules, whose sessions the conditions run with
+     * @param facts      The run's facts and the views built over them
+     * @param untilFirst Whether to stop evaluating at the first match
+     * @return The matched rules and every rule's outcome
+     * @throws RuleExecutionException if a condition fails, or the run was cancelled before one
+     */
+    Matches match(List<CompiledRule> ruleList, RuleSet.Copy copy, RunFacts facts, boolean untilFirst) {
+        List<CompiledRule> matched = new ArrayList<>();
+        List<RuleEvaluation> evaluations = new ArrayList<>(ruleList.size());
+        for (CompiledRule rule : ruleList) {
+            evaluations.add(RuleEvaluation.of(rule.rule(), outcome(rule, copy, facts, matched, untilFirst)));
+        }
+        // An immutable copy, which the result's own List.copyOf then keeps as it is rather than copying again.
+        return new Matches(matched, List.copyOf(evaluations));
+    }
+
+    /**
+     * Evaluates one rule's condition, unless the run is decided already, and adds the rule to {@code matched} when
+     * the condition is true.
+     *
+     * @return The rule's outcome
+     */
+    private RuleEvaluation.Outcome outcome(CompiledRule rule, RuleSet.Copy copy, RunFacts facts,
+                                           List<CompiledRule> matched, boolean untilFirst) {
+        if (untilFirst && !matched.isEmpty()) {
+            return RuleEvaluation.Outcome.NOT_EVALUATED;
+        }
+        if (!matches(rule, copy, facts)) {
+            return RuleEvaluation.Outcome.NOT_MATCHED;
+        }
+        matched.add(rule);
+        return RuleEvaluation.Outcome.MATCHED;
     }
 
     /**

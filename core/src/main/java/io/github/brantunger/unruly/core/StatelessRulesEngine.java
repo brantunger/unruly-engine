@@ -11,8 +11,8 @@ import java.util.function.Supplier;
 
 /**
  * A StatelessRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
- * <strong>STATELESS</strong> implementation, the {@link io.github.brantunger.unruly.api.RulesEngine} fires the action of a single rule. All condition fields within the
- * ruleList are evaluated in the stateless rule engine. However, only a single action is fired. During conflict
+ * <strong>STATELESS</strong> implementation, the {@link io.github.brantunger.unruly.api.RulesEngine} fires the action of a single rule. Conditions are
+ * evaluated in priority order until one is true, and only that rule's action is fired. During conflict
  * resolution the {@link Rule} with the highest priority value is found first. The action field of the rule found first
  * will be the only action triggered. The output object is therefore shaped by only one rule: the matching rule with
  * the highest priority value.
@@ -45,8 +45,9 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
     /**
      * Fires the action of the first rule whose condition is true. Conditions are evaluated in priority order, and the
-     * run stops at the first match, so the rules below it are never evaluated: they are neither matched nor unmatched.
-     * The output object is therefore shaped by only one rule, the matching rule with the highest priority value.
+     * run stops at the first match, so the rules below it are never evaluated: they are neither matched nor unmatched,
+     * and the result reports them as not evaluated. The output object is therefore shaped by only one rule, the
+     * matching rule with the highest priority value.
      *
      * @param facts   The key/value fact store to run the rule engine against.
      * @param timeout How long the run may take, or {@code null} if it has no deadline
@@ -56,21 +57,17 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     @Override
     RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
         return runInScope(facts, timeout, (ruleSet, copy, runFacts) -> {
-            List<CompiledRule> rules = ruleSet.rules();
-            if (rules.isEmpty()) {
-                return RunResult.of(null, List.of(), ruleSet.checksum());
-            }
-
             // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
             // broken lower-priority condition can't fail a run that is already decided.
-            CompiledRule resolvedRule = this.firstMatch(rules, copy, runFacts);
-            if (null == resolvedRule) {
-                return RunResult.of(null, List.of(), ruleSet.checksum());
+            Matches matches = this.match(ruleSet.rules(), copy, runFacts, true);
+            if (matches.matched().isEmpty()) {
+                return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.checksum());
             }
 
             // Run the action of the selected rule on given data and return the output.
+            CompiledRule resolvedRule = matches.matched().get(0);
             O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), runFacts);
-            return RunResult.of(output, List.of(resolvedRule.rule()), ruleSet.checksum());
+            return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(), ruleSet.checksum());
         });
     }
 
@@ -78,22 +75,4 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
     String matchPolicy() {
         return "firstMatch";
     }
-
-    /**
-     * Returns the first rule whose condition is true, evaluating them in priority order and stopping there.
-     *
-     * @param ruleList The rules, in evaluation order
-     * @param copy     The run's copy of the rules, whose sessions the conditions run with
-     * @param facts    The run's facts and the views built over them
-     * @return The first matching rule, or {@code null} if none matched
-     */
-    private CompiledRule firstMatch(List<CompiledRule> ruleList, RuleSet.Copy copy, RunFacts facts) {
-        for (CompiledRule rule : ruleList) {
-            if (this.matches(rule, copy, facts)) {
-                return rule;
-            }
-        }
-        return null;
-    }
 }
-

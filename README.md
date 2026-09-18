@@ -31,7 +31,7 @@ like.
 | Feature | What you get |
 | --- | --- |
 | 📝 **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
-| 🔀 **Two match policies** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. |
+| 🔀 **Three match policies** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. A *unique-match* engine fires the one match, and fails when two rules apply. |
 | 🔢 **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
 | 🛡️ **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. Fact and property names are checked when a rule runs, unless MVEL's [strong typing](docs/languages/mvel.md#-strong-typing) is on. |
 | 🧵 **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
@@ -254,19 +254,25 @@ flowchart TD
     B -- "valid" --> C{"Match policy"}
     C -- "first match" --> D["Evaluate conditions in priority order<br/>until one is true"]
     C -- "all matches" --> E["Evaluate every condition"]
+    C -- "unique match" --> U["Evaluate every condition"]
     D -- "none is true" --> N(["return null"])
     E -- "none is true" --> N
+    U -- "none is true" --> N
     D -- "one is true" --> F["Create the output with your supplier,<br/>then fire that rule's action"]
     E -- "some are true" --> G["Create the output with your supplier,<br/>then fire every match in priority order"]
+    U -- "one is true" --> F
+    U -- "more are true" --> X(["throw, naming every match"])
     F -- "done" --> R(["return the output"])
     G -- "done" --> R
-    class B,D,E step
+    class B,D,E,U step
     class C decision
     class F,G yours
     class N,R ok
+    class X fail
     classDef step     fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
     classDef decision fill:#fef3c7,stroke:#d97706,color:#451a03
     classDef ok       fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef fail     fill:#ffe4e6,stroke:#e11d48,color:#4c0519
     classDef yours    fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-dasharray:4 3
 ```
 
@@ -307,16 +313,16 @@ that isn't a reserved word such as `empty` or `in`, or a class name MVEL resolve
 
 The output supplier creates it once in a run, after a rule has matched, and must return a new object on every call.
 Actions see it as `output` and change it. `run()` returns it, or `null` exactly when no rule fired. `runWithResult()`
-also reports the rules that fired and a checksum of the rules the run used. See
-[The output object](docs/engines-and-runs.md#-the-output-object).
+also reports the rules that fired, what each rule's condition evaluated to, and a checksum of the rules the run used.
+See [The output object](docs/engines-and-runs.md#-the-output-object).
 
 ### Choosing an engine
 
-| Compared | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
-| --- | --- | --- |
-| **Conditions evaluated** | Until the first match; the rules below it aren't evaluated | All of them, before any action runs |
-| **Actions fired** | Only the highest-priority match | Every match, highest priority first, on one output object |
-| **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation |
+| Compared | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` | `RulesEngineBuilder.uniqueMatch(...)` |
+| --- | --- | --- | --- |
+| **Conditions evaluated** | Until the first match; the rules below it aren't evaluated | All of them, before any action runs | All of them, before any action runs |
+| **Actions fired** | Only the highest-priority match | Every match, highest priority first, on one output object | The one match; two or more fail the run, naming them |
+| **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation | Decision tables whose rows must not overlap |
 
 > [!WARNING]
 > An all-matches run is **not atomic**. If an action throws, the actions that already ran keep their changes to the
@@ -424,8 +430,8 @@ flag, or build a new engine.
 <summary><b>How does this compare with Drools or Easy Rules?</b></summary>
 
 unruly-engine is intentionally small. It has no Rete network, no working memory and no forward chaining. Each
-`run()` makes a single pass in priority order — a first-match engine stops at the first match, an all-matches engine
-evaluates every condition and then fires — and actions never trigger re-evaluation. That makes it simple to reason about and a good fit for decision tables and moderate rule sets.
+`run()` makes a single pass in priority order — a first-match engine stops at the first match, an all-matches or a
+unique-match engine evaluates every condition and then fires — and actions never trigger re-evaluation. That makes it simple to reason about and a good fit for decision tables and moderate rule sets.
 If you need inference over changing facts, use a full production-rule system.
 
 </details>

@@ -81,7 +81,7 @@ reports it as the cause of a `RuleCompilationException`.
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling. It's logged with the rule's name, or the language's name when the language fails to create its compiler, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, with the error as its cause. |
-| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; the run's thread is interrupted, which keeps the interrupt status set and makes the cause an `InterruptedException`; or the run passes its [timeout](stopping-runs.md), which makes the cause a `TimeoutException` |
+| `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; more than one rule matches on a [unique-match](engines-and-runs.md#unique-match-one-rule-or-none) engine, which names them all and belongs to no rule; the run's thread is interrupted, which keeps the interrupt status set and makes the cause an `InterruptedException`; or the run passes its [timeout](stopping-runs.md), which makes the cause a `TimeoutException` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)); or a [declared fact](facts.md#-declaring-facts) isn't an instance of its type, and, with `requireDeclaredFacts()`, a declared fact is missing or an undeclared one was supplied |
 | | `IllegalStateException` | `load()` has never been called, or the engine is closed |
 | | `NullPointerException` | `facts` is `null` |
@@ -104,6 +104,7 @@ start a log line of its own:
 | --- | --- |
 | A rule, fact or language name | Escaped, and shortened to 200 characters |
 | Text copied from an exception, such as a language's compile error or warning, or what the output supplier or a listener threw | Shortened to 1,000 characters, then escaped |
+| The list of matched rules in a unique-match engine's failure | Each name escaped and shortened to 200 characters, and the list shortened to 1,000 |
 | An exception in the chain with no message | The message also names the root cause's class, and its message unless already there: `... (caused by java.lang.RuntimeException: boom)` |
 | A `run()` a condition or action started, which failed | `a nested run() failed: ...`, and it isn't logged a second time |
 | A `RuleExecutionException` a language or your code throws itself | Logged like any other exception |
@@ -169,6 +170,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A condition or action throws | `RuleExecutionException` that names the rule | `onError`, then `onRunError`, with that exception | ERROR |
 | A condition returns `null` or a non-boolean, an action returns `null`, or a property can't be set | `RuleExecutionException` that names the rule | `onError`, then `onRunError`, with that exception | ERROR |
 | The output supplier throws or returns `null` | `RuleExecutionException`, no rule | The conditions' callbacks, then `onRunError`; no `onError` | ERROR |
+| More than one rule matches on a unique-match engine | `RuleExecutionException`, no rule, naming every matched rule in its message | The conditions' callbacks, then `onRunError`; no `onError` and no action callback | ERROR |
 | A fact name the engine or a language rejects, or a fact that doesn't match its [declaration](facts.md#-declaring-facts) | `IllegalArgumentException` | `onRunError` with that `IllegalArgumentException` | ERROR |
 | A language fails to create a session for the run | `RuleExecutionException`, no rule | Nothing, not even `beforeRun`: the run fails before it starts | ERROR |
 | The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
