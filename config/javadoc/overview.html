@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>unruly-engine</title>
+</head>
+<body>
+<p>A rules engine for Java: rules are conditions and actions written in an expression language, such as MVEL, that an
+engine compiles once and runs against your facts from any number of threads.</p>
+
+<h1>Where to start</h1>
+<ol>
+<li>{@link io.github.brantunger.unruly.api.RulesEngineBuilder} builds an engine: choose the match policy
+({@code firstMatch}, {@code allMatches} or {@code uniqueMatch}), then its languages, imports, listeners and limits.</li>
+<li>{@link io.github.brantunger.unruly.api.Rule} is a condition, an action and a priority, created with
+{@link io.github.brantunger.unruly.api.Rule#builder()}.</li>
+<li>{@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} compiles a rule list; a broken rule fails
+there, not during a run. {@link io.github.brantunger.unruly.api.RulesEngine#run(io.github.brantunger.unruly.api.FactStore)}
+runs the rules against a {@link io.github.brantunger.unruly.api.FactStore}, such as a
+{@link io.github.brantunger.unruly.api.FactMap}.</li>
+<li>{@link io.github.brantunger.unruly.api.RuleListener} observes each run, condition and action; what {@code load}
+and {@code run} throw is in {@link io.github.brantunger.unruly.api.exception}.</li>
+<li>Writing an expression language starts at {@link io.github.brantunger.unruly.api.language}, and testing one at
+{@link io.github.brantunger.unruly.test}.</li>
+</ol>
+
+<h1>Modules</h1>
+<ul>
+<li><b>{@code io.github.brantunger.unruly.core}</b>, the artifact {@code unruly-engine-core}: the API, the language
+SPI and the engine, without an expression language.</li>
+<li><b>{@code io.github.brantunger.unruly}</b>, the artifact {@code unruly-engine}: the MVEL language. It requires
+the core module.</li>
+<li><b>{@code io.github.brantunger.unruly.test}</b>, the artifact {@code unruly-engine-test}: tools for testing an
+expression language, for its own tests.</li>
+</ul>
+
+<p>The guides: the <a href="https://github.com/brantunger/unruly-engine#-quick-start">quick start</a> and the
+<a href="https://github.com/brantunger/unruly-engine/blob/main/docs/README.md">documentation index</a>, which lists
+a reading order for each kind of reader.</p>
+</body>
+</html>

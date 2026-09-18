@@ -88,9 +88,12 @@ depend on `unruly-engine-core` instead: the same engine and API, without MVEL. T
 <summary><b>On the module path</b></summary>
 
 On the module path, `unruly-engine` is the module `io.github.brantunger.unruly`, and `unruly-engine-core` is
-`io.github.brantunger.unruly.core`. Require one of them: it requires SLF4J, and MVEL for `unruly-engine`. Rules read your
-classes through MVEL, so also export every package whose classes rules use: fact types, the output type, the types
-of properties rules reach through them, and imported classes.
+`io.github.brantunger.unruly.core`. Require one of them: it requires SLF4J, and MVEL for `unruly-engine`. Two modules
+then read your classes: the engine, `io.github.brantunger.unruly.core`, reads the facts and writes the output, and the
+language's module reads whatever its expressions reach. So export or open every package whose classes rules use: fact
+types, the output type, the types of properties rules reach through them, and imported classes. An export without a
+`to` clause works for every language; [Packaging](docs/languages/custom.md#-packaging) shows the narrower export an
+application can use when its language doesn't reflect on facts itself.
 
 ```java
 module com.example.app {

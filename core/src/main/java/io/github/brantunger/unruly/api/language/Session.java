@@ -22,6 +22,9 @@ package io.github.brantunger.unruly.api.language;
  * <b>Implemented by</b> expression languages. A method added to this interface is a {@code default} method, so an
  * existing language keeps compiling and working.
  * </p>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md">Writing an expression
+ *      language</a>
  */
 public interface Session extends AutoCloseable {
 
@@ -35,9 +38,11 @@ public interface Session extends AutoCloseable {
     }
 
     /**
-     * Releases what the session holds. The engine calls it once, when no run is using the session, on the thread that
-     * finished with it last. By default, does nothing. An exception it throws is logged at WARN and doesn't fail a run,
-     * except a fatal {@link Error}, which is rethrown unchanged.
+     * Releases what the session holds. The engine calls it once, when no run is using the session, on whichever
+     * thread finishes with it: the run's thread, or the thread that calls {@code load()} or {@code close()} when the
+     * session is idle. A language whose runtime is bound to a thread must not assume which. By default, does nothing.
+     * An exception it throws is logged at WARN and doesn't fail a run, except a fatal {@link Error}, which is rethrown
+     * unchanged.
      */
     @Override
     default void close() {

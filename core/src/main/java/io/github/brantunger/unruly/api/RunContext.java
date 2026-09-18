@@ -11,8 +11,10 @@ import java.util.Map;
  *
  * <p>
  * <b>Implemented by the engine</b>, which passes it to a listener. It's sealed, so a listener can't implement it;
- * test a listener through an engine, as the listener guide shows. Because only the engine implements it, a later
- * release can add methods to it without breaking listeners.
+ * test a listener by running an engine, as <a href=
+ * "https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md#-callbacks">Callbacks</a> in
+ * the listener guide says. Because only the engine implements it, a later release can add methods to it without
+ * breaking listeners.
  * </p>
  *
  * <p>
@@ -20,6 +22,9 @@ import java.util.Map;
  * {@code onRunError}, however the facts change during the run and whatever another engine's runs look like. Its
  * {@code toString()} names the run, its parent, the match policy and the checksum, never the facts.
  * </p>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md">Listeners &amp;
+ *      logging</a>
  */
 public sealed interface RunContext permits io.github.brantunger.unruly.core.EngineRunContext {
 

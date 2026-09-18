@@ -101,7 +101,7 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 
 | Message starts with | Cause | Fix |
 | --- | --- | --- |
-| `The engine has no expression language: add one with language(), or put a language's jar on the class path` | No language was given and `ServiceLoader` found none: `unruly-engine-core` alone, or a shaded jar without MVEL's service file | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language); for shaded jars, [Expression languages are found with ServiceLoader](migrating-to-2.md#-expression-languages-are-found-with-serviceloader) |
+| `The engine has no expression language: add one with language(), or put a language on the class path or, with a provides clause, on the module path` | No language was given and `ServiceLoader` found none: `unruly-engine-core` alone, or a shaded jar without MVEL's service file | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language); for shaded jars, [Expression languages are found with ServiceLoader](migrating-to-2.md#-expression-languages-are-found-with-serviceloader) |
 | `The engine has several expression languages, ` | Two or more languages, and no default | Name one with `defaultLanguage(...)`; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `The default language '` | `defaultLanguage(...)` names a language the engine doesn't have | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `Options are given for the expression language '` | `option(...)` names a language the engine doesn't have | [Exceptions by method](error-handling.md#-exceptions-by-method) |

@@ -13,8 +13,8 @@ import java.util.Set;
 import java.util.function.BiFunction;
 
 /**
- * FactMap is an implementation of {@link FactStore}. It's a Key/Value store where the key is a {@link String}
- * representing the fact's name, and the value is a {@link FactReference} itself.
+ * The built-in {@link FactStore}: a map from each fact's name to its {@link FactReference}, backed by a
+ * {@link HashMap}.
  *
  * <p>
  * Every way of adding a fact rejects a {@code null} name, and rejects a key that differs from the
@@ -33,7 +33,15 @@ import java.util.function.BiFunction;
  * facts under the same names are equal, whatever their implementation.
  * </p>
  *
+ * <p>
+ * <b>Threads:</b> not thread-safe, like the {@link HashMap} it wraps. Build one for each run, and don't change it
+ * while a run reads it.
+ * </p>
+ *
  * @param <T> The object/value type of the facts
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md">Facts</a>
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md#-reusing-and-sharing-a-store">Reusing
+ *      and sharing a store</a>
  */
 public class FactMap<T extends @Nullable Object> implements FactStore<T>, Map<String, @Nullable FactReference<T>> {
 

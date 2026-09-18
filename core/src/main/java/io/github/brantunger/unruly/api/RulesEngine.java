@@ -7,9 +7,9 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * The RulesEngine fires the action expression from a list of {@link Rule} objects when their conditions evaluate to
- * <strong>true</strong>. Build one with {@link RulesEngineBuilder}, which sets its expression languages, imports,
- * listeners and limit on compiled copies once.
+ * Runs rules against facts: it evaluates each {@link Rule}'s condition and fires the actions of the rules that match,
+ * as its match policy decides. Build one with {@link RulesEngineBuilder}, which sets its match policy, expression
+ * languages, imports, listeners, limit on compiled copies and run timeout once.
  *
  * <p>
  * <b>Lifecycle:</b> compile the rules with {@link #load(List)}, then call {@link #run(FactStore)} or
@@ -27,6 +27,10 @@ import java.util.List;
  * </p>
  *
  * @param <O> The output object type to instantiate
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/thread-safety.md">Thread safety</a>
+ * @see <a href=
+ *      "https://github.com/brantunger/unruly-engine/blob/main/docs/error-handling.md#-exceptions-by-method">Exceptions
+ *      by method</a>
  */
 public interface RulesEngine<O> extends AutoCloseable {
 
@@ -34,16 +38,24 @@ public interface RulesEngine<O> extends AutoCloseable {
      * Compiles a rule list and swaps it in for the rules loaded before, if any.
      *
      * @param ruleList The list of {@link Rule} objects
-     * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if a rule fails to compile, has a
-     *         blank condition or action, has a condition that contains an assignment or {@code import_static}, shares
-     *         its name with another rule, is written in a language the engine doesn't have, or if the list contains a
-     *         {@code null} rule. Also if an expression language throws while creating its compiler, or returns
-     *         {@code null} instead of a compiler or a compiled expression. That includes a {@link LinkageError} such as
-     *         a {@link NoClassDefFoundError} for a class a rule uses, which means the rule is misconfigured rather than
-     *         the JVM failing. A {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
-     *         compiling, also as the cause of another exception, is logged and then rethrown unchanged.
+     * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if the list contains a {@code null}
+     *         rule; two rules share a name; a condition or action is blank; a rule is written in a language the engine
+     *         doesn't have; a condition or action has a syntax error its language detects, or is one its language
+     *         rejects, such as a condition with an assignment; a language throws while creating its compiler, or
+     *         returns {@code null} instead of a compiler or a compiled expression; a {@link LinkageError} such as a
+     *         {@link NoClassDefFoundError} is thrown for a class a rule uses, which means the rule is misconfigured
+     *         rather than the JVM failing; or a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a name
+     *         the rules' languages can't refer to. A {@code null} rule or a duplicate name is thrown at once. The
+     *         other problems are collected before the exception is thrown, and
+     *         {@link RuleCompilationException#failures() failures()} lists them: each broken rule, a language that
+     *         can't create its compiler (once, in place of the first rule that needed it; the rules written in it
+     *         aren't compiled and get no failure of their own), and each declared fact name the compilers that were
+     *         created reject.
      * @throws IllegalStateException if the engine is closed
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
+     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
+     *                               compiling, also as the cause of another exception, is logged and then rethrown
+     *                               unchanged
      */
     void load(List<Rule> ruleList);
 
@@ -73,36 +85,49 @@ public interface RulesEngine<O> extends AutoCloseable {
     List<RuleCompilationException> validate(List<Rule> ruleList);
 
     /**
-     * Fire rules engine against the rules supplied by the rules list.
+     * Runs the loaded rules against facts.
      *
      * @param facts The facts to run the rules against. Any {@link FactStore} is accepted, such as a
      *              {@code FactMap<Applicant>}. The engine reads them through {@link FactStore#asMap()}.
-     * @return The output of firing the actions of the matching {@link Rule} objects, or {@code null} if the rule
-     *         list is empty or no rule matched
-     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
-     *         an action fails, a condition doesn't evaluate to a boolean, the output factory throws or returns
-     *         {@code null}, a compiled condition or action throws or returns {@code null} when it is copied for the
-     *         run, or more than one rule matches on a {@link RulesEngineBuilder#uniqueMatch(java.util.function.Supplier) unique-match}
-     *         engine, which names them all and belongs to no rule. Also if the run must stop, which is checked between rules and when each condition or action
-     *         returns, because its thread was interrupted, which keeps the interrupt status set and makes the cause an {@link InterruptedException}, or because it passed the
-     *         deadline a {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
+     * @return The output of the actions of the matching {@link Rule} objects, or {@code null} if the rule list is
+     *         empty or no rule matched
+     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if a condition or action throws; a
+     *         condition evaluates to {@code null} or a non-boolean; an action returns {@code null} instead of an
+     *         {@link io.github.brantunger.unruly.api.language.ActionResult}, or a property it returned can't be set
+     *         on the output; the output supplier throws or returns {@code null}; a language throws or returns
+     *         {@code null} when it creates a session for the run; or more than one rule matches on a
+     *         {@link RulesEngineBuilder#uniqueMatch(java.util.function.Supplier) unique-match} engine, which names
+     *         them all and belongs to no rule. Also if the run must stop, which is checked while it waits for a
+     *         compiled copy of the rules, between rules and when each condition or action returns, because its
+     *         thread was interrupted, which keeps the interrupt status
+     *         set and makes the cause an {@link InterruptedException}, or because it passed the deadline a
+     *         {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
      *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
      *         {@code null}.
      * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
-     *         language of a loaded rule can't refer to. In MVEL, that is a name that isn't a Java identifier, a
-     *         reserved word such as {@code empty} or {@code in}, or a class name MVEL resolves, such as {@code Math}
-     *         or a class from an imported package. A rule list without rules is checked against the engine's default
-     *         language. Also if a language's check of a fact name fails with any other exception, which becomes the
-     *         cause.
+     *         language of a loaded rule can't refer to (a rule list without rules is checked against the engine's
+     *         default language); if a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a non-null
+     *         value that isn't an instance of its type; or, with {@link RulesEngineBuilder#requireDeclaredFacts()},
+     *         if a declared fact is missing or an undeclared one is supplied. Also if a language's check of a fact
+     *         name fails with any other exception, which becomes the cause.
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      * @throws NullPointerException if {@code facts} is {@code null}
+     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, wherever it
+     *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
+     *                               language checking a name, creating a session or closing one, or a listener), is
+     *                               rethrown unchanged, also when it arrives as the cause of another exception.
+     *                               Every other {@link Error} from a rule, the output supplier, an output writer or
+     *                               a language creating a session, including a {@link LinkageError}, is reported as
+     *                               a {@code RuleExecutionException}; one from a language's check of a fact name as
+     *                               an {@code IllegalArgumentException}; one from a listener is logged, and the run
+     *                               goes on; one from closing a session is logged at WARN
      */
     default @Nullable O run(FactStore<?> facts) {
         return runWithResult(facts).output();
     }
 
     /**
-     * Fires the rules like {@link #run(FactStore)}, and reports what the run did: the output object, the rules that
+     * Runs the rules like {@link #run(FactStore)}, and reports what the run did: the output object, the rules that
      * fired, what each rule's condition evaluated to, and the checksum of the rules the run used. A caller can record
      * which rules produced a decision, and why the others didn't apply, without a {@link RuleListener}.
      *
@@ -120,7 +145,7 @@ public interface RulesEngine<O> extends AutoCloseable {
     }
 
     /**
-     * Fires the rules like {@link #runWithResult(FactStore)}, with settings for this run only, such as a
+     * Runs the rules like {@link #runWithResult(FactStore)}, with settings for this run only, such as a
      * {@link RunOptions#withTimeoutOf(Duration) timeout} that replaces the one the engine was built with.
      *
      * <p>

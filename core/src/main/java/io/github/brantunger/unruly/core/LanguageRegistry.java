@@ -70,7 +70,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
         }
         if (names.isEmpty()) {
             throw new IllegalStateException("The engine has no expression language: add one with language(), or put "
-                    + "a language's jar on the class path");
+                    + "a language on the class path or, with a provides clause, on the module path");
         }
         Iterator<String> name = names.iterator();
         String only = name.next();

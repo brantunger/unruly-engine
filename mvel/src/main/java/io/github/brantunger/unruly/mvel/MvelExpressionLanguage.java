@@ -8,7 +8,9 @@ import org.mvel2.util.ErrorUtil;
 import java.util.Set;
 
 /**
- * MVEL 2, the engine's default expression language.
+ * MVEL 2 as an expression language for the engine, named {@value #LANGUAGE_NAME}. A rule whose language is
+ * {@code null} is written in MVEL when MVEL is the engine's only language, or when
+ * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#defaultLanguage(String)} names it.
  *
  * <ul>
  *     <li>Conditions and actions have the same access to the JVM as Java code, including processes, files and
@@ -22,6 +24,8 @@ import java.util.Set;
  *     <li>MVEL caches accessors in a compiled expression without synchronization, so each session, which one run
  *     uses at a time, runs its own compiled copy of each expression.</li>
  * </ul>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/mvel.md">MVEL</a>
  */
 public final class MvelExpressionLanguage implements ExpressionLanguage {
 

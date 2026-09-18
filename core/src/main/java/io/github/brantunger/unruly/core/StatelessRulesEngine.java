@@ -10,19 +10,16 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * A StatelessRulesEngine is a concrete implementation that extends the {@link AbstractRulesEngine} class. In the
- * <strong>STATELESS</strong> implementation, the {@link io.github.brantunger.unruly.api.RulesEngine} fires the action of a single rule. Conditions are
- * evaluated in priority order until one is true, and only that rule's action is fired. During conflict
- * resolution the {@link Rule} with the highest priority value is found first. The action field of the rule found first
- * will be the only action triggered. The output object is therefore shaped by only one rule: the matching rule with
- * the highest priority value.
+ * The first-match engine: conditions are evaluated in priority order until one is true, and only that rule's action
+ * fires. The rules below the match are never evaluated, and the run's result reports them as not evaluated, so the
+ * output object is shaped by one rule: the matching {@link Rule} with the highest priority.
  *
  * <p>
  * <b>Ties:</b> if several matching rules share the highest priority, the one that appears first in the list
  * passed to {@link #load(java.util.List)} is fired.
  * </p>
  *
- * @param <O> The output object type to instantiate when the rule's action expression is fired.
+ * @param <O> The output object type to instantiate when the rule's action expression is fired
  */
 final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 

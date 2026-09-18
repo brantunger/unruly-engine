@@ -117,6 +117,8 @@ tasks.register('javadoc', ModuleJavadoc) {
         configuration.incoming.artifactView { componentFilter { it instanceof ModuleComponentIdentifier } }.files
     })
     title = "unruly-engine ${project.version} API"
+    // The front page: where to start, the modules, and links to the guides.
+    overview = layout.projectDirectory.file('config/javadoc/overview.html')
     javadocTool = javaToolchains.javadocToolFor {
         languageVersion = JavaLanguageVersion.of(21)
     }

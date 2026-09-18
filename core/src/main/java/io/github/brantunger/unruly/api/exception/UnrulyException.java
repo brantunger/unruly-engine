@@ -11,7 +11,7 @@ public class UnrulyException extends RuntimeException {
     /**
      * Constructs a new exception with the specified detail message.
      *
-     * @param message the detail message.
+     * @param message The detail message
      */
     public UnrulyException(@Nullable String message) {
         super(message);
@@ -20,8 +20,8 @@ public class UnrulyException extends RuntimeException {
     /**
      * Constructs a new exception with the specified detail message and cause.
      *
-     * @param message the detail message.
-     * @param cause   the cause.
+     * @param message The detail message
+     * @param cause   The cause
      */
     public UnrulyException(@Nullable String message, @Nullable Throwable cause) {
         super(message, cause);

@@ -39,7 +39,7 @@ public class RuleCompilationException extends UnrulyException {
     /**
      * Constructs a new exception with the specified detail message.
      *
-     * @param message the detail message.
+     * @param message The detail message
      */
     public RuleCompilationException(@Nullable String message) {
         this(message, (Throwable) null, (String) null);
@@ -48,8 +48,8 @@ public class RuleCompilationException extends UnrulyException {
     /**
      * Constructs a new exception with the specified detail message and cause.
      *
-     * @param message the detail message.
-     * @param cause   the cause.
+     * @param message The detail message
+     * @param cause   The cause
      */
     public RuleCompilationException(@Nullable String message, @Nullable Throwable cause) {
         this(message, cause, null);
@@ -58,10 +58,10 @@ public class RuleCompilationException extends UnrulyException {
     /**
      * Constructs a new exception with the specified detail message, cause and the name of the rule that failed.
      *
-     * @param message  the detail message.
-     * @param cause    the cause.
-     * @param ruleName the name of the rule that failed, or {@code null} if the failure isn't about one rule or the
-     *                 rule has no name.
+     * @param message  The detail message
+     * @param cause    The cause
+     * @param ruleName The name of the rule that failed, or {@code null} if the failure isn't about one rule or the
+     *                 rule has no name
      */
     public RuleCompilationException(@Nullable String message, @Nullable Throwable cause, @Nullable String ruleName) {
         this(message, cause, ruleName, null, List.of());
@@ -70,11 +70,11 @@ public class RuleCompilationException extends UnrulyException {
     /**
      * Constructs a new exception for one rule's condition or action.
      *
-     * @param message        the detail message.
-     * @param cause          the cause.
-     * @param ruleName       the name of the rule that failed, or {@code null} if the rule has no name.
-     * @param expressionKind whether the condition or the action failed, or {@code null} if neither did
-     * @param issues         where and what the expression language found wrong; copied
+     * @param message        The detail message
+     * @param cause          The cause
+     * @param ruleName       The name of the rule that failed, or {@code null} if the rule has no name
+     * @param expressionKind Whether the condition or the action failed, or {@code null} if neither did
+     * @param issues         Where and what the expression language found wrong; copied
      * @throws NullPointerException if {@code issues} or one of its elements is {@code null}
      */
     public RuleCompilationException(@Nullable String message, @Nullable Throwable cause, @Nullable String ruleName,
@@ -91,8 +91,8 @@ public class RuleCompilationException extends UnrulyException {
      * Constructs an exception for several failures while loading a rule list. Its rule name, expression kind and
      * issues are those of the first failure, which is also its cause.
      *
-     * @param message  the detail message.
-     * @param failures each failure, in the order they were found; copied
+     * @param message  The detail message
+     * @param failures Each failure, in the order they were found; copied
      * @throws IllegalArgumentException if {@code failures} is empty
      * @throws NullPointerException     if {@code failures} or one of its elements is {@code null}
      */
@@ -120,7 +120,7 @@ public class RuleCompilationException extends UnrulyException {
      * Returns the name of the rule that failed, as {@link io.github.brantunger.unruly.api.Rule#getRuleName()} returns
      * it. Unlike the message, it isn't escaped or shortened, so it can be used to look the rule up.
      *
-     * @return the rule's name, or {@code null} if the failure isn't about one rule (for example an expression language
+     * @return The rule's name, or {@code null} if the failure isn't about one rule (for example an expression language
      *         failed to create its compiler, or an element of the list is {@code null})
      */
     public @Nullable String getRuleName() {
@@ -130,8 +130,8 @@ public class RuleCompilationException extends UnrulyException {
     /**
      * Returns whether the rule's condition or its action failed.
      *
-     * @return the kind of expression, or {@code null} if the failure isn't about a condition or an action, for example
-     *         a rule written in a language that isn't registered
+     * @return The kind of expression, or {@code null} if the failure isn't about a condition or an action, for example
+     *         a rule written in a language the engine doesn't have
      */
     public @Nullable ExpressionKind getExpressionKind() {
         return expressionKind;
@@ -140,7 +140,7 @@ public class RuleCompilationException extends UnrulyException {
     /**
      * Returns where and what the expression language found wrong, when it said.
      *
-     * @return the issues, possibly none; unmodifiable
+     * @return The issues, possibly none; unmodifiable
      */
     public List<InvalidExpressionException.Issue> issues() {
         return reportedIssues;
@@ -151,7 +151,7 @@ public class RuleCompilationException extends UnrulyException {
      * language that couldn't create its compiler, in place of the first rule that needed it; and each declared fact
      * name the languages reject, last. Only a rule's failure has a {@link #getRuleName() rule name}.
      *
-     * @return one exception for each failure, or only this exception if there was one; unmodifiable
+     * @return One exception for each failure, or only this exception if there was one; unmodifiable
      */
     public List<RuleCompilationException> failures() {
         return ruleFailures.isEmpty() ? List.of(this) : ruleFailures;

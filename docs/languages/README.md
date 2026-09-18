@@ -111,7 +111,8 @@ one whose name is blank, fail `build()`. Anything a language throws while it's c
 `build()` fails with `The default language 'cel' isn't one of the engine's expression languages: [mvel]`. Without a
 name, it's the engine's only language. With several and no name, `build()` fails with `The engine has several expression
 languages, [cel, mvel], so name the language of rules without one with defaultLanguage()`; with none, with `The engine
-has no expression language: add one with language(), or put a language's jar on the class path`.
+has no expression language: add one with language(), or put a language on the class path or, with a provides clause, on
+the module path`.
 
 ## 📋 What a language can offer
 

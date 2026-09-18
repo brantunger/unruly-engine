@@ -51,13 +51,17 @@ import java.util.function.Supplier;
  * </p>
  *
  * @param <O> The type of the output object
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/thread-safety.md">Thread safety</a>
+ * @see <a href=
+ *      "https://github.com/brantunger/unruly-engine/blob/main/docs/error-handling.md#-exceptions-by-method">Exceptions
+ *      by method</a>
  */
 public final class RulesEngineBuilder<O> {
 
     // The smallest limit on compiled copies: one run at a time.
     private static final int MIN_COPIES = 1;
 
-    /** Creates an engine with one match policy from the output factory and the builder's settings. */
+    /** Creates an engine with one match policy from the output supplier and the builder's settings. */
     @FunctionalInterface
     private interface EngineFactory<O> {
         RulesEngine<O> create(Supplier<O> outputFactory, EngineConfiguration<O> configuration);
@@ -126,7 +130,7 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * No match returns {@code null}, like the other engines. More than one match fires nothing, doesn't call the output
-     * factory, and throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} that names each
+     * supplier, and throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} that names each
      * matched rule in priority order and belongs to no rule: listeners get {@code afterEvaluate} for every rule, then
      * {@code onRunError}. It depends on nothing language-specific: it counts the conditions that were true.
      * </p>
@@ -368,37 +372,22 @@ public final class RulesEngineBuilder<O> {
      * of the default limit on runs from virtual threads.
      *
      * <p>
-     * Each run uses a copy of the rules, one session for each expression language, that no other run is using. An
-     * engine without a limit makes a new copy whenever all of them are in use, and keeps as many as the most runs it
-     * has had in progress at once. With a limit, a run that starts while all of them are in use waits until one is
-     * free, so at most {@code maxCopies} runs make progress at once. Two kinds of run don't wait:
-     * </p>
-     *
-     * <ul>
-     *     <li>a run started from inside another run <b>on the same thread</b>, such as from an action or a listener,
-     *     whatever engine the run around it belongs to;</li>
-     *     <li>a run that has waited five seconds without one single copy being given back, which is what waiting
-     *     for a run of this engine on <b>another</b> thread looks like. It's logged at WARN once for each rule
-     *     list.</li>
-     * </ul>
-     *
-     * <p>
-     * Each gets an extra copy that isn't kept, so a rule or listener that waits for another thread's run can't
-     * deadlock the engine. A busy engine keeps giving copies back, so it keeps waiting and the limit holds.
-     * </p>
-     *
-     * <p>
-     * If a thread is interrupted while its run waits for a copy, the run throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} and the thread's interrupt status stays
-     * set. A rule list whose languages all keep their state in the engine, rather than in a
-     * {@link io.github.brantunger.unruly.api.language.Session}, needs no copies: every run shares one, and no limit
-     * applies.
+     * A run that starts while all of them are in use waits until one is free, so at most {@code maxCopies} runs make
+     * progress at once. A run started from inside another run on the same thread, and a run that has waited five
+     * seconds without one single copy being given back, don't wait: each gets an extra copy that isn't kept. A run
+     * that is interrupted while it waits, or that passes its deadline there, throws a
+     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}; an interrupted thread keeps its
+     * interrupt status set. A rule list whose languages all return
+     * {@link io.github.brantunger.unruly.api.language.Session#none()} needs no copies, and no limit applies to it.
      * </p>
      *
      * @param maxCopies The most compiled copies of the rules to keep, and so the most runs making progress at once;
      *                  at least 1
      * @return This builder
      * @throws IllegalArgumentException if {@code maxCopies} is less than 1
+     * @see <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#-limiting-the-copies">Limiting
+     * the copies</a>
      */
     public RulesEngineBuilder<O> maxCopies(int maxCopies) {
         if (maxCopies < MIN_COPIES) {
@@ -431,22 +420,13 @@ public final class RulesEngineBuilder<O> {
      * Stops a run that is still going after {@code timeout}. Without this, a run has no deadline.
      *
      * <p>
-     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, so waiting for a compiled copy
-     * of the rules counts towards it: a run that is still waiting at its deadline stops waiting. A run started from
-     * inside another run on the same thread, such as one an action starts on another engine, stops at whichever of
-     * the two deadlines comes first. The engine checks it before each condition and each action, and again when each
-     * one returns, so a run whose last condition or action returns past its deadline fails even though that rule
-     * finished; it doesn't stop an
-     * expression that is already running. MVEL has no hook inside an
-     * expression, so an MVEL rule that loops for ever can't be stopped, with or without a timeout: run rules you
-     * don't trust in a process of their own. A language that can stop inside an expression, such as one built on
-     * JEXL's cancellation, stops there instead, because it is given the deadline.
-     * </p>
-     *
-     * <p>
-     * A run past its deadline throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}
-     * caused by a {@link java.util.concurrent.TimeoutException}. What ran before that keeps its effects on the
-     * output object and on the facts, like any other failed run.
+     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, and waiting for a compiled copy
+     * of the rules counts towards it. The engine checks it before each condition and each action, and again when
+     * each one returns, so a run whose last condition or action returns past its deadline fails even though that
+     * rule finished. It doesn't stop an expression that is already running; only a language that checks
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()} can stop inside one. A run
+     * past its deadline throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} caused by
+     * a {@link java.util.concurrent.TimeoutException}.
      * </p>
      *
      * @param timeout How long a run may take; positive. {@link RunOptions#withTimeoutOf(Duration)} gives a single run
@@ -454,6 +434,7 @@ public final class RulesEngineBuilder<O> {
      * @return This builder
      * @throws IllegalArgumentException if {@code timeout} is zero or negative
      * @throws NullPointerException     if {@code timeout} is {@code null}
+     * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/stopping-runs.md">Stopping a run</a>
      */
     public RulesEngineBuilder<O> runTimeout(Duration timeout) {
         Objects.requireNonNull(timeout, "timeout must not be null");

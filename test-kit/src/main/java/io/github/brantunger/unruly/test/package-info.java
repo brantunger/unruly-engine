@@ -9,6 +9,10 @@
  * </ul>
  *
  * <p>Types in this package are non-null unless annotated {@link org.jspecify.annotations.Nullable}.</p>
+ *
+ * @see <a href=
+ * "https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md#-testing-with-the-contract-kit">
+ * Testing with the contract kit</a>
  */
 @NullMarked
 package io.github.brantunger.unruly.test;

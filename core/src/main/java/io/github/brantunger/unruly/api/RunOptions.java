@@ -9,9 +9,9 @@ import java.util.Objects;
  * Settings for one run, given to {@link RulesEngine#runWithResult(FactStore, RunOptions)}. Anything left unset uses
  * what the engine was built with.
  *
- * <pre>{@code
+ * {@snippet :
  * RunResult<Decision> result = engine.runWithResult(facts, RunOptions.withTimeoutOf(Duration.ofMillis(200)));
- * }</pre>
+ * }
  *
  * <p>
  * It's immutable: each {@code with} method returns a copy with one setting changed, so a shared instance can't be

@@ -33,8 +33,12 @@ import java.util.Map;
  *
  * <p>
  * <b>Implementing:</b> every callback has a default that does nothing, so override only the ones you need. A callback
- * added in a 1.x release also has a default that does nothing, so an existing listener keeps compiling and working.
+ * added in a later 2.x release also has a default that does nothing, so an existing listener keeps compiling and
+ * working.
  * </p>
+ *
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md">Listeners &amp;
+ *      logging</a>
  */
 public interface RuleListener {
 
@@ -66,27 +70,23 @@ public interface RuleListener {
     }
 
     /**
-     * Called when a run fails, in place of {@link #afterRun}. Unlike {@link #onError}, this reports every failure of
-     * the run, including the ones that belong to no rule: a fact name no language can refer to, an output supplier
-     * that throws or returns {@code null}, more than one rule matching on a unique-match engine, an interrupt while
-     * the run waits for a compiled copy of the rules, and a run stopped because its thread was interrupted or it
-     * passed its deadline.
+     * Called when a run fails, in place of {@link #afterRun}. Unlike {@link #onError}, this reports the failures
+     * that belong to no rule too, such as a stopped run or an output supplier that throws. A failure inside a rule
+     * reaches that rule's {@link #onError} first, then this callback. A run that fails before it starts, because a
+     * language throws or returns {@code null} when it creates a session for the run, reaches no listener at all.
      *
      * <p>
-     * A failure inside a rule reaches that rule's {@link #onError} first, then this callback. {@code error} is what
-     * {@code run()} throws; when a fatal {@link Error} is rethrown instead, {@code error} is a
-     * {@link RuleExecutionException} that carries it: as a cause, unless a listener's {@link #onError} threw it and
-     * there is no fatal cause, in which case as a suppressed exception.
-     * The first fatal error a listener's {@link #onError} throws while closing a failure that is fatal itself, other
-     * than that failure's own error, is suppressed too, but isn't the one {@code run()} rethrows; any later one is
-     * only logged. When the error came while a rule's callback was open, from the rule, a listener's
-     * {@code before*} callback or a listener's {@link #onError}, that is the exception {@link #onError} got, which
-     * names the rule unless the run was stopped; for one from anywhere else, such as a listener's {@link #beforeRun},
-     * {@link #afterEvaluate} or {@link #afterExecute}, it names no rule.
+     * {@code error} is what {@code run()} throws. When {@code run()} rethrows a fatal {@link Error} instead,
+     * {@code error} is a {@link RuleExecutionException} that carries it. If the error came while a rule's callback
+     * was open, from the rule, a listener's {@code before*} callback or a listener's {@link #onError}, that is the
+     * exception {@link #onError} got, which names the rule unless the run was stopped; for one from anywhere else,
+     * such as a listener's {@link #beforeRun}, {@link #afterEvaluate} or {@link #afterExecute}, it names no rule.
      * </p>
      *
      * @param run   The run that {@link #beforeRun} opened
-     * @param error The exception about to be thrown from {@code run()}
+     * @param error The failure; {@code run()} throws it, or the fatal {@link Error} it wraps
+     * @see <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md#-callbacks">Callbacks</a>
      */
     default void onRunError(RunContext run, RuntimeException error) {
         // default empty implementation
@@ -95,7 +95,7 @@ public interface RuleListener {
     /**
      * Called before a rule's condition is evaluated.
      *
-     * @param rule  The rule being evaluated.
+     * @param rule  The rule being evaluated
      * @param facts A read-only view of the fact values, keyed by fact name. Writing to it throws
      *              {@link UnsupportedOperationException}.
      */
@@ -106,10 +106,10 @@ public interface RuleListener {
     /**
      * Called after a rule's condition is evaluated.
      *
-     * @param rule        The rule that was evaluated.
+     * @param rule        The rule that was evaluated
      * @param facts       A read-only view of the fact values, keyed by fact name. Writing to it throws
      *                    {@link UnsupportedOperationException}.
-     * @param matchResult The boolean result of the condition evaluation.
+     * @param matchResult The boolean result of the condition evaluation
      */
     default void afterEvaluate(Rule rule, Map<String, @Nullable Object> facts, boolean matchResult) {
         // default empty implementation
@@ -118,8 +118,8 @@ public interface RuleListener {
     /**
      * Called before a rule's action is executed.
      *
-     * @param rule   The rule whose action is about to be executed.
-     * @param output The current output object.
+     * @param rule   The rule whose action is about to be executed
+     * @param output The current output object
      */
     default void beforeExecute(Rule rule, Object output) {
         // default empty implementation
@@ -128,8 +128,8 @@ public interface RuleListener {
     /**
      * Called after a rule's action is executed.
      *
-     * @param rule   The rule whose action was executed.
-     * @param output The output object after execution.
+     * @param rule   The rule whose action was executed
+     * @param output The output object after execution
      */
     default void afterExecute(Rule rule, Object output) {
         // default empty implementation
@@ -137,34 +137,28 @@ public interface RuleListener {
 
     /**
      * Called when evaluating a rule's condition or executing its action fails, in place of
-     * {@link #afterEvaluate} or {@link #afterExecute}. Every {@code before*} callback is followed by
-     * exactly one call to the matching {@code after*} method or to this method, so resources opened
-     * in {@code before*} (timers, tracing spans, logging context) can always be closed.
+     * {@link #afterEvaluate} or {@link #afterExecute}. Every {@code before*} callback is followed by exactly one
+     * call to the matching {@code after*} method or to this method.
      *
      * <p>
-     * {@code error} is the exception that {@code run()} throws once all listeners have been notified.
-     * This includes a condition or action that throws an {@link Error}: a {@link StackOverflowError}, an
-     * {@link AssertionError} or a {@link LinkageError} such as {@link NoClassDefFoundError} is wrapped in
-     * {@code error}, because a missing or unreadable class means the rule is misconfigured. For a
-     * {@link VirtualMachineError} such as an {@link OutOfMemoryError}, {@code error} wraps it and {@code run()}
-     * rethrows the original error instead. That
-     * includes an error thrown by Java code the rule calls, such as a method, a getter or a lambda held in a fact,
-     * which reaches the engine as the cause of another exception.
+     * {@code error} is the exception that {@code run()} throws once all listeners have been notified. An
+     * {@link Error} the condition or action throws is wrapped in it; for a fatal {@link VirtualMachineError} such as
+     * an {@link OutOfMemoryError}, {@code error} wraps it and {@code run()} rethrows the original error instead.
      * Errors found while compiling rules in {@code load()} are not reported here.
      * </p>
      *
      * <p>
      * A run stopped <b>between</b> rules, because its thread was interrupted or it passed its deadline, is not
-     * reported here. The engine checks that before {@link #beforeEvaluate} and {@link #beforeExecute}, so the rule it
-     * would have gone on to never started and has no callback to close. Only {@link #onRunError} is called. A run
-     * stopped <b>while</b> a condition or action was running, which returns or throws once the run is cancelled (a
-     * run it started stopping at the deadline it inherited, say), closes that rule's callback here: {@code error}
-     * then has no rule name and an {@link InterruptedException} or a {@link java.util.concurrent.TimeoutException}
-     * as its cause, so don't count it as the rule failing.
+     * reported here, because no callback for the next rule is open: only {@link #onRunError} is called. A run
+     * stopped <b>while</b> a condition or action was running, which returns or throws once the run is cancelled,
+     * closes that rule's callback here: {@code error} then has no rule name and an {@link InterruptedException} or
+     * a {@link java.util.concurrent.TimeoutException} as its cause.
      * </p>
      *
-     * @param rule  The rule whose condition or action failed.
-     * @param error The exception about to be thrown from {@code run()}.
+     * @param rule  The rule whose condition or action failed
+     * @param error The failure; {@code run()} throws it, or the fatal {@link Error} it wraps
+     * @see <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md#-guarantees">Guarantees</a>
      */
     default void onError(Rule rule, RuleExecutionException error) {
         // default empty implementation
