@@ -5,6 +5,8 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,9 +35,13 @@ class FatalErrorLogTest {
     }
 
     private static RulesEngine<Map<String, Object>> engine(RuleListener listener) {
+        return engine(listener, RULES);
+    }
+
+    private static RulesEngine<Map<String, Object>> engine(RuleListener listener, List<Rule> rules) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .listener(listener).build();
-        engine.load(RULES);
+        engine.load(rules);
         return engine;
     }
 
@@ -95,6 +101,44 @@ class FatalErrorLogTest {
 
         assertEquals(message, reported.get().getMessage());
         assertSame(oom, reported.get().getCause());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"beforeRun", "afterRun", "onRunError"})
+    @DisplayName("an OutOfMemoryError from a run callback names the callback, which belongs to no rule")
+    void runCallbackThrowsFatalError(String callback) {
+        OutOfMemoryError oom = new OutOfMemoryError("listener oom");
+        RuleListener listener = new RuleListener() {
+
+            @Override
+            public void beforeRun(RunContext run) {
+                throwIfItIs("beforeRun");
+            }
+
+            @Override
+            public void afterRun(RunContext run, RunResult<?> result) {
+                throwIfItIs("afterRun");
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                throwIfItIs("onRunError");
+            }
+
+            private void throwIfItIs(String which) {
+                if (which.equals(callback)) {
+                    throw oom;
+                }
+            }
+        };
+        // onRunError is only called for a run that fails, so that case needs a rule that fails: a condition whose
+        // result isn't a boolean.
+        RulesEngine<Map<String, Object>> engine = engine(listener, "onRunError".equals(callback)
+                ? List.of(Rule.builder().ruleName("r").condition("1").action("output.put('k', 1)").build())
+                : RULES);
+
+        assertLoggedThenRethrown(oom, "A listener threw java.lang.OutOfMemoryError in " + callback,
+                () -> engine.run(new FactMap<>()));
     }
 
     @Test

@@ -16,7 +16,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("StatefulRulesEngine")
+@DisplayName("an engine that fires every matching rule")
 class StatefulRulesEngineTest {
 
     private StatefulRulesEngine<Map<String, Object>> engine;
@@ -31,7 +31,7 @@ class StatefulRulesEngineTest {
     class Run {
 
         @Test
-        @DisplayName("throws IllegalStateException when setRuleList() was never called")
+        @DisplayName("throws IllegalStateException when load() was never called")
         void throwsWhenNoRulesSet() {
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("x", 10);

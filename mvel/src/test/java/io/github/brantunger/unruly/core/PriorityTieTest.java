@@ -25,7 +25,7 @@ class PriorityTieTest {
     }
 
     @Test
-    @DisplayName("the stateless engine fires the first-listed of the top-priority rules")
+    @DisplayName("a first-match run fires the first-listed of the top-priority rules")
     void statelessPicksFirstListed() {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
 
@@ -37,7 +37,7 @@ class PriorityTieTest {
     }
 
     @Test
-    @DisplayName("the stateful engine fires equal priorities in list order, null priorities last")
+    @DisplayName("an all-matches run fires equal priorities in list order, null priorities last")
     void statefulKeepsListOrder() {
         StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
 

@@ -168,6 +168,23 @@ class RunTimeoutTest {
     }
 
     @Test
+    @DisplayName("the deadline is the timeout itself, so a rule that takes less than twice it still stops the run")
+    void theDeadlineIsTheTimeoutItself() {
+        Fired fired = new Fired();
+        // The slow action returns past this timeout and short of twice it, so a run that carried on would show a
+        // deadline further off than the timeout it was given.
+        RulesEngine<Map<String, Object>> engine = allMatches(
+                builder -> builder.runTimeout(Duration.ofMillis(SLOW_MILLIS * 2 / 3)).listener(fired),
+                SLOW_ACTION_THEN_B);
+
+        RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
+
+        assertTrue(thrown.getMessage().startsWith("run() passed its deadline of "), thrown.getMessage());
+        assertFalse(fired.rules.contains("b"), "rule b ran " + SLOW_MILLIS + " ms into a run whose timeout was "
+                + SLOW_MILLIS * 2 / 3 + " ms");
+    }
+
+    @Test
     @DisplayName("a first-match run past its deadline stops as soon as the slow condition returns")
     void pastTheDeadlineInAFirstMatchRun() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)

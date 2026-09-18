@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -236,11 +237,11 @@ class WaitStopCallbackRunTest {
     }
 
     @Test
-    @DisplayName("a run started from those callbacks on the same engine names the waiting run as its parent")
-    void nestedRunOnTheSameEngineHasAParent() throws Exception {
+    @DisplayName("each run started from those callbacks on the same engine names the waiting run as its parent")
+    void nestedRunsOnTheSameEngineHaveAParent() throws Exception {
         AtomicReference<RulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         AtomicReference<RunContext> waiting = new AtomicReference<>();
-        AtomicReference<RunContext> nested = new AtomicReference<>();
+        List<RunContext> nested = new CopyOnWriteArrayList<>();
         AtomicBoolean once = new AtomicBoolean();
 
         stopWhileWaiting(new RuleListener() {
@@ -248,16 +249,20 @@ class WaitStopCallbackRunTest {
             public void beforeRun(RunContext run) {
                 if (run.facts().isEmpty() && once.compareAndSet(false, true)) {
                     waiting.set(run);
-                    // Stops while waiting too, at the deadline it inherits, which has already passed.
+                    // Both stop while waiting too, at the deadline they inherit, which has already passed. The
+                    // second shows that the first put the waiting run back as the run the thread is inside, rather
+                    // than leaving the thread with no run at all.
                     assertThrows(RuleExecutionException.class, () -> self.get().run(new FactMap<>()));
-                } else if (run.facts().isEmpty() && nested.get() == null) {
-                    nested.set(run);
+                    assertThrows(RuleExecutionException.class, () -> self.get().run(new FactMap<>()));
+                } else if (run.facts().isEmpty()) {
+                    nested.add(run);
                 }
             }
         }, self);
 
         assertNotNull(waiting.get(), "the waiting run's beforeRun didn't arrive");
-        assertNotNull(nested.get(), "the run started from beforeRun sent no beforeRun of its own");
-        assertSame(waiting.get(), nested.get().parent(), "the nested run's parent isn't the waiting run");
+        assertEquals(2, nested.size(), "the runs started from beforeRun sent no beforeRun of their own");
+        assertTrue(nested.stream().allMatch(run -> run.parent() == waiting.get()),
+                "each run started from beforeRun has the waiting run as its parent");
     }
 }

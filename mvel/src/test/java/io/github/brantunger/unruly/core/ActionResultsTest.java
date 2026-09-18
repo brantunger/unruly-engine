@@ -179,6 +179,25 @@ class ActionResultsTest {
     }
 
     @Test
+    @DisplayName("afterExecute sees the output with the properties the action returned already on it")
+    void afterExecuteSeesTheProperties() {
+        List<Map<?, ?>> audited = new ArrayList<>();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(PATCH).listener(new RuleListener() {
+                    @Override
+                    public void afterExecute(Rule rule, Object output) {
+                        // A listener that audits what a rule did reads the output as the rule left it.
+                        audited.add(new HashMap<>((Map<?, ?>) output));
+                    }
+                }).build();
+        engine.load(List.of(rule("r", 1, "approved=true")));
+
+        engine.run(new FactMap<>());
+
+        assertEquals(List.of(Map.of("approved", true)), audited);
+    }
+
+    @Test
     @DisplayName("a property without a setter that accepts the value fails the rule as an action, and listeners hear of it")
     void noSetter() {
         List<RuleExecutionException> errors = new ArrayList<>();

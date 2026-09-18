@@ -28,7 +28,7 @@ class AbstractRulesEngineTest {
     class NullFacts {
 
         @Test
-        @DisplayName("StatefulRulesEngine throws NullPointerException for null facts")
+        @DisplayName("an all-matches engine throws NullPointerException for null facts")
         void statefulThrowsForNullFacts() {
             StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule rule = Rule.builder()
@@ -44,7 +44,7 @@ class AbstractRulesEngineTest {
         }
 
         @Test
-        @DisplayName("StatelessRulesEngine throws NullPointerException for null facts")
+        @DisplayName("a first-match engine throws NullPointerException for null facts")
         void statelessThrowsForNullFacts() {
             StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
             Rule rule = Rule.builder()

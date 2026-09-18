@@ -19,7 +19,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("assignments in conditions are rejected at setRuleList()")
+@DisplayName("assignments in conditions are rejected at load()")
 class ConditionAssignmentRejectionTest {
 
     private static Rule rule(String name, String condition, String action) {

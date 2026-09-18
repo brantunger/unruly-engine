@@ -302,4 +302,29 @@ class RunCallbacksTest {
         engine.run(new FactMap<>());
         assertNull(recorder.runs.get(0).parent(), "the thread is no longer inside the first run");
     }
+
+    @Test
+    @DisplayName("each of two runs one action starts is a child of the run around them, not only the first")
+    void twoNestedRunsInOneRun() {
+        Recorder recorder = new Recorder();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .listener(recorder).build();
+        engine.load(List.of(rule("outer", "isdef first",
+                "output.put('first', eng.run(first)); output.put('second', eng.run(second))")));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("eng", engine);
+        facts.setValue("first", new FactMap<>());
+        facts.setValue("second", new FactMap<>());
+
+        engine.run(facts);
+
+        RunContext outer = recorder.runs.get(0);
+        List<RunContext> nested = recorder.runs.stream().filter(run -> run != outer).toList();
+        // A nested run that ends must put the run around it back, not merely forget that there was one: the second
+        // nested run is the one that shows the difference.
+        assertEquals(List.of(2L, 3L), nested.stream().map(RunContext::runId).distinct().toList(),
+                "two runs started inside the first: " + recorder.calls);
+        assertTrue(nested.stream().allMatch(run -> run.parent() == outer),
+                "both are children of the run around them");
+    }
 }

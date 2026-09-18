@@ -185,7 +185,7 @@ class RuleCompilationIsolationTest {
         }
 
         @Test
-        @DisplayName("setRuleList() may be called from several threads at once")
+        @DisplayName("load() may be called from several threads at once")
         void concurrentReloads() throws InterruptedException {
             RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
             ConcurrentLinkedQueue<Exception> failures = new ConcurrentLinkedQueue<>();

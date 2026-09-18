@@ -13,8 +13,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Pins the documented StatefulRulesEngine semantics so a change to them is a deliberate one. */
-@DisplayName("StatefulRulesEngine documented semantics")
+/** Pins the documented all-matches semantics so a change to them is a deliberate one. */
+@DisplayName("the documented semantics of a run that fires every match")
 public class StatefulSemanticsTest {
 
     // Public with public accessors so MVEL can read and write the property.

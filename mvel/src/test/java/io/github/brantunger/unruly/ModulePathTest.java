@@ -103,6 +103,11 @@ class ModulePathTest {
         String output = run("withoutMvel", "com.example.withoutmvel", withoutMvel);
 
         assertTrue(output.contains("Module path without MVEL: 1000 runs passed"), output);
+        // The engine's own reflection over the application's classes: reading a record fact's components for the
+        // language, and calling the output bean's setters. On the class path every package is open, so nothing but
+        // a module boundary tells a rule that holds from one that only looked like it.
+        assertTrue(output.contains("Module path without MVEL: 1000 runs on a record fact and a bean output passed"),
+                output);
     }
 
     @Test
