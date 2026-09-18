@@ -129,9 +129,9 @@ public class LoanController {
 }
 ```
 
-To record **why** a decision was made, use `runWithResult()` instead. It returns the output, the rules that fired, and
-a checksum of the rules the run used, so an audit row ties the decision to a version of the rules even if they're
-reloaded a moment later:
+To record **why** a decision was made, use `runWithResult()` instead. It returns the output, the rules that fired,
+each rule's outcome, and a checksum of the rules the run used, so an audit row ties the decision to a version of the
+rules even if they're reloaded a moment later:
 
 ```java
 RunResult<LoanDecision> result = loanRulesEngine.runWithResult(facts);

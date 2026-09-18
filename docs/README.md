@@ -11,7 +11,7 @@ New here? Start with the [Quick start](../README.md#-quick-start) in the main RE
 | Guide | Covers |
 | --- | --- |
 | 📜 [Writing rules](writing-rules.md) | Anatomy of a rule, choosing a language, what rules may change, loading rules from data, and testing rules |
-| 🔀 [Engines and runs](engines-and-runs.md) | Rule order, first match or all matches, the output object, what a run reports, checksums for auditing, and reloading |
+| 🔀 [Engines and runs](engines-and-runs.md) | Rule order, first match, all matches or unique match, the output object, what a run reports and why each rule did or didn't apply, checksums for auditing, and reloading |
 | ⚡ [MVEL](languages/mvel.md) | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Expression languages](languages/README.md) | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | The lifecycle, compile errors, facts, sessions, packaging and the contract test kit for a language of your own |

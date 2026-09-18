@@ -182,9 +182,10 @@ matched, but on a first-match engine only the first match fires. See
 
 ### Match policy
 
-Which matching rules fire, fixed when the engine is built: `firstMatch` fires the first match in evaluation order, and
-`allMatches` evaluates every condition, then fires every match in priority order. `RunContext.matchPolicy()` returns
-`"firstMatch"` or `"allMatches"`. 1.x called them *stateless* and *stateful*. See
+Which matching rules fire, fixed when the engine is built: `firstMatch` fires the first match in evaluation order,
+`allMatches` evaluates every condition, then fires every match in priority order, and `uniqueMatch` evaluates every
+condition, fires the one match, and fails the run when there are more. `RunContext.matchPolicy()` returns
+`"firstMatch"`, `"allMatches"` or `"uniqueMatch"`. 1.x called the first two *stateless* and *stateful*. See
 [First match or all matches](engines-and-runs.md#-first-match-or-all-matches).
 
 ### Missing fact
@@ -216,8 +217,9 @@ per run that matches a rule, and `run()` returns it, or `null` when no rule fire
 
 ### Output supplier
 
-The `Supplier` given to `firstMatch(...)` or `allMatches(...)` that creates the [output object](#output-object). It must
-return a new, non-`null` object on every call. Javadoc calls it the output factory. See
+The `Supplier` given to `firstMatch(...)`, `allMatches(...)` or `uniqueMatch(...)` that creates the
+[output object](#output-object). It must return a new, non-`null` object on every call. Javadoc calls it the output
+factory. See
 [The output object](engines-and-runs.md#-the-output-object).
 
 ### Priority
@@ -243,6 +245,13 @@ The [checksum](#checksum) uses it, so the same rules on engines with different d
 An immutable `Rule`, created with `Rule.builder()`: a unique name, a condition, an action, and an optional priority,
 description and language. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
+### Rule evaluation
+
+What a run found out about one rule, in `RunResult.evaluations()`: the rule and its outcome, `MATCHED`, `NOT_MATCHED`
+or `NOT_EVALUATED`. A first-match engine reports the rules after the match as not evaluated; the other policies
+evaluate every rule. A rule whose condition failed has none, because the run throws instead. See
+[What a run reports](engines-and-runs.md#-what-a-run-reports).
+
 ### Rule list
 
 The `List<Rule>` you pass to `load()`. Its order only matters between rules with equal priorities; the engine keeps the
@@ -267,9 +276,9 @@ A `RunOptions` passed to `runWithResult(facts, options)` for one run. Today it h
 
 ### Run result
 
-The `RunResult` that `runWithResult(...)` returns: `output()`, `firedRules()` in firing order, and `ruleSetChecksum()`.
-Its output is `null` exactly when no rule fired; a failed run throws instead of returning one. See
-[What a run reports](engines-and-runs.md#-what-a-run-reports).
+The `RunResult` that `runWithResult(...)` returns: `output()`, `firedRules()` in firing order, `evaluations()` with
+every rule's outcome, and `ruleSetChecksum()`. Its output is `null` exactly when no rule fired; a failed run throws
+instead of returning one. See [What a run reports](engines-and-runs.md#-what-a-run-reports).
 
 ### Session
 
@@ -289,3 +298,9 @@ How long a run may take: `runTimeout(duration)` on the builder, or `RunOptions.w
 engine never interrupts the thread: it checks before and after each condition and action, and while a run waits for a
 copy, so an expression that is already running isn't stopped unless its language checks `isCancelled()`. See
 [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
+
+### Unique-match engine
+
+An engine built with `RulesEngineBuilder.uniqueMatch(...)`, which evaluates every condition, fires the one match, and
+fails the run, naming every matched rule, when more than one is true. See
+[match policy](#match-policy) and [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none).

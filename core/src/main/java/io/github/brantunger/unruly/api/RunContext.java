@@ -40,8 +40,9 @@ public sealed interface RunContext permits io.github.brantunger.unruly.core.Engi
 
     /**
      * Returns which rules the engine fires: {@code "firstMatch"} for the action of the highest-priority matching rule,
-     * or {@code "allMatches"} for every match in priority order. It's a {@link String} rather than an enum, so a later
-     * release can add a policy without breaking code that switches over the values it knows.
+     * {@code "allMatches"} for every match in priority order, or {@code "uniqueMatch"} for the one match, failing the
+     * run when there are more. It's a {@link String} rather than an enum, so a later release can add a policy without
+     * breaking code that switches over the values it knows.
      *
      * @return The policy's name
      */

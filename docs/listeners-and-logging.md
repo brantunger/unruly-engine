@@ -24,7 +24,7 @@ Every method has an empty default implementation, so override only the ones you 
 | Callback | Called | Arguments |
 | --- | --- | --- |
 | `beforeRun(run)` | When a run starts, before any condition | The `RunContext`: the run's number, its parent run, the match policy, the checksum of the rules it uses, and its facts |
-| `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, and the rules' checksum |
+| `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, each rule's outcome, and the rules' checksum |
 | `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus what the run failed with, **including failures that belong to no rule**. See below the diagram |
 | `beforeEvaluate(rule, facts)` | Before a condition is evaluated | The rule, and a read-only view of the fact values |
 | `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched |
@@ -62,11 +62,11 @@ sequenceDiagram
 ```
 
 A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
-failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, an
-interrupt or a passed deadline while the run waits for a compiled copy of the rules, or a run stopped because its
-thread was interrupted or it passed its deadline between rules — reaches `onRunError` only, because no rule was
-involved. The rule a stopped run would have gone on to gets no callback either: the check runs before `beforeEvaluate`
-and `beforeExecute`, so there is no open callback for `onError` to close.
+failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, more than one
+rule matching on a unique-match engine, an interrupt or a passed deadline while the run waits for a compiled copy of
+the rules, or a run stopped because its thread was interrupted or it passed its deadline between rules — reaches
+`onRunError` only, because no rule was involved. The rule a stopped run would have gone on to gets no callback either:
+the check runs before `beforeEvaluate` and `beforeExecute`, so there is no open callback for `onError` to close.
 
 A run stopped while a condition or action was running is different: that rule's callback is closed with `onError`,
 whose exception has no rule name and an `InterruptedException` or `TimeoutException` cause, so don't count it as a

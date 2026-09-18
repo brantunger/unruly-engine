@@ -3,8 +3,8 @@
 > [!NOTE]
 > Describes 2.0.0, which isn't released yet.
 
-The order rules run in, what a first-match and an all-matches engine do, when the output object is created, and what a
-run and an engine report about the rules they used.
+The order rules run in, what a first-match, an all-matches and a unique-match engine do, when the output object is
+created, and what a run and an engine report about the rules they used.
 
 **Who it's for:** application developers who build engines, run rules and record decisions.
 **You'll be able to:** predict which rules fire and in what order, write an output supplier that works, read a
@@ -41,6 +41,7 @@ facts.setValue("applicant", new Applicant("Ada", 780));
 RunResult<LoanDecision> result = engine.runWithResult(facts);
 LoanDecision decision = result.output();        // interestRate = 4.5, notes = [prime]
 List<Rule> fired = result.firedRules();         // the prime-rate rule
+List<RuleEvaluation> why = result.evaluations(); // prime-rate=MATCHED, standard-rate=NOT_EVALUATED
 String checksum = result.ruleSetChecksum();     // identifies the rules this run used
 
 // At shutdown:
@@ -50,7 +51,8 @@ engine.close();
 - A [run](glossary.md#run) evaluates the rules in [evaluation order](glossary.md#evaluation-order): highest priority
   first.
 - A **first-match** engine stops at the first rule whose condition is true, and fires only that rule. An
-  **all-matches** engine evaluates every condition, then fires every match in order.
+  **all-matches** engine evaluates every condition, then fires every match in order. A **unique-match** engine
+  evaluates every condition, fires the one match, and fails the run when there are more.
 - The [output supplier](glossary.md#output-supplier) is called once in a run, after a rule has matched. `run()`
   returns `null` exactly when no rule fired.
 - A condition or action that fails fails the run: it throws, and returns no result. See
@@ -60,7 +62,7 @@ engine.close();
 ## 📜 Rule order
 
 `load()` sorts the rule list into evaluation order once, and every run of the engine uses that order, on every thread
-and with either match policy:
+and with every match policy:
 
 - A higher `priority` comes first.
 - Equal priorities keep their order from the list passed to `load()`.
@@ -80,20 +82,23 @@ changes the [checksum](#-auditing-a-decision).
 
 ## 🔀 First match or all matches
 
-The [match policy](glossary.md#match-policy) is chosen when the engine is built, and can't change.
+The [match policy](glossary.md#match-policy) is chosen when the engine is built, and can't change. There are three:
+first match, all matches, and [unique match](#unique-match-one-rule-or-none), for a decision table whose rows must
+not overlap.
 
-| Compared | First match | All matches |
-| --- | --- | --- |
-| **Create with** | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` |
-| **Conditions evaluated** | In order, until one is true. The rules below it aren't evaluated | All of them, before any action runs |
-| **Actions fired** | Only the first match | Every match, in evaluation order |
-| **`firedRules()`** | At most one rule | Every match, in firing order |
-| **Output** | Shaped by exactly one rule | Shared by every matched action, so a later action can overwrite an earlier one's change |
-| **A condition fails** | The run fails. A broken rule below the first match isn't evaluated, so it can't fail the run | The run fails before any action runs and before the output is created |
-| **An action fails** | The run fails | The run fails, and the actions that already ran keep their changes |
-| **`RunContext.matchPolicy()`** | `"firstMatch"` | `"allMatches"` |
-| **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation |
-| **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` |
+| Compared | First match | All matches | Unique match |
+| --- | --- | --- | --- |
+| **Create with** | `RulesEngineBuilder.firstMatch(...)` | `RulesEngineBuilder.allMatches(...)` | `RulesEngineBuilder.uniqueMatch(...)` |
+| **Conditions evaluated** | In order, until one is true. The rules below it aren't evaluated | All of them, before any action runs | All of them, before any action runs |
+| **Actions fired** | Only the first match | Every match, in evaluation order | The one match; more than one fails the run |
+| **`firedRules()`** | At most one rule | Every match, in firing order | At most one rule |
+| **`evaluations()`** | `MATCHED` or `NOT_MATCHED` down to the match, then `NOT_EVALUATED` | `MATCHED` or `NOT_MATCHED` for every rule | `MATCHED` or `NOT_MATCHED` for every rule |
+| **Output** | Shaped by exactly one rule | Shared by every matched action, so a later action can overwrite an earlier one's change | Shaped by exactly one rule |
+| **A condition fails** | The run fails. A broken rule below the first match isn't evaluated, so it can't fail the run | The run fails before any action runs and before the output is created | The same as all matches |
+| **An action fails** | The run fails | The run fails, and the actions that already ran keep their changes | The run fails |
+| **`RunContext.matchPolicy()`** | `"firstMatch"` | `"allMatches"` | `"uniqueMatch"` |
+| **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation | Decision tables whose rows must not overlap |
+| **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` | Fails: both rules match |
 
 | If you need | Use |
 | --- | --- |
@@ -101,8 +106,10 @@ The [match policy](glossary.md#match-policy) is chosen when the engine is built,
 | Every rule that applies to add to the output | `allMatches(...)` |
 | A default when no other rule applies | `firstMatch(...)`, with a lowest-priority rule whose condition is `true` |
 | To know every rule that matched | `allMatches(...)`, then `RunResult.firedRules()` |
+| To know why a rule didn't apply | `RunResult.evaluations()`; see [What a run reports](#-what-a-run-reports) |
+| To be told when two rules apply to the same facts | `uniqueMatch(...)` |
 
-Neither policy chains rules: a run is one pass over the rules. An all-matches run **matches first, then fires**. It
+No policy chains rules: a run is one pass over the rules. An all-matches run **matches first, then fires**. It
 evaluates every condition, calls the output supplier once, then runs each matched action in order. An action never
 causes a condition to be evaluated again: if a higher-priority action changes a fact, a rule that already matched still
 fires, and its action sees the changed fact.
@@ -129,6 +136,31 @@ sequenceDiagram
 > object and to any facts they changed, and the run throws a `RuleExecutionException` naming the failing rule. A
 > failing condition changes nothing, because no action has run yet.
 
+### Unique match: one rule or none
+
+In a decision table, two rows that match the same input usually mean a mistake in the table, and a first-match engine
+hides it by picking the higher priority. A unique-match engine evaluates every condition, like an all-matches engine,
+and then:
+
+- **No match:** returns `null` and fires nothing.
+- **One match:** creates the output and fires that rule.
+- **More than one match:** fires nothing, never calls the output supplier, and throws a `RuleExecutionException`
+  naming every matched rule in evaluation order:
+  `2 rules matched, but a unique-match engine allows one: 'prime-rate', 'standard-rate'`. The list of names is cut
+  at 1,000 characters, like text copied from an exception.
+
+The failure belongs to no rule, so `getRuleName()` is `null`. Listeners get `afterEvaluate` for every rule and then
+`onRunError`, and no `onError`. It's logged at ERROR.
+
+```java
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.uniqueMatch(LoanDecision::new).build();
+engine.load(rules);                       // the Quick start's prime-rate and standard-rate
+engine.run(facts);                        // score 780 matches both: throws RuleExecutionException
+```
+
+The check counts conditions that were true, whatever language the rules are written in. It finds an overlap only for
+the facts of that run: to check a table for every input, run it against the inputs you care about in a test.
+
 What each failure throws, logs and tells listeners is in
 [What happens on each failure](error-handling.md#-what-happens-on-each-failure). A timeout or an interrupt stops a run
 instead of failing a rule; see [Stopping a run](stopping-runs.md).
@@ -136,12 +168,14 @@ instead of failing a rule; see [Stopping a run](stopping-runs.md).
 ## 📤 The output object
 
 The [output object](glossary.md#output-object) is what a run's actions change, and what `run()` returns. The output
-supplier, the `Supplier` you give `firstMatch(...)` or `allMatches(...)`, creates it.
+supplier, the `Supplier` you give `firstMatch(...)`, `allMatches(...)` or `uniqueMatch(...)`, creates it.
 
 | In a run where | The supplier is called |
 | --- | --- |
 | A first-match engine finds a true condition | Once, after that condition and before its action |
 | An all-matches engine finds at least one true condition | Once, after every condition and before the first action |
+| A unique-match engine finds exactly one true condition | Once, after every condition and before the action |
+| A unique-match engine finds more than one true condition | Never, and the run throws |
 | No condition is true, or the rule list is empty | Never, and `run()` returns `null` |
 | A condition fails, or the run is stopped before a rule matches | Never, and the run throws |
 
@@ -185,17 +219,34 @@ A [run result](glossary.md#run-result) holds:
 
 - `output()`: the output object, or `null` exactly when no rule fired.
 - `firedRules()`: the rules whose actions ran, in firing order. It's unmodifiable, and has at most one rule on a
-  first-match engine.
+  first-match or unique-match engine.
+- `evaluations()`: one [rule evaluation](glossary.md#rule-evaluation) for every loaded rule, in evaluation order,
+  each with the rule and its outcome: `MATCHED`, `NOT_MATCHED`, or `NOT_EVALUATED` for a rule after the match on a
+  first-match engine. It's unmodifiable, and empty when the rule list is.
 - `ruleSetChecksum()`: the checksum of the rules this run used.
 
-A run that fails throws, so there's never a partial result.
+A run that fails throws, so there's never a partial result, and no evaluation is reported for a rule that failed.
+
+The evaluations answer "why didn't rule X apply?" without a listener:
+
+```java
+RunResult<LoanDecision> result = engine.runWithResult(facts);
+for (RuleEvaluation evaluation : result.evaluations()) {
+    System.out.println(evaluation.rule().getRuleName() + ": " + evaluation.outcome());
+}
+// prime-rate: MATCHED
+// standard-rate: NOT_EVALUATED
+```
+
+On a first-match engine, `NOT_EVALUATED` says only that the rule came after the match. To know whether it would have
+matched, use an all-matches or a unique-match engine, which evaluate every condition.
 
 > [!IMPORTANT]
 > `run()` returns `null` when no rule fired: no condition was true, or the rule list is empty. A rule that fired always
 > gives a non-`null` output, even when its action changed nothing, so check for `null` before you read the output.
 
-The engine keeps the `Rule` objects you pass to `load()`. `rules().rules()`, `firedRules()` and listener callbacks all
-give you those same instances, so you can compare them with `==` or use them as keys in a map.
+The engine keeps the `Rule` objects you pass to `load()`. `rules().rules()`, `firedRules()`, `evaluations()` and
+listener callbacks all give you those same instances, so you can compare them with `==` or use them as keys in a map.
 
 ### The loaded rules
 
@@ -218,10 +269,11 @@ Before the first `load()`, `run()` throws `IllegalStateException` (`load() must 
 | **A shared output object** | `firstMatch(() -> decision)` gives every run the same object, so results from earlier runs pile up | Return a new object: `firstMatch(LoanDecision::new)` |
 | **`null` from `run()`** | No rule fired, and code that reads the output throws `NullPointerException` | Check for `null`, or add a lowest-priority rule whose condition is `true` |
 | **A `null` priority** | The rule comes after every number, even `-1000` | Give every rule a priority, and assert the order with `rules().rules()` |
-| **Rules below a first match** | They aren't evaluated, so they're neither matched nor unmatched, and listeners hear nothing about them | Use `allMatches(...)` to see every match |
+| **Rules below a first match** | They aren't evaluated, so they're neither matched nor unmatched: `evaluations()` reports them as `NOT_EVALUATED`, and listeners hear nothing about them | Use `allMatches(...)` or `uniqueMatch(...)` to evaluate every rule |
+| **Two rows of a decision table overlap** | A first-match engine fires the higher priority and hides the overlap | Use `uniqueMatch(...)`, which fails the run and names both rules |
 | **An action changes a fact in an all-matches run** | Rules that already matched still fire; conditions aren't evaluated again | Decide in conditions, from the facts as the run was given them |
 | **An action fails in an all-matches run** | The actions before it keep their changes | Discard the output and any facts the actions changed |
-| **The same checksum on both match policies** | A first-match and an all-matches engine with the same rules report the same checksum | Record `RunContext.matchPolicy()` too; see [Auditing a decision](#-auditing-a-decision) |
+| **The same checksum on every match policy** | Engines with the same rules report the same checksum, whatever their policy | Record `RunContext.matchPolicy()` too; see [Auditing a decision](#-auditing-a-decision) |
 | **`rules().checksum()` read after a run** | A reload in between gives the new rules' checksum | Record `RunResult.ruleSetChecksum()` |
 | **A changed description** | The checksum stays the same, but the two `Rule` objects aren't `equals` | Compare checksums to tell whether the rules changed what they do |
 
@@ -235,10 +287,11 @@ To tie a decision to the rules that made it, record these with it:
 
 - **`RunResult.ruleSetChecksum()`**: which rules the run used. Don't read `engine.rules().checksum()` afterwards: a
   reload in between changes it, while the run finished with the rules it started with.
-- **The match policy**: `RunContext.matchPolicy()`, which is `"firstMatch"` or `"allMatches"`.
+- **The match policy**: `RunContext.matchPolicy()`, which is `"firstMatch"`, `"allMatches"` or `"uniqueMatch"`.
 - **`RunResult.firedRules()`**: which rules fired, in order.
+- **`RunResult.evaluations()`**, when the audit must also say why the other rules didn't apply.
 
-A listener's `afterRun` receives all three, after every run that succeeds:
+A listener's `afterRun` receives all of them, after every run that succeeds:
 
 ```java
 // auditLog is your own code.
@@ -253,7 +306,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 ```
 
 > [!WARNING]
-> The checksum identifies the rules, not the engine. A first-match and an all-matches engine loaded with the same rules
+> The checksum identifies the rules, not the engine. Engines with different match policies loaded with the same rules
 > report the same checksum, although they can decide differently. Record `RunContext.matchPolicy()` with
 > `RunResult.ruleSetChecksum()`.
 
@@ -346,8 +399,20 @@ language that couldn't create its compiler, or a declared fact name the language
 ### Does a lower-priority rule still run after a match?
 
 On a first-match engine, no, and its condition isn't evaluated either. On an all-matches engine, yes: every condition
-is evaluated first, then every match fires in priority order, and no condition is evaluated again after an action. See
+is evaluated first, then every match fires in priority order, and no condition is evaluated again after an action. A
+unique-match engine evaluates every condition too, and fails the run if a second one is true. See
 [First match or all matches](#-first-match-or-all-matches).
+
+### How do I find out why a rule didn't apply?
+
+Read `runWithResult(facts).evaluations()`: it has every rule with `MATCHED`, `NOT_MATCHED` or, after the match on a
+first-match engine, `NOT_EVALUATED`. A rule whose condition threw has no outcome, because the run threw instead. See
+[What a run reports](#-what-a-run-reports).
+
+### How do I catch two rules that apply to the same facts?
+
+Build the engine with `uniqueMatch(...)`. A run in which more than one rule matches fires nothing and throws, naming
+every matched rule. See [Unique match: one rule or none](#unique-match-one-rule-or-none).
 
 ### If an all-matches run fails, did some actions already run?
 
@@ -371,7 +436,7 @@ shared one collects the results of every run. See [The output object](#-the-outp
 Yes, exactly. A rule that fired gives a non-`null` output even when its action changed nothing. See
 [What a run reports](#-what-a-run-reports).
 
-### Does the checksum tell a first-match decision from an all-matches one?
+### Does the checksum tell a first-match decision from an all-matches or a unique-match one?
 
 No. It covers only the rules: each one's name, priority, resolved language, condition and action. Record
 `RunContext.matchPolicy()` with `RunResult.ruleSetChecksum()`. See [Auditing a decision](#-auditing-a-decision).

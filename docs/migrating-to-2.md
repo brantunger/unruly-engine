@@ -300,9 +300,11 @@ code.
 **What changed:**
 
 - `RulesEngineBuilder.stateless(...)` and `stateful(...)` are renamed `firstMatch(...)` and `allMatches(...)`, after
-  the hit policies they implement, and return a builder; `build()` creates the engine. A first-match engine fires the
+  the match policies they implement, and return a builder; `build()` creates the engine. A first-match engine fires the
   action of the highest-priority matching rule, and an all-matches engine fires every match in priority order, as
-  before.
+  before. A third policy, `uniqueMatch(...)`, is new: it evaluates every condition, fires the one match, and fails
+  the run when more than one rule matches. See
+  [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none).
 - Imports, expression languages, listeners, the limit on compiled copies, the output type, the output writer and each
   language's options are set on the builder, and can't change once the engine is built. `RulesEngine.addImport`, `addImports`, `registerLanguage`, `registerListener` and
   `registerListeners` are removed, and so are the `stateless(supplier, maxCopies)` and `stateful(supplier, maxCopies)`
@@ -381,8 +383,8 @@ rule. This is a behaviour change that the API compatibility check can't see, so 
 | --- | --- |
 | A listener counting `beforeEvaluate` / `afterEvaluate` per run | Expect calls only up to the first match on a first-match engine |
 | Relying on every run evaluating every rule, as a smoke test | Validate the rules at startup or in a test, as [Writing rules](writing-rules.md) recommends, rather than in production runs |
-| Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false` |
-| Needing every condition evaluated, for example to detect more than one match | Use `allMatches(...)` |
+| Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false`. `runWithResult(facts).evaluations()` reports them as `NOT_EVALUATED` |
+| Needing every condition evaluated, for example to detect more than one match | Use `allMatches(...)`, or `uniqueMatch(...)`, which fails a run in which more than one rule matches |
 
 ## ⏳ An interrupted run stops, and a run can be given a timeout
 
@@ -429,8 +431,9 @@ the run's deadline; see [Writing a language](languages/custom.md#-stopping-a-run
 
 **What changed:**
 
-- **`runWithResult(facts)`** returns a `RunResult`: the output object, the rules that fired in firing order, and the
-  checksum of the rules the run used. `run(facts)` is unchanged, and is now a `default` method returning
+- **`runWithResult(facts)`** returns a `RunResult`: the output object, the rules that fired in firing order, what each
+  rule's condition evaluated to (`MATCHED`, `NOT_MATCHED`, or `NOT_EVALUATED` after a first match), and the checksum
+  of the rules the run used. `run(facts)` is unchanged, and is now a `default` method returning
   `runWithResult(facts).output()`.
 - **`rules()`** returns a `RuleSetInfo`: the loaded rules in evaluation order, their checksum, and when they were
   loaded. Before the first `load()` it reports no rules and no load time.
@@ -455,6 +458,7 @@ compile unchanged.
 | A listener with a `ThreadLocal` to group callbacks into a run | `beforeRun` / `afterRun`, and `RunContext.runId()` or the context itself |
 | A listener that counts failures in `onError` | `onRunError` also reports failures that belong to no rule |
 | Recording which rules produced a decision with a shared listener | `runWithResult(facts).firedRules()` |
+| Recording every condition's result with a listener, to explain a decision | `runWithResult(facts).evaluations()`, one entry per rule |
 | Recording which version of the rules produced a decision | `runWithResult(facts).ruleSetChecksum()`, and `engine.rules().checksum()` for the engine's current rules |
 
 ## 🧵 Compiled copies are limited on virtual threads

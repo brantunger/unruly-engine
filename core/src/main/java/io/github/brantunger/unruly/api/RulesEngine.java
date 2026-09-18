@@ -22,7 +22,7 @@ import java.util.List;
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
  * Implement {@link #load(List)}, {@link #validate(List)}, {@link #runWithResult(FactStore, RunOptions)} and
  * {@link #rules()}; {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
- * implementation keeps compiling. {@link RunResult#of(Object, List, String)} and
+ * implementation keeps compiling. {@link RunResult#of(Object, List, List, String)} and
  * {@link RuleSetInfo#of(List, String, java.time.Instant)} create the values an implementation returns.
  * </p>
  *
@@ -81,8 +81,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         list is empty or no rule matched
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if evaluating a condition or executing
      *         an action fails, a condition doesn't evaluate to a boolean, the output factory throws or returns
-     *         {@code null}, or a compiled condition or action throws or returns {@code null} when it is copied for the
-     *         run. Also if the run must stop, which is checked between rules and when each condition or action
+     *         {@code null}, a compiled condition or action throws or returns {@code null} when it is copied for the
+     *         run, or more than one rule matches on a {@link RulesEngineBuilder#uniqueMatch(java.util.function.Supplier) unique-match}
+     *         engine, which names them all and belongs to no rule. Also if the run must stop, which is checked between rules and when each condition or action
      *         returns, because its thread was interrupted, which keeps the interrupt status set and makes the cause an {@link InterruptedException}, or because it passed the
      *         deadline a {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
      *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
@@ -102,12 +103,13 @@ public interface RulesEngine<O> extends AutoCloseable {
 
     /**
      * Fires the rules like {@link #run(FactStore)}, and reports what the run did: the output object, the rules that
-     * fired, and the checksum of the rules the run used. A caller can record which rules produced a decision without
-     * a {@link RuleListener}.
+     * fired, what each rule's condition evaluated to, and the checksum of the rules the run used. A caller can record
+     * which rules produced a decision, and why the others didn't apply, without a {@link RuleListener}.
      *
      * @param facts The facts to run the rules against, as {@link #run(FactStore)} takes them
      * @return What the run did, never {@code null}. Its {@link RunResult#output() output} is {@code null} exactly when
-     *         no rule fired, because the rule list is empty or no condition matched.
+     *         no rule fired, because the rule list is empty or no condition matched, and its
+     *         {@link RunResult#evaluations() evaluations} have one entry per loaded rule.
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
