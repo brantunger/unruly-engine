@@ -16,13 +16,20 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on each JDK listed here.
-        java-version: [ '21', '25' ]
+        # The full gate runs on JDK 21 on each OS: the module-path applications and the child JVMs the tests launch
+        # depend on the OS, and Windows's and macOS's file systems are case-insensitive (the case-insensitive class
+        # lookup itself is still faked in the tests; see #414). Compilation stays on the Java 21 toolchain; -PtestJdk
+        # runs the tests on JDK 25, on Linux only.
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        java-version: [ '21' ]
+        include:
+          - os: ubuntu-latest
+            java-version: '25'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -33,8 +40,8 @@ jobs:
           distribution: 'temurin'
 
       # Validates the Gradle wrapper, and caches Gradle's dependencies, wrapper and build cache between runs. Runs on
-      # main save the cache; pull requests only read it. The basic provider is open source; the default, enhanced one
-      # isn't. The configuration cache isn't saved, because that needs an encryption key.
+      # main save the cache; pull requests only read it, and each OS has its own. The basic provider is open source;
+      # the default, enhanced one isn't. The configuration cache isn't saved, because that needs an encryption key.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
@@ -42,7 +49,8 @@ jobs:
 
       # `build` runs `check`: Checkstyle, PMD, the 100% JaCoCo gate, the API compatibility check of every artifact,
       # the Javadoc site and each project's Javadoc, so a broken doc comment fails here, and the tests, including the
-      # applications ModulePathTest runs on the module path.
+      # applications ModulePathTest runs on the module path. On Windows the default shell, pwsh, resolves ./gradlew
+      # to gradlew.bat.
       - name: Build & Test
         if: matrix.java-version == '21'
         run: ./gradlew build jacocoTestReport --no-daemon
@@ -52,11 +60,12 @@ jobs:
         if: matrix.java-version != '21'
         run: ./gradlew :mvel:test --no-daemon -PtestJdk=${{ matrix.java-version }}
 
+      # Artifact names must be unique within a run, and three jobs run on JDK 21, so the OS is part of each name.
       - name: Upload API Compatibility Report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: api-compatibility-report-jdk${{ matrix.java-version }}
+          name: api-compatibility-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
           path: |
             core/build/reports/japicmp/
             mvel/build/reports/japicmp/
@@ -67,11 +76,12 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always() && matrix.java-version == '21'
         with:
-          name: jacoco-report-jdk${{ matrix.java-version }}
+          name: jacoco-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
           path: build/reports/jacoco/
 
+      # Codecov gets one report per run, from Linux.
       - name: Upload Coverage to Codecov
-        if: matrix.java-version == '21'
+        if: matrix.java-version == '21' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
         with:
           files: build/reports/jacoco/report.xml

@@ -68,9 +68,11 @@ too with `-x jacocoTestCoverageVerification`, or run `./gradlew build -x check` 
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `apiCheck` in each published project's `build.gradle`, `config/japicmp/accepted-breaks.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path in a new JVM: one requires `io.github.brantunger.unruly` and runs MVEL rules, one requires only `io.github.brantunger.unruly.core` and brings its own language, one runs the test kit's contract test with JUnit, and one reads rules from JSON through the documented Jackson 2 and Jackson 3 mix-ins | `mvel/src/test/java/io/github/brantunger/unruly/ModulePathTest.java`, `mvel/src/test/resources/module-path` |
 
-On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21**, and the tests again on
-**JDK 25** with `./gradlew :mvel:test -PtestJdk=25`. A separate check validates the PR title. CI restores Gradle's
-caches from `main`, so a pull request only rebuilds what it changed.
+On every pull request, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows and macOS, because
+the module-path applications and the child JVMs the tests launch depend on the OS, and Windows's and macOS's file
+systems are case-insensitive (the case-insensitive class lookup itself is still faked in the tests; see #414). The
+tests run again on **JDK 25** with `./gradlew :mvel:test -PtestJdk=25`, on Linux. A separate check validates the PR
+title. CI restores Gradle's caches from `main`, one per OS, so a pull request only rebuilds what it changed.
 
 > [!TIP]
 > Coverage is the gate that most often fails. When it does, run `./gradlew jacocoTestReport` and open the HTML
