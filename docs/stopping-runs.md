@@ -104,7 +104,7 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 - **A blocked rule isn't woken.** A condition in `Thread.sleep` or a blocking call runs to its end, and the run stops
   when it returns.
 - **An expression is stopped part-way only if its language checks.** A language can poll
-  `EvaluationContext.isCancelled()` and give up; see [Other expression languages](languages/custom.md#-stopping-a-run).
+  `EvaluationContext.isCancelled()` and give up; see [Writing a language](languages/custom.md#-stopping-a-run).
   In MVEL there is no such hook, so `while (true) {}` blocks the thread for ever. Run rules you don't trust in a
   process of their own.
 - **Nothing is checked after the last condition or action returns.** Time spent in a listener callback, the output

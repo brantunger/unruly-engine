@@ -80,9 +80,9 @@ implementation("io.github.brantunger:unruly-engine:1.8.0")
 
 </details>
 
-`unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/custom.md),
+`unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/README.md),
 depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
-`unruly-engine-test`; see [Testing a language](docs/languages/custom.md#-testing-a-language).
+`unruly-engine-test`; see [Testing with the contract kit](docs/languages/custom.md#-testing-with-the-contract-kit).
 
 <details>
 <summary><b>On the module path</b></summary>
@@ -291,7 +291,7 @@ condition or action is missing.
 - **The action** runs when the rule fires, usually changing `output`.
 - **The priority** sets the order: higher first. See [Rule order](docs/engines-and-runs.md#-rule-order).
 - **The language:** a rule without one is written in the engine's default language, which is MVEL when MVEL is the
-  only language found. See [Other expression languages](docs/languages/custom.md).
+  only language found. See [Expression languages](docs/languages/README.md).
 
 [Writing rules](docs/writing-rules.md) covers each field, and how to read rules from JSON.
 
@@ -331,7 +331,8 @@ The full comparison, including what happens when an action changes a fact, is in
 - **Write your first rules:** [Writing rules](docs/writing-rules.md), then [Facts](docs/facts.md).
 - **Take rules to production:** [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md),
   [Thread safety](docs/thread-safety.md) and [Compiled copies](docs/compiled-copies.md).
-- **Use or write another expression language:** [Other expression languages](docs/languages/custom.md).
+- **Use or write another expression language:** [Expression languages](docs/languages/README.md), then
+  [Writing a language](docs/languages/custom.md).
 - **Upgrade from 1.x:** [Migrating to 2.0](docs/migrating-to-2.md).
 
 Every guide is listed in the [documentation index](docs/README.md), and the API in the

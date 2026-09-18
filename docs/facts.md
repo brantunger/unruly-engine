@@ -153,7 +153,7 @@ The engine hands each language the fact values as they are. It doesn't read prop
 | Class that isn't public | ⚠️ only through a public interface declaring the accessor, even on the class path | ✅ through a public interface, or where its package is open |
 
 `FactProperties` is a helper a language may use, and MVEL doesn't. Its rules are in
-[Writing a language](languages/custom.md#-writing-a-language); MVEL's are in
+[Reading facts](languages/custom.md#-reading-facts); MVEL's are in
 [Facts in MVEL](languages/mvel.md#-facts-in-mvel). Check another language's own documentation.
 
 ## 👀 Who sees facts

@@ -59,16 +59,17 @@ Rule.builder()
 A rule is written in the language its `language` names, or in the engine's default language when that is `null`, and
 one rule list can mix languages. An engine's languages and imports are set on its builder, so every `load()` compiles
 the rules with the same ones. To give an engine several languages and choose one for each rule, see
-[Choosing a language per rule](languages/custom.md#-choosing-a-language-per-rule).
+[Choosing a language per rule](languages/README.md#-choosing-a-language-per-rule); the rest of
+[Expression languages](languages/README.md) says how the engine picks the default and what to depend on.
 
 ## 🔏 What rules can change
 
 ### Conditions can't assign
 
 A condition can't change the facts. Every language that passes the
-[contract test kit](languages/custom.md#-testing-a-language) rejects a condition that assigns to a fact when `load()`
-compiles it, with a `RuleCompilationException`. The engine also rejects any write to the facts while a condition runs,
-failing the rule with `Cannot assign or declare 'x' in a condition`.
+[contract test kit](languages/custom.md#-testing-with-the-contract-kit) rejects a condition that assigns to a fact
+when `load()` compiles it, with a `RuleCompilationException`. The engine also rejects any write to the facts while a
+condition runs, failing the rule with `Cannot assign or declare 'x' in a condition`.
 
 That isn't a sandbox: a condition can still call methods, loop and run several statements, so it can change state
 (`System.setProperty('k', 'v') == null`) or never finish (`while (true) {}; true`). Keep conditions to expressions
