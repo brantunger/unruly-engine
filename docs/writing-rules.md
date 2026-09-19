@@ -30,6 +30,10 @@ Rule.builder()
         .language("mvel")                                // optional: null means the engine's default language
         .condition("applicant.creditScore >= 750")       // must evaluate to a boolean
         .action("output.approved = true; output.interestRate = 4.5")
+        .enabled(true)                                   // optional: false has runs skip the rule
+        .validFrom(Instant.parse("2027-01-01T00:00:00Z"))
+        .validTo(Instant.parse("2028-01-01T00:00:00Z"))  // optional: used from validFrom until before validTo
+        .tags(Set.of("eu", "retail"))                    // optional: a run given tags needs one of these
         .build();
 ```
 
@@ -49,6 +53,18 @@ Rule.builder()
   `failures()`.
 - **Order and output** belong to the engine: see [Rule order](engines-and-runs.md#-rule-order) and
   [The output object](engines-and-runs.md#-the-output-object).
+
+`enabled`, `validFrom`, `validTo` and `tags` choose which runs use the rule. A run that doesn't use it skips it: the
+condition isn't evaluated, and its outcome is `SKIPPED`. See
+[Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
+
+| Field | Default | `build()` throws `IllegalStateException` for |
+| --- | --- | --- |
+| `enabled` | `true` | Nothing |
+| `validFrom`, `validTo` | `null`: no start, no end | A `validTo` that isn't after `validFrom`, including an equal one |
+| `tags` | None | A `null` or blank tag |
+
+`getTags()` returns an unmodifiable set in `String` order, with a tag given twice kept once.
 
 > [!TIP]
 > Rules are usually Java string literals, so in MVEL use **single quotes** for strings inside them:
@@ -125,7 +141,20 @@ List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
 ```
 
 The code is the same for Jackson 2 and Jackson 3, which Spring Boot 4 uses; only the imports differ
-(`com.fasterxml.jackson` or `tools.jackson`). A rule without a name, condition or action fails while it's read.
+(`com.fasterxml.jackson` or `tools.jackson`). A rule without a name, condition or action fails while it's read. Every
+field is read by its name, and a field left out, or `null`, keeps its default:
+
+```json
+[{"ruleName": "summer-rate", "priority": 20, "condition": "applicant.creditScore >= 700",
+  "action": "output.interestRate = 3.9", "enabled": true,
+  "validFrom": "2027-06-01T00:00:00Z", "validTo": "2027-09-01T00:00:00Z", "tags": ["eu", "retail"]}]
+```
+
+> [!IMPORTANT]
+> Jackson 2 reads `validFrom` and `validTo` only with its java.time module: add `.addModule(new JavaTimeModule())`
+> to the builder above, from `com.fasterxml.jackson.datatype:jackson-datatype-jsr310`. Without it, reading a rule that
+> sets either one fails with an `InvalidDefinitionException` that names that artifact; rules without them read fine.
+> Jackson 3 needs no module.
 
 Rules are code, so load them only from sources you trust as much as your application code; see
 [Security](../README.md#-security).

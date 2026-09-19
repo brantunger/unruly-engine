@@ -3,7 +3,8 @@ package io.github.brantunger.unruly.api;
 import java.util.Objects;
 
 /**
- * What a run found out about one rule: whether its condition was true, false, or never evaluated. A
+ * What a run found out about one rule: whether its condition was true, false, or never evaluated, or whether the run
+ * skipped the rule. A
  * {@link RunResult#evaluations() run result} has one for every loaded rule, in evaluation order, so a caller can
  * answer "why didn't rule X apply?" without a {@link RuleListener}.
  *
@@ -14,7 +15,10 @@ import java.util.Objects;
  */
 public final class RuleEvaluation {
 
-    /** What evaluating a rule's condition found. A run that fails throws, so there is no outcome for a failure. */
+    /**
+     * What evaluating a rule's condition found, or that the run skipped the rule. A run that fails throws, so there is
+     * no outcome for a failure.
+     */
     public enum Outcome {
         /** The condition was true. On every engine, a matched rule is one that fired, unless the run failed. */
         MATCHED,
@@ -24,7 +28,14 @@ public final class RuleEvaluation {
          * The condition wasn't evaluated: the rule comes after the match on a first-match engine, so it's neither
          * matched nor unmatched.
          */
-        NOT_EVALUATED
+        NOT_EVALUATED,
+        /**
+         * The run skipped the rule without evaluating its condition: the rule is {@link Rule#isEnabled() disabled},
+         * outside its {@link Rule#getValidFrom() validity window} when the run started, or carries none of the tags
+         * the run was {@link RunOptions#withTags(java.util.Collection) given}. A skipped rule is reported as
+         * skipped wherever it is in the list, including after the match on a first-match engine.
+         */
+        SKIPPED
     }
 
     private final Rule evaluated;
@@ -40,7 +51,7 @@ public final class RuleEvaluation {
      * such as a decorator or a test double, and for tests that compare results.
      *
      * @param rule    The rule
-     * @param outcome What evaluating its condition found
+     * @param outcome What evaluating its condition found, or that the run skipped it
      * @return The evaluation
      * @throws NullPointerException if an argument is {@code null}
      */
@@ -58,7 +69,7 @@ public final class RuleEvaluation {
     }
 
     /**
-     * Returns what evaluating the rule's condition found.
+     * Returns what evaluating the rule's condition found, or that the run skipped the rule.
      *
      * @return The outcome
      */

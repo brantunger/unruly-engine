@@ -268,10 +268,21 @@ JsonLogic, write actions. In `ExpressionLanguageContractTest`, four hooks may re
   `LoggingRuleListener` no longer show `(unnamed)`. An `Expression` needs a rule name too.
 - The engine keeps the rules passed to `load()` instead of copying them, and listeners receive those same
   instances.
+- A rule has four new fields, which choose the runs that use it: `enabled`, `validFrom`, `validTo` and `tags`. See
+  [Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
+- `toString()` lists them after `language`, and `hashCode()` mixes them in, so every rule's text and hash code differ
+  from 1.x, even a rule that doesn't set them. `equals` compares them too.
+
+A rule built with only a name, a condition and an action now prints:
+
+```text
+Rule(ruleName=r, condition=true, action=x, priority=null, description=null, language=null, enabled=true, validFrom=null, validTo=null, tags=[])
+```
 
 **Who is affected:** code that builds a rule without a name, creates or changes rules with the constructors or
 setters, subclasses `Rule`, or reads rules from JSON or configuration through the no-arg constructor and setters.
-Authors of expression languages whose tests create an `Expression` without a rule name.
+Authors of expression languages whose tests create an `Expression` without a rule name. Code that parses
+`Rule.toString()`, compares it in tests, or stores a rule's `hashCode()`, which the compiler can't catch.
 
 **What to change:**
 
@@ -285,9 +296,13 @@ Authors of expression languages whose tests create an `Expression` without a rul
 | Spring `@ConfigurationProperties` binding `List<Rule>` | Bind your own record and build the rules; see [Spring Boot](spring-boot.md#-rules-from-configuration) |
 | `rule.getRuleName() != null ? name : "(unnamed)"`; in Kotlin, `rule.ruleName ?: "(unnamed)"` | `rule.getRuleName()`; in Kotlin, `rule.ruleName` is a `String` |
 | `new Expression(null, kind, text)` | `new Expression("rule-name", kind, text)` |
+| A test that expects 1.x's `Rule.toString()` or `hashCode()` value | Expect the 2.0 value, which includes the four new fields |
+| Filtering the list before `load()` to switch rules off, schedule them, or pick a market | `enabled(false)`, `validFrom(...)` and `validTo(...)`, or `tags(...)` on the rules, and `RunOptions.withTags(...)` for a run; see [Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses) |
 
 To read rules with Jackson, register one mix-in for `Rule` and one for its builder. The code is the same for Jackson 2
-and Jackson 3; only the imports differ (`com.fasterxml.jackson` or `tools.jackson`):
+and Jackson 3; only the imports differ (`com.fasterxml.jackson` or `tools.jackson`). Jackson 2 also needs its
+java.time module, `.addModule(new JavaTimeModule())` from `jackson-datatype-jsr310`, to read a rule that sets
+`validFrom` or `validTo`; see [Loading rules from data](writing-rules.md#-loading-rules-from-data):
 
 ```java
 @JsonDeserialize(builder = Rule.RuleBuilder.class)
@@ -429,7 +444,7 @@ rule. This is a behaviour change that the API compatibility check can't see, so 
 | --- | --- |
 | A listener counting `beforeEvaluate` / `afterEvaluate` per run | Expect calls only up to the first match on a first-match engine |
 | Relying on every run evaluating every rule, as a smoke test | Validate the rules at startup or in a test, as [Writing rules](writing-rules.md) recommends, rather than in production runs |
-| Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false`. `runWithResult(facts).evaluations()` reports them as `NOT_EVALUATED` |
+| Reading rule outcomes for rules below the match | They're neither matched nor unmatched: they weren't evaluated, so don't report them as `false`. `runWithResult(facts).evaluations()` reports them as `NOT_EVALUATED`, or `SKIPPED` for a rule the run skips |
 | Needing every condition evaluated, for example to detect more than one match | Use `allMatches(...)`, or `uniqueMatch(...)`, which fails a run in which more than one rule matches |
 
 ## ⏳ An interrupted run stops, and a run can be given a timeout
@@ -478,15 +493,17 @@ the run's deadline; see [Writing a language](languages/custom.md#-stopping-a-run
 **What changed:**
 
 - **`runWithResult(facts)`** returns a `RunResult`: the output object, the rules that fired in firing order, what each
-  rule's condition evaluated to (`MATCHED`, `NOT_MATCHED`, or `NOT_EVALUATED` after a first match), and the checksum
-  of the rules the run used. `run(facts)` is unchanged, and is now a `default` method returning
+  rule's condition evaluated to (`MATCHED`, `NOT_MATCHED`, `NOT_EVALUATED` after a first match, or `SKIPPED` for a
+  rule the run [skipped](engines-and-runs.md#-choosing-which-rules-a-run-uses)), and the checksum of the rules the run
+  used. `run(facts)` is unchanged, and is now a `default` method returning
   `runWithResult(facts).output()`.
 - **`rules()`** returns a `RuleSetInfo`: the loaded rules in evaluation order, their checksum, and when they were
   loaded. Before the first `load()` it reports no rules and no load time.
 - **The checksum** is the lowercase hex SHA-256 of the rules, covering each rule's name, priority, resolved language,
-  condition and action, but not its description. A rule with no `language` hashes as the engine's default language, so
-  the same rules on engines with different defaults have different checksums. A run keeps the checksum of the rules it
-  started with, so it can differ from `rules().checksum()` after a reload: that's what an audit needs.
+  condition, action, `enabled`, validity window and tags, but not its description. A rule with no `language` hashes
+  as the engine's default language, so the same rules on engines with different defaults have different checksums. A
+  run keeps the checksum of the rules it started with, so it can differ from `rules().checksum()` after a reload:
+  that's what an audit needs. The layout is in [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
 - **Listeners see a run**, with three new `default` callbacks: `beforeRun(RunContext)`,
   `afterRun(RunContext, RunResult)` and `onRunError(RunContext, RuntimeException)`. `onRunError` reports failures that
   belong to no rule too: a rejected fact name, an output supplier that throws, and an interrupt while the run waits for
@@ -589,6 +606,7 @@ Features 1.x didn't have. A caller needs none of them to upgrade. A class that i
 | `rules()` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
 | `validate(rules)` | [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it) |
 | `runTimeout(...)` and `RunOptions` | [An interrupted run stops, and a run can be given a timeout](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout) |
+| A rule's `enabled`, `validFrom`, `validTo` and `tags`, `RunOptions.withTags(...)`, the builder's `clock(...)`, and the `SKIPPED` outcome | [Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses) |
 | Declared facts: `fact(...)`, `facts(...)` and `requireDeclaredFacts()` | [Declaring facts](facts.md#-declaring-facts) |
 | `outputType(...)` and `outputWriter(...)` | [Actions return a result](#-actions-return-a-result) |
 | The run callbacks `beforeRun`, `afterRun` and `onRunError` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |

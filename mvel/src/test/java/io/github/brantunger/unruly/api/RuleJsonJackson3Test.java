@@ -9,9 +9,11 @@ import tools.jackson.databind.annotation.JsonDeserialize;
 import tools.jackson.databind.annotation.JsonPOJOBuilder;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -42,14 +44,18 @@ class RuleJsonJackson3Test {
             [
               {"ruleName": "prime-rate", "priority": 10, "condition": "applicant.score >= 750",
                "action": "output.put('rate', 4.5)", "description": "Prime", "language": "mvel"},
-              {"ruleName": "standard-rate", "condition": "true", "action": "output.put('rate', 6.9)"}
+              {"ruleName": "standard-rate", "condition": "true", "action": "output.put('rate', 6.9)",
+               "enabled": false, "validFrom": "2027-06-01T00:00:00Z", "validTo": "2027-09-01T00:00:00Z",
+               "tags": ["retail", "eu"]}
             ]
             """;
 
     private static final List<Rule> EXPECTED = List.of(
             Rule.builder().ruleName("prime-rate").priority(10).condition("applicant.score >= 750")
                     .action("output.put('rate', 4.5)").description("Prime").language("mvel").build(),
-            Rule.builder().ruleName("standard-rate").condition("true").action("output.put('rate', 6.9)").build());
+            Rule.builder().ruleName("standard-rate").condition("true").action("output.put('rate', 6.9)")
+                    .enabled(false).validFrom(Instant.parse("2027-06-01T00:00:00Z"))
+                    .validTo(Instant.parse("2027-09-01T00:00:00Z")).tags(Set.of("eu", "retail")).build());
 
     private static final ObjectMapper MAPPER = JsonMapper.builder()
             .addMixIn(Rule.class, RuleMixIn.class)
@@ -78,6 +84,15 @@ class RuleJsonJackson3Test {
     @DisplayName("rules written with the same mapper read back equal")
     void roundTrip() {
         assertEquals(EXPECTED, read(MAPPER, MAPPER.writeValueAsString(EXPECTED)));
+    }
+
+    @Test
+    @DisplayName("null for enabled or tags reads as the default, so a rule stored with nulls stays enabled")
+    void nullsReadAsDefaults() {
+        String json = "[{\"ruleName\": \"r\", \"condition\": \"true\", \"action\": \"x\","
+                + " \"enabled\": null, \"tags\": null}]";
+
+        assertEquals(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()), read(MAPPER, json));
     }
 
     @Test

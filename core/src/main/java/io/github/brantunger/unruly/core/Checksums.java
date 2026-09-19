@@ -6,6 +6,8 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -41,8 +43,32 @@ final class Checksums {
             write(bytes, compiled.language());
             write(bytes, rule.getCondition());
             write(bytes, rule.getAction());
+            write(bytes, String.valueOf(rule.isEnabled()));
+            write(bytes, text(rule.getValidFrom()));
+            write(bytes, text(rule.getValidTo()));
+            writeTags(bytes, rule);
         }
         return hex(SHA_256, bytes.toByteArray());
+    }
+
+    /** An instant as ISO-8601 text in UTC, as {@link Instant#toString()} writes it, or {@code null}. */
+    private static String text(Instant instant) {
+        return instant == null ? null : instant.toString();
+    }
+
+    /**
+     * Writes a rule's tags: how many there are, as four bytes, then each one as a value, in the order of their UTF-8
+     * bytes compared as unsigned numbers, which another system can reproduce without Java's order of strings.
+     */
+    private static void writeTags(ByteArrayOutputStream bytes, Rule rule) {
+        writeLength(bytes, rule.getTags().size());
+        rule.getTags().stream()
+                .map(tag -> tag.getBytes(StandardCharsets.UTF_8))
+                .sorted(Arrays::compareUnsigned)
+                .forEach(utf8 -> {
+                    writeLength(bytes, utf8.length);
+                    bytes.writeBytes(utf8);
+                });
     }
 
     /**

@@ -63,12 +63,17 @@ public final class RuleSetInfo {
      * Returns a checksum that identifies the loaded rules, so a decision can be tied to a version of them.
      *
      * <p>
-     * It's the lowercase hex SHA-256 of every rule in evaluation order. Each rule contributes its name, priority, the
-     * expression language <b>as the engine resolved it</b> (so a rule with no language contributes the engine's
-     * default language), its condition and its action. Each value is written as its length in bytes, as four bytes
-     * most significant first, followed by its UTF-8 bytes; a {@code null} priority is written as the length
-     * {@code -1}. A rule's description isn't included, because it doesn't affect what the rules do, so editing it
-     * doesn't change the checksum. Another system can compute the same value from the same rules.
+     * It's the lowercase hex SHA-256 of every rule in evaluation order. Each rule contributes, in this order: its
+     * name; its priority as decimal text; the expression language <b>as the engine resolved it</b> (so a rule with no
+     * language contributes the engine's default language); its condition; its action; {@code true} or
+     * {@code false} for whether it's {@link Rule#isEnabled() enabled}; its {@link Rule#getValidFrom() validFrom} and
+     * {@link Rule#getValidTo() validTo} as ISO-8601 text in UTC, as {@link Instant#toString()} writes them, such as
+     * {@code 2027-06-01T00:00:00Z}; and its tags. Each value is written as its length in bytes, as four bytes most
+     * significant first, followed by its UTF-8 bytes; a {@code null} priority, validFrom or validTo is written as the
+     * length {@code -1}. The tags are written as how many there are, as four bytes, followed by each tag as a value, in
+     * the order of their UTF-8 bytes compared as unsigned numbers. A rule's description isn't included, because it
+     * doesn't affect what the rules do, so editing it doesn't change the checksum. Another system can compute the same
+     * value from the same rules.
      * </p>
      *
      * @return The checksum; for an empty rule list, the SHA-256 of no bytes

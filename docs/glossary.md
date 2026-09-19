@@ -46,7 +46,8 @@ carrier, which is why MVEL rules on many virtual threads can deadlock. See [MVEL
 ### Checksum
 
 A lowercase hex SHA-256 that identifies a loaded rule list: each rule's name, priority,
-[resolved language](#resolved-language), condition and action, in [evaluation order](#evaluation-order), but not its
+[resolved language](#resolved-language), condition, action, whether it's enabled, its
+[validity window](#validity-window) and its [tags](#tag), in [evaluation order](#evaluation-order), but not its
 description, and not the match policy. `RuleSetInfo.checksum()` gives the engine's current one, and
 `RunResult.ruleSetChecksum()` the one a run used. See [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
 
@@ -190,7 +191,8 @@ matched, but on a first-match engine only the first match fires. See
 
 Which matching rules fire, fixed when the engine is built: `firstMatch` fires the first match in evaluation order,
 `allMatches` evaluates every condition, then fires every match in priority order, and `uniqueMatch` evaluates every
-condition, fires the one match, and fails the run when there are more. `RunContext.matchPolicy()` returns
+condition, fires the one match, and fails the run when there are more. Each considers only the rules the run uses; see
+[Skipped rule](#skipped-rule). `RunContext.matchPolicy()` returns
 `"firstMatch"`, `"allMatches"` or `"uniqueMatch"`. 1.x called the first two *stateless* and *stateful*. See
 [First match or all matches](engines-and-runs.md#-first-match-or-all-matches).
 
@@ -249,13 +251,15 @@ The [checksum](#checksum) uses it, so the same rules on engines with different d
 ### Rule
 
 An immutable `Rule`, created with `Rule.builder()`: a unique name, a condition, an action, and an optional priority,
-description and language. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
+description and language. It's enabled, with no [validity window](#validity-window) and no [tags](#tag), unless
+those are set. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
 ### Rule evaluation
 
-What a run found out about one rule, in `RunResult.evaluations()`: the rule and its outcome, `MATCHED`, `NOT_MATCHED`
-or `NOT_EVALUATED`. A first-match engine reports the rules after the match as not evaluated; the other policies
-evaluate every rule. A rule whose condition failed has none, because the run throws instead. See
+What a run found out about one rule, in `RunResult.evaluations()`: the rule and its outcome, `MATCHED`, `NOT_MATCHED`,
+`NOT_EVALUATED` or `SKIPPED`. A first-match engine reports the rules after the match as not evaluated; the other
+policies evaluate every rule the run uses. A [skipped rule](#skipped-rule) is `SKIPPED` on every policy, wherever it
+is. A rule whose condition failed has none, because the run throws instead. See
 [What a run reports](engines-and-runs.md#-what-a-run-reports).
 
 ### Rule list
@@ -276,9 +280,11 @@ The `RunContext` that identifies one run to listeners: `runId()`, `parent()`, `m
 
 ### Run options
 
-A `RunOptions` passed to `runWithResult(facts, options)` for one run. Today it holds only a timeout, from
-`RunOptions.withTimeoutOf(duration)`, that replaces the engine's; `RunOptions.defaults()` changes nothing. See
-[Stopping a run](stopping-runs.md#-quick-start).
+A `RunOptions` passed to `runWithResult(facts, options)` for one run. It can hold a timeout, from
+`RunOptions.withTimeoutOf(duration)` or `withTimeout(duration)`, that replaces the engine's, and [tags](#tag), from
+`withTags(tags)`, that choose the rules the run uses. Each `with` method returns a copy that keeps the other
+setting; `RunOptions.defaults()` changes nothing. See [Stopping a run](stopping-runs.md#-quick-start) and
+[Tags](engines-and-runs.md#tags).
 
 ### Run result
 
@@ -292,11 +298,24 @@ A language's `Session`: its state for one [compiled copy](#compiled-copy), used 
 expressions keep no state returns `Session.none()`; when every language of a rule list does, all its runs share one
 set of sessions. See [Thread safety](languages/custom.md#-thread-safety).
 
+### Skipped rule
+
+A loaded rule a run doesn't use: it's disabled, outside its [validity window](#validity-window) when the run starts,
+or carries none of the [tags](#tag) the run was given. Its condition isn't evaluated, no listener hears about it, and
+its [rule evaluation](#rule-evaluation) is `SKIPPED`. `load()` still compiles it. See
+[Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
+
 ### Stop
 
 A run ended because its thread was interrupted or it passed its [deadline](#deadline). Unlike a rule failure, it throws
 a `RuleExecutionException` whose `getRuleName()` is `null`, with an `InterruptedException` or `TimeoutException` cause,
 and it's logged at WARN rather than ERROR. See [What stops a run](stopping-runs.md#-what-stops-a-run).
+
+### Tag
+
+A name that groups rules, such as a market or a product, set with `tags(...)` on a rule's builder. A run given tags
+with `RunOptions.withTags(...)` uses only the rules that carry at least one of them, compared exactly, case included,
+and [skips](#skipped-rule) the rest, including rules with no tags. See [Tags](engines-and-runs.md#tags).
 
 ### Timeout
 
@@ -310,3 +329,10 @@ copy, so an expression that is already running isn't stopped unless its language
 An engine built with `RulesEngineBuilder.uniqueMatch(...)`, which evaluates every condition, fires the one match, and
 fails the run, naming every matched rule, when more than one is true. See
 [match policy](#match-policy) and [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none).
+
+### Validity window
+
+When runs use a rule: from its `validFrom`, inclusive, until its `validTo`, exclusive; a `null` start or end is open. A run
+reads the engine's clock, `clock(...)` on the builder or else `Clock.systemUTC()`, once when `run()` is called, and
+[skips](#skipped-rule) a rule outside its window at that instant. See
+[The validity window and the engine's clock](engines-and-runs.md#the-validity-window-and-the-engines-clock).

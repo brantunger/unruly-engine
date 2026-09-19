@@ -73,10 +73,10 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("the builder sets the languages, imports, listeners, facts, copy limit, timeout, output and options")
+    @DisplayName("the builder sets the languages, imports, listeners, facts, copy limit, timeout, clock, output and options")
     // The copy limit has two setters: maxCopies(n) for every thread, and unlimitedCopies() to turn it off.
     void builderSettings() {
-        assertEquals(List.of("allMatches", "build", "defaultLanguage", "fact", "facts", "firstMatch", "imports",
+        assertEquals(List.of("allMatches", "build", "clock", "defaultLanguage", "fact", "facts", "firstMatch", "imports",
                 "imports", "language", "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter",
                 "requireDeclaredFacts", "runTimeout", "uniqueMatch", "unlimitedCopies"),
                 names(RulesEngineBuilder.class));

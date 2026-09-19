@@ -32,6 +32,7 @@ like.
 | --- | --- |
 | 📝 **Rules as data** | Conditions and actions are strings, so rules can live in a database, a YAML file or a config service, and be reloaded while the application runs. Rules are code, so load them only from [trusted sources](#-security). |
 | 🔀 **Three match policies** | A *first-match* engine fires only the highest-priority match. An *all-matches* engine fires every match. A *unique-match* engine fires the one match, and fails when two rules apply. |
+| 🔖 **Rules chosen per run** | Disable a rule, give it a validity window, or tag it by market or product, and runs [skip the rules that don't apply](docs/engines-and-runs.md#-choosing-which-rules-a-run-uses). A window opens and closes without a reload. |
 | 🔢 **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
 | 🛡️ **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. Fact and property names are checked when a rule runs, unless MVEL's [strong typing](docs/languages/mvel.md#-strong-typing) is on. |
 | 🧵 **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
@@ -294,8 +295,8 @@ run: `run()` throws a `RuleExecutionException`, and no result is returned. See
 ### Rules
 
 A `Rule` is immutable. It has a `ruleName`, a `condition` and an `action`, and an optional `priority`, `description`
-and `language`. Create one with `Rule.builder()`, whose `build()` throws `IllegalStateException` when the name,
-condition or action is missing.
+and `language`, and `enabled`, `validFrom`, `validTo` and `tags`, which choose the runs that use it. Create one with
+`Rule.builder()`, whose `build()` throws `IllegalStateException` when the name, condition or action is missing.
 
 - **The name** must be unique within a rule list. It names the rule in errors, exceptions and listener callbacks.
 - **The condition** must evaluate to a `boolean`. It can't assign to a fact, but it can call methods; see

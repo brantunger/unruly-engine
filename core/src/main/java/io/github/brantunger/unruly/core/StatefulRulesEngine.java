@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -50,17 +51,18 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
     /**
      * Evaluates every condition, in priority order, and then fires the action of every {@link Rule} whose condition
-     * was true, in the same order, highest priority first. The actions share one output object, so a lower-priority
-     * action can overwrite a field set by a higher-priority one.
+     * was true, in the same order, highest priority first. A rule the run skips isn't evaluated. The actions share one
+     * output object, so a lower-priority action can overwrite a field set by a higher-priority one.
      *
      * @param facts   The input fact store to run rules against
      * @param timeout How long the run may take, or {@code null} if it has no deadline
+     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @return The accumulated output object resulting from firing the actions of all matching rules, or
      *         {@code null} if the rule list is empty or no rule matched
      */
     @Override
-    RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
-        return runInScope(facts, timeout, (ruleSet, copy, runFacts) -> {
+    RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
+        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
             // Match the facts and data against the set of rules with the highest priority first.
             Matches matches = this.match(ruleSet.rules(), copy, runFacts, false);
             if (matches.matched().isEmpty()) {

@@ -23,6 +23,8 @@ dependencies {
     testImplementation project(':test-kit')
     // The Jackson mix-ins the docs show for reading rules from JSON are tested with Jackson 2 and Jackson 3.
     testImplementation libs.jackson2.databind
+    // Jackson 2 reads a rule's validity window (java.time.Instant) only with its java.time module; Jackson 3 needs none.
+    testImplementation libs.jackson2.datatype.jsr310
     testImplementation libs.jackson3.databind
     testImplementation platform(libs.junit.bom)
     testImplementation 'org.junit.jupiter:junit-jupiter'

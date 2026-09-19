@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -51,7 +52,7 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 /**
  * What every engine shares, whatever its match policy: loading and compiling rules, borrowing a compiled copy for
  * each run, evaluating conditions and running actions, listener callbacks, cancellation and failure reporting. A
- * subclass supplies the match policy in {@link #runRules(FactStore, Duration)} and names it in
+ * subclass supplies the match policy in {@link #runRules(FactStore, Duration, Set)} and names it in
  * {@link #matchPolicy()}.
  *
  * <p>
@@ -90,6 +91,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final CopyPermits copyPermits;
     // How long a run may take, or null if runs have no deadline. A run() call can pass one of its own.
     private final Duration runTimeout;
+    // The clock a run reads when it starts, to decide which rules are within their validity window.
+    private final Clock clock;
     // The output type languages are told about, and what sets the properties actions return.
     private final Class<?> outputType;
     private final OutputWriter<? super O> outputWriter;
@@ -149,6 +152,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.copyLimit = configuration.copyLimit();
         this.copyPermits = new CopyPermits(copyLimit.maxCopies());
         this.runTimeout = configuration.runTimeout();
+        this.clock = configuration.clock();
         this.outputType = configuration.outputType();
         this.outputWriter = configuration.outputWriter();
         this.declaredFacts = configuration.declaredFacts();
@@ -159,7 +163,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Returns the rules as {@link #load(List)} compiled them, or {@code null} if it has not been called or the
      * engine is closed. Every run shares them, each with its own sessions, from
-     * {@link #runInScope(FactStore, Duration, RunBody)}.
+     * {@link #runInScope(FactStore, Duration, Set, RunBody)}.
      *
      * @return An unmodifiable list of compiled rules, or {@code null}
      */
@@ -210,7 +214,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Fires the rules against {@code facts} with {@code options}: its timeout if it has one, otherwise the timeout
-     * the engine was built with, if any.
+     * the engine was built with, if any, and only the rules its tags choose, if it has any.
      *
      * @param facts   {@inheritDoc}
      * @param options {@inheritDoc}
@@ -220,7 +224,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     public final RunResult<O> runWithResult(FactStore<?> facts, RunOptions options) {
         Objects.requireNonNull(options, "options must not be null");
         Duration timeout = options.timeout();
-        return runRules(facts, timeout == null ? runTimeout : timeout);
+        return runRules(facts, timeout == null ? runTimeout : timeout, options.tags());
     }
 
     /**
@@ -228,9 +232,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param facts   The facts the run was given
      * @param timeout How long the run may take, or {@code null} if it has no deadline
+     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @return What the run did
      */
-    abstract RunResult<O> runRules(FactStore<?> facts, Duration timeout);
+    abstract RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags);
 
     /**
      * Runs one run inside its listener scope: every listener gets {@link RuleListener#beforeRun}, then the rule
@@ -247,11 +252,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param timeout How long the run may take, or {@code null} if it has no timeout of its own. The deadline is
      *                taken from when the run starts, so waiting for a copy of the rules counts towards it, and a run
      *                started from inside another run on this thread stops no later than that run's deadline.
+     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @param body    What the engine does once it holds a copy of the rules
      * @return What the run did
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      */
-    RunResult<O> runInScope(FactStore<?> facts, Duration timeout, RunBody<O> body) {
+    RunResult<O> runInScope(FactStore<?> facts, Duration timeout, Set<String> tags, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
         // Misuse, before the run is numbered or recorded: it reaches no listener and no recording either.
         RuleSet rules = currentRules();
@@ -265,6 +271,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String outcome = RunEvent.FAILED;
         try {
             Instant deadline = Cancellation.deadlineFrom(timeout);
+            // Read once, so every rule's validity window is judged at the same time, however long the run takes.
+            RuleSelection selection = new RuleSelection(clock.instant(), tags);
             Map<String, Object> values = factValues(facts);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
             RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally);
@@ -276,7 +284,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // outlive its rule lists, so a permit that isn't returned would lower its limit for good.
             try {
                 RunResult<O> result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally,
-                        body);
+                        selection, body);
                 outcome = RunEvent.COMPLETED;
                 return result;
             } finally {
@@ -298,7 +306,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /** Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. */
     private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, Map<String, Object> values,
                                      Map<String, Object> listenerFacts, Instant deadline, long runId,
-                                     RunContext parent, RunTally tally, RunBody<O> body) {
+                                     RunContext parent, RunTally tally, RuleSelection selection,
+                                     RunBody<O> body) {
         List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent);
         currentRun.set(run);
@@ -310,7 +319,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
                 checkFactNames(values, rules.factChecks());
-                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally));
+                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally, selection));
             } catch (RuntimeException e) {
                 notifyRunError(snapshot, run, e, tally);
                 throw e;
@@ -911,7 +920,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Evaluates the rules' conditions one after another, in list order, recording each rule's outcome, and keeps the
      * rules that matched. An engine that fires only the first match stops evaluating there: the rules after it are
-     * recorded as not evaluated, so a broken condition among them can't fail a run that is already decided.
+     * recorded as not evaluated, so a broken condition among them can't fail a run that is already decided. A rule
+     * the run skips is recorded as skipped wherever it is, and no listener hears about it.
      *
      * @param ruleList   The rules, in evaluation order
      * @param copy       The run's copy of the rules, whose sessions the conditions run with
@@ -931,13 +941,17 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Evaluates one rule's condition, unless the run is decided already, and adds the rule to {@code matched} when
-     * the condition is true.
+     * Evaluates one rule's condition, unless the run skips the rule or is decided already, and adds the rule to
+     * {@code matched} when the condition is true.
      *
      * @return The rule's outcome
      */
     private RuleEvaluation.Outcome outcome(CompiledRule rule, RuleSet.Copy copy, RunFacts facts,
                                            List<CompiledRule> matched, boolean untilFirst) {
+        // Before the first-match check, so a skipped rule reads as skipped wherever it is.
+        if (facts.selection().skips(rule.rule())) {
+            return RuleEvaluation.Outcome.SKIPPED;
+        }
         if (untilFirst && !matched.isEmpty()) {
             return RuleEvaluation.Outcome.NOT_EVALUATED;
         }

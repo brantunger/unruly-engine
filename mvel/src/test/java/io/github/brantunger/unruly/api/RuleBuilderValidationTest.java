@@ -7,6 +7,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -46,6 +50,38 @@ class RuleBuilderValidationTest {
     void nameCheckedFirst() {
         assertEquals("ruleName must not be null", rejection(Rule.builder()));
         assertEquals("condition must not be null", rejection(Rule.builder().ruleName("r")));
+    }
+
+    @Test
+    @DisplayName("validTo must be after validFrom: an empty or reversed window is rejected")
+    void windowMustNotBeEmpty() {
+        Instant start = Instant.parse("2027-06-01T00:00:00Z");
+
+        assertEquals("validTo must be after validFrom, but validFrom is 2027-06-01T00:00:00Z and validTo is "
+                + "2027-06-01T00:00:00Z", rejection(complete().validFrom(start).validTo(start)));
+        assertEquals("validTo must be after validFrom, but validFrom is 2027-06-01T00:00:00Z and validTo is "
+                + "2027-05-31T23:59:59Z", rejection(complete().validFrom(start).validTo(start.minusSeconds(1))));
+        assertEquals(start.plusNanos(1), complete().validFrom(start).validTo(start.plusNanos(1)).build().getValidTo());
+        assertEquals(start, complete().validTo(start).build().getValidTo(), "an end alone is a window");
+        assertEquals(start, complete().validFrom(start).build().getValidFrom(), "a start alone is a window");
+    }
+
+    @Test
+    @DisplayName("a tag must not be null or blank")
+    void tagsMustBeNames() {
+        assertEquals("tags must not contain null, but were [eu, null]",
+                rejection(complete().tags(Arrays.asList("eu", null))));
+        assertEquals("tags must not contain a blank tag, but were [eu, \t]",
+                rejection(complete().tags(List.of("eu", "\t"))));
+    }
+
+    @Test
+    @DisplayName("null means the default for enabled and tags, as for the other optional fields")
+    void nullMeansTheDefault() {
+        Rule rule = complete().enabled(false).tags(List.of("eu")).enabled(null).tags(null).build();
+
+        assertTrue(rule.isEnabled());
+        assertEquals(Set.of(), rule.getTags());
     }
 
     @Test

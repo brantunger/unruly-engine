@@ -46,7 +46,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | Guide | For | Covers |
 | --- | --- | --- |
 | 📜 [Writing rules](writing-rules.md) | Rule authors | Anatomy of a rule, choosing a language, what rules may change, loading rules from data, and testing rules |
-| 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, first match, all matches or unique match, the output object, what a run reports and why each rule did or didn't apply, checksums for auditing, and reloading |
+| 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, which rules a run uses, first match, all matches or unique match, the output object, what a run reports and why each rule did or didn't apply, checksums for auditing, and reloading |
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions, packaging and the contract test kit for a language of your own |

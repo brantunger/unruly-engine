@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -41,11 +42,13 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
     }
 
     /**
-     * Evaluates every condition, then fires the action of the one rule that matched. No match returns no output, like
-     * the other engines. More than one match fires nothing, and fails the run before the output object is created.
+     * Evaluates every condition, except those of rules the run skips, then fires the action of the one rule that
+     * matched. No match returns no output, like the other engines. More than one match fires nothing, and fails the
+     * run before the output object is created.
      *
      * @param facts   The key/value fact store to run the rule engine against.
      * @param timeout How long the run may take, or {@code null} if it has no deadline
+     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @return The object that is the result of the action getting fired against the given {@link Rule}, or
      *         {@code null} if the rule list is empty or no rule matched
      * @throws RuleExecutionException if more than one rule matched: it names each of them, in priority order, with
@@ -53,8 +56,8 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
      *                                to no rule
      */
     @Override
-    RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
-        return runInScope(facts, timeout, (ruleSet, copy, runFacts) -> {
+    RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
+        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
             Matches matches = this.match(ruleSet.rules(), copy, runFacts, false);
             List<CompiledRule> matched = matches.matched();
             if (matched.isEmpty()) {

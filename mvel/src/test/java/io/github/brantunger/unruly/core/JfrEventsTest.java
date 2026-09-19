@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import jdk.jfr.Configuration;
@@ -27,6 +28,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -184,12 +186,12 @@ class JfrEventsTest {
     }
 
     @Test
-    @DisplayName("a first-match run counts only the conditions it evaluated, and a rule it skipped has no event")
+    @DisplayName("a first-match run counts only the conditions it evaluated, and a rule below the match has no event")
     void firstMatchRun() throws IOException {
         RulesEngine<Map<String, Object>> engine =
                 RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
         engine.load(List.of(rule("jfr-first-miss", 3, "score > 900"), rule("jfr-first-hit", 2, "score > 700"),
-                rule("jfr-first-skipped", 1, "score > 500")));
+                rule("jfr-first-below", 1, "score > 500")));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("score", 750);
 
@@ -206,6 +208,29 @@ class JfrEventsTest {
         assertEquals("firstMatch", run.getString("matchPolicy"));
         assertEquals(List.of("jfr-first-miss CONDITION NOT_MATCHED", "jfr-first-hit CONDITION MATCHED",
                 "jfr-first-hit ACTION FIRED"), ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
+    }
+
+    @Test
+    @DisplayName("a rule the run skips has no event and isn't counted as evaluated")
+    void skippedRulesNotRecorded() throws IOException {
+        RulesEngine<Map<String, Object>> engine =
+                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        engine.load(List.of(rule("jfr-skip-disabled", 3, "score > 500").toBuilder().enabled(false).build(),
+                rule("jfr-skip-untagged", 2, "score > 500"),
+                rule("jfr-skip-tagged", 1, "score > 500").toBuilder().tags(Set.of("eu")).build()));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("score", 750);
+
+        Recording recording = recordEverything();
+        RunResult<Map<String, Object>> result = engine.runWithResult(facts,
+                RunOptions.defaults().withTags(Set.of("eu")));
+        List<RecordedEvent> all = stop(recording, "skipped");
+
+        RecordedEvent run = runEvent(all, result.ruleSetChecksum());
+        assertEquals(1, run.getInt("rulesEvaluated"));
+        assertEquals(1, run.getInt("rulesFired"));
+        assertEquals(List.of("jfr-skip-tagged CONDITION MATCHED", "jfr-skip-tagged ACTION FIRED"),
+                ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
     }
 
     @Test

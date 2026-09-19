@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,8 +19,8 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners, limit on compiled copies
- * and run timeout are set here and can't change once it's built; only its rules can, with
+ * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners, limit on compiled copies,
+ * run timeout and clock are set here and can't change once it's built; only its rules can, with
  * {@link RulesEngine#load(List)}.
  *
  * <p>
@@ -77,6 +78,7 @@ public final class RulesEngineBuilder<O> {
     // was created.
     private @Nullable CopyLimit copies;
     private @Nullable Duration timeout;
+    private Clock runClock = Clock.systemUTC();
     private final Map<String, Class<?>> factTypes = new LinkedHashMap<>();
     private boolean allFactsDeclared;
     private Class<? super O> outputClass = Object.class;
@@ -96,7 +98,8 @@ public final class RulesEngineBuilder<O> {
      * Conditions are evaluated in that order, and the run stops at the first match, so the rules below it are never
      * evaluated: they're neither matched nor unmatched, the run's {@link RunResult#evaluations() result} reports them
      * as not evaluated, and a broken condition among them can't fail a run that's already decided. Use
-     * {@link #allMatches(Supplier)} or {@link #uniqueMatch(Supplier)} when every condition must be evaluated.
+     * {@link #allMatches(Supplier)} or {@link #uniqueMatch(Supplier)} when every condition must be evaluated. A rule
+     * the run skips is never evaluated, and is reported as skipped wherever it is; see {@link Rule}.
      * </p>
      *
      * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
@@ -111,7 +114,8 @@ public final class RulesEngineBuilder<O> {
 
     /**
      * Starts building an engine that fires the action of every rule whose condition is true, in priority order, all
-     * changing the same output object: DMN's rule order. Every condition is evaluated before any action runs.
+     * changing the same output object: DMN's rule order. Every condition, except those of rules the run skips, is
+     * evaluated before any action runs.
      *
      * @param outputFactory Creates the output object. It is called once per run that matches a rule and must
      *                      return a new, non-null object each time.
@@ -125,14 +129,16 @@ public final class RulesEngineBuilder<O> {
 
     /**
      * Starts building an engine that fires the action of the one rule whose condition is true, and fails the run when
-     * more than one is: DMN's unique match, for a decision table whose rows must not overlap. Every condition is
-     * evaluated, in priority order, before anything fires, so the failure names every rule that matched.
+     * more than one is: DMN's unique match, for a decision table whose rows must not overlap. Every condition, except
+     * those of rules the run skips, is evaluated, in priority order, before anything fires, so the failure names every
+     * rule that matched.
      *
      * <p>
      * No match returns {@code null}, like the other engines. More than one match fires nothing, doesn't call the output
      * supplier, and throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} that names each
-     * matched rule in priority order and belongs to no rule: listeners get {@code afterEvaluate} for every rule, then
-     * {@code onRunError}. It depends on nothing language-specific: it counts the conditions that were true.
+     * matched rule in priority order and belongs to no rule: listeners get {@code afterEvaluate} for every rule the
+     * run doesn't skip, then {@code onRunError}. It depends on nothing language-specific: it counts the conditions
+     * that were true.
      * </p>
      *
      * @param outputFactory Creates the output object. It is called once per run that matches exactly one rule and
@@ -446,6 +452,28 @@ public final class RulesEngineBuilder<O> {
     }
 
     /**
+     * Sets the clock a run reads, once when it starts, to decide which rules are within their validity window
+     * ({@link Rule#getValidFrom()}, {@link Rule#getValidTo()}). Without this, the engine uses
+     * {@link Clock#systemUTC()}. A test can give a fixed clock, such as
+     * {@code Clock.fixed(Instant.parse("2027-06-01T00:00:00Z"), ZoneOffset.UTC)}, to run the rules as they're scheduled
+     * at that time.
+     *
+     * <p>
+     * Only the validity window uses the clock. A {@link #runTimeout(Duration) run timeout} is measured with the
+     * system clock whatever clock is set here. Anything the clock throws fails the run unchanged, before any listener
+     * is told the run started.
+     * </p>
+     *
+     * @param clock The clock
+     * @return This builder
+     * @throws NullPointerException if {@code clock} is {@code null}
+     */
+    public RulesEngineBuilder<O> clock(Clock clock) {
+        this.runClock = Objects.requireNonNull(clock, "clock must not be null");
+        return this;
+    }
+
+    /**
      * Builds an engine with this builder's settings. Load its rules with {@link RulesEngine#load(List)} before the
      * first run.
      *
@@ -464,7 +492,7 @@ public final class RulesEngineBuilder<O> {
      */
     public RulesEngine<O> build() {
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
-                importNames, listenerList, copies != null ? copies : CopyLimit.forVirtualThreads(), timeout,
+                importNames, listenerList, copies != null ? copies : CopyLimit.forVirtualThreads(), timeout, runClock,
                 outputClass, writer, languageOptions, factTypes, allFactsDeclared);
         return engineFactory.create(outputFactory, configuration);
     }

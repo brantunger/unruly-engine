@@ -6,13 +6,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -79,6 +83,39 @@ class RuleJsonJackson2Test {
     @DisplayName("rules written with the same mapper read back equal")
     void roundTrip() throws Exception {
         assertEquals(EXPECTED, read(MAPPER, MAPPER.writeValueAsString(EXPECTED)));
+    }
+
+    @Test
+    @DisplayName("enabled and tags need nothing more, but a validity window needs Jackson 2's java.time module")
+    void windowNeedsJavaTimeModule() throws Exception {
+        String json = """
+                [{"ruleName": "summer", "condition": "true", "action": "x", "enabled": false,
+                  "validFrom": "2027-06-01T00:00:00Z", "validTo": "2027-09-01T00:00:00Z", "tags": ["retail", "eu"]}]
+                """;
+        Rule expected = Rule.builder().ruleName("summer").condition("true").action("x").enabled(false)
+                .validFrom(Instant.parse("2027-06-01T00:00:00Z")).validTo(Instant.parse("2027-09-01T00:00:00Z"))
+                .tags(Set.of("eu", "retail")).build();
+        Rule withoutWindow = expected.toBuilder().validFrom(null).validTo(null).build();
+        ObjectMapper withJavaTime = JsonMapper.builder()
+                .addMixIn(Rule.class, RuleMixIn.class)
+                .addMixIn(Rule.RuleBuilder.class, RuleBuilderMixIn.class)
+                .addModule(new JavaTimeModule())
+                .build();
+
+        assertEquals(List.of(withoutWindow), read(MAPPER, MAPPER.writeValueAsString(List.of(withoutWindow))));
+        InvalidDefinitionException ex = assertThrows(InvalidDefinitionException.class, () -> read(MAPPER, json));
+        assertTrue(ex.getMessage().contains("jackson-datatype-jsr310"), ex.getMessage());
+        assertEquals(List.of(expected), read(withJavaTime, json));
+        assertEquals(List.of(expected), read(withJavaTime, withJavaTime.writeValueAsString(List.of(expected))));
+    }
+
+    @Test
+    @DisplayName("null for enabled or tags reads as the default, so a rule stored with nulls stays enabled")
+    void nullsReadAsDefaults() throws Exception {
+        String json = "[{\"ruleName\": \"r\", \"condition\": \"true\", \"action\": \"x\","
+                + " \"enabled\": null, \"tags\": null}]";
+
+        assertEquals(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()), read(MAPPER, json));
     }
 
     @Test
