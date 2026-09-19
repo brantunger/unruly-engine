@@ -233,7 +233,9 @@ spring.threads.virtual.enabled=true
 
 That turns on the engine's **default copy limit**, which applies only to runs on virtual threads: one compiled copy of
 the rules for every two processors. Rules that compute are fine with it. Rules that wait on a database or another
-service hold their copy while they wait, so build those engines with `unlimitedCopies()` or a larger `maxCopies(...)`.
+service hold their copy while they wait, so build those engines with a `maxCopies(...)` sized for the runs you want
+waiting at once. Not `unlimitedCopies()`: on virtual threads it makes a copy for every waiting thread; see
+[Virtual threads](compiled-copies.md#-virtual-threads).
 Nothing changes while the property is off, because the default doesn't apply to a Tomcat or Jetty thread pool.
 
 If your rules are written in MVEL and you run on JDK 21 to 23, read
