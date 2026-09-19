@@ -1,5 +1,5 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Text files are stored and checked out with LF line endings, on every platform
+* text=auto eol=lf
 
 # Standard text files (Java, XML, Properties, Markdown, etc.)
 *.java text diff=java
