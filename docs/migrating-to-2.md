@@ -614,4 +614,5 @@ Features 1.x didn't have. A caller needs none of them to upgrade. A class that i
 | `unlimitedCopies()` | [Compiled copies are limited on virtual threads](#-compiled-copies-are-limited-on-virtual-threads) |
 | `copiesAtLoad(n)`, and `ExpressionCompiler.warmUp(Session)` for language authors | [Making copies at load](compiled-copies.md#making-copies-at-load) |
 | Flight Recorder events for runs and rules | [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events) |
+| GraalVM native images: reflection metadata for MVEL in the `unruly-engine` jar, and a native image built and run in CI | [Native image](native-image.md) |
 | `close()` | [Languages keep run state in sessions, and engines can be closed](#-languages-keep-run-state-in-sessions-and-engines-can-be-closed) |

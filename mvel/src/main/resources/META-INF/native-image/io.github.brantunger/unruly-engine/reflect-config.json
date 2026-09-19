@@ -1,0 +1,11 @@
+[
+  {
+    "name": "org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer",
+    "methods": [
+      {
+        "name": "<init>",
+        "parameterTypes": []
+      }
+    ]
+  }
+]

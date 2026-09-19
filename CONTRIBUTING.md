@@ -92,6 +92,7 @@ cd unruly-engine
 | `mvel` | `unruly-engine` | The MVEL language, and all the tests: those of `core` and `test-kit` too, because most of them run MVEL rules |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
 | `benchmarks` | — | JMH benchmarks; not published, and the build checks its sources without running them |
+| `native-smoke` | — | An application CI builds into a GraalVM native image and runs; not published |
 
 Settings shared by the projects are in the convention plugins in `buildSrc/src/main/groovy`. The `core` package is
 internal: its module exports it only to the test kit's module, and a class in it is public only where the builder

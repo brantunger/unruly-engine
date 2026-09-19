@@ -1,0 +1,15 @@
+// An application that CI builds into a GraalVM native image and runs, to check the engine and MVEL work there
+// (see docs/native-image.md). Not published, and not part of the coverage gate.
+plugins {
+    id 'unruly.java-conventions'
+    id 'application'
+}
+
+dependencies {
+    implementation project(':mvel')
+    runtimeOnly libs.slf4j.simple
+}
+
+application {
+    mainClass = 'com.example.nativesmoke.Main'
+}

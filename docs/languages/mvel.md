@@ -320,6 +320,9 @@ Because a session's expressions belong to one run at a time, they're safe with a
 leaves MVEL's global optimizer setting alone. MVEL's default JIT optimizer stays in effect (unless you pass
 `-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use MVEL aren't affected.
 
+In a GraalVM native image, the JIT must be off: an image can't load the classes it generates, so with the JIT on the
+first condition fails. Start the executable with `-Dmvel2.disable.jit=true`; see [Native image](../native-image.md).
+
 > [!NOTE]
 > Earlier versions switched MVEL to its slower reflective optimizer for the whole JVM when the engine class loaded,
 > unless the JVM was started with `-Dunruly.mvel.jit=true`. Later 1.x releases ignored that property, and 2.0 removes

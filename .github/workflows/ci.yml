@@ -107,6 +107,42 @@ jobs:
           use_oidc: true
           fail_ci_if_error: true
 
+  # Builds the native-smoke application into a GraalVM native image and runs it (docs/native-image.md), with only the
+  # reflection metadata the mvel jar ships and the application's own, and without Flight Recorder support, which is
+  # native-image's default. MVEL generates classes at run time unless its JIT is off, which a native image can't do.
+  native-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # GraalVM Community Edition 21.0.2, the release docs/native-image.md was tested with, as JAVA_HOME; Gradle's
+      # Java 21 toolchain finds it too.
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@0426e2e191540e8514dff98dc52a5f5146a2a276 # v1.6.6
+        with:
+          java-version: '21.0.2'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+
+      - name: Build the application
+        run: ./gradlew :native-smoke:installDist
+
+      - name: Build the native image
+        run: |
+          mkdir -p native-smoke/build/native
+          native-image --no-fallback -H:+ReportExceptionStackTraces \
+            -cp 'native-smoke/build/install/native-smoke/lib/*' -o native-smoke/build/native/native-smoke com.example.nativesmoke.Main
+
+      # The application checks its own results and exits with 1 if one is wrong.
+      - name: Run it
+        run: native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
+
   # Submits the resolved dependency graph so Dependabot alerts cover transitives,
   # not just the coordinates declared in build.gradle.
   dependency-graph:
