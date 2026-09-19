@@ -131,8 +131,9 @@ public interface RulesEngine<O> extends AutoCloseable {
 
     /**
      * Runs the rules like {@link #run(FactStore)}, and reports what the run did: the output object, the rules that
-     * fired, what each rule's condition evaluated to, and the checksum of the rules the run used. A caller can record
-     * which rules produced a decision, and why the others didn't apply, without a {@link RuleListener}.
+     * fired, what each rule's condition evaluated to, the checksum of the rules the run used, and the run's
+     * {@link RunResult#tags() tags} and {@link RunResult#startedAt() start instant}. A caller can record which rules
+     * produced a decision, and why the others didn't apply, without a {@link RuleListener}.
      *
      * @param facts The facts to run the rules against, as {@link #run(FactStore)} takes them
      * @return What the run did, never {@code null}. Its {@link RunResult#output() output} is {@code null} exactly when

@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -19,11 +20,14 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -37,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class RunContextIdentityTest {
 
     private static final String SECRET = "4111 1111 1111 1111";
+    private static final Clock AT_NOW = Clock.fixed(Instant.parse("2027-06-01T00:00:00Z"), ZoneOffset.UTC);
 
     /** Keeps a "span" per run in a map keyed on the context, as a tracing listener would. */
     private static final class Spans implements RuleListener {
@@ -79,7 +84,7 @@ class RunContextIdentityTest {
 
     private static RulesEngine<Map<String, Object>> engine(RuleListener listener, String action) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .listener(listener).build();
+                .listener(listener).clock(AT_NOW).build();
         engine.load(List.of(Rule.builder().ruleName("r").condition("true").action(action).build()));
         return engine;
     }
@@ -113,20 +118,26 @@ class RunContextIdentityTest {
     }
 
     @Test
-    @DisplayName("a run's context describes the run, not its facts")
+    @DisplayName("a run's context describes the run, its tags and when it started, not its facts")
     void runContextLeavesTheFactsOut() {
         Spans spans = new Spans();
+        RulesEngine<Map<String, Object>> engine = engine(spans, "output.put('x', 1)");
 
-        engine(spans, "output.put('x', 1)").run(new FactMap<>(new Fact<Object>("card", SECRET)));
+        engine.run(new FactMap<>(new Fact<Object>("card", SECRET)));
+        engine.runWithResult(new FactMap<>(new Fact<Object>("card", SECRET)),
+                RunOptions.defaults().withTags(Set.of("retail", "eu")));
 
         String text = spans.runs.get(0).toString();
         assertFalse(text.contains(SECRET), text);
         assertEquals("RunContext(runId=1, parent=none, matchPolicy=allMatches, ruleSetChecksum="
-                + spans.runs.get(0).ruleSetChecksum() + ")", text);
+                + spans.runs.get(0).ruleSetChecksum() + ", tags=[], startedAt=2027-06-01T00:00:00Z)", text);
+        assertEquals("RunContext(runId=2, parent=none, matchPolicy=allMatches, ruleSetChecksum="
+                + spans.runs.get(1).ruleSetChecksum() + ", tags=[eu, retail], startedAt=2027-06-01T00:00:00Z)",
+                spans.runs.get(1).toString());
     }
 
     @Test
-    @DisplayName("a nested run's context names its parent run")
+    @DisplayName("a nested run's context names its parent run, and the tags its own options give it")
     void nestedRunNamesItsParent() {
         List<RunContext> runs = new CopyOnWriteArrayList<>();
         RuleListener recorder = new RuleListener() {
@@ -136,13 +147,19 @@ class RunContextIdentityTest {
             }
         };
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .listener(recorder).build();
+                .listener(recorder).clock(AT_NOW).build();
         engine.load(List.of(Rule.builder().ruleName("outer").condition("depth == 0").action("nester.runNested()")
-                .build()));
+                .tags(Set.of("eu")).build()));
 
-        engine.run(new FactMap<>(new Fact<Object>("depth", 0), new Fact<Object>("nester", new Nester(engine))));
+        engine.runWithResult(new FactMap<>(new Fact<Object>("depth", 0),
+                new Fact<Object>("nester", new Nester(engine))), RunOptions.defaults().withTags(Set.of("eu")));
 
         assertTrue(runs.get(1).toString().startsWith("RunContext(runId=2, parent=1, "), runs.get(1).toString());
+        // The nested run has the tags its own options give it, none here; the run around it keeps its own.
+        assertTrue(runs.get(1).toString().endsWith(", tags=[], startedAt=2027-06-01T00:00:00Z)"),
+                runs.get(1).toString());
+        assertTrue(runs.get(0).toString().endsWith(", tags=[eu], startedAt=2027-06-01T00:00:00Z)"),
+                runs.get(0).toString());
     }
 
     @Test

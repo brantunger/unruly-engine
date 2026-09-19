@@ -138,6 +138,10 @@ The clock is `Clock.systemUTC()` unless the builder's `clock(Clock)` sets anothe
 will be on a date with `.clock(Clock.fixed(Instant.parse("2027-07-01T00:00:00Z"), ZoneOffset.UTC))`. Only windows
 use this clock: a [run timeout](stopping-runs.md) is measured by the system clock, whatever `clock(...)` is set to.
 
+`RunContext.startedAt()` and `RunResult.startedAt()` return the instant the run judged the windows at. It comes from
+the engine's clock, so a fixed clock gives every run the same instant. Don't compare it with `rules().loadedAt()` or
+with the run's deadline: those use the system clock.
+
 ### Tags
 
 A rule's tags are names that group it, such as a market or a product; a rule has none by default. A run given tags
@@ -145,7 +149,8 @@ with `RunOptions.defaults().withTags(Set.of("eu", "retail"))` uses only the rule
 run without tags uses rules whatever their tags. Tags are compared exactly, case included, so `EU` doesn't select `eu`.
 
 `withTags(...)` needs at least one tag: to use every rule, don't call it. `withTags(...)` keeps the options' timeout,
-and `withTimeout(...)` keeps their tags. `RunOptions.tags()` returns them, empty when the run uses every rule.
+and `withTimeout(...)` keeps their tags. `RunOptions.tags()` returns them, empty when the run uses every rule, and
+`RunContext.tags()` and `RunResult.tags()` return the same tags for the run they describe.
 
 > [!WARNING]
 > A run given tags skips every rule that has no tags, including a default meant to apply everywhere, such as a
@@ -300,6 +305,18 @@ A [run result](glossary.md#run-result) holds:
   unmodifiable, and empty when the rule list is.
 - `ruleSetChecksum()`: the checksum of the rules this run used.
 
+It also says what chose the rules the run used:
+
+- `tags()`: the tags the run was given, `RunOptions.tags()`, in `String` order. It's unmodifiable, never `null`, and
+  empty when the run used every rule.
+- `startedAt()`: the instant the run judged every rule's [validity window](#the-validity-window-and-the-engines-clock)
+  at, from the engine's clock.
+
+The engine fills in both on every result it returns. A `RulesEngine` of your own, such as a test double, that builds
+its result with `RunResult.of(...)` returns empty `tags()` and a `null` `startedAt()`, just as the short `of(...)`
+form has empty `evaluations()`. `withRun(run)` returns a copy of a result that carries a `RunContext`'s tags and
+instant.
+
 A run that fails throws, so there's never a partial result, and no evaluation is reported for a rule that failed.
 
 The evaluations answer "why didn't rule X apply?" without a listener:
@@ -315,8 +332,9 @@ for (RuleEvaluation evaluation : result.evaluations()) {
 
 On a first-match engine, `NOT_EVALUATED` says only that the rule came after the match. To know whether it would have
 matched, use an all-matches or a unique-match engine, which evaluate every condition. `SKIPPED` says the run didn't
-use the rule, but not which of the three reasons applied: read the rule's `isEnabled()`, `getValidFrom()`,
-`getValidTo()` and `getTags()`.
+use the rule, but not which of the three reasons applied. The result holds what decided it: compare the rule's
+`isEnabled()`, its `getValidFrom()` and `getValidTo()` with `result.startedAt()`, and its `getTags()` with
+`result.tags()`.
 
 > [!IMPORTANT]
 > `run()` returns `null` when no rule fired: no condition was true, or the rule list is empty. A rule that fired always
@@ -370,8 +388,8 @@ To tie a decision to the rules that made it, record these with it:
 - **`RunResult.firedRules()`**: which rules fired, in order.
 - **`RunResult.evaluations()`**, when the audit must also say why the other rules didn't apply. It marks the rules
   the run skipped, but not why.
-- **The tags you gave the run**, `RunOptions.tags()`, if you use tags. Neither `RunContext` nor `RunResult` holds
-  them, and neither holds the instant the run judged validity windows at.
+- **`tags()` and `startedAt()`**, on `RunContext` or `RunResult`: what explains a `SKIPPED` rule. Runs with the same
+  checksum can use different rules when their tags or start differ.
 
 A listener's `afterRun` receives all of them, after every run that succeeds:
 
@@ -381,7 +399,8 @@ RuleListener audit = new RuleListener() {
     @Override
     public void afterRun(RunContext run, RunResult<?> result) {
         auditLog.record(run.matchPolicy(), result.ruleSetChecksum(),
-                result.firedRules().stream().map(Rule::getRuleName).toList());
+                result.firedRules().stream().map(Rule::getRuleName).toList(),
+                run.tags(), run.startedAt());
     }
 };
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).listener(audit).build();
@@ -499,8 +518,9 @@ the run skips never runs. See [First match or all matches](#-first-match-or-all-
 
 Read `runWithResult(facts).evaluations()`: it has every rule with `MATCHED`, `NOT_MATCHED`, `NOT_EVALUATED` after the
 match on a first-match engine, or `SKIPPED` when the run didn't use the rule because it's disabled, outside its
-validity window, or without the run's tags. A rule whose condition threw has no outcome, because the run threw
-instead. See [What a run reports](#-what-a-run-reports).
+validity window, or without the run's tags. To tell which, compare the rule with the result's `startedAt()` and
+`tags()`. A rule whose condition threw has no outcome, because the run threw instead. See
+[What a run reports](#-what-a-run-reports).
 
 ### How do I switch a rule off, or schedule it?
 

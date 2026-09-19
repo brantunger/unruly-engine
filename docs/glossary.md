@@ -293,8 +293,10 @@ rule matched, fire actions and return. `run()` throws `IllegalStateException` be
 
 ### Run context
 
-The `RunContext` that identifies one run to listeners: `runId()`, `parent()`, `matchPolicy()`, `ruleSetChecksum()` and
-`facts()`. Only the engine creates one. See [Callbacks](listeners-and-logging.md#-callbacks).
+The `RunContext` that identifies one run to listeners: `runId()`, `parent()`, `matchPolicy()`, `ruleSetChecksum()`,
+`facts()`, `tags()` and `startedAt()`. The last two are the [tags](#tag) the run was given, and the instant it judged
+every [validity window](#validity-window) at. It's sealed: its one implementation is internal, and the engine creates
+the contexts it passes. See [Callbacks](listeners-and-logging.md#-callbacks).
 
 ### Run options
 
@@ -307,8 +309,9 @@ setting; `RunOptions.defaults()` changes nothing. See [Stopping a run](stopping-
 ### Run result
 
 The `RunResult` that `runWithResult(...)` returns: `output()`, `firedRules()` in firing order, `evaluations()` with
-every rule's outcome, and `ruleSetChecksum()`. Its output is `null` exactly when no rule fired; a failed run throws
-instead of returning one. See [What a run reports](engines-and-runs.md#-what-a-run-reports).
+every rule's outcome, `ruleSetChecksum()`, and the run's `tags()` and `startedAt()`, as on the
+[run context](#run-context). Its output is `null` exactly when no rule fired; a failed run throws instead of returning
+one. See [What a run reports](engines-and-runs.md#-what-a-run-reports).
 
 ### Session
 
@@ -350,7 +353,8 @@ fails the run, naming every matched rule, when more than one is true. See
 
 ### Validity window
 
-When runs use a rule: from its `validFrom`, inclusive, until its `validTo`, exclusive; a `null` start or end is open. A run
-reads the engine's clock, `clock(...)` on the builder or else `Clock.systemUTC()`, once when `run()` is called, and
-[skips](#skipped-rule) a rule outside its window at that instant. See
+When runs use a rule: from its `validFrom`, inclusive, until its `validTo`, exclusive; a `null` start or end is
+open. A run reads the engine's clock, `clock(...)` on the builder or else `Clock.systemUTC()`, once when `run()` is
+called, and [skips](#skipped-rule) a rule outside its window at that instant, which `startedAt()` on the
+[run context](#run-context) and the [run result](#run-result) returns. See
 [The validity window and the engine's clock](engines-and-runs.md#the-validity-window-and-the-engines-clock).

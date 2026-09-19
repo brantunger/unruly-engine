@@ -59,9 +59,9 @@ guides before the first request reaches it.
 ## 🔏 Auditing
 
 - [ ] A decision you must explain is recorded with `runWithResult()`: `firedRules()`, `evaluations()`,
-      `ruleSetChecksum()` and the engine's [match policy](glossary.md#match-policy), because the checksum doesn't cover
-      the policy, and with the tags you gave the run, if any, because neither the checksum nor the result holds
-      them; see [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
+      `ruleSetChecksum()`, the run's `tags()` and `startedAt()`, which explain a `SKIPPED` rule, and the engine's
+      [match policy](glossary.md#match-policy), because the checksum doesn't cover the policy; see
+      [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
 
 ## 🧵 Threads and stopping
 

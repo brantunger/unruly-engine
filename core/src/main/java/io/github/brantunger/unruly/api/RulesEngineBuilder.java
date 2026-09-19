@@ -517,7 +517,12 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * Only the validity window uses the clock. A {@link #runTimeout(Duration) run timeout} is measured with the
      * system clock whatever clock is set here. Anything the clock throws fails the run unchanged, before any listener
-     * is told the run started.
+     * is told the run started; a {@code null} instant fails it the same way, with a {@link NullPointerException}.
+     * </p>
+     *
+     * <p>
+     * The instant a run read is its {@link RunContext#startedAt()}, which listeners get, and its
+     * {@link RunResult#startedAt()}, so an audit record can say what time judged the windows.
      * </p>
      *
      * @param clock The clock

@@ -56,7 +56,8 @@ class EngineApiShapeTest {
         assertTrue(runContext.isSealed(), "RunContext isn't sealed");
         assertEquals(List.of("io.github.brantunger.unruly.core.EngineRunContext"),
                 Arrays.stream(runContext.getPermittedSubclasses()).map(Class::getName).toList());
-        assertEquals(List.of("facts", "matchPolicy", "parent", "ruleSetChecksum", "runId"), names(runContext));
+        assertEquals(List.of("facts", "matchPolicy", "parent", "ruleSetChecksum", "runId", "startedAt", "tags"),
+                names(runContext));
     }
 
     @Test

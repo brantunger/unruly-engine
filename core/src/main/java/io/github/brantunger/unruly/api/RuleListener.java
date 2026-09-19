@@ -52,7 +52,9 @@ public interface RuleListener {
      * reaches no callback.
      * </p>
      *
-     * @param run The run, which identifies it and carries its facts and the checksum of the rules it uses
+     * @param run The run, which identifies it and carries its facts, the checksum of the rules it uses, and the
+     *            {@link RunContext#tags() tags} and {@link RunContext#startedAt() start time} that choose which of them
+     *            it uses
      */
     default void beforeRun(RunContext run) {
         // default empty implementation
@@ -62,8 +64,8 @@ public interface RuleListener {
      * Called when a run has finished, after the last {@code after*} callback.
      *
      * @param run    The run that {@link #beforeRun} opened
-     * @param result What the run did: the output object, the rules that fired, each rule's outcome, and the rules'
-     *               checksum
+     * @param result What the run did: the output object, the rules that fired, each rule's outcome, the rules'
+     *               checksum, and the run's {@link RunResult#tags() tags} and {@link RunResult#startedAt() start time}
      */
     default void afterRun(RunContext run, RunResult<?> result) {
         // default empty implementation

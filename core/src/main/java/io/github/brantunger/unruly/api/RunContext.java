@@ -2,7 +2,9 @@ package io.github.brantunger.unruly.api;
 
 import org.jspecify.annotations.Nullable;
 
+import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * One run of an engine, given to {@link RuleListener}'s run callbacks. It identifies the run, so a listener can
@@ -20,7 +22,8 @@ import java.util.Map;
  * <p>
  * <b>Identity:</b> a context equals only itself, so it can key a map from {@code beforeRun} to {@code afterRun} or
  * {@code onRunError}, however the facts change during the run and whatever another engine's runs look like. Its
- * {@code toString()} names the run, its parent, the match policy and the checksum, never the facts.
+ * {@code toString()} names the run, its parent, the match policy, the checksum, the tags and when the run started,
+ * never the facts.
  * </p>
  *
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md">Listeners &amp;
@@ -68,4 +71,25 @@ public sealed interface RunContext permits io.github.brantunger.unruly.core.Engi
      * @return The fact values by name. Writing to it throws {@link UnsupportedOperationException}.
      */
     Map<String, @Nullable Object> facts();
+
+    /**
+     * Returns the tags the run was given with {@link RunOptions#withTags(java.util.Collection)}: the run uses only the
+     * rules that carry at least one of them, and reports the others as
+     * {@link RuleEvaluation.Outcome#SKIPPED SKIPPED}. With {@link #startedAt()} and the {@link #ruleSetChecksum()}, it
+     * tells which rules the run uses, so an audit record can say why one was skipped.
+     *
+     * @return The run's {@link RunOptions#tags()}: in {@link String} order, unmodifiable, and empty if the run uses
+     *         every rule
+     */
+    Set<String> tags();
+
+    /**
+     * Returns when the run started, by the engine's {@link RulesEngineBuilder#clock(java.time.Clock) clock}: the one
+     * instant the run read from it, which judged every rule's {@link Rule#getValidFrom() validFrom} and
+     * {@link Rule#getValidTo() validTo}. A fixed clock gives every run the same instant. It isn't comparable to
+     * {@link RuleSetInfo#loadedAt()} or the run's deadline, which are measured with the system clock.
+     *
+     * @return The instant the run started at
+     */
+    Instant startedAt();
 }

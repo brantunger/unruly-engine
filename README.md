@@ -321,8 +321,8 @@ that isn't a reserved word such as `empty` or `in`, or a class name MVEL resolve
 
 The output supplier creates it once in a run, after a rule has matched, and must return a new object on every call.
 Actions see it as `output` and change it. `run()` returns it, or `null` exactly when no rule fired. `runWithResult()`
-also reports the rules that fired, what each rule's condition evaluated to, and a checksum of the rules the run used.
-See [The output object](docs/engines-and-runs.md#-the-output-object).
+also reports the rules that fired, what each rule's condition evaluated to, a checksum of the rules the run used,
+and the run's tags and start instant. See [The output object](docs/engines-and-runs.md#-the-output-object).
 
 ### Choosing an engine
 

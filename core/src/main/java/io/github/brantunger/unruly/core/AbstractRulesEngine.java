@@ -275,13 +275,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             Instant deadline = Cancellation.deadlineFrom(timeout);
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
-            RuleSelection selection = new RuleSelection(clock.instant(), tags);
+            // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
+            RuleSelection selection = new RuleSelection(
+                    Objects.requireNonNull(clock.instant(), "the engine's clock returned a null instant"), tags);
             Map<String, Object> values = factValues(facts);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
-            RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally);
+            RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
             while (copy == null) {
                 rules = currentRules();
-                copy = borrow(rules, listenerFacts, deadline, runId, parent, tally);
+                copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
             // outlive its rule lists, so a permit that isn't returned would lower its limit for good.
@@ -312,7 +314,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                      RunContext parent, RunTally tally, RuleSelection selection,
                                      RunBody<O> body) {
         List<RuleListener> snapshot = listenerSnapshot();
-        EngineRunContext run = newRun(runId, rules, listenerFacts, parent);
+        EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
         Instant outerDeadline = Cancellation.enter(deadline);
         fatalFailure.remove();
@@ -322,7 +324,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
                 checkFactNames(values, rules.factChecks());
-                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally, selection));
+                // Every run that returns passes here, a nested one too, so the result carries the run's tags and
+                // start before afterRun or the caller sees it.
+                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally, selection))
+                        .withRun(run);
             } catch (RuntimeException e) {
                 notifyRunError(snapshot, run, e, tally);
                 throw e;
@@ -372,8 +377,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /** Creates the context one run is reported to listeners with. */
-    private EngineRunContext newRun(long runId, RuleSet rules, Map<String, Object> listenerFacts, RunContext parent) {
-        return new EngineRunContext(runId, parent, matchPolicy(), rules.checksum(), listenerFacts);
+    private EngineRunContext newRun(long runId, RuleSet rules, Map<String, Object> listenerFacts, RunContext parent,
+                                    RuleSelection selection) {
+        return new EngineRunContext(runId, parent, matchPolicy(), rules.checksum(), listenerFacts, selection.tags(),
+                selection.startedAt());
     }
 
     /**
@@ -454,7 +461,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                limit
      */
     private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline, long runId,
-                                RunContext parent, RunTally tally) {
+                                RunContext parent, RunTally tally, RuleSelection selection) {
         try {
             return rules.borrow(deadline);
         } catch (InterruptedException e) {
@@ -464,11 +471,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     ? "to make a compiled copy of the rules: every build slot was in use"
                     : "for a compiled copy of the rules: all " + rules.limit() + " were in use";
             throw stoppedWaiting(rules, listenerFacts, "run() was interrupted while waiting " + waiting, e, deadline,
-                    null, runId, parent, tally);
+                    null, runId, parent, tally, selection);
         } catch (TimeoutException e) {
             throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
                     + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e,
-                    deadline, deadline, runId, parent, tally);
+                    deadline, deadline, runId, parent, tally, selection);
         }
     }
 
@@ -486,18 +493,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param runId         The run's number
      * @param parent        The run this one was started from, or {@code null}
      * @param tally         The run's tally, which records the stop for the run's event
+     * @param selection     The run's tags and start, which its context carries
      * @return The exception to throw
      */
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
                                                   Exception cause, Instant deadline, Instant passed, long runId,
-                                                  RunContext parent, RunTally tally) {
+                                                  RunContext parent, RunTally tally, RuleSelection selection) {
         log.warn(msg);
         RuleExecutionException failure = ReportedFailure.stop(msg, cause, passed);
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
         // from any other callback of a run that stopped.
         List<RuleListener> snapshot = listenerSnapshot();
-        EngineRunContext run = newRun(runId, rules, listenerFacts, parent);
+        EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
         Instant outerDeadline = Cancellation.enter(deadline);
         try {
