@@ -39,9 +39,9 @@ jobs:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
-          # Swap for a fine-grained PAT (contents+PRs write) if you make the CI checks
-          # required on main — PRs opened by GITHUB_TOKEN do not trigger `pull_request`
-          # workflows, so the release PR would otherwise sit with no checks and be unmergeable.
+          # A release PR opened with GITHUB_TOKEN gets a CI run that waits for a maintainer's
+          # approval, and no PR title check (pull_request_target) at all. Swap for a fine-grained
+          # PAT (contents+PRs write) if the title check becomes required on main.
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

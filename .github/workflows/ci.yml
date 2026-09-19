@@ -15,7 +15,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Says whether a pull request changes anything besides documentation: Markdown files outside src/, or files under
+  # docs/. The build and native-image jobs skip a documentation-only pull request; docs-and-hygiene checks it. A push
+  # always runs everything, so main keeps its caches and coverage.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      # A pull request's run checks out the merge of the pull request into its base branch, whose first parent is
+      # the base branch, so HEAD^1..HEAD is what the pull request changes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      # Documentation only: every changed path is under docs/ or ends in .md, and none is under a src/ directory.
+      # Anything else, or an empty diff, counts as code. --no-renames lists a moved file's old path too, so moving a
+      # file into docs/ still counts as code.
+      - name: Find what the pull request changes
+        id: diff
+        run: |
+          changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          if [ -n "$changed" ] && ! grep -qvE '^docs/|\.md$' <<< "$changed" && ! grep -qE '(^|/)src/' <<< "$changed"; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    # Skips only when the changes job said the pull request is documentation only: on a push the changes job is
+    # skipped, and when it fails, its output is empty, so the build runs.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     # id-token lets the Codecov step authenticate with OIDC instead of a stored token.
@@ -111,6 +144,8 @@ jobs:
   # reflection metadata the mvel jar ships and the application's own, and without Flight Recorder support, which is
   # native-image's default. MVEL generates classes at run time unless its JIT is off, which a native image can't do.
   native-image:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -142,6 +177,61 @@ jobs:
       # The application checks its own results and exits with 1 if one is wrong.
       - name: Run it
         run: native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
+
+  # Checks documentation and repository hygiene with Python and git, without Gradle. Each step only warns until the
+  # checks have run on a week of pull requests (continue-on-error); then they block. See
+  # docs/contributing/build-and-gates.md for running them locally.
+  docs-and-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - name: Links, anchors and table rows
+        continue-on-error: true
+        run: python3 config/docs/check_docs.py
+
+      # Every text file is stored with LF (.gitattributes); a file committed with CRLF, or with both, shows here.
+      - name: Line endings
+        continue-on-error: true
+        run: |
+          bad=$(git ls-files --eol | awk '$1 == "i/crlf" || $1 == "i/mixed"')
+          if [ -n "$bad" ]; then
+            echo "::error::These files are stored with CRLF line endings; run 'git add --renormalize .' and commit:"
+            echo "$bad"
+            exit 1
+          fi
+
+      # Only the pages a pull request changes: pages written before docs/STYLE.md still have findings.
+      # CHANGELOG.md is written by release-please.
+      - name: Style of the changed pages
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          pages=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- '*.md' ':!CHANGELOG.md')
+          if [ -n "$pages" ]; then
+            python3 config/docs/check_style.py $pages
+          fi
+
+  # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the
+  # build matrix, and a skipped matrix job doesn't report its per-OS checks. A skipped job counts as passed. The
+  # changes job isn't judged: when it fails, the build and native-image run anyway, and they decide.
+  ci-result:
+    if: ${{ !cancelled() }}
+    needs: [ changes, build, native-image, docs-and-hygiene ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if a job failed
+        if: >-
+          contains(fromJSON('["failure", "cancelled"]'), needs.build.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.native-image.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.docs-and-hygiene.result)
+        run: |
+          echo "::error::build: ${{ needs.build.result }}, native-image: ${{ needs.native-image.result }}, docs-and-hygiene: ${{ needs.docs-and-hygiene.result }}"
+          exit 1
 
   # Submits the resolved dependency graph so Dependabot alerts cover transitives,
   # not just the coordinates declared in build.gradle.

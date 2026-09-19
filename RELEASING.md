@@ -40,7 +40,9 @@ flowchart LR
 2. [release-please](https://github.com/googleapis/release-please) opens a PR titled
    **chore(main): release X.Y.Z**. It bumps `gradle.properties`, the README install snippets,
    `.release-please-manifest.json` and `CHANGELOG.md`, and updates the PR as further commits land.
-3. Review the proposed version and changelog, then **squash-merge the release PR**.
+3. Review the proposed version and changelog. The release PR is opened with `GITHUB_TOKEN`, so its CI run waits for
+   a maintainer's approval (`action_required`), and the PR title check doesn't run on it at all. Approve the waiting
+   run in the Actions tab, then **squash-merge the release PR** once CI is green.
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD, the
    coverage gate and the [API compatibility check](docs/contributing/api-compatibility.md) against the previous
