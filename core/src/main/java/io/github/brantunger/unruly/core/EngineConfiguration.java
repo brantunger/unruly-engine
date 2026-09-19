@@ -22,6 +22,7 @@ import java.util.Objects;
  * @param listeners       The listeners, in the order they're called
  * @param copyLimit       How many compiled copies of the rules runs may hold at once, and which runs that
  *                        applies to
+ * @param copiesAtLoad    How many copies of the rules {@code load()} makes, zero or more
  * @param runTimeout      How long a run may take, or {@code null} if runs have no deadline
  * @param clock           The clock a run reads when it starts, to decide which rules are within their validity window
  * @param outputType      The output type languages are told about
@@ -32,7 +33,8 @@ import java.util.Objects;
  * @param <O>             The type of the output object
  */
 public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
-                                     List<RuleListener> listeners, CopyLimit copyLimit, Duration runTimeout, Clock clock,
+                                     List<RuleListener> listeners, CopyLimit copyLimit, int copiesAtLoad,
+                                     Duration runTimeout, Clock clock,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
                                      Map<String, Map<String, String>> options,
                                      Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {

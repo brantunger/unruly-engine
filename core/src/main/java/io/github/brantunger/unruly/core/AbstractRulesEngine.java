@@ -89,6 +89,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final CopyLimit copyLimit;
     // The permits for copyLimit, which every rule list this engine loads shares, so a reload can't raise the limit.
     private final CopyPermits copyPermits;
+    // How many copies of the rules load() makes, before runs can see them.
+    private final int copiesAtLoad;
     // How long a run may take, or null if runs have no deadline. A run() call can pass one of its own.
     private final Duration runTimeout;
     // The clock a run reads when it starts, to decide which rules are within their validity window.
@@ -151,6 +153,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.listeners = configuration.listeners();
         this.copyLimit = configuration.copyLimit();
         this.copyPermits = new CopyPermits(copyLimit.maxCopies());
+        this.copiesAtLoad = configuration.copiesAtLoad();
         this.runTimeout = configuration.runTimeout();
         this.clock = configuration.clock();
         this.outputType = configuration.outputType();
@@ -549,8 +552,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * <p>
+     * An engine built with {@link io.github.brantunger.unruly.api.RulesEngineBuilder#copiesAtLoad(int)
+     * copiesAtLoad(n)} then makes {@code n} copies of the rules, on this thread, before swapping them in, so runs go on
+     * using the rules loaded before until it returns. A language that fails to create or warm up a session for one
+     * fails the load, and the rules loaded before stay loaded.
+     * </p>
+     *
+     * <p>
      * The rule list it replaces is closed once no run is using it: its languages' sessions and compilers are closed. A
-     * rule list that fails to load closes the compilers it created.
+     * rule list that fails to load closes the compilers it created, and the sessions of any copies it made.
      * </p>
      *
      * @param ruleList The List of {@link Rule} objects to compile.
@@ -580,6 +590,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             compilation.closeCompilers();
             throw e;
         }
+        prepareCopies(loaded);
         RuleSet replaced;
         synchronized (lifecycle) {
             if (closed) {
@@ -591,6 +602,29 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         if (replaced != null) {
             replaced.retire();
+        }
+    }
+
+    /**
+     * Makes the copies of the rules the engine was built to make at load. From here on the rule set owns the
+     * compilers, so a failure retires it, which closes the copies made so far and then the compilers, once.
+     *
+     * @param loaded The rule set, which no run can see yet
+     * @throws RuleCompilationException if a language can't create or warm up a session: already logged, as
+     *                                  {@code load()} logs every failure
+     */
+    // The cause is what the language threw, as when a language can't create its compiler: the ReportedFailure around
+    // it is the engine's own wrapper for a run, and was logged when it was made.
+    @SuppressWarnings("PMD.PreserveStackTrace")
+    private void prepareCopies(RuleSet loaded) {
+        try {
+            loaded.prepareCopies(copiesAtLoad);
+        } catch (ReportedFailure e) {
+            loaded.retire();
+            throw new RuleCompilationException(e.getMessage(), e.getCause());
+        } catch (RuntimeException | Error e) {
+            loaded.retire();
+            throw e;
         }
     }
 

@@ -50,12 +50,15 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@link RuleCompilationException#failures() failures()} lists them: each broken rule, a language that
      *         can't create its compiler (once, in place of the first rule that needed it; the rules written in it
      *         aren't compiled and get no failure of their own), and each declared fact name the compilers that were
-     *         created reject.
+     *         created reject. Once the rules compile, an engine built with
+     *         {@link RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)} makes its copies of them, and a language
+     *         that throws while creating or warming up a session for one, or returns {@code null} instead of a
+     *         session, fails the load with this exception, naming the language, on its own.
      * @throws IllegalStateException if the engine is closed
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
-     *                               compiling, also as the cause of another exception, is logged and then rethrown
-     *                               unchanged
+     *                               compiling or making copies, also as the cause of another exception, is logged and
+     *                               then rethrown unchanged
      */
     void load(List<Rule> ruleList);
 

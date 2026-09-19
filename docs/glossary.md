@@ -62,7 +62,8 @@ Afterwards `run()`, `runWithResult()`, `load()` and `rules()` throw `IllegalStat
 
 The per-run state of a loaded rule list: one [session](#session) for each language its rules use. A run borrows a copy
 no other run is using, or makes a new one, and gives it back when it ends; the engine keeps copies until the next
-`load()` or `close()`. See [Compiled copies](compiled-copies.md).
+`load()` or `close()`. An engine can also make them when the rules load, as [copies at load](#copies-at-load). See
+[Compiled copies](compiled-copies.md).
 
 ### Compiler
 
@@ -84,12 +85,20 @@ rejects that at `load()`, and the engine rejects any write to the facts at run t
 promises every language must keep. The same artifact has `LanguageTestContexts` for testing a compiler without an
 engine. See [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit).
 
+### Copies at load
+
+The [compiled copies](#compiled-copy) `load()` makes itself, before it swaps the new rules in, on an engine built with
+`copiesAtLoad(n)`; by default it makes none. Each copy's sessions are warmed up with `ExpressionCompiler.warmUp`, and
+runs borrow the copies ready instead of making them. See
+[Making copies at load](compiled-copies.md#making-copies-at-load).
+
 ### Copy limit
 
 The most [compiled copies](#compiled-copy) an engine keeps, and so the most runs that make progress at once. By default
 an engine limits runs on virtual threads only, to one copy for every two processors and at least one; `maxCopies(n)`
 limits every thread and `unlimitedCopies()` removes the limit. The limit belongs to the engine, so every rule list it
-loads shares it and a reload never raises it. See [Limiting the copies](compiled-copies.md#-limiting-the-copies).
+loads shares it and a reload never raises it. [Copies made at load](#copies-at-load) are kept too, and under the default
+limit can be more than it. See [Limiting the copies](compiled-copies.md#-limiting-the-copies).
 
 ### Deadline
 

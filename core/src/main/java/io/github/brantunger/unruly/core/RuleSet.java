@@ -33,7 +33,8 @@ import java.util.function.LongSupplier;
  * name to a different kind of object, so its session compiles its own expressions. A copy is therefore only used by
  * one run at a time: a run borrows an idle copy, or makes a new one when every copy is in use, and gives it back when
  * it finishes. Without a limit, the number of copies grows to the largest number of runs that have used the rule list
- * at once.
+ * at once. {@link #prepareCopies(int)} makes idle copies before the rule set is published, so the first runs find
+ * them ready.
  * </p>
  *
  * <p>
@@ -279,6 +280,62 @@ final class RuleSet {
             if (!lent) {
                 leave();
             }
+        }
+    }
+
+    /**
+     * Makes {@code count} idle copies of the rules, each session prepared with
+     * {@link ExpressionCompiler#warmUp(Session)}, for runs to borrow. Called by {@code load()} on its own thread,
+     * before any run can see the rule set. If the first copy shows that no language keeps state between runs, it
+     * becomes the sessions every run shares, and no more are made.
+     *
+     * @param count How many copies to make; zero makes none
+     * @throws RuleExecutionException if a language throws or returns {@code null} from {@code newSession()}, or
+     *                                throws from {@code warmUp()}. It's logged at ERROR, and the copies already made
+     *                                stay idle for {@link #retire()} to close. A fatal {@link Error} is rethrown
+     *                                unchanged.
+     */
+    void prepareCopies(int count) {
+        for (int made = 0; made < count; made++) {
+            Map<String, Session> sessions = newSessions();
+            if (statelessSessions(sessions)) {
+                sharedSessions = sessions;
+                return;
+            }
+            boolean warmed = false;
+            try {
+                warmUp(sessions);
+                warmed = true;
+            } finally {
+                if (!warmed) {
+                    Closing.sessions(sessions);
+                }
+            }
+            idle.add(sessions);
+        }
+    }
+
+    // Session.none() is one shared instance with nothing to prepare, and identity is the question, as in
+    // statelessSessions().
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private void warmUp(Map<String, Session> sessions) {
+        for (Map.Entry<String, Session> session : sessions.entrySet()) {
+            if (session.getValue() != Session.none()) {
+                warmUp(session.getKey(), compilers.get(session.getKey()), session.getValue());
+            }
+        }
+    }
+
+    private static void warmUp(String language, ExpressionCompiler compiler, Session session) {
+        try {
+            compiler.warmUp(session);
+        } catch (Exception | Error e) {
+            Failures.keepInterruptStatus(e);
+            String msg = "The '" + Failures.quote(language) + "' expression language failed to warm up a session: "
+                    + Failures.describe(e);
+            log.error(msg);
+            Failures.throwIfPresent(Failures.fatalError(e));
+            throw new ReportedFailure(msg, e);
         }
     }
 

@@ -307,6 +307,10 @@ A copy is built lazily, one expression at a time:
   isn't wasted.
 - As it runs, MVEL generates accessor classes for that session alone.
 
+A copy an engine makes when the rules load, with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load), is
+different: `load()` compiles every condition and action into it, reached or not, and the first such copy takes the forms
+`load()` compiled. Its accessor classes are still generated as it runs.
+
 So an [extra copy](../glossary.md#extra-copy) — one a run makes because no copy is free, rather than one it borrows —
 pays that price and then throws it away when the run ends. A rule that keeps making them, by starting a run of the
 same engine on another thread under a full [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and
@@ -337,7 +341,8 @@ So on JDK 21 to 23:
 
 - use JDK 24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491). A
   virtual thread still keeps its carrier while the JVM looks up a class, which MVEL does whenever it compiles an
-  expression, including each time a run makes a new compiled copy;
+  expression, including each time a run makes a new compiled copy (see
+  [Making copies at load](../compiled-copies.md#making-copies-at-load));
 - otherwise run MVEL rules on platform threads, or keep the copies of all your engines together below
   `jdk.virtualThreadScheduler.parallelism`, which is the number of processors unless you set it.
 

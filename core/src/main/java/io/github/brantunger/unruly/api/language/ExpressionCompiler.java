@@ -6,8 +6,10 @@ package io.github.brantunger.unruly.api.language;
  *
  * <p>
  * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} calls the compile methods on one
- * thread. {@link #checkFactName(String)} and {@link #newSession()} are called by runs of the rule list, possibly on
- * many threads at once, so they must be thread-safe.
+ * thread, and then, for an engine built with
+ * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)}, {@link #newSession()}
+ * and {@link #warmUp(Session)} on the same thread. {@link #checkFactName(String)} and {@link #newSession()} are also
+ * called by runs of the rule list, possibly on many threads at once, so they must be thread-safe.
  * </p>
  *
  * <p>
@@ -64,6 +66,29 @@ public interface ExpressionCompiler extends AutoCloseable {
      *         session with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
      */
     Session newSession();
+
+    /**
+     * Prepares a new session before any run uses it, such as by compiling this compiler's expressions into it, so
+     * that the runs that use it first don't pay for that. By default, does nothing: a session prepares itself the
+     * first time each expression runs, whatever that costs.
+     *
+     * <p>
+     * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} calls it on its own thread, once for
+     * each session it creates with {@link #newSession()} for a copy made when the rules load
+     * ({@link io.github.brantunger.unruly.api.RulesEngineBuilder#copiesAtLoad(int)}), after compiling every
+     * expression and before any run uses the session. It isn't called for {@link Session#none()}, or for a session
+     * created during a run, which prepares itself as it's used.
+     * </p>
+     *
+     * @param session A session this compiler's {@link #newSession()} returned, which no run has used
+     * @throws Exception if the session can't be prepared. It fails {@code load()} with a
+     *                   {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} naming the
+     *                   language, and the rules loaded before stay loaded, except a fatal {@link Error}, which is
+     *                   rethrown unchanged.
+     */
+    default void warmUp(Session session) throws Exception {
+        // A session prepares itself as it's used.
+    }
 
     /**
      * Rejects the name of a fact that rules written in this language couldn't refer to, such as a keyword of the
