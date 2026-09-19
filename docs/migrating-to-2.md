@@ -594,4 +594,5 @@ Features 1.x didn't have. A caller needs none of them to upgrade. A class that i
 | The run callbacks `beforeRun`, `afterRun` and `onRunError` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
 | `uniqueMatch(...)` | [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none) |
 | `unlimitedCopies()` | [Compiled copies are limited on virtual threads](#-compiled-copies-are-limited-on-virtual-threads) |
+| Flight Recorder events for runs and rules | [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events) |
 | `close()` | [Languages keep run state in sessions, and engines can be closed](#-languages-keep-run-state-in-sessions-and-engines-can-be-closed) |

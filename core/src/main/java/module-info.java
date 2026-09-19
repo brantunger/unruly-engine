@@ -10,6 +10,8 @@
 module io.github.brantunger.unruly.core {
     requires transitive org.jspecify;
     requires org.slf4j;
+    // The engine's Flight Recorder events. A jlink image of an application must include jdk.jfr.
+    requires jdk.jfr;
 
     exports io.github.brantunger.unruly.api;
     exports io.github.brantunger.unruly.api.exception;

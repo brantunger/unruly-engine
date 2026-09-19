@@ -50,6 +50,9 @@ guides before the first request reaches it.
 - [ ] An SLF4J provider is on the class path, and you've decided whether the `io.github.brantunger.unruly` loggers
       stay on, because their messages and DEBUG lines can contain fact values; see
       [Logging setup](listeners-and-logging.md#-logging-setup).
+- [ ] Slow runs show up in a Flight Recorder recording: the run event is on by default with a 10 ms threshold, and
+      a jlink image that puts the engine on the class path adds `jdk.jfr`; see
+      [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events).
 
 ## 🔏 Auditing
 

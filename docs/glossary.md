@@ -150,6 +150,12 @@ that rule's failure. See [Exceptions by method](error-handling.md#-exceptions-by
 An engine built with `RulesEngineBuilder.firstMatch(...)`, which evaluates conditions in order and fires only the first
 match. See [match policy](#match-policy).
 
+### Flight Recorder event
+
+What the engine records for JDK Flight Recorder: one `io.github.brantunger.unruly.Run` event for each `run()` call,
+on by default for runs over 10 ms, and one `io.github.brantunger.unruly.Rule` event for each condition and action,
+off by default. See [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events).
+
 ### Issue
 
 An `InvalidExpressionException.Issue`: one problem a language found in an expression, with a severity, a line and a

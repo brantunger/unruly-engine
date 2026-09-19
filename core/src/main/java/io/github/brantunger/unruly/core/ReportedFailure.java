@@ -49,6 +49,17 @@ final class ReportedFailure extends RuleExecutionException {
     }
 
     /**
+     * Tells whether an exception is a run that stopped, because it was interrupted or passed its deadline, rather
+     * than a failure.
+     *
+     * @param thrown What a run or a rule threw
+     * @return {@code true} for a stop reported by the engine
+     */
+    static boolean isStop(Throwable thrown) {
+        return thrown instanceof ReportedFailure failure && failure.stopped;
+    }
+
+    /**
      * Tells whether this is a run that stopped for the same reason: interrupted, or past the same deadline.
      *
      * @param passed The deadline another run passed, or {@code null} for an interrupt

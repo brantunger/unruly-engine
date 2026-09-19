@@ -98,6 +98,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final boolean allFactsDeclared;
     // Each language's options, by language name.
     private final Map<String, Map<String, String>> options;
+    // Numbers the engines of this JVM, so a Flight Recorder event tells one engine's runs from another's.
+    private static final AtomicLong ENGINE_IDS = new AtomicLong();
+    private final long engineId = ENGINE_IDS.incrementAndGet();
     // Numbers this engine's runs, so a listener can tell them apart.
     private final AtomicLong runIds = new AtomicLong();
     // The run this thread is inside, so a run an action or a listener starts knows the run around it. Removed when
@@ -250,30 +253,54 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     RunResult<O> runInScope(FactStore<?> facts, Duration timeout, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
-        Instant deadline = Cancellation.deadlineFrom(timeout);
-        Map<String, Object> values = factValues(facts);
-        Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
-        RuleSet rules;
-        RuleSet.Copy copy;
-        do {
-            rules = currentRules();
-            copy = borrow(rules, listenerFacts, deadline);
-        } while (copy == null);
-        // The copy is given back however the run ends, even when setting it up fails: the engine's permits outlive
-        // its rule lists, so a permit that isn't returned would lower its limit for good.
+        // Misuse, before the run is numbered or recorded: it reaches no listener and no recording either.
+        RuleSet rules = currentRules();
+        long runId = runIds.incrementAndGet();
+        RunContext parent = currentRun.get();
+        long parentRunId = parent == null ? 0 : parent.runId();
+        // The event spans the whole call: reading the facts, and waiting for a copy, which counts towards the
+        // deadline too.
+        RunEvent event = RunEvent.startIfEnabled();
+        RunTally tally = new RunTally();
+        String outcome = RunEvent.FAILED;
         try {
-            return runWithCopy(rules, copy, values, listenerFacts, deadline, body);
+            Instant deadline = Cancellation.deadlineFrom(timeout);
+            Map<String, Object> values = factValues(facts);
+            Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
+            RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally);
+            while (copy == null) {
+                rules = currentRules();
+                copy = borrow(rules, listenerFacts, deadline, runId, parent, tally);
+            }
+            // The copy is given back however the run ends, even when setting it up fails: the engine's permits
+            // outlive its rule lists, so a permit that isn't returned would lower its limit for good.
+            try {
+                RunResult<O> result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally,
+                        body);
+                outcome = RunEvent.COMPLETED;
+                return result;
+            } finally {
+                rules.release(copy);
+            }
+        } catch (RuntimeException e) {
+            outcome = ReportedFailure.isStop(e) ? RunEvent.STOPPED : RunEvent.FAILED;
+            throw e;
+        } catch (Error e) {
+            outcome = tally.hasStopped() ? RunEvent.STOPPED : RunEvent.FAILED;
+            throw e;
         } finally {
-            rules.release(copy);
+            if (event != null) {
+                event.commit(engineId, runId, parentRunId, matchPolicy(), tally, rules.checksum(), outcome);
+            }
         }
     }
 
     /** Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. */
     private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, Map<String, Object> values,
-                                     Map<String, Object> listenerFacts, Instant deadline, RunBody<O> body) {
+                                     Map<String, Object> listenerFacts, Instant deadline, long runId,
+                                     RunContext parent, RunTally tally, RunBody<O> body) {
         List<RuleListener> snapshot = listenerSnapshot();
-        RunContext parent = currentRun.get();
-        EngineRunContext run = newRun(rules, listenerFacts, parent);
+        EngineRunContext run = newRun(runId, rules, listenerFacts, parent);
         currentRun.set(run);
         Instant outerDeadline = Cancellation.enter(deadline);
         fatalFailure.remove();
@@ -283,14 +310,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
                 checkFactNames(values, rules.factChecks());
-                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline));
+                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally));
             } catch (RuntimeException e) {
-                notifyRunError(snapshot, run, e);
+                notifyRunError(snapshot, run, e, tally);
                 throw e;
             } catch (Error e) {
                 // run() rethrows the error itself; listeners see what it failed with.
-                RuleExecutionException failure = runFailure(e);
-                notifyRunError(snapshot, run, failure);
+                notifyRunError(snapshot, run, runFailure(e), tally);
                 throw e;
             }
             notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
@@ -321,14 +347,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 : new RuleExecutionException("The run failed with " + Failures.describeWithClass(error), error);
     }
 
-    /** Closes a run that failed with {@code onRunError} on every listener. */
-    private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error) {
+    /**
+     * Closes a run that failed with {@code onRunError} on every listener. A stop is recorded on the tally first, so
+     * a fatal error a listener throws in its place still leaves the run's event saying the run stopped, as the
+     * listeners were told.
+     */
+    private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error, RunTally tally) {
+        if (ReportedFailure.isStop(error)) {
+            tally.markStopped();
+        }
         notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error));
     }
 
     /** Creates the context one run is reported to listeners with. */
-    private EngineRunContext newRun(RuleSet rules, Map<String, Object> listenerFacts, RunContext parent) {
-        return new EngineRunContext(runIds.incrementAndGet(), parent, matchPolicy(), rules.checksum(), listenerFacts);
+    private EngineRunContext newRun(long runId, RuleSet rules, Map<String, Object> listenerFacts, RunContext parent) {
+        return new EngineRunContext(runId, parent, matchPolicy(), rules.checksum(), listenerFacts);
     }
 
     /**
@@ -406,18 +439,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
      * @throws RuleExecutionException if the thread is interrupted while it waits for a copy
      */
-    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline) {
+    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline, long runId,
+                                RunContext parent, RunTally tally) {
         try {
             return rules.borrow(deadline);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw stoppedWaiting(rules, listenerFacts,
                     "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
-                            + " were in use", e, deadline, null);
+                            + " were in use", e, deadline, null, runId, parent, tally);
         } catch (TimeoutException e) {
             throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
                     + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e,
-                    deadline, deadline);
+                    deadline, deadline, runId, parent, tally);
         }
     }
 
@@ -432,29 +466,31 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param cause         An {@link InterruptedException} or a {@link TimeoutException}
      * @param deadline      When the run had to stop, or {@code null} if it had no deadline
      * @param passed        The deadline the run passed, or {@code null} if it was interrupted instead
+     * @param runId         The run's number
+     * @param parent        The run this one was started from, or {@code null}
+     * @param tally         The run's tally, which records the stop for the run's event
      * @return The exception to throw
      */
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
-                                                  Exception cause, Instant deadline, Instant passed) {
+                                                  Exception cause, Instant deadline, Instant passed, long runId,
+                                                  RunContext parent, RunTally tally) {
         log.warn(msg);
         RuleExecutionException failure = ReportedFailure.stop(msg, cause, passed);
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
         // from any other callback of a run that stopped.
         List<RuleListener> snapshot = listenerSnapshot();
-        RunContext parent = currentRun.get();
-        EngineRunContext run = newRun(rules, listenerFacts, parent);
+        EngineRunContext run = newRun(runId, rules, listenerFacts, parent);
         currentRun.set(run);
         Instant outerDeadline = Cancellation.enter(deadline);
         try {
             try {
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
             } catch (Error e) {
-                RuleExecutionException fatal = runFailure(e);
-                notifyRunError(snapshot, run, fatal);
+                notifyRunError(snapshot, run, runFailure(e), tally);
                 throw e;
             }
-            notifyRunError(snapshot, run, failure);
+            notifyRunError(snapshot, run, failure, tally);
             return failure;
         } finally {
             Cancellation.leave(outerDeadline);
@@ -1128,6 +1164,27 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+        RuleEvent event = RuleEvent.startIfEnabled();
+        String outcome = RuleEvent.FAILED;
+        facts.tally().countEvaluated();
+        try {
+            boolean result = evaluateCondition(rule, copy, facts);
+            outcome = result ? RuleEvent.MATCHED : RuleEvent.NOT_MATCHED;
+            return result;
+        } catch (RuleExecutionException e) {
+            outcome = RuleEvent.resultOf(e);
+            throw e;
+        } catch (Error e) {
+            outcome = fatalOutcome();
+            throw e;
+        } finally {
+            if (event != null) {
+                event.commit(engineId, facts.runId(), rule, ExpressionKind.CONDITION, outcome);
+            }
+        }
+    }
+
+    private boolean evaluateCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
         // The run's evaluation context has its own read-only view, whose messages are about conditions, so a
         // listener that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = facts.forListeners();
@@ -1163,6 +1220,38 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
+        RuleEvent event = RuleEvent.startIfEnabled();
+        String outcome = RuleEvent.FAILED;
+        try {
+            O output = executeAction(rule, copy, outputResult, facts);
+            facts.tally().countFired();
+            outcome = RuleEvent.FIRED;
+            return output;
+        } catch (RuleExecutionException e) {
+            outcome = RuleEvent.resultOf(e);
+            throw e;
+        } catch (Error e) {
+            outcome = fatalOutcome();
+            throw e;
+        } finally {
+            if (event != null) {
+                event.commit(engineId, facts.runId(), rule, ExpressionKind.ACTION, outcome);
+            }
+        }
+    }
+
+    /**
+     * Classifies a rule a fatal {@link Error} leaves: the run stopped in it when a listener's {@code onError} threw
+     * the error while closing a stop, which {@link #closedWithStop} recorded for {@code onRunError}; otherwise the
+     * rule failed.
+     *
+     * @return {@link RuleEvent#STOPPED} or {@link RuleEvent#FAILED}
+     */
+    private String fatalOutcome() {
+        return ReportedFailure.isStop(fatalFailure.get()) ? RuleEvent.STOPPED : RuleEvent.FAILED;
+    }
+
+    private O executeAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
         List<RuleListener> snapshot = listenerSnapshot();
         notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
