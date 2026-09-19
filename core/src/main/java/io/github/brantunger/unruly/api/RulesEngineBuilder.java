@@ -28,7 +28,7 @@ import java.util.function.Supplier;
  * the most runs it has had in progress at once. A thread pool bounds that; virtual threads don't, so by default an
  * engine limits <b>runs on virtual threads</b> to one copy for every two processors. {@link #maxCopies(int)} sets a
  * limit for every kind of thread, and {@link #unlimitedCopies()} turns it off, leaving only <a href=
- * "https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#waiting-for-a-build-slot">build
+ * "https://github.com/brantunger/unruly-engine/blob/main/docs/virtual-threads.md#-waiting-for-a-build-slot">build
  * slots</a> to pace new copies on virtual threads. See
  * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md">Compiled copies</a>.
  * </p>
@@ -432,7 +432,7 @@ public final class RulesEngineBuilder<O> {
      *
      * @return This builder
      * @see <a href=
-     * "https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#waiting-for-a-build-slot">Waiting
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/virtual-threads.md#-waiting-for-a-build-slot">Waiting
      * for a build slot</a>
      */
     public RulesEngineBuilder<O> unlimitedCopies() {
@@ -459,8 +459,9 @@ public final class RulesEngineBuilder<O> {
      * It's for runs on virtual threads on JDK 24 and later, where a run that makes a copy can keep its carrier while
      * MVEL loads the classes it compiles. It doesn't stop MVEL generating accessor classes during a copy's first
      * runs, and a copy made during a run, such as one for a run nested in another, is made as before. See
-     * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#-virtual-threads">
-     * Virtual threads</a>.
+     * <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/virtual-threads.md#-class-loading-pins-carriers">
+     * Class loading pins carriers</a>.
      * </p>
      *
      * @param count How many copies to make; zero, the default, makes none. With {@link #maxCopies(int)}, it can't

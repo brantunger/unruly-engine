@@ -93,7 +93,8 @@ reports it as the cause of a `RuleCompilationException`.
 | | `NullPointerException` | The timeout is `null` |
 | `RunOptions.withTags()` | `IllegalArgumentException` | The collection is empty, or a tag in it is `null` or blank |
 | | `NullPointerException` | The collection itself is `null` |
-| `runWithResult(facts, options)` | | As `runWithResult(facts)` |
+| `runWithResult(facts, options)` | `NullPointerException` | `options` is `null`: `options must not be null`, before any listener hears of the run |
+| | | Everything else as `runWithResult(facts)` |
 | `validate(rules)` | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null`. A `null` entry is returned as a problem, not thrown |
 | | `Error` (rethrown) | As `load(rules)`. Everything else `load()` would throw is returned as a `RuleCompilationException` in the list |

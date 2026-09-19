@@ -61,8 +61,8 @@ and an exception's message and cause, so a change there fails the tests rather t
 ## 🆕 Adding a method to a public interface
 
 Users implement several public interfaces: `RulesEngine` (for example to decorate an engine), `RuleListener`,
-`FactStore`, `FactReference`, and a language's `ExpressionLanguage`, `ExpressionCompiler`, `CompiledCondition`,
-`CompiledAction` and `Session`. Each interface's Javadoc says who implements it.
+`FactStore`, `FactReference`, `OutputWriter`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,
+`CompiledCondition`, `CompiledAction` and `Session`. Each interface's Javadoc says who implements it.
 
 Within a major version, a method added to any of them is a `default` method, and the check fails on an abstract
 one. When no generic implementation makes sense, the default throws `UnsupportedOperationException`.

@@ -345,7 +345,8 @@ The full comparison, including what happens when an action changes a fact, is in
 - **Write your first rules:** [Writing rules](docs/writing-rules.md), then [Facts](docs/facts.md).
 - **Take rules to production:** [Before you go to production](docs/production.md), then
   [Engines and runs](docs/engines-and-runs.md), [Error handling](docs/error-handling.md),
-  [Thread safety](docs/thread-safety.md) and [Compiled copies](docs/compiled-copies.md).
+  [Thread safety](docs/thread-safety.md), [Compiled copies](docs/compiled-copies.md) and
+  [Virtual threads](docs/virtual-threads.md).
 - **Use or write another expression language:** [Expression languages](docs/languages/README.md), then
   [Writing a language](docs/languages/custom.md).
 - **Upgrade from 1.x:** [Migrating to 2.0](docs/migrating-to-2.md).

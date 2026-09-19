@@ -339,7 +339,7 @@ processors) makes that less likely, but doesn't prevent it:
 - a run that waited five seconds without a copy coming back takes an extra copy on its own thread;
 - with one processor, the limit of one copy equals the one carrier;
 - `unlimitedCopies()`, or a `maxCopies(...)` at or above the number of carriers, leaves no carrier free;
-  [build slots](../compiled-copies.md#waiting-for-a-build-slot) don't change that.
+  [build slots](../virtual-threads.md#-waiting-for-a-build-slot) don't change that.
 
 So on JDK 21 to 23:
 
@@ -350,7 +350,8 @@ So on JDK 21 to 23:
 - otherwise run MVEL rules on platform threads, or keep the copies of all your engines together below
   `jdk.virtualThreadScheduler.parallelism`, which is the number of processors unless you set it.
 
-See [Limiting the copies](../compiled-copies.md#-limiting-the-copies).
+See [Limiting the copies](../compiled-copies.md#-limiting-the-copies) and
+[Virtual threads](../virtual-threads.md).
 
 ## 🔒 Security
 

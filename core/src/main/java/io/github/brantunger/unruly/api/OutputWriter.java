@@ -9,6 +9,11 @@ import org.jspecify.annotations.Nullable;
  * is {@link #beansAndMaps()}.
  *
  * <p>
+ * <b>Implemented by</b> applications, to write to an output object the default writer doesn't suit. A method added to
+ * this interface is a {@code default} method, so an existing writer keeps compiling and working.
+ * </p>
+ *
+ * <p>
  * The engine calls it on the thread running the rule, once for each property, in the order the action returned them.
  * Anything it throws fails the rule with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}
  * naming the rule and the property, which listeners receive in {@code onError}. It must be thread-safe, because runs

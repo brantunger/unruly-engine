@@ -91,7 +91,7 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 - **A wait for a build slot** happens only on an engine built with `unlimitedCopies()`, when a run on a virtual
   thread, not nested in another run on it, finds no idle copy. The deadline never fails it: the run waits at most half
   its time left, then makes its copy and goes on. Only an interrupt stops it; see
-  [Waiting for a build slot](compiled-copies.md#waiting-for-a-build-slot).
+  [Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot).
 - **An interrupt that a rule, listener, output supplier or language throws is put back.** When an
   `InterruptedException` is anywhere in the cause chain of what they throw, the engine sets the interrupt status again.
   A condition or action that throws it stops the run. A listener's exception is logged, and the next check stops the

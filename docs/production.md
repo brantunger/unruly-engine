@@ -73,7 +73,7 @@ guides before the first request reaches it.
       `maxCopies(...)`, or `unlimitedCopies()` only for a thread pool or with memory for a copy per run in progress;
       see [Limiting the copies](compiled-copies.md#-limiting-the-copies).
 - [ ] With MVEL rules on virtual threads on JDK 24 or later, you decided whether `load()` makes the copies with
-      `copiesAtLoad(n)`; see [Virtual threads](compiled-copies.md#-virtual-threads).
+      `copiesAtLoad(n)`; see [Class loading pins carriers](virtual-threads.md#-class-loading-pins-carriers).
 - [ ] Work stops reaching the engine before `close()`, which returns at once and doesn't drain; see
       [Draining before you close](thread-safety.md#draining-before-you-close).
 

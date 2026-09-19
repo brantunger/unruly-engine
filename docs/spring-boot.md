@@ -238,7 +238,7 @@ That turns on the engine's **default copy limit**, which applies only to runs on
 the rules for every two processors. Rules that compute are fine with it. Rules that wait on a database or another
 service hold their copy while they wait, so build those engines with a `maxCopies(...)` sized for the runs you want
 waiting at once. `unlimitedCopies()` doesn't bound the copies, which grow with the runs waiting; see
-[Virtual threads](compiled-copies.md#-virtual-threads).
+[What changes on virtual threads](virtual-threads.md#-what-changes-on-virtual-threads).
 Nothing changes while the property is off, because the default doesn't apply to a Tomcat or Jetty thread pool.
 
 If your rules are written in MVEL and you run on JDK 21 to 23, read

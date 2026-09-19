@@ -113,6 +113,7 @@ documentation lives.
 | Glossary | 📖 | Troubleshooting | 🩺 |
 | Production checklist | 🏭 | Contributing | 🤝 |
 | Development setup | 💻 | Documentation, the guide index | 📚 |
+| Virtual threads | 🧶 | Carrier pinning | 📌 |
 
 ## 💬 Callouts
 
