@@ -68,9 +68,10 @@ guides before the first request reaches it.
 - [ ] A [timeout](glossary.md#timeout) stops a run only between expressions, and in MVEL never inside one; see
       [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
 - [ ] On virtual threads, or with rules that wait on I/O, you chose the [copy limit](glossary.md#copy-limit) with
-      `maxCopies(...)` or `unlimitedCopies()`; see [Limiting the copies](compiled-copies.md#-limiting-the-copies).
+      `maxCopies(...)`, or `unlimitedCopies()` only for a thread pool; see
+      [Limiting the copies](compiled-copies.md#-limiting-the-copies).
 - [ ] With MVEL rules on virtual threads on JDK 24 or later, you decided whether `load()` makes the copies with
-      `copiesAtLoad(n)`, and read the known issue before choosing `unlimitedCopies()`; see
+      `copiesAtLoad(n)`, and didn't choose `unlimitedCopies()`; see
       [Virtual threads](compiled-copies.md#-virtual-threads).
 - [ ] Work stops reaching the engine before `close()`, which returns at once and doesn't drain; see
       [Draining before you close](thread-safety.md#draining-before-you-close).

@@ -409,11 +409,13 @@ public final class RulesEngineBuilder<O> {
      * default limit on runs from virtual threads.
      *
      * <p>
-     * This is what an engine did before 2.0, and what rules that wait — on I/O, a database or another service —
-     * usually want: such a run holds a copy while it waits, so a limit caps how many of them can overlap. The cost is
-     * that nothing bounds the copies: a run for each of ten thousand virtual threads makes ten thousand copies, each
-     * of which recompiles every expression and generates its own accessor classes. With a thread pool, the pool's
-     * size bounds them instead.
+     * This is what an engine did before 2.0, and it suits a thread pool, whose size bounds the copies. On virtual
+     * threads nothing bounds them: every run that finds all copies in use makes its own, and a run that waits lets the
+     * next virtual thread start, so rules that wait — on I/O, a database or another service — and on JDK 24 and later
+     * any run that blocks while MVEL loads classes, can make a copy for each virtual thread. Each copy recompiles every
+     * expression and generates its own accessor classes. For rules that wait on virtual threads, use
+     * {@link #maxCopies(int)} sized for the runs you want waiting at once; with MVEL on JDK 21 to 23, below the number
+     * of carriers, since a limit at or above it can deadlock every carrier there.
      * </p>
      *
      * @return This builder

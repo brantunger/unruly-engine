@@ -553,7 +553,7 @@ I/O. This is a behaviour change that the API compatibility check can't see, so t
 | 1.x | 2.0 |
 | --- | --- |
 | Runs from virtual threads, with as many copies as runs | At most one copy for every two processors; the runs above that wait. `.unlimitedCopies()` keeps the 1.x behaviour. On JDK 21 to 23, MVEL rules with unlimited copies can deadlock every carrier: see [Limiting the copies](compiled-copies.md#-limiting-the-copies) |
-| Rules that wait on a database, a service or a file, run from virtual threads | `.unlimitedCopies()`, or `.maxCopies(n)` sized for how many waiting runs you want at once: the default is sized for rules that compute |
+| Rules that wait on a database, a service or a file, run from virtual threads | `.maxCopies(n)` sized for how many waiting runs you want at once: the default is sized for rules that compute. Not `.unlimitedCopies()`, which makes a copy for every waiting virtual thread. With MVEL on JDK 21 to 23, keep `n` below the number of carriers; see [Virtual threads](compiled-copies.md#-virtual-threads) |
 | An action that runs the same engine on another thread and waits for it | It no longer hangs: the nested run waits five seconds, then takes an extra copy, and the engine warns |
 | Sizing memory from the number of copies | Up to one for every two processors for virtual-thread runs, plus, without `maxCopies(...)`, one for each platform-thread run at your peak, plus an extra for each run that doesn't wait. Kept copies stay until the next `load()` or `close()`. The limit is per engine and holds across reloads |
 | `maxCopies(...)` as the only way to bound the copies | Still available, and still applies to every thread; it's now a change to the default rather than a way out of no limit |

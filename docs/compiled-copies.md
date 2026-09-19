@@ -85,7 +85,7 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 | --- | --- | --- |
 | A platform thread pool | Anything | The default: the pool size already bounds the copies |
 | Virtual threads | Compute | The default |
-| Virtual threads | Wait on a database, a service or a file | `unlimitedCopies()`, or `maxCopies(n)` sized for the waiting runs you want at once |
+| Virtual threads | Wait on a database, a service or a file | `maxCopies(n)` sized for the runs you want waiting at once, not `unlimitedCopies()`: see [Virtual threads](#-virtual-threads) |
 | Virtual threads, MVEL rules, JDK 21 to 23 | Anything | See [Virtual threads](#-virtual-threads) before you raise the limit |
 | Anything, with memory to protect | Anything | `maxCopies(n)`, which bounds platform-thread runs too |
 
@@ -232,8 +232,16 @@ Jetty or executor pool: the default doesn't apply to runs on platform threads.
 
 The default is **sized for rules that compute**. A rule that waits — on a database, a service, a file — holds its copy
 while it waits, so a limit of `N` caps how many such runs make progress at once, however many virtual threads you
-start. Build those engines with `unlimitedCopies()`, or with a `maxCopies(...)` sized for how many waiting runs you
-want at once.
+start. Build those engines with a `maxCopies(n)` about as large as the number of runs you want waiting at once. Each
+copy costs memory and a compile of every rule, so size it to the waiting you expect rather than to the threads. With
+MVEL on JDK 21 to 23, keep `n` below the number of carriers: see the caution above.
+
+**Not `unlimitedCopies()` on virtual threads.** Without a limit, every run that finds all copies in use makes its own,
+and a run that waits lets the next virtual thread start, so waiting runs end up with one copy for each virtual thread.
+With 21 MVEL rules, one of whose conditions waits 1 ms, and 10,000 virtual threads sharing 200,000 runs on 32 cores,
+`unlimitedCopies()` made 10,000 copies on JDK 26 and on JDK 21. On JDK 26 it ran about 10,300 runs a second, against
+78,700 with `maxCopies(256)` and 7,900 with the default limit, 16 there. `unlimitedCopies()` is for thread pools,
+whose size bounds the copies.
 
 **Known issue on JDK 24 and later.** A virtual thread still keeps its carrier while the JVM loads a class. MVEL loads
 classes while it compiles, and generates accessor classes during a copy's first runs, so a run that makes a new
@@ -244,13 +252,17 @@ shortens the waiting without removing the pinning.
 [`copiesAtLoad(n)`](#making-copies-at-load) moves that compiling, and the classes it loads, into `load()` for the
 copies it makes. It doesn't move the accessor classes, which MVEL still generates during each copy's first runs, or
 the compiling of a copy a run makes itself.
-[#421](https://github.com/brantunger/unruly-engine/issues/421) tracks `unlimitedCopies()` with MVEL on JDK 24 and
-later, which `copiesAtLoad(n)` can't help.
 
 Measured on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000 runs of 21 MVEL rules, and
 `copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned events fell by about a third, from
 1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput didn't change, at about
 690,000–745,000 runs a second. On JDK 21 there were no pins either way.
+
+Without a limit it's much worse. The run loading a class keeps its carrier, but on JDK 24 and later the runs waiting
+for that class give theirs up, so more virtual threads start, find no idle copy and make their own. With 21 MVEL rules
+that compute, 100,000 virtual threads made 100,000 copies with `unlimitedCopies()` and ran about 2,900 runs a second
+on JDK 26.0.1, against about 197,000 with the default limit. On JDK 21, where a waiting run keeps its carrier, the
+same run made 34 copies.
 
 ## 🚧 Gotchas
 
@@ -259,7 +271,7 @@ Measured on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000 
 | **`maxCopies(n)` isn't a cap on copies** | A stalled run, or a nested run that finds no place free, takes an extra copy, and runs the limit doesn't apply to keep copies of their own | Size memory with [Memory sizing](#memory-sizing) |
 | **Kept copies never shrink** | The memory a traffic spike took stays until the next `load()` or `close()` | Reload periodically, if that memory matters |
 | **`copiesAtLoad(n)` above the default limit** | `build()` accepts it, but runs on virtual threads never borrow more than the limit of them at once, so the rest sit idle unless runs on platform threads use them | Make `n` no more than the limit, or add `maxCopies(n)` with the same `n`, so the limit applies to every thread |
-| **A deadline under five seconds never takes an extra copy** | A fan-out that would need one waits until its deadline and fails with a `TimeoutException` cause | Give engines that run each other `unlimitedCopies()` |
+| **A deadline under five seconds never takes an extra copy** | A fan-out that would need one waits until its deadline and fails with a `TimeoutException` cause | Give engines that run each other `unlimitedCopies()`, which never waits, though on virtual threads it makes a copy for each waiting run, or a timeout comfortably above five seconds: only a run with more than five seconds left when it starts waiting takes an extra copy once it has stalled |
 | **A reused interrupted thread** | The next run on that thread stops at its first rule, or fails at once when it would have waited | Call `Thread.interrupted()` before reusing the thread |
 
 ## ❓ Questions you might not think to ask
