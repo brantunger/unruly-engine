@@ -44,7 +44,7 @@ What a run on a virtual thread waits for, on an engine built with `unlimitedCopi
 [compiled copy](#compiled-copy); it holds the slot until that copy's first run ends. An engine has one for each
 processor. They pace how many new copies are in their first run at once, without bounding how many copies exist: a
 run that gives up waiting makes its copy without one. See
-[Waiting for a build slot](compiled-copies.md#waiting-for-a-build-slot).
+[Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot).
 
 ### Carrier thread
 

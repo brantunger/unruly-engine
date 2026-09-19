@@ -23,7 +23,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 2. [What a run reports](engines-and-runs.md#-what-a-run-reports) and
    [Handling failures](error-handling.md#-handling-failures).
 3. [Stopping a run](stopping-runs.md): timeouts and interrupts.
-4. [Thread safety at a glance](thread-safety.md#-at-a-glance) and [Compiled copies](compiled-copies.md).
+4. [Thread safety at a glance](thread-safety.md#-at-a-glance), [Compiled copies](compiled-copies.md) and, if your
+   runs come from virtual threads, [Virtual threads](virtual-threads.md).
 5. [Logging setup](listeners-and-logging.md#-logging-setup) and [Spring Boot](spring-boot.md).
 6. [Native image](native-image.md), if you build one with GraalVM: MVEL's JIT and the reflection to register.
 7. [Troubleshooting](troubleshooting.md): from a symptom or a message to the section that explains it.
@@ -61,7 +62,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | ⏳ [Stopping a run](stopping-runs.md) | Application developers | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
 | 🟣 [Kotlin](kotlin.md) | Application developers | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](thread-safety.md) | Application developers | What's shared, the engine's lifecycle and closing, and reloading rules under traffic |
-| 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, what a run waits for, and virtual threads |
+| 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, and what a run waits for |
+| 🧶 [Virtual threads](virtual-threads.md) | Application developers | The copy limit that applies only there, build slots and `unlimitedCopies()`, what each costs, and the JDK versions that deadlock or pin a carrier |
 | 🔼 [Migrating to 2.0](migrating-to-2.md) | Everyone | Every change from 1.x that can affect your code, who it affects, and what to change |
 | 📖 [Glossary](glossary.md) | Everyone | Short definitions of the terms the guides use, each linked to the page that explains it |
 | ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | Everyone | The API reference |

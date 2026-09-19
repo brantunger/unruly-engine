@@ -198,8 +198,9 @@ rules use. Each `run()` borrows a copy that no other run is using, makes a new o
 run after `load()` does, unless the engine [makes copies at load](compiled-copies.md#making-copies-at-load)), and gives
 it back when it finishes.
 
-How many copies an engine keeps, how to limit them, what a run waits for when they run out, and what changes on
-virtual threads are on their own page: [Compiled copies](compiled-copies.md).
+How many copies an engine keeps, how to limit them and what a run waits for when they run out are on their own page:
+[Compiled copies](compiled-copies.md). What changes when runs come from virtual threads is on
+[Virtual threads](virtual-threads.md).
 
 ## 🚧 Gotchas
 

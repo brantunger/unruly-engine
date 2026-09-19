@@ -4,11 +4,10 @@
 > Describes 2.0.0, which isn't released yet.
 
 Each run works on a compiled copy of the rules. This page says what a copy is, how many an engine keeps,
-how to limit them, how to make them when the rules load, what a run waits for when they run out, and what changes on
-virtual threads.
+how to limit them, how to make them when the rules load, and what a run waits for when they run out.
+[Virtual threads](virtual-threads.md) covers what changes there.
 
-**Who it's for:** application developers sizing an engine for many concurrent runs, or tuning it for virtual
-threads.
+**Who it's for:** application developers sizing an engine for many concurrent runs.
 **You'll be able to:** estimate the memory the copies take, choose a copy limit for your workload, and tell
 why a run waited.
 **Before you start:** [Thread safety](thread-safety.md), which covers what an engine shares and how it reloads
@@ -18,7 +17,6 @@ and closes.
 
 - [How copies work](#-how-copies-work)
 - [Limiting the copies](#-limiting-the-copies)
-- [Virtual threads](#-virtual-threads)
 - [Gotchas](#-gotchas)
 - [Questions you might not think to ask](#-questions-you-might-not-think-to-ask)
 
@@ -85,8 +83,8 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 | --- | --- | --- |
 | A platform thread pool | Anything | The default: the pool size already bounds the copies |
 | Virtual threads | Compute | The default |
-| Virtual threads | Wait on a database, a service or a file | `maxCopies(n)` sized for the runs you want waiting at once, which bounds the copies; see [Virtual threads](#-virtual-threads) before `unlimitedCopies()` |
-| Virtual threads, MVEL rules, JDK 21 to 23 | Anything | See [Virtual threads](#-virtual-threads) before you raise the limit |
+| Virtual threads | Wait on a database, a service or a file | `maxCopies(n)` sized for the runs you want waiting at once, which bounds the copies; see [Virtual threads](virtual-threads.md) before `unlimitedCopies()` |
+| Virtual threads, MVEL rules, JDK 21 to 23 | Anything | See [Virtual threads](virtual-threads.md) before you raise the limit |
 | Anything, with memory to protect | Anything | `maxCopies(n)`, which bounds platform-thread runs too |
 
 The limit belongs to the **engine**, not to one rule list: while `load()` swaps in a new list (see
@@ -115,8 +113,9 @@ session, not only the ones a run reaches.
 
 What it costs:
 
-- **A slower `load()`.** In the measurement under [Virtual threads](#-virtual-threads), 16 copies of 21 MVEL rules
-  added about 65 ms to a reload that otherwise took 15 ms, and about 80 ms to the first load in a new JVM.
+- **A slower `load()`.** 16 copies of 21 MVEL rules added about 65 ms to a reload that otherwise took 15 ms, and
+  about 80 ms to the first load in a new JVM. What those copies buy at run time is in
+  [Class loading pins carriers](virtual-threads.md#-class-loading-pins-carriers).
 - **Memory from the start.** The copies exist from `load()` until the next `load()` or `close()`, whether runs use
   them or not. During a reload, the old rules' copies and the new ones exist together until the swap.
 
@@ -173,8 +172,12 @@ flowchart TD
 
 A run the limit doesn't apply to never waits for a copy. It takes an idle one or makes a new one, with one exception:
 on an engine built with `unlimitedCopies()`, a run on a virtual thread that isn't nested and finds no idle copy waits
-for a build slot before it makes one. See [Waiting for a build slot](#waiting-for-a-build-slot). The rest of this
-section is about runs the limit applies to.
+for a build slot before it makes one.
+
+Only an interrupt fails that wait, with a `RuleExecutionException`; a run that gives up waiting, at half its time left or
+after five seconds without a slot coming back, makes its copy anyway. See
+[Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot). The rest of this section is about runs the
+limit applies to.
 
 While a run waits:
 
@@ -229,116 +232,6 @@ A stalled run, and a nested run that finds no place free, get an extra copy that
 when the run gives it back. So a limit bounds the runs that can make progress, rather than the copies that can exist
 at one instant.
 
-### Waiting for a build slot
-
-An engine built with `unlimitedCopies()` has no limit, so its runs never wait for a copy. On virtual threads it paces
-how fast new copies are made instead, because a new copy's first run is the slow one: in MVEL, a copy compiles each
-expression the first time it runs it. Without that pacing, a virtual thread that found every copy in use made its
-own, however many there were; see [Virtual threads](#-virtual-threads).
-
-The engine has one **build slot** for each processor, counted once by `build()`. Each engine has its own, and every
-rule list it loads shares them, across reloads too. A run on a virtual thread, not nested in another run on it:
-
-1. takes an idle copy at once, if there is one, including one [made at load](#making-copies-at-load);
-2. otherwise waits for a slot, then looks for an idle copy again, and gives the slot back if it finds one;
-3. otherwise makes a new copy, which is kept, and holds the slot until that copy's first run ends, including any time
-   its rules spend waiting.
-
-A run whose rules' languages all return `Session.none()` gives the slot back at once, and every run shares one set of
-sessions, as under a limit.
-
-So the slots **pace** how many new copies are in their first run at once; they don't bound how many copies exist. A
-run that gives up waiting (below) makes and runs its new copy without a slot, so a short run timeout weakens the
-pacing. The copies still grow to the most runs in progress at once, only more slowly;
-[Virtual threads](#-virtual-threads) has measurements. Runs on platform threads, nested runs, and every run on an
-engine with the default limit or `maxCopies(n)` never wait for a slot.
-
-| When | What happens |
-| --- | --- |
-| The thread is already interrupted | It doesn't wait: it makes its copy, and the run stops at its first rule |
-| The run has a deadline | It waits at most half the time it had left when it started waiting, then makes its copy without a slot, so its rules keep the other half |
-| Five seconds pass without one slot coming back | It makes its copy without a slot: runs waiting for other runs of this engine look like that, as in [Runs that don't wait](#runs-that-dont-wait) |
-| The thread is interrupted while it waits | `run()` throws a `RuleExecutionException` caused by the `InterruptedException`, and the interrupt status stays set |
-
-The message is `run() was interrupted while waiting to make a compiled copy of the rules: every build slot
-was in use`, and listeners get `beforeRun` and then `onRunError`, as for any stopped wait. A passed deadline never
-fails this wait, so an engine without a limit never fails a run for want of a copy. Giving up on a slot isn't logged.
-
-Without a deadline, a run waits for as long as slots keep coming back. Unlike places under a limit, slots are handed
-out first come, first served, so a run that waits isn't overtaken for ever by runs that arrive after it.
-
-A waiting run isn't woken by any copy given back by a run that holds no slot, such as a run on a copy that had
-already run, a run on a platform thread, a nested run, or a run that gave up waiting for a slot. It waits until a
-slot comes back, or it gives up as the table above says, and runs that arrive meanwhile take those idle copies first.
-
-## 🧵 Virtual threads
-
-> [!CAUTION]
-> On JDK 21 to 23, a virtual thread waiting on a monitor keeps the platform thread carrying it. A language whose
-> expressions contend on a lock shared by the whole JVM can then hold every carrier and deadlock. MVEL is one: read
-> [MVEL on virtual threads](languages/mvel.md#-virtual-threads) before you raise the limit.
-
-With more than one processor, the default is **below the number of processors**, which is how many platform threads
-carry virtual threads unless the scheduler is configured otherwise. That makes a deadlock less likely without ruling
-it out: the limit is per engine, so several engines' limits add up, a run that gives up waiting takes an extra copy,
-and `-Djdk.virtualThreadScheduler.parallelism` can leave fewer carriers than the limit. Nothing changes for a Tomcat,
-Jetty or executor pool: the default doesn't apply to runs on platform threads.
-
-The default is **sized for rules that compute**. A rule that waits — on a database, a service, a file — holds its copy
-while it waits, so a limit of `N` caps how many such runs make progress at once, however many virtual threads you
-start. Build those engines with a `maxCopies(n)` about as large as the number of runs you want waiting at once. Each
-copy costs memory and a compile of every rule, so size it to the waiting you expect rather than to the threads. With
-MVEL on JDK 21 to 23, keep `n` below the number of carriers: see the caution above.
-
-**`unlimitedCopies()` on virtual threads** makes copies as the runs need them, and paces the new ones with
-[build slots](#waiting-for-a-build-slot). That doesn't bound the copies: they follow how many runs are in progress at
-once, which grows with how long the rules wait. With rules that wait it ran faster than `maxCopies(256)` below, but
-made 311–320 copies on JDK 26 and about 2,100 on JDK 21.
-
-So use `maxCopies(n)` when memory needs a hard bound, and `unlimitedCopies()` only if memory can take a copy for each
-run in progress at your busiest moment. With MVEL on JDK 21 to 23, see the caution above first.
-
-Measured with 21 MVEL rules on 32 processors under Windows, with build slots, three times each. With rules that
-wait, one condition waits 1 ms and 10,000 virtual threads share 200,000 runs; with rules that compute, 100,000 virtual
-threads share 400,000 runs. Each cell is the copies made, then the runs a second:
-
-| Rules, JDK | `unlimitedCopies()` | `maxCopies(256)` | Default limit, 16 there |
-| --- | --- | --- | --- |
-| Wait, JDK 26 | 311–320, about 99,000 | 256, about 87,700 | 16, about 7,700 |
-| Wait, JDK 21 | 2,110–2,123, about 41,000 | 256, about 15,400 | 16, about 1,050 |
-| Compute, JDK 26 | 98–102, about 153,000 | Not measured | 16, about 200,000 |
-| Compute, JDK 21 | 33, 108,000–142,000 | Not measured | 16, about 85,000 |
-
-Before build slots, `unlimitedCopies()` made a copy for each virtual thread whenever runs blocked: 10,000 copies and
-about 10,500 runs a second for rules that wait, in one measurement on each JDK, and 100,000 copies and about 2,900
-runs a second for rules that compute on JDK 26, in two.
-
-**On JDK 21, build slots cost rules that compute some throughput.** There, a virtual thread waiting on a monitor
-keeps its carrier, as the caution above says, and the copies never piled up: 33 to 37 before build slots, 33 with
-them. Runs still wait for slots, though. Over 20,000,000 runs, `unlimitedCopies()` ran 1,150,000–1,380,000 runs a
-second, against about 1,395,000 in three measurements before, up to about 17% fewer. Over 400,000 runs it ran
-108,000–142,000, against about 216,000 in the one measurement before.
-
-**Known issue on JDK 24 and later.** A virtual thread still keeps its carrier while the JVM loads a class. MVEL loads
-classes while it compiles, and generates accessor classes during a copy's first runs, so a run that makes a new
-compiled copy can pin its carrier for as long as that takes. Since
-[#387](https://github.com/brantunger/unruly-engine/pull/387), MVEL's class lookups no longer wait on each other, which
-shortens the waiting without removing the pinning.
-
-[`copiesAtLoad(n)`](#making-copies-at-load) moves that compiling, and the classes it loads, into `load()` for the
-copies it makes. It doesn't move the accessor classes, which MVEL still generates during each copy's first runs, or
-the compiling of a copy a run makes itself.
-
-Measured on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000 runs of 21 MVEL rules, and
-`copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned events fell by about a third, from
-1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput didn't change, at about
-690,000–745,000 runs a second. On JDK 21 there were no pins either way.
-
-Without a limit, that pinning is what made the copies pile up before build slots: the run loading a class keeps its
-carrier, but on JDK 24 and later the runs waiting for that class give theirs up, so more virtual threads start and
-find no idle copy. Now those runs wait for a slot. Over 20,000,000 runs of rules that compute on JDK 26,
-`unlimitedCopies()` kept about 100 copies; two of three measurements ran 640,000–690,000 runs a second, one 304,000.
-
 ## 🚧 Gotchas
 
 | Gotcha | What happens | Do this instead |
@@ -346,9 +239,7 @@ find no idle copy. Now those runs wait for a slot. Over 20,000,000 runs of rules
 | **`maxCopies(n)` isn't a cap on copies** | A stalled run, or a nested run that finds no place free, takes an extra copy, and runs the limit doesn't apply to keep copies of their own | Size memory with [Memory sizing](#memory-sizing) |
 | **Kept copies never shrink** | The memory a traffic spike took stays until the next `load()` or `close()` | Reload periodically, if that memory matters |
 | **`copiesAtLoad(n)` above the default limit** | `build()` accepts it, but runs on virtual threads never borrow more than the limit of them at once, so the rest sit idle unless runs on platform threads use them | Make `n` no more than the limit, or add `maxCopies(n)` with the same `n`, so the limit applies to every thread |
-| **A deadline under five seconds never takes an extra copy** | Under a limit, a fan-out that would need one waits until its deadline and fails with a `TimeoutException` cause | Give runs more than five seconds left when they start waiting, or give engines that run each other `unlimitedCopies()`, which never fails a run for want of a copy. On virtual threads, a cold fan-out can still wait up to five seconds, or half its time left, for a build slot while its parents hold every slot; `copiesAtLoad(n)` avoids that |
-| **`unlimitedCopies()` doesn't bound copies on virtual threads** | Build slots only pace new copies; copies grow with the runs in progress, about 2,100 for 10,000 waiting threads on JDK 21 | `maxCopies(n)` when memory needs a hard bound; see [Virtual threads](#-virtual-threads) |
-| **`unlimitedCopies()` runs can wait on virtual threads** | With no idle copy, a run waits for a [build slot](#waiting-for-a-build-slot): at most half its time left, or while slots keep coming back | A timeout caps the wait; `copiesAtLoad(n)` gives the first runs idle copies, taken without a slot |
+| **A deadline under five seconds never takes an extra copy** | Under a limit, a fan-out that would need one waits until its deadline and fails with a `TimeoutException` cause | Give runs more than five seconds left when they start waiting, or give engines that run each other `unlimitedCopies()`, which never fails a run for want of a copy. On virtual threads, a cold fan-out can still wait up to five seconds, or half its time left, for a [build slot](virtual-threads.md#-waiting-for-a-build-slot) while its parents hold every slot; `copiesAtLoad(n)` avoids that |
 | **A reused interrupted thread** | The next run on that thread stops at its first rule, or fails at once when it would have waited | Call `Thread.interrupted()` before reusing the thread |
 
 ## ❓ Questions you might not think to ask
@@ -368,13 +259,8 @@ build new ones.
 
 Only if the first runs after each `load()` matter more to you than the time `load()` takes. Its main use is MVEL rules
 run on virtual threads on JDK 24 and later, where it cut the carrier pinning of those first runs by about a third
-in one benchmark, without changing throughput. See [Making copies at load](#making-copies-at-load).
-
-### Can a run wait on an engine built with `unlimitedCopies()`?
-
-Yes, on a virtual thread: a run that finds no idle copy waits for one of the engine's build slots, one for each
-processor, before it makes a copy. The slots pace new copies without bounding them: copies still grow with the runs in
-progress. See [Waiting for a build slot](#waiting-for-a-build-slot).
+in one benchmark, without changing throughput. See [Making copies at load](#making-copies-at-load) and
+[Class loading pins carriers](virtual-threads.md#-class-loading-pins-carriers).
 
 ### Does waiting for a copy show up in my listener timings?
 
