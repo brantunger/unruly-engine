@@ -70,6 +70,14 @@ final class RunEvent extends Event {
     String outcome;
 
     /**
+     * Loads the class, which registers the event with Flight Recorder. Called by {@link FlightRecorderEvents}, which
+     * finds out whether that works where the engine runs.
+     */
+    static void load() {
+        // Nothing else to do: calling a static method runs the class's initializer.
+    }
+
+    /**
      * Starts the event for a run, if a recording has it enabled.
      *
      * @return The started event, or {@code null} when no recording wants it

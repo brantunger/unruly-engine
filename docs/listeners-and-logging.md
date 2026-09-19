@@ -220,8 +220,12 @@ without a recording; after that, an event that isn't enabled costs nothing measu
 
 > [!NOTE]
 > The module `io.github.brantunger.unruly.core` requires `jdk.jfr`, which every JDK includes and jlink adds to an
-> image that requires the engine. An image whose runtime puts the engine on the class path must add it by hand:
-> `--add-modules jdk.jfr`.
+> image that requires the engine. On the class path it's optional: a runtime image without `jdk.jfr` runs the engine
+> with no events, as a native image without Flight Recorder support does (below).
+
+A GraalVM native image built without `--enable-monitoring=jfr`, which is `native-image`'s default, has no Flight
+Recorder. There the engine records no events and its runs work as usual: at the first run it finds that the event
+classes can't be loaded, and logs that once at DEBUG. See [Native image](native-image.md#-flight-recorder-events).
 
 To keep every run, lower the threshold; to see each rule, enable the rule event. Both can be done on a running JVM:
 
@@ -264,6 +268,7 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 | `io.github.brantunger.unruly.engine` | `WARN` | A language failed to close a session or a compiler |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run waited five seconds for a compiled copy and made an extra one, once for each rule list |
 | `io.github.brantunger.unruly.engine` | `DEBUG` | The stack trace of an exception a listener threw, which prints its message unescaped |
+| `io.github.brantunger.unruly.engine` | `DEBUG` | `The engine records no Flight Recorder events here, because they can't be loaded: <error>`, once, where the event classes can't be loaded, such as a native image without Flight Recorder |
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
 
 Each failure is logged just before its exception is thrown. Misuse isn't logged: a `null` argument, `run()` before

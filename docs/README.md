@@ -25,7 +25,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 3. [Stopping a run](stopping-runs.md): timeouts and interrupts.
 4. [Thread safety at a glance](thread-safety.md#-at-a-glance) and [Compiled copies](compiled-copies.md).
 5. [Logging setup](listeners-and-logging.md#-logging-setup) and [Spring Boot](spring-boot.md).
-6. [Troubleshooting](troubleshooting.md): from a symptom or a message to the section that explains it.
+6. [Native image](native-image.md), if you build one with GraalVM: MVEL's JIT and the reflection to register.
+7. [Troubleshooting](troubleshooting.md): from a symptom or a message to the section that explains it.
 
 ## 🔨 Writing an expression language
 
@@ -51,6 +52,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions, packaging and the contract test kit for a language of your own |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
+| 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: turning MVEL's JIT off, registering reflection, the errors a missing registration gives, Flight Recorder, and what was tested |
 | 🌱 [Spring Boot](spring-boot.md) | Application developers | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | Application developers | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Application developers | Every exception by method, what's caught when rules load and what only at run time |

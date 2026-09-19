@@ -1,0 +1,33 @@
+[
+  {
+    "name": "com.example.nativesmoke.Main$Applicant",
+    "allPublicFields": true,
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "creditScore", "parameterTypes": []},
+      {"name": "income", "parameterTypes": []}
+    ]
+  },
+  {
+    "name": "com.example.nativesmoke.Main$LoanDecision",
+    "allPublicFields": true,
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "setRate", "parameterTypes": ["java.lang.String"]}
+    ]
+  },
+  {
+    "name": "java.lang.Math",
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "max", "parameterTypes": ["int", "int"]}
+    ]
+  },
+  {
+    "name": "java.util.HashMap",
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "put", "parameterTypes": ["java.lang.Object", "java.lang.Object"]}
+    ]
+  }
+]

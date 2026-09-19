@@ -269,7 +269,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         long parentRunId = parent == null ? 0 : parent.runId();
         // The event spans the whole call: reading the facts, and waiting for a copy, which counts towards the
         // deadline too.
-        RunEvent event = RunEvent.startIfEnabled();
+        RunEvent event = FlightRecorderEvents.startRun();
         RunTally tally = new RunTally();
         String outcome = RunEvent.FAILED;
         try {
@@ -1212,7 +1212,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
-        RuleEvent event = RuleEvent.startIfEnabled();
+        RuleEvent event = FlightRecorderEvents.startRule();
         String outcome = RuleEvent.FAILED;
         facts.tally().countEvaluated();
         try {
@@ -1220,7 +1220,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             outcome = result ? RuleEvent.MATCHED : RuleEvent.NOT_MATCHED;
             return result;
         } catch (RuleExecutionException e) {
-            outcome = RuleEvent.resultOf(e);
+            outcome = ruleOutcome(e);
             throw e;
         } catch (Error e) {
             outcome = fatalOutcome();
@@ -1268,7 +1268,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
-        RuleEvent event = RuleEvent.startIfEnabled();
+        RuleEvent event = FlightRecorderEvents.startRule();
         String outcome = RuleEvent.FAILED;
         try {
             O output = executeAction(rule, copy, outputResult, facts);
@@ -1276,7 +1276,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             outcome = RuleEvent.FIRED;
             return output;
         } catch (RuleExecutionException e) {
-            outcome = RuleEvent.resultOf(e);
+            outcome = ruleOutcome(e);
             throw e;
         } catch (Error e) {
             outcome = fatalOutcome();
@@ -1286,6 +1286,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 event.commit(engineId, facts.runId(), rule, ExpressionKind.ACTION, outcome);
             }
         }
+    }
+
+    /**
+     * Classifies what a condition or action threw, here rather than in {@link RuleEvent}, so a rule that fails doesn't
+     * load the event class where {@link FlightRecorderEvents#USABLE} found it can't be.
+     *
+     * @param thrown The exception the rule's evaluation ends with
+     * @return {@link RuleEvent#STOPPED} for a run that was interrupted or passed its deadline, otherwise
+     *         {@link RuleEvent#FAILED}
+     */
+    private static String ruleOutcome(RuleExecutionException thrown) {
+        return ReportedFailure.isStop(thrown) ? RuleEvent.STOPPED : RuleEvent.FAILED;
     }
 
     /**

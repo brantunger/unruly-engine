@@ -399,6 +399,17 @@ clause at all, because the accessor classes MVEL generates live in the unnamed m
 [Installation](../../README.md#-installation) block explains. A test that extends the contract kit opens its package
 `to org.junit.platform.commons`.
 
+### Native image
+
+A language works in a GraalVM native image if it generates no classes while rules run: an image can't load a class
+that wasn't in it when it was built. Register the reflection the language itself needs in its jar, in
+`META-INF/native-image/<group>/<artifact>/reflect-config.json`, which `native-image` reads from the class path. The
+`unruly-engine` jar does this for MVEL. `native-image` registers the provider in your `META-INF/services` file, so
+`ServiceLoader` finds the language as on the JVM.
+
+The application registers its own fact and output classes, because `FactProperties` and the default `OutputWriter`
+read and write them by reflection. Only MVEL has been tested in an image; see [Native image](../native-image.md).
+
 ## 🧪 Testing with the contract kit
 
 The `unruly-engine-test` artifact, at the same version as the engine, has two tools for a language's tests. Add it

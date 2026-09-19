@@ -24,9 +24,10 @@ usual fix for each.
 ## ✅ What build runs
 
 `build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build, local, CI and
-release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has four projects: `core`
-(`unruly-engine-core`), `mvel` (`unruly-engine`, which also holds all the tests), `test-kit` (`unruly-engine-test`)
-and `benchmarks`, which isn't published: the build checks its sources, and only the `jmh` task runs the benchmarks.
+release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has five projects: `core`
+(`unruly-engine-core`), `mvel` (`unruly-engine`, which also holds all the tests), `test-kit` (`unruly-engine-test`),
+and two that aren't published: `benchmarks`, whose sources the build checks while only the `jmh` task runs them, and
+`native-smoke`, a small application CI builds into a GraalVM native image.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
@@ -100,6 +101,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | --- | --- | --- |
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport` | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive |
 | JDK 25 on `ubuntu-latest` | `./gradlew :mvel:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
+| `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
 
 A second workflow, `pr-title.yml`, checks a pull request's title against Conventional Commits, because the title
 becomes the release commit. It runs on pull requests only.

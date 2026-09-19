@@ -39,6 +39,8 @@ guides before the first request reaches it.
       [Should I build an engine for each request?](engines-and-runs.md#should-i-build-an-engine-for-each-request).
 - [ ] On the module path, the packages of your fact and output types are exported without a `to` clause; see
       [Installation](../README.md#-installation).
+- [ ] In a GraalVM native image, the executable runs with `-Dmvel2.disable.jit=true`, and every rule has run in the
+      image against facts that fire it, so no class or method it uses is missing; see [Native image](native-image.md).
 
 ## 🧯 When things fail
 
@@ -51,7 +53,7 @@ guides before the first request reaches it.
       stay on, because their messages and DEBUG lines can contain fact values; see
       [Logging setup](listeners-and-logging.md#-logging-setup).
 - [ ] Slow runs show up in a Flight Recorder recording: the run event is on by default with a 10 ms threshold, and
-      a jlink image that puts the engine on the class path adds `jdk.jfr`; see
+      a jlink image that puts the engine on the class path includes `jdk.jfr`, without which there are no events; see
       [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events).
 
 ## 🔏 Auditing

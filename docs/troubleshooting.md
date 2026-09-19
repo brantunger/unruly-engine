@@ -180,6 +180,8 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `rules matched, but a unique-match engine allows one` | Two rows of the decision table overlap; see [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none) |
 | `RuleExecutionException` | `run() was interrupted` | The thread was interrupted, and its interrupt status stays set: clear it with `Thread.interrupted()`; see [Why does every run on my pooled thread fail](stopping-runs.md#why-does-every-run-on-my-pooled-thread-fail-after-i-caught-an-interrupted-run) |
 | `RuleExecutionException` | `run() passed its deadline` | The run passed its timeout; see [Stopping a run](stopping-runs.md) |
+| `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT is on: start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](native-image.md#-mvels-jit-must-be-off) |
+| `RuleExecutionException` | `MissingReflectionRegistrationError` as the cause | In a native image, a class or method the rule uses isn't registered for reflection; see [Registering your classes](native-image.md#-registering-your-classes) |
 | `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](error-handling.md#-exceptions-by-method). On the module path, see [Installation](../README.md#-installation) |
 
 A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
@@ -196,6 +198,8 @@ message; the original is `getCause()`. See [Exceptions by method](error-handling
   name and an export without a `to` clause; see [Installation](../README.md#-installation).
 - **No log output:** there's no SLF4J provider on the class path; see
   [Logging setup](listeners-and-logging.md#-logging-setup).
+- **Rules pass on the JVM but fail in a native image:** MVEL's JIT is on, or the image doesn't register a class or
+  method the rules use; see [Errors and what they mean](native-image.md#-errors-and-what-they-mean).
 
 ### Under load, or at shutdown
 

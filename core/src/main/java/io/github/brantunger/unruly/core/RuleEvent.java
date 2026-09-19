@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Enabled;
@@ -68,6 +67,14 @@ final class RuleEvent extends Event {
     String result;
 
     /**
+     * Loads the class, which registers the event with Flight Recorder. Called by {@link FlightRecorderEvents}, which
+     * finds out whether that works where the engine runs.
+     */
+    static void load() {
+        // Nothing else to do: calling a static method runs the class's initializer.
+    }
+
+    /**
      * Starts the event for a condition or action, if a recording has it enabled.
      *
      * @return The started event, or {@code null} when no recording wants it
@@ -79,16 +86,6 @@ final class RuleEvent extends Event {
         RuleEvent event = new RuleEvent();
         event.begin();
         return event;
-    }
-
-    /**
-     * Classifies what a condition or action threw.
-     *
-     * @param thrown The exception the rule's evaluation ends with
-     * @return {@link #STOPPED} for a run that was interrupted or passed its deadline, otherwise {@link #FAILED}
-     */
-    static String resultOf(RuleExecutionException thrown) {
-        return ReportedFailure.isStop(thrown) ? STOPPED : FAILED;
     }
 
     /**
