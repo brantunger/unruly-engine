@@ -449,7 +449,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param rules The rule set to borrow from
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
-     * @throws RuleExecutionException if the thread is interrupted while it waits for a copy
+     * @throws RuleExecutionException if the thread is interrupted while it waits for a copy, or for a build slot to
+     *                                make one, or if the run's deadline passes while it waits for a copy under a
+     *                                limit
      */
     private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline, long runId,
                                 RunContext parent, RunTally tally) {
@@ -457,9 +459,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             return rules.borrow(deadline);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw stoppedWaiting(rules, listenerFacts,
-                    "run() was interrupted while waiting for a compiled copy of the rules: all " + rules.limit()
-                            + " were in use", e, deadline, null, runId, parent, tally);
+            // Without a limit, the only wait is for a build slot, on a virtual thread.
+            String waiting = rules.limit() == RuleSet.UNLIMITED
+                    ? "to make a compiled copy of the rules: every build slot was in use"
+                    : "for a compiled copy of the rules: all " + rules.limit() + " were in use";
+            throw stoppedWaiting(rules, listenerFacts, "run() was interrupted while waiting " + waiting, e, deadline,
+                    null, runId, parent, tally);
         } catch (TimeoutException e) {
             throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
                     + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e,

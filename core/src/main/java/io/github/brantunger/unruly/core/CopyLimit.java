@@ -8,8 +8,10 @@ package io.github.brantunger.unruly.core;
  * An engine built without a limit of its own limits <b>runs on virtual threads</b> to one copy for every two
  * processors, and at least one. A copy is expensive — for MVEL it recompiles every expression, and each copy
  * generates its own accessor classes — and a platform thread pool already bounds how many runs overlap, while virtual
- * threads don't: a run for each of ten thousand virtual threads made ten thousand copies. Limiting only virtual
- * threads leaves a thread pool's throughput as it was, and bounds the case that has no bound of its own.
+ * threads don't: without a limit, ten thousand virtual threads whose rules waited made ten thousand copies before an
+ * engine had build slots, and still make hundreds to thousands with them, since the slots only pace new copies (see
+ * {@code CopyPermits}). Limiting only virtual threads leaves a thread pool's throughput as it was, and bounds the case
+ * that has no bound of its own.
  * </p>
  *
  * <p>

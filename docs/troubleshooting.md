@@ -204,7 +204,8 @@ message; the original is `getCause()`. See [Exceptions by method](error-handling
 ### Under load, or at shutdown
 
 - **Runs on virtual threads wait:** the default [copy limit](glossary.md#copy-limit) applies to them; see
-  [Limiting the copies](compiled-copies.md#-limiting-the-copies).
+  [Limiting the copies](compiled-copies.md#-limiting-the-copies). With `unlimitedCopies()`, a run that finds no idle
+  copy waits for a build slot; see [Waiting for a build slot](compiled-copies.md#waiting-for-a-build-slot).
 - **Every run on one pool thread fails at its first rule:** its interrupt status is still set; see
   [Gotchas](stopping-runs.md#-gotchas).
 - **Runs fail with `The engine is closed` during shutdown:** the engine bean was closed before the work stopped; see

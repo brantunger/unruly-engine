@@ -63,14 +63,15 @@ try {
 
 ## 🚦 What stops a run
 
-The engine looks at the thread's interrupt status and the run's deadline at three kinds of point, and stops the run at
-the first one that finds either:
+The engine looks at the thread's interrupt status and the run's deadline at these points, and stops the run at the
+first one that finds either:
 
 | Where the engine checks | The message ends with |
 | --- | --- |
 | Before each condition and each action | `before rule 'x'` |
 | When a condition or action returns, or throws an exception | `during rule 'x'` |
 | While the run waits for a compiled copy | `while waiting for a compiled copy of the rules: all N were in use` |
+| While the run waits for a build slot, interrupts only | `while waiting to make a compiled copy of the rules: every build slot was in use` |
 
 Each message starts with `run() passed its deadline of <instant>` or `run() was interrupted`.
 
@@ -87,6 +88,10 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 - **A wait for a copy** happens only when the engine limits copies and all of them are in use. The run stops waiting
   at its deadline. But when no copy comes back for five seconds and the deadline is further away than that, it makes
   an extra copy and goes on instead; see [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
+- **A wait for a build slot** happens only on an engine built with `unlimitedCopies()`, when a run on a virtual
+  thread, not nested in another run on it, finds no idle copy. The deadline never fails it: the run waits at most half
+  its time left, then makes its copy and goes on. Only an interrupt stops it; see
+  [Waiting for a build slot](compiled-copies.md#waiting-for-a-build-slot).
 - **An interrupt that a rule, listener, output supplier or language throws is put back.** When an
   `InterruptedException` is anywhere in the cause chain of what they throw, the engine sets the interrupt status again.
   A condition or action that throws it stops the run. A listener's exception is logged, and the next check stops the
@@ -112,8 +117,9 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   though, the last rule's `afterEvaluate` or `afterExecute` and `afterRun` can run past the deadline, and the run
   returns normally.
 - **An empty rule list evaluates nothing,** so a passed deadline or an interrupt can stop its run only while it waits
-  for a copy. Otherwise the run returns normally, and the interrupt status stays set. The same holds for a run that
-  [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses) every rule: nothing is checked before a skipped rule.
+  for a copy, or an interrupt while it waits for a build slot. Otherwise the run returns normally, and the interrupt
+  status stays set. The same holds for a run that [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses) every
+  rule: nothing is checked before a skipped rule.
 - **Another thread isn't covered.** Work an action hands to another thread gets neither the deadline nor the
   interrupt.
 

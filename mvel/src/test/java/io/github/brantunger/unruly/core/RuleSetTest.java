@@ -245,7 +245,7 @@ class RuleSetTest {
             RuleSet.Copy copy = rules.borrow(deadline());
             try {
                 assertEquals(RuleSet.Kind.KEPT, copy.kind(), "a run the limit doesn't apply to gets a copy of its own");
-                assertFalse(copy.permit(), "and holds no permit, because it took none");
+                assertEquals(RuleSet.Held.NOTHING, copy.held(), "and holds no permit, because it took none");
                 assertEquals(2, sessions.get(), "and it is a copy of its own, not the one held");
             } finally {
                 rules.release(copy);

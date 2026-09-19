@@ -38,6 +38,14 @@ The engine is published as three jars in the `io.github.brantunger` group: `unru
 `unruly-engine-test` (the [contract test kit](#contract-test-kit)). The `benchmarks` project isn't published. See
 [Installation](../README.md#-installation) and [Packaging](languages/custom.md#-packaging).
 
+### Build slot
+
+What a run on a virtual thread waits for, on an engine built with `unlimitedCopies()`, before it makes a new
+[compiled copy](#compiled-copy); it holds the slot until that copy's first run ends. An engine has one for each
+processor. They pace how many new copies are in their first run at once, without bounding how many copies exist: a
+run that gives up waiting makes its copy without one. See
+[Waiting for a build slot](compiled-copies.md#waiting-for-a-build-slot).
+
 ### Carrier thread
 
 The platform thread that a virtual thread runs on. On JDK 21 to 23, a virtual thread waiting on a monitor keeps its
@@ -96,9 +104,10 @@ runs borrow the copies ready instead of making them. See
 
 The most [compiled copies](#compiled-copy) an engine keeps, and so the most runs that make progress at once. By default
 an engine limits runs on virtual threads only, to one copy for every two processors and at least one; `maxCopies(n)`
-limits every thread and `unlimitedCopies()` removes the limit. The limit belongs to the engine, so every rule list it
-loads shares it and a reload never raises it. [Copies made at load](#copies-at-load) are kept too, and under the default
-limit can be more than it. See [Limiting the copies](compiled-copies.md#-limiting-the-copies).
+limits every thread and `unlimitedCopies()` leaves only [build slots](#build-slot). The limit belongs to the engine,
+so every rule list it loads shares it and a reload never raises it. [Copies made at load](#copies-at-load) are kept
+too, and under the default limit can be more than it. See
+[Limiting the copies](compiled-copies.md#-limiting-the-copies).
 
 ### Deadline
 
@@ -216,8 +225,8 @@ decides for itself. See [Null and missing facts](facts.md#-null-and-missing-fact
 ### Nested run
 
 A run started on the same thread from inside another run, such as from an action or a listener, on any engine. It never
-waits for a compiled copy, and it stops at the outer run's deadline if that comes first. On the same engine,
-`RunContext.parent()` names the outer run. See [Nested runs](stopping-runs.md#-nested-runs) and
+waits for a compiled copy or a [build slot](#build-slot), and it stops at the outer run's deadline if that comes first.
+On the same engine, `RunContext.parent()` names the outer run. See [Nested runs](stopping-runs.md#-nested-runs) and
 [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ### Null reference
