@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,6 +23,7 @@ import java.util.Objects;
  * @param copyLimit       How many compiled copies of the rules runs may hold at once, and which runs that
  *                        applies to
  * @param runTimeout      How long a run may take, or {@code null} if runs have no deadline
+ * @param clock           The clock a run reads when it starts, to decide which rules are within their validity window
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
  * @param declaredFacts   The declared type of each fact, by name, empty if none were declared
@@ -30,7 +32,7 @@ import java.util.Objects;
  * @param <O>             The type of the output object
  */
 public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
-                                     List<RuleListener> listeners, CopyLimit copyLimit, Duration runTimeout,
+                                     List<RuleListener> listeners, CopyLimit copyLimit, Duration runTimeout, Clock clock,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
                                      Map<String, Map<String, String>> options,
                                      Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
@@ -46,6 +48,7 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
         Objects.requireNonNull(copyLimit, "copyLimit");
+        Objects.requireNonNull(clock, "clock");
         Objects.requireNonNull(outputType, "outputType");
         Objects.requireNonNull(outputWriter, "outputWriter");
         declaredFacts = Map.copyOf(declaredFacts);

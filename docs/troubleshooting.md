@@ -32,7 +32,7 @@ flowchart TD
     C -- "yes" --> E{"First-match engine?"}
     E -- "yes" --> F{"Did a higher-priority rule match?"}
     F -- "yes" --> G["Only that rule fires. Use allMatches(...) or uniqueMatch(...)"]
-    F -- "no" --> H["Check the rules are loaded: engine.rules().rules(). An empty list returns null"]
+    F -- "no" --> H["Check they're loaded (engine.rules().rules()) and not SKIPPED (evaluations())"]
     E -- "no, all matches" --> I{"Did a later action change the output?"}
     I -- "yes" --> J["A lower priority fires later and overwrites"]
     I -- "no" --> H
@@ -52,7 +52,9 @@ In words: if `run()` threw, read [An exception from run()](#-an-exception-from-r
 result, check whether the condition is true for these facts; if not, check the fact's name and value (in MVEL, an
 enum compared with a string is `false`). If it is true and the engine is first-match, a higher-priority match fires
 instead of your rule. If the engine is all-matches, a lower-priority action may have overwritten the output. Otherwise
-check the rules are loaded: `engine.rules().rules()` lists them, and an empty list returns `null`.
+check the rules are loaded: `engine.rules().rules()` lists them, and an empty list returns `null`. A loaded rule the
+run skipped reads `SKIPPED` in `runWithResult(facts).evaluations()`; see
+[A rule's outcome is SKIPPED](#a-rules-outcome-is-skipped).
 
 ### run() returns null
 
@@ -92,6 +94,13 @@ The output supplier returns a shared object, so every run adds to it. See
 
 Read `runWithResult(facts).evaluations()`: one outcome for every loaded rule. See
 [What a run reports](engines-and-runs.md#-what-a-run-reports).
+
+### A rule's outcome is SKIPPED
+
+The run didn't use the rule, and didn't evaluate its condition: the rule is disabled, the run started outside its
+validity window by the engine's clock, or the run was given tags and the rule carries none of them. A rule with no
+tags is skipped by every run given tags, and tags are compared case included. See
+[Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
 
 ## 🔧 An exception from build()
 

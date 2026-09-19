@@ -112,7 +112,8 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   though, the last rule's `afterEvaluate` or `afterExecute` and `afterRun` can run past the deadline, and the run
   returns normally.
 - **An empty rule list evaluates nothing,** so a passed deadline or an interrupt can stop its run only while it waits
-  for a copy. Otherwise the run returns normally, and the interrupt status stays set.
+  for a copy. Otherwise the run returns normally, and the interrupt status stays set. The same holds for a run that
+  [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses) every rule: nothing is checked before a skipped rule.
 - **Another thread isn't covered.** Work an action hands to another thread gets neither the deadline nor the
   interrupt.
 

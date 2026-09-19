@@ -5,7 +5,7 @@ import java.util.Map;
 
 /**
  * What every rule of one run needs: the run's fact values, the read-only views built over them, and when the run
- * must stop. <b>Internal:</b> this record may change in any release.
+ * must stop, and which rules it uses. <b>Internal:</b> this record may change in any release.
  *
  * <p>
  * The views and the evaluation context depend only on the run, not on the rule being evaluated, so the engine builds
@@ -19,9 +19,10 @@ import java.util.Map;
  * @param deadline     When the run must stop, or {@code null} if it has none
  * @param runId        The run's number, which its Flight Recorder events carry
  * @param tally        What the run counts as it goes, for its Flight Recorder event
+ * @param selection    Which rules the run uses, and which it skips
  */
 record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, EngineEvaluationContext evaluation,
-                Instant deadline, long runId, RunTally tally) {
+                Instant deadline, long runId, RunTally tally, RuleSelection selection) {
 
     /**
      * Builds the views one run needs.
@@ -31,11 +32,12 @@ record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, En
      * @param deadline     When the run must stop, or {@code null} if it has none
      * @param runId        The run's number
      * @param tally        What the run counts as it goes
+     * @param selection    Which rules the run uses
      * @return The run's facts
      */
     static RunFacts of(Map<String, Object> values, Map<String, Object> forListeners, Instant deadline, long runId,
-                       RunTally tally) {
+                       RunTally tally, RuleSelection selection) {
         return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline), deadline, runId,
-                tally);
+                tally, selection);
     }
 }

@@ -7,6 +7,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Modifier;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
@@ -42,9 +43,9 @@ class EngineVisibilityTest {
         assertTrue(Modifier.isFinal(Engines.class.getModifiers()));
         assertEquals(0, Engines.class.getConstructors().length);
         EngineConfiguration<Object> unlimited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
-                CopyLimit.none(), null, Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                CopyLimit.none(), null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
         EngineConfiguration<Object> limited = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
-                CopyLimit.of(2), null, Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                CopyLimit.of(2), null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
 
         assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
         assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));

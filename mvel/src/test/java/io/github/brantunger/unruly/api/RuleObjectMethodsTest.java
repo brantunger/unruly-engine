@@ -3,17 +3,21 @@ package io.github.brantunger.unruly.api;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.UnaryOperator;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Pins what 1.x releases returned from {@code equals}, {@code hashCode} and {@code toString}, so users' logs, hashed
- * collections and equality checks don't change.
+ * Pins what {@code equals}, {@code hashCode} and {@code toString} return, so a change to users' logs, hashed
+ * collections and equality checks is deliberate. 2.0 added {@code enabled}, {@code validFrom}, {@code validTo} and
+ * {@code tags} to all three, which changed every rule's {@code toString} and {@code hashCode} from 1.x.
  */
-@DisplayName("Rule's equals, hashCode and toString keep the behavior of earlier releases")
+@DisplayName("Rule's equals, hashCode and toString return pinned values")
 class RuleObjectMethodsTest {
 
     private static Rule full() {
@@ -26,23 +30,37 @@ class RuleObjectMethodsTest {
     @DisplayName("toString lists every field in declaration order")
     void toStringFormat() {
         assertEquals("Rule(ruleName=prime-rate, condition=applicant.score >= 750, action=output.rate = 4.5, "
-                + "priority=10, description=Prime, language=mvel)", full().toString());
+                + "priority=10, description=Prime, language=mvel, enabled=true, validFrom=null, validTo=null, "
+                + "tags=[])", full().toString());
+        assertEquals("Rule(ruleName=r, condition=true, action=x, priority=null, description=null, language=null, "
+                        + "enabled=false, validFrom=2027-06-01T00:00:00Z, validTo=2027-09-01T00:00:00Z, "
+                        + "tags=[eu, retail])",
+                Rule.builder().ruleName("r").condition("true").action("x").enabled(false)
+                        .validFrom(Instant.parse("2027-06-01T00:00:00Z")).validTo(Instant.parse("2027-09-01T00:00:00Z"))
+                        .tags(List.of("retail", "eu")).build().toString(),
+                "the tags are listed in String order, whatever order they were given in");
     }
 
     @Test
     @DisplayName("the builder's toString lists every field set so far")
     void builderToStringFormat() {
         assertEquals("Rule.RuleBuilder(ruleName=prime-rate, condition=applicant.score >= 750, "
-                + "action=output.rate = 4.5, priority=10, description=Prime, language=mvel)", full().toBuilder().toString());
+                + "action=output.rate = 4.5, priority=10, description=Prime, language=mvel, enabled=true, "
+                + "validFrom=null, validTo=null, tags=[])", full().toBuilder().toString());
         assertEquals("Rule.RuleBuilder(ruleName=null, condition=null, action=null, priority=null, description=null, "
-                + "language=null)", Rule.builder().toString());
+                + "language=null, enabled=true, validFrom=null, validTo=null, tags=[])", Rule.builder().toString());
     }
 
     @Test
-    @DisplayName("hashCode returns the same values as earlier releases")
+    @DisplayName("hashCode returns the values an independent computation of its documented formula gives")
+    // Computed outside Java from the formula in Rule.hashCode: 1.x's six fields, then enabled (Boolean.hashCode),
+    // validFrom and validTo (43 for null) and the tags' Set.hashCode. The same computation gives 1.x's values,
+    // -1798543528 and -144318294, for 1.x's six fields alone.
     void hashCodeValues() {
-        assertEquals(-1798543528, full().hashCode());
-        assertEquals(-144318294, Rule.builder().ruleName("r").condition("true").action("x").build().hashCode());
+        assertEquals(-587241311, full().hashCode());
+        assertEquals(-550219821, Rule.builder().ruleName("r").condition("true").action("x").build().hashCode());
+        assertEquals(-1483400424, Rule.builder().ruleName("r").condition("true").action("x").enabled(false)
+                .tags(Set.of("eu", "retail")).build().hashCode());
     }
 
     @Test
@@ -58,6 +76,10 @@ class RuleObjectMethodsTest {
         changes.put("description null", builder -> builder.description(null));
         changes.put("language", builder -> builder.language("toy"));
         changes.put("language null", builder -> builder.language(null));
+        changes.put("enabled", builder -> builder.enabled(false));
+        changes.put("validFrom", builder -> builder.validFrom(Instant.EPOCH));
+        changes.put("validTo", builder -> builder.validTo(Instant.EPOCH));
+        changes.put("tags", builder -> builder.tags(Set.of("eu")));
 
         changes.forEach((name, change) -> {
             Rule changed = change.apply(full().toBuilder()).build();

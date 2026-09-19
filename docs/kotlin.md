@@ -50,7 +50,10 @@ val decision: LoanDecision? = engine.run(facts)   // null when no rule matched
 | `RunContext.parent()` | `RunContext?`: `null` unless another run of the same engine started this one |
 | `RuleSetInfo.loadedAt()` | `Instant?`: `null` before the first `load()` |
 | `RunOptions.timeout()` | `Duration?`: `null` when the run uses the engine's timeout |
+| `RunOptions.tags()` | `Set<String>`: empty when the run uses every rule |
 | `Rule.priority`, `description`, `language` | `Int?`, `String?`, `String?` |
+| `Rule.validFrom`, `Rule.validTo` | `Instant?`: `null` when the rule has no start or no end |
+| `Rule.isEnabled`, `Rule.tags` | `Boolean`, `Set<String>` |
 | `Rule.ruleName`, `Rule.condition`, `Rule.action`, and the builder's `ruleName()`, `condition()` and `action()` | `String` |
 | `FactReference.name` | `String` |
 | `RuleCompilationException.ruleName`, `RuleExecutionException.ruleName` | `String?` |

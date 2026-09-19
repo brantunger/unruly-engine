@@ -4,6 +4,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Rule")
@@ -42,6 +47,35 @@ class RuleTest {
         assertNull(rule.getPriority());
         assertNull(rule.getDescription());
         assertNull(rule.getLanguage());
+    }
+
+    @Test
+    @DisplayName("a rule is enabled, with no validity window and no tags, unless they're set")
+    void selectionFieldsDefault() {
+        Rule rule = required().build();
+
+        assertTrue(rule.isEnabled());
+        assertNull(rule.getValidFrom());
+        assertNull(rule.getValidTo());
+        assertEquals(Set.of(), rule.getTags());
+    }
+
+    @Test
+    @DisplayName("enabled, the window and the tags are kept, copied by toBuilder, and the tags can't be changed")
+    void selectionFieldsKept() {
+        Instant from = Instant.parse("2027-06-01T00:00:00Z");
+        Instant to = Instant.parse("2027-09-01T00:00:00Z");
+        List<String> given = new ArrayList<>(List.of("retail", "eu", "eu"));
+        Rule rule = required().enabled(false).validFrom(from).validTo(to).tags(given).build();
+        given.add("uk");
+
+        assertFalse(rule.isEnabled());
+        assertEquals(from, rule.getValidFrom());
+        assertEquals(to, rule.getValidTo());
+        assertEquals(List.of("eu", "retail"), List.copyOf(rule.getTags()), "in String order, each tag once, copied");
+        assertThrows(UnsupportedOperationException.class, () -> rule.getTags().add("uk"));
+        assertEquals(rule, rule.toBuilder().build());
+        assertTrue(rule.toBuilder().enabled(true).build().isEnabled());
     }
 
     @Nested
@@ -132,8 +166,8 @@ class RuleTest {
         @Test
         @DisplayName("toString shows unset optional fields as null")
         void toStringWithNulls() {
-            assertEquals("Rule(ruleName=r, condition=c, action=a, priority=null, description=null, language=null)",
-                    required().build().toString());
+            assertEquals("Rule(ruleName=r, condition=c, action=a, priority=null, description=null, language=null, "
+                    + "enabled=true, validFrom=null, validTo=null, tags=[])", required().build().toString());
         }
     }
 

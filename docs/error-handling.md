@@ -71,13 +71,14 @@ reports it as the cause of a `RuleCompilationException`.
 | `imports()` / `listener()` / `listeners()` | `NullPointerException` | The argument or an element is `null`. Nothing is added. |
 | `maxCopies()` | `IllegalArgumentException` | The limit on compiled copies is less than 1 |
 | `runTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
+| `clock()` | `NullPointerException` | The clock is `null` |
 | `outputType()` / `outputWriter()` / `option()` | `NullPointerException` | An argument is `null` |
 | `fact()` / `facts()` | `IllegalArgumentException` | A fact is declared with the name `output` |
 | | `NullPointerException` | A name, a type or the map is `null` |
 | `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language, or a language given an option, isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or two found languages have the same name |
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path |
 | | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |
-| `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. |
+| `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. Also a tag that is `null` or blank, and a `validTo` that isn't after `validFrom`, including an equal one: `validTo must be after validFrom, but validFrom is ... and validTo is ...` |
 | `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition its language rejects (in MVEL, an assignment or `import_static`); an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](languages/mvel.md#-strong-typing), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to |
 | | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null` |
@@ -88,6 +89,9 @@ reports it as the cause of a `RuleCompilationException`.
 | | `NullPointerException` | `facts` is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. Every other `Error`, including a `LinkageError` such as `NoClassDefFoundError` or `IllegalAccessError`, is reported as a `RuleExecutionException` naming the rule, with the error as its cause. |
 | `RunOptions.withTimeoutOf()` / `withTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
+| | `NullPointerException` | The timeout is `null` |
+| `RunOptions.withTags()` | `IllegalArgumentException` | The collection is empty, or a tag in it is `null` or blank |
+| | `NullPointerException` | The collection itself is `null` |
 | `runWithResult(facts, options)` | | As `runWithResult(facts)` |
 | `validate(rules)` | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null`. A `null` entry is returned as a problem, not thrown |

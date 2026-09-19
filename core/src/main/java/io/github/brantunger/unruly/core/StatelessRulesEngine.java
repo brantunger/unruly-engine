@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RunResult;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -48,12 +49,13 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      *
      * @param facts   The key/value fact store to run the rule engine against.
      * @param timeout How long the run may take, or {@code null} if it has no deadline
+     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @return The object that is the result of the action getting fired against the given {@link Rule}, or
      *         {@code null} if the rule list is empty or no rule matched
      */
     @Override
-    RunResult<O> runRules(FactStore<?> facts, Duration timeout) {
-        return runInScope(facts, timeout, (ruleSet, copy, runFacts) -> {
+    RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
+        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
             // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
             // broken lower-priority condition can't fail a run that is already decided.
             Matches matches = this.match(ruleSet.rules(), copy, runFacts, true);

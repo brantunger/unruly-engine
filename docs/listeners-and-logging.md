@@ -85,6 +85,10 @@ facts change during the run or another engine runs with equal facts; its `toStri
 facts. `RunContext` is sealed to the engine, so test a listener by running an engine rather than by constructing a
 context.
 
+A rule the run [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses), because it's disabled, outside its
+validity window or without the run's tags, gets no callback at all. It appears only in the `RunResult` that
+`afterRun` receives, with the outcome `SKIPPED`.
+
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
 ## 📝 Writing a listener
@@ -193,7 +197,7 @@ names and fields below are the contract; the classes that emit them aren't API.
 | Event | Enabled by default | One for every |
 | --- | --- | --- |
 | `io.github.brantunger.unruly.Run` | Yes, with a 10 ms threshold, so only slow runs are kept | `run()` call, from the call to its return or exception, including reading the facts and any wait for a compiled copy |
-| `io.github.brantunger.unruly.Rule` | No | Condition evaluated and action run; a rule a first-match run skipped has none |
+| `io.github.brantunger.unruly.Rule` | No | Condition evaluated and action run; a rule below a first match, or one the run skips, has none |
 
 The run event's fields:
 
@@ -202,7 +206,7 @@ The run event's fields:
 | `engineId` | Numbers the engines of the JVM in creation order, so two engines' runs can be told apart |
 | `runId`, `parentRunId` | The run's number within its engine, as `RunContext.runId()` reports it, and the number of the run it was started from on the same thread, or 0 |
 | `matchPolicy` | `firstMatch`, `allMatches` or `uniqueMatch` |
-| `rulesEvaluated`, `rulesFired` | Conditions evaluated and actions run to completion, also for a run that failed or stopped part-way |
+| `rulesEvaluated`, `rulesFired` | Conditions evaluated and actions run to completion, also for a run that failed or stopped part-way. Rules the run skips count in neither |
 | `ruleSetChecksum` | The [checksum](glossary.md#checksum) of the rules the run used |
 | `outcome` | `COMPLETED`; `STOPPED` when the run was interrupted or passed its deadline, also while waiting for a copy; `FAILED` for any other exception |
 

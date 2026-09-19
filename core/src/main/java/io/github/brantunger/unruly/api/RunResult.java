@@ -95,8 +95,9 @@ public final class RunResult<O> {
      * Returns what each rule's condition evaluated to: one evaluation for every loaded rule, in evaluation order, the
      * same {@link Rule} instances as {@link RuleSetInfo#rules()}. On a first-match engine, the rules after the match
      * are {@link RuleEvaluation.Outcome#NOT_EVALUATED}; to know whether they would have matched, use an all-matches or
-     * a unique-match engine, which evaluate every condition. A result created with
-     * {@link #of(Object, List, String)} has none.
+     * a unique-match engine, which evaluate every condition of the rules the run uses. A rule the run skipped is
+     * {@link RuleEvaluation.Outcome#SKIPPED} on every engine. A result created with {@link #of(Object, List, String)}
+     * has none.
      *
      * @return The evaluations; unmodifiable, and empty if the rule list is empty
      */
