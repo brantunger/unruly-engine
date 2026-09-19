@@ -75,8 +75,19 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     private Serializable compiledIn(Session session) {
+        return mvelSession(session).compiled(this);
+    }
+
+    /**
+     * Returns the session as the MVEL session it must be.
+     *
+     * @param session A session an MVEL compiler created
+     * @return The session
+     * @throws IllegalArgumentException if another language's compiler created it
+     */
+    static MvelSession mvelSession(Session session) {
         if (session instanceof MvelSession mvel) {
-            return mvel.compiled(this);
+            return mvel;
         }
         throw new IllegalArgumentException("An MVEL expression runs with a session its compiler created, not "
                 + session);

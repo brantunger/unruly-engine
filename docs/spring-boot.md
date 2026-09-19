@@ -216,7 +216,8 @@ new engine.
 
 - A run already in progress finishes with the rules it started with, and a request that arrives while the new list is
   still compiling is served by the old rules, without waiting.
-- If two instances of the job overlap, both compile, and the one that finishes compiling last wins.
+- If two instances of the job overlap, both compile, and the one that finishes last wins: the last to swap in its
+  rules, after making any copies at load.
 - Compare `RunResult.ruleSetChecksum()` with `engine.rules().checksum()` when an audit row has to name the version of
   the rules a decision used.
 

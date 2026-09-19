@@ -4,7 +4,8 @@
 > Describes 2.0.0, which isn't released yet.
 
 Each run works on a compiled copy of the rules. This page says what a copy is, how many an engine keeps,
-how to limit them, what a run waits for when they run out, and what changes on virtual threads.
+how to limit them, how to make them when the rules load, what a run waits for when they run out, and what changes on
+virtual threads.
 
 **Who it's for:** application developers sizing an engine for many concurrent runs, or tuning it for virtual
 threads.
@@ -28,13 +29,14 @@ and closes.
 Every run shares the rules as `load()` compiled them. What an expression language changes while its expressions run
 lives in a *[session](glossary.md#session)*, and a **compiled copy** of the rules is one session for each language the
 rules use. Each `run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first
-run after `load()` does), and gives it back when it finishes.
+run after `load()` does, unless the engine [makes copies at load](#making-copies-at-load)), and gives it back when it
+finishes.
 
 A rule list that needs no copy at all is never limited, once the engine knows. When every language of the list returns
 `Session.none()`, nothing a copy holds changes while the rules run, so every run shares one set of sessions. The engine
 learns this from the list's first copy, so straight after a reload from rules that did need copies, the first such run
-may still wait. See [Thread safety for language authors](languages/custom.md#-thread-safety) for what a language must
-do to qualify.
+may still wait, unless the engine [makes copies at load](#making-copies-at-load), when `load()` learns it. See
+[Thread safety for language authors](languages/custom.md#-thread-safety) for what a language must do to qualify.
 
 In MVEL, a session compiles each expression again the first time that copy runs it, and MVEL generates accessor
 classes for that session alone. See [Compiled copies in MVEL](languages/mvel.md#-compiled-copies).
@@ -47,14 +49,16 @@ classes for that session alone. See [Compiled copies in MVEL](languages/mvel.md#
 | Runs the limit doesn't apply to | One for each such run at your busiest moment |
 | [Extra copies](glossary.md#extra-copy) | At most one for each nested or stalled run in progress; a nested run that finds a place free takes a kept copy |
 | A rule list [a reload replaced](thread-safety.md#-reloading-rules-while-running) | The copies its unfinished runs still hold, unlimited ones only |
+| [Copies made at load](#making-copies-at-load) | `n` idle copies from each `load()` until the next one, even above the default limit, which bounds only the copies runs hold; during a reload, the new rules' `n` and the old rules' kept copies, until the swap |
 
 Count each engine separately: an engine's limit is its own. By default the limit applies only to runs on virtual
 threads, so a platform thread pool of `N` threads can keep up to `N` copies. Don't add the last row to the first: a
 draining list's *limited* runs hold permits from the same limit, so they're already in it.
 
-**Kept copies never shrink.** The engine keeps as many as the most runs that held one at once, up to the limit, until
-the next `load()` or `close()`. Memory doesn't come back after a traffic spike; a periodic reload releases it, at the
-cost of rebuilding copies on the next runs.
+**Kept copies never shrink.** The engine keeps as many as the most runs that held one at once, up to the limit, or as
+many as it [made at load](#making-copies-at-load) if that is more, until the next `load()` or `close()`. Memory
+doesn't come back after a traffic spike; a periodic reload releases it, at the cost of rebuilding copies on the next
+runs.
 
 ## 🔧 Limiting the copies
 
@@ -93,6 +97,43 @@ engines each have a limit of their own, so their limits add up.
 
 `maxCopies(n)` therefore bounds the runs that make progress, not the copies that can exist at one instant: nested and
 stalled runs take an extra copy on top (below), and the list a reload replaced keeps the copies its runs still hold.
+
+### Making copies at load
+
+By default no copy exists until a run needs one, so the first runs after each `load()` make them. With
+`copiesAtLoad(n)`, which is off by default, `load()` makes `n` copies itself and runs borrow them ready:
+
+```java
+// 8 is the default limit on virtual threads with 16 processors: runs there use no more copies than that at once
+RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new).copiesAtLoad(8).build();
+```
+
+`load()` makes the copies one after another, on its own thread, after every rule has compiled and before it swaps the
+new rules in, so runs go on using the rules it replaces meanwhile. For each copy, it creates a session in every
+language that keeps state between runs and warms it up. MVEL's warm-up compiles every condition and action into the
+session, not only the ones a run reaches.
+
+What it costs:
+
+- **A slower `load()`.** In the measurement under [Virtual threads](#-virtual-threads), 16 copies of 21 MVEL rules
+  added about 65 ms to a reload that otherwise took 15 ms, and about 80 ms to the first load in a new JVM.
+- **Memory from the start.** The copies exist from `load()` until the next `load()` or `close()`, whether runs use
+  them or not. During a reload, the old rules' copies and the new ones exist together until the swap.
+
+What it doesn't change:
+
+- **The limit.** A limited run still waits for a place; it just finds a copy ready. `build()` throws
+  `IllegalArgumentException` when `n` is more than `maxCopies(...)`. The default limit and `unlimitedCopies()` accept
+  any `n`. Any run can borrow any idle copy, but with the default limit no more runs on virtual threads than the limit
+  hold one at the same time, so the copies above it are used only while runs on platform threads hold copies too.
+- **Copies made during a run.** A copy a run makes because none is idle, and the extra copy of a nested or stalled
+  run, are made as before, and not warmed up.
+- **Rules that need no copy.** When every language returns `Session.none()`, `load()` makes the one shared set of
+  sessions for any `n` above zero, and no more. `validate()` makes no copies.
+
+A language that fails to create or warm up a session for a copy fails `load()` with a `RuleCompilationException` that
+names the language, and the rules loaded before stay loaded; see
+[Exceptions by method](error-handling.md#-exceptions-by-method).
 
 ### What a run waits for
 
@@ -196,10 +237,20 @@ want at once.
 
 **Known issue on JDK 24 and later.** A virtual thread still keeps its carrier while the JVM loads a class. MVEL loads
 classes while it compiles, and generates accessor classes during a copy's first runs, so a run that makes a new
-compiled copy can pin its carrier for as long as that takes.
-[#294](https://github.com/brantunger/unruly-engine/issues/294) is open and tracks making the copies when the rules
-load instead. Since [#387](https://github.com/brantunger/unruly-engine/pull/387), MVEL's class lookups no longer wait
-on each other, which shortens the waiting without removing the pinning.
+compiled copy can pin its carrier for as long as that takes. Since
+[#387](https://github.com/brantunger/unruly-engine/pull/387), MVEL's class lookups no longer wait on each other, which
+shortens the waiting without removing the pinning.
+
+[`copiesAtLoad(n)`](#making-copies-at-load) moves that compiling, and the classes it loads, into `load()` for the
+copies it makes. It doesn't move the accessor classes, which MVEL still generates during each copy's first runs, or
+the compiling of a copy a run makes itself.
+[#421](https://github.com/brantunger/unruly-engine/issues/421) tracks `unlimitedCopies()` with MVEL on JDK 24 and
+later, which `copiesAtLoad(n)` can't help.
+
+Measured on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000 runs of 21 MVEL rules, and
+`copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned events fell by about a third, from
+1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput didn't change, at about
+690,000–745,000 runs a second. On JDK 21 there were no pins either way.
 
 ## 🚧 Gotchas
 
@@ -207,6 +258,7 @@ on each other, which shortens the waiting without removing the pinning.
 | --- | --- | --- |
 | **`maxCopies(n)` isn't a cap on copies** | A stalled run, or a nested run that finds no place free, takes an extra copy, and runs the limit doesn't apply to keep copies of their own | Size memory with [Memory sizing](#memory-sizing) |
 | **Kept copies never shrink** | The memory a traffic spike took stays until the next `load()` or `close()` | Reload periodically, if that memory matters |
+| **`copiesAtLoad(n)` above the default limit** | `build()` accepts it, but runs on virtual threads never borrow more than the limit of them at once, so the rest sit idle unless runs on platform threads use them | Make `n` no more than the limit, or add `maxCopies(n)` with the same `n`, so the limit applies to every thread |
 | **A deadline under five seconds never takes an extra copy** | A fan-out that would need one waits until its deadline and fails with a `TimeoutException` cause | Give engines that run each other `unlimitedCopies()` |
 | **A reused interrupted thread** | The next run on that thread stops at its first rule, or fails at once when it would have waited | Call `Thread.interrupted()` before reusing the thread |
 
@@ -222,6 +274,12 @@ engine has its own limit. See [Memory sizing](#memory-sizing).
 
 No. Kept copies stay until the next `load()` or `close()`. A periodic reload releases them, and the next runs pay to
 build new ones.
+
+### Should I make the copies at load?
+
+Only if the first runs after each `load()` matter more to you than the time `load()` takes. Its main use is MVEL rules
+run on virtual threads on JDK 24 and later, where it cut the carrier pinning of those first runs by about a third
+in one benchmark, without changing throughput. See [Making copies at load](#making-copies-at-load).
 
 ### Does waiting for a copy show up in my listener timings?
 

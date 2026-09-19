@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import org.mvel2.CompileException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,6 +26,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     private final Imports imports;
     private final FactNames factNames;
+    // Every expression compiled, for warmUp(). Only load()'s thread compiles and warms up, so a plain list will do.
+    private final List<MvelExpression> compiled = new ArrayList<>();
 
     /**
      * Creates the compiler for one rule list.
@@ -85,7 +88,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     private MvelExpression compile(Expression source) {
         try {
-            return MvelExpression.compile(source.text(), imports);
+            MvelExpression expression = MvelExpression.compile(source.text(), imports);
+            compiled.add(expression);
+            return expression;
         } catch (CompileException e) {
             // The engine reports an expression too long for MVEL's recursive parser as such.
             if (rootCause(e) instanceof StackOverflowError) {
@@ -130,6 +135,20 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     @Override
     public Session newSession() {
         return new MvelSession();
+    }
+
+    /**
+     * Compiles every condition and action of the rule list into the session, which otherwise compiles each one the
+     * first time it runs. The first session warmed up takes the compilations made when the rules loaded; every later
+     * one compiles the expressions again.
+     *
+     * @param session A session {@link #newSession()} returned
+     * @throws IllegalArgumentException if the session isn't one this compiler created
+     */
+    @Override
+    public void warmUp(Session session) {
+        MvelSession mvel = MvelExpression.mvelSession(session);
+        compiled.forEach(mvel::compiled);
     }
 
     @Override

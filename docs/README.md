@@ -59,7 +59,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | ⏳ [Stopping a run](stopping-runs.md) | Application developers | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
 | 🟣 [Kotlin](kotlin.md) | Application developers | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](thread-safety.md) | Application developers | What's shared, the engine's lifecycle and closing, and reloading rules under traffic |
-| 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, what a run waits for, and virtual threads |
+| 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, what a run waits for, and virtual threads |
 | 🔼 [Migrating to 2.0](migrating-to-2.md) | Everyone | Every change from 1.x that can affect your code, who it affects, and what to change |
 | 📖 [Glossary](glossary.md) | Everyone | Short definitions of the terms the guides use, each linked to the page that explains it |
 | ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | Everyone | The API reference |

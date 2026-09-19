@@ -20,7 +20,7 @@ import java.util.function.Supplier;
 
 /**
  * Configures and builds a {@link RulesEngine}. An engine's languages, imports, listeners, limit on compiled copies,
- * run timeout and clock are set here and can't change once it's built; only its rules can, with
+ * copies made at load, run timeout and clock are set here and can't change once it's built; only its rules can, with
  * {@link RulesEngine#load(List)}.
  *
  * <p>
@@ -77,6 +77,7 @@ public final class RulesEngineBuilder<O> {
     // null until the engine is built, so the default reads the number of processors then, not when the builder
     // was created.
     private @Nullable CopyLimit copies;
+    private int loadCopies;
     private @Nullable Duration timeout;
     private Clock runClock = Clock.systemUTC();
     private final Map<String, Class<?>> factTypes = new LinkedHashMap<>();
@@ -423,6 +424,44 @@ public final class RulesEngineBuilder<O> {
     }
 
     /**
+     * Makes {@code count} compiled copies of the rules each time {@link RulesEngine#load(List)} runs, so the first
+     * runs borrow copies that are ready instead of making them. Without this, no copy is made until a run needs one.
+     *
+     * <p>
+     * Making a copy compiles the rules again, in each language that keeps state between runs, and prepares its
+     * sessions with {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#warmUp(
+     * io.github.brantunger.unruly.api.language.Session) warmUp}: MVEL compiles every condition and action into it.
+     * {@code load()} makes the copies one after another on its own thread, after compiling the rules and before
+     * runs can see them, so runs go on using the rules it replaces meanwhile, and {@code load()} takes that much
+     * longer. For example, 16 copies of 21 MVEL rules added about 65 ms to a reload that otherwise took 15 ms. Rules
+     * whose languages all keep no state between runs get one set of sessions that every run shares, whatever
+     * {@code count} is.
+     * </p>
+     *
+     * <p>
+     * It's for runs on virtual threads on JDK 24 and later, where a run that makes a copy can keep its carrier while
+     * MVEL loads the classes it compiles. It doesn't stop MVEL generating accessor classes during a copy's first
+     * runs, and a copy made during a run, such as one for a run nested in another, is made as before. See
+     * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#-virtual-threads">
+     * Virtual threads</a>.
+     * </p>
+     *
+     * @param count How many copies to make; zero, the default, makes none. With {@link #maxCopies(int)}, it can't
+     *              be more than the limit, since no more copies than that are used at once. The default limit, on
+     *              runs from virtual threads only, and {@link #unlimitedCopies()} allow any number.
+     * @return This builder
+     * @throws IllegalArgumentException if {@code count} is negative; {@link #build()} throws it if {@code count} is
+     *                                  more than {@link #maxCopies(int)}
+     */
+    public RulesEngineBuilder<O> copiesAtLoad(int count) {
+        if (count < 0) {
+            throw new IllegalArgumentException("copiesAtLoad must not be negative, but was " + count);
+        }
+        this.loadCopies = count;
+        return this;
+    }
+
+    /**
      * Stops a run that is still going after {@code timeout}. Without this, a run has no deadline.
      *
      * <p>
@@ -488,11 +527,16 @@ public final class RulesEngineBuilder<O> {
      *                                  unchanged.
      * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
      *                                  class that exists but can't be loaded, for example because a class it depends on
-     *                                  is missing
+     *                                  is missing; or if {@link #copiesAtLoad(int)} is more than {@link #maxCopies(int)}
      */
     public RulesEngine<O> build() {
+        CopyLimit limit = copies != null ? copies : CopyLimit.forVirtualThreads();
+        if (limit.limits() && !limit.virtualThreadsOnly() && loadCopies > limit.maxCopies()) {
+            throw new IllegalArgumentException("copiesAtLoad(" + loadCopies + ") is more than maxCopies("
+                    + limit.maxCopies() + "): no more copies than that are used at once");
+        }
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
-                importNames, listenerList, copies != null ? copies : CopyLimit.forVirtualThreads(), timeout, runClock,
+                importNames, listenerList, limit, loadCopies, timeout, runClock,
                 outputClass, writer, languageOptions, factTypes, allFactsDeclared);
         return engineFactory.create(outputFactory, configuration);
     }

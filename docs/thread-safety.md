@@ -36,8 +36,9 @@ one run does.
 | `rules()` | ✅ | At any time. Before the first `load()` it reports no rules; after `close()` it throws. |
 | `close()` | ✅ | Once the engine is no longer needed. It returns at once, and runs already going finish with their rules. |
 
-An engine's languages, imports, listeners, [copy limit](glossary.md#copy-limit), run timeout, output type, output
-writer, declared facts and language options are all fixed when it's built. Only `load()` changes anything afterwards.
+An engine's languages, imports, listeners, [copy limit](glossary.md#copy-limit), copies at load, run timeout, output
+type, output writer, declared facts and language options are all fixed when it's built. Only `load()` changes
+anything afterwards.
 
 Interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression
 returns** — before each condition and each action, and when each one returns, so a run whose last condition or action
@@ -165,15 +166,16 @@ For the runs:
 - A run already in progress finishes with the rules it started with. `RunResult.ruleSetChecksum()` identifies them,
   and may already differ from `rules().checksum()`.
 - Runs that start after the swap use the new rules.
-- A run that starts **while the new list is still compiling** uses the old rules, without waiting.
+- A run that starts **while the new list is still compiling**, or while `load()` makes its
+  [copies at load](compiled-copies.md#making-copies-at-load), uses the old rules, without waiting.
 - A run checks its fact names with the languages of the rules it runs, whichever list that is.
 
 For the load itself:
 
-- If the new list fails to compile, nothing is swapped, the old rules stay in place, and the compilers the failed load
-  created are closed.
-- When two threads call `load()` at once, both compile the list they were given, and the one that finishes compiling
-  last wins.
+- If the new list fails to compile, or a language fails to create or warm up a session for a copy at load, nothing
+  is swapped, the old rules stay in place, and the sessions and compilers the failed load created are closed.
+- When two threads call `load()` at once, both compile the list they were given, and the one that finishes last wins:
+  the last to swap in its rules, after making any copies at load.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
   affect another rule or a later reload.
 
@@ -185,14 +187,16 @@ At the swap, the replaced list is retired: its idle [compiled copies](compiled-c
 copy given back is closed rather than kept, and its compilers close once the last run using it returns. A run that read
 the engine's rules just before the swap uses that list only while a run of it is still going, and may then build a copy
 of it; when the list is already closed, the run starts again on the new rules. Copies aren't carried over, so the first
-runs after each `load()` build them again.
+runs after each `load()` build them again, unless the engine was built with
+[`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load), when `load()` builds them before the swap.
 
 ## 📑 Compiled copies
 
 Every run shares the rules as `load()` compiled them. What an expression language changes while its expressions run
 lives in a *[session](glossary.md#session)*, and a **compiled copy** of the rules is one session for each language the
 rules use. Each `run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first
-run after `load()` does), and gives it back when it finishes.
+run after `load()` does, unless the engine [makes copies at load](compiled-copies.md#making-copies-at-load)), and gives
+it back when it finishes.
 
 How many copies an engine keeps, how to limit them, what a run waits for when they run out, and what changes on
 virtual threads are on their own page: [Compiled copies](compiled-copies.md).
@@ -212,7 +216,8 @@ They finish and return their results. `close()` returns at once and waits for no
 
 ### Can I call `load()` while runs are happening, or from two threads at once?
 
-Yes to both. Runs in progress keep their rules, and of two concurrent loads the one that finishes compiling last wins.
+Yes to both. Runs in progress keep their rules, and of two concurrent loads the one that finishes last wins: the last
+to swap in its rules, after making any copies at load.
 See [Reloading rules while running](#-reloading-rules-while-running).
 
 ### Can a run start before the first `load()` finishes?

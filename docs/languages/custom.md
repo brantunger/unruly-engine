@@ -33,7 +33,8 @@ any shape, keep run state in sessions, package the language for both paths, and 
 ## 🛑 Lifecycle at a glance
 
 Nothing is created at `build()`: a [compiler](../glossary.md#compiler) exists once `load()` needs it, and a
-[session](../glossary.md#session) once a run does.
+[session](../glossary.md#session) once a run does, or once `load()` makes its copies on an engine built with
+[`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load).
 
 ```mermaid
 sequenceDiagram
@@ -48,6 +49,7 @@ sequenceDiagram
     App->>Engine: load(rules)
     Engine->>Lang: newCompiler(context), at the first rule in this language
     Engine->>Comp: compileCondition(), then compileAction(), for each rule in priority order
+    Engine->>Comp: newSession(), then warmUp(session), n times with copiesAtLoad(n)
     App->>Engine: run(facts), on any thread
     Engine->>Comp: newSession(), when no idle copy is free
     Engine->>Comp: checkFactName(name), for each fact
@@ -63,7 +65,8 @@ sequenceDiagram
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
 | `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
-| `newSession` | A run that finds no idle copy of the rules | The run's thread | Yes |
+| `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled | The run's thread, or the `load()` thread | Yes |
+| `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it. Never for `Session.none()`, a session a run creates, or `validate()` | The `load()` thread | No |
 | `evaluate`, `execute` | Each rule the run reaches | The run's thread | Yes, each with its own session |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below) | Depends on the case | Yes, alongside other sessions |
 | `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
@@ -75,7 +78,8 @@ only `Session.none()`, the session of a language that keeps no state (see [Threa
 
 Two failures close things early. A session made for a copy that another language then fails to make is closed on the
 run's thread, at once, before it's used. A `load()` that fails closes the compilers it created at once, on the
-`load()` thread, before any session exists.
+`load()` thread; when it fails while making its copies, it closes the sessions of the copies it made first, then each
+compiler once.
 
 A run holds its copy from before `checkFactName` until after its last expression, so the compiler's `close()` never
 overlaps them, and both compile methods finish before any run can see the compiler. A language the engine has but no
@@ -88,7 +92,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | Interface | You implement | It returns |
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | A new compiler for each rule list |
-| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)` and `close()` | Compiled expressions that every run shares |
+| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)` | A `Boolean`; an `ActionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
@@ -176,6 +180,7 @@ compiles the same way but returns the failures and logs nothing, not even your w
 | Anything with a `StackOverflowError` as a cause | `... failed to compile: the expression is too long or too deeply nested to compile` | Per rule |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; the rules written in it aren't compiled |
+| An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | Alone, after every rule has compiled; the rules loaded before stay loaded |
 | A [fatal error](../glossary.md#fatal-error), thrown or as a cause | Logged, then rethrown unchanged | At once |
 | `IllegalArgumentException` from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 
@@ -318,6 +323,7 @@ too, a throw is then reported as that rule's failure, logged at ERROR, and a ret
 | --- | --- |
 | Your `ExpressionLanguage` instance | May serve several engines and concurrent `load()` calls at once: keep it stateless, with a constant `name()` |
 | `compileCondition`, `compileAction` | Called on one thread, the `load()` caller, and all finish before any run sees the compiler |
+| `warmUp` | Called on the `load()` thread, one session at a time, after every compile call and before any run sees the compiler |
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, possibly on different threads one after another |
@@ -340,6 +346,19 @@ A `newSession()` that throws or returns `null` fails the run that needed the ses
 logged at ERROR, and closes the sessions other languages already made for that copy; it happens before `beforeRun`,
 so no listener is told. A `close()` that throws is logged at WARN and the rest are still closed; only a fatal error
 is rethrown.
+
+### Warming up a session
+
+An engine built with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) makes its copies during
+`load()`, and passes each new session to `warmUp(Session)` before any run uses it. Override it to do there what your
+session would otherwise do on its first runs, such as compiling expressions into it. By default it does nothing, and
+the copies are still made. MVEL compiles every condition and action into the session.
+
+- **When:** on the `load()` thread, one session after another, after every expression has compiled.
+- **Not called:** for `Session.none()`, for a session a run creates, or by `validate()`, which makes no copies.
+- **If it throws:** `load()` fails with a `RuleCompilationException` naming your language, logged at ERROR; the rules
+  loaded before stay loaded, and the failed load's sessions and compilers are closed. A fatal error is logged and
+  rethrown unchanged.
 
 ## 📦 Packaging
 
@@ -387,7 +406,7 @@ with test scope, for example `testImplementation 'io.github.brantunger:unruly-en
 JUnit Jupiter 6, and brings JUnit Jupiter's API.
 
 `ExpressionLanguageContractTest` checks the promises above for any language. Extend it and supply expressions in your
-language, one method for each hook. Its eleven checks:
+language, one method for each hook. Its twelve checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -400,6 +419,7 @@ language, one method for each hook. Its eleven checks:
 | `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException` |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or `run()` |
+| `copiesAtLoad` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, two runs on two threads each see their own facts, and `x` = 2 fires nothing |
 | `compilerClosed` | `factEquals`, `putFact` | No | Each compiler is closed exactly once, after a reload and after `close()` |
 | `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
 
@@ -471,5 +491,12 @@ Yes. A copy of the rules has one session for every language the rule list uses, 
 ### If `newSession()` fails, do listeners hear about it?
 
 No. It happens before `beforeRun`, so the run throws a `RuleExecutionException`, logged at ERROR, and no listener is
-called. See [Thread safety](#-thread-safety).
+called. See [Thread safety](#-thread-safety). When `load()` is making copies, it throws a `RuleCompilationException`
+instead, and listeners aren't involved either.
+
+### Do I have to implement `warmUp`?
+
+No. By default it does nothing, and an engine built with `copiesAtLoad(n)` still makes its copies at load. Implement
+it when a session's first use is costly, such as compiling or loading classes. See
+[Warming up a session](#warming-up-a-session).
 

@@ -409,6 +409,31 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
+    @DisplayName("copies made and warmed up when the rules load give the same results, one run or several at once")
+    // Shut down in the finally block, which also interrupts workers that a broken language leaves running.
+    @SuppressWarnings("PMD.CloseResource")
+    void copiesAtLoad() throws Exception {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(language()).copiesAtLoad(2).build();
+        engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Map<String, Object>>> results = new ArrayList<>();
+            for (int y = 0; y < 2; y++) {
+                FactStore<Object> facts = fact("x", 1);
+                facts.setValue("y", y);
+                results.add(workers.submit(() -> engine.run(facts)));
+            }
+            for (int y = 0; y < 2; y++) {
+                assertSameOutput(Map.of(SEEN, y), results.get(y).get(30, TimeUnit.SECONDS));
+            }
+            assertNull(engine.run(fact("x", 2)));
+        } finally {
+            workers.shutdownNow();
+        }
+    }
+
+    @Test
     @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's closed")
     void compilerClosed() {
         ExpressionLanguage language = language();
