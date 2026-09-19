@@ -40,6 +40,10 @@ jobs:
             deps
             revert
           requireScope: false
+          # Dependabot's titles capitalise the subject ("deps: Bump ..."), and Dependabot labels every pull request
+          # it opens `dependencies`. The squash commit's type is still `deps`, which release-please hides.
+          ignoreLabels: |
+            dependencies
           subjectPattern: ^(?![A-Z]).+[^.]$
           subjectPatternError: |
             The subject "{subject}" is invalid for the "{type}" type.

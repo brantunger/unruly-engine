@@ -102,9 +102,26 @@ so a second build reuses task outputs, including those of another branch, and th
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport` | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive |
 | JDK 25 on `ubuntu-latest` | `./gradlew :mvel:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
+| `docs-and-hygiene` on `ubuntu-latest` | `config/docs/check_docs.py`, a line-ending check, and `config/docs/check_style.py` on the pages a pull request changes | Broken links and anchors, joined table rows, files stored with CRLF, and [STYLE.md](../STYLE.md)'s mechanical rules |
+| `ci-result` | Nothing | Fails when `build`, `native-image` or `docs-and-hygiene` failed or was cancelled; a skipped job counts as passed, and `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
+
+A pull request that changes only documentation skips the build matrix and `native-image`. That means every changed
+file is under `docs/` or ends in `.md`, and none is under a `src/` directory. The `changes` job decides that, on
+pull requests only. When it fails, the build and `native-image` run anyway, and a push never skips them.
+
+`docs-and-hygiene` only warns for now: a failed step shows as an annotation, and the job stays green. Later, its
+checks will block. A page written before STYLE.md may have findings in lines you didn't touch. Run the checks
+before you push, from the repository root, with Python 3:
+
+```bash
+python config/docs/check_docs.py
+python config/docs/check_style.py docs/facts.md   # the pages you changed
+git ls-files --eol | grep -E '^i/(crlf|mixed)'   # lists files stored with CRLF; prints nothing when all is well
+```
 
 A second workflow, `pr-title.yml`, checks a pull request's title against Conventional Commits, because the title
-becomes the release commit. It runs on pull requests only.
+becomes the release commit. It runs on pull requests only. On one labelled `dependencies`, which Dependabot opens
+with a capitalised subject, it skips the format check, but it still rejects a `!` on any type but `feat` and `fix`.
 
 What the jobs leave behind:
 

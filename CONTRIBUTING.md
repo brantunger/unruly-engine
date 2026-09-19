@@ -153,7 +153,9 @@ Three things to know about the gate:
 - A Gradle deprecation fails every build (`org.gradle.warning.mode=fail` in `gradle.properties`).
 
 On every pull request and push to `main`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows
-and macOS, runs the tests again on **JDK 25** on Linux, and checks the PR title. No branch protection requires a
+and macOS, the tests again on **JDK 25** on Linux, and the native-image check, except on a
+[documentation-only pull request](docs/contributing/build-and-gates.md#-ci). It also checks the PR title, and warns,
+for now, about broken links, CRLF line endings and the style of the changed pages. No branch protection requires a
 check; maintainers merge when CI and the title check are green. The reports, caches and artifacts are described in
 [Build and gates](docs/contributing/build-and-gates.md).
 
