@@ -2,8 +2,10 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.RunContext;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * One run of an engine. <b>Internal:</b> public only because {@link RunContext} is sealed to it.
@@ -21,6 +23,8 @@ public final class EngineRunContext implements RunContext {
     private final String policy;
     private final String checksum;
     private final Map<String, Object> factValues;
+    private final Set<String> runTags;
+    private final Instant start;
 
     /**
      * Creates the context of one run.
@@ -30,15 +34,20 @@ public final class EngineRunContext implements RunContext {
      * @param matchPolicy     {@code "firstMatch"}, {@code "allMatches"} or {@code "uniqueMatch"}
      * @param ruleSetChecksum The checksum of the rules the run uses
      * @param facts           The run's fact values, already read-only
-     * @throws NullPointerException if {@code matchPolicy}, {@code ruleSetChecksum} or {@code facts} is {@code null}
+     * @param tags            The run's tags, sorted and read-only, or none if the run uses every rule
+     * @param startedAt       When the run started, by the engine's clock
+     * @throws NullPointerException if {@code matchPolicy}, {@code ruleSetChecksum}, {@code facts}, {@code tags} or
+     *                              {@code startedAt} is {@code null}
      */
     public EngineRunContext(long runId, RunContext parent, String matchPolicy, String ruleSetChecksum,
-                            Map<String, Object> facts) {
+                            Map<String, Object> facts, Set<String> tags, Instant startedAt) {
         this.id = runId;
         this.enclosingRun = parent;
         this.policy = Objects.requireNonNull(matchPolicy, "matchPolicy");
         this.checksum = Objects.requireNonNull(ruleSetChecksum, "ruleSetChecksum");
         this.factValues = Objects.requireNonNull(facts, "facts");
+        this.runTags = Objects.requireNonNull(tags, "tags");
+        this.start = Objects.requireNonNull(startedAt, "startedAt");
     }
 
     @Override
@@ -66,15 +75,26 @@ public final class EngineRunContext implements RunContext {
         return factValues;
     }
 
+    @Override
+    public Set<String> tags() {
+        return runTags;
+    }
+
+    @Override
+    public Instant startedAt() {
+        return start;
+    }
+
     /**
-     * Describes the run without its facts, such as
-     * {@code RunContext(runId=3, parent=2, matchPolicy=allMatches, ruleSetChecksum=9f2c...)}.
+     * Describes the run without its facts, such as {@code RunContext(runId=3, parent=2, matchPolicy=allMatches,
+     * ruleSetChecksum=9f2c..., tags=[eu, retail], startedAt=2027-06-01T00:00:00Z)}.
      *
      * @return The description
      */
     @Override
     public String toString() {
         return "RunContext(runId=" + id + ", parent=" + (enclosingRun == null ? "none" : enclosingRun.runId())
-                + ", matchPolicy=" + policy + ", ruleSetChecksum=" + checksum + ")";
+                + ", matchPolicy=" + policy + ", ruleSetChecksum=" + checksum + ", tags=" + runTags + ", startedAt="
+                + start + ")";
     }
 }

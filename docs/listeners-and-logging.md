@@ -24,8 +24,8 @@ Every method has an empty default implementation, so override only the ones you 
 
 | Callback | Called | Arguments |
 | --- | --- | --- |
-| `beforeRun(run)` | When a run starts, before any condition | The `RunContext`: the run's number, its parent run, the match policy, the checksum of the rules it uses, and its facts |
-| `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, each rule's outcome, and the rules' checksum |
+| `beforeRun(run)` | When a run starts, before any condition | The `RunContext`: the run's number, its parent run, the match policy, the checksum of the rules it uses, its facts, its tags, and the instant its validity windows are judged at |
+| `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, each rule's outcome, the rules' checksum, and the run's tags and instant |
 | `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus what the run failed with, **including failures that belong to no rule**. See below the diagram |
 | `beforeEvaluate(rule, facts)` | Before a condition is evaluated | The rule, and a read-only view of the fact values |
 | `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched |
@@ -89,6 +89,13 @@ context.
 A rule the run [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses), because it's disabled, outside its
 validity window or without the run's tags, gets no callback at all. It appears only in the `RunResult` that
 `afterRun` receives, with the outcome `SKIPPED`.
+
+The context says what chose the rules: `tags()` is the run's `RunOptions.tags()`, empty when it uses every rule, and
+`startedAt()` is the instant its windows were judged at, from the
+[engine's clock](engines-and-runs.md#the-validity-window-and-the-engines-clock). Every run callback gets both, even
+`onRunError` for a run stopped while it waited for a compiled copy. A nested run doesn't inherit them: it reads the
+clock again, and has only the tags its own options give it. Conditions and actions can't read either value, because
+neither is on `EvaluationContext` or `ActionContext`.
 
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 
@@ -210,6 +217,9 @@ The run event's fields:
 | `rulesEvaluated`, `rulesFired` | Conditions evaluated and actions run to completion, also for a run that failed or stopped part-way. Rules the run skips count in neither |
 | `ruleSetChecksum` | The [checksum](glossary.md#checksum) of the rules the run used |
 | `outcome` | `COMPLETED`; `STOPPED` when the run was interrupted or passed its deadline, also while waiting for a copy; `FAILED` for any other exception |
+
+The run event doesn't record the run's tags or the instant its validity windows were judged at. A listener can read
+both from the `RunContext`.
 
 The rule event carries `engineId` and `runId` too, so it joins to its run, plus `ruleName`, `language`, `phase`
 (`CONDITION` or `ACTION`) and `result`: `MATCHED` or `NOT_MATCHED` for a condition, `FIRED` for an action, and

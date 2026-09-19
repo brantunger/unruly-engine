@@ -7,15 +7,21 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -24,6 +30,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -103,8 +110,15 @@ class WaitStopCallbackRunTest {
     private static RuleExecutionException stopWhileWaiting(RuleListener listener,
                                                            AtomicReference<RulesEngine<Map<String, Object>>> self)
             throws Exception {
+        return stopWhileWaiting(listener, self, Clock.systemUTC(), RunOptions.defaults());
+    }
+
+    /** Like {@link #stopWhileWaiting(RuleListener)}, with the engine's clock and the waiting run's options. */
+    private static RuleExecutionException stopWhileWaiting(RuleListener listener,
+                                                           AtomicReference<RulesEngine<Map<String, Object>>> self,
+                                                           Clock clock, RunOptions waiting) throws Exception {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .maxCopies(1).runTimeout(SHORT).listener(listener).build();
+                .maxCopies(1).runTimeout(SHORT).clock(clock).listener(listener).build();
         self.set(engine);
         engine.load(List.of(rule("hold", "true", "output.put('held', gate.hold())")));
         Gate gate = new Gate();
@@ -115,7 +129,7 @@ class WaitStopCallbackRunTest {
             Future<?> holder = threads.submit(() -> engine.run(facts));
             assertTrue(gate.entered.await(30, TimeUnit.SECONDS), "the holder never took the copy");
 
-            Future<?> waiter = threads.submit(() -> engine.run(new FactMap<>()));
+            Future<?> waiter = threads.submit(() -> engine.runWithResult(new FactMap<>(), waiting));
             RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class,
                     assertThrows(java.util.concurrent.ExecutionException.class,
                             () -> waiter.get(30, TimeUnit.SECONDS)).getCause());
@@ -264,5 +278,55 @@ class WaitStopCallbackRunTest {
         assertEquals(2, nested.size(), "the runs started from beforeRun sent no beforeRun of their own");
         assertTrue(nested.stream().allMatch(run -> run.parent() == waiting.get()),
                 "each run started from beforeRun has the waiting run as its parent");
+    }
+
+    @Test
+    @DisplayName("onRunError's context of a run stopped while waiting carries the run's tags and start")
+    void waitingRunCarriesTagsAndStart() throws Exception {
+        Instant now = Instant.parse("2027-06-01T00:00:00Z");
+        AtomicInteger reads = new AtomicInteger();
+        // Each read is a second later than the one before, so a second read for the waiting run would show.
+        Clock ticking = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now.plusSeconds(reads.getAndIncrement());
+            }
+        };
+        AtomicReference<RunContext> holding = new AtomicReference<>();
+        AtomicReference<RunContext> waiting = new AtomicReference<>();
+
+        // The holder reads the clock when it starts, before its action opens the gate the helper waits on, and only
+        // then does the helper start the waiting run: the holder reads now, and the waiting run now plus a second.
+        stopWhileWaiting(new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                if (!run.facts().isEmpty()) {
+                    holding.set(run);
+                }
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                if (run.facts().isEmpty()) {
+                    waiting.set(run);
+                }
+            }
+        }, new AtomicReference<>(), ticking, RunOptions.defaults().withTags(Set.of("retail", "eu")));
+
+        assertNotNull(waiting.get(), "the waiting run's onRunError didn't arrive");
+        assertEquals(List.of("eu", "retail"), List.copyOf(waiting.get().tags()));
+        assertEquals(now, holding.get().startedAt());
+        assertEquals(now.plusSeconds(1), waiting.get().startedAt());
+        assertEquals(2, reads.get(), "one read for each run, none while the waiting run stops");
     }
 }

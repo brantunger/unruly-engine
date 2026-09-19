@@ -99,8 +99,9 @@ Read `runWithResult(facts).evaluations()`: one outcome for every loaded rule. Se
 
 The run didn't use the rule, and didn't evaluate its condition: the rule is disabled, the run started outside its
 validity window by the engine's clock, or the run was given tags and the rule carries none of them. A rule with no
-tags is skipped by every run given tags, and tags are compared case included. See
-[Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
+tags is skipped by every run given tags, and tags are compared case included. To tell which reason applied, compare
+the rule's `isEnabled()`, `getValidFrom()`, `getValidTo()` and `getTags()` with `result.startedAt()` and
+`result.tags()`. See [Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
 
 ## 🔧 An exception from build()
 

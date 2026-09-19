@@ -264,6 +264,46 @@ class RuleSelectionTest {
     }
 
     @Test
+    @DisplayName("a clock that returns null fails the run, naming the clock, before any listener hears of it")
+    void nullInstantFailsTheRun() {
+        Clock returnsNull = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return null;
+            }
+        };
+        List<String> heard = new CopyOnWriteArrayList<>();
+        RuleListener listener = new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                heard.add("beforeRun");
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                heard.add("onRunError");
+            }
+        };
+        // No rule has a window, so only the run's context needs the instant.
+        RulesEngine<Map<String, Object>> engine = allMatches().clock(returnsNull).listener(listener).build();
+        engine.load(List.of(rule("r", "true")));
+
+        assertEquals("the engine's clock returned a null instant",
+                assertThrows(NullPointerException.class, () -> engine.run(new FactMap<>())).getMessage());
+        assertEquals(List.of(), heard);
+    }
+
+    @Test
     @DisplayName("the builder rejects a null clock")
     void nullClockRejected() {
         RulesEngineBuilder<Map<String, Object>> builder = allMatches();

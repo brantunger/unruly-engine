@@ -48,9 +48,11 @@ val decision: LoanDecision? = engine.run(facts)   // null when no rule matched
 | `RuleListener.beforeEvaluate` / `afterEvaluate` facts, `RunContext.facts()` | `Map<String, Any?>` |
 | `RunResult.output()` | `O?`: `null` when no rule fired |
 | `RunContext.parent()` | `RunContext?`: `null` unless another run of the same engine started this one |
+| `RunContext.startedAt()` | `Instant` |
+| `RunResult.startedAt()` | `Instant?`: `null` on a result built with `RunResult.of(...)` and not given a run with `withRun(...)`; the engine's results always have one |
 | `RuleSetInfo.loadedAt()` | `Instant?`: `null` before the first `load()` |
 | `RunOptions.timeout()` | `Duration?`: `null` when the run uses the engine's timeout |
-| `RunOptions.tags()` | `Set<String>`: empty when the run uses every rule |
+| `RunOptions.tags()`, `RunContext.tags()`, `RunResult.tags()` | `Set<String>`: empty when the run uses every rule, and on a result built with `RunResult.of(...)` and not given a run with `withRun(...)` |
 | `Rule.priority`, `description`, `language` | `Int?`, `String?`, `String?` |
 | `Rule.validFrom`, `Rule.validTo` | `Instant?`: `null` when the rule has no start or no end |
 | `Rule.isEnabled`, `Rule.tags` | `Boolean`, `Set<String>` |

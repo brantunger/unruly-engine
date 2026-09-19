@@ -494,9 +494,9 @@ the run's deadline; see [Writing a language](languages/custom.md#-stopping-a-run
 
 - **`runWithResult(facts)`** returns a `RunResult`: the output object, the rules that fired in firing order, what each
   rule's condition evaluated to (`MATCHED`, `NOT_MATCHED`, `NOT_EVALUATED` after a first match, or `SKIPPED` for a
-  rule the run [skipped](engines-and-runs.md#-choosing-which-rules-a-run-uses)), and the checksum of the rules the run
-  used. `run(facts)` is unchanged, and is now a `default` method returning
-  `runWithResult(facts).output()`.
+  rule the run [skipped](engines-and-runs.md#-choosing-which-rules-a-run-uses)), the checksum of the rules the run
+  used, and the run's tags and the instant it judged validity windows at, which explain a `SKIPPED` rule.
+  `run(facts)` is unchanged, and is now a `default` method returning `runWithResult(facts).output()`.
 - **`rules()`** returns a `RuleSetInfo`: the loaded rules in evaluation order, their checksum, and when they were
   loaded. Before the first `load()` it reports no rules and no load time.
 - **The checksum** is the lowercase hex SHA-256 of the rules, covering each rule's name, priority, resolved language,
@@ -508,7 +508,8 @@ the run's deadline; see [Writing a language](languages/custom.md#-stopping-a-run
   `afterRun(RunContext, RunResult)` and `onRunError(RunContext, RuntimeException)`. `onRunError` reports failures that
   belong to no rule too: a rejected fact name, an output supplier that throws, and an interrupt while the run waits for
   a compiled copy of the rules. `RunContext` identifies the run and names its parent, so a run started from an action
-  no longer needs a `ThreadLocal` to be told apart.
+  no longer needs a `ThreadLocal` to be told apart. It also holds the run's `tags()` and `startedAt()`, so a
+  listener can record what chose the rules.
 
 **Who is affected:** classes that implement `RulesEngine`, such as decorators and test doubles. Listeners and callers
 compile unchanged.
@@ -517,7 +518,7 @@ compile unchanged.
 
 | 1.x | 2.0 |
 | --- | --- |
-| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)`, `rules()` and `validate(rules)`; `run` and `runWithResult(facts)` have defaults that delegate to it. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return. |
+| A class that implements `RulesEngine` | Implement `runWithResult(FactStore, RunOptions)`, `rules()` and `validate(rules)`; `run` and `runWithResult(facts)` have defaults that delegate to it. `RunResult.of(...)` and `RuleSetInfo.of(...)` create what they return; a result from `RunResult.of(...)` has empty `tags()` and a `null` `startedAt()`; `withRun(run)` returns a copy that carries the run's. |
 | A listener with a `ThreadLocal` to group callbacks into a run | `beforeRun` / `afterRun`, and `RunContext.runId()` or the context itself |
 | A listener that counts failures in `onError` | `onRunError` also reports failures that belong to no rule |
 | Recording which rules produced a decision with a shared listener | `runWithResult(facts).firedRules()` |
@@ -608,7 +609,7 @@ Features 1.x didn't have. A caller needs none of them to upgrade. A class that i
 
 | New in 2.0 | See |
 | --- | --- |
-| `runWithResult()`, with `firedRules()`, `evaluations()` and `ruleSetChecksum()` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
+| `runWithResult()`, with `firedRules()`, `evaluations()`, `ruleSetChecksum()`, `tags()` and `startedAt()` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
 | `rules()` | [A run reports what it did, and an engine reports its rules](#-a-run-reports-what-it-did-and-an-engine-reports-its-rules) |
 | `validate(rules)` | [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it) |
 | `runTimeout(...)` and `RunOptions` | [An interrupted run stops, and a run can be given a timeout](#-an-interrupted-run-stops-and-a-run-can-be-given-a-timeout) |

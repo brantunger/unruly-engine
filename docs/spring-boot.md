@@ -131,16 +131,19 @@ public class LoanController {
 ```
 
 To record **why** a decision was made, use `runWithResult()` instead. It returns the output, the rules that fired,
-each rule's outcome, and a checksum of the rules the run used, so an audit row ties the decision to a version of the
-rules even if they're reloaded a moment later:
+each rule's outcome, a checksum of the rules the run used, and the run's tags and start instant, so an audit row ties
+the decision to a version of the rules even if they're reloaded a moment later:
 
 ```java
 RunResult<LoanDecision> result = loanRulesEngine.runWithResult(facts);
 
-auditLog.record(applicant.id(),
+auditLog.record(applicant.id(),     // auditLog is your own code
         result.firedRules().stream().map(Rule::getRuleName).toList(),
-        result.ruleSetChecksum());          // engine.rules().checksum() is the engine's current rule set
+        result.ruleSetChecksum(),           // engine.rules().checksum() is the engine's current rule set
+        result.tags(), result.startedAt()); // what explains a SKIPPED rule
 ```
+
+See [Auditing a decision](engines-and-runs.md#-auditing-a-decision) for what else to record.
 
 > [!TIP]
 > Handle what `run()` throws in the controller itself, so that a run the caller stopped and a rule that failed don't
