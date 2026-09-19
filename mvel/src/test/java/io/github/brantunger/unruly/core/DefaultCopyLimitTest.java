@@ -218,18 +218,21 @@ class DefaultCopyLimitTest {
     }
 
     @Test
-    @DisplayName("unlimitedCopies() turns the default off, so runs on virtual threads don't wait either")
+    @DisplayName("unlimitedCopies() turns the default off: runs on virtual threads wait only for a build slot, one for"
+            + " each processor")
     void unlimitedCopies() throws InterruptedException {
         Gate gate = new Gate();
         RulesEngine<Map<String, Object>> engine =
                 engine(RulesEngineBuilder::unlimitedCopies, List.of(RULE));
 
+        // Each run in progress is a new copy's first run, which holds a build slot (BuildSlotsTest).
         start(PROCESSORS + EXTRA_RUNS, true, engine, gate);
-        await(() -> gate.inProgress.get() == PROCESSORS + EXTRA_RUNS, "every run is in progress at once");
+        await(() -> gate.inProgress.get() == PROCESSORS && allParked(),
+                PROCESSORS + " runs are in progress, more than the default limit of " + LIMIT);
         gate.open.countDown();
         joinTheRuns();
 
-        assertEquals(PROCESSORS + EXTRA_RUNS, gate.mostInProgress.get());
+        assertEquals(PROCESSORS, gate.mostInProgress.get());
     }
 
     @Test

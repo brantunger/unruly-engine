@@ -160,8 +160,8 @@ surface when a rule is evaluated. Another language decides what it catches when 
 ## ⏳ Stopping a run
 
 A run stops once its thread is interrupted or it passes its timeout: before each condition and action, when one
-returns, or while it waits for a compiled copy. [Stopping a run](stopping-runs.md) covers timeouts, what they can't
-stop, nested runs and what listeners see.
+returns, or while it waits for a compiled copy; an interrupt also stops it while it waits for a build slot.
+[Stopping a run](stopping-runs.md) covers timeouts, what they can't stop, nested runs and what listeners see.
 
 ## 🧾 What happens on each failure
 
@@ -182,6 +182,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
 | The run is stopped when a condition or action returns or throws an exception | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
 | The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
+| The run is interrupted while it waits for a build slot; a deadline never stops this wait | `RuleExecutionException`, no rule, with an `InterruptedException` cause | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | A listener throws an exception, or an `Error` that isn't fatal | Nothing: the run goes on | Every other listener still gets that callback | WARN, with the message escaped and shortened; the stack trace at DEBUG |
 | A fatal error from a rule | The error itself | `onError`, then `onRunError`, with a `RuleExecutionException` that names the rule | ERROR |
 | A fatal error from `beforeRun`, a `before*` or an `after*` callback | The error itself | Every listener gets that callback first, then `onRunError` | ERROR, naming the listener's error |
@@ -200,8 +201,8 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
   that names no rule. One from a language creating a session reaches no listener, like any other session failure.
 - **A `before*` callback that throws a fatal error** is closed with `onError` on every listener, and its condition or
   action doesn't run. The rest of what listeners see is in [Guarantees](listeners-and-logging.md#-guarantees).
-- **A run of an empty rule list evaluates nothing**, so an interrupt or a passed deadline can only stop it while it
-  waits for a compiled copy. Otherwise it returns normally.
+- **A run of an empty rule list evaluates nothing**, so an interrupt or a passed deadline can stop it only while it
+  waits for a compiled copy, or an interrupt while it waits for a build slot. Otherwise it returns normally.
 
 ## 🧯 Handling failures
 

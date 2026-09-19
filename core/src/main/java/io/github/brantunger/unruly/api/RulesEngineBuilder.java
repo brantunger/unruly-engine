@@ -27,7 +27,9 @@ import java.util.function.Supplier;
  * <b>Compiled copies:</b> a run uses a copy of the rules that no other run is using, and an engine keeps as many as
  * the most runs it has had in progress at once. A thread pool bounds that; virtual threads don't, so by default an
  * engine limits <b>runs on virtual threads</b> to one copy for every two processors. {@link #maxCopies(int)} sets a
- * limit for every kind of thread, and {@link #unlimitedCopies()} turns it off. See
+ * limit for every kind of thread, and {@link #unlimitedCopies()} turns it off, leaving only <a href=
+ * "https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#waiting-for-a-build-slot">build
+ * slots</a> to pace new copies on virtual threads. See
  * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md">Compiled copies</a>.
  * </p>
  *
@@ -409,16 +411,29 @@ public final class RulesEngineBuilder<O> {
      * default limit on runs from virtual threads.
      *
      * <p>
-     * This is what an engine did before 2.0, and it suits a thread pool, whose size bounds the copies. On virtual
-     * threads nothing bounds them: every run that finds all copies in use makes its own, and a run that waits lets the
-     * next virtual thread start, so rules that wait — on I/O, a database or another service — and on JDK 24 and later
-     * any run that blocks while MVEL loads classes, can make a copy for each virtual thread. Each copy recompiles every
-     * expression and generates its own accessor classes. For rules that wait on virtual threads, use
-     * {@link #maxCopies(int)} sized for the runs you want waiting at once; with MVEL on JDK 21 to 23, below the number
-     * of carriers, since a limit at or above it can deadlock every carrier there.
+     * Like an engine before 2.0, its runs never wait for a copy, which suits a thread pool, whose size bounds the
+     * copies. On a virtual thread, a run that finds no idle copy, and isn't nested in another run on that
+     * thread, first waits for one of the engine's build slots, one for each processor, and holds it until the new
+     * copy's first run ends, which is when a language such as MVEL compiles the expressions. The slots pace the new
+     * copies without bounding them: the copies still grow with the runs in progress, so rules that wait — on I/O, a
+     * database or another service — can make many. In a language such as MVEL, each copy recompiles every expression
+     * and generates its own accessor classes. For a hard bound, use {@link #maxCopies(int)} sized for the runs you
+     * want waiting at once; with MVEL on JDK 21 to 23, below the number of carriers, since a limit at or above it can
+     * deadlock every carrier there, and so can this.
+     * </p>
+     *
+     * <p>
+     * A run with a deadline waits for a slot for at most half the time it has left, and a run that sees no slot given
+     * back for five seconds stops waiting; either then makes its copy without a slot, so no run fails for want of a
+     * copy. A run interrupted while it waits throws a
+     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, and its thread keeps its interrupt
+     * status set. Runs on platform threads never wait.
      * </p>
      *
      * @return This builder
+     * @see <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#waiting-for-a-build-slot">Waiting
+     * for a build slot</a>
      */
     public RulesEngineBuilder<O> unlimitedCopies() {
         this.copies = CopyLimit.none();

@@ -338,7 +338,8 @@ processors) makes that less likely, but doesn't prevent it:
 - each engine has its own limit, so the limits of several engines add up;
 - a run that waited five seconds without a copy coming back takes an extra copy on its own thread;
 - with one processor, the limit of one copy equals the one carrier;
-- `unlimitedCopies()`, or a `maxCopies(...)` at or above the number of carriers, leaves no carrier free.
+- `unlimitedCopies()`, or a `maxCopies(...)` at or above the number of carriers, leaves no carrier free;
+  [build slots](../compiled-copies.md#waiting-for-a-build-slot) don't change that.
 
 So on JDK 21 to 23:
 

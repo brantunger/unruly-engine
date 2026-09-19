@@ -38,6 +38,14 @@ import java.util.function.LongSupplier;
  * </p>
  *
  * <p>
+ * A run on a virtual thread that no limit covers, because the engine was built with {@code unlimitedCopies()}, makes
+ * its new copy only once it holds one of the engine's build slots, and holds the slot until that first run ends (see
+ * {@link CopyPermits}). The slots pace how many new copies are in their first run at once, without bounding how many
+ * copies exist, and a run that waits too long for one makes and runs its copy without it. A run on a platform thread
+ * takes no slot: its thread pool's size bounds the copies its runs make.
+ * </p>
+ *
+ * <p>
  * With a limit, at most that many copies are kept, and a run that finds all of them in use waits for one. Two
  * kinds of run don't wait, because the copy they would wait for may be one that has to finish first:
  * </p>
@@ -113,14 +121,24 @@ final class RuleSet {
         SHARED
     }
 
+    /** What a run gives back to the engine's {@link CopyPermits} with its copy. */
+    enum Held {
+        /** Nothing. */
+        NOTHING,
+        /** A permit, which a limited run holds for as long as it uses a kept copy. */
+        PERMIT,
+        /** A build slot, which a run holds while it runs a new copy for the first time. */
+        SLOT
+    }
+
     /**
      * A copy of the rules lent to one run.
      *
      * @param sessions The sessions of the languages the rules use, by language name
      * @param kind     What happens to it when it's given back
-     * @param permit   Whether the run holds a permit for it
+     * @param held     What the run holds with it, given back with it
      */
-    record Copy(Map<String, Session> sessions, Kind kind, boolean permit) {
+    record Copy(Map<String, Session> sessions, Kind kind, Held held) {
 
         /**
          * Returns whether the copy is kept for a later run.
@@ -252,14 +270,18 @@ final class RuleSet {
     /**
      * Takes a copy of the rules that no other run is using, making a new one if necessary. With a limit, waits for a
      * copy when all of them are in use, unless the current thread already holds one: then an extra copy that isn't
-     * kept is made instead. A copy that fails to be made isn't kept, and doesn't count toward the limit.
+     * kept is made instead. A copy that fails to be made isn't kept, and doesn't count toward the limit. Without a
+     * limit, a run on a virtual thread that has to make a copy waits for a build slot first: with a deadline, for at
+     * most half the time it has left; without one, for as long as slots keep coming back.
      *
      * @return A copy for the caller alone, to give back with {@link #release(Copy)}, or {@code null} if the rule set is
      *         closed: it was retired, and every copy was given back
-     * @param deadline When the run must stop, or {@code null} if it has none. Waiting for a copy stops there.
-     * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use. A thread
-     *                                whose interrupt status is already set still gets a free copy; the run then stops
-     *                                at its first rule. A thread that throws holds no copy.
+     * @param deadline When the run must stop, or {@code null} if it has none. Waiting for a copy that is in use stops
+     *                 there; waiting for a build slot gives up at half the time left, and the run makes its copy.
+     * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use, or for a
+     *                                build slot. A thread whose interrupt status is already set still gets a free copy,
+     *                                or makes one; the run then stops at its first rule. A thread that throws holds no
+     *                                copy.
      * @throws TimeoutException       if the deadline passes while the thread waits for a copy that is in use, which
      *                                likewise leaves it holding none
      * @throws RuleExecutionException if a language fails to create a session for a new copy, which is logged at ERROR.
@@ -356,9 +378,7 @@ final class RuleSet {
             // A shared copy needs nothing: its sessions belong to every run, and are closed with the rule set.
         } finally {
             endRunOnThread();
-            if (borrowed.permit()) {
-                giveBack();
-            }
+            giveBack(borrowed.held());
             leave();
         }
     }
@@ -417,10 +437,13 @@ final class RuleSet {
     private Copy lend(Instant deadline) throws InterruptedException, TimeoutException {
         Map<String, Session> shared = sharedSessions;
         if (shared != null) {
-            return new Copy(shared, Kind.SHARED, false);
+            return new Copy(shared, Kind.SHARED, Held.NOTHING);
         }
         if (!copyLimit.appliesToCurrentThread()) {
-            return keptCopy(false);
+            // A thread pool's size bounds the copies its runs make, and virtual threads have nothing but the build
+            // slots. A nested run never waits for one: its own thread may hold the slot it would wait for.
+            return copyLimit.limits() || !Thread.currentThread().isVirtual() || nestedRun()
+                    ? keptCopy(Held.NOTHING) : slottedCopy(deadline);
         }
         // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
         boolean nested = nestedRun();
@@ -432,14 +455,50 @@ final class RuleSet {
             Map<String, Session> sessions = newSessions();
             if (statelessSessions(sessions)) {
                 sharedSessions = sessions;
-                return new Copy(sessions, Kind.SHARED, false);
+                return new Copy(sessions, Kind.SHARED, Held.NOTHING);
             }
             if (!nested) {
                 warnAboutOverflow();
             }
-            return new Copy(sessions, Kind.EXTRA, false);
+            return new Copy(sessions, Kind.EXTRA, Held.NOTHING);
         }
-        return keptCopy(true);
+        return keptCopy(Held.PERMIT);
+    }
+
+    /**
+     * Takes a copy for a run on a virtual thread that no limit covers. An idle copy is taken at once. Otherwise the run
+     * waits for a build slot, and holds it while it runs its new copy for the first time, which is when a language
+     * such as MVEL compiles the expressions and loads classes. So at most one new copy for each slot is in its first
+     * run at once, apart from those of runs that gave up waiting. A run that gets a slot looks for an idle copy again
+     * first, so copies given back while it waited are used before a new one is made. A copy given back without a slot
+     * doesn't wake a waiting run: runs arriving meanwhile take it.
+     *
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @return The copy
+     * @throws InterruptedException if the thread is interrupted while it waits for a slot
+     */
+    private Copy slottedCopy(Instant deadline) throws InterruptedException {
+        Map<String, Session> sessions = idle.poll();
+        if (sessions == null) {
+            // A run that gives up waiting still makes its copy: an engine without a limit never fails a run for want
+            // of one.
+            Held held = permits.awaitSlot(stallWindow, deadline) ? Held.SLOT : Held.NOTHING;
+            sessions = idle.poll();
+            if (sessions == null) {
+                boolean made = false;
+                try {
+                    sessions = newSessions();
+                    made = true;
+                } finally {
+                    if (!made) {
+                        giveBack(held);
+                    }
+                }
+                return keptCopy(sessions, held);
+            }
+            giveBack(held);
+        }
+        return keptCopy(sessions, Held.NOTHING);
     }
 
     /**
@@ -486,32 +545,42 @@ final class RuleSet {
     }
 
     /**
-     * Takes a copy the run keeps until it gives it back. The first copy decides whether the rules need copies at all:
-     * when no language keeps state between runs, its sessions become the ones every run shares.
+     * Takes an idle copy, or makes one, that the run keeps until it gives it back.
      *
-     * @param permit Whether the run took a permit for this copy
+     * @param held What the run took for this copy, given back if no copy can be made
      * @return The copy
      */
-    private Copy keptCopy(boolean permit) {
+    private Copy keptCopy(Held held) {
         Map<String, Session> sessions;
         boolean taken = false;
         try {
             sessions = take();
             taken = true;
         } finally {
-            if (!taken && permit) {
-                giveBack();
+            if (!taken) {
+                giveBack(held);
             }
         }
+        return keptCopy(sessions, held);
+    }
+
+    /**
+     * Lends the given sessions as a copy the run keeps until it gives it back. The first copy decides whether the
+     * rules need copies at all: when no language keeps state between runs, its sessions become the ones every run
+     * shares, and the run gives back at once what it took for the copy.
+     *
+     * @param sessions The copy's sessions
+     * @param held     What the run took for this copy
+     * @return The copy
+     */
+    private Copy keptCopy(Map<String, Session> sessions, Held held) {
         if (statelessSessions(sessions)) {
             // Nothing in the rules changes while they run, so one set of sessions serves every run at once.
             sharedSessions = sessions;
-            if (permit) {
-                giveBack();
-            }
-            return new Copy(sessions, Kind.SHARED, false);
+            giveBack(held);
+            return new Copy(sessions, Kind.SHARED, Held.NOTHING);
         }
-        return new Copy(sessions, Kind.KEPT, permit);
+        return new Copy(sessions, Kind.KEPT, held);
     }
 
     /** Whether every language of these rules returned {@link Session#none()}, so a copy holds nothing of its own. */
@@ -527,7 +596,8 @@ final class RuleSet {
             log.warn("All {} compiled copies of the rules were in use for {} ms without one being given back, so this"
                             + " run made an extra copy instead of waiting for ever. A rule or listener that waits for"
                             + " a run of this engine on another thread causes that; so does a rule slower than the"
-                            + " wait. Build the engine with unlimitedCopies() if it is meant to work that way.",
+                            + " wait. If runs are meant to wait for each other, build the engine with a larger"
+                            + " maxCopies(n), or with unlimitedCopies() if it runs on a thread pool.",
                     copyLimit.maxCopies(), stallWindow);
         }
     }
@@ -573,9 +643,13 @@ final class RuleSet {
         }
     }
 
-    // Releases a copy's permit, and tells a run that is waiting that copies are still coming back.
-    private void giveBack() {
-        permits.giveBack();
+    // Gives back what a run held with its copy, which tells a run that is waiting that they are still coming back.
+    private void giveBack(Held held) {
+        if (held == Held.PERMIT) {
+            permits.giveBack();
+        } else if (held == Held.SLOT) {
+            permits.giveBackSlot();
+        }
     }
 
     private Map<String, Session> take() {

@@ -459,8 +459,8 @@ Three things follow:
 - A run whose thread is interrupted, before it starts or while it is going, throws a `RuleExecutionException` caused
   by an `InterruptedException` at the next check: before or after a condition or action, or while it waits for a
   copy. `getRuleName()` is `null`: an interrupt isn't that rule's failure. The interrupt status stays set. A run of
-  an empty rule list evaluates nothing, so it's only stopped while it waits for a copy, and otherwise returns
-  normally.
+  an empty rule list evaluates nothing, so it's only stopped while it waits for a copy, or for a build slot, and
+  otherwise returns normally.
 - `RulesEngineBuilder.runTimeout(Duration)`, `RunOptions` and `runWithResult(facts, options)` are new. A run past its
   deadline fails the same way, with a `TimeoutException` as the cause, including while it waits for a compiled copy
   of the rules. A run started from inside another run on the same thread stops no later than the outer run's
@@ -542,8 +542,14 @@ deadlock an engine:
 Either gets an extra copy that isn't kept. In 1.x only the first case skipped the wait, and only on the same rule
 list, so a run nested on another thread, on another engine, or after a reload could wait for ever.
 
-`maxCopies(int)` still limits runs from every kind of thread, and the new `unlimitedCopies()` restores the 1.x
-default. A rule list whose languages all return `Session.none()` needs no copies, so no limit applies to it.
+`maxCopies(int)` still limits runs from every kind of thread. A rule list whose languages all return `Session.none()`
+needs no copies, so no limit applies to it.
+
+The new `unlimitedCopies()` restores the 1.x default, with one difference: on virtual threads, a run that finds no idle
+copy waits for one of the engine's [build slots](compiled-copies.md#waiting-for-a-build-slot), one for each
+processor, before it makes one, and holds the slot until that copy's first run ends. 1.x never waited there. The wait
+never fails on a deadline, but an interrupt while it waits fails the run with `run() was interrupted while waiting to
+make a compiled copy of the rules: every build slot was in use`.
 
 **Who is affected:** applications that run rules on virtual threads, and applications with a limit whose rules wait on
 I/O. This is a behaviour change that the API compatibility check can't see, so there's no compiler error to catch it.
@@ -552,8 +558,8 @@ I/O. This is a behaviour change that the API compatibility check can't see, so t
 
 | 1.x | 2.0 |
 | --- | --- |
-| Runs from virtual threads, with as many copies as runs | At most one copy for every two processors; the runs above that wait. `.unlimitedCopies()` keeps the 1.x behaviour. On JDK 21 to 23, MVEL rules with unlimited copies can deadlock every carrier: see [Limiting the copies](compiled-copies.md#-limiting-the-copies) |
-| Rules that wait on a database, a service or a file, run from virtual threads | `.maxCopies(n)` sized for how many waiting runs you want at once: the default is sized for rules that compute. Not `.unlimitedCopies()`, which makes a copy for every waiting virtual thread. With MVEL on JDK 21 to 23, keep `n` below the number of carriers; see [Virtual threads](compiled-copies.md#-virtual-threads) |
+| Runs from virtual threads, with as many copies as runs | At most one copy for every two processors; the runs above that wait. `.unlimitedCopies()` makes copies as runs need them, but a run that has to make one may first wait for a build slot. On JDK 21 to 23, MVEL rules with unlimited copies can deadlock every carrier: see [Limiting the copies](compiled-copies.md#-limiting-the-copies) |
+| Rules that wait on a database, a service or a file, run from virtual threads | `.maxCopies(n)` sized for how many waiting runs you want at once: the default is sized for rules that compute. `.unlimitedCopies()` doesn't bound the copies, which grow with the runs waiting at once. With MVEL on JDK 21 to 23, keep `n` below the number of carriers; see [Virtual threads](compiled-copies.md#-virtual-threads) |
 | An action that runs the same engine on another thread and waits for it | It no longer hangs: the nested run waits five seconds, then takes an extra copy, and the engine warns |
 | Sizing memory from the number of copies | Up to one for every two processors for virtual-thread runs, plus, without `maxCopies(...)`, one for each platform-thread run at your peak, plus an extra for each run that doesn't wait. Kept copies stay until the next `load()` or `close()`. The limit is per engine and holds across reloads |
 | `maxCopies(...)` as the only way to bound the copies | Still available, and still applies to every thread; it's now a change to the default rather than a way out of no limit |
