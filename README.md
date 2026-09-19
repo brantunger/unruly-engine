@@ -35,7 +35,7 @@ like.
 | 🔢 **Predictable ordering** | Higher priorities fire first, equal priorities keep their list order, and `null` priorities go last. |
 | 🛡️ **Fails fast** | Most syntax errors, blank expressions, duplicate rule names and assignments in conditions are rejected when rules are loaded. Fact and property names are checked when a rule runs, unless MVEL's [strong typing](docs/languages/mvel.md#-strong-typing) is on. |
 | 🧵 **Thread-safe** | Load rules once, call `run()` from any number of threads, and swap in new rules atomically. |
-| 👂 **Observable** | Lifecycle listeners with guaranteed before/after pairing, plus a ready-made SLF4J logging listener. |
+| 👂 **Observable** | Lifecycle listeners with guaranteed before/after pairing, a ready-made SLF4J logging listener, and [Flight Recorder events](docs/listeners-and-logging.md#-flight-recorder-events) for slow runs by default, and for every run and rule on request. |
 | 🧩 **Pluggable languages** | Rules are written in MVEL, or in other expression languages you give the engine, chosen per rule, even within one rule list. |
 | 🪶 **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
 
@@ -102,6 +102,9 @@ module com.example.app {
 }
 ```
 
+- **The engine's module requires `jdk.jfr`**, for its
+  [Flight Recorder events](docs/listeners-and-logging.md#-flight-recorder-events). jlink adds it to an image that
+  requires the engine; an image whose runtime puts the engine on the class path needs `--add-modules jdk.jfr`.
 - **MVEL's jar has no module name**, so on the module path its name, `mvel2`, comes from the file name
   `mvel2-2.5.4.Final.jar`. Gradle puts a jar without a module name on the class path instead, and the application
   fails to start with `FindException: Module mvel2 not found, required by io.github.brantunger.unruly`. Give the jar

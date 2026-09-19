@@ -5,7 +5,7 @@
 > [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/listeners-and-logging.md).
 
 Add a `RuleListener` to an engine to trace which rules matched, time each rule, or audit decisions. The engine also logs
-its own failures through SLF4J.
+its own failures through SLF4J, and records slow runs as JDK Flight Recorder events.
 
 [← Documentation index](README.md)
 
@@ -13,6 +13,7 @@ its own failures through SLF4J.
 - [Writing a listener](#-writing-a-listener)
 - [Guarantees](#-guarantees)
 - [LoggingRuleListener](#-loggingrulelistener)
+- [Flight Recorder events](#-flight-recorder-events)
 - [Logging setup](#-logging-setup)
 
 ---
@@ -181,6 +182,64 @@ Rule names appear as the engine's error messages show them: line breaks and othe
 (`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own. The failure
 message on that line is escaped the same way and isn't shortened, because it carries text the engine didn't write,
 such as the fact values a language quotes in its own message.
+
+## 📡 Flight Recorder events
+
+The engine emits two [JDK Flight Recorder](https://docs.oracle.com/en/java/javase/21/jfapi/) events, whatever
+language the rules are written in. They need no dependency and no listener, and an event that isn't enabled costs a
+run nothing measurable, so they are how to see what an engine does in production without writing code. The event
+names and fields below are the contract; the classes that emit them aren't API.
+
+| Event | Enabled by default | One for every |
+| --- | --- | --- |
+| `io.github.brantunger.unruly.Run` | Yes, with a 10 ms threshold, so only slow runs are kept | `run()` call, from the call to its return or exception, including reading the facts and any wait for a compiled copy |
+| `io.github.brantunger.unruly.Rule` | No | Condition evaluated and action run; a rule a first-match run skipped has none |
+
+The run event's fields:
+
+| Field | Value |
+| --- | --- |
+| `engineId` | Numbers the engines of the JVM in creation order, so two engines' runs can be told apart |
+| `runId`, `parentRunId` | The run's number within its engine, as `RunContext.runId()` reports it, and the number of the run it was started from on the same thread, or 0 |
+| `matchPolicy` | `firstMatch`, `allMatches` or `uniqueMatch` |
+| `rulesEvaluated`, `rulesFired` | Conditions evaluated and actions run to completion, also for a run that failed or stopped part-way |
+| `ruleSetChecksum` | The [checksum](glossary.md#checksum) of the rules the run used |
+| `outcome` | `COMPLETED`; `STOPPED` when the run was interrupted or passed its deadline, also while waiting for a copy; `FAILED` for any other exception |
+
+The rule event carries `engineId` and `runId` too, so it joins to its run, plus `ruleName`, `language`, `phase`
+(`CONDITION` or `ACTION`) and `result`: `MATCHED` or `NOT_MATCHED` for a condition, `FIRED` for an action, and
+`STOPPED` or `FAILED` for either, with the same meaning as on the run. The run event keeps the stack trace of the
+`run()` caller; the rule event records none. A run refused because nothing is loaded or the engine is closed records
+nothing, unless the engine was closed while the run was starting: that run is `FAILED`. The first run of a JVM
+registers the events with Flight Recorder, which loads about a hundred classes and takes about 50 ms once, with or
+without a recording; after that, an event that isn't enabled costs nothing measurable.
+
+> [!NOTE]
+> The module `io.github.brantunger.unruly.core` requires `jdk.jfr`, which every JDK includes and jlink adds to an
+> image that requires the engine. An image whose runtime puts the engine on the class path must add it by hand:
+> `--add-modules jdk.jfr`.
+
+To keep every run, lower the threshold; to see each rule, enable the rule event. Both can be done on a running JVM:
+
+```text
+jcmd <pid> JFR.start settings=default io.github.brantunger.unruly.Run#threshold=0ms io.github.brantunger.unruly.Rule#enabled=true
+```
+
+or in a `.jfc` settings file:
+
+```xml
+<event name="io.github.brantunger.unruly.Run">
+  <setting name="enabled">true</setting>
+  <setting name="threshold">0 ms</setting>
+</event>
+<event name="io.github.brantunger.unruly.Rule">
+  <setting name="enabled">true</setting>
+</event>
+```
+
+Enabled, the rule event costs about 60 ns per condition or action, and a run of a thousand rules is up to two
+thousand events, so enable it to investigate, not permanently. With the run event's threshold at 0 ms, every run
+also walks the stack for its trace.
 
 ## 🔧 Logging setup
 
