@@ -1,12 +1,10 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.TestLogs;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -26,19 +24,13 @@ class LoggingRuleListenerNameTest {
 
     private static String logsOf(Rule rule, boolean matchResult) {
         LoggingRuleListener listener = new LoggingRuleListener();
-        PrintStream original = System.err;
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8));
-        try {
+        return TestLogs.logsOf(() -> {
             listener.beforeEvaluate(rule, Map.of());
             listener.afterEvaluate(rule, Map.of(), matchResult);
             listener.beforeExecute(rule, new Object());
             listener.afterExecute(rule, new Object());
             listener.onError(rule, new RuleExecutionException("boom"));
-        } finally {
-            System.setErr(original);
-        }
-        return buffer.toString(StandardCharsets.UTF_8);
+        });
     }
 
     @Test

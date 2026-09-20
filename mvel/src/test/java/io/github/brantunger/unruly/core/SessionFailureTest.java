@@ -4,14 +4,9 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.api.language.ActionResult;
-import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.core.EngineLoggingTest.ENGINE_LOGGER;
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -41,32 +36,7 @@ class SessionFailureTest {
 
     /** A language whose rules always match and do nothing, and whose sessions come from {@code newSession}. */
     private static ExpressionLanguage language(String name, Supplier<Session> newSession) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return name;
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return (evaluationContext, session) -> true;
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return (actionContext, session) -> ActionResult.done();
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return newSession.get();
-                    }
-                };
-            }
-        };
+        return StubExpressionLanguage.named(name).newSession(newSession);
     }
 
     /** A session of a language that has state of its own, so each copy of the rules needs one. */

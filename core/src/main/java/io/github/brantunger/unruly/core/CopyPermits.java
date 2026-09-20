@@ -40,7 +40,8 @@ final class CopyPermits {
     }
 
     /**
-     * Creates the permits for a limit, with the given number of build slots.
+     * Creates the permits for a limit, with the given number of build slots. It is a deliberate test seam: the engine
+     * always takes one slot for each processor, so only a test that needs a known number of slots calls this.
      *
      * @param limit How many copies limited runs may hold at once, or {@link RuleSet#UNLIMITED}
      * @param slots How many runs may hold a build slot at once, each while its new copy runs for the first time

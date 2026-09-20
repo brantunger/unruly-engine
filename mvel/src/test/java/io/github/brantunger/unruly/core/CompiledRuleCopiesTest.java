@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("each run shares the compiled rules, with sessions that no other run is using")

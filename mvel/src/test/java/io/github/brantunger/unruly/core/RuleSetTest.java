@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestLogs;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
@@ -185,7 +186,7 @@ class RuleSetTest {
         // business of the tests, not of a check that runs after every one of them.
         String logs;
         try {
-            logs = EngineLoggingTest.logsOf(() -> {
+            logs = TestLogs.logsOf(() -> {
                 try {
                     probe.release(probe.borrow(deadline()));
                 } catch (InterruptedException e) {
@@ -206,7 +207,8 @@ class RuleSetTest {
     @DisplayName("a copy in use is never lent twice, and one given back is reused instead of creating sessions again")
     void copiesLentOneAtATime() throws InterruptedException, TimeoutException {
         AtomicInteger sessions = new AtomicInteger();
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())));
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
+                CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
 
         RuleSet.Copy first = rules.borrow(null);
         try {
@@ -277,7 +279,7 @@ class RuleSetTest {
         Map<String, ExpressionCompiler> compilers = new LinkedHashMap<>();
         compilers.put("b", compiler("b", sessions, created));
         compilers.put("a", compiler("a", sessions, created));
-        RuleSet rules = new RuleSet(List.of(RULE), compilers);
+        RuleSet rules = new RuleSet(List.of(RULE), compilers, CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
 
         RuleSet.Copy copy = rules.borrow(null);
         try {
@@ -468,7 +470,7 @@ class RuleSetTest {
 
         String logs;
         try {
-            logs = EngineLoggingTest.logsOf(() -> {
+            logs = TestLogs.logsOf(() -> {
                 try {
                     // Another thread, so the runs aren't nested: a nested run doesn't wait, and doesn't warn. Its
                     // borrows have a deadline, so a rule set that never gives up waiting fails this test instead of
@@ -500,7 +502,8 @@ class RuleSetTest {
     void factChecksKeptWithRules() {
         ExpressionCompiler check = compiler("x", new AtomicInteger(), new CopyOnWriteArrayList<>());
 
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("x", check));
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("x", check), CopyLimit.none(),
+                new CopyPermits(RuleSet.UNLIMITED));
 
         assertEquals(Map.of("x", check), rules.factChecks());
     }

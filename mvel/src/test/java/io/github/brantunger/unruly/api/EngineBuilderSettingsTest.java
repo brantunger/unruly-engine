@@ -27,12 +27,6 @@ class EngineBuilderSettingsTest {
         return Rule.builder().ruleName(name).language(language).condition(condition).action(action).build();
     }
 
-    private static FactMap<Object> fact(String name, Object value) {
-        FactMap<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
-    }
-
     /** A listener that records the names of the rules it's told were evaluated, prefixed with its own name. */
     private record Recording(String name, List<String> calls) implements RuleListener {
         @Override
@@ -154,8 +148,8 @@ class EngineBuilderSettingsTest {
             toy.load(List.of());
             mvel.load(List.of());
 
-            assertNull(toy.run(fact("empty", 1)));
-            assertThrows(IllegalArgumentException.class, () -> mvel.run(fact("empty", 1)));
+            assertNull(toy.run(new FactMap<>(new Fact<>("empty", 1))));
+            assertThrows(IllegalArgumentException.class, () -> mvel.run(new FactMap<>(new Fact<>("empty", 1))));
         }
     }
 
@@ -264,7 +258,7 @@ class EngineBuilderSettingsTest {
 
             // A String where the late declaration says Integer: the engine that was built declares nothing, so
             // nothing about this run's facts contradicts a declaration.
-            assertEquals(Map.of("k", 1), engine.run(fact("count", "not a number")));
+            assertEquals(Map.of("k", 1), engine.run(new FactMap<>(new Fact<>("count", "not a number"))));
         }
 
         @Test

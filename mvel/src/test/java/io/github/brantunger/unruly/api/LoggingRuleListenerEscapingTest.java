@@ -4,27 +4,13 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("LoggingRuleListener escapes and shortens rule names, as the engine's messages do")
 class LoggingRuleListenerEscapingTest {
-
-    private static String logsOf(Runnable action) {
-        PrintStream original = System.err;
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8));
-        try {
-            action.run();
-        } finally {
-            System.setErr(original);
-        }
-        return buffer.toString(StandardCharsets.UTF_8);
-    }
 
     @Test
     @DisplayName("a rule name with line breaks and control characters is logged on one line, in every callback")

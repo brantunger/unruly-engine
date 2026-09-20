@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**

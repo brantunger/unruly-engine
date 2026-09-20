@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -57,7 +58,8 @@ class NestedRunCopyTest {
             if (!fannedOut.compareAndSet(false, true)) {
                 return INNER;
             }
-            Future<Map<String, Object>> nested = executor.submit(() -> engine.get().run(facts("helper", this)));
+            Future<Map<String, Object>> nested =
+                    executor.submit(() -> engine.get().run(new FactMap<>(new Fact<>("helper", this))));
             try {
                 return nested.get(20, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
@@ -99,7 +101,7 @@ class NestedRunCopyTest {
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }
-            return other.get().run(facts("cross", this));
+            return other.get().run(new FactMap<>(new Fact<>("cross", this)));
         }
     }
 
@@ -127,7 +129,7 @@ class NestedRunCopyTest {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException(e);
             }
-            return engine.get().run(facts("holder", holder));
+            return engine.get().run(new FactMap<>(new Fact<>("holder", holder)));
         }
     }
 
@@ -170,12 +172,6 @@ class NestedRunCopyTest {
         return Rule.builder().ruleName(name).condition("true").action(action).build();
     }
 
-    private static FactStore<Object> facts(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
-    }
-
     @Test
     @DisplayName("a run handed to another thread from inside a run gets a copy instead of waiting for ever")
     void nestedOnAnotherThread() {
@@ -186,7 +182,7 @@ class NestedRunCopyTest {
         // The engine can't tell the other thread's run from an unrelated caller, so that run does wait — but only
         // until five seconds pass with no copy given back. Then it takes a copy of its own, rather than waiting for
         // the copy this run is holding while it waits for that run.
-        Map<String, Object> output = engine.run(facts("helper", helper));
+        Map<String, Object> output = engine.run(new FactMap<>(new Fact<>("helper", helper)));
 
         assertEquals(Map.of("nested", INNER), output.get("nested"), "the nested run finished");
         helper.executor.shutdownNow();
@@ -205,8 +201,8 @@ class NestedRunCopyTest {
         fromB.other.set(a);
         ExecutorService threads = Executors.newFixedThreadPool(2);
 
-        Future<Map<String, Object>> first = threads.submit(() -> a.run(facts("cross", fromA)));
-        Future<Map<String, Object>> second = threads.submit(() -> b.run(facts("cross", fromB)));
+        Future<Map<String, Object>> first = threads.submit(() -> a.run(new FactMap<>(new Fact<>("cross", fromA))));
+        Future<Map<String, Object>> second = threads.submit(() -> b.run(new FactMap<>(new Fact<>("cross", fromB))));
 
         assertEquals(Map.of("other", Map.of("other", INNER)), first.get(30, TimeUnit.SECONDS),
                 "the run of engine A deadlocked");
@@ -225,7 +221,7 @@ class NestedRunCopyTest {
         reload.engine.set(engine);
         ExecutorService threads = Executors.newFixedThreadPool(2);
 
-        FactStore<Object> outerFacts = facts("reload", reload);
+        FactStore<Object> outerFacts = new FactMap<>(new Fact<>("reload", reload));
         outerFacts.setValue("holder", holder);
         Future<Map<String, Object>> outer = threads.submit(() -> engine.run(outerFacts));
         // The rules the outer run started with are replaced while it holds their only copy, and another thread takes
@@ -235,7 +231,8 @@ class NestedRunCopyTest {
                 "the outer run never reached its action, so it would read the reloaded rules");
         engine.load(List.of(rule("reloaded", "output.put('held', holder.hold())")));
         reload.reloaded.countDown();
-        Future<Map<String, Object>> newList = threads.submit(() -> engine.run(facts("holder", holder)));
+        Future<Map<String, Object>> newList =
+                threads.submit(() -> engine.run(new FactMap<>(new Fact<>("holder", holder))));
         assertTrue(holder.holding.await(20, TimeUnit.SECONDS), "the new list's only copy was never taken");
         reload.holdingTheNewCopy.countDown();
 
