@@ -11,6 +11,85 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.0.0](https://github.com/brantunger/unruly-engine/compare/v1.8.0...v2.0.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* release 2.0.0 under the Apache License 2.0 ([#443](https://github.com/brantunger/unruly-engine/issues/443))
+* give one run its settings through RunOptions, and bound the whole run by its deadline ([#369](https://github.com/brantunger/unruly-engine/issues/369))
+* limit the compiled copies runs on virtual threads make, and never let a nested run wait for ever ([#341](https://github.com/brantunger/unruly-engine/issues/341))
+* stop a run between rules when it is interrupted or past its deadline ([#329](https://github.com/brantunger/unruly-engine/issues/329))
+* report a missing class from a rule instead of letting it escape ([#328](https://github.com/brantunger/unruly-engine/issues/328))
+* stop a first-match engine at the first matching condition ([#327](https://github.com/brantunger/unruly-engine/issues/327))
+* report what a run did and which rules an engine has loaded, and tell listeners when a run starts and ends ([#326](https://github.com/brantunger/unruly-engine/issues/326))
+* configure engines on a builder, choose a default language, and rename stateless, stateful and setRuleList ([#324](https://github.com/brantunger/unruly-engine/issues/324))
+* make facts immutable and named, stop FactStore extending Map, and accept any FactStore in run() ([#323](https://github.com/brantunger/unruly-engine/issues/323))
+* make Rule immutable, require rule names, and read rules from JSON with two Jackson mix-ins ([#322](https://github.com/brantunger/unruly-engine/issues/322))
+* let an action return properties for the engine to set on the output ([#312](https://github.com/brantunger/unruly-engine/issues/312))
+* compile a language's Expression, report every broken rule, and locate errors ([#305](https://github.com/brantunger/unruly-engine/issues/305))
+* keep a language's run state in pooled sessions, and close them ([#304](https://github.com/brantunger/unruly-engine/issues/304))
+* seal the SPI contexts and publish the language test kit ([#303](https://github.com/brantunger/unruly-engine/issues/303))
+* split the engine into unruly-engine-core and the MVEL unruly-engine, as named modules ([#302](https://github.com/brantunger/unruly-engine/issues/302))
+* hide the engine classes behind RulesEngineBuilder and log under a fixed name ([#301](https://github.com/brantunger/unruly-engine/issues/301))
+* find expression languages with ServiceLoader and create MVEL only when rules load ([#300](https://github.com/brantunger/unruly-engine/issues/300))
+* require Java 21 ([#298](https://github.com/brantunger/unruly-engine/issues/298))
+
+### Features
+
+* compile a language's Expression, report every broken rule, and locate errors ([#305](https://github.com/brantunger/unruly-engine/issues/305)) ([0a64b7d](https://github.com/brantunger/unruly-engine/commit/0a64b7d67cb9d14c5184e22f0cd32902cd1174c4))
+* configure engines on a builder, choose a default language, and rename stateless, stateful and setRuleList ([#324](https://github.com/brantunger/unruly-engine/issues/324)) ([45eb4a4](https://github.com/brantunger/unruly-engine/commit/45eb4a49b5e47ae6b179094b94b956df484f494d))
+* declare fact names and types, so a typo fails when the rules load ([#345](https://github.com/brantunger/unruly-engine/issues/345)) ([141d9ad](https://github.com/brantunger/unruly-engine/commit/141d9ade30de4b184f3c41081999c9ee36076d73))
+* emit Flight Recorder events for slow runs by default, and for every run and rule on request ([#418](https://github.com/brantunger/unruly-engine/issues/418)) ([474fe78](https://github.com/brantunger/unruly-engine/commit/474fe7806ed66c191138effefcc34ed977898c76))
+* find expression languages with ServiceLoader and create MVEL only when rules load ([#300](https://github.com/brantunger/unruly-engine/issues/300)) ([de37d15](https://github.com/brantunger/unruly-engine/commit/de37d15529ff5282a95282172e2d946fa81806b8))
+* give languages the output type and their own options, and let an application set how output properties are written ([#325](https://github.com/brantunger/unruly-engine/issues/325)) ([28b9d2e](https://github.com/brantunger/unruly-engine/commit/28b9d2e851d748ab92af2957a4769e0932a98d9d))
+* give one run its settings through RunOptions, and bound the whole run by its deadline ([#369](https://github.com/brantunger/unruly-engine/issues/369)) ([c33a98f](https://github.com/brantunger/unruly-engine/commit/c33a98f2ab274e9a4c4077370cb5b690d31e90e8))
+* hide the engine classes behind RulesEngineBuilder and log under a fixed name ([#301](https://github.com/brantunger/unruly-engine/issues/301)) ([b04aa2d](https://github.com/brantunger/unruly-engine/commit/b04aa2dc2cd69b6464aad9c9f43bbb0b567e263d))
+* keep a language's run state in pooled sessions, and close them ([#304](https://github.com/brantunger/unruly-engine/issues/304)) ([c596ffe](https://github.com/brantunger/unruly-engine/commit/c596ffe0038459edc2ea0710da04aee258bba59c))
+* let an action return properties for the engine to set on the output ([#312](https://github.com/brantunger/unruly-engine/issues/312)) ([f84ae7d](https://github.com/brantunger/unruly-engine/commit/f84ae7d0f7e4f6673aec6750e630125b738fef7b))
+* let an engine make and warm its compiled copies when the rules load ([#423](https://github.com/brantunger/unruly-engine/issues/423)) ([c6da7c0](https://github.com/brantunger/unruly-engine/commit/c6da7c0da940f86ea10bded5e3482cdc34a40593))
+* let rules be switched off, scheduled and tagged, and let a run choose rules by tag ([#419](https://github.com/brantunger/unruly-engine/issues/419)) ([f95799b](https://github.com/brantunger/unruly-engine/commit/f95799b62b00aa3a0100f4a585da9d3384314d77))
+* limit the compiled copies runs on virtual threads make, and never let a nested run wait for ever ([#341](https://github.com/brantunger/unruly-engine/issues/341)) ([8e9ac87](https://github.com/brantunger/unruly-engine/commit/8e9ac87a022f64e959f25ec3870db9687313976f))
+* make facts immutable and named, stop FactStore extending Map, and accept any FactStore in run() ([#323](https://github.com/brantunger/unruly-engine/issues/323)) ([5cc1b95](https://github.com/brantunger/unruly-engine/commit/5cc1b95befc1c3d6d8c4989bc86e9218f4fb9635))
+* make Rule immutable, require rule names, and read rules from JSON with two Jackson mix-ins ([#322](https://github.com/brantunger/unruly-engine/issues/322)) ([ca6f342](https://github.com/brantunger/unruly-engine/commit/ca6f342ef37d6547a1041c34c56ef00e657b1b1e))
+* read a fact's properties the same way in every language ([#346](https://github.com/brantunger/unruly-engine/issues/346)) ([d2f055f](https://github.com/brantunger/unruly-engine/commit/d2f055f9f05d8b2b7019c6eef898e493561e0ed2))
+* release 2.0.0 under the Apache License 2.0 ([#443](https://github.com/brantunger/unruly-engine/issues/443)) ([dc47ed8](https://github.com/brantunger/unruly-engine/commit/dc47ed8ee4e9b4097cfa244490ca88bbad2ff54d))
+* report a missing class from a rule instead of letting it escape ([#328](https://github.com/brantunger/unruly-engine/issues/328)) ([5f74476](https://github.com/brantunger/unruly-engine/commit/5f74476262714e51613a920f68e4acfb4e543c52))
+* report every rule's outcome on the run result, and add a unique-match engine that fails when two rules match ([#411](https://github.com/brantunger/unruly-engine/issues/411)) ([7dd6691](https://github.com/brantunger/unruly-engine/commit/7dd669124269ddd1fe755f7343fb367c0d1b7eb6))
+* report what a run did and which rules an engine has loaded, and tell listeners when a run starts and ends ([#326](https://github.com/brantunger/unruly-engine/issues/326)) ([baed984](https://github.com/brantunger/unruly-engine/commit/baed9841c2b3c624afd4981250b1f9a1e3bb46bf))
+* require Java 21 ([#298](https://github.com/brantunger/unruly-engine/issues/298)) ([674736b](https://github.com/brantunger/unruly-engine/commit/674736b70aeefae0ff206a1b4f3be8a87a1c7fa1))
+* run in a GraalVM native image, with MVEL's reflection metadata, a native CI check and a guide ([#426](https://github.com/brantunger/unruly-engine/issues/426)) ([a5ced40](https://github.com/brantunger/unruly-engine/commit/a5ced406cdd74aff81a73ed36e0aaf39542d0f42))
+* seal the SPI contexts and publish the language test kit ([#303](https://github.com/brantunger/unruly-engine/issues/303)) ([a1c69e2](https://github.com/brantunger/unruly-engine/commit/a1c69e28222504452b19a91a1718bb2c22f3eba8))
+* show a run's tags and start instant on its context and result ([#432](https://github.com/brantunger/unruly-engine/issues/432)) ([34b4da2](https://github.com/brantunger/unruly-engine/commit/34b4da2ccd1317d2b1c86937f73e054c6b065bf7))
+* split the engine into unruly-engine-core and the MVEL unruly-engine, as named modules ([#302](https://github.com/brantunger/unruly-engine/issues/302)) ([bb0ce61](https://github.com/brantunger/unruly-engine/commit/bb0ce612e753012e0ab59ef618231b368a6baf76))
+* stop a first-match engine at the first matching condition ([#327](https://github.com/brantunger/unruly-engine/issues/327)) ([400d943](https://github.com/brantunger/unruly-engine/commit/400d9439204acc8757fb15028f7b59302327ce5c))
+* stop a run between rules when it is interrupted or past its deadline ([#329](https://github.com/brantunger/unruly-engine/issues/329)) ([0aa75be](https://github.com/brantunger/unruly-engine/commit/0aa75be72402ba52b646f6881b08243d961caa61))
+* validate a rule list without loading it, returning every problem load() would throw ([#409](https://github.com/brantunger/unruly-engine/issues/409)) ([4784388](https://github.com/brantunger/unruly-engine/commit/4784388ed01101bf3e2a963515e924d42499b51d))
+
+
+### Bug Fixes
+
+* compare run contexts by identity and keep facts out of every context's toString ([#376](https://github.com/brantunger/unruly-engine/issues/376)) ([17cc4e4](https://github.com/brantunger/unruly-engine/commit/17cc4e43483276cef83d6bb0a668030f64eaef70))
+* don't fail a release because a tag has no GitHub Release ([#444](https://github.com/brantunger/unruly-engine/issues/444)) ([756c3ea](https://github.com/brantunger/unruly-engine/commit/756c3ea2756eb12d5260cca7fdf2c305d67c8851))
+* escape a listener's exception in the log, and log a stopped rule as stopped ([#397](https://github.com/brantunger/unruly-engine/issues/397)) ([d950b74](https://github.com/brantunger/unruly-engine/commit/d950b746319b1f33452755157aba523c8e028527))
+* escape the text a language wrote into a message, not only the names the engine wrote ([#342](https://github.com/brantunger/unruly-engine/issues/342)) ([a0bee9d](https://github.com/brantunger/unruly-engine/commit/a0bee9d84af2da993f04f5534df0cbc76e4a33fe))
+* give the callbacks of a run stopped while waiting its deadline and identity ([#400](https://github.com/brantunger/unruly-engine/issues/400)) ([e5b8c6e](https://github.com/brantunger/unruly-engine/commit/e5b8c6e8e177f9694d0868c24793042012f985f2))
+* keep a condition's or action's wrong result when the run stops ([#395](https://github.com/brantunger/unruly-engine/issues/395)) ([e5c8ff3](https://github.com/brantunger/unruly-engine/commit/e5c8ff37c9f6a65c0607c0f319f3837293f0d52f))
+* keep a fatal error onError throws while closing a fatal failure ([#399](https://github.com/brantunger/unruly-engine/issues/399)) ([0317468](https://github.com/brantunger/unruly-engine/commit/03174688ad59d0045cb0aac30ecd1c1a12d4dfab))
+* keep an engine's copy limit across reloads ([#384](https://github.com/brantunger/unruly-engine/issues/384)) ([7e78213](https://github.com/brantunger/unruly-engine/commit/7e78213cb1311401d74f551d3e2b802e9444bcc5))
+* keep the default virtual-thread copy limit below the number of carriers ([#374](https://github.com/brantunger/unruly-engine/issues/374)) ([5955c1b](https://github.com/brantunger/unruly-engine/commit/5955c1b19444866d021d2968cd94a880752f8ae6))
+* let MVEL class lookups through a rule list's class loader run in parallel ([#387](https://github.com/brantunger/unruly-engine/issues/387)) ([08f71c1](https://github.com/brantunger/unruly-engine/commit/08f71c168711382b644de8b83658e355f54b4c6b))
+* let the contract test kit pass Long and Double numbers and check JavaBean facts ([#378](https://github.com/brantunger/unruly-engine/issues/378)) ([865fa53](https://github.com/brantunger/unruly-engine/commit/865fa53a901e6e56fbd923ed3322f2d5fc090267))
+* let the default OutputWriter reach setters the way facts are read ([#380](https://github.com/brantunger/unruly-engine/issues/380)) ([460841c](https://github.com/brantunger/unruly-engine/commit/460841ca437355c40e7c7250821c8a5bbe71915a))
+* log a stop in a nested run once, not once per run level ([#391](https://github.com/brantunger/unruly-engine/issues/391)) ([47149cc](https://github.com/brantunger/unruly-engine/commit/47149cc7704bc473cb2272eeb6d3dd1f66327a95))
+* make declared facts satisfiable, and MVEL strong typing an explicit option ([#377](https://github.com/brantunger/unruly-engine/issues/377)) ([9a4fb57](https://github.com/brantunger/unruly-engine/commit/9a4fb57a19939267a3004c612986a1d5ce9cff10))
+* pace the copies unlimitedCopies() makes on virtual threads with one build slot per processor ([#430](https://github.com/brantunger/unruly-engine/issues/430)) ([635378d](https://github.com/brantunger/unruly-engine/commit/635378d8d11e9531fa8c98bc5f48810e75caaabd))
+* read a fact whose class isn't public where its package is open to the engine ([#368](https://github.com/brantunger/unruly-engine/issues/368)) ([58df645](https://github.com/brantunger/unruly-engine/commit/58df645ed43060d8e3e9add8837d4be2aa2ffb78))
+* report a failed language and a rejected declared fact together with the broken rules ([#408](https://github.com/brantunger/unruly-engine/issues/408)) ([4a3043f](https://github.com/brantunger/unruly-engine/commit/4a3043f26d7494fa8346af270ddd155a059b4e45))
+* report failures once, escaped, and to every listener with their rule and cause ([#375](https://github.com/brantunger/unruly-engine/issues/375)) ([4340f7d](https://github.com/brantunger/unruly-engine/commit/4340f7d30a075b6941088b6060a25bfc97957809))
+* say where MVEL rejects an assignment in a condition, with an issue ([#394](https://github.com/brantunger/unruly-engine/issues/394)) ([a073986](https://github.com/brantunger/unruly-engine/commit/a073986811130f6e9d5470c00019ab76306ec720))
+* stop a run that is cancelled during its last condition or action ([#371](https://github.com/brantunger/unruly-engine/issues/371)) ([97790ba](https://github.com/brantunger/unruly-engine/commit/97790ba829e26d06823da819317048c6507f668e))
+
 ## [1.8.0](https://github.com/brantunger/unruly-engine/compare/v1.7.1...v1.8.0) (2026-09-15)
 
 
