@@ -47,6 +47,74 @@ jobs:
           # Always `main`, by the guard above.
           target-branch: ${{ github.ref_name }}
 
+      # The notes release-please writes are the changelog entry and nothing else, so the migration guides are linked
+      # here. There's no way to do it from release-please-config.json: the schema has only pull-request-header and
+      # pull-request-footer, which release-please strips back out before it takes the notes for the Release, and the
+      # action has no notes input. Doing it on the release-please side would be wrong anyway — the Release notes and
+      # the CHANGELOG.md entry are the same generated text, so a header there would repeat in every entry of a file
+      # that is a permanent record.
+      # The links are pinned to the tag, not to `main`: the notes are permanent, and a page that later moves or is
+      # renamed would leave a dead link behind in every past release. Nothing checks a link written in a workflow
+      # file — config/docs/check_docs.py only checks the pages, the Java sources and the Javadoc overview — so each
+      # page is looked up at the tag first and one that can't be confirmed is left out with a warning instead of
+      # published as a 404. The lookup can also fail for a reason that isn't a missing page, so the warning says
+      # what gh reported rather than claiming the page is gone.
+      # Like the Latest mark below this is cosmetic, so every way of failing to add the links only warns. Only a
+      # broken environment still fails the job: an empty tag, which would mean release-please's own output is
+      # broken, or a RUNNER_TEMP that can't be written. A failure here would skip `publish` and strand a version
+      # that was never built or uploaded, and re-running wouldn't repair it: release-please would find the Release
+      # already there and report no new release, so `publish` never fires again.
+      # It runs before the Latest step so that anything `gh release edit` might do to the Latest mark — today it
+      # sends only `body` — is repaired on the spot by the step below. Note the watch email and the Atom entry go
+      # out when release-please publishes the Release, before this step, and editing the body doesn't re-send them.
+      # The heading and both links suit any 2.x release; revisit them at 3.0.
+      - name: Link the migration guides from the release notes
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          : "${TAG:?release-please reported no tag}"
+          # An invisible marker, so a second run of this step appends nothing.
+          marker='<!-- migration-guides -->'
+          if ! body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body'); then
+            echo "::warning::Couldn't read the ${TAG} release notes, so they don't link the migration guides. See RELEASING.md."
+            exit 0
+          fi
+          case "$body" in
+            *"$marker"*)
+              echo "::notice::The ${TAG} release notes already link the migration guides."
+              exit 0
+              ;;
+          esac
+          links=''
+          while read -r path title; do
+            # gh's own message is kept and reported, because it says 404 for a page that isn't at the tag and
+            # something else — 401, 403, a rate limit, a 5xx — for a lookup that never got an answer. --silent
+            # drops the body; the message is collapsed onto one line so it fits in the warning.
+            if reason=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${TAG}" --silent 2>&1); then
+              links="${links}- [${title}](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/${path})"$'\n'
+            else
+              echo "::warning::Couldn't confirm ${path} is in ${TAG}, so the release notes don't link it: ${reason//$'\n'/ }. See RELEASING.md."
+            fi
+          done <<'EOF'
+          docs/migrating-to-2.md Migrating to 2.0
+          docs/migrating-to-2-implementers.md Migrating a language or an engine
+          EOF
+          if [ -z "$links" ]; then
+            echo "::warning::Neither migration guide could be confirmed in ${TAG}, so the release notes link neither. See RELEASING.md."
+            exit 0
+          fi
+          notes="${RUNNER_TEMP}/release-notes.md"
+          {
+            printf '%s\n\n' "$body"
+            printf '%s\n\n' "$marker"
+            printf '### 🔼 Upgrading from 1.x\n\n'
+            printf '%s' "$links"
+          } > "$notes"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" \
+            || echo "::warning::Couldn't add the migration guides to the ${TAG} release notes. See RELEASING.md."
+
       # release-please marks every GitHub Release it creates as the repository's "Latest" release, even when a newer
       # version is already out, so this puts the mark back on the highest released version, which already includes the
       # release just created. Releases all come from `main`, so the mark normally belongs to the release just made; the
@@ -244,9 +312,9 @@ jobs:
             commit --quiet -m "docs: Javadoc ${VERSION}"
           git -C pages push --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
 
-      # No repo1 sync poll here: propagation takes 30-60 minutes, and waiting inside this
-      # run would hold the `release` concurrency group that long. RELEASING.md shows how
-      # to confirm the sync by hand.
+      # No repo1 sync poll here: propagation can take up to 30-60 minutes (2.0.0 took about 4),
+      # and waiting inside this run could hold the `release` concurrency group that long.
+      # RELEASING.md shows how to confirm the sync by hand.
 
   # Deploys gh-pages, which `publish` just updated, to GitHub Pages. A separate job because a job has
   # one environment: `publish` uses maven-central, and a Pages deployment uses github-pages. Pushing

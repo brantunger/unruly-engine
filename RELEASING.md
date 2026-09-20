@@ -43,7 +43,7 @@ flowchart LR
         P["pages job<br/>deploy gh-pages"] --> H["Javadoc on<br/>GitHub Pages"]
     end
     D --> E
-    F -. "30–60 min" .-> G
+    F -. "up to 30–60 min" .-> G
     J --> P
 ```
 
@@ -62,9 +62,14 @@ flowchart LR
    then publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to the
    `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
 
+The Release notes are the changelog entry, with links to [Migrating to 2.0](docs/migrating-to-2.md) and
+[Migrating a language or an engine](docs/migrating-to-2-implementers.md) appended by the `release-please` job. The
+links are pinned to the tag, so each release's notes keep pointing at the guides as that release left them.
+
 Central Portal validation is synchronous, so a green `publish` job means the release was accepted. Propagation to
-`repo1.maven.org` takes a further **30–60 minutes**. The workflow doesn't wait for it, so the release queue isn't
-held up; see [Checking a release by hand](#-checking-a-release-by-hand) to confirm the sync.
+`repo1.maven.org` can take up to a further 30–60 minutes; for 2.0.0 it took about 4 minutes. The workflow doesn't
+wait for it, so the release queue isn't held up; see
+[Checking a release by hand](#-checking-a-release-by-hand) to confirm the sync.
 
 ## 🚦 Forcing a release
 
@@ -133,6 +138,7 @@ the short (8-character) key ID so the plugin picks the right one.
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
 | **After the upload** (attaching the jars or adding the Javadoc to `gh-pages` failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
 | **Only the `pages` job failed** | Everything else shipped. Re-run the failed job, or redeploy with `gh workflow run pages.yml --ref main`. |
+| **The migration guides weren't linked from the notes** (a warning in the `release-please` job) | Cosmetic, and deliberately not a failure: failing there would skip `publish`, and a re-run couldn't repair it, because release-please would find the Release already made and report no new release. Add the links by hand: `gh release view vX.Y.Z --json body --jq .body > notes.md`, append the `<!-- migration-guides -->` marker line and the links, then `gh release edit vX.Y.Z --notes-file notes.md`. The warning quotes what `gh` said about the page it skipped: a 404 means the page really isn't at that tag, anything else (401, 403, a rate limit, a 5xx) means the lookup never got an answer and the link was fine. |
 | **The `Latest` mark didn't move** (a warning in the `release-please` job, and only possible when the version just released isn't the highest one) | Cosmetic, and deliberately not a failure: the tag and the GitHub Release exist, and `publish` goes on to build and upload as usual. Nothing reads the mark — `/latest/` on the Javadoc site is decided by the workflow's `newest` output, not by it — so leaving it is safe. To put it back, run `gh release edit vX.Y.Z --latest` for the highest released version, which the `NEWEST` snippet in [The Javadoc site](#-the-javadoc-site) computes. |
 | **Released but broken** | Don't try to replace it. Cut the next patch version. |
 
@@ -141,7 +147,8 @@ the short (8-character) key ID so the plugin picks the right one.
 Deployment status is on the Portal (login required): <https://central.sonatype.com/publishing/deployments>.
 
 The public artifact page on `central.sonatype.com` answers HTTP 200 for any version, even one that doesn't exist,
-so it can't confirm a release. Check `repo1` instead, 30–60 minutes after publishing:
+so it can't confirm a release. Check `repo1` instead. Allow up to 30–60 minutes, but try sooner: for 2.0.0 the POMs
+were 404 at 19:20:25 UTC and served at 19:23:09 UTC, about four minutes after the `publish` job ended.
 
 ```bash
 VERSION=<version>
@@ -165,10 +172,18 @@ names the workflow and the commit it was built from. Verify a downloaded jar aga
 ```bash
 curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.jar"
 gh attestation verify "unruly-engine-$VERSION.jar" --repo brantunger/unruly-engine
-# Prints the build and signer repository and workflow, the workflow as
-# .github/workflows/release.yml@refs/heads/main. Exits 1 when no attestation matches the file's digest.
-# Add --format json for the whole predicate, including the commit the jar was built from.
+# Exit 0 = verified. Exit 1 = no attestation matches the file's digest; that error is always printed.
+GH_FORCE_TTY=1 gh attestation verify "unruly-engine-$VERSION.jar" --repo brantunger/unruly-engine 2>&1
+# The summary: build and signer repository and workflow, the workflow as
+# .github/workflows/release.yml@refs/heads/main.
+gh attestation verify "unruly-engine-$VERSION.jar" --repo brantunger/unruly-engine --format json
+# The whole predicate on stdout, including the commit the jar was built from.
 ```
+
+> [!IMPORTANT]
+> On success that summary goes to **stderr**, and only when `gh` is attached to a terminal. Piped or redirected,
+> the command prints nothing on either stream and still exits 0 — so a script must read the exit code, not the
+> output. `GH_FORCE_TTY=1` with `2>&1` brings the summary back; `--format json` prints on a pipe either way.
 
 The ref is the **branch**, not the tag, even though the job builds the tag: the workflow is triggered by the push to
 `main`, and release-please creates the tag inside that same run, so the run's identity stays on
