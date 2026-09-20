@@ -25,14 +25,26 @@ manual act. The version bump, changelog, git tag, GitHub Release, Maven Central 
 
 ```mermaid
 flowchart LR
-    A["Merge a feat: or<br/>fix: PR"] --> B["release-please opens<br/>chore(main): release X.Y.Z"]
-    B --> C["Review and<br/>squash-merge it"]
-    C --> D["Tag vX.Y.Z +<br/>GitHub Release"]
-    D --> E["publish job<br/>build, check, sign"]
-    E --> F["Central<br/>Portal"]
-    F -. "30–60 min" .-> G["repo1.maven.org"]
-    E --> P["pages job<br/>deploy gh-pages"]
-    P --> H["Javadoc on<br/>GitHub Pages"]
+    subgraph merge["You merge"]
+        direction TB
+        A["Merge a feat: or<br/>fix: PR"] --> B["release-please opens<br/>chore(main): release X.Y.Z"]
+        B --> C["Review and<br/>squash-merge it"]
+        C --> D["Tag vX.Y.Z +<br/>GitHub Release"]
+    end
+    subgraph publish["publish job"]
+        direction TB
+        E["build, check,<br/>javadoc jars"] --> V["attest the<br/>nine jars"]
+        V --> F["sign, upload to<br/>Central Portal"]
+        F --> J["push the Javadoc<br/>to gh-pages"]
+    end
+    subgraph after["Then"]
+        direction TB
+        G["repo1.maven.org"]
+        P["pages job<br/>deploy gh-pages"] --> H["Javadoc on<br/>GitHub Pages"]
+    end
+    D --> E
+    F -. "30–60 min" .-> G
+    J --> P
 ```
 
 1. Merge PRs to `main` with [Conventional Commit](CONTRIBUTING.md#-commit-and-pr-titles) titles. `feat:` bumps the
@@ -46,8 +58,9 @@ flowchart LR
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD, the
    coverage gate and the [API compatibility check](docs/contributing/api-compatibility.md) against the previous
-   release), publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to
-   the `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
+   release) and the javadoc jars, [attests](#-checking-a-release-by-hand) the nine jars it's about to publish,
+   then publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to the
+   `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
 
 Central Portal validation is synchronous, so a green `publish` job means the release was accepted. Propagation to
 `repo1.maven.org` takes a further **30–60 minutes**. The workflow doesn't wait for it, so the release queue isn't
@@ -102,8 +115,9 @@ release-please opens **chore(1.x): release 1.X.Y** against `1.x`, and merging th
    EOF
    ```
 
-4. Optionally, for weekly dependency bumps on `1.x` too, copy both entries in `.github/dependabot.yml` on `main`
-   and add `target-branch: "1.x"` to the copies. Dependabot reads that file only from the default branch, and its
+4. Optionally, for weekly dependency bumps on `1.x` too, copy the entries in `.github/dependabot.yml` on `main` you
+   want bumped there — the root Gradle build and the actions, and `buildSrc` if `1.x` has one — and add
+   `target-branch: "1.x"` to the copies. Dependabot reads that file only from the default branch, and its
    security updates only ever target the default branch, so check `1.x` by hand when an alert names a dependency it
    uses.
 
@@ -137,6 +151,10 @@ build, with its tests and checks, has already run in an earlier step without the
 pinned to a commit SHA, with its version in a comment, and Dependabot updates both. Signing happens in memory; no GPG keyring is imported
 onto the runner.
 
+Build provenance needs no secret. The `publish` job has `id-token: write` and `attestations: write` on top of
+`contents: write`, so the attestation step can sign with the run's own short-lived OIDC token and record the result
+on the repository.
+
 ## 🔐 One-time GPG setup
 
 Central verifies signatures against a public keyserver, so the **public** half of the key has to be published
@@ -165,7 +183,7 @@ the short (8-character) key ID so the plugin picks the right one.
 
 | Failure | What to do |
 | --- | --- |
-| **Before the upload** (build, Checkstyle, PMD, coverage, API compatibility or Javadoc failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
+| **Before the upload** (build, Checkstyle, PMD, coverage, API compatibility, Javadoc or the attestation failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
 | **After the upload** (attaching the jars or adding the Javadoc to `gh-pages` failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
 | **Only the `pages` job failed** | Everything else shipped. Re-run the failed job, or redeploy with `gh workflow run pages.yml --ref main`. |
@@ -192,6 +210,28 @@ The Javadoc for the same version is live as soon as the `pages` job finishes:
 curl -sI "https://brantunger.github.io/unruly-engine/$VERSION/index.html"
 # HTTP 200 once the pages job has deployed gh-pages
 ```
+
+Each of the nine published jars also carries a
+[build provenance](https://docs.github.com/en/actions/concepts/security/artifact-attestations) attestation, which
+names the workflow and the commit it was built from. Verify a downloaded jar against it:
+
+```bash
+curl -sfO "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.jar"
+gh attestation verify "unruly-engine-$VERSION.jar" --repo brantunger/unruly-engine
+# Prints the build and signer repository and workflow, the workflow as
+# .github/workflows/release.yml@refs/heads/main. Exits 1 when no attestation matches the file's digest.
+# Add --format json for the whole predicate, including the commit the jar was built from.
+```
+
+The ref is the **branch**, not the tag, even though the job builds the tag: the workflow is triggered by the push to
+`main` (`1.x` for a hotfix), and release-please creates the tag inside that same run, so the run's identity stays on
+the branch. A `--signer-workflow` or `--cert-identity` filter has to use that ref. The commit in the predicate is the
+one that was tagged.
+
+Unlike the `curl` checks above, this one calls the API, so `gh` has to be logged in (`gh auth status`). `-sf` makes
+`curl` fail on a 404 instead of saving the error page as the jar, which would then fail verification for the wrong
+reason. The same works for the `-sources.jar` and `-javadoc.jar` files and for the other two artifacts. 2.0.0 is the
+first release with attestations, so an earlier version has none and the command fails for it.
 
 ## ☕ The Javadoc site
 

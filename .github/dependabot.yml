@@ -14,6 +14,22 @@ updates:
         patterns:
           - "*"
 
+  # buildSrc is its own Gradle build, and the entry above may not see it: Dependabot's Gradle support has treated
+  # buildSrc as an included build of the root directory, but which version github.com runs can't be checked from
+  # here. Its dependencies are the plugins the convention plugins apply (vanniktech, japicmp, gradlex), declared in
+  # buildSrc/build.gradle by their marker coordinates rather than in the version catalog, and they appear never to
+  # have been bumped. If the first weekly run opens two pull requests for the same bump, delete this entry.
+  - package-ecosystem: "gradle"
+    directory: "/buildSrc"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      buildsrc-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

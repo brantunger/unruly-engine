@@ -86,8 +86,10 @@ abstract class ModuleJavadoc extends DefaultTask {
         destination.deleteDir()
         Map<String, String> modules = getModuleSourcePaths().get()
         Directory root = getRoot().get()
-        // A warning fails the task, like the projects' own Javadoc tasks.
+        // A warning fails the task, like the projects' own Javadoc tasks. -notimestamp leaves the generation date
+        // out of every page, so rebuilding the site from the same sources produces the same files.
         List<String> arguments = ['-d', destination.absolutePath, '-quiet', '-Xdoclint:all', '-Werror',
+                                  '-notimestamp',
                                   '-encoding', 'UTF-8', '-docencoding', 'UTF-8', '-charset', 'UTF-8',
                                   '-doctitle', getTitle().get(), '-windowtitle', getTitle().get(),
                                   '--module', modules.keySet().join(','),
