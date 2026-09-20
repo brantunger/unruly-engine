@@ -114,7 +114,7 @@ engine.runWithResult(facts, RunOptions.defaults().withTags(Set.of("eu"))).evalua
 | --- | --- |
 | The rule is disabled | `enabled(false)` on the rule's builder; rules are enabled by default |
 | The run starts before the rule's `validFrom`, or at or after its `validTo` | `validFrom(Instant)` and `validTo(Instant)` on the rule's builder; `null`, the default, means no start or no end |
-| The run was given tags, and the rule carries none of them | `tags(...)` on the rule's builder, and `RunOptions.withTags(...)` for the run |
+| The run was given tags, and the rule carries none of them | `tags(...)` on the rule's builder, and `RunOptions.defaults().withTags(...)` for the run |
 
 A skipped rule is treated the same whichever reason applies:
 

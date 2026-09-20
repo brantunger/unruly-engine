@@ -88,16 +88,18 @@ An intended break belongs in a major release, and needs three things:
    under "Behavior changes" in the description.
 3. Add a section to [Migrating to 2.0](../migrating-to-2.md): who is affected, and what to change.
 
-A line applies while the baseline is from an earlier major version, so a hotfix released from the `1.x` branch in
-the meantime doesn't turn it off. Once that major version is published and becomes the baseline, the build warns that
-its lines no longer apply, and they can be deleted.
+A break in the language SPI or in `RulesEngine` goes in
+[Migrating a language or an engine](../migrating-to-2-implementers.md) instead of that page.
+
+A line applies while the baseline is from an earlier major version, so a 1.x release published in the meantime
+doesn't turn it off. Once that major version is published and becomes the baseline, the build warns that its lines no
+longer apply, and they can be deleted.
 
 ## 📅 Baselines
 
 The baseline is the artifact's newest release on Maven Central that isn't higher than the version in
-`gradle.properties`. Because the baseline is never higher than the build's own version, `main` and the `1.x` branch
-are each checked against their own release line, and a release PR's version, not yet published, is compared with the
-release before it.
+`gradle.properties`. Because the baseline is never higher than the build's own version, a branch is always checked
+against its own release line, and a release PR's version, not yet published, is compared with the release before it.
 
 Two artifacts are new in 2.0.0, so until then:
 

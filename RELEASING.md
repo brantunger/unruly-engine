@@ -5,13 +5,13 @@
 > squash-merged, release-please opens the release PR, and the maintainer's merge of it publishes the release.
 > [CONTRIBUTING.md](CONTRIBUTING.md) is the page for contributors.
 
-Releases are automated. Merging a PR to `main` (or to `1.x`, for a [hotfix](#-hotfix-releases-from-1x)) is the only
-manual act. The version bump, changelog, git tag, GitHub Release, Maven Central publish and
-[Javadoc site](#-the-javadoc-site) all follow from it.
+Releases are automated, and they all come from `main`: merging a PR is the only manual act. The version bump,
+changelog, git tag, GitHub Release, Maven Central publish and [Javadoc site](#-the-javadoc-site) all follow from it.
+1.8.0 is the last 1.x release, so there is no second release line to publish from; [SECURITY.md](SECURITY.md) is the
+policy.
 
 - [The normal flow](#-the-normal-flow)
 - [Forcing a release](#-forcing-a-release)
-- [Hotfix releases from 1.x](#-hotfix-releases-from-1x)
 - [Required secrets](#-required-secrets)
 - [One-time GPG setup](#-one-time-gpg-setup)
 - [When a publish half-completes](#-when-a-publish-half-completes)
@@ -77,60 +77,6 @@ bumps ship in that release without their own changelog entries.
 > [!WARNING]
 > `Release-As:` footers do **not** work here. The repository squash-merges with the PR title only, so commit bodies
 > never reach `main`.
-
-## 🌿 Hotfix releases from 1.x
-
-2.0 is developed on `main`, so once its first breaking change is merged, a 1.x fix can't be released from there.
-1.x fixes ship from a `1.x` branch instead. The release workflow and CI run on it the same way as on `main`:
-release-please opens **chore(1.x): release 1.X.Y** against `1.x`, and merging that PR publishes the version.
-
-### Once, before the first hotfix
-
-1. Create the branch from the last 1.x release tag:
-
-   ```bash
-   git fetch origin --tags
-   git push origin 'v1.8.0^{commit}:refs/heads/1.x'
-   ```
-
-2. Allow the branch in both deployment environments. They only accept `main` (and `gh-pages`), so the `publish` and
-   `pages` jobs would fail on `1.x` before running:
-
-   ```bash
-   gh api -X POST repos/brantunger/unruly-engine/environments/maven-central/deployment-branch-policies -f name=1.x -f type=branch
-   gh api -X POST repos/brantunger/unruly-engine/environments/github-pages/deployment-branch-policies -f name=1.x -f type=branch
-   ```
-
-3. Protect the branch like `main` (pull requests only, no force pushes or deletion; admins can bypass):
-
-   ```bash
-   gh api -X POST repos/brantunger/unruly-engine/rulesets --input - <<'EOF'
-   {"name": "Protect 1.x", "target": "branch", "enforcement": "active",
-    "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
-    "conditions": {"ref_name": {"include": ["refs/heads/1.x"], "exclude": []}},
-    "rules": [{"type": "deletion"}, {"type": "non_fast_forward"},
-              {"type": "pull_request", "parameters": {"required_approving_review_count": 0,
-               "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false,
-               "require_last_push_approval": false, "required_review_thread_resolution": false}}]}
-   EOF
-   ```
-
-4. Optionally, for weekly dependency bumps on `1.x` too, copy the entries in `.github/dependabot.yml` on `main` you
-   want bumped there — the root Gradle build and the actions, and `buildSrc` if `1.x` has one — and add
-   `target-branch: "1.x"` to the copies. Dependabot reads that file only from the default branch, and its
-   security updates only ever target the default branch, so check `1.x` by hand when an alert names a dependency it
-   uses.
-
-### Each hotfix
-
-1. Fix it on `main` first if the bug is there too, then cherry-pick the squashed commit onto a branch from `1.x`
-   and open a PR into `1.x` with the same `fix:` title. CI runs on it as it does for `main`. The API check
-   compares `1.x` with the newest 1.x release, never with a 2.x one.
-2. Squash-merge it. release-please opens **chore(1.x): release 1.X.Y**; review and squash-merge that too.
-3. The `publish` and `pages` jobs publish the version and add `/1.X.Y/` to the Javadoc site. `/latest/` and the
-   repository's **Latest** GitHub Release stay on the newest version: the workflow moves them only for the highest
-   release tag.
-4. `CHANGELOG.md` on `main` doesn't list the hotfix. Its GitHub Release and the changelog on `1.x` do.
 
 ## 🔑 Required secrets
 
@@ -224,7 +170,7 @@ gh attestation verify "unruly-engine-$VERSION.jar" --repo brantunger/unruly-engi
 ```
 
 The ref is the **branch**, not the tag, even though the job builds the tag: the workflow is triggered by the push to
-`main` (`1.x` for a hotfix), and release-please creates the tag inside that same run, so the run's identity stays on
+`main`, and release-please creates the tag inside that same run, so the run's identity stays on
 the branch. A `--signer-workflow` or `--cert-identity` filter has to use that ref. The commit in the predicate is the
 one that was tagged.
 
@@ -240,7 +186,7 @@ The `publish` job copies the Javadoc it built to the `gh-pages` branch, and the 
 
 | Path | Contents |
 | --- | --- |
-| `/latest/` | The newest release, by version number: a hotfix of an older line doesn't replace it. The README links here. |
+| `/latest/` | The newest release, by version number: publishing an older version later doesn't replace it. The README links here. |
 | `/X.Y.Z/` | Each release, kept permanently. There's no `/1.0.0/`: that version was published without a `-javadoc.jar`. |
 | `/` | Redirects to `/latest/` |
 
@@ -262,7 +208,7 @@ once per version.
 
 If the publish step failed, rebuild that version's directory from its tag. The site covers both modules, but each
 artifact's `-javadoc.jar` holds only its own, so the script builds the site. The script replaces
-`pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version or a 1.x hotfix:
+`pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version:
 
 ```bash
 VERSION=<version>

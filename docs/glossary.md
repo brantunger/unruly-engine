@@ -335,8 +335,9 @@ and it's logged at WARN rather than ERROR. See [What stops a run](stopping-runs.
 ### Tag
 
 A name that groups rules, such as a market or a product, set with `tags(...)` on a rule's builder. A run given tags
-with `RunOptions.withTags(...)` uses only the rules that carry at least one of them, compared exactly, case included,
-and [skips](#skipped-rule) the rest, including rules with no tags. See [Tags](engines-and-runs.md#tags).
+with `RunOptions.defaults().withTags(...)` uses only the rules that carry at least one of them, compared exactly,
+case included, and [skips](#skipped-rule) the rest, including rules with no tags. See
+[Tags](engines-and-runs.md#tags).
 
 ### Timeout
 
