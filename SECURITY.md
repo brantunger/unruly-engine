@@ -6,6 +6,10 @@ Only the **latest release** on [Maven Central](https://central.sonatype.com/arti
 receives security fixes. Fixes ship as a new patch release, so upgrading to the newest version is always the
 remedy.
 
+Every jar on Maven Central is signed with the project's GPG key, and from 2.0.0 each also carries a GitHub build
+provenance attestation. [RELEASING.md](RELEASING.md#-checking-a-release-by-hand) shows how to check a downloaded
+jar against it.
+
 ## Reporting a vulnerability
 
 **Please don't report security issues in public GitHub issues, discussions or pull requests.**

@@ -76,8 +76,13 @@ jobs:
     # and a job timeout is a hard failure, so it must sit well clear of the sum of the steps.
     timeout-minutes: 45
     environment: maven-central
+    # contents: write attaches the jars to the GitHub Release and pushes the Javadoc to gh-pages. id-token and
+    # attestations are for the attest step below: it signs the provenance with the job's short-lived OIDC token
+    # and records the attestation on the repository.
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       # Publish exactly the commit that was tagged, never a moving main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,15 +90,21 @@ jobs:
           ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
 
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-
       - name: Set up JDK 21
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: 'gradle'
+
+      # Validates the Gradle wrapper, as it does in ci.yml, so there's no separate wrapper-validation step here.
+      # The cache is read-only: a release from main would otherwise write to the same cache scope CI's runs on main
+      # use (setup-gradle only writes from the default branch anyway, so a 1.x release already reads only), and the
+      # build below passes --no-build-cache in any case.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
 
       # The full build runs first, without the signing key or the Portal token, so the
       # release artifacts clear Checkstyle, PMD, the coverage gate and the API check, and
@@ -101,8 +112,46 @@ jobs:
       # also builds the combined Javadoc site, which the Central step doesn't.
       - name: Build
         # Without the build cache, so the published jars are built from scratch (the runner is fresh, so there is
-        # nothing to clean), and with a fresh API baseline.
-        run: ./gradlew build --no-build-cache -PapiCheck.refresh
+        # nothing to clean), and with a fresh API baseline. plainJavadocJar is the vanniktech plugin's task and
+        # isn't part of `build`, so without it only the main and sources jars exist; the publish step uploads the
+        # javadoc jars too, and the attest step below covers them.
+        run: ./gradlew build plainJavadocJar --no-build-cache -PapiCheck.refresh
+
+      # The nine jars Central receives, named one by one and hashed. sha256sum exits non-zero on a file that isn't
+      # there, so the list of subjects and the check that all nine exist are the same command: a renamed artifact or
+      # a javadoc jar the Build step stopped producing fails here, before anything is published. The attest step
+      # below can't do that itself — it expands subject-path as a glob and only fails when nothing at all matches,
+      # so eight jars and one typo would attest eight and pass. The `sed` drops each path's directories, leaving the
+      # file name as the subject name. benchmarks and native-smoke are never published, so they're never listed.
+      - name: Hash the published jars
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          : "${VERSION:?release-please reported no version}"
+          # The default shell is `bash -e`, without pipefail, so a missing jar would otherwise be masked by the
+          # exit status of sed and tee.
+          set -o pipefail
+          sha256sum \
+            "core/build/libs/unruly-engine-core-${VERSION}.jar" \
+            "core/build/libs/unruly-engine-core-${VERSION}-sources.jar" \
+            "core/build/libs/unruly-engine-core-${VERSION}-javadoc.jar" \
+            "mvel/build/libs/unruly-engine-${VERSION}.jar" \
+            "mvel/build/libs/unruly-engine-${VERSION}-sources.jar" \
+            "mvel/build/libs/unruly-engine-${VERSION}-javadoc.jar" \
+            "test-kit/build/libs/unruly-engine-test-${VERSION}.jar" \
+            "test-kit/build/libs/unruly-engine-test-${VERSION}-sources.jar" \
+            "test-kit/build/libs/unruly-engine-test-${VERSION}-javadoc.jar" \
+            | sed 's#  .*/#  #' | tee "${RUNNER_TEMP}/published-jars.sha256"
+
+      # Attests those nine digests before the jars are uploaded: a failure here costs a re-run, while a failure
+      # after the upload would strand a published version, which Central won't accept a second time (the same
+      # reason the gh-pages step below recreates a missing branch rather than failing). The publish step can't
+      # change what was attested: its jar tasks are up to date from the Build step, and the archives are
+      # reproducible either way.
+      - name: Attest the published jars
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ runner.temp }}/published-jars.sha256
 
       # Only this step gets the secrets, and it skips `check`, which the step above ran.
       # Signing is done in-memory by the vanniktech plugin — no gpg keyring is imported

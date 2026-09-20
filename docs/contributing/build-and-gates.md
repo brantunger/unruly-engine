@@ -130,8 +130,9 @@ What the jobs leave behind:
   only when a job fails.
 - **Codecov** gets one upload per run, from the Linux JDK 21 job, authenticated with OIDC. A pull request from a
   fork, or a run Dependabot triggers, skips the upload, because GitHub issues no OIDC token to it.
-- **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests only read them.
-  The configuration cache isn't saved, because that needs an encryption key.
+- **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests only read them,
+  as does the release workflow's `publish` job. The configuration cache isn't saved, because that needs an
+  encryption key.
 
 No branch protection requires a check; maintainers merge when CI and the title check are green.
 
@@ -172,7 +173,9 @@ broken `{@link}` or bad HTML fails the build. `check` depends on the Javadoc in 
 - Each published project's `javadoc` task documents its own module. Its output is what the project's `-javadoc.jar`
   packages at publish time.
 - The root project's `javadoc` task builds one site for all the modules in `build/docs/javadoc`. It hands the
-  javadoc tool the modules rather than source files, so it documents only the packages they export.
+  javadoc tool the modules rather than source files, so it documents only the packages they export, and passes
+  `-notimestamp`, so no page carries the date it was generated and a rebuild of the same sources gives the same
+  files.
 
 `./gradlew javadoc` runs every project's `javadoc` task, `benchmarks` included, and the site: an unqualified task
 name runs the task of that name in every project. `./gradlew :javadoc` builds the site alone. The site is
