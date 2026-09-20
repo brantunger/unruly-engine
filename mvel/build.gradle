@@ -80,13 +80,6 @@ mavenPublishing {
 
 apiCheck {
     artifactId = artifact
-    // These packages moved to unruly-engine-core in 2.0.0, and are compared there.
-    excludedPackages = [
-            'io.github.brantunger.unruly.api',
-            'io.github.brantunger.unruly.api.exception',
-            'io.github.brantunger.unruly.api.language',
-            'io.github.brantunger.unruly.core',
-    ]
 }
 
 // The tests are here, not in core or test-kit, because most of them run MVEL rules. They run on the class path, so the tests in

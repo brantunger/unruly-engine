@@ -27,5 +27,4 @@ mavenPublishing {
 
 apiCheck {
     artifactId = artifact
-    firstRelease = '2.0.0'
 }

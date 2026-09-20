@@ -30,10 +30,6 @@ apiCheck {
     // core is internal: the module doesn't export it, and its classes are package-private except Engines, the
     // builder's entry point.
     excludedPackages = ['io.github.brantunger.unruly.core']
-    // Until its first release, 2.0.0, this artifact is compared with the last 1.x release of unruly-engine, the single
-    // jar that also held the MVEL language.
-    predecessor = 'io.github.brantunger:unruly-engine:(,2.0.0)'
-    predecessorExcludedPackages = ['io.github.brantunger.unruly.mvel']
 }
 
 // The Javadoc documents the API only. core's one public class, Engines, exists for RulesEngineBuilder.
