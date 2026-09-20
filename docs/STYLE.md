@@ -24,7 +24,7 @@ documentation lives.
 
 ---
 
-## 📄 Page template
+## 📃 Page template
 
 ```markdown
 # <emoji> <Title>
@@ -114,6 +114,7 @@ documentation lives.
 | Production checklist | 🏭 | Contributing | 🤝 |
 | Development setup | 💻 | Documentation, the guide index | 📚 |
 | Virtual threads | 🧶 | Carrier pinning | 📌 |
+| License | 📄 | | |
 
 ## 💬 Callouts
 

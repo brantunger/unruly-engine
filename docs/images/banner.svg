@@ -50,7 +50,7 @@
     <rect x="502" y="206" width="124" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
     <text x="564" y="227" text-anchor="middle">Thread-safe</text>
     <rect x="638" y="206" width="112" height="32" rx="16" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-opacity="0.18"/>
-    <text x="694" y="227" text-anchor="middle">GPL-3.0</text>
+    <text x="694" y="227" text-anchor="middle">Apache-2.0</text>
   </g>
 
   <!-- Rule card -->

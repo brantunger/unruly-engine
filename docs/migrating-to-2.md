@@ -11,6 +11,7 @@ then [Migrating a language or an engine](migrating-to-2-implementers.md).
 [← Documentation index](README.md)
 
 - [Should you upgrade?](#-should-you-upgrade)
+- [The license is now Apache-2.0](#-the-license-is-now-apache-20)
 - [Which sections apply to you?](#-which-sections-apply-to-you)
 - [Java 21 is required](#-java-21-is-required)
 - [What you depend on](#-what-you-depend-on)
@@ -57,6 +58,34 @@ compiler won't point at them until you're on 2.0:
 | The language SPI's `copy()` | [Sessions](migrating-to-2-implementers.md#-languages-keep-run-state-in-sessions) |
 | The language SPI's `compileCondition(String)` and `compileAction(String)` | [Compiling](migrating-to-2-implementers.md#-languages-compile-an-expression) |
 
+## 📄 The license is now Apache-2.0
+
+**What changed:** 2.0.0 and later are published under the [Apache License 2.0](../LICENSE). 1.8.0 and every release
+before it were published under the GNU General Public License v3.0, and the copies of them on Maven Central carry
+that license; the rights it granted can't be withdrawn.
+
+**Who is affected:** anyone whose legal or compliance review covered a GPL-3.0 dependency, and anyone who avoided
+the library because of one.
+
+**What to change:** nothing in your code. No class, method, message or behavior changes with the license.
+
+Apache-2.0 is permissive: use, modify and redistribute the engine, including inside closed-source software. Each
+contributor also grants a patent license, limited to the claims their contribution necessarily infringes, alone or
+combined with the engine, and it ends if you bring patent litigation claiming the engine infringes.
+
+What the upgrade removes is GPL-3.0's copyleft. Under 1.x, distributing software that included the engine
+generally meant releasing that software under the GPL too; Apache-2.0 asks for notices instead. Neither license
+asks anything of a service you only host — GPL-3.0 has no network clause.
+
+Shipping software that contains the engine — a fat jar, a WAR, a container image or an installer, repackaged or
+not — means keeping its copyright notices and including the [LICENSE](../LICENSE) and the [NOTICE](../NOTICE)
+alongside your own. If you modify its source files, mark them as changed.
+
+> [!NOTE]
+> A license scanner that reads the POM sees the change: 1.x declares `GNU GENERAL PUBLIC LICENSE v3.0` and 2.0.0
+> declares `The Apache License, Version 2.0`. Re-run the scan after the upgrade rather than carrying the old result
+> forward.
+
 ## 📍 Which sections apply to you?
 
 | You... | Read |
@@ -69,6 +98,7 @@ compiler won't point at them until you're on 2.0:
 | Write rules in MVEL | Nothing in your rule text changes; the messages a broken rule gives do: [What your logs look like now](#-what-your-logs-look-like-now) |
 | Use Kotlin | [Facts](#-facts-are-immutable-and-a-factstore-isnt-a-map), then, for code written for 1.4 or earlier, [Upgrading Kotlin code](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier) |
 | Implement `RulesEngine`, or write an expression language | This page, then [Migrating a language or an engine](migrating-to-2-implementers.md) |
+| Review the licenses of your dependencies, or redistribute the engine's code | [The license is now Apache-2.0](#-the-license-is-now-apache-20): 2.0.0 drops GPL-3.0 for Apache-2.0 |
 
 Four changes your compiler won't catch:
 
