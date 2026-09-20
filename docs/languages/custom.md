@@ -11,7 +11,8 @@ when, and on which thread.
 **You'll be able to:** implement the four interfaces, report compile errors the way the engine expects, read facts of
 any shape, keep run state in sessions, package the language for both paths, and check it with the contract test kit.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
-[Compiled copies](../compiled-copies.md).
+[Compiled copies](../compiled-copies.md). Moving a language from 1.x?
+[Migrating a language or an engine](../migrating-to-2-implementers.md) lists what changed.
 
 [← Documentation index](../README.md)
 

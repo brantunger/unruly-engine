@@ -41,7 +41,9 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 ## 🔼 Upgrading from 1.x
 
 1. [Migrating to 2.0](migrating-to-2.md): every change that can affect code written for 1.x.
-2. [Upgrading Kotlin code from 1.4 or earlier](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier), for Kotlin.
+2. [Migrating a language or an engine](migrating-to-2-implementers.md), if you wrote an expression language or a
+   class that implements `RulesEngine`.
+3. [Upgrading Kotlin code from 1.4 or earlier](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier), for Kotlin.
 
 ## 📋 All guides
 
@@ -65,6 +67,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, and what a run waits for |
 | 🧶 [Virtual threads](virtual-threads.md) | Application developers | The copy limit that applies only there, build slots and `unlimitedCopies()`, what each costs, and the JDK versions that deadlock or pin a carrier |
 | 🔼 [Migrating to 2.0](migrating-to-2.md) | Everyone | Every change from 1.x that can affect your code, who it affects, and what to change |
+| 🔼 [Migrating a language or an engine](migrating-to-2-implementers.md) | Language authors, `RulesEngine` implementers | What the 2.0 language SPI and `RulesEngine` interface need on top of the changes every caller sees |
 | 📖 [Glossary](glossary.md) | Everyone | Short definitions of the terms the guides use, each linked to the page that explains it |
 | ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | Everyone | The API reference |
 

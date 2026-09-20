@@ -182,7 +182,8 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 
 > [!IMPORTANT]
 > A breaking change needs a `!` in the PR title, a line in `config/japicmp/accepted-breaks.txt` and a section in
-> [Migrating to 2.0](docs/migrating-to-2.md), so every user can find what to change.
+> [Migrating to 2.0](docs/migrating-to-2.md), or, if it breaks the language SPI or `RulesEngine`, in
+> [Migrating a language or an engine](docs/migrating-to-2-implementers.md), so every user can find what to change.
 
 - **Any language, not just MVEL.** Code, Javadoc and messages in `unruly-engine-core` must not assume MVEL. What is
   only true of MVEL goes in the `mvel` package and [docs/languages/mvel.md](docs/languages/mvel.md).

@@ -95,7 +95,7 @@ so a second build reuses task outputs, including those of another branch, and th
 
 ## 🤖 CI
 
-`.github/workflows/ci.yml` runs on every pull request and push to `main` (and to `1.x`, the hotfix branch):
+`.github/workflows/ci.yml` runs on every pull request and push to `main` (and to `1.x`, which its trigger still lists):
 
 | Job | Runs | Why |
 | --- | --- | --- |
