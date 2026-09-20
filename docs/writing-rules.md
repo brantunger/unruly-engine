@@ -137,8 +137,13 @@ List<Rule> rules = mapper.readValue(json, new TypeReference<List<Rule>>() { });
 ```
 
 The code is the same for Jackson 2 and Jackson 3, which Spring Boot 4 uses; only the imports differ
-(`com.fasterxml.jackson` or `tools.jackson`). A rule without a name, condition or action fails while it's read. Every
-field is read by its name, and a field left out, or `null`, keeps its default:
+(`com.fasterxml.jackson` or `tools.jackson`). The defaults aren't the same: Jackson 3 ignores a field it doesn't know,
+so a rule file that misspells `priority` as `prioirty` is read without error and the rule keeps the default priority,
+`null`, which sorts last. The mapper above throws `UnrecognizedPropertyException` on Jackson 2; add
+`.enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)` to its builder to get that failure back on Jackson 3.
+
+A rule without a name, condition or action fails while it's read. Every field is read by its name, and a field left
+out, or `null`, keeps its default:
 
 ```json
 [{"ruleName": "summer-rate", "priority": 20, "condition": "applicant.creditScore >= 700",
