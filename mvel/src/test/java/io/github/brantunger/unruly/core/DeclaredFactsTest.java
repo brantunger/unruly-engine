@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -38,19 +39,13 @@ class DeclaredFactsTest {
         return engine;
     }
 
-    private static FactStore<Object> facts(String name, Object value) {
-        FactStore<Object> store = new FactMap<>();
-        store.setValue(name, value);
-        return store;
-    }
-
     @Test
     @DisplayName("a value that isn't an instance of the declared type fails the run, naming the fact")
     void wrongType() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Applicant.class));
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                () -> engine.run(facts("applicant", "not an applicant")));
+                () -> engine.run(new FactMap<>(new Fact<>("applicant", "not an applicant"))));
 
         assertEquals("Fact 'applicant' was declared as " + Applicant.class.getName()
                 + ", but the run supplied a java.lang.String", thrown.getMessage());
@@ -61,7 +56,7 @@ class DeclaredFactsTest {
     void rightType() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Object.class)
                 .fact("score", Number.class));
-        FactStore<Object> store = facts("applicant", new Applicant(700));
+        FactStore<Object> store = new FactMap<>(new Fact<>("applicant", new Applicant(700)));
         store.setValue("score", 12);
 
         assertEquals(Map.of("ok", true), engine.run(store));
@@ -72,7 +67,7 @@ class DeclaredFactsTest {
     void nullValue() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Applicant.class));
 
-        assertEquals(Map.of("ok", true), engine.run(facts("applicant", null)));
+        assertEquals(Map.of("ok", true), engine.run(new FactMap<>(new Fact<>("applicant", null))));
     }
 
     @Test
@@ -80,7 +75,7 @@ class DeclaredFactsTest {
     void missingWithoutRequiring() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Applicant.class));
 
-        assertEquals(Map.of("ok", true), engine.run(facts("other", 1)));
+        assertEquals(Map.of("ok", true), engine.run(new FactMap<>(new Fact<>("other", 1))));
     }
 
     @Test
@@ -88,7 +83,7 @@ class DeclaredFactsTest {
     void undeclaredWhenRequired() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Applicant.class)
                 .requireDeclaredFacts());
-        FactStore<Object> store = facts("applicant", new Applicant(700));
+        FactStore<Object> store = new FactMap<>(new Fact<>("applicant", new Applicant(700)));
         store.setValue("sneaky", 1);
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> engine.run(store));
@@ -116,7 +111,7 @@ class DeclaredFactsTest {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder
                 .facts(Map.of("a", Integer.class, "b", String.class))
                 .fact("a", String.class));
-        FactStore<Object> store = facts("a", "now a string");
+        FactStore<Object> store = new FactMap<>(new Fact<>("a", "now a string"));
         store.setValue("b", "b");
 
         assertEquals(Map.of("ok", true), engine.run(store));
@@ -139,9 +134,9 @@ class DeclaredFactsTest {
     void primitiveTypeIsWrapped() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("age", int.class));
 
-        assertEquals(Map.of("ok", true), engine.run(facts("age", 30)));
+        assertEquals(Map.of("ok", true), engine.run(new FactMap<>(new Fact<>("age", 30))));
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                () -> engine.run(facts("age", "thirty")));
+                () -> engine.run(new FactMap<>(new Fact<>("age", "thirty"))));
         assertEquals("Fact 'age' was declared as java.lang.Integer, but the run supplied a java.lang.String",
                 thrown.getMessage());
     }

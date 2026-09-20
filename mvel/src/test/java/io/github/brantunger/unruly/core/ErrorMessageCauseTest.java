@@ -7,9 +7,6 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -18,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 // Public, as is the fact class: MVEL's reflective accessors need to reach its method.
@@ -69,16 +67,8 @@ public class ErrorMessageCauseTest {
         facts.setValue("x", 1);
         AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        PrintStream original = System.err;
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8));
-        try {
-            thrown.set(assertThrows(RuleExecutionException.class, () -> engine.run(facts)));
-        } finally {
-            System.setErr(original);
-        }
+        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class, () -> engine.run(facts))));
         String message = thrown.get().getMessage();
-        String logs = buffer.toString(StandardCharsets.UTF_8);
 
         assertTrue(message.startsWith("Failed to execute action for rule 'rec': a nested run() failed: "
                 + "Failed to execute action for rule 'rec': [Error: could not access: missing"), message);

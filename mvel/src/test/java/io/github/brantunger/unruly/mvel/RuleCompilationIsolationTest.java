@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -30,12 +31,6 @@ class RuleCompilationIsolationTest {
         return Rule.builder().ruleName(name).priority(priority).condition(condition).action(action).build();
     }
 
-    private static FactStore<Object> facts(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
-    }
-
     @Nested
     @DisplayName("variables")
     class Variables {
@@ -48,7 +43,7 @@ class RuleCompilationIsolationTest {
                     rule("declares", 2, "true", "String total = 'n/a'; output.put('a', total)"),
                     rule("reads", 1, "total > 5", "output.put('b', total + 1)")));
 
-            Map<String, Object> result = engine.run(facts("total", 41));
+            Map<String, Object> result = engine.run(new FactMap<>(new Fact<>("total", 41)));
 
             assertEquals(42, result.get("b"));
         }
@@ -61,7 +56,7 @@ class RuleCompilationIsolationTest {
                     rule("declares", 2, "true", "String total = 'n/a'; output.put('a', total)"),
                     rule("matches", 1, "total + 1 == 42", "output.put('b', true)")));
 
-            Map<String, Object> result = engine.run(facts("total", 41));
+            Map<String, Object> result = engine.run(new FactMap<>(new Fact<>("total", 41)));
 
             assertEquals(true, result.get("b"));
         }
@@ -148,7 +143,7 @@ class RuleCompilationIsolationTest {
 
             for (int t = 0; t < 4; t++) {
                 pool.submit(() -> {
-                    FactStore<Object> facts = facts("x", 1);
+                    FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1));
                     while (!stop.get()) {
                         try {
                             engine.run(facts);

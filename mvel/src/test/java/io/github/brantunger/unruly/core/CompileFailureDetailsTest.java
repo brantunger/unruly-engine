@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("compile failures carry each rule's failure, the expression kind and the language's issues")

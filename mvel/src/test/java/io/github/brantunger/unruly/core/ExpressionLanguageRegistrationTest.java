@@ -1,13 +1,12 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -15,6 +14,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
@@ -36,12 +36,6 @@ class ExpressionLanguageRegistrationTest {
 
     private static Rule rule(String name, String language, String condition, String action) {
         return Rule.builder().ruleName(name).language(language).condition(condition).action(action).build();
-    }
-
-    private static FactStore<Object> fact(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
     }
 
     /** An engine with exactly the given languages. */
@@ -67,37 +61,9 @@ class ExpressionLanguageRegistrationTest {
 
     /** A language that rejects every fact name, saying which language rejected it. */
     private static ExpressionLanguage rejectingLanguage(String languageName) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return languageName;
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return (evaluation, session) -> true;
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return (action, session) -> ActionResult.done();
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return Session.none();
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        throw new IllegalArgumentException("rejected by " + languageName);
-                    }
-                };
-            }
-        };
+        return StubExpressionLanguage.named(languageName).checkFactName(name -> {
+            throw new IllegalArgumentException("rejected by " + languageName);
+        });
     }
 
     @ParameterizedTest(name = "{0} first")
@@ -110,7 +76,8 @@ class ExpressionLanguageRegistrationTest {
                 Rule.builder().ruleName("low").language(second).priority(1).condition("c").action("a").build(),
                 Rule.builder().ruleName("high").language(first).priority(2).condition("c").action("a").build()));
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(fact("x", 1)));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>("x", 1))));
 
         assertEquals("rejected by " + first, ex.getMessage());
     }
@@ -124,8 +91,8 @@ class ExpressionLanguageRegistrationTest {
                 rule("mvel", "mvel", "x == 1", "output.put('mvel', x)"),
                 rule("toy", "toy", "x == 1", "put toy x")));
 
-        assertEquals(Map.of("default", 1, "mvel", 1, "toy", 1), engine.run(fact("x", 1)));
-        assertNull(engine.run(fact("x", 2)));
+        assertEquals(Map.of("default", 1, "mvel", 1, "toy", 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+        assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
     }
 
     @Test
@@ -159,7 +126,7 @@ class ExpressionLanguageRegistrationTest {
         StatefulRulesEngine<Map<String, Object>> engine = engine(new ToyExpressionLanguage());
         engine.load(List.of(rule("r", null, "x == 1", "put k x")));
 
-        assertEquals(Map.of("k", 1), engine.run(fact("x", 1)));
+        assertEquals(Map.of("k", 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
         List<Rule> mvel = List.of(rule("m", null, "true", "output.put('home', System.getProperty('user.home'))"));
         assertThrows(RuleCompilationException.class, () -> engine.load(mvel));
     }
@@ -171,7 +138,7 @@ class ExpressionLanguageRegistrationTest {
                 .language(new MvelExpressionLanguage()).language(new ToyExpressionLanguage()).defaultLanguage("toy"));
         engine.load(List.of(rule("r", null, "x == 1", "put k x")));
 
-        assertEquals(Map.of("k", 1), engine.run(fact("x", 1)));
+        assertEquals(Map.of("k", 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
     }
 
     @Test
@@ -182,8 +149,9 @@ class ExpressionLanguageRegistrationTest {
         StatefulRulesEngine<Map<String, Object>> mvel = withMvel(new ToyExpressionLanguage());
         mvel.load(List.of());
 
-        assertNull(toy.run(fact("empty", 1)), "the toy language accepts 'empty'");
-        assertThrows(IllegalArgumentException.class, () -> mvel.run(fact("empty", 1)), "MVEL reserves 'empty'");
+        assertNull(toy.run(new FactMap<>(new Fact<>("empty", 1))), "the toy language accepts 'empty'");
+        assertThrows(IllegalArgumentException.class, () -> mvel.run(new FactMap<>(new Fact<>("empty", 1))),
+                "MVEL reserves 'empty'");
     }
 
     @Test
@@ -261,11 +229,12 @@ class ExpressionLanguageRegistrationTest {
         StatefulRulesEngine<Map<String, Object>> engine = withMvel(new ToyExpressionLanguage());
         engine.load(List.of(rule("toy", "toy", "true", "put k empty")));
 
-        assertEquals(Map.of("k", 1), engine.run(fact("empty", 1)), "MVEL reserves 'empty', but no rule is MVEL");
+        assertEquals(Map.of("k", 1), engine.run(new FactMap<>(new Fact<>("empty", 1))),
+                "MVEL reserves 'empty', but no rule is MVEL");
 
         engine.load(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "1")));
 
-        assertThrows(IllegalArgumentException.class, () -> engine.run(fact("empty", 1)));
+        assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>("empty", 1))));
     }
 
     @Test
@@ -277,7 +246,8 @@ class ExpressionLanguageRegistrationTest {
                 Rule.builder().ruleName("toy").language("toy").priority(1).condition("true").action("put k 1")
                         .build()));
 
-        assertThrows(IllegalArgumentException.class, () -> engine.run(fact("empty", 1)), "MVEL reserves 'empty'");
+        assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>("empty", 1))),
+                "MVEL reserves 'empty'");
     }
 
     @Test

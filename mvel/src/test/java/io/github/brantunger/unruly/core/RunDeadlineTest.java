@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestLogs;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -326,7 +327,7 @@ class RunDeadlineTest {
         facts.setValue("nested", new Propagating(inner));
 
         AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
-        String logs = EngineLoggingTest.logsOf(() -> thrown.set(
+        String logs = TestLogs.logsOf(() -> thrown.set(
                 assertThrows(RuleExecutionException.class, () -> outer.run(facts))));
 
         RuleExecutionException stop = thrown.get();

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -249,12 +250,6 @@ public abstract class ExpressionLanguageContractTest {
         return engine;
     }
 
-    private static FactStore<Object> fact(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
-    }
-
     /**
      * Asserts that a run's output, or a list of outputs, is what was expected, comparing numbers by value: {@code 1},
      * {@code 1L} and {@code 1.0} are the same output. Everything else is compared with {@code equals}.
@@ -304,8 +299,8 @@ public abstract class ExpressionLanguageContractTest {
     void conditionReadsFacts() {
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")));
 
-        assertSameOutput(Map.of(SEEN, 1), engine.run(fact("x", 1)));
-        assertNull(engine.run(fact("x", 2)));
+        assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+        assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
     }
 
     @Test
@@ -313,9 +308,9 @@ public abstract class ExpressionLanguageContractTest {
     void conditionMustBeBoolean() {
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factValue("x"), putFact(SEEN, "x")));
 
-        assertEquals(Map.of(SEEN, true), engine.run(fact("x", true)));
+        assertEquals(Map.of(SEEN, true), engine.run(new FactMap<>(new Fact<>("x", true))));
         for (Object notBoolean : Arrays.asList(null, "true", 1)) {
-            assertThrows(RuleExecutionException.class, () -> engine.run(fact("x", notBoolean)),
+            assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", notBoolean))),
                     String.valueOf(notBoolean));
         }
     }
@@ -337,7 +332,8 @@ public abstract class ExpressionLanguageContractTest {
         String reassign = reassignOutput();
         assumeTrue(reassign != null, "the language's actions can't assign the output");
         // A language may reject the assignment when compiling or when running.
-        assertThrows(UnrulyException.class, () -> engine(rule("r", 1, alwaysTrue(), reassign)).run(fact("x", 1)));
+        assertThrows(UnrulyException.class,
+                () -> engine(rule("r", 1, alwaysTrue(), reassign)).run(new FactMap<>(new Fact<>("x", 1))));
     }
 
     @Test
@@ -349,8 +345,8 @@ public abstract class ExpressionLanguageContractTest {
                 rule("declares", 2, alwaysTrue(), declare),
                 rule("reads", 1, alwaysTrue(), putFact(SEEN, "x")));
 
-        assertSameOutput(Map.of(SEEN, 1), engine.run(fact("x", 1)));
-        assertSameOutput(Map.of(SEEN, 3), engine.run(fact("x", 3)));
+        assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+        assertSameOutput(Map.of(SEEN, 3), engine.run(new FactMap<>(new Fact<>("x", 3))));
     }
 
     @Test
@@ -373,7 +369,7 @@ public abstract class ExpressionLanguageContractTest {
         assumeTrue(name != null, "the language accepts every fact name");
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, alwaysTrue(), putFact(SEEN, "x")));
 
-        assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 1)));
+        assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
     }
 
     @Test
@@ -382,12 +378,18 @@ public abstract class ExpressionLanguageContractTest {
         RulesEngine<Map<String, Object>> engine =
                 engine(rule("r", 1, factProperty(APPLICANT, CREDIT_SCORE, 750), putFact(SEEN, APPLICANT)));
 
-        assertNotNull(engine.run(fact(APPLICANT, new Applicant(750))), "a record fact's component wasn't read");
-        assertNotNull(engine.run(fact(APPLICANT, new ApplicantBean(750))), "a JavaBean fact's getter wasn't read");
-        assertNotNull(engine.run(fact(APPLICANT, Map.of(CREDIT_SCORE, 750))), "a map fact's key wasn't read");
-        assertNull(engine.run(fact(APPLICANT, new Applicant(700))), "the record's component was read as 750");
-        assertNull(engine.run(fact(APPLICANT, new ApplicantBean(700))), "the JavaBean's getter was read as 750");
-        assertNull(engine.run(fact(APPLICANT, Map.of(CREDIT_SCORE, 700))), "the map's key was read as 750");
+        assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750)))),
+                "a record fact's component wasn't read");
+        assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new ApplicantBean(750)))),
+                "a JavaBean fact's getter wasn't read");
+        assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, Map.of(CREDIT_SCORE, 750)))),
+                "a map fact's key wasn't read");
+        assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(700)))),
+                "the record's component was read as 750");
+        assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new ApplicantBean(700)))),
+                "the JavaBean's getter was read as 750");
+        assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, Map.of(CREDIT_SCORE, 700)))),
+                "the map's key was read as 750");
     }
 
     @Test
@@ -404,7 +406,8 @@ public abstract class ExpressionLanguageContractTest {
         // Only the record: a missing key of a map is a different question, and languages answer it differently on
         // purpose. JsonLogic, JEXL and SpEL read a missing key as null or empty, which is what their users expect,
         // and a faithful adapter for one of them shouldn't fail a contract written around a record's components.
-        assertThrows(UnrulyException.class, () -> engine(misspelled).run(fact(APPLICANT, new Applicant(750))),
+        assertThrows(UnrulyException.class,
+                () -> engine(misspelled).run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750)))),
                 "a misspelled property of a record fact didn't fail");
     }
 
@@ -420,14 +423,14 @@ public abstract class ExpressionLanguageContractTest {
         try {
             List<Future<Map<String, Object>>> results = new ArrayList<>();
             for (int y = 0; y < 2; y++) {
-                FactStore<Object> facts = fact("x", 1);
+                FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1));
                 facts.setValue("y", y);
                 results.add(workers.submit(() -> engine.run(facts)));
             }
             for (int y = 0; y < 2; y++) {
                 assertSameOutput(Map.of(SEEN, y), results.get(y).get(30, TimeUnit.SECONDS));
             }
-            assertNull(engine.run(fact("x", 2)));
+            assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
         } finally {
             workers.shutdownNow();
         }
@@ -441,11 +444,11 @@ public abstract class ExpressionLanguageContractTest {
         RulesEngine<Map<String, Object>> engine = engine(countingCloses(language, closes));
 
         engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-        assertSameOutput(Map.of(SEEN, 1), engine.run(fact("x", 1)));
+        assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
         engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
 
         assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
-        assertSameOutput(Map.of(SEEN, 2), engine.run(fact("x", 2)));
+        assertSameOutput(Map.of(SEEN, 2), engine.run(new FactMap<>(new Fact<>("x", 2))));
 
         engine.close();
         engine.close();

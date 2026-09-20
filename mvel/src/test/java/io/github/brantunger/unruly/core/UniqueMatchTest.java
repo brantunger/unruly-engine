@@ -12,9 +12,6 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** #292: a unique-match engine fires the one match and fails when there are more. */
@@ -158,16 +156,9 @@ class UniqueMatchTest {
     @DisplayName("the failure is logged at ERROR, like every failure the engine throws")
     void failureIsLogged() {
         RulesEngine<Map<String, Object>> engine = engine(rule("a", 2, "true"), rule("b", 1, "true"));
-        PrintStream err = System.err;
-        ByteArrayOutputStream captured = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(captured, true, StandardCharsets.UTF_8));
-        try {
-            assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
-        } finally {
-            System.setErr(err);
-        }
 
-        String log = captured.toString(StandardCharsets.UTF_8);
+        String log = logsOf(() -> assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>())));
+
         assertTrue(log.contains("ERROR") && log.contains("2 rules matched, but a unique-match engine allows one"),
                 log);
     }

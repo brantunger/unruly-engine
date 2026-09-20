@@ -151,29 +151,6 @@ final class RuleSet {
     }
 
     /**
-     * Creates a rule set with no copies yet and no limit on them.
-     *
-     * @param compiledRules The compiled rules, in the order they run
-     * @param compilers     The compilers of the languages the rules use, by language name, in the order they check
-     *                      fact names
-     */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers) {
-        this(compiledRules, compilers, CopyLimit.none());
-    }
-
-    /**
-     * Creates a rule set with no copies yet.
-     *
-     * @param compiledRules The compiled rules, in the order they run
-     * @param compilers     The compilers of the languages the rules use, by language name, in the order they check
-     *                      fact names
-     * @param limit         How many copies runs may hold at once, and which runs that applies to
-     */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit) {
-        this(compiledRules, compilers, limit, new CopyPermits(limit.maxCopies()));
-    }
-
-    /**
      * Creates a rule set with no copies yet, whose limited runs take the permits of the engine that loaded it.
      *
      * @param compiledRules The compiled rules, in the order they run
@@ -189,7 +166,8 @@ final class RuleSet {
 
     /**
      * Creates a rule set whose runs give up waiting for a copy after {@code stallWindowMillis}, for tests that would
-     * otherwise wait the whole stall window.
+     * otherwise wait the whole stall window. It is a deliberate test seam: the engine never passes a stall window of
+     * its own, so keep it even if no test uses it today.
      *
      * @param compiledRules     The compiled rules, in the order they run
      * @param compilers         The compilers of the languages the rules use, by language name
@@ -202,7 +180,9 @@ final class RuleSet {
     }
 
     /**
-     * Creates a rule set whose limited runs take the given permits and give up waiting after {@code stallWindowMillis}.
+     * Creates a rule set whose limited runs take the given permits and give up waiting after
+     * {@code stallWindowMillis}. It is a deliberate test seam too: it lets a test share permits between rule sets
+     * <em>and</em> shorten the stall window, which nothing but a test needs.
      *
      * @param compiledRules     The compiled rules, in the order they run
      * @param compilers         The compilers of the languages the rules use, by language name

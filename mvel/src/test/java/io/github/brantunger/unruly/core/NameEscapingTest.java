@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.core.EngineLoggingTest.ENGINE_LOGGER;
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("names in the engine's messages are escaped and shortened, so they can't forge log lines")

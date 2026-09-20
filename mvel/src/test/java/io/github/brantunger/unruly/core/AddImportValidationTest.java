@@ -5,14 +5,9 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -44,33 +39,7 @@ class AddImportValidationTest {
 
     /** A language that keeps the context each of its compilers is created with. */
     private static ExpressionLanguage capturing(AtomicReference<CompileContext> captured) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return "capture";
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                captured.set(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return (evaluation, session) -> true;
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return (action, session) -> ActionResult.done();
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return Session.none();
-                    }
-                };
-            }
-        };
+        return StubExpressionLanguage.named("capture").onNewCompiler(captured::set);
     }
 
     /** Loads one rule written in the {@link #capturing} language, and returns the context it was compiled with. */

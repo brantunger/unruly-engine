@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -29,18 +30,13 @@ class FactNameValidationTest {
         return Rule.builder().ruleName("r").condition(condition).action("output.put('hit', true)").build();
     }
 
-    private static FactStore<Object> fact(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
-    }
-
     @ParameterizedTest(name = "\"{0}\"")
     @ValueSource(strings = {"my-fact", "a.b", "has space", "1x", ""})
     void nonIdentifiersRejected(String name) {
         RulesEngine<Map<String, Object>> engine = engine("true");
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 1)));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
 
         assertEquals("'" + name + "' is not a valid fact name: rules can only refer to a fact named with a Java "
                 + "identifier", ex.getMessage());
@@ -51,7 +47,8 @@ class FactNameValidationTest {
     void reservedNamesRejected(String name) {
         RulesEngine<Map<String, Object>> engine = engine("true");
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(fact(name, 5)));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>(name, 5))));
 
         assertEquals("'" + name + "' cannot be used as a fact name: MVEL reads it as a keyword or class name, "
                 + "so rules would never see the fact", ex.getMessage());
@@ -60,13 +57,13 @@ class FactNameValidationTest {
     @Test
     @DisplayName("a class name from an imported package is rejected; without the import it is an ordinary fact")
     void importedClassNameRejected() {
-        assertEquals(Map.of("hit", true), engine("Date == 5").run(fact("Date", 5)));
+        assertEquals(Map.of("hit", true), engine("Date == 5").run(new FactMap<>(new Fact<>("Date", 5))));
 
         RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("java.util").build();
         imported.load(List.of(rule("true")));
 
-        assertThrows(IllegalArgumentException.class, () -> imported.run(fact("Date", 5)));
+        assertThrows(IllegalArgumentException.class, () -> imported.run(new FactMap<>(new Fact<>("Date", 5))));
     }
 
     @Test
@@ -78,7 +75,7 @@ class FactNameValidationTest {
 
         for (int i = 0; i < 2; i++) {
             IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                    () -> imported.run(fact("Date", 5)));
+                    () -> imported.run(new FactMap<>(new Fact<>("Date", 5))));
             assertEquals("'Date' cannot be used as a fact name: MVEL reads it as a keyword or class name, "
                     + "so rules would never see the fact", ex.getMessage());
         }
@@ -98,7 +95,7 @@ class FactNameValidationTest {
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"total", "_x", "$x", "claim", "Process", "Date"})
     void validNamesAccepted(String name) {
-        assertEquals(Map.of("hit", true), engine(name + " == 5").run(fact(name, 5)));
+        assertEquals(Map.of("hit", true), engine(name + " == 5").run(new FactMap<>(new Fact<>(name, 5))));
     }
 
     @Test
@@ -106,7 +103,7 @@ class FactNameValidationTest {
     void repeatedRunsAccepted() {
         RulesEngine<Map<String, Object>> engine = engine("claim == 5");
         for (int i = 0; i < 3; i++) {
-            assertEquals(Map.of("hit", true), engine.run(fact("claim", 5)));
+            assertEquals(Map.of("hit", true), engine.run(new FactMap<>(new Fact<>("claim", 5))));
         }
     }
 

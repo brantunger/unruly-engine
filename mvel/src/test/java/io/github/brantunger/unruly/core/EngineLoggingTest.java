@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
@@ -14,9 +14,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -24,11 +21,12 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * slf4j-simple writes to whatever {@link System#err} is at the time of each call, so the engine's log lines can be
- * captured here.
+ * captured with {@link io.github.brantunger.unruly.TestLogs#logsOf}.
  */
 @DisplayName("the engine logs each failure before throwing it")
 class EngineLoggingTest {
@@ -37,24 +35,6 @@ class EngineLoggingTest {
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
-    }
-
-    private static FactStore<Object> fact(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
-    }
-
-    static String logsOf(Runnable action) {
-        PrintStream original = System.err;
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8));
-        try {
-            action.run();
-        } finally {
-            System.setErr(original);
-        }
-        return buffer.toString(StandardCharsets.UTF_8);
     }
 
     /**
@@ -110,7 +90,7 @@ class EngineLoggingTest {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", "true", "output.put('k', 1)")));
 
-        assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(fact(name, 1)));
+        assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
     }
 
     @Test
@@ -119,7 +99,7 @@ class EngineLoggingTest {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", "x.missing > 1", "output.put('k', 1)")));
 
-        assertLoggedAtError(RuleExecutionException.class, () -> engine.run(fact("x", 1)));
+        assertLoggedAtError(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", 1))));
     }
 
     @Test
@@ -128,7 +108,7 @@ class EngineLoggingTest {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", "true", "output.put('k', x.missing)")));
 
-        assertLoggedAtError(RuleExecutionException.class, () -> engine.run(fact("x", 1)));
+        assertLoggedAtError(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", 1))));
     }
 
     @Test
@@ -188,8 +168,8 @@ class EngineLoggingTest {
         AtomicReference<Object> outcome = new AtomicReference<>();
 
         String logs = logsOf(() -> outcome.set(failing
-                ? assertThrows(RuleExecutionException.class, () -> engine.run(fact("x", 1)))
-                : engine.run(fact("x", 1))));
+                ? assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", 1))))
+                : engine.run(new FactMap<>(new Fact<>("x", 1)))));
 
         if (!failing) {
             assertEquals(Map.of("k", 1), outcome.get());

@@ -7,14 +7,10 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -25,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("rule exceptions carry the name of the rule that failed")
@@ -47,32 +43,9 @@ class RuleNameOnExceptionTest {
 
     /** A language that fails to create a session, so the first run fails before it evaluates any rule. */
     private static ExpressionLanguage failingSessionLanguage() {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return "no-session";
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return (evaluationContext, session) -> true;
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return (actionContext, session) -> ActionResult.done();
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        throw new IllegalStateException("can't create a session");
-                    }
-                };
-            }
-        };
+        return StubExpressionLanguage.named("no-session").newSession(() -> {
+            throw new IllegalStateException("can't create a session");
+        });
     }
 
     @Test

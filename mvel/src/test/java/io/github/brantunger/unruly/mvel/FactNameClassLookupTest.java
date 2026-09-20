@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -25,12 +26,6 @@ class FactNameClassLookupTest {
 
     private static Rule rule(String condition) {
         return Rule.builder().ruleName("r").condition(condition).action("output.put('hit', true)").build();
-    }
-
-    private static FactStore<Object> fact(String name, Object value) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, value);
-        return facts;
     }
 
     private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
@@ -76,7 +71,7 @@ class FactNameClassLookupTest {
             RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                     .imports("java.util").build();
             engine.load(List.of(rule("true")));
-            return engine.run(fact("line_1", 1));
+            return engine.run(new FactMap<>(new Fact<>("line_1", 1)));
         });
 
         assertEquals(Map.of("hit", true), output);
@@ -91,7 +86,7 @@ class FactNameClassLookupTest {
                 .imports(IMPORTED_PACKAGE).build();
         engine.load(List.of(rule("true")));
 
-        Object result = runOnThread(classPathHidden(), engine, fact(CLASS_NAME, 1));
+        Object result = runOnThread(classPathHidden(), engine, new FactMap<>(new Fact<>(CLASS_NAME, 1)));
 
         assertInstanceOf(IllegalArgumentException.class, result);
     }
@@ -106,7 +101,8 @@ class FactNameClassLookupTest {
             return built;
         });
 
-        Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine, fact(CLASS_NAME, 1));
+        Object result = runOnThread(FactNameClassLookupTest.class.getClassLoader(), engine,
+                new FactMap<>(new Fact<>(CLASS_NAME, 1)));
 
         assertEquals(Map.of("hit", true), result);
     }
@@ -118,8 +114,8 @@ class FactNameClassLookupTest {
             RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                     .imports("java.util.Map.Entry", "java.util").build();
             engine.load(List.of(rule("Objects.nonNull(Entry)")));
-            assertThrows(IllegalArgumentException.class, () -> engine.run(fact("Date", 1)));
-            return engine.run(fact("claim", 1));
+            assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>("Date", 1))));
+            return engine.run(new FactMap<>(new Fact<>("claim", 1)));
         });
 
         assertEquals(Map.of("hit", true), output);

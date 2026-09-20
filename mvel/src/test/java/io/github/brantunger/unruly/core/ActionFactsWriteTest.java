@@ -5,13 +5,8 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
-import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,42 +23,22 @@ class ActionFactsWriteTest {
      * A language whose condition is always true. An action {@code write} puts 99 into the facts as {@code x}; any other
      * action copies fact {@code x} to the output.
      */
-    private static final ExpressionLanguage WRITER = new ExpressionLanguage() {
-        @Override
-        public String name() {
-            return "writer";
-        }
+    private static final ExpressionLanguage WRITER = StubExpressionLanguage.named("writer")
+            .compileAction(expression -> "write".equals(expression.text())
+                    ? (action, session) -> {
+                        action.facts().put("x", 99);
+                        return ActionResult.done();
+                    }
+                    : (action, session) -> {
+                        asMap(action.output()).put("x", action.facts().get("x"));
+                        return ActionResult.done();
+                    });
 
-        @Override
-        public ExpressionCompiler newCompiler(CompileContext context) {
-            return new ExpressionCompiler() {
-                @Override
-                public CompiledCondition compileCondition(Expression expression) {
-                    return (evaluation, session) -> true;
-                }
-
-                @SuppressWarnings("unchecked")
-                @Override
-                public CompiledAction compileAction(Expression expression) {
-                    String source = expression.text();
-                    return "write".equals(source)
-                            ? (action, session) -> {
-                                action.facts().put("x", 99);
-                                return ActionResult.done();
-                            }
-                            : (action, session) -> {
-                                ((Map<String, Object>) action.output()).put("x", action.facts().get("x"));
-                                return ActionResult.done();
-                            };
-                }
-
-                @Override
-                public Session newSession() {
-                    return Session.none();
-                }
-            };
-        }
-    };
+    /** The output object, which every engine here builds with {@code HashMap::new}. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object output) {
+        return (Map<String, Object>) output;
+    }
 
     private static Rule rule(String name, int priority, String action) {
         return Rule.builder().ruleName(name).language("writer").priority(priority).condition("c").action(action).build();

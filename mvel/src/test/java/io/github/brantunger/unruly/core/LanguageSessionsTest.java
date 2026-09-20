@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.logsOf;
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("each language gets one session per copy of the rules, and the engine closes what it no longer needs")
@@ -437,7 +437,8 @@ class LanguageSessionsTest {
     @Test
     @DisplayName("a run that reads rules just as they're closed reads the rules again")
     void runRetriesAfterRulesClosed() {
-        RuleSet closedRules = new RuleSet(List.of(), Map.of());
+        RuleSet closedRules = new RuleSet(List.of(), Map.of(), CopyLimit.none(),
+                new CopyPermits(RuleSet.UNLIMITED));
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),

@@ -1,18 +1,11 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.language.ActionResult;
-import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
-import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -37,44 +30,9 @@ class FactNameCheckFailureTest {
     }
 
     private void load(Consumer<String> check, UnaryOperator<RulesEngineBuilder<Map<String, Object>>> extra) {
-        engine = TestEngines.allMatches(HashMap::new, builder -> extra.apply(builder).language(new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return "x";
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return (evaluation, session) -> true;
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return (action, session) -> ActionResult.done();
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return Session.none();
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        check.accept(name);
-                    }
-                };
-            }
-        }));
+        engine = TestEngines.allMatches(HashMap::new,
+                builder -> extra.apply(builder).language(StubExpressionLanguage.named("x").checkFactName(check)));
         engine.load(List.of(Rule.builder().ruleName("r").language("x").condition("c").action("a").build()));
-    }
-
-    private static FactStore<Object> fact(String name) {
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue(name, 1);
-        return facts;
     }
 
     @Test
@@ -85,7 +43,8 @@ class FactNameCheckFailureTest {
             throw broken;
         });
 
-        IllegalArgumentException ex = assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(fact("a")));
+        IllegalArgumentException ex = assertLoggedAtError(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>("a", 1))));
 
         assertEquals("The 'x' expression language failed to check fact name 'a': checker broke on a", ex.getMessage());
         assertSame(broken, ex.getCause());
@@ -98,7 +57,8 @@ class FactNameCheckFailureTest {
             throw new NullPointerException();
         });
 
-        IllegalArgumentException ex = assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(fact("a")));
+        IllegalArgumentException ex = assertLoggedAtError(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>("a", 1))));
 
         assertEquals("The 'x' expression language failed to check fact name 'a': java.lang.NullPointerException",
                 ex.getMessage());
@@ -113,7 +73,7 @@ class FactNameCheckFailureTest {
         });
 
         assertLoggedThenRethrown(oom, "The 'x' expression language failed to check fact name 'a': wrapped",
-                () -> engine.run(fact("a")));
+                () -> engine.run(new FactMap<>(new Fact<>("a", 1))));
     }
 
     @Test
@@ -124,7 +84,8 @@ class FactNameCheckFailureTest {
             throw rejection;
         });
 
-        assertSame(rejection, assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(fact("a"))));
+        assertSame(rejection, assertLoggedAtError(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>("a", 1)))));
     }
 
     @Test

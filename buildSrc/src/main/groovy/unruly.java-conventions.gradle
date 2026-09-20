@@ -71,7 +71,6 @@ tasks.named('test', Test) {
         includeEngines 'junit-jupiter'
     }
     systemProperties = [
-            'junit.jupiter.extensions.autodetection.enabled': 'true',
             // Lets a test confirm it really runs on the requested JDK.
             'unruly.test.jdk': testJdk,
             // LoggingRuleListener logs at DEBUG; enabled so its messages can be asserted.
