@@ -91,9 +91,9 @@ An intended break belongs in a major release, and needs three things:
 A break in the language SPI or in `RulesEngine` goes in
 [Migrating a language or an engine](../migrating-to-2-implementers.md) instead of that page.
 
-A line applies while the baseline is from an earlier major version, so a 1.x release published in the meantime
-doesn't turn it off. Once that major version is published and becomes the baseline, the build warns that its lines no
-longer apply, and they can be deleted.
+A line applies while the baseline is from an earlier major version, so a release from that earlier major version
+published in the meantime doesn't turn it off. Once that major version is published and becomes the baseline, the
+build warns that its lines no longer apply, and they can be deleted.
 
 ## 📅 Baselines
 
