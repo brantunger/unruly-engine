@@ -88,8 +88,8 @@ cd unruly-engine
 
 | Project | Publishes | Contains |
 | --- | --- | --- |
-| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language |
-| `mvel` | `unruly-engine` | The MVEL language, and all the tests: those of `core` and `test-kit` too, because most of them run MVEL rules |
+| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need none |
+| `mvel` | `unruly-engine` | The MVEL language, and every test that needs a language to run: most of the engine's, because a rule has to be written in one |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
 | `benchmarks` | — | JMH benchmarks; not published, and the build checks its sources without running them |
 | `native-smoke` | — | An application CI builds into a GraalVM native image and runs; not published |
@@ -98,16 +98,21 @@ Settings shared by the projects are in the convention plugins in `buildSrc/src/m
 internal: its module exports it only to the test kit's module, and a class in it is public only where the builder
 or the test kit needs it.
 
-Where does my test go? The tests are under `mvel/src/test/java/io/github/brantunger/unruly/`; the paths below are
-relative to it unless given in full:
+Where does my test go? There are two test source sets, `core/src/test` and `mvel/src/test`, and the line between
+them is the expression language: `core` has none, so an engine built there throws `The engine has no expression
+language` before a rule is ever compiled. A test that loads or runs a rule belongs in `mvel`; a test that doesn't,
+or that registers a language of its own, belongs in `core`. The paths below are relative to
+`java/io/github/brantunger/unruly/` in the source set named.
 
 | You changed | Put the test in | Why |
 | --- | --- | --- |
-| A public type in `api`, `api.exception` or `api.language` | The same package, under `api/` | The tests of a package sit next to it, whichever project holds it |
-| An internal class in `core` | The same package, under `core/` | The tests run on the class path, so a test in the package sees its package-private classes |
-| The MVEL language | `mvel/` | Everything that is only true of MVEL stays in the `mvel` package |
-| The test kit | `test/` for `LanguageTestContexts`; `api/language/ContractKitChecksTest` for the contract test | The kit's own checks are tested with a toy language |
+| A public type in `api`, `api.exception` or `api.language`, without running a rule | `core/src/test`, the same package, under `api/` | The tests of a package sit next to it, whichever project holds it |
+| An internal class in `core`, without running a rule | `core/src/test`, the same package, under `core/` | Every source set runs on the class path, so a test in the package sees its package-private classes |
+| Anything a rule in the default language has to run through | `mvel/src/test`, the same package | Only `mvel` has a language, so `core`'s tests can't build an engine that compiles a rule |
+| The MVEL language | `mvel/src/test`, under `mvel/` | Everything that is only true of MVEL stays in the `mvel` package |
+| The test kit | `mvel/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test | `test-kit` depends on `core`, so a `core` test can't depend on the kit |
 | What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` and for a toy language through `api/language/ToyExpressionLanguageContractTest` |
+| A helper both source sets need | `core/src/testFixtures`, the same package | `mvel` gets it with `testImplementation testFixtures(project(':core'))`, so it can't drift into two copies |
 | Module-path behaviour | A sample application under `mvel/src/test/resources/module-path/` | `ModulePathTest` compiles each one against the built jars and runs it in a new JVM |
 
 ## 🧪 Prove your test fails first
@@ -124,6 +129,8 @@ cp mvel/src/test/java/io/github/brantunger/unruly/core/NullPriorityTest.java \
 git worktree remove --force ../unruly-main
 ```
 
+A test in `core/src/test` is copied to the same path under `core/` instead, and run with `:core:test`.
+
 Expect `FAILED`, and name the failing assertion in the PR description. A test that uses API your PR adds fails to
 compile on `main` instead; say so in the PR. On Windows, delete the worktree's `build` and `.gradle` directories
 first, then remove it with `git -c core.longpaths=true worktree remove --force ../unruly-main`.
@@ -135,7 +142,7 @@ on JDK 25, and checks the PR title.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite | `mvel/src/test` |
+| 🧪 **Tests** | The JUnit suite | `core/src/test` and `mvel/src/test` |
 | 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |

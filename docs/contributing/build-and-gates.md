@@ -25,13 +25,13 @@ usual fix for each.
 
 `build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build, local, CI and
 release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has five projects: `core`
-(`unruly-engine-core`), `mvel` (`unruly-engine`, which also holds all the tests), `test-kit` (`unruly-engine-test`),
-and two that aren't published: `benchmarks`, whose sources the build checks while only the `jmh` task runs them, and
-`native-smoke`, a small application CI builds into a GraalVM native image.
+(`unruly-engine-core`, whose tests need no language), `mvel` (`unruly-engine`, which holds every test that does),
+`test-kit` (`unruly-engine-test`), and two that aren't published: `benchmarks`, whose sources the build checks
+while only the `jmh` task runs them, and `native-smoke`, a small application CI builds into a GraalVM native image.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite, on the class path | `mvel/src/test`, `mvel/build.gradle` |
+| 🧪 **Tests** | The JUnit suite, on the class path, in two source sets | `core/src/test`, `mvel/src/test`, and both `build.gradle` files |
 | 📏 **Checkstyle** | Main and test sources: `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
@@ -54,24 +54,24 @@ Some details behind the table:
 The `benchmarks` project is the exception to the javac gate: it compiles JMH's generated code, so it runs with
 `-Xlint:none` instead (`benchmarks/build.gradle`).
 
-The design rules are ordinary JUnit tests under `mvel/src/test/java/io/github/brantunger/unruly/`:
+The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unruly/` in the source set named:
 
-| Test | Protects |
-| --- | --- |
-| `PackageDependencyTest` | Each package uses only the packages listed for it, and only `mvel` uses the MVEL library |
-| `api/EngineApiShapeTest` | An engine is configured once, on a builder; `RulesEngine` and `RuleListener` have exactly the documented methods |
-| `api/language/SealedContextsTest` | Only the engine implements the contexts it passes to a language |
-| `api/NullnessAnnotationsTest` | The public API declares its nullness with JSpecify, and the internal `core` package isn't `@NullMarked` |
-| `core/EngineVisibilityTest` | The engine classes aren't public and can only be created through `RulesEngineBuilder` |
-| `ClassFileVersionTest` | The published classes are compiled for Java 21 |
-| `ModulePathTest` | The module declarations work where they take effect: on the module path, in a new JVM |
-| `TestJdkTest` | The tests really ran on the JDK `-PtestJdk` asked for |
+| Test | Source set | Protects |
+| --- | --- | --- |
+| `PackageDependencyTest` | `mvel/src/test` | Each package uses only the packages listed for it, and only `mvel` uses the MVEL library |
+| `api/EngineApiShapeTest` | `core/src/test` | An engine is configured once, on a builder; `RulesEngine` and `RuleListener` have exactly the documented methods |
+| `api/language/SealedContextsTest` | `core/src/test` | Only the engine implements the contexts it passes to a language |
+| `api/NullnessAnnotationsTest` | `mvel/src/test` | The public API declares its nullness with JSpecify, and the internal `core` package isn't `@NullMarked` |
+| `core/EngineVisibilityTest` | `mvel/src/test` | The engine classes aren't public and can only be created through `RulesEngineBuilder` |
+| `ClassFileVersionTest` | `mvel/src/test` | The published classes are compiled for Java 21 |
+| `ModulePathTest` | `mvel/src/test` | The module declarations work where they take effect: on the module path, in a new JVM |
+| `TestJdkTest` | `mvel/src/test` | The tests really ran on the JDK `-PtestJdk` asked for |
 
 ## 📊 Reports
 
 | Task | Report |
 | --- | --- |
-| `:mvel:test` | `mvel/build/reports/tests/test/index.html` |
+| `:core:test`, `:mvel:test` | `core/build/reports/tests/test/index.html` and `mvel/build/reports/tests/test/index.html` |
 | `jacocoTestReport`, `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html`, the aggregate of every artifact; `build/reports/jacoco/report.xml` for tools |
 | `checkstyleMain`, `checkstyleTest` | `<project>/build/reports/checkstyle/main.html` and `test.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |

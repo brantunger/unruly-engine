@@ -12,9 +12,10 @@ jacoco {
     toolVersion = libs.versions.jacoco.get()
 }
 
-// Coverage of the published artifacts. The tests are in mvel, and they cover core's and test-kit's classes too, so
-// the report and the gate combine the classes of mvel, test-kit and the projects they depend on.
+// Coverage of the published artifacts. core's tests cover core's classes, and mvel's cover the MVEL language and
+// the test kit, so the report and the gate combine the execution data and the classes of all three projects.
 dependencies {
+    jacocoAggregation project(':core')
     jacocoAggregation project(':mvel')
     jacocoAggregation project(':test-kit')
 }
