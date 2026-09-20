@@ -1,8 +1,5 @@
 # 📖 Glossary
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet.
-
 Short definitions of the words the unruly-engine guides use, each with a link to the guide that explains it.
 
 **Who it's for:** everyone.

@@ -1,9 +1,5 @@
 # 🟣 Kotlin
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/kotlin.md).
-
 The engine is plain Java, and Kotlin uses it directly. Since 1.5.0 its public API marks what can be `null` with
 [JSpecify](https://jspecify.dev/) annotations, and Kotlin 2.1 and later read them strictly, so Kotlin sees exactly
 which types are nullable.

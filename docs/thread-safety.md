@@ -1,9 +1,5 @@
 # 🧵 Thread safety
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/thread-safety.md).
-
 An engine is built once and shared by every thread in your application. This page says what that promises, what stays
 yours, and what happens when you reload or close an engine while runs are going.
 

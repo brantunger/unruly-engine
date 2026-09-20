@@ -1,8 +1,5 @@
 # 🧊 Native image
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. This page has no 1.8.0 version.
-
 How to build an application that runs MVEL rules into a GraalVM native image: the one setting it needs, the
 reflection it must register, and what the errors mean when something is missing.
 

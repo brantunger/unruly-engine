@@ -1,9 +1,5 @@
 # 📁 Facts
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/facts.md).
-
 Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**, which is
 any Java object.
 

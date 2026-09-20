@@ -1,9 +1,5 @@
 # 🌱 Spring Boot
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/spring-boot.md).
-
 unruly-engine has no Spring dependency, but it fits naturally into a Spring application: build each engine as a
 singleton bean, load its rules at startup, and call `run()` from your request handlers.
 

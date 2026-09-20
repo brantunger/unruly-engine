@@ -1,8 +1,5 @@
 # 📑 Compiled copies
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet.
-
 Each run works on a compiled copy of the rules. This page says what a copy is, how many an engine keeps,
 how to limit them, how to make them when the rules load, and what a run waits for when they run out.
 [Virtual threads](virtual-threads.md) covers what changes there.

@@ -1,8 +1,5 @@
 # 🔀 Engines and runs
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet.
-
 The order rules run in, what a first-match, an all-matches and a unique-match engine do, when the output object is
 created, and what a run and an engine report about the rules they used.
 

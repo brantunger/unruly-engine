@@ -2,10 +2,6 @@
 
 # 📚 unruly-engine documentation
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/README.md).
-
 Pick the reading order that matches what you're doing, or find a guide in the table at the end.
 
 ## 🚀 Your first rule

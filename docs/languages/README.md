@@ -1,8 +1,5 @@
 # 🧩 Expression languages
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet.
-
 How an engine gets its expression languages, which one each rule is written in, and what your build needs.
 
 **Who it's for:** application developers.

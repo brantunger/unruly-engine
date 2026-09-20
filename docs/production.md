@@ -1,8 +1,5 @@
 # 🏭 Before you go to production
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. This page has no 1.8.0 version.
-
 A checklist for taking rules to production. Each item is one sentence and one link to the guide that owns it; this
 page states no rules of its own.
 

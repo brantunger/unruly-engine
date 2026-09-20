@@ -1,8 +1,5 @@
 # 🧶 Virtual threads
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. This page has no 1.8.0 version.
-
 What changes when runs come from virtual threads: the copy limit that applies only there, the build slots that pace
 new copies when there's no limit, what each costs, and what the JDK version changes.
 

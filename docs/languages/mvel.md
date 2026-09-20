@@ -1,9 +1,5 @@
 # ⚡ MVEL
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/languages/mvel.md).
-
 MVEL is the engine's default expression language: a rule is written in MVEL when its `language` is unset or
 `"mvel"`. MVEL looks like Java, with some extra operators and looser typing.
 

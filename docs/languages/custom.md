@@ -1,9 +1,5 @@
 # 🔨 Writing an expression language
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/languages/custom.md).
-
 How to implement `ExpressionLanguage` so rules can be written in a language of your own, and what the engine calls,
 when, and on which thread.
 

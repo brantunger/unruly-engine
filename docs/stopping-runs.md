@@ -1,8 +1,5 @@
 # ⏳ Stopping a run
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet.
-
 A run stops when its thread is interrupted or it passes a timeout. This page says where it stops, what it throws, and
 what a timeout can't stop.
 
