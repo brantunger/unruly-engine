@@ -7,8 +7,7 @@ name: Release
 
 on:
   push:
-    # `1.x` releases hotfixes for the 1.x line once `main` moves to 2.0; see RELEASING.md.
-    branches: [ "main", "1.x" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
@@ -23,7 +22,7 @@ jobs:
   release-please:
     # workflow_dispatch can be launched from any branch; without this guard
     # release-please would open a release PR against that branch.
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/1.x'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -45,12 +44,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          # The branch that was pushed: release PRs, tags and the manifest are per branch.
+          # Always `main`, by the guard above.
           target-branch: ${{ github.ref_name }}
 
-      # release-please marks every GitHub Release it creates as the repository's "Latest" release, so a hotfix
-      # from 1.x would take that from a newer 2.x release. The newest version is the highest release tag, which
-      # already includes the tag just created. Pre-release tags (with a suffix) are left out.
+      # release-please marks every GitHub Release it creates as the repository's "Latest" release, even when a newer
+      # version is already out, so this puts the mark back on the highest release tag, which already includes the tag
+      # just created. Pre-release tags (with a suffix) are left out. Releases all come from `main`, so the mark
+      # normally belongs to the release just made; the check costs one lookup and covers a Release created by hand,
+      # outside this workflow. It also sets the `newest` output, which the gh-pages step below needs.
       - name: Keep the newest release marked Latest
         id: newest
         if: steps.release.outputs.release_created == 'true'
@@ -98,8 +99,7 @@ jobs:
 
       # Validates the Gradle wrapper, as it does in ci.yml, so there's no separate wrapper-validation step here.
       # The cache is read-only: a release from main would otherwise write to the same cache scope CI's runs on main
-      # use (setup-gradle only writes from the default branch anyway, so a 1.x release already reads only), and the
-      # build below passes --no-build-cache in any case.
+      # use, and the build below passes --no-build-cache in any case.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
@@ -173,7 +173,8 @@ jobs:
 
       # The gh-pages branch keeps one directory per release plus `latest`; the `pages` job below
       # deploys it. The Build step above generated the site, so this only copies it.
-      # `latest` only moves for the newest release, so a hotfix from 1.x doesn't replace newer docs.
+      # `latest` only moves for the newest release, so a release made out of order doesn't replace newer docs; the
+      # release-please job's `newest` output, read as NEWEST below, is what decides.
       # A missing branch is recreated instead of failing the job: this version is already on
       # Central, so the job can't be re-run. RELEASING.md shows how to add the older versions back.
       - name: Add the Javadoc to the gh-pages branch

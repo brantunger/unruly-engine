@@ -74,9 +74,10 @@ mavenPublishing {
 // The baseline is resolved in a detached configuration: in one of the project's own configurations, Gradle resolves
 // the project's coordinates to the project itself, and the check would silently compare the jar with itself.
 //
-// The range, rather than latest.release, keeps each release line on its own baseline: a hotfix released from the 1.x
-// branch doesn't become the baseline of main while main still has a 1.x version, and the 1.x branch never compares
-// itself with a 2.x release. A release PR's version isn't published yet, so its baseline is the release before it.
+// The range, rather than latest.release, keeps the baseline from ever being higher than the build's own version, so
+// a build is always checked against its own release line: a release PR's version isn't published yet, so its
+// baseline is the release before it, and a re-run or a local build of an older tag is compared with the release
+// before that tag rather than with whatever is newest.
 def apiCheck = extensions.create('apiCheck', ApiCheckExtension)
 
 def projectGroup = project.group.toString()
