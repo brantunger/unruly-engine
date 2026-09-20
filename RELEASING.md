@@ -133,6 +133,7 @@ the short (8-character) key ID so the plugin picks the right one.
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
 | **After the upload** (attaching the jars or adding the Javadoc to `gh-pages` failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
 | **Only the `pages` job failed** | Everything else shipped. Re-run the failed job, or redeploy with `gh workflow run pages.yml --ref main`. |
+| **The `Latest` mark didn't move** (a warning in the `release-please` job, and only possible when the version just released isn't the highest one) | Cosmetic, and deliberately not a failure: the tag and the GitHub Release exist, and `publish` goes on to build and upload as usual. Nothing reads the mark — `/latest/` on the Javadoc site is decided by the workflow's `newest` output, not by it — so leaving it is safe. To put it back, run `gh release edit vX.Y.Z --latest` for the highest released version, which the `NEWEST` snippet in [The Javadoc site](#-the-javadoc-site) computes. |
 | **Released but broken** | Don't try to replace it. Cut the next patch version. |
 
 ## 🔎 Checking a release by hand
@@ -212,9 +213,13 @@ artifact's `-javadoc.jar` holds only its own, so the script builds the site. The
 
 ```bash
 VERSION=<version>
-# The highest release tag, the same way the release workflow decides. Not "Latest", which a mistake can move.
-NEWEST=$(git ls-remote --tags --refs https://github.com/brantunger/unruly-engine.git 'v*' \
-  | sed -n 's#^.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
+# The highest released version, the same way the release workflow decides: from the Releases, not the tags, which
+# can hold a vX.Y.Z that was never released, and not "Latest", which a mistake can move.
+NEWEST=$(gh release list --repo brantunger/unruly-engine --limit 1000 \
+  --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' \
+  | sed -n 's#^v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
+# A failed lookup would leave NEWEST empty, and the comparison below would then silently skip latest/.
+: "${NEWEST:?the release lookup found nothing; check gh auth status}"
 git clone --depth 1 --branch gh-pages https://github.com/brantunger/unruly-engine.git pages
 git clone --depth 1 --branch "v$VERSION" https://github.com/brantunger/unruly-engine.git "unruly-engine-$VERSION"
 (cd "unruly-engine-$VERSION" && ./gradlew javadoc)

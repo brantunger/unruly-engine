@@ -48,10 +48,19 @@ jobs:
           target-branch: ${{ github.ref_name }}
 
       # release-please marks every GitHub Release it creates as the repository's "Latest" release, even when a newer
-      # version is already out, so this puts the mark back on the highest release tag, which already includes the tag
-      # just created. Pre-release tags (with a suffix) are left out. Releases all come from `main`, so the mark
-      # normally belongs to the release just made; the check costs one lookup and covers a Release created by hand,
-      # outside this workflow. It also sets the `newest` output, which the gh-pages step below needs.
+      # version is already out, so this puts the mark back on the highest released version, which already includes the
+      # release just created. Releases all come from `main`, so the mark normally belongs to the release just made; the
+      # check is one listing of the Releases, and it covers a Release created by hand, outside this workflow. It also
+      # sets the `newest` output, which the gh-pages step below needs.
+      # The versions come from the Releases, not from the tags: a `vX.Y.Z` tag with no Release was never published, or
+      # had its Release removed on purpose; either way it can't carry the mark, and `gh release edit` couldn't act on
+      # it, so it must not win here. Drafts and pre-releases are left out, and so is any Release whose tag isn't
+      # exactly `vX.Y.Z`, whether or not it is flagged as a pre-release.
+      # Moving the mark is cosmetic, so a failure there only warns: the tag and the Release exist by the time this
+      # runs, and failing the step would skip `publish` and strand a version that was never built or uploaded. A lookup
+      # that fails outright, or finds no releases at all, still fails the job, and on purpose here rather than later:
+      # `newest` is what decides below whether `latest/` moves, so an empty one would next be caught by the gh-pages
+      # step's own guard — after the upload to Central, the one point the job can't be re-run from.
       - name: Keep the newest release marked Latest
         id: newest
         if: steps.release.outputs.release_created == 'true'
@@ -60,13 +69,23 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           : "${VERSION:?release-please reported no version}"
-          newest=$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" 'v*' \
-            | sed -n 's#^.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
-          : "${newest:?no release tags found}"
+          # The default shell is `bash -e`, without pipefail, so a failed lookup would otherwise be masked by the exit
+          # status of sed and read as "no releases".
+          set -o pipefail
+          # Releases come back newest-first by date, not by version, so the whole list is fetched and sorted here: the
+          # default limit of 30 would drop the highest version once thirty releases were made more recently than it.
+          released=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
+            --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' \
+            | sed -n 's#^v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p')
+          : "${released:?no vX.Y.Z releases found}"
+          # The version just released is folded in as well. release-please has already created its Release, so it is
+          # normally in the list; this keeps a read that hasn't caught up from taking the mark off it.
+          newest=$(printf '%s\n%s\n' "$released" "$VERSION" | sort -V | tail -n 1)
           echo "newest=${newest}" >> "$GITHUB_OUTPUT"
           if [ "$newest" != "$VERSION" ]; then
             echo "::notice::${VERSION} isn't the newest release, so v${newest} stays marked Latest."
-            gh release edit "v${newest}" --repo "$GITHUB_REPOSITORY" --latest
+            gh release edit "v${newest}" --repo "$GITHUB_REPOSITORY" --latest \
+              || echo "::warning::Couldn't move the Latest mark to v${newest}, so it stays on ${VERSION}. See RELEASING.md."
           fi
 
   publish:
