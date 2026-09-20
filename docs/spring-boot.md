@@ -1,7 +1,9 @@
 # 🌱 Spring Boot
 
 unruly-engine has no Spring dependency, but it fits naturally into a Spring application: build each engine as a
-singleton bean, load its rules at startup, and call `run()` from your request handlers.
+singleton bean, load its rules at startup, and call `run()` from your request handlers. Checked on Spring Boot 4.1.1
+with Tomcat 11.0.24 and JDK 21, where the only difference that turned up was Boot 4's Jackson 3, noted where it
+matters.
 
 [← Documentation index](README.md)
 
@@ -96,8 +98,17 @@ loan:
 
 Enable the record with `@EnableConfigurationProperties(LoanRulesProperties.class)`, then pass
 `properties.rules().stream().map(RuleProperties::toRule).toList()` to `load()`. A rule without a name, condition
-or action makes `toRule()` throw, so the application refuses to start. To read rules from JSON instead, register the
-Jackson mix-ins shown in [Loading rules from data](writing-rules.md#-loading-rules-from-data).
+or action makes `toRule()` throw, so the application refuses to start.
+
+To read rules from JSON instead, register the Jackson mix-ins shown in
+[Loading rules from data](writing-rules.md#-loading-rules-from-data) on a mapper the rule-loading component owns — a
+`private final JsonMapper` field in your `RuleRepository` — rather than on the mapper Spring Boot auto-configures.
+Rule mapping then can't change how the application maps its own JSON. On the shared mapper the mix-ins apply wherever
+the application maps a `Rule`, and rule files follow whatever Jackson settings the application set for its own JSON.
+
+Spring Boot 4 brings Jackson 3, which ignores a field it doesn't know instead of failing, so a misspelled `priority`
+in a rule file is dropped in silence and the rule keeps the default.
+[Loading rules from data](writing-rules.md#-loading-rules-from-data) says how to get that failure back.
 
 ## 🌐 Use it in a controller
 
@@ -139,18 +150,48 @@ auditLog.record(applicant.id(),     // auditLog is your own code
         result.tags(), result.startedAt()); // what explains a SKIPPED rule
 ```
 
-See [Auditing a decision](engines-and-runs.md#-auditing-a-decision) for what else to record.
+> [!WARNING]
+> Never return a `RunResult` from a handler. On Spring Boot 4 the response is `200 {}`, with no exception and no log
+> line, because Jackson 3 has `SerializationFeature.FAIL_ON_EMPTY_BEANS` off by default. Map it to a record of your
+> own instead.
 
-> [!TIP]
-> Handle what `run()` throws in the controller itself, so that a run the caller stopped and a rule that failed don't
-> get the same response. [Exceptions by method](error-handling.md#-exceptions-by-method) lists them all.
+`RunResult` and `RuleEvaluation` are final classes and `RunContext` is an interface; none is a record. Jackson maps a
+record from its components and falls back to bean introspection for everything else, and their accessors —
+`output()`, `firedRules()`, `outcome()` — aren't getters, so it finds no properties and writes an empty object. A
+record of your own maps in full, and `Rule`, which has getters, serializes normally.
+
+Jackson 2 threw `InvalidDefinitionException` here; Jackson 3, which Spring Boot 4 uses, writes `{}`, so a test that
+checks only the status passes.
+
+```java
+public record LoanAudit(LoanDecision decision, List<String> firedRules, String ruleSetChecksum,
+                        Set<String> tags, Instant startedAt) {       // a record of your own
+
+    public static LoanAudit of(RunResult<LoanDecision> result) {
+        return new LoanAudit(result.output(),
+                result.firedRules().stream().map(Rule::getRuleName).toList(),
+                result.ruleSetChecksum(), result.tags(), result.startedAt());
+    }
+}
+```
+
+Return `LoanAudit.of(result)` from the handler. See
+[Auditing a decision](engines-and-runs.md#-auditing-a-decision) for what else to record.
+
+Handle what `run()` throws in the controller itself, so that a run the caller stopped and a rule that failed don't get
+the same response. [Exceptions by method](error-handling.md#-exceptions-by-method) lists them all.
 
 ```java
 @ExceptionHandler(RuleExecutionException.class)          // a rule failed, or the run was stopped
 public ResponseEntity<String> ruleFailed(RuleExecutionException e) {
-    boolean stopped = e.getRuleName() == null
-            && (e.getCause() instanceof TimeoutException || e.getCause() instanceof InterruptedException);
-    log.error("Rule '{}' failed", e.getRuleName(), e);    // getRuleName() is null when no one rule failed
+    boolean stopped = e.getRuleName() == null                 // null when no one rule failed
+            && (e.getCause() instanceof TimeoutException      // java.util.concurrent.TimeoutException
+                    || e.getCause() instanceof InterruptedException);
+    if (stopped) {
+        log.warn("A loan decision was stopped: {}", e.getMessage());   // the caller asked for it: not a failure
+    } else {
+        log.error("Rule '{}' failed", e.getRuleName(), e);
+    }
     return ResponseEntity.status(stopped ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.INTERNAL_SERVER_ERROR)
             .body("No decision could be made");
 }
@@ -165,6 +206,10 @@ public ResponseEntity<String> factsRejected(IllegalArgumentException e) {
 A stop names no rule, and its cause is the `TimeoutException` or `InterruptedException` itself. A run an action
 started that stopped at an earlier deadline of its own is that rule failing, so it takes the other branch. See
 [telling a stop from a rule bug](stopping-runs.md#how-do-i-tell-a-timeout-an-interrupt-and-a-rule-bug-apart).
+
+The engine has logged both already — a stop at WARN, a rule failure at ERROR — so each line above is a second copy
+with your own context. [Logging setup](listeners-and-logging.md#-logging-setup) says how to turn the engine's own
+logging down if you'd rather log only your own.
 
 An `@ExceptionHandler` method inside the controller applies only to that controller. To share the pair between several
 controllers, put them in a `@RestControllerAdvice(assignableTypes = LoanController.class)` — not in a plain advice,
@@ -290,7 +335,7 @@ spring.lifecycle.timeout-per-shutdown-phase=30s   # the default: how long each p
 
 With graceful shutdown, a request that was already running a rule finished normally, and the engine bean was closed
 just after it returned — never during it. With `immediate`, the same request was cut off part-way through. (Checked on
-Spring Boot 3.5.16 and Tomcat, with JDK 21.)
+Spring Boot 4.1.1 and Tomcat 11.0.24, with JDK 21, and earlier on Boot 3.5.16.)
 
 ### A scheduled reloader during shutdown
 

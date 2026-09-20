@@ -198,12 +198,14 @@ key is usually a misspelled rule.
 
 ## 🚧 Comparison gotchas
 
-MVEL compares values more loosely than Java, which can make a condition match, or not match, unexpectedly.
+MVEL compares and computes values more loosely than Java, which can make a condition match, or not match,
+unexpectedly.
 
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
 | 🔤 **Enums vs strings** | `order.status == 'SHIPPED'` is always `false` when `status` is an enum, with no error | `order.status.name() == 'SHIPPED'` |
 | 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
+| ➗ **Division by zero** | Without [strong typing](#-strong-typing), MVEL divides as doubles, so `total / count` is `Infinity` when `count` is 0, not an error | Check the divisor first: `count != 0 && total / count > 100` |
 | 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](#null-and-missing-facts) | `isdef x && x > 1` |
@@ -233,6 +235,10 @@ so with the option on, `load()` fails, saying why, unless all of these hold:
 | `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
 | No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
 | `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
+
+Strong typing also changes arithmetic, because MVEL then computes in the declared types rather than in doubles:
+`total / count` on two `Integer` facts is an `Integer`, and dividing by zero throws `ArithmeticException`, where the
+same condition gives `Infinity` with the option off.
 
 See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
 doesn't catch a condition that isn't a boolean; the engine checks that itself, whatever the language.
