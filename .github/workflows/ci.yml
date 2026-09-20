@@ -59,9 +59,9 @@ jobs:
       fail-fast: false
       matrix:
         # The full gate runs on JDK 21 on each OS: the module-path applications and the child JVMs the tests launch
-        # depend on the OS, and Windows's and macOS's file systems are case-insensitive (the case-insensitive class
-        # lookup itself is still faked in the tests; see #414). Compilation stays on the Java 21 toolchain; -PtestJdk
-        # runs the tests on JDK 25, on Linux only.
+        # depend on the OS, and Windows's and macOS's file systems are case-insensitive, so the tests that look a
+        # compiled class up in another case for real run there, and skip on ubuntu-latest, where fakes cover them.
+        # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25, on Linux only.
         os: [ ubuntu-latest, windows-latest, macos-latest ]
         java-version: [ '21' ]
         include:
@@ -119,12 +119,17 @@ jobs:
             test-kit/build/reports/japicmp/
           if-no-files-found: ignore
 
+      # The test results go up with the coverage, because coverage alone can't tell a test that ran from one that
+      # was skipped: the JUnit XML names the skipped tests and says why, which is how a leg proves it ran the
+      # lookups that only a case-insensitive file system has.
       - name: Upload Coverage Report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always() && matrix.java-version == '21'
         with:
           name: jacoco-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
-          path: build/reports/jacoco/
+          path: |
+            build/reports/jacoco/
+            mvel/build/test-results/test/
 
       # Codecov gets one report per run, from Linux, and a failed upload fails the job. The upload authenticates
       # with the job's OIDC token, which GitHub doesn't issue to a pull request from a fork or to any run Dependabot
