@@ -1,9 +1,5 @@
 # 👂 Listeners & logging
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/listeners-and-logging.md).
-
 Add a `RuleListener` to an engine to trace which rules matched, time each rule, or audit decisions. The engine also logs
 its own failures through SLF4J, and records slow runs as JDK Flight Recorder events.
 

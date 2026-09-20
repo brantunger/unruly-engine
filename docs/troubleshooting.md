@@ -1,8 +1,5 @@
 # 🩺 Troubleshooting
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. This page has no 1.8.0 version.
-
 Symptoms, their usual causes, and the page that explains each one. This page states no rules of its own: every
 answer links to the guide that owns it.
 

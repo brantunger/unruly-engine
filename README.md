@@ -20,10 +20,6 @@ like.
 
 </div>
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [the README at tag v1.8.0](https://github.com/brantunger/unruly-engine/tree/v1.8.0).
-
 ---
 
 ## ✨ Features

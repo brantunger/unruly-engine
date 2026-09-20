@@ -1,9 +1,5 @@
 # 📜 Writing rules
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/writing-rules.md).
-
 Every rule has two expressions: a **condition** that decides whether the rule matches, and an **action** that runs
 when it fires. They are written in the expression language the rule names or, for a rule that names none, in the
 engine's default language, which is [MVEL](languages/mvel.md) when MVEL is the only language found.

@@ -1,9 +1,5 @@
 # 🚨 Error handling
 
-> [!NOTE]
-> Describes 2.0.0, which isn't released yet. For 1.8.0, see
-> [this page at v1.8.0](https://github.com/brantunger/unruly-engine/blob/v1.8.0/docs/error-handling.md).
-
 The engine throws its own exceptions for rule problems and standard JDK exceptions for misuse of the API. Starting
 from a symptom or a message? [Troubleshooting](troubleshooting.md) maps each one to the section that explains it.
 
