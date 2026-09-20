@@ -33,8 +33,7 @@ member is removed or changes in a binary- or source-incompatible way.
 Each project writes its report to `<project>/build/reports/japicmp/report.html` (and `report.txt`). CI uploads the
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
 `buildSrc/src/main/groovy/unruly.library.gradle`, and each project's `apiCheck { }` block in its `build.gradle` says
-which artifact it compares and which packages it leaves out: the internal `core` package, and, for `unruly-engine`,
-the packages that moved to `unruly-engine-core`.
+which artifact it compares and which packages it leaves out, such as the internal `core` package.
 
 ## 🚫 What counts as a break
 
@@ -72,9 +71,9 @@ engine's own implementations, so no user implements them and a new method breaks
 checks that the three a language sees stay sealed.
 
 japicmp can't see sealing, though. It reports a new abstract method on a sealed interface like any other, so give it
-a `default` body, or accept it with a line and a `!` title, as the `CompileContext` and `EvaluationContext` lines in
-the file did for 2.0. For the same reason, sealing an interface that wasn't is a break the check won't catch: title
-that PR with a `!` by hand.
+a `default` body, or accept it with a line and a `!` title, as `CompileContext` and `EvaluationContext` did for 2.0.
+For the same reason, sealing an interface that wasn't is a break the check won't catch: title that PR with a `!` by
+hand.
 
 ## 💥 Accepting an intended break
 
@@ -101,12 +100,22 @@ The baseline is the artifact's newest release on Maven Central that isn't higher
 `gradle.properties`. Because the baseline is never higher than the build's own version, a branch is always checked
 against its own release line, and a release PR's version, not yet published, is compared with the release before it.
 
-Two artifacts are new in 2.0.0, so until then:
+Every published artifact now has a release of its own, so each is compared with its own newest release. For an
+artifact added later, the check tries three things in order, and its `apiCheck { }` block supplies the last two
+until the first release:
 
-- `unruly-engine-core` has no release of its own, and is compared with the last 1.x `unruly-engine` jar, without
-  that jar's `mvel` package (`predecessor` and `predecessorExcludedPackages` in `core/build.gradle`).
-- `unruly-engine-test` has nothing to compare with, and its check is skipped (`firstRelease` in
-  `test-kit/build.gradle`); the build logs `Skipping the API check`.
+1. The artifact's own newest release, whenever it has one.
+2. `firstRelease`, the version the artifact first ships in: while the artifact has no release and the build's
+   version is no higher than that, the check is skipped and the build logs `Skipping the API check`.
+3. `predecessor`, with `predecessorExcludedPackages`: the dependency notation, with a version range, of the releases
+   the artifact's classes were published in before, such as another artifact it was split out of. Its newest release
+   in that range is the baseline.
+
+Both settings stop applying once the artifact has a release of its own. The build warns about a `predecessor` that
+no longer applies, as it does about a package excluded because it moved to another artifact, so it's deleted rather
+than kept for ever; nothing warns about a stale `firstRelease`, so delete that one by hand. `firstRelease` also
+stops applying once the build's version rises above it: from then on a baseline the check can't resolve fails the
+build instead of skipping the check.
 
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
 baseline already in the Gradle cache. The lookup is kept for 24 hours, so a new release becomes the baseline within a

@@ -75,12 +75,12 @@ The design rules are ordinary JUnit tests under `mvel/src/test/java/io/github/br
 | `jacocoTestReport`, `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html`, the aggregate of every artifact; `build/reports/jacoco/report.xml` for tools |
 | `checkstyleMain`, `checkstyleTest` | `<project>/build/reports/checkstyle/main.html` and `test.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |
-| `japicmp` | `<project>/build/reports/japicmp/report.html` and `report.txt`, for `core` and `mvel` |
+| `japicmp` | `<project>/build/reports/japicmp/report.html` and `report.txt`, for `core`, `mvel` and `test-kit` |
 | `javadoc` | `build/docs/javadoc/index.html` for the site; the console for the warnings that failed it |
 
-`test-kit` has no japicmp report until 2.0.0 is released: its check is skipped while the artifact has no release, as
-[API compatibility](api-compatibility.md#-baselines) explains. `jacocoTestCoverageVerification` fails on the console;
-the HTML report from `jacocoTestReport` shows the uncovered lines and branches.
+Every published project writes a japicmp report; [API compatibility](api-compatibility.md#-baselines) explains which
+release each one is compared with. `jacocoTestCoverageVerification` fails on the console; the HTML report from
+`jacocoTestReport` shows the uncovered lines and branches.
 
 ## 💾 The build cache and the configuration cache
 
