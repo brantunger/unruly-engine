@@ -47,8 +47,8 @@ mavenPublishing {
         url = 'https://github.com/brantunger/unruly-engine'
         licenses {
             license {
-                name = 'GNU GENERAL PUBLIC LICENSE v3.0'
-                url = 'https://www.gnu.org/licenses/gpl-3.0.en.html'
+                name = 'The Apache License, Version 2.0'
+                url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
             }
         }
         developers {
@@ -63,6 +63,24 @@ mavenPublishing {
             developerConnection = 'scm:git:ssh://github.com/brantunger/unruly-engine.git'
             url = 'https://github.com/brantunger/unruly-engine'
         }
+    }
+}
+
+// Apache-2.0 asks a redistributor to include the license (section 4(a)) and to pass on the NOTICE (section 4(d)),
+// so every jar Central receives carries both under META-INF/: the main, sources and javadoc jar of each published
+// project. Only they get them: benchmarks and native-smoke apply unruly.java-conventions, not this plugin, and are
+// never distributed. withType covers the sources and javadoc jars, which the publishing plugin registers after this
+// line. unruly.java-conventions stamps every archive entry with a fixed timestamp, these two included, so adding
+// them keeps the jars reproducible.
+//
+// The type has to be org.gradle.jvm.tasks.Jar, spelled out. A Groovy build script resolves a bare `Jar` to
+// org.gradle.api.tasks.bundling.Jar, and plainJavadocJar is a com.vanniktech.maven.publish.tasks.JavadocJar, which
+// extends the jvm one and not the bundling one. Matching on the bundling type silently skips the three javadoc
+// jars, which are published like the rest.
+def noticeFiles = [rootProject.file('LICENSE'), rootProject.file('NOTICE')]
+tasks.withType(org.gradle.jvm.tasks.Jar).configureEach {
+    from(noticeFiles) {
+        into 'META-INF'
     }
 }
 

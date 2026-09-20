@@ -239,7 +239,8 @@ lists the Javadoc rules:
 - Use the [glossary](docs/glossary.md)'s terms: **output supplier**, **rule list**, **run**, **compiled copy**,
   **session**.
 
-## 📃 License
+## 📄 License
 
 By contributing, you agree that your contributions are licensed under the
-[GNU General Public License v3.0](LICENSE).
+[Apache License, Version 2.0](LICENSE), the license of 2.0.0 and later. Releases up to and including 1.8.0 were
+made under the GNU General Public License v3.0.

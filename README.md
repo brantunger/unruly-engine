@@ -9,7 +9,7 @@
 [![Javadoc](https://img.shields.io/badge/javadoc-reference-5c6bc0)](https://brantunger.github.io/unruly-engine/latest/)
 [![Coverage](https://codecov.io/gh/brantunger/unruly-engine/branch/main/graph/badge.svg)](https://codecov.io/gh/brantunger/unruly-engine)
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 **Keep business rules out of your code.**<br>
 Write each rule's condition and action as an [MVEL](https://github.com/mvel/mvel) expression, or in an expression
@@ -418,8 +418,15 @@ If you need inference over changing facts, use a full production-rule system.
 <details>
 <summary><b>What license is it under?</b></summary>
 
-The GNU General Public License v3.0, not the LGPL. Check that it's compatible with how you distribute your
-software before depending on it.
+2.0.0 onwards, the Apache License 2.0: use, modify and redistribute it, including inside closed-source software.
+Each contributor also grants a patent license, limited to the claims their contribution necessarily infringes,
+alone or combined with the engine, and it ends if you bring patent litigation claiming the engine infringes. 1.8.0
+and earlier were released under the GNU General Public License v3.0.
+
+Running the engine in a service you host asks nothing of you. Shipping software that contains it — a fat jar, a
+WAR, a container image or an installer, repackaged or not — means keeping its copyright notices and including the
+[LICENSE](LICENSE) and the [NOTICE](NOTICE) alongside your own. If you modify its source files, mark them as
+changed.
 
 </details>
 
@@ -431,4 +438,6 @@ process in [RELEASING.md](RELEASING.md).
 
 ## 📄 License
 
-unruly-engine is licensed under the [GNU General Public License v3.0](LICENSE).
+unruly-engine 2.0.0 and later are licensed under the [Apache License 2.0](LICENSE), and a redistribution carries
+the [NOTICE](NOTICE) with it. 1.8.0 and earlier were released under the GNU General Public License v3.0, and the
+copies of them on Maven Central carry that license; the rights it granted can't be withdrawn.
