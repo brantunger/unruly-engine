@@ -21,7 +21,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * The class loader here reproduces what a class directory on Windows or macOS does when MVEL asks whether the fact
  * name {@code applicant} is a class: it finds {@code Applicant.class}, and defining it throws a "wrong name"
  * {@code NoClassDefFoundError}. Faking it makes the test the same on every CI leg, including Linux, whose file
- * system is case-sensitive. No test loads a class from a real case-insensitive directory yet (#414).
+ * system is case-sensitive, and it pins the exact message the check reads.
+ * {@link RealCaseInsensitiveClassDirectoryTest} runs this bare-name lookup, and the two other lookups that decide the
+ * same thing, against a class file compiled into a real class directory, and skips where that directory turns out to
+ * be case-sensitive.
  */
 @DisplayName("a fact name that matches a class file in a different case compiles as the fact")
 class CaseInsensitiveClassDirectoryTest {

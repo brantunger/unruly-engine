@@ -99,7 +99,7 @@ so a second build reuses task outputs, including those of another branch, and th
 
 | Job | Runs | Why |
 | --- | --- | --- |
-| JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport` | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive |
+| JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport` | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped |
 | JDK 25 on `ubuntu-latest` | `./gradlew :mvel:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `config/docs/check_docs.py`, a line-ending check, and `config/docs/check_style.py` on the pages a pull request changes | Broken links and anchors, joined table rows, files stored with CRLF, and [STYLE.md](../STYLE.md)'s mechanical rules |
@@ -125,7 +125,8 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 
 What the jobs leave behind:
 
-- **Artifacts:** `jacoco-report-jdk21-<os>` from every JDK 21 job, always; `api-compatibility-report-jdk21-<os>`
+- **Artifacts:** `jacoco-report-jdk21-<os>` from every JDK 21 job, always, with that job's JUnit results beside the
+  coverage, so you can see which tests ran and which were skipped; `api-compatibility-report-jdk21-<os>`
   only when a job fails.
 - **Codecov** gets one upload per run, from the Linux JDK 21 job, authenticated with OIDC. A pull request from a
   fork, or a run Dependabot triggers, skips the upload, because GitHub issues no OIDC token to it.
