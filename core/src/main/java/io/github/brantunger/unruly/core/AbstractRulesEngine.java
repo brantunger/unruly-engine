@@ -1090,22 +1090,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * taken as the expression giving up, as a run started from inside it does when it stops at the deadline it
      * inherited, so the run stops the way a cancelled run always does: no rule name, logged at WARN, with an
      * {@link InterruptedException} or a {@link TimeoutException} as the cause and what the expression threw kept as a
-     * suppressed exception. The rule's open callback is closed with {@code onError}. Otherwise the rule failed, and a
-     * fatal {@link Error} in what it threw is rethrown as for any failure.
+     * suppressed exception. The rule's open callback is closed with {@code onError}. When the run hasn't been
+     * cancelled, the rule failed; an {@link Error} in what the expression threw makes that the answer even when it
+     * has, because the code being run broke rather than gave up. Either way a fatal {@link Error} in what it threw
+     * is rethrown as for any failure.
      *
      * @param snapshot The listeners the rule's callbacks went to
      * @param rule     The rule whose expression threw
      * @param deadline When the run must stop, or {@code null} if it has none
      * @param thrown   What the expression threw
-     * @param failed   Reports the rule's failure, when the run wasn't cancelled
+     * @param failed   Reports the rule's failure, when the run wasn't cancelled or {@code thrown} has an
+     *                 {@link Error} anywhere in its cause chain
      * @return The exception to throw
      */
     private RuleExecutionException stoppedOrFailed(List<RuleListener> snapshot, CompiledRule rule, Instant deadline,
                                                    Exception thrown, Supplier<RuleExecutionException> failed) {
-        // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and a
-        // fatal Error inside what it threw is rethrown as it always is, cancelled or not.
+        // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and an
+        // Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
-        RuleExecutionException stop = Failures.fatalError(thrown) == null
+        RuleExecutionException stop = Failures.errorInChain(thrown) == null
                 ? cancellation("during rule '" + rule.displayName() + "'", deadline, thrown) : null;
         if (stop == null) {
             return failed.get();

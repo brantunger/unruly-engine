@@ -76,6 +76,31 @@ public final class Failures {
         return null;
     }
 
+    /**
+     * Finds the {@link Error} of any kind in what was caught: the throwable itself, or one of its causes. This is
+     * what a cancelled run asks before it reports a stop, because an error from Java code a rule calls, such as a
+     * method, a getter or a lambda held in a fact, reaches the engine wrapped in the expression language's own
+     * exception, and a run past its deadline or interrupted would otherwise report it as a stop that names no rule
+     * rather than as that rule's failure.
+     *
+     * <p>
+     * Unlike {@link #fatalError}, which looks for the first error the engine must not absorb (see {@link #isFatal})
+     * and so may pass over a non-fatal one above it, this finds the first error in the chain whether it is fatal or
+     * not.
+     * </p>
+     *
+     * @param thrown What was caught, or {@code null}
+     * @return The first error in {@code thrown}'s cause chain, or {@code null} if there is none
+     */
+    static Error errorInChain(Throwable thrown) {
+        for (Throwable t : causeChain(thrown)) {
+            if (t instanceof Error error) {
+                return error;
+            }
+        }
+        return null;
+    }
+
     static void throwIfPresent(Error fatal) {
         if (fatal != null) {
             throw fatal;
