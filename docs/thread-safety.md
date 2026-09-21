@@ -16,6 +16,7 @@ one run does.
 - [Lifecycle and closing](#-lifecycle-and-closing)
 - [Reloading rules while running](#-reloading-rules-while-running)
 - [Compiled copies](#-compiled-copies)
+- [Class loaders](#-class-loaders)
 - [Gotchas](#-gotchas)
 - [Questions you might not think to ask](#-questions-you-might-not-think-to-ask)
 
@@ -198,11 +199,47 @@ How many copies an engine keeps, how to limit them and what a run waits for when
 [Compiled copies](compiled-copies.md). What changes when runs come from virtual threads is on
 [Virtual threads](virtual-threads.md).
 
+## 🌳 Class loaders
+
+The classes of your facts and of your output object must be reachable from the **context class loader of the thread
+that calls `load()`**. The engine captures that loader while `load()` compiles the rules and gives it to every
+expression language as the loader to find classes with. `RulesEngineBuilder` has no class-loader option, so that
+context class loader is the only control there is.
+
+Most applications never think about it: one class loader holds the application, the engine and the fact classes. It
+matters when those classes live somewhere else, such as a plugin or tenant jar, a container's application class loader
+or a test harness that isolates each case. Load the rules with that loader in place, and put the old one back:
+
+```java
+ClassLoader original = Thread.currentThread().getContextClassLoader();
+Thread.currentThread().setContextClassLoader(pluginLoader);   // the loader that holds Applicant and LoanDecision
+try {
+    engine.load(rules);                                       // load() captures it
+} finally {
+    Thread.currentThread().setContextClassLoader(original);
+}
+```
+
+> [!IMPORTANT]
+> Wrap `load()`, not `run()`. The engine reads a context class loader in `build()`, `load()` and `validate()` only, so
+> a run never uses the one on its own thread to find your classes.
+
+- `validate(rules)` captures a loader the same way, on whichever thread calls it.
+- `build()` uses the **building** thread's context class loader, for the engine's languages and for an import that
+  names a single class. Imported packages are looked up with the **loading** thread's.
+- A thread with no context class loader leaves the engine using this library's own class loader.
+
+In MVEL, setting the context class loader around `run()` instead leaves the rule failing, and closing the engine
+doesn't release the loader `load()` captured: MVEL's dynamic optimizer holds it, and holds the first loader to
+evaluate a rule for the life of the JVM. That, and the flag that frees them, are in
+[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
+
 ## 🚧 Gotchas
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
 | **`close()` doesn't drain** | Runs in progress finish, but nothing waits for them | Stop the work reaching the engine, then close; see [Draining before you close](#draining-before-you-close) |
+| **The context class loader set around `run()`** | In MVEL, the rule works for about 50 runs in quick succession and then fails for ever, with a fact or output class not found | Set it around `load()`; see [Class loaders](#-class-loaders) |
 | **A reload reaches nested runs** | After a `load()`, a run started from an action or a listener uses the new rules, which the outer run's checksum doesn't describe | Reload between requests, or record each run's `ruleSetChecksum()` |
 
 ## ❓ Questions you might not think to ask
