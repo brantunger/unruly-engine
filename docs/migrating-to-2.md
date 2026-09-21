@@ -521,7 +521,11 @@ the engine's messages. None of it is a compile error.
 | Messages that copied what a rule threw at run time, a language's compile error, or what your supplier or listener threw, as it was written | All of it is escaped now, so a line break in it can't forge a log line |
 | A listener's exception logged at WARN with its stack trace | WARN with `Listener threw exception in <callback>: <class>: <message>`, escaped; the stack trace at DEBUG |
 | `LoggingRuleListener` logging `Failed rule: <name> \| Error: <message>` for every failure | A rule the run stopped is logged as `Stopped rule: <name> \| <message>`, and no rule is ever `(unnamed)`. Both lines are at DEBUG, as in 1.x |
-| Parsing `Can not compile rule 'x'. Error: ...` | `Condition for rule 'x' failed to compile: ...`, or `Action for rule 'x' ...`, with the language's position when it gives one |
+| Parsing `Can not compile rule 'x'. Error: ...` | `Condition for rule 'x' ` or `Action for rule 'x' `, then the language's message, with its position when it gives one |
+| Expecting `failed to compile: ` in every compile error | The engine adds it only when the language throws something other than an `InvalidExpressionException` |
+| Reading `getMessage()` of a failed `load()` | When several rules fail, one exception reports them all: `2 rules failed to compile: ...`, or `2 failures while loading the rules: ...` when a failure names no rule |
+| `getCause()` and `getRuleName()` on a failed `load()`'s exception | `failures()` has each failure. On a combined one, `getRuleName()` names the first, and `getCause()` is that first failure, a hop further down |
+| Matching a run failure by its exception class name | An internal subclass, `ReportedFailure`; `catch` and `instanceof` still work; see [What happens on each failure](error-handling.md#-what-happens-on-each-failure) |
 | Parsing MVEL's `'+=' at position 13` for an assignment or `import_static` in a condition | `at line 1, column 14`, carried as an `InvalidExpressionException.Issue` as well as in the text |
 
 1.x already escaped rule, fact and language *names*, and already shortened names to 200 characters and copied text
@@ -529,6 +533,14 @@ to 1,000; [Exceptions by method](error-handling.md#-exceptions-by-method) owns t
 [Logging setup](listeners-and-logging.md#-logging-setup) owns every line and its level. A positioned compile error
 reads `Condition for rule 'r' failed to compile at line 1, column 6: Malformed expression`, and
 [Errors when rules load](languages/mvel.md#-errors-when-rules-load) covers what MVEL puts in one.
+
+Everything after the rule's name there is MVEL's own message, `failed to compile` and all. An expression MVEL
+rejects outright reads `Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 23)` instead,
+with no `failed to compile`.
+
+When several rules fail, one exception reports them all, so `getCause()` is one level deeper than for a single rule:
+the combined exception wraps the first failure. [Exceptions by method](error-handling.md#-exceptions-by-method) owns
+the message shape and what `failures()` holds.
 
 To replace the logger name, for example:
 

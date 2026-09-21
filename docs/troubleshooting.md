@@ -128,7 +128,8 @@ it creates, `unresolvable property or identifier` for one it calls; see
 
 `load()` throws one `RuleCompilationException` for the whole list. `failures()` has one entry per broken rule; a
 language that can't create its compiler and a rejected [declared fact](glossary.md#declared-fact) name are listed with
-them. The previous rules stay loaded. `validate(rules)` returns the same problems without loading anything; see
+them. The previous rules stay loaded. `validate(rules)` returns the same problems without loading anything, except a
+language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it) and
 [Exceptions by method](error-handling.md#-exceptions-by-method).
 

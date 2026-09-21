@@ -668,8 +668,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@inheritDoc}
      *
      * <p>
-     * The rules are compiled by the same code as {@code load()}, so the two can't disagree. The compilers created are
-     * closed before this returns, and no session is ever made.
+     * The rules are compiled by the same code as {@code load()}. The compilers created are closed before this
+     * returns, and no session is ever made, so a language that fails only while a session is created or warmed up for
+     * a copy of {@code copiesAtLoad(n)} fails {@code load()} alone and isn't reported here. With the default
+     * {@code copiesAtLoad(0)} nothing is outside what it can see.
      * </p>
      */
     @Override

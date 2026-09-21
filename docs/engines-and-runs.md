@@ -484,8 +484,8 @@ Runs in flight during a reload, two loads at once, and what `close()` releases a
 ### Checking a list before loading it
 
 `validate(rules)` compiles a list exactly as `load()` would, with the engine's languages, imports, options and
-declared facts, and returns every problem instead of throwing: one `RuleCompilationException` for each, in the order
-`load()` would find them, or an empty list when the rules would load. Nothing is loaded and nothing about the rules
+declared facts, and returns the problems instead of throwing: one `RuleCompilationException` for each, in the order
+`load()` would find them, or an empty list when there are none. Nothing is loaded and nothing about the rules
 is logged, not even a language's compile warnings, so a rule editor or an admin endpoint can call it as often as it
 likes.
 
@@ -501,6 +501,11 @@ if (problems.isEmpty()) {
 Unlike `load()`, a `null` entry or a duplicate name doesn't stop the check: every other rule is still compiled, so
 one call lists everything. `getRuleName()` names the rule a problem belongs to, and is `null` for a `null` entry, a
 language that couldn't create its compiler, or a declared fact name the languages reject.
+
+One problem `validate()` can't report. It makes no copies, but an engine built with
+[`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load) above zero makes them once the rules compile, and a
+language that throws while creating or warming up a session for one, or returns `null` instead of a session, fails
+that `load()`, naming the language. With the default `copiesAtLoad(0)` nothing is outside what it can see.
 
 ## ❓ Questions you might not think to ask
 

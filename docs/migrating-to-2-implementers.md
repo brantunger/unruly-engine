@@ -17,6 +17,7 @@ changes apply to you too; this page is what you need on top of them.
 - [Languages compile an Expression](#-languages-compile-an-expression)
 - [Actions return a result](#-actions-return-a-result)
 - [A run can stop while your language runs](#-a-run-can-stop-while-your-language-runs)
+- [Packaging and discovery](#-packaging-and-discovery)
 
 ---
 
@@ -34,7 +35,7 @@ compile unchanged.
 | Method | What it does |
 | --- | --- |
 | `void load(List<Rule>)` | Compiles a rule list and swaps it in. The 1.x `setRuleList` renamed |
-| `List<RuleCompilationException> validate(List<Rule>)` | Reports what `load()` would throw, without loading |
+| `List<RuleCompilationException> validate(List<Rule>)` | Reports what `load()` would throw, without loading, except a language that fails while `load()` makes the copies of `copiesAtLoad(n)` |
 | `RunResult<O> runWithResult(FactStore<?>, RunOptions)` | Runs the rules with per-run settings |
 | `RuleSetInfo rules()` | The loaded rules, their checksum and when they were loaded |
 
@@ -138,8 +139,11 @@ than on its first run. See [Warming up a session](languages/custom.md#warming-up
 exception, a language that couldn't create its compiler, and each rejected declared fact name. `getExpressionKind()`
 and `issues()` say what failed and where, on `RuleExecutionException` too.
 
-Compile error messages name the expression: `Can not compile rule 'r'. Error: ...` is now
-`Condition for rule 'r' failed to compile: ...` or `Action for rule 'r' failed to compile: ...`.
+Compile error messages name the expression, and your message is a fragment the engine completes: it writes
+`Condition for rule 'r' ` or `Action for rule 'r' ` and then your `InvalidExpressionException`'s message, adding
+`failed to compile: ` only when your compiler throws something else. So 1.x's `Can not compile rule 'r'. Error: ...`
+is now `Condition for rule 'r' contains an assignment ('=' at line 1, column 16)`, or
+`Condition for rule 'r' failed to compile: ...` for any other exception.
 
 **Who is affected:** authors of expression languages, and code that reads compile error messages or causes.
 
@@ -150,9 +154,10 @@ Compile error messages name the expression: `Can not compile rule 'r'. Error: ..
 | `compileCondition(String source)` | `compileCondition(Expression source)`, reading `source.text()` |
 | Settings passed to a language's own constructor, such as a parser's features | `.option("my-language", "key", "value")` on the engine's builder, read from `CompileContext.options()` |
 | Parsing `Can not compile rule 'x'. Error: ...` | `getRuleName()`, `getExpressionKind()` and `issues()`, or the new message |
+| A whole-sentence message from your compiler | A fragment: the engine writes `Condition for rule 'r' ` before it, and adds `failed to compile: ` only for exceptions other than `InvalidExpressionException` |
 | Reloading to find the next broken rule | `failures()`, which lists them all |
-| A throwaway engine to check rules before loading them | `validate(rules)`, which returns every problem and loads nothing |
-| `getCause()` is MVEL's `CompileException` | `getCause().getCause()`, or `issues()` |
+| A throwaway engine to check rules before loading them | `validate(rules)`, which loads nothing and returns every problem except a language that fails while `load()` makes the copies of `copiesAtLoad(n)` |
+| `getCause()` is MVEL's `CompileException` | `getCause().getCause()` when one rule failed, one level deeper when several did and the exception combines them; or `issues()` |
 | `new Expression(null, kind, text)` in a test | `new Expression("rule-name", kind, text)`: a rule name is required |
 
 How the engine collects and orders those failures is in
@@ -201,3 +206,29 @@ expression and returns still works, and the engine stops the run as soon as the 
 Do neither and, unless the deadline has passed too, the engine sees no interrupt: a throw is reported as that rule's
 failure and a return lets the run go on. [Stopping a run](languages/custom.md#-stopping-a-run) owns these rules and
 shows the code; [Stopping a run](stopping-runs.md) describes what a caller sees.
+
+## 📦 Packaging and discovery
+
+**What changed:** an engine built without `language(...)` finds its languages with `ServiceLoader` when it is built,
+so a language jar declares itself. 1.x created MVEL itself and looked for nothing, so a 1.x language jar needed no
+such declaration.
+
+**Who is affected:** anyone publishing a language in its own jar.
+
+**What to add.** Declare the language both ways, as [Packaging](languages/custom.md#-packaging) describes in full:
+
+| Where | What |
+| --- | --- |
+| Class path | A file `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` holding the class name, such as `com.example.lang.MyLanguage` |
+| Module path | A `provides io.github.brantunger.unruly.api.language.ExpressionLanguage with com.example.lang.MyLanguage;` clause |
+
+Adding them changes what your users' engines find. A user who never calls `language(...)` and has MVEL on the class
+path too now gets `The engine has several expression languages, [mvel, my], so name the language of rules without one
+with defaultLanguage()` from `build()`, an `IllegalStateException`, until they call either `defaultLanguage(...)` or
+`language(...)`. Giving any language to the builder turns discovery off, so an engine built with
+`language(new MyLanguage())` never sees this.
+
+Say both remedies in your release notes. The class needs a public no-argument constructor, and `ServiceLoader` runs
+on every `build()`, so a constructor that throws fails every engine built without `language(...)`.
+[ServiceLoader](migrating-to-2.md#-expression-languages-are-found-with-serviceloader) is the same change from the
+caller's side.

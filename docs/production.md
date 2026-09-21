@@ -25,7 +25,8 @@ guides before the first request reaches it.
 - [ ] Every rule is tested against sample facts in CI, because `load()` doesn't check fact or property names unless
       the facts are declared and the language checks rules against them; see
       [Testing rules](writing-rules.md#-testing-rules).
-- [ ] A rule editor or pipeline calls `validate(rules)`, which returns every problem `load()` would throw; see
+- [ ] A rule editor or pipeline calls `validate(rules)`, which returns every problem `load()` would throw except a
+      language that fails making a `copiesAtLoad(n)` copy; see
       [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it).
 
 ## 🚦 Before the first request

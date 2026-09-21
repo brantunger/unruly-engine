@@ -64,10 +64,19 @@ public interface RulesEngine<O> extends AutoCloseable {
 
     /**
      * Compiles a rule list exactly as {@link #load(List)} would, with this engine's languages, imports, options and
-     * declared facts, without loading it, and returns every problem {@code load()} would have thrown instead of
-     * throwing. The rules loaded, if any, are unchanged, and the compiled result is discarded: a later {@code load()}
-     * compiles the list again. Nothing about the rules is logged, not even a language's compile warnings; a fatal
-     * {@link Error} is logged at ERROR before it's rethrown, and a compiler that fails to close at WARN, as always.
+     * declared facts, without loading it, and returns the problems {@code load()} would have thrown instead of
+     * throwing. The two lists aren't quite the same, and the paragraphs below say how. The rules loaded, if any, are
+     * unchanged, and the compiled result is discarded: a later {@code load()} compiles the list again. Nothing about
+     * the rules is logged, not even a language's compile warnings; a fatal {@link Error} is logged at ERROR before
+     * it's rethrown, and a compiler that fails to close at WARN, as always.
+     *
+     * <p>
+     * One problem this method can't report: it makes no copies. An engine built with
+     * {@link RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)} above zero makes them once the rules compile, and a
+     * language that throws while creating or warming up a session for one, or returns {@code null} instead of a
+     * session, fails that {@code load()}, naming the language. With the default {@code copiesAtLoad(0)} nothing is
+     * outside what it can see.
+     * </p>
      *
      * <p>
      * The problems come in the order {@code load()} finds them: a {@code null} entry or a duplicate name, in list
@@ -78,7 +87,7 @@ public interface RulesEngine<O> extends AutoCloseable {
      * </p>
      *
      * @param ruleList The list of {@link Rule} objects
-     * @return One exception for each problem, as {@code load()} would have reported it; empty if the list would load
+     * @return One exception for each problem found, as {@code load()} would have reported it; empty when it finds none
      * @throws IllegalStateException if the engine is closed
      * @throws NullPointerException  if the list itself is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while

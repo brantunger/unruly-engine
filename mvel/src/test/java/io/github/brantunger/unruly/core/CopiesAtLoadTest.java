@@ -344,6 +344,26 @@ class CopiesAtLoadTest {
     }
 
     @Test
+    @DisplayName("validate() doesn't see a session that can't be created, which fails the same load()")
+    // #456: load() calls prepareCopies() after compiling, and validate() doesn't: it compiles the rules, closes the
+    // compilers it made and never asks a language for a session, so this failure is load()'s alone.
+    void validateMissesSessionFailure() {
+        ScriptedLanguage language = new ScriptedLanguage(Script.SECOND_SESSION_THROWS);
+        RulesEngine<Map<String, Object>> engine = engine(language, 2);
+        List<Rule> rules = List.of(rule("r"));
+
+        assertEquals(List.of(), engine.validate(rules), "the session the second copy can't create isn't validate()'s");
+        assertEquals(List.of(), language.created, "validate() made no session to fail on");
+        assertEquals(1, language.compilersClosed.get(), "it compiled the rules, and closed the compiler it made");
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+
+        assertEquals("The 'scripted' expression language failed to create a session: no second session",
+                ex.getMessage());
+        assertNull(ex.getRuleName(), "the failure is the language's, not a rule's");
+    }
+
+    @Test
     @DisplayName("when a later copy fails, the copies the load already made are closed with its compiler")
     void laterCopyFails() {
         ScriptedLanguage language = new ScriptedLanguage(Script.SECOND_SESSION_THROWS);
