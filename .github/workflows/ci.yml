@@ -102,9 +102,10 @@ jobs:
         run: ./gradlew build jacocoTestReport
 
       # Compilation always uses the Java 21 toolchain, so only the tests depend on this JDK; -PtestJdk runs them on it.
+      # Both test tasks: core has its own tests, and mvel the ones that need MVEL.
       - name: Test on JDK ${{ matrix.java-version }}
         if: matrix.java-version != '21'
-        run: ./gradlew :mvel:test -PtestJdk=${{ matrix.java-version }}
+        run: ./gradlew :core:test :mvel:test -PtestJdk=${{ matrix.java-version }}
 
       # Artifact names must be unique within a run, and three jobs run on JDK 21, so the OS is part of each name.
       - name: Upload API Compatibility Report
@@ -128,6 +129,7 @@ jobs:
           name: jacoco-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
           path: |
             build/reports/jacoco/
+            core/build/test-results/test/
             mvel/build/test-results/test/
 
       # Codecov gets one report per run, from Linux, and a failed upload fails the job. The upload authenticates

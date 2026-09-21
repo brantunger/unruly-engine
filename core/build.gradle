@@ -1,5 +1,8 @@
 plugins {
     id 'unruly.library'
+    // core's tests share fixtures with mvel's: the tests that need MVEL stay there, and both source sets use the
+    // same engines, log capture and test languages.
+    id 'java-test-fixtures'
 }
 
 // The engine without an expression language. The mvel project publishes unruly-engine, which adds MVEL.
@@ -13,6 +16,16 @@ dependencies {
     implementation libs.slf4j.api
     // The public API's nullness annotations. An api dependency, so users' compilers, Kotlin and IDEs can read them.
     api libs.jspecify
+
+    // EngineLogs asserts with JUnit, and both source sets' tests use it. An api dependency, because Executable
+    // is in its signatures. The fixtures aren't published, so this adds nothing to unruly-engine-core.
+    testFixturesApi platform(libs.junit.bom)
+    testFixturesApi 'org.junit.jupiter:junit-jupiter-api'
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly libs.slf4j.simple
 }
 
 mavenPublishing {
@@ -37,4 +50,20 @@ tasks.named('javadoc', Javadoc) {
     exclude 'io/github/brantunger/unruly/core/**'
     // Lets javadoc find the excluded classes that the documented ones use.
     options.addPathOption('-source-path').value = [file('src/main/java')]
+}
+
+// java-test-fixtures adds the fixtures to components.java, which unruly.library publishes, so unruly-engine-core
+// would gain -test-fixtures.jar and -test-fixtures-sources.jar. The fixtures are for this build's own tests, and the
+// released artifact set is fixed, so all three variants are left out of the publication.
+components.java.withVariantsFromConfiguration(configurations.testFixturesApiElements) { skip() }
+components.java.withVariantsFromConfiguration(configurations.testFixturesRuntimeElements) { skip() }
+components.java.withVariantsFromConfiguration(configurations.testFixturesSourcesElements) { skip() }
+
+// mvel applies extra-java-module-info, which fails on any jar that doesn't name a module, and the fixtures jar has
+// no module-info: its classes sit in core's packages, and it is only ever on a class path. A name in the manifest
+// satisfies the check and leaves the jar as it is. It is never published, so the name is not an API.
+tasks.named('testFixturesJar', Jar) {
+    manifest {
+        attributes('Automatic-Module-Name': 'io.github.brantunger.unruly.testfixtures')
+    }
 }

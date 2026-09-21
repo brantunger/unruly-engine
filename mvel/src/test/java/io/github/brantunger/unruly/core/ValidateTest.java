@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedThenRethrown;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedThenRethrown;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -214,7 +214,7 @@ class ValidateTest {
 
         String logs = logsOf(() -> engine.load(List.of(in("counting", "r"))));
 
-        assertTrue(logs.contains("WARN " + EngineLoggingTest.ENGINE_LOGGER
+        assertTrue(logs.contains("WARN " + EngineLogs.ENGINE_LOGGER
                 + "Condition for rule 'r' has a warning at line 1, column 1: deprecated"), logs);
         assertEquals(0, language.closed.get(), "the loaded rules keep their compiler");
     }

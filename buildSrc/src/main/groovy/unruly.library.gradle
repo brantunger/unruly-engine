@@ -22,8 +22,9 @@ jacoco {
     toolVersion = jacocoVersion
 }
 
-// The tests in mvel also cover core's and test-kit's classes, so the root project's jacocoTestReport and
-// jacocoTestCoverageVerification cover the artifacts together. Each project's own tasks would see only its classes.
+// The tests are split between core and mvel, and mvel's also cover the test kit, so the root project's
+// jacocoTestReport and jacocoTestCoverageVerification cover the artifacts together. Each project's own tasks would
+// see only its own classes, measured by its own tests.
 tasks.named('jacocoTestReport') {
     enabled = false
 }

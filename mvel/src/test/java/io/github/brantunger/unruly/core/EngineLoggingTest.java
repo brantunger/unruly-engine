@@ -8,7 +8,6 @@ import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -22,41 +21,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedAtError;
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * slf4j-simple writes to whatever {@link System#err} is at the time of each call, so the engine's log lines can be
- * captured with {@link io.github.brantunger.unruly.TestLogs#logsOf}.
- */
 @DisplayName("the engine logs each failure before throwing it")
 class EngineLoggingTest {
 
-    static final String ENGINE_LOGGER = "io.github.brantunger.unruly.engine - ";
-
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
-    }
-
-    /**
-     * Asserts that {@code action} throws {@code type} and that the exception's message was logged at ERROR.
-     *
-     * @return The exception
-     */
-    static <T extends Throwable> T assertLoggedAtError(Class<T> type, Executable action) {
-        AtomicReference<T> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(type, action)));
-
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + thrown.get().getMessage()), logs);
-        return thrown.get();
-    }
-
-    /** Asserts that {@code action} throws {@code error} itself, after logging {@code message} at ERROR. */
-    static void assertLoggedThenRethrown(Error error, String message, Executable action) {
-        AtomicReference<Error> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(Error.class, action)));
-
-        assertSame(error, thrown.get());
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + message), logs);
     }
 
     static Stream<Arguments> rejectedRuleLists() {
