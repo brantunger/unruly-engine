@@ -9,19 +9,27 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A tiny expression language for tests. It keeps its own variables and never writes to the map it reads facts from,
  * so tests that use it show the engine's guarantees don't depend on how MVEL works.
  *
  * <ul>
- *     <li>A condition is {@code OPERAND} or {@code OPERAND == OPERAND}.</li>
+ *     <li>A condition is {@code OPERAND} or {@code OPERAND OPERATOR OPERAND}, where the operator is {@code ==},
+ *     {@code >}, {@code >=}, {@code <} or {@code <=}. {@code ==} compares any two values; the others compare two
+ *     numbers, and fail the rule when either side isn't one.</li>
  *     <li>An action is statements separated by {@code ;}: {@code let NAME = OPERAND} declares a variable, and
  *     {@code put KEY OPERAND} puts a value into the output map, or, for a language that returns properties, into the
  *     action's {@link ActionResult}.</li>
- *     <li>An operand is an integer, {@code true}, {@code false}, {@code null}, the name of a variable or fact, or
- *     {@code fact.property}, which {@link FactProperties#read} reads from a record, a bean or a map.</li>
+ *     <li>An operand is an integer, a string in single quotes and without spaces, {@code true}, {@code false},
+ *     {@code null}, the name of a variable or fact, or {@code fact.property}, which {@link FactProperties#read}
+ *     reads from a record, a bean or a map.</li>
  * </ul>
+ *
+ * <p>
+ * Every token is separated by whitespace, so a string operand can't contain a space.
+ * </p>
  *
  * <p>
  * Its compiled expressions keep no state, so its session is {@link Session#none()}. It relies on the default
@@ -32,6 +40,9 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
 
     /** The name the language has unless another is given. */
     public static final String LANGUAGE_NAME = "toy";
+
+    /** The operators a condition can compare two operands with. */
+    private static final Set<String> OPERATORS = Set.of("==", ">", ">=", "<", "<=");
 
     private final String languageName;
     private final boolean returnsProperties;
@@ -97,13 +108,36 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
             String operand = tokens.get(0);
             return (context, session) -> value(operand, context.facts(), Map.of());
         }
-        if (tokens.size() == 3 && "==".equals(tokens.get(1))) {
+        if (tokens.size() == 3 && OPERATORS.contains(tokens.get(1))) {
             String left = tokens.get(0);
+            String operator = tokens.get(1);
             String right = tokens.get(2);
-            return (context, session) -> Objects.equals(value(left, context.facts(), Map.of()),
+            return (context, session) -> compare(operator, value(left, context.facts(), Map.of()),
                     value(right, context.facts(), Map.of()));
         }
         throw new IllegalArgumentException("syntax error in condition '" + source + "'");
+    }
+
+    /**
+     * Compares two operands. {@code ==} compares with {@link Objects#equals}, so numbers of different types aren't
+     * equal; the ordering operators compare numerically, whatever kind of {@link Number} each side is.
+     */
+    private static boolean compare(String operator, Object left, Object right) {
+        if ("==".equals(operator)) {
+            return Objects.equals(left, right);
+        }
+        if (!(left instanceof Number leftNumber) || !(right instanceof Number rightNumber)) {
+            throw new IllegalStateException("'" + operator + "' compares numbers, not '" + left + "' and '" + right
+                    + "'");
+        }
+        int order = Double.compare(leftNumber.doubleValue(), rightNumber.doubleValue());
+        return switch (operator) {
+            case ">" -> order > 0;
+            case ">=" -> order >= 0;
+            case "<" -> order < 0;
+            case "<=" -> order <= 0;
+            default -> throw new IllegalStateException("unknown operator '" + operator + "'");
+        };
     }
 
     private CompiledAction action(String source) {
@@ -145,6 +179,9 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
     }
 
     private static Object value(String token, Map<String, Object> facts, Map<String, Object> locals) {
+        if (token.length() >= 2 && token.startsWith("'") && token.endsWith("'")) {
+            return token.substring(1, token.length() - 1);
+        }
         if ("true".equals(token) || "false".equals(token)) {
             return Boolean.valueOf(token);
         }

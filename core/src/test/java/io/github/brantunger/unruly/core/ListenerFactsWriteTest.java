@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +33,7 @@ class ListenerFactsWriteTest {
     void listenerWriteRejected() {
         List<String> messages = new CopyOnWriteArrayList<>();
         StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
-                builder -> builder.listener(new RuleListener() {
+                builder -> builder.language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
                         messages.add(attemptWrite(facts, "z"));
@@ -43,7 +44,7 @@ class ListenerFactsWriteTest {
                         messages.add(attemptWrite(facts, "x"));
                     }
                 }));
-        engine.load(List.of(Rule.builder().ruleName("r").condition("x == 1").action("output.put('k', x)").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("x == 1").action("put k x").build()));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("x", 1);
 

@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -15,13 +16,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class DuplicateRuleNameTest {
 
     private static Rule rule(String name) {
-        return Rule.builder().ruleName(name).condition("true").action("output.put('k', 1)").build();
+        return Rule.builder().ruleName(name).condition("true").action("put k 1").build();
     }
 
     @Test
     @DisplayName("load() rejects two rules with the same name")
     void duplicateNamesRejected() {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
+        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                builder -> builder.language(new ToyExpressionLanguage()));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("a"), rule("b"), rule("a"))));

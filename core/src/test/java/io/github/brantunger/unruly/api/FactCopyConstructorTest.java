@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -26,11 +27,12 @@ class FactCopyConstructorTest {
     @Test
     @DisplayName("a rule can refer to the copied fact by its name")
     void copiedFactUsableInRules() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
-        engine.load(List.of(Rule.builder().ruleName("r").condition("x == 'hi'")
-                .action("output.put('hit', true)").build()));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).build();
+        engine.load(List.of(Rule.builder().ruleName("r").condition("x == 1")
+                .action("put hit true").build()));
 
-        FactMap<Object> facts = new FactMap<>(new Fact<Object>(new Fact<>("x", "hi")));
+        FactMap<Object> facts = new FactMap<>(new Fact<Object>(new Fact<>("x", 1)));
 
         assertEquals(Map.of("hit", true), engine.run(facts));
     }

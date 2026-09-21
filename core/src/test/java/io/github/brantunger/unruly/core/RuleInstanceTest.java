@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -50,7 +51,7 @@ class RuleInstanceTest {
 
     private static StatefulRulesEngine<Map<String, Object>> engine(Rule rule, RuleListener listener) {
         StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
-                builder -> builder.listener(listener));
+                builder -> builder.language(new ToyExpressionLanguage()).listener(listener));
         engine.load(List.of(rule));
         return engine;
     }
@@ -58,7 +59,7 @@ class RuleInstanceTest {
     @Test
     @DisplayName("the loaded rule and every listener callback are the rule passed to load()")
     void sameInstance() {
-        Rule rule = Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build();
+        Rule rule = Rule.builder().ruleName("r").condition("true").action("put k 1").build();
         Recorder recorder = new Recorder();
         StatefulRulesEngine<Map<String, Object>> engine = engine(rule, recorder);
 
@@ -72,7 +73,7 @@ class RuleInstanceTest {
     @Test
     @DisplayName("onError gets the same instance too")
     void sameInstanceOnError() {
-        Rule rule = Rule.builder().ruleName("r").condition("true").action("output.noSuchMethod()").build();
+        Rule rule = Rule.builder().ruleName("r").condition("true").action("put k missing").build();
         Recorder recorder = new Recorder();
         StatefulRulesEngine<Map<String, Object>> engine = engine(rule, recorder);
 

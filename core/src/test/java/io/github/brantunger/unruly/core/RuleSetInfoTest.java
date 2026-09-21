@@ -19,12 +19,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class RuleSetInfoTest {
 
     private static final Rule HIGH = Rule.builder().ruleName("high").priority(2).condition("true")
-            .action("output.put('high', 1)").build();
+            .action("put high 1").build();
     private static final Rule LOW = Rule.builder().ruleName("low").priority(1).condition("true")
-            .action("output.put('low', 1)").build();
+            .action("put low 1").build();
 
     private static RulesEngine<Map<String, Object>> engine() {
-        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).build();
     }
 
     private static String checksumOf(List<Rule> rules) {
@@ -77,7 +78,7 @@ class RuleSetInfoTest {
         assertNotEquals(checksumOf(List.of(HIGH, LOW)),
                 checksumOf(List.of(HIGH.toBuilder().priority(9).build(), LOW)));
         assertNotEquals(checksumOf(List.of(HIGH, LOW)),
-                checksumOf(List.of(HIGH.toBuilder().action("output.put('high', 2)").build(), LOW)),
+                checksumOf(List.of(HIGH.toBuilder().action("put high 2").build(), LOW)),
                 "a rule whose action alone changed is a different rule list");
         assertNotEquals(checksumOf(List.of(HIGH, LOW)),
                 checksumOf(List.of(HIGH.toBuilder().ruleName("other").build(), LOW)),

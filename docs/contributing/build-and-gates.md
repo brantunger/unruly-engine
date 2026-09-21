@@ -25,9 +25,10 @@ usual fix for each.
 
 `build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build, local, CI and
 release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has five projects: `core`
-(`unruly-engine-core`, whose tests need no language), `mvel` (`unruly-engine`, which holds every test that does),
-`test-kit` (`unruly-engine-test`), and two that aren't published: `benchmarks`, whose sources the build checks
-while only the `jmh` task runs them, and `native-smoke`, a small application CI builds into a GraalVM native image.
+(`unruly-engine-core`, whose tests need no MVEL), `mvel` (`unruly-engine`, which holds the tests that need MVEL or
+the test kit, and those that check the whole build), `test-kit` (`unruly-engine-test`), and two that aren't
+published: `benchmarks`, whose sources the build checks while only the `jmh` task runs them, and `native-smoke`, a
+small application CI builds into a GraalVM native image.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
@@ -62,7 +63,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | `api/EngineApiShapeTest` | `core/src/test` | An engine is configured once, on a builder; `RulesEngine` and `RuleListener` have exactly the documented methods |
 | `api/language/SealedContextsTest` | `core/src/test` | Only the engine implements the contexts it passes to a language |
 | `api/NullnessAnnotationsTest` | `mvel/src/test` | The public API declares its nullness with JSpecify, and the internal `core` package isn't `@NullMarked` |
-| `core/EngineVisibilityTest` | `mvel/src/test` | The engine classes aren't public and can only be created through `RulesEngineBuilder` |
+| `core/EngineVisibilityTest` | `core/src/test` | The engine classes aren't public and can only be created through `RulesEngineBuilder` |
 | `ClassFileVersionTest` | `mvel/src/test` | The published classes are compiled for Java 21 |
 | `ModulePathTest` | `mvel/src/test` | The module declarations work where they take effect: on the module path, in a new JVM |
 | `TestJdkTest` | `mvel/src/test` | The tests really ran on the JDK `-PtestJdk` asked for |
@@ -73,7 +74,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | --- | --- |
 | `:core:test`, `:mvel:test` | `core/build/reports/tests/test/index.html` and `mvel/build/reports/tests/test/index.html` |
 | `jacocoTestReport`, `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html`, the aggregate of every artifact; `build/reports/jacoco/report.xml` for tools |
-| `checkstyleMain`, `checkstyleTest` | `<project>/build/reports/checkstyle/main.html` and `test.html`, with `.xml` twins |
+| `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html` and `test.html`, and `core`'s `testFixtures.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |
 | `japicmp` | `<project>/build/reports/japicmp/report.html` and `report.txt`, for `core`, `mvel` and `test-kit` |
 | `javadoc` | `build/docs/javadoc/index.html` for the site; the console for the warnings that failed it |
@@ -100,7 +101,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | Job | Runs | Why |
 | --- | --- | --- |
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport` | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped |
-| JDK 25 on `ubuntu-latest` | `./gradlew :mvel:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
+| JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `config/docs/check_docs.py`, a line-ending check, and `config/docs/check_style.py` on the pages a pull request changes | Broken links and anchors, joined table rows, files stored with CRLF, and [STYLE.md](../STYLE.md)'s mechanical rules |
 | `ci-result` | Nothing | Fails when `build`, `native-image` or `docs-and-hygiene` failed or was cancelled; a skipped job counts as passed, and `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
@@ -144,7 +145,7 @@ and a missing one fails the build naming the version. The build passes `unruly.t
 `TestJdkTest` fails if the JVM running them doesn't match.
 
 ```bash
-./gradlew :mvel:test -PtestJdk=25
+./gradlew :core:test :mvel:test -PtestJdk=25
 ```
 
 ## 🔕 PMD suppressions

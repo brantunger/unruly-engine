@@ -78,7 +78,11 @@ cd unruly-engine
 | The full gate | `./gradlew clean build` | `./gradlew clean build` | `gradlew clean build` |
 | One test class | `./gradlew :mvel:test --tests '*StatefulSemanticsTest*'` | `./gradlew :mvel:test --tests '*StatefulSemanticsTest*'` | `gradlew :mvel:test --tests "*StatefulSemanticsTest*"` |
 | The coverage report | `./gradlew jacocoTestReport` | `./gradlew jacocoTestReport` | `gradlew jacocoTestReport` |
-| The tests on JDK 25 | `./gradlew :mvel:test -PtestJdk=25` | `./gradlew :mvel:test -PtestJdk=25` | `gradlew :mvel:test -PtestJdk=25` |
+| The tests on JDK 25 | `./gradlew :core:test :mvel:test -PtestJdk=25` | `./gradlew :core:test :mvel:test -PtestJdk=25` | `gradlew :core:test :mvel:test -PtestJdk=25` |
+
+`:core:test` and `:mvel:test` are separate tasks, so `--tests` has to name a class the project holds, or Gradle
+reports `No tests found for given includes`. [Where things live](#-where-things-live) says which project a test
+belongs to; an unqualified `./gradlew test` runs both.
 
 > [!WARNING]
 > In cmd.exe, single quotes aren't quotes: `--tests '*Foo*'` passes them to Gradle, which then reports
@@ -88,8 +92,8 @@ cd unruly-engine
 
 | Project | Publishes | Contains |
 | --- | --- | --- |
-| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need none |
-| `mvel` | `unruly-engine` | The MVEL language, and every test that needs a language to run: most of the engine's, because a rule has to be written in one |
+| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need no MVEL |
+| `mvel` | `unruly-engine` | The MVEL language, the tests that need MVEL or the test kit, and the tests that check the whole build |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
 | `benchmarks` | — | JMH benchmarks; not published, and the build checks its sources without running them |
 | `native-smoke` | — | An application CI builds into a GraalVM native image and runs; not published |
@@ -99,16 +103,17 @@ internal: its module exports it only to the test kit's module, and a class in it
 or the test kit needs it.
 
 Where does my test go? There are two test source sets, `core/src/test` and `mvel/src/test`, and the line between
-them is the expression language: `core` has none, so an engine built there throws `The engine has no expression
-language` before a rule is ever compiled. A test that loads or runs a rule belongs in `mvel`; a test that doesn't,
-or that registers a language of its own, belongs in `core`. The paths below are relative to
-`java/io/github/brantunger/unruly/` in the source set named.
+them is whether the test needs MVEL. A `core` test that runs a rule names a language of its own:
+`core/src/testFixtures` has `ToyExpressionLanguage`, which evaluates a tiny syntax, and `StubExpressionLanguage`,
+whose rules always match and whose actions are Java. An engine built with no language throws `The engine has no
+expression language`. The paths below are relative to `java/io/github/brantunger/unruly/` in the source set named.
 
 | You changed | Put the test in | Why |
 | --- | --- | --- |
 | A public type in `api`, `api.exception` or `api.language`, without running a rule | `core/src/test`, the same package, under `api/` | The tests of a package sit next to it, whichever project holds it |
 | An internal class in `core`, without running a rule | `core/src/test`, the same package, under `core/` | Every source set runs on the class path, so a test in the package sees its package-private classes |
-| Anything a rule in the default language has to run through | `mvel/src/test`, the same package | Only `mvel` has a language, so `core`'s tests can't build an engine that compiles a rule |
+| What the engine does with a rule, whatever language it is written in | `core/src/test`, the same package | `RulesEngineBuilder.language()` gives the engine the toy or stub language, so `core` can load and run rules |
+| Anything only MVEL does: its expression syntax, its compile errors, its fact-name rules, or its being the default | `mvel/src/test`, the same package | The toy and stub languages can't reproduce it, so moving the test would delete the coverage |
 | The MVEL language | `mvel/src/test`, under `mvel/` | Everything that is only true of MVEL stays in the `mvel` package |
 | The test kit | `mvel/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test | `test-kit` depends on `core`, so a `core` test can't depend on the kit |
 | What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` and for a toy language through `api/language/ToyExpressionLanguageContractTest` |
@@ -170,11 +175,11 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 
 | Failing task or message | Where the report is | Usual fix |
 | --- | --- | --- |
-| `:mvel:test` | `mvel/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
+| `:core:test`, `:mvel:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
 | `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html` | Run `./gradlew jacocoTestReport`, open the report, and cover the red lines and yellow branches |
 | `pmdMain` | `<project>/build/reports/pmd/main.html` | Fix the finding; suppress only as [Build and gates](docs/contributing/build-and-gates.md#-pmd-suppressions) shows |
-| `checkstyleMain`, `checkstyleTest` | `<project>/build/reports/checkstyle/main.html`, `test.html` | Braces on every block, no star or unused imports |
-| `compileJava`, `compileTestJava` with `-Werror` | The console | Fix the warning; every javac lint is on |
+| `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html`, `test.html`, and `core`'s `testFixtures.html` | Braces on every block, no star or unused imports |
+| `compileJava`, `compileTestJava`, `compileTestFixturesJava` with `-Werror` | The console | Fix the warning; every javac lint is on |
 | `javadoc` | The console | Every public member needs a comment with `@param`, `@return` and `@throws`, and every `{@link}` must resolve |
 | `japicmp` | `<project>/build/reports/japicmp/report.html` | See [API compatibility](docs/contributing/api-compatibility.md) |
 | `PackageDependencyTest` | The test report | A package used one it may not; `PackageDependencyTest` lists what each package may use |

@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +29,15 @@ class UniqueMatchTest {
 
     private static Rule rule(String name, int priority, String condition) {
         return Rule.builder().ruleName(name).priority(priority).condition(condition)
-                .action("output.put('fired', '" + name + "')").build();
+                .action("put fired '" + name + "'").build();
+    }
+
+    /**
+     * A matching rule under a name the toy language can't put in an action, such as one with a line break in it. Its
+     * action never runs: every test that uses it is about a run that more than one rule matched.
+     */
+    private static Rule matching(String name, int priority) {
+        return Rule.builder().ruleName(name).priority(priority).condition("true").action("put fired 'yes'").build();
     }
 
     private static final Rule PRIME = rule("prime-rate", 10, "score >= 750");
@@ -80,10 +89,10 @@ class UniqueMatchTest {
 
     private static RulesEngine<Map<String, Object>> engine(AtomicInteger outputs, RuleListener listener,
                                                            Rule... rules) {
-        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.uniqueMatch(() -> {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>uniqueMatch(() -> {
             outputs.incrementAndGet();
             return new HashMap<>();
-        });
+        }).language(new ToyExpressionLanguage());
         if (listener != null) {
             builder.listener(listener);
         }
@@ -166,7 +175,7 @@ class UniqueMatchTest {
     @Test
     @DisplayName("a rule name in the failure is escaped, so it can't start a log line of its own")
     void namesAreEscaped() {
-        RulesEngine<Map<String, Object>> engine = engine(rule("line\nbreak", 2, "true"), rule("b", 1, "true"));
+        RulesEngine<Map<String, Object>> engine = engine(matching("line\nbreak", 2), rule("b", 1, "true"));
 
         RuleExecutionException e = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 

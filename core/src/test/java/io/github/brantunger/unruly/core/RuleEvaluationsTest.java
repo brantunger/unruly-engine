@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,13 +29,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class RuleEvaluationsTest {
 
     private static final Rule HIGH = Rule.builder().ruleName("high").priority(3).condition("false")
-            .action("output.put('high', 1)").build();
+            .action("put high 1").build();
     private static final Rule MIDDLE = Rule.builder().ruleName("middle").priority(2).condition("true")
-            .action("output.put('middle', 1)").build();
+            .action("put middle 1").build();
     private static final Rule LOW = Rule.builder().ruleName("low").priority(1).condition("true")
-            .action("output.put('low', 1)").build();
+            .action("put low 1").build();
     private static final Rule BROKEN = Rule.builder().ruleName("broken").priority(0).condition("x.missing > 1")
-            .action("output.put('broken', 1)").build();
+            .action("put broken 1").build();
 
     private static RulesEngine<Map<String, Object>> loaded(RulesEngineBuilder<Map<String, Object>> builder,
                                                            Rule... rules) {
@@ -44,15 +45,18 @@ class RuleEvaluationsTest {
     }
 
     private static RulesEngineBuilder<Map<String, Object>> firstMatch() {
-        return RulesEngineBuilder.firstMatch(HashMap::new);
+        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage());
     }
 
     private static RulesEngineBuilder<Map<String, Object>> allMatches() {
-        return RulesEngineBuilder.allMatches(HashMap::new);
+        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new ToyExpressionLanguage());
     }
 
     private static RulesEngineBuilder<Map<String, Object>> uniqueMatch() {
-        return RulesEngineBuilder.uniqueMatch(HashMap::new);
+        return RulesEngineBuilder.<Map<String, Object>>uniqueMatch(HashMap::new)
+                .language(new ToyExpressionLanguage());
     }
 
     private static List<String> names(List<RuleEvaluation> evaluations) {
@@ -93,7 +97,7 @@ class RuleEvaluationsTest {
     @Test
     @DisplayName("when no rule matches, every rule is reported as not matched, on every policy")
     void noMatchReportsEveryRuleNotMatched() {
-        Rule never = Rule.builder().ruleName("never").priority(1).condition("false").action("output.put('n', 1)")
+        Rule never = Rule.builder().ruleName("never").priority(1).condition("false").action("put n 1")
                 .build();
         for (Supplier<RulesEngineBuilder<Map<String, Object>>> builder : List.<Supplier<RulesEngineBuilder<Map<String, Object>>>>of(
                 RuleEvaluationsTest::firstMatch, RuleEvaluationsTest::allMatches, RuleEvaluationsTest::uniqueMatch)) {

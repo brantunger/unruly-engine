@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,7 @@ class RuleSelectionTest {
     private static final String FAILS_IF_EVALUATED = "x.missing > 1";
 
     private static Rule rule(String name, String condition) {
-        return Rule.builder().ruleName(name).condition(condition).action("output.put('" + name + "', 1)").build();
+        return Rule.builder().ruleName(name).condition(condition).action("put " + name + " 1").build();
     }
 
     private static RulesEngine<Map<String, Object>> loaded(RulesEngineBuilder<Map<String, Object>> builder,
@@ -50,7 +51,8 @@ class RuleSelectionTest {
     }
 
     private static RulesEngineBuilder<Map<String, Object>> allMatches() {
-        return RulesEngineBuilder.allMatches(HashMap::new);
+        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new ToyExpressionLanguage());
     }
 
     private static List<String> outcomes(RunResult<?> result) {
@@ -186,7 +188,8 @@ class RuleSelectionTest {
         Rule offBelow = rule("off-below", "true").toBuilder().enabled(false).build();
         Rule below = rule("below", "true");
 
-        RunResult<Map<String, Object>> result = loaded(RulesEngineBuilder.firstMatch(HashMap::new), off, match,
+        RunResult<Map<String, Object>> result = loaded(RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()), off, match,
                 offBelow, below).runWithResult(new FactMap<>());
 
         assertEquals(List.of("off=SKIPPED", "match=MATCHED", "off-below=SKIPPED", "below=NOT_EVALUATED"),
@@ -200,7 +203,8 @@ class RuleSelectionTest {
         Rule off = rule("off", "true").toBuilder().enabled(false).build();
         Rule on = rule("on", "true");
 
-        RunResult<Map<String, Object>> result = loaded(RulesEngineBuilder.uniqueMatch(HashMap::new), off, on)
+        RunResult<Map<String, Object>> result = loaded(RulesEngineBuilder.<Map<String, Object>>uniqueMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()), off, on)
                 .runWithResult(new FactMap<>());
 
         assertEquals(List.of("off=SKIPPED", "on=MATCHED"), outcomes(result));

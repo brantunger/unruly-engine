@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -77,8 +78,9 @@ class SecondFatalFromOnErrorTest {
             }
         };
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage())
                 .listener(first).listener(closer).listener(recorder).build();
-        engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action("output.put('k', 1)").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action("put k 1").build()));
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         String logs = logsOf(() -> thrown.set(assertThrows(Error.class,
                 () -> engine.run(new FactMap<>(new Fact<Object>("boom", new Boom()))))));
@@ -133,8 +135,9 @@ class SecondFatalFromOnErrorTest {
             }
         };
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage())
                 .listener(rethrows).listener(throwsAnother).listener(recorder).build();
-        engine.load(List.of(Rule.builder().ruleName("r").condition("boom.x").action("output.put('k', 1)").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("boom.x").action("put k 1").build()));
 
         Throwable thrown = assertThrows(Error.class,
                 () -> engine.run(new FactMap<>(new Fact<Object>("boom", new Boom()))));

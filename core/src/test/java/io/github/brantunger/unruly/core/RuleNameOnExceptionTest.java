@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -28,7 +29,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class RuleNameOnExceptionTest {
 
     private final RulesEngine<Map<String, Object>> engine =
-            RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .language(new ToyExpressionLanguage()).build();
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
@@ -51,16 +53,16 @@ class RuleNameOnExceptionTest {
     @Test
     @DisplayName("a failing condition, a failing action and a non-boolean condition name their rule")
     void runFailures() {
-        engine.load(List.of(rule("condition", "missing > 1", "output.put('a', 1)")));
+        engine.load(List.of(rule("condition", "missing > 1", "put a 1")));
         assertEquals("condition", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
 
-        engine.load(List.of(rule("action", "true", "missing.call()")));
+        engine.load(List.of(rule("action", "true", "put a missing")));
         assertEquals("action", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
 
-        engine.load(List.of(rule("text", "'text'", "output.put('a', 1)")));
+        engine.load(List.of(rule("text", "1", "put a 1")));
         assertEquals("text", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
 
-        engine.load(List.of(rule("null", "null", "output.put('a', 1)")));
+        engine.load(List.of(rule("null", "null", "put a 1")));
         assertEquals("null", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
     }
 
@@ -68,16 +70,16 @@ class RuleNameOnExceptionTest {
     @DisplayName("a rule that fails to compile, has a blank expression, a language the engine lacks or a duplicate name is named")
     void compilationFailures() {
         assertEquals("syntax", thrown(RuleCompilationException.class,
-                () -> engine.load(List.of(rule("syntax", "applicant.creditScore >=", "x")))).getRuleName());
+                () -> engine.load(List.of(rule("syntax", "applicant.creditScore >=", "put a 1")))).getRuleName());
         assertEquals("blank-condition", thrown(RuleCompilationException.class,
-                () -> engine.load(List.of(rule("blank-condition", " ", "x")))).getRuleName());
+                () -> engine.load(List.of(rule("blank-condition", " ", "put a 1")))).getRuleName());
         assertEquals("blank-action", thrown(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("blank-action", "true", "")))).getRuleName());
         assertEquals("elsewhere", thrown(RuleCompilationException.class,
                 () -> engine.load(List.of(Rule.builder().ruleName("elsewhere").language("nope")
-                        .condition("true").action("x").build()))).getRuleName());
+                        .condition("true").action("put a 1").build()))).getRuleName());
         assertEquals("twice", thrown(RuleCompilationException.class,
-                () -> engine.load(List.of(rule("twice", "true", "x"), rule("twice", "true", "x"))))
+                () -> engine.load(List.of(rule("twice", "true", "put a 1"), rule("twice", "true", "put a 1"))))
                 .getRuleName());
     }
 
@@ -101,6 +103,7 @@ class RuleNameOnExceptionTest {
     void listenerFatalError() {
         AtomicReference<RuleExecutionException> reported = new AtomicReference<>();
         RulesEngine<Map<String, Object>> listened = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new ToyExpressionLanguage())
                 .listener(new RuleListener() {
                     @Override
                     public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
@@ -113,7 +116,7 @@ class RuleNameOnExceptionTest {
                     }
                 })
                 .build();
-        listened.load(List.of(rule("heard", "true", "x")));
+        listened.load(List.of(rule("heard", "true", "put a 1")));
 
         thrown(OutOfMemoryError.class, () -> listened.run(new FactMap<>()));
 
@@ -123,7 +126,7 @@ class RuleNameOnExceptionTest {
     @Test
     @DisplayName("the name isn't escaped: a name with a line break is returned as it was given")
     void nameNotEscaped() {
-        engine.load(List.of(rule("two\nlines", "missing > 1", "x")));
+        engine.load(List.of(rule("two\nlines", "missing > 1", "put a 1")));
 
         RuleExecutionException ex = thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
@@ -139,8 +142,8 @@ class RuleNameOnExceptionTest {
 
         RulesEngine<Map<String, Object>> failingOutput = RulesEngineBuilder.<Map<String, Object>>allMatches(() -> {
             throw new IllegalStateException("no output");
-        }).build();
-        failingOutput.load(List.of(rule("r", "true", "x")));
+        }).language(new ToyExpressionLanguage()).build();
+        failingOutput.load(List.of(rule("r", "true", "put a 1")));
         assertNull(thrown(RuleExecutionException.class, () -> failingOutput.run(new FactMap<>())).getRuleName());
 
         RulesEngine<Map<String, Object>> broken = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)

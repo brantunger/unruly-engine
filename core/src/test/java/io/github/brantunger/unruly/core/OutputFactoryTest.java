@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -20,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class OutputFactoryTest {
 
     private static final List<Function<Supplier<Map<String, Object>>, RulesEngine<Map<String, Object>>>> ENGINES =
-            List.of(factory -> RulesEngineBuilder.allMatches(factory).build(),
-                    factory -> RulesEngineBuilder.firstMatch(factory).build());
+            List.of(factory -> RulesEngineBuilder.allMatches(factory).language(new ToyExpressionLanguage()).build(),
+                    factory -> RulesEngineBuilder.firstMatch(factory).language(new ToyExpressionLanguage()).build());
 
     private static RulesEngine<Map<String, Object>> engineWith(
             Function<Supplier<Map<String, Object>>, RulesEngine<Map<String, Object>>> constructor,
@@ -30,7 +31,7 @@ class OutputFactoryTest {
         engine.load(List.of(Rule.builder()
                 .ruleName("first-rule")
                 .condition(condition)
-                .action("output.put('k', 1)")
+                .action("put k 1")
                 .priority(1)
                 .build()));
         return engine;

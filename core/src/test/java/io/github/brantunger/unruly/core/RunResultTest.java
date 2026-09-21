@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,23 +28,23 @@ import static org.junit.jupiter.api.Assertions.*;
 class RunResultTest {
 
     private static final Rule HIGH = Rule.builder().ruleName("high").priority(2).condition("true")
-            .action("output.put('high', 1)").build();
+            .action("put high 1").build();
     private static final Rule LOW = Rule.builder().ruleName("low").priority(1).condition("true")
-            .action("output.put('low', 1)").build();
+            .action("put low 1").build();
     private static final Rule NEVER = Rule.builder().ruleName("never").condition("false")
-            .action("output.put('never', 1)").build();
+            .action("put never 1").build();
     private static final Instant NOW = Instant.parse("2027-06-01T00:00:00Z");
 
     private static RulesEngine<Map<String, Object>> firstMatch(Rule... rules) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .build();
+                .language(new ToyExpressionLanguage()).build();
         engine.load(List.of(rules));
         return engine;
     }
 
     private static RulesEngine<Map<String, Object>> allMatches(Rule... rules) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .build();
+                .language(new ToyExpressionLanguage()).build();
         engine.load(List.of(rules));
         return engine;
     }
@@ -117,7 +118,7 @@ class RunResultTest {
     @DisplayName("a result names the run's tags and when it started in its toString")
     void toStringNamesTheTagsAndStart() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .clock(Clock.fixed(NOW, ZoneOffset.UTC)).build();
+                .language(new ToyExpressionLanguage()).clock(Clock.fixed(NOW, ZoneOffset.UTC)).build();
         engine.load(List.of(HIGH));
 
         RunResult<Map<String, Object>> result = engine.runWithResult(new FactMap<>(),
@@ -145,7 +146,8 @@ class RunResultTest {
     void withRunCarriesTheRun() {
         AtomicReference<RunContext> seen = new AtomicReference<>();
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .clock(Clock.fixed(NOW, ZoneOffset.UTC)).listener(new RuleListener() {
+                .language(new ToyExpressionLanguage()).clock(Clock.fixed(NOW, ZoneOffset.UTC))
+                .listener(new RuleListener() {
                     @Override
                     public void beforeRun(RunContext run) {
                         seen.set(run);

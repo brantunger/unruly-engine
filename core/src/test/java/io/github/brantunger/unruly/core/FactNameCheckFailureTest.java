@@ -15,8 +15,8 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedAtError;
-import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedThenRethrown;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedAtError;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedThenRethrown;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("a language's fact-name check that fails unexpectedly is reported like a rejected name")

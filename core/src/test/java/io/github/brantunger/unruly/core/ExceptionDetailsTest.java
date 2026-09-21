@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("exceptions keep their cause and name the null argument")
 class ExceptionDetailsTest {
 
-    private final RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(HashMap::new);
+    private final RulesEngineBuilder<Map<String, Object>> builder =
+            RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).language(new ToyExpressionLanguage());
 
     @Test
     @DisplayName("a rejected import keeps the failed class lookup as its cause")

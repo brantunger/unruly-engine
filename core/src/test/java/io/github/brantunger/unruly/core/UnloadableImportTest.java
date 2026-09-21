@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,7 +47,8 @@ class UnloadableImportTest {
     }
 
     private static RulesEngineBuilder<Map<String, Object>> importing(String name) {
-        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).imports(name);
+        return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).imports(name);
     }
 
     @ParameterizedTest(name = "{0}")

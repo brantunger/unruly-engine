@@ -1,7 +1,7 @@
 plugins {
     id 'unruly.library'
-    // core's tests share fixtures with mvel's: the tests that run MVEL rules stay there, and they use the same
-    // engines, log capture and test languages.
+    // core's tests share fixtures with mvel's: the tests that need MVEL stay there, and both source sets use the
+    // same engines, log capture and test languages.
     id 'java-test-fixtures'
 }
 
@@ -16,6 +16,11 @@ dependencies {
     implementation libs.slf4j.api
     // The public API's nullness annotations. An api dependency, so users' compilers, Kotlin and IDEs can read them.
     api libs.jspecify
+
+    // EngineLogs asserts with JUnit, and both source sets' tests use it. An api dependency, because Executable
+    // is in its signatures. The fixtures aren't published, so this adds nothing to unruly-engine-core.
+    testFixturesApi platform(libs.junit.bom)
+    testFixturesApi 'org.junit.jupiter:junit-jupiter-api'
 
     testImplementation platform(libs.junit.bom)
     testImplementation 'org.junit.jupiter:junit-jupiter'

@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.LoggingRuleListener;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,18 +57,18 @@ public class RuleListenerTest {
         };
 
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
-                builder -> builder.listener(listener));
+                builder -> builder.language(new ToyExpressionLanguage()).listener(listener));
 
         Rule rule1 = Rule.builder()
                 .ruleName("Rule1")
                 .condition("input == 5")
-                .action("output.put('result', 1)")
+                .action("put result 1")
                 .build();
 
         Rule rule2 = Rule.builder()
                 .ruleName("Rule2")
                 .condition("input == 10")
-                .action("output.put('result', 2)")
+                .action("put result 2")
                 .build();
 
         engine.load(List.of(rule1, rule2));
@@ -104,13 +105,13 @@ public class RuleListenerTest {
             }
         };
 
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
-                builder -> builder.listener(badListener).listeners(List.of(new LoggingRuleListener())));
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new, builder -> builder.language(new ToyExpressionLanguage())
+                .listener(badListener).listeners(List.of(new LoggingRuleListener())));
 
         Rule rule1 = Rule.builder()
                 .ruleName("Rule1")
                 .condition("input == 10")
-                .action("output.put('result', 1)")
+                .action("put result 1")
                 .build();
 
         engine.load(List.of(rule1));

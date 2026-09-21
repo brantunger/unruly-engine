@@ -6,6 +6,14 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunOptions;
+import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.Expression;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,16 +45,51 @@ class ReloadCopyLimitTest {
         private final CountDownLatch release = new CountDownLatch(1);
 
         /**
-         * Waits until the test releases the gate.
+         * Waits until the test releases the gate. It is a getter, so a rule reads it as the property
+         * {@code gate.hold}.
          *
-         * @return {@code true}, so a condition that calls it matches
+         * @return {@code true}, so a condition that reads it matches
          * @throws InterruptedException if the thread is interrupted while it waits
          */
-        public boolean hold() throws InterruptedException {
+        public boolean getHold() throws InterruptedException {
             holding.countDown();
             return release.await(30, TimeUnit.SECONDS);
         }
     }
+
+    /**
+     * The toy language, with a session of its own: a language whose sessions are {@link Session#none()} needs no copy
+     * of the rules per run, so only a language with state has a copy limit to keep.
+     */
+    private static final ExpressionLanguage STATEFUL_TOY = new ExpressionLanguage() {
+
+        @Override
+        public String name() {
+            return ToyExpressionLanguage.LANGUAGE_NAME;
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            ExpressionCompiler toy = new ToyExpressionLanguage().newCompiler(context);
+            return new ExpressionCompiler() {
+                @Override
+                public CompiledCondition compileCondition(Expression expression) {
+                    return toy.compileCondition(expression);
+                }
+
+                @Override
+                public CompiledAction compileAction(Expression expression) {
+                    return toy.compileAction(expression);
+                }
+
+                @Override
+                public Session newSession() {
+                    return new Session() {
+                    };
+                }
+            };
+        }
+    };
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
@@ -56,14 +99,14 @@ class ReloadCopyLimitTest {
     @DisplayName("a run on the new rules waits while a run on the replaced rules holds the only copy")
     void reloadKeepsTheLimit() throws InterruptedException {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .maxCopies(1).build();
-        engine.load(List.of(rule("old", "gate.hold()", "output.put('rules', 'old')")));
+                .language(STATEFUL_TOY).maxCopies(1).build();
+        engine.load(List.of(rule("old", "gate.hold", "put rules 'old'")));
         Gate gate = new Gate();
         Thread holder = new Thread(() -> engine.run(new FactMap<>(new Fact<Object>("gate", gate))), "holder");
         holder.start();
         assertTrue(gate.holding.await(30, TimeUnit.SECONDS), "the run on the old rules never started");
 
-        engine.load(List.of(rule("new", "true", "output.put('rules', 'new')")));
+        engine.load(List.of(rule("new", "true", "put rules 'new'")));
 
         // On a thread of its own, so nothing another test left on JUnit's thread can make it look like a nested run.
         AtomicReference<Throwable> thrown = new AtomicReference<>();

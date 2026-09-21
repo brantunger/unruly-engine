@@ -7,6 +7,8 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,13 +30,13 @@ class DeclaredFactsTest {
     public record Applicant(int creditScore) {
     }
 
-    private static final Rule RULE = Rule.builder().ruleName("r").condition("true")
-            .action("output.put('ok', true)").build();
+    private static final Rule RULE = Rule.builder().ruleName("r").condition("true").action("put ok true").build();
 
     private static RulesEngine<Map<String, Object>> engine(
             java.util.function.UnaryOperator<RulesEngineBuilder<Map<String, Object>>> configuration) {
         RulesEngine<Map<String, Object>> engine =
-                configuration.apply(RulesEngineBuilder.allMatches(HashMap::new)).build();
+                configuration.apply(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                        .language(new ToyExpressionLanguage())).build();
         engine.load(List.of(RULE));
         return engine;
     }
@@ -169,6 +171,11 @@ class DeclaredFactsTest {
     @DisplayName("a declared name no language can refer to fails load(), naming the fact")
     void unusableDeclaredNameFailsLoading() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new StubExpressionLanguage().checkFactName(name -> {
+                    if (!name.chars().allMatch(Character::isJavaIdentifierPart)) {
+                        throw new IllegalArgumentException("'" + name + "' is not a name rules can refer to");
+                    }
+                }))
                 .fact("not a name", String.class).build();
 
         RuleCompilationException thrown = assertThrows(

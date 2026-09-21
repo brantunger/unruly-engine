@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,10 +43,10 @@ class FactStoreViewTest {
         }
     }
 
-    private static RulesEngine<Map<String, Object>> engine(String condition) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
-        engine.load(List.of(Rule.builder().ruleName("r").condition(condition)
-                .action("output.put('hit', true)").build()));
+    private static RulesEngine<Map<String, Object>> engine(String condition, String action) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).build();
+        engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action(action).build()));
         return engine;
     }
 
@@ -79,7 +80,7 @@ class FactStoreViewTest {
         FactMap<Integer> facts = new FactMap<>();
         facts.setValue("x", 2);
 
-        assertEquals(Map.of("hit", true), engine("x > 1").run(facts));
+        assertEquals(Map.of("hit", true), engine("x == 2", "put hit true").run(facts));
     }
 
     @Test
@@ -89,7 +90,8 @@ class FactStoreViewTest {
         facts.setValue("x", 2);
         facts.put(new Fact<>("y", 3));
 
-        assertEquals(Map.of("hit", true), engine("x + y == 5").run(facts));
+        // The condition reads the fact the store was told to set, the action the one it was handed as a reference.
+        assertEquals(Map.of("hit", 3), engine("x == 2", "put hit y").run(facts));
         assertEquals(2, facts.getValue("x"));
         assertNull(facts.getValue("missing"));
     }

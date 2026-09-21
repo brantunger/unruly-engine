@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -16,9 +17,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class NullFactReferenceTest {
 
     private static StatelessRulesEngine<Map<String, Object>> engine() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                builder -> builder.language(new ToyExpressionLanguage()));
         engine.load(List.of(Rule.builder().ruleName("is-null").condition("x == null")
-                .action("output.put('isNull', true)").build()));
+                .action("put isNull true").build()));
         return engine;
     }
 

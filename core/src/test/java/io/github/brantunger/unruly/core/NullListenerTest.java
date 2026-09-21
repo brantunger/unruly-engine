@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("null listeners on the builder")
 class NullListenerTest {
 
-    private final RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(HashMap::new);
+    private final RulesEngineBuilder<Map<String, Object>> builder =
+            RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).language(new ToyExpressionLanguage());
 
     @Test
     @DisplayName("listener(null) throws NullPointerException")
@@ -51,7 +53,7 @@ class NullListenerTest {
         assertTrue(ex.getMessage().contains("listeners must not contain null"));
 
         RulesEngine<Map<String, Object>> engine = builder.build();
-        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("put k 1").build()));
         assertEquals(1, engine.run(new FactMap<>()).get("k"));
         assertEquals(0, callbacks.get(), "the valid listener before the null must not have been added");
     }

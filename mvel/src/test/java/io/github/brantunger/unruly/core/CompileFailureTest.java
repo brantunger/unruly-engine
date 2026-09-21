@@ -22,8 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedAtError;
-import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedThenRethrown;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedAtError;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedThenRethrown;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**

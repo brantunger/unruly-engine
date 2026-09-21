@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,17 +20,18 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.assertLoggedThenRethrown;
+import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedThenRethrown;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("a fatal Error from the output supplier or a listener callback is logged at ERROR before it is rethrown")
 class FatalErrorLogTest {
 
     private static final List<Rule> RULES = List.of(Rule.builder().ruleName("r").condition("true")
-            .action("output.put('k', 1)").build());
+            .action("put k 1").build());
 
     private static RulesEngine<Map<String, Object>> engine(Supplier<Map<String, Object>> output) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(output).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(output)
+                .language(new ToyExpressionLanguage()).build();
         engine.load(RULES);
         return engine;
     }
@@ -40,7 +42,7 @@ class FatalErrorLogTest {
 
     private static RulesEngine<Map<String, Object>> engine(RuleListener listener, List<Rule> rules) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .listener(listener).build();
+                .language(new ToyExpressionLanguage()).listener(listener).build();
         engine.load(rules);
         return engine;
     }
@@ -134,7 +136,7 @@ class FatalErrorLogTest {
         // onRunError is only called for a run that fails, so that case needs a rule that fails: a condition whose
         // result isn't a boolean.
         RulesEngine<Map<String, Object>> engine = engine(listener, "onRunError".equals(callback)
-                ? List.of(Rule.builder().ruleName("r").condition("1").action("output.put('k', 1)").build())
+                ? List.of(Rule.builder().ruleName("r").condition("1").action("put k 1").build())
                 : RULES);
 
         assertLoggedThenRethrown(oom, "A listener threw java.lang.OutOfMemoryError in " + callback,

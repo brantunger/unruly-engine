@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -19,7 +20,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static io.github.brantunger.unruly.core.EngineLoggingTest.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -37,26 +38,26 @@ class ListenerLogLinesTest {
     public static final class Pause {
 
         /**
-         * Sleeps, then answers {@code true}.
+         * Sleeps, then answers {@code true}. It is a getter, so a rule reads it as the property {@code pause.longer}.
          *
          * @return {@code true}
          * @throws InterruptedException if the thread is interrupted while sleeping
          */
-        public boolean longer() throws InterruptedException {
+        public boolean getLonger() throws InterruptedException {
             Thread.sleep(600);
             return true;
         }
     }
 
     private static Rule rule(String name, String condition) {
-        return Rule.builder().ruleName(name).condition(condition).action("output.put('k', 1)").build();
+        return Rule.builder().ruleName(name).condition(condition).action("put k 1").build();
     }
 
     @Test
     @DisplayName("a listener's message is escaped on the WARN line, and its stack trace is logged at DEBUG")
     void listenerExceptionIsEscaped() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .listener(new RuleListener() {
+                .language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matched) {
                         throw new IllegalStateException("bad\nWARN forged line");
@@ -82,8 +83,9 @@ class ListenerLogLinesTest {
     @DisplayName("LoggingRuleListener logs a rule the run stopped in as stopped")
     void stoppedRule() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .runTimeout(Duration.ofMillis(200)).listener(new LoggingRuleListener()).build();
-        engine.load(List.of(rule("slow", "pause.longer()")));
+                .language(new ToyExpressionLanguage()).runTimeout(Duration.ofMillis(200))
+                .listener(new LoggingRuleListener()).build();
+        engine.load(List.of(rule("slow", "pause.longer")));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("pause", new Pause());
 
