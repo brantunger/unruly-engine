@@ -59,7 +59,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *
  * <p>
  * The checks compare numbers in the output by value, so a language whose whole numbers are {@code Long}s, as CEL's
- * are, or {@code Double}s, as JsonLogic's and JavaScript's are, passes as it is.
+ * are, or {@code Double}s, as JsonLogic's and JavaScript's are, needs no conversion to pass on that count. What a
+ * language reads is a separate promise, and every language here makes it, whatever its own numbers are: a rule
+ * written for {@code 1} is also run against a {@code Long}, a {@code Short} and a {@code BigDecimal} fact, and must
+ * fire for all three and not for a {@code 2L} one. A language that compares whole numbers by type opts out of that
+ * one check with {@link #comparesWholeNumbersByValue()}.
  * </p>
  *
  * @see <a href=
@@ -94,13 +98,25 @@ public abstract class ExpressionLanguageContractTest {
     protected abstract String alwaysTrue();
 
     /**
-     * Returns a condition that is true when an integer fact equals a value.
+     * Returns a condition that is true when a whole-number fact equals a value.
      *
      * @param fact  The fact's name
      * @param value The value to compare it with
      * @return The condition
      */
     protected abstract String factEquals(String fact, int value);
+
+    /**
+     * Whether this language compares whole numbers by value, so that a rule written for {@code 1} fires for a
+     * {@code Long}, a {@code Short} and a {@code BigDecimal} fact that holds one, and doesn't fire for a {@code 2L}
+     * fact. By default, {@code true}. A strongly typed language that deliberately compares them by type returns
+     * {@code false}, which skips the whole check: there's no opting out of one of the three types.
+     *
+     * @return Whether whole numbers of different types compare equal
+     */
+    protected boolean comparesWholeNumbersByValue() {
+        return true;
+    }
 
     /**
      * Returns a condition whose result is a fact's value, whatever its type.
@@ -152,6 +168,26 @@ public abstract class ExpressionLanguageContractTest {
      * @return The condition
      */
     protected abstract String syntaxError();
+
+    /**
+     * Returns an action with a syntax error, one this language's own compiler rejects. By default, whatever
+     * {@link #syntaxError()} returns, which is a broken action in most languages. Override it when that text is a
+     * valid action in this one: the language then compiles it without complaint, and the check fails with nothing
+     * but JUnit's "expected {@code RuleCompilationException} to be thrown", naming neither the expression nor the
+     * hook that supplied it.
+     *
+     * <p>
+     * The action must not be blank, and the check fails when it is: the engine rejects a blank action itself, naming
+     * the rule, before the language is asked to compile anything, so a blank one would pass the check without the
+     * language's compiler ever running. Unlike the {@code @Nullable} hooks around it, this one can't be skipped by
+     * returning {@code null}.
+     * </p>
+     *
+     * @return The action, never blank
+     */
+    protected String actionSyntaxError() {
+        return syntaxError();
+    }
 
     /**
      * Returns a fact name that rules in this language can't refer to.
@@ -304,6 +340,23 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
+    @DisplayName("a condition written for a whole number reads a Long, a Short and a BigDecimal fact")
+    void conditionReadsWholeNumbers() {
+        assumeTrue(comparesWholeNumbersByValue(), "the language compares whole numbers by type");
+        RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")));
+
+        // A language whose equality is Objects.equals passes the check above, where every fact is an Integer, and
+        // then never fires on a fact that came from JSON, a database or a long id.
+        for (Object one : List.of(1L, (short) 1, BigDecimal.ONE)) {
+            assertNotNull(engine.run(new FactMap<>(new Fact<>("x", one))),
+                    "the rule didn't fire for a " + one.getClass().getSimpleName() + " fact");
+        }
+        // And it is by value: a language whose coercion falls through to true whenever the runtime types differ
+        // fires for every whole number there is.
+        assertNull(engine.run(new FactMap<>(new Fact<>("x", 2L))), "the rule fired for a 2L fact");
+    }
+
+    @Test
     @DisplayName("a condition must evaluate to a boolean: null, a string or a number fails the rule")
     void conditionMustBeBoolean() {
         RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factValue("x"), putFact(SEEN, "x")));
@@ -360,6 +413,24 @@ public abstract class ExpressionLanguageContractTest {
         assertEquals("r", ex.getRuleName());
         assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
         assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a syntax error in an action is reported by load, naming the rule and its action")
+    void syntaxErrorInActionAtLoad() {
+        String action = actionSyntaxError();
+        // The engine rejects a blank action before the language is asked to compile it, so a blank one would make
+        // this check pass without the language's compiler running at all.
+        assertFalse(action.isBlank(), "actionSyntaxError() must return an action the language itself rejects");
+        RulesEngine<Map<String, Object>> engine = engine();
+        List<Rule> rules = List.of(rule("r", 1, alwaysTrue(), action));
+
+        // A language that compiles its actions on first use loads this rule without a word, and fails it in
+        // production instead, one run at a time.
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+
+        assertEquals("r", ex.getRuleName());
+        assertEquals(ExpressionKind.ACTION, ex.getExpressionKind());
     }
 
     @Test
