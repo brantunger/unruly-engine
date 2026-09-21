@@ -117,6 +117,9 @@ engine.load(rules);
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
 - A thread without a context class loader uses this library's own class loader instead.
 
+The classes of your facts and of the output object must be reachable from that same class loader, whatever the
+rules import; see [Class loaders](../thread-safety.md#-class-loaders).
+
 While compiling `applicant.creditScore`, MVEL checks whether `applicant` is a class. In a class directory on a
 case-insensitive file system, the lookup for `applicant.class` finds `Applicant.class`, and the JVM reports
 `NoClassDefFoundError: applicant (wrong name: Applicant)`. That counts as no class, so `applicant` is read as the fact.
@@ -329,6 +332,32 @@ first condition fails. Start the executable with `-Dmvel2.disable.jit=true`; see
 > Earlier versions switched MVEL to its slower reflective optimizer for the whole JVM when the engine class loaded,
 > unless the JVM was started with `-Dunruly.mvel.jit=true`. Later 1.x releases ignored that property, and 2.0 removes
 > the `AbstractRulesEngine.JIT_PROPERTY` constant that named it.
+
+### The dynamic optimizer and class loaders
+
+MVEL's dynamic optimizer registers an accessor object the first time an expression is evaluated, and keeps it in a
+list held from a static field. The list holds 1,500 accessors, and the oldest are dropped as newer ones arrive.
+Dropping one frees nothing while the engine holding that compiled expression is alive: the expression still refers to
+the accessor.
+
+Class loaders stay reachable through the optimizer in two ways. The first class loader to evaluate a rule in the JVM
+becomes the parent of the optimizer's own class loader and is held for the life of the JVM. The class loader a rule
+list was loaded with is held while its accessors are in the list. Closing the engine releases neither, and neither
+does dropping it.
+
+An application that keeps one class loader for its lifetime — most applications — never notices. One that discards
+loaders, on a WAR redeploy, a plugin or tenant reload, or in a test harness that isolates each case, keeps one loader
+per cycle, with its classes and their metaspace.
+
+`-Dmvel2.disable.jit=true` switches the dynamic optimizer off, and the loaders are then collected. MVEL reads the
+property once, as its optimizer factory initializes, so it's a decision for the JVM's command line, and it costs
+MVEL's reflective accessors instead of its JIT ones everywhere in that JVM, including other libraries that use MVEL.
+See [MVEL's JIT must be off](../native-image.md#-mvels-jit-must-be-off).
+
+The same optimizer is why a class the `load()` thread's context class loader can't reach fails a rule only after about
+50 runs in quick succession: until the optimizer steps in, MVEL reads the fact reflectively and the rule works. A
+steady trickle of runs never reaches the burst, so tests pass and production fails. See
+[Class loaders](../thread-safety.md#-class-loaders).
 
 ## 🧵 Virtual threads
 

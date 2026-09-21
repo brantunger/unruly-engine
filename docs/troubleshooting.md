@@ -180,6 +180,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `run() passed its deadline` | The run passed its timeout; see [Stopping a run](stopping-runs.md) |
 | `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT is on: start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](native-image.md#-mvels-jit-must-be-off) |
 | `RuleExecutionException` | `MissingReflectionRegistrationError` as the cause | In a native image, a class or method the rule uses isn't registered for reflection; see [Registering your classes](native-image.md#-registering-your-classes) |
+| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, after about 50 runs in quick succession | That class isn't reachable from the context class loader of the thread that called `load()`; see [Class loaders](thread-safety.md#-class-loaders) |
 | `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](error-handling.md#-exceptions-by-method). On the module path, see [Installation](../README.md#-installation) |
 
 A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
@@ -199,6 +200,19 @@ message; the original is `getCause()`. See [Exceptions by method](error-handling
 - **Rules pass on the JVM but fail in a native image:** MVEL's JIT is on, or the image doesn't register a class or
   method the rules use; see [Errors and what they mean](native-image.md#-errors-and-what-they-mean).
 
+### A rule fails for ever after about 50 runs in quick succession
+
+A rule works in tests and in the first minutes of production, then fails on every run. In MVEL that comes after about
+50 runs in quick succession, when the JIT optimizer takes over the rule's accessors; see
+[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders). It has two
+shapes:
+
+- On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
+  isn't reachable from the context class loader of the thread that called `load()`; see
+  [Class loaders](thread-safety.md#-class-loaders).
+- On the module path, an `IllegalAccessError` naming your package: it needs an export without a `to` clause; see
+  [Installation](../README.md#-installation).
+
 ### Under load, or at shutdown
 
 - **Runs on virtual threads wait:** the default [copy limit](glossary.md#copy-limit) applies to them; see
@@ -208,6 +222,9 @@ message; the original is `getCause()`. See [Exceptions by method](error-handling
   [Gotchas](stopping-runs.md#-gotchas).
 - **Runs fail with `The engine is closed` during shutdown:** the engine bean was closed before the work stopped; see
   [Shutting down](spring-boot.md#-shutting-down).
+- **Metaspace or the class-loader count climbs across redeploys, plugin or tenant reloads:** the old loaders are
+  not collected, because in MVEL the dynamic optimizer holds them; see
+  [MVEL's dynamic optimizer](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
 
 ### With facts the tests never used
 
