@@ -222,7 +222,7 @@ when a release publishes, the `publish` job recreates it with only that release'
 redirect, and logs a warning. Every older `/X.Y.Z/` then returns 404 until you add it back with the script below,
 once per version.
 
-If the publish step failed, rebuild that version's directory from its tag. The site covers both modules, but each
+If the publish step failed, rebuild that version's directory from its tag. The site covers all the modules, but each
 artifact's `-javadoc.jar` holds only its own, so the script builds the site. The script replaces
 `pages/latest` only when `VERSION` is the newest release, so it's also safe for an older version:
 
