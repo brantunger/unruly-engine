@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 /**
  * An engine's permits for compiled copies of its rules: one for each copy a limited run holds. Every rule list the
@@ -92,6 +93,23 @@ final class CopyPermits {
      * @throws InterruptedException if the thread is interrupted while it waits
      */
     boolean awaitSlot(long window, Instant deadline) throws InterruptedException {
+        return awaitSlot(slots, slotsGivenBack::get, window, deadline);
+    }
+
+    /**
+     * Waits for one of {@code slots} while they're still being given back, as {@link #awaitSlot(long, Instant)}
+     * describes. It takes the slots and their count rather than reading this engine's, so a test can drive the wait
+     * with slots of its own: it is a deliberate test seam, like {@link RuleSet#awaitPermit}.
+     *
+     * @param slots    The build slots to wait for
+     * @param returned How many slots have been given back so far
+     * @param window   How long to wait for progress, in milliseconds
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @return {@code true} if a slot was taken, {@code false} if the run is to make its copy without one
+     * @throws InterruptedException if the thread is interrupted while it waits
+     */
+    static boolean awaitSlot(Semaphore slots, LongSupplier returned, long window, Instant deadline)
+            throws InterruptedException {
         if (Thread.currentThread().isInterrupted()) {
             return false;
         }
@@ -101,7 +119,7 @@ final class CopyPermits {
         // Instant.MAX a huge timeout gives, is Long.MAX_VALUE, as patient as a run without one.
         long patience = left == null ? Long.MAX_VALUE : Math.max(0, TimeUnit.NANOSECONDS.convert(left.dividedBy(2)));
         long windowNanos = TimeUnit.MILLISECONDS.toNanos(window);
-        long seen = slotsGivenBack.get();
+        long seen = returned.getAsLong();
         while (true) {
             long waited = System.nanoTime() - start;
             long wait = Math.min(windowNanos, patience - waited);
@@ -111,7 +129,7 @@ final class CopyPermits {
             if (wait < windowNanos) {
                 return false;
             }
-            long now = slotsGivenBack.get();
+            long now = returned.getAsLong();
             if (now == seen) {
                 return false;
             }

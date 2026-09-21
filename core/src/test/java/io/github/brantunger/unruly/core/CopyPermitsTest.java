@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.time.Instant;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -112,6 +115,21 @@ class CopyPermitsTest {
         assertFalse(permits.awaitSlot(10_000, Instant.now().plusMillis(600)));
         long waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
         assertTrue(waited >= 250 && waited < 600, "waited " + waited + " ms, not about 300");
+    }
+
+    @Test
+    @DisplayName("a run gives up when its half of the time left is spent, however many slots come back meanwhile")
+    void givesUpWhenItsPatienceIsSpentWhileSlotsChurn() throws InterruptedException {
+        // No slot is ever free, and slots are given back all the while, so only the run's own patience can end this
+        // wait: the count stops moving after three reads, so a run that rode the churn instead would end too, and
+        // fail this test rather than hold it. The window is far longer than the patience, so the wait ends when the
+        // half of the time left is spent, after about 200 ms.
+        AtomicLong reads = new AtomicLong();
+        LongSupplier returned = () -> Math.min(3, reads.incrementAndGet());
+
+        assertFalse(CopyPermits.awaitSlot(new Semaphore(0), returned, 10_000, Instant.now().plusMillis(400)));
+
+        assertEquals(1, reads.get(), "the run read the count again instead of giving up when its patience ran out");
     }
 
     @Test

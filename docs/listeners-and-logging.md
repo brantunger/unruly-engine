@@ -61,10 +61,10 @@ sequenceDiagram
 A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
 failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, more than one
 rule matching on a unique-match engine, an interrupt or a passed deadline while the run waits for a compiled copy of
-the rules, an interrupt while it waits for a build slot, or a run stopped because its thread was interrupted or it
-passed its deadline between rules — reaches `onRunError` only, because no rule was involved. The rule a stopped run
-would have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`, so there is
-no open callback for `onError` to close.
+the rules or reads them again after a reload or a `close()`, an interrupt while it waits for a build slot, or a run
+stopped because its thread was interrupted or it passed its deadline between rules — reaches `onRunError` only,
+because no rule was involved. The rule a stopped run would have gone on to gets no callback either: the check runs
+before `beforeEvaluate` and `beforeExecute`, so there is no open callback for `onError` to close.
 
 A run stopped while a condition or action was running is different: that rule's callback is closed with `onError`,
 whose exception has no rule name and an `InterruptedException` or `TimeoutException` cause, so don't count it as a

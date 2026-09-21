@@ -49,7 +49,9 @@ public interface RuleListener {
      * <p>
      * A run that waits for a compiled copy of the rules opens its scope when the wait ends, so the wait isn't inside
      * the pair. A {@code run()} that fails because no rules are loaded, or because the engine is closed, is misuse and
-     * reaches no callback.
+     * reaches no callback. One that fails because the engine's rule list was closed over and over while it was
+     * borrowing a copy reaches none either: that means an engine invariant has broken rather than that the call was
+     * wrong.
      * </p>
      *
      * @param run The run, which identifies it and carries its facts, the checksum of the rules it uses, and the

@@ -15,7 +15,8 @@ import org.jspecify.annotations.Nullable;
  * </p>
  *
  * <ul>
- *   <li>the run was interrupted, or passed its deadline, while it waited for a compiled copy of the rules;</li>
+ *   <li>the run was interrupted, or passed its deadline, while it waited for a compiled copy of the rules, or while
+ *   it read them again after a reload, or a close of the engine, closed the list it had read;</li>
  *   <li>the run was stopped between rules, or when a condition or action returned, or threw something with no
  *   {@link Error} anywhere in its cause chain, once the run had to stop, because its thread was interrupted or it
  *   passed its deadline; the cause is then an {@link InterruptedException} or a

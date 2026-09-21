@@ -355,7 +355,8 @@ final class RuleSet {
             } else if (borrowed.kind() == Kind.EXTRA) {
                 Closing.sessions(borrowed.sessions());
             }
-            // A shared copy needs nothing: its sessions belong to every run, and are closed with the rule set.
+            // A shared copy needs nothing: its sessions belong to every run, and are Session.none(), which has
+            // nothing to close.
         } finally {
             endRunOnThread();
             giveBack(borrowed.held());
@@ -598,22 +599,9 @@ final class RuleSet {
         if (users.compareAndSet(0, CLOSED)) {
             try {
                 closeIdle();
-                closeShared();
             } finally {
                 Closing.compilers(compilers);
             }
-        }
-    }
-
-    /**
-     * Closes the sessions every run shared, once no run holds them. Unlike an idle copy, a shared copy is in use
-     * while runs are in progress, so retiring the rule set can't close it: the last run to finish does.
-     */
-    private void closeShared() {
-        // Called once, from the transition to CLOSED, so the sessions can't be closed twice.
-        Map<String, Session> shared = sharedSessions;
-        if (shared != null) {
-            Closing.sessions(shared);
         }
     }
 
