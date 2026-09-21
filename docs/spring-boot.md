@@ -204,7 +204,9 @@ public ResponseEntity<String> factsRejected(IllegalArgumentException e) {
 ```
 
 A stop names no rule, and its cause is the `TimeoutException` or `InterruptedException` itself. A run an action
-started that stopped at an earlier deadline of its own is that rule failing, so it takes the other branch. See
+started that stopped at an earlier deadline of its own is that rule failing, so it takes the other branch. So does a
+rule whose Java code throws an `Error` once the run must stop: that names the rule, so the handler logs it at ERROR
+and answers 500 rather than 503. See
 [telling a stop from a rule bug](stopping-runs.md#how-do-i-tell-a-timeout-an-interrupt-and-a-rule-bug-apart).
 
 The engine has logged both already — a stop at WARN, a rule failure at ERROR — so each line above is a second copy

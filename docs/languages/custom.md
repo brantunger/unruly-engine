@@ -308,8 +308,9 @@ public CompiledAction compileAction(Expression expression) {
 it's called on, so call it on the run's thread, not from a worker your language hands work to.
 
 Returning when it's `true` is enough: the engine checks again as soon as the expression returns, and stops the run
-whatever it returned. Throwing an exception once the run is cancelled stops the run the same way; an `Error` is still
-that rule's failure.
+whatever it returned. Throwing an exception once the run is cancelled stops the run the same way, unless an `Error`
+is anywhere in its cause chain, even wrapped in your own exception: the throw is then still that rule's failure,
+logged at ERROR; see [What stops a run](../stopping-runs.md#-what-stops-a-run).
 
 `deadline()` is an `Instant`, or `null` when the run has no timeout. Use it to give a call of your own a timeout.
 

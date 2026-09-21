@@ -177,7 +177,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fact name the engine or a language rejects, or a fact that doesn't match its [declaration](facts.md#-declaring-facts) | `IllegalArgumentException` | `onRunError` with that `IllegalArgumentException` | ERROR |
 | A language fails to create a session for the run | `RuleExecutionException`, no rule | Nothing, not even `beforeRun`: the run fails before it starts | ERROR |
 | The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
-| The run is stopped when a condition or action returns or throws an exception | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
+| The run is stopped when a condition or action returns, or throws an exception with no `Error` in its cause chain | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
 | The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | The run is interrupted while it waits for a build slot; a deadline never stops this wait | `RuleExecutionException`, no rule, with an `InterruptedException` cause | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | A listener throws an exception, or an `Error` that isn't fatal | Nothing: the run goes on | Every other listener still gets that callback | WARN, with the message escaped and shortened; the stack trace at DEBUG |
@@ -198,6 +198,9 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
   that names no rule. One from a language creating a session reaches no listener, like any other session failure.
 - **A `before*` callback that throws a fatal error** is closed with `onError` on every listener, and its condition or
   action doesn't run. The rest of what listeners see is in [Guarantees](listeners-and-logging.md#-guarantees).
+- **A condition or action that throws once the run must stop** is a stop, unless an `Error` is anywhere in the cause
+  chain of what it threw: that is reported as the rule's own failure, the first row above, at ERROR; see
+  [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **A run of an empty rule list evaluates nothing**, so an interrupt or a passed deadline can stop it only while it
   waits for a compiled copy, or an interrupt while it waits for a build slot. Otherwise it returns normally.
 
@@ -225,8 +228,9 @@ try {
 
 - **Tell a stop from a failure by its cause.** A stopped run's exception names no rule and has an
   `InterruptedException` or `TimeoutException` cause.
-- **A bug near the deadline is reported as a stop.** What the rule threw, or why what it returned was wrong, is only in
-  `getSuppressed()`; see [What stops a run](stopping-runs.md#-what-stops-a-run).
+- **A bug near the deadline is usually reported as a stop.** Why what the rule returned was wrong, or what it threw
+  with no `Error` in its cause chain, is only in `getSuppressed()`. A throw with an `Error` in its chain stays that
+  rule's failure instead; see [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before.
