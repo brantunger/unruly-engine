@@ -168,7 +168,9 @@ engine logs `Condition for rule 'prime-rate' has a warning at line 2, column 5: 
 ## 🚨 Errors when rules load
 
 What your compiler throws or returns decides what the user sees from `load()`, or gets back from `validate()`, which
-compiles the same way but returns the failures and logs nothing, not even your warnings:
+compiles the same way but returns the failures and logs only a fatal error, not your warnings and not the failures
+themselves. Every row but the session one applies to both; `validate()` makes no copies, so only `load()` ever
+reaches that one:
 
 | You throw or return | The user sees | Reported |
 | --- | --- | --- |
@@ -177,7 +179,7 @@ compiles the same way but returns the failures and logs nothing, not even your w
 | Anything with a `StackOverflowError` as a cause | `... failed to compile: the expression is too long or too deeply nested to compile` | Per rule |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; the rules written in it aren't compiled |
-| An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | Alone, after every rule has compiled; the rules loaded before stay loaded |
+| An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
 | A [fatal error](../glossary.md#fatal-error), thrown or as a cause | Logged, then rethrown unchanged | At once |
 | `IllegalArgumentException` from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 

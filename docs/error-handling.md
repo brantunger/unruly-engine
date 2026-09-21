@@ -93,7 +93,7 @@ reports it as the cause of a `RuleCompilationException`.
 | | | Everything else as `runWithResult(facts)` |
 | `validate(rules)` | `IllegalStateException` | The engine is closed |
 | | `NullPointerException` | The list itself is `null`. A `null` entry is returned as a problem, not thrown |
-| | `Error` (rethrown) | As `load(rules)`. Everything else `load()` would throw is returned as a `RuleCompilationException` in the list |
+| | `Error` (rethrown) | As `load(rules)`, from compiling only. Everything else is returned in the list, not thrown. `validate()` makes no copies, so nothing from `copiesAtLoad(n)` reaches it at all |
 | `rules()` | `IllegalStateException` | The engine is closed |
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
