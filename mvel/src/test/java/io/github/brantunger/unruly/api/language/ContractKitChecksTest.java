@@ -20,12 +20,16 @@ class ContractKitChecksTest {
 
     /** Runs one of the kit's checks, by name, on a contract test for {@code language}. */
     private static void runCheck(ExpressionLanguage language, String check) throws Throwable {
-        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+        runCheck(new ToyExpressionLanguageContractTest() {
             @Override
             protected ExpressionLanguage language() {
                 return language;
             }
-        };
+        }, check);
+    }
+
+    /** Runs one of the kit's checks, by name, on a contract test the caller built. */
+    private static void runCheck(ExpressionLanguageContractTest test, String check) throws Throwable {
         Method method = ExpressionLanguageContractTest.class.getDeclaredMethod(check);
         method.setAccessible(true);
         try {
@@ -74,6 +78,38 @@ class ContractKitChecksTest {
         };
     }
 
+    /** Wraps a language so that its actions compile on first use instead of when the rule is loaded. */
+    private static ExpressionLanguage lazyActions(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return (actionContext, session) ->
+                                compiler.compileAction(expression).execute(actionContext, session);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
     @Test
     @DisplayName("a language that can't read a JavaBean fact fails the property check")
     void beanBlindLanguageFails() {
@@ -81,6 +117,33 @@ class ContractKitChecksTest {
                 () -> runCheck(beanBlind(new ToyExpressionLanguage()), "conditionReadsProperties"));
 
         assertTrue(failure.getMessage().startsWith("a JavaBean fact's getter wasn't read"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that compares whole numbers by type fails the whole-number check")
+    void byTypeLanguageFails() {
+        // The toy is the broken language here: its == is Objects.equals. The hook it overrides to false goes back
+        // to true, or the check would abort on its assumption instead of failing.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected boolean comparesWholeNumbersByValue() {
+                return true;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "conditionReadsWholeNumbers"));
+
+        assertTrue(failure.getMessage().startsWith("the rule didn't fire for a Long fact"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that compiles its actions on first use fails the action syntax-error check")
+    void lazyActionLanguageFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(lazyActions(new ToyExpressionLanguage()), "syntaxErrorInActionAtLoad"));
+
+        assertTrue(failure.getMessage().contains("RuleCompilationException to be thrown"), failure.getMessage());
     }
 
     @Test

@@ -21,6 +21,12 @@ class ToyExpressionLanguageContractTest extends ExpressionLanguageContractTest {
         return fact + " == " + value;
     }
 
+    // The toy's == is Objects.equals and its literals are Integers, so 1L and 1 are different values to it.
+    @Override
+    protected boolean comparesWholeNumbersByValue() {
+        return false;
+    }
+
     @Override
     protected String factValue(String fact) {
         return fact;

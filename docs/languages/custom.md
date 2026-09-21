@@ -230,6 +230,11 @@ through a public supertype that declares the accessor, a superclass or an interf
 package is open to `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the
 application `opens` it; see [Packaging](#-packaging).
 
+A language is expected to compare whole numbers of different types by value on the way in, so a condition written for
+`x` = 1 matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that deliberately
+doesn't can skip the [contract kit](#-testing-with-the-contract-kit)'s check by overriding
+`comparesWholeNumbersByValue()` in its test to return `false`.
+
 `FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
 that reads only maps. It throws `IllegalArgumentException` for a value it doesn't take apart, such as a number, a
 string or a collection, so don't call it on each fact: convert the whole fact map, with one more level.
@@ -410,20 +415,40 @@ read and write them by reflection. Only MVEL has been tested in an image; see [N
 ## 🧪 Testing with the contract kit
 
 The `unruly-engine-test` artifact, at the same version as the engine, has two tools for a language's tests. Add it
-with test scope, for example `testImplementation 'io.github.brantunger:unruly-engine-test:<version>'`. It's built with
-JUnit Jupiter 6, and brings JUnit Jupiter's API.
+with test scope, together with what a Gradle build needs to run the checks:
+
+```groovy
+dependencies {
+    testImplementation 'io.github.brantunger:unruly-engine-test:<version>'
+
+    testImplementation platform('org.junit:junit-bom:6.1.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+```
+
+The kit is built with JUnit Jupiter 6, and brings `unruly-engine-core` and `junit-jupiter-api`. A Gradle build still
+needs the rest: a JUnit test engine to run the checks, the JUnit Platform launcher to start it, and
+`useJUnitPlatform()`, because a Gradle `Test` task runs JUnit 4 unless it is told otherwise, and without that setting
+the checks never run. With Maven and Surefire 3.5.4, the kit alone is enough: Surefire supplies the test engine.
 
 `ExpressionLanguageContractTest` checks the promises above for any language. Extend it and supply expressions in your
-language, one method for each hook. Its twelve checks:
+language, one method for each hook. Its fourteen checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
 | `conditionReadsFacts` | `factEquals`, `putFact` | No | Fires for `x` = 1, not for 2 |
+| `conditionReadsWholeNumbers` | `factEquals`, `putFact` | `comparesWholeNumbersByValue()` returns `false` | Fires for `x` = 1 given a `Long`, a `Short` or a `BigDecimal` fact, not for `2L` |
 | `conditionMustBeBoolean` | `factValue`, `putFact` | No | `true` fires; `null`, `"true"` and `1` fail the rule |
 | `conditionAssignmentRejected` | `assignment`, `putFact` | No | `load()` throws, message starting `Condition for rule 'r' ` |
 | `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or `run()` throws an `UnrulyException` |
 | `actionVariablesStayLocal` | `alwaysTrue`, `declareVariable`, `putFact` | `declareVariable()` returns `null` | A later rule still sees the fact's value |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
+| `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
 | `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException` |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or `run()` |
@@ -432,12 +457,29 @@ language, one method for each hook. Its twelve checks:
 | `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
 
 - Only the four `@Nullable` hooks, `declareVariable`, `reassignOutput`, `unusableFactName` and
-  `missingFactProperty`, may return `null`. `assignment()` and `syntaxError()` can't be skipped: a language with no
-  assignment syntax must still make `load()` reject what `assignment()` returns.
+  `missingFactProperty`, may return `null`. `comparesWholeNumbersByValue()` is a boolean opt-out rather than one of
+  them, and returning `false` skips its check.
+- `assignment()`, `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped: a
+  language with no assignment syntax must still make `load()` reject what `assignment()` returns.
 - `language()` is called for each check and for each engine a check builds, so return a new instance.
-- Each check builds `allMatches(HashMap::new).language(language())`, with no imports, options or declared facts, so
-  the language must work alone. `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are
-  compared by value, so `Long` or `Double` whole numbers pass.
+
+Each check builds `allMatches(HashMap::new).language(language())`, with no imports, options or declared facts, so the
+language must work alone. `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by
+value, so `Long` or `Double` whole numbers pass.
+
+Two things no check exercises, so passing the kit says nothing about them.
+
+**Cancellation.** No check runs the rules with an interrupt, a deadline or a timeout. A runtime that clears the
+thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does, passes the kit and still hides the
+caller's interrupt from the engine.
+
+The hole is a narrow one. The engine checks before each condition and each action, and again when each returns, so an
+interrupt raised between rules always stops the run, and the deadline path is unaffected. Only an interrupt raised and
+swallowed inside one expression escapes; see [Stopping a run](#-stopping-a-run).
+
+**The `CompileContext`.** Every check builds the engine with an empty `CompileContext`, so a language that ignores
+imports, options, declared facts and the output type passes. Test what your language does with each of them yourself;
+[Implementing the interfaces](#-implementing-the-interfaces) says what the context carries.
 
 `LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or a compiled
 expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
