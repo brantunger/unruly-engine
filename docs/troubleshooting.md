@@ -164,6 +164,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | --- | --- | --- |
 | `IllegalStateException` | `load() must be called before run()` | No `load()` has succeeded yet. Load the rules before traffic; see [Lifecycle and closing](thread-safety.md#-lifecycle-and-closing) |
 | `IllegalStateException` | `The engine is closed` | Your framework closed the engine at shutdown; see [Closing](thread-safety.md#closing) and [Shutting down](spring-boot.md#-shutting-down) |
+| `IllegalStateException` | `while this run was borrowing a copy of it` | Not your code: an engine invariant has broken, and the message says which one. Report it with the stack trace at the issue link the message gives |
 | `IllegalArgumentException` | `' is reserved for the output object` | A fact is named `output`; see [Naming rules](facts.md#-naming-rules) |
 | `IllegalArgumentException` | `' is not a valid fact name`, `' cannot be used as a fact name` | In MVEL, the name isn't an identifier, or is a keyword or class name; see [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
 | `IllegalArgumentException` | `was declared as`, `wasn't declared`, `was declared, but the run didn't supply it` | A fact doesn't match its declaration; see [Declaring facts](facts.md#-declaring-facts) |

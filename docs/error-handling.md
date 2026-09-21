@@ -82,7 +82,7 @@ reports it as the cause of a `RuleCompilationException`.
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling, or while making the copies of `copiesAtLoad(n)`. It's logged with the rule's name, or the language's name when the language fails to create its compiler or a copy's session, or to warm one up, then rethrown unchanged, even when the language wraps it in its own exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, or the language while making copies, with the error as its cause. |
 | `run(facts)` / `runWithResult(facts)` | `RuleExecutionException` | A condition or action throws; a condition evaluates to `null` or a non-boolean; an action returns `null` instead of an `ActionResult`, or a property it returned can't be set on the output; the output supplier throws or returns `null`; an expression language throws or returns `null` when it creates a session for the run; more than one rule matches on a [unique-match](engines-and-runs.md#unique-match-one-rule-or-none) engine, which names them all and belongs to no rule; the run's thread is interrupted, which keeps the interrupt status set and makes the cause an `InterruptedException`; or the run passes its [timeout](stopping-runs.md), which makes the cause a `TimeoutException` |
 | | `IllegalArgumentException` | A fact is named `output`, or has a name rules can't use (see [Facts](facts.md#-naming-rules)); or a [declared fact](facts.md#-declaring-facts) isn't an instance of its type, and, with `requireDeclaredFacts()`, a declared fact is missing or an undeclared one was supplied |
-| | `IllegalStateException` | `load()` has never been called, or the engine is closed |
+| | `IllegalStateException` | `load()` has never been called, or the engine is closed; or the engine's rule list was closed over and over while the run was borrowing a copy of it, which means an engine invariant has broken rather than that the call was wrong |
 | | `NullPointerException` | `facts` is `null`, or the engine's clock returned a `null` instant: `the engine's clock returned a null instant`, before any listener hears of the run |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, comes from a rule, from Java code a rule calls (a method, a getter or a lambda held in a fact), from the output supplier or from a listener. It's rethrown unchanged even when it arrives as the cause of another exception. Every other `Error`, including a `LinkageError` such as `NoClassDefFoundError` or `IllegalAccessError`, is reported as a `RuleExecutionException` naming the rule, with the error as its cause. |
 | `RunOptions.withTimeoutOf()` / `withTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
@@ -157,7 +157,8 @@ surface when a rule is evaluated. Another language decides what it catches when 
 ## ⏳ Stopping a run
 
 A run stops once its thread is interrupted or it passes its timeout: before each condition and action, when one
-returns, or while it waits for a compiled copy; an interrupt also stops it while it waits for a build slot.
+returns, while it waits for a compiled copy, or while it reads the engine's rules again after a reload or `close()`
+closed the list it had read; an interrupt also stops it while it waits for a build slot.
 [Stopping a run](stopping-runs.md) covers timeouts, what they can't stop, nested runs and what listeners see.
 
 ## 🧾 What happens on each failure
@@ -180,6 +181,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | The run is stopped when a condition or action returns, or throws an exception with no `Error` in its cause chain | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
 | The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | The run is interrupted while it waits for a build slot; a deadline never stops this wait | `RuleExecutionException`, no rule, with an `InterruptedException` cause | `beforeRun` only when the wait ends, then `onRunError` | WARN |
+| The run is stopped while it reads the engine's rules again, after a reload or `close()` closed the list it had read | The same as between rules | `beforeRun`, then `onRunError` | WARN |
 | A listener throws an exception, or an `Error` that isn't fatal | Nothing: the run goes on | Every other listener still gets that callback | WARN, with the message escaped and shortened; the stack trace at DEBUG |
 | A fatal error from a rule | The error itself | `onError`, then `onRunError`, with a `RuleExecutionException` that names the rule | ERROR |
 | A fatal error from `beforeRun`, a `before*` or an `after*` callback | The error itself | Every listener gets that callback first, then `onRunError` | ERROR, naming the listener's error |
@@ -187,7 +189,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; the reported exception keeps the first other one a listener threw in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure` at WARN |
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
 | A fatal error from `onRunError` | That error, in place of the exception the run failed with | Every listener gets `onRunError` | ERROR |
-| `run()` before `load()`, on a closed engine, or with `null` facts | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
+| `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](#-exceptions-by-method) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 
 > [!NOTE]
 > A stack trace or `getClass()` may show `io.github.brantunger.unruly.core.ReportedFailure`. It's an internal subclass
@@ -202,7 +204,8 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
   chain of what it threw: that is reported as the rule's own failure, the first row above, at ERROR; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **A run of an empty rule list evaluates nothing**, so an interrupt or a passed deadline can stop it only while it
-  waits for a compiled copy, or an interrupt while it waits for a build slot. Otherwise it returns normally.
+  waits for a compiled copy, or while it reads the engine's rules again after a reload or `close()` closed the list
+  it had read; an interrupt can also stop it while it waits for a build slot. Otherwise it returns normally.
 
 ## 🧯 Handling failures
 

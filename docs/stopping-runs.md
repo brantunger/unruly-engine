@@ -69,6 +69,7 @@ first one that finds either:
 | When a condition or action returns, or throws an exception with no `Error` in its cause chain | `during rule 'x'` |
 | While the run waits for a compiled copy | `while waiting for a compiled copy of the rules: all N were in use` |
 | While the run waits for a build slot, interrupts only | `while waiting to make a compiled copy of the rules: every build slot was in use` |
+| While the run reads the engine's rules again, after a reload or `close()` closed the list it had read | `while reading the engine's rules again: the rules this run read had been closed by a reload or by close()` |
 
 Each message starts with `run() passed its deadline of <instant>` or `run() was interrupted`.
 
@@ -95,6 +96,12 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   thread, not nested in another run on it, finds no idle copy. The deadline never fails it: the run waits at most half
   its time left, then makes its copy and goes on. Only an interrupt stops it; see
   [Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot).
+- **A second reading of the rules** happens when the list the run read was closed before it could borrow a copy of
+  it, which a reload does to the list it replaces and `close()` does to the engine's last one. The run stops there
+  if its thread was interrupted or its deadline has passed; otherwise it reads the engine's rules again and goes on
+  with the new ones, or throws `IllegalStateException("The engine is closed")` after a `close()`; see
+  [Reloading rules while running](thread-safety.md#-reloading-rules-while-running) and
+  [Closing](thread-safety.md#closing).
 - **An interrupt that a rule, listener, output supplier or language throws is put back.** When an
   `InterruptedException` is anywhere in the cause chain of what they throw, the engine sets the interrupt status again.
   A condition or action that throws it stops the run. A listener's exception is logged, and the next check stops the
@@ -120,9 +127,10 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   though, the last rule's `afterEvaluate` or `afterExecute` and `afterRun` can run past the deadline, and the run
   returns normally.
 - **An empty rule list evaluates nothing,** so a passed deadline or an interrupt can stop its run only while it waits
-  for a copy, or an interrupt while it waits for a build slot. Otherwise the run returns normally, and the interrupt
-  status stays set. The same holds for a run that [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses) every
-  rule: nothing is checked before a skipped rule.
+  for a copy, or while it reads the engine's rules again after a reload or a `close()`; an interrupt can also stop
+  it while it waits for a build slot. Otherwise the run returns normally, and the interrupt status stays set. The
+  same holds for a run that [skips](engines-and-runs.md#-choosing-which-rules-a-run-uses) every rule: nothing is
+  checked before a skipped rule.
 - **Another thread isn't covered.** Work an action hands to another thread gets neither the deadline nor the
   interrupt.
 
@@ -135,8 +143,8 @@ depends on where the run stopped:
 - **When a condition or action returns, or throws an exception with no `Error` in its cause chain:** that rule's
   `beforeEvaluate` or `beforeExecute` is closed with `onError`, and its exception is the stop, with no rule name.
   Don't count it as a rule failure.
-- **While waiting for a copy:** `beforeRun` is sent only when the wait ends, then `onRunError`. A timer started in
-  `beforeRun` doesn't measure the wait.
+- **While waiting for a copy, or reading the rules again:** `beforeRun` is sent only when that ends, then
+  `onRunError`. A timer started in `beforeRun` doesn't measure the wait.
 
 A throw with an `Error` anywhere in its cause chain is the one case that closes `onError` with that rule's failure
 instead of the stop, named and logged at ERROR; see [What stops a run](#-what-stops-a-run).
@@ -177,11 +185,11 @@ failure, stops included.
 
 A nested run is a run started on the same thread while another run is in progress: from a condition, an action, or a
 listener callback up to and including `afterRun` and `onRunError`. That includes the `beforeRun` and `onRunError` of a
-run that stopped while waiting for a compiled copy: it never ran a rule, but a run started from its callbacks still
-inherits its deadline, if it had one, and names it as its `parent()` on the same engine. Such a run holds no copy,
-so a run started from its callbacks isn't covered by the rule that a nested run never waits — but it doesn't wait
-either: with that run's deadline already passed, or the same interrupt on the thread, it takes a free copy or fails at
-once.
+run that stopped while waiting for a compiled copy, or while reading the engine's rules again: it never ran a rule,
+but a run started from its callbacks still inherits its deadline, if it had one, and names it as its `parent()` on the
+same engine. Such a run holds no copy, so a run started from its callbacks isn't covered by the rule that a nested run
+never waits — but it doesn't wait either: with that run's deadline already passed, or the same interrupt on the
+thread, it takes a free copy or fails at once.
 
 - **It stops at whichever deadline comes first,** its own or the outer run's, on any engine. It sees the same
   interrupt, because the interrupt status belongs to the thread.

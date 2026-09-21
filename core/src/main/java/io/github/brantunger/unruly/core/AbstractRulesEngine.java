@@ -71,6 +71,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
     private static final String CLOSED_MESSAGE = "The engine is closed";
+    // How many times one run may read the engine's rules in all: its first reading, and one more for each time it
+    // finds the set it read closed before it could borrow from it. Reading again settles the one race that can
+    // cause that — a reload, or close(), retires the set the run had read in between its reading and its borrow —
+    // and each concurrent reload can stale a run once, so the bound is far above one. Past it, the invariant a run
+    // relies on has broken, and a run that spun instead would leave no evidence.
+    private static final int RULE_READS_PER_RUN = 64;
     // The engine's languages and its default language, fixed when it's built.
     private final LanguageRegistry languages;
     // The imported packages and classes, resolved when the engine is built and passed to every compilation.
@@ -249,6 +255,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * names are checked inside the scope, so a name no language can refer to reaches {@code onRunError}. A run that
      * waits for a copy opens its scope when the wait ends; an interrupt while waiting opens and closes a scope of its
      * own. Failing because no rules are loaded, or because the engine is closed, is misuse and reaches no listener.
+     * Failing because the engine's rule list was closed over and over while the run was borrowing a copy reaches
+     * none either: that means an engine invariant has broken rather than that the call was wrong.
      * </p>
      *
      * @param facts   The facts the run was given
@@ -258,7 +266,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @param body    What the engine does once it holds a copy of the rules
      * @return What the run did
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, the engine is closed, or the run read
+     *                               a closed rule list {@value #RULE_READS_PER_RUN} times in a row, which means the
+     *                               engine's own invariant has broken
      */
     RunResult<O> runInScope(FactStore<?> facts, Duration timeout, Set<String> tags, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
@@ -281,7 +291,20 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Map<String, Object> values = factValues(facts);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
             RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
-            while (copy == null) {
+            for (int read = 1; copy == null; read++) {
+                // The rule set the run read was closed before it could borrow from it, which a reload does to the
+                // set it replaced, and close() to the set it detaches: reading again finds the set that replaced it,
+                // or reports the closed engine. A run the caller has stopped meanwhile stops here rather than
+                // reading again, and one that keeps finding closed sets fails rather than spinning for ever.
+                stopIfCancelled(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                if (read == RULE_READS_PER_RUN) {
+                    throw new IllegalStateException("The engine's rule list was closed " + RULE_READS_PER_RUN
+                            + " times in a row while this run was borrowing a copy of it. A rule list is closed only"
+                            + " after it has been retired, and only a rule list that is no longer the engine's"
+                            + " current one is retired, so the list a run reads can never already be closed: that"
+                            + " invariant has broken. Please report this stack trace at"
+                            + " https://github.com/brantunger/unruly-engine/issues");
+                }
                 rules = currentRules();
                 copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
             }
@@ -480,6 +503,34 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Stops a run that was interrupted, or passed its deadline, while reading the engine's rules again because the
+     * rule set it read had been closed. Reported like a run that stopped waiting for a copy: it too stopped before
+     * it got one, and for the same two reasons.
+     *
+     * @param rules         The rule set the run found closed
+     * @param listenerFacts The run's facts, as listeners see them
+     * @param deadline      When the run must stop, or {@code null} if it has none
+     * @param runId         The run's number
+     * @param parent        The run this one was started from, or {@code null}
+     * @param tally         The run's tally, which records the stop for the run's event
+     * @param selection     The run's tags and start, which its context carries
+     * @throws RuleExecutionException if the thread is interrupted, or the run's deadline has passed
+     */
+    private void stopIfCancelled(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline, long runId,
+                                 RunContext parent, RunTally tally, RuleSelection selection) {
+        String reading = " while reading the engine's rules again: the rules this run read had been closed by a"
+                + " reload or by close()";
+        if (Thread.currentThread().isInterrupted()) {
+            throw stoppedWaiting(rules, listenerFacts, "run() was interrupted" + reading, new InterruptedException(),
+                    deadline, null, runId, parent, tally, selection);
+        }
+        if (Cancellation.hasPassed(deadline)) {
+            throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline + reading,
+                    Cancellation.timedOut(deadline), deadline, deadline, runId, parent, tally, selection);
+        }
+    }
+
+    /**
      * Reports a run that stopped before it got a copy of the rules, because it was interrupted or passed its deadline
      * while waiting. Logged at WARN, like the check between rules: a run the caller stopped isn't the rules or the
      * engine failing.
@@ -642,9 +693,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Closes the engine. The rule list is closed once no run is using it: runs in progress finish, their sessions are
-     * closed as each one returns, and the languages' compilers after the last one. Afterwards, {@code run()} and
-     * {@link #load(List)} throw {@link IllegalStateException}. Closing it again does nothing.
+     * Closes the engine. The rule list is closed once no run is using it: a run holding a copy finishes, and so does
+     * one waiting for a copy, because {@link RuleSet#borrow(Instant)} counts the run before it waits, and a rule list
+     * with a run counted on it can't close. Their sessions are closed as each one returns, and the languages'
+     * compilers after the last one. Afterwards, {@code run()} and {@link #load(List)} throw
+     * {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a copy
+     * when this method closed them, because it reads them again and finds a closed engine. Closing it again does
+     * nothing.
      */
     // A closed engine has no rule set.
     @SuppressWarnings("PMD.NullAssignment")

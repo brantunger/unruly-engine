@@ -15,7 +15,9 @@
  *   {@code load()} reports it as the cause of a {@code RuleCompilationException} that names the rule.</li>
  *   <li>Misuse throws {@link java.lang.IllegalStateException} (running before {@code load()}, or on a closed engine)
  *   or {@link java.lang.IllegalArgumentException} (a fact name rules can't use, or a fact that doesn't match its
- *   declaration).</li>
+ *   declaration). A run also throws {@code IllegalStateException} when the engine's rule list was closed over and
+ *   over while it was borrowing a copy of it, which means an engine invariant has broken rather than that the call
+ *   was wrong.</li>
  * </ul>
  *
  * <p>

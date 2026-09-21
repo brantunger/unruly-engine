@@ -35,7 +35,12 @@ import static org.junit.jupiter.api.Assertions.*;
 // a copy, would otherwise hold a test here for ever, and one test that waits for ever holds the whole suite. JUnit
 // reports this deadline once the test returns, which catches a test that is merely slow, so every borrow that could
 // wait is given a deadline of its own, and the one test of waiting with no deadline runs on a thread of its own.
-@Timeout(value = 30, unit = TimeUnit.SECONDS)
+//
+// SAME_THREAD, spelled out rather than left to junit-platform.properties, which makes SEPARATE_THREAD the default
+// for every other timed class: RuleSet counts the runs in progress in a thread-local, and the @AfterEach below
+// checks that each test gave its copies back on the thread that took them. A body JUnit ran on a timeout thread of
+// its own would leave that check reading another thread's count, and it would pass whatever a test leaked.
+@Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SAME_THREAD)
 @DisplayName("RuleSet lends each run its own sessions for the shared compiled rules")
 class RuleSetTest {
 
@@ -54,6 +59,14 @@ class RuleSetTest {
 
     /** A session named after its language and numbered in the order sessions were created. */
     private record NumberedSession(String language, int number) implements Session {
+    }
+
+    /** A session that records when it's closed, by adding its number to the list every session of the copy shares. */
+    private record RecordingSession(int number, List<Integer> closed) implements Session {
+        @Override
+        public void close() {
+            closed.add(number);
+        }
     }
 
     private static final CompiledRule RULE = new CompiledRule(
@@ -77,6 +90,26 @@ class RuleSetTest {
             public Session newSession() {
                 created.add(language);
                 return new NumberedSession(language, counter.incrementAndGet());
+            }
+        };
+    }
+
+    /** A compiler whose sessions record when they're closed, numbered as {@link #compiler}'s are. */
+    private static ExpressionCompiler recordingCompiler(AtomicInteger counter, List<Integer> closed) {
+        return new ExpressionCompiler() {
+            @Override
+            public CompiledCondition compileCondition(Expression expression) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public CompiledAction compileAction(Expression expression) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public Session newSession() {
+                return new RecordingSession(counter.incrementAndGet(), closed);
             }
         };
     }
@@ -157,6 +190,83 @@ class RuleSetTest {
             throw new AssertionError("the thread meant to hold a copy never got one", failure.get());
         }
         return new Holder(holder, askedBack, failure);
+    }
+
+    /**
+     * A run on a virtual thread that borrows one copy and holds it until it's asked back. Unlike {@link Holder}, it
+     * is returned before its borrow ends, so a test can watch a borrow that has to wait, and it reports the copy it
+     * got, so a test can tell one copy from another.
+     */
+    private record VirtualRun(Thread thread, CountDownLatch borrowed, CountDownLatch askedBack,
+                              AtomicReference<RuleSet.Copy> held, AtomicReference<Throwable> failure) {
+
+        /** Waits for the borrow to end and returns the copy it took, failing the test if it took none. */
+        RuleSet.Copy copy() throws InterruptedException {
+            assertTrue(borrowed.await(30, TimeUnit.SECONDS), "the run never finished borrowing");
+            if (failure.get() != null) {
+                throw new AssertionError("the run borrowing a copy failed", failure.get());
+            }
+            return held.get();
+        }
+
+        /** Asks for the copy back, waits for the run to end, and fails the test if the run did. */
+        void giveBack() throws InterruptedException {
+            askedBack.countDown();
+            thread.join(TimeUnit.SECONDS.toMillis(30));
+            assertFalse(thread.isAlive(), "the run holding the copy never ended");
+            if (failure.get() != null) {
+                throw new AssertionError("the run holding the copy failed", failure.get());
+            }
+        }
+    }
+
+    /**
+     * Starts a run on a virtual thread that borrows one copy and holds it until it's asked back, and returns at once,
+     * before the borrow has ended.
+     *
+     * @param rules The rule set to borrow from
+     * @return The run
+     */
+    private static VirtualRun startVirtualRun(RuleSet rules) {
+        CountDownLatch borrowed = new CountDownLatch(1);
+        CountDownLatch askedBack = new CountDownLatch(1);
+        AtomicReference<RuleSet.Copy> held = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        // Whatever goes wrong on the thread is kept for the test to report, as in holdOneCopy, and the copy is given
+        // back whatever happens after it was taken. A virtual thread is always a daemon.
+        Thread thread = Thread.ofVirtual().start(() -> {
+            RuleSet.Copy copy;
+            try {
+                copy = rules.borrow(deadline());
+                if (copy == null) {
+                    failure.set(new AssertionError("the rule set to borrow from is closed"));
+                    return;
+                }
+                held.set(copy);
+            } catch (Exception | Error e) {
+                failure.set(e);
+                return;
+            } finally {
+                borrowed.countDown();
+            }
+            try {
+                assertTrue(askedBack.await(30, TimeUnit.SECONDS), "the copy was never asked for back");
+            } catch (Exception | Error e) {
+                failure.set(e);
+            } finally {
+                rules.release(copy);
+            }
+        });
+        return new VirtualRun(thread, borrowed, askedBack, held, failure);
+    }
+
+    /** Waits until {@code thread} is parked with a timeout, which is how a run waiting for a build slot waits. */
+    private static void awaitParked(Thread thread) throws InterruptedException {
+        long giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (thread.getState() != Thread.State.TIMED_WAITING) {
+            assertTrue(System.nanoTime() < giveUp, "the run never started waiting for a build slot");
+            Thread.sleep(2);
+        }
     }
 
     /**
@@ -495,6 +605,55 @@ class RuleSetTest {
         assertNull(failure.get(), "an overflowing run never got its copy: " + failure.get());
         assertEquals(1, logs.lines().filter(line -> line.contains("made an extra copy")).count(), logs);
         assertEquals(3, sessions.get(), "the copy held, and one for each overflowing run");
+    }
+
+    @Test
+    @DisplayName("a run that waited for a build slot and then took a copy given back gives its own slot back")
+    void aWaitingRunGivesItsSlotBackWithTheCopyItTook() throws InterruptedException {
+        AtomicInteger sessions = new AtomicInteger();
+        // One build slot for the whole engine, so a slot that isn't given back is gone for good: every later run
+        // that needs a copy would then wait out the whole window before making one. The window is far longer than
+        // the borrows' deadlines, so a wait that ended any other way would fail the test.
+        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
+                CopyLimit.none(), permits, TimeUnit.MINUTES.toMillis(5));
+
+        VirtualRun holder = startVirtualRun(rules);
+        assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
+        assertFalse(permits.awaitSlot(0, null), "the slot is held while the first run's new copy runs");
+        VirtualRun waiter = startVirtualRun(rules);
+        awaitParked(waiter.thread());
+
+        // The copy is kept before the slot is released, so the run that waited finds it and needs no slot after all.
+        holder.giveBack();
+
+        RuleSet.Copy taken = waiter.copy();
+        assertSame(holder.copy().sessions(), taken.sessions(), "the run that waited took the copy given back");
+        assertEquals(1, sessions.get(), "so it made no copy of its own");
+        assertEquals(RuleSet.Held.NOTHING, taken.held(), "and holds nothing to give back with it");
+        waiter.giveBack();
+        assertTrue(permits.awaitSlot(0, null), "the slot the run took while waiting was never given back");
+    }
+
+    @Test
+    @DisplayName("a rule set retired while runs hold copies closes each copy's sessions as its run gives it back")
+    void aRetiredRuleSetClosesEachCopyAsItComesBack() throws InterruptedException {
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", recordingCompiler(new AtomicInteger(), closed)),
+                CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
+        // Two runs, because when only one holds a copy the rule set has no user left once it comes back, and closes
+        // everything then in any case: a second run still in flight is what tells "closed when you gave it back"
+        // from "closed when the slowest run still in flight finished".
+        Holder first = holdOneCopy(rules);
+        Holder second = holdOneCopy(rules);
+
+        rules.retire();
+
+        assertEquals(List.of(), closed, "no copy has been given back yet");
+        first.giveBack();
+        assertEquals(List.of(1), closed, "the copy given back was closed at once, not when the last run left");
+        second.giveBack();
+        assertEquals(List.of(1, 2), closed, "and the last copy when its own run gave it back");
     }
 
     @Test

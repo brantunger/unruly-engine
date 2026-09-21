@@ -176,6 +176,7 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 | Failing task or message | Where the report is | Usual fix |
 | --- | --- | --- |
 | `:core:test`, `:mvel:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
+| `Timeout has been exceeded` on `:core:test` or `:mvel:test` | The console, and `<project>/build/reports/tests/test/index.html` | A test never returned, and the task's 10-minute timeout stopped it; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 | `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html` | Run `./gradlew jacocoTestReport`, open the report, and cover the red lines and yellow branches |
 | `pmdMain` | `<project>/build/reports/pmd/main.html` | Fix the finding; suppress only as [Build and gates](docs/contributing/build-and-gates.md#-pmd-suppressions) shows |
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html`, `test.html`, and `core`'s `testFixtures.html` | Braces on every block, no star or unused imports |

@@ -73,6 +73,11 @@ tasks.named('check') {
 }
 
 tasks.named('test', Test) {
+    // Ten minutes, for a test that never returns. The whole suite runs in about a minute, so this never fires on a
+    // healthy build; when it does fire, Gradle stops the test worker and fails the task, which a CI job cancelled by
+    // its own timeout never does. A task stopped this way writes no JUnit XML at all — measured, not assumed — so
+    // what names the test that hung is the HTML report, which does get written.
+    timeout = java.time.Duration.ofMinutes(10)
     javaLauncher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(testJdk)
     }

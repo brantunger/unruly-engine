@@ -183,6 +183,8 @@ class RuleEvaluationsTest {
     @DisplayName("a result built without evaluations has none, and one built with them copies the list")
     void resultsBuiltByHand() {
         List<RuleEvaluation> evaluations = new java.util.ArrayList<>(List.of(RuleEvaluation.of(HIGH, Outcome.MATCHED)));
+        List<RuleEvaluation> withNull = new java.util.ArrayList<>();
+        withNull.add(null);
 
         RunResult<String> without = RunResult.of("out", List.of(HIGH), "checksum");
         RunResult<String> with = RunResult.of("out", List.of(HIGH), evaluations, "checksum");
@@ -191,6 +193,7 @@ class RuleEvaluationsTest {
         assertEquals(List.of(), without.evaluations());
         assertEquals(List.of(RuleEvaluation.of(HIGH, Outcome.MATCHED)), with.evaluations());
         assertThrows(NullPointerException.class, () -> RunResult.of("out", List.of(), null, "checksum"));
+        assertThrows(NullPointerException.class, () -> RunResult.of("out", List.of(), withNull, "checksum"));
     }
 
     @Test

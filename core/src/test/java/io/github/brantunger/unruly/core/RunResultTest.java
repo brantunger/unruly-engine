@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,6 +140,29 @@ class RunResultTest {
             assertNull(result.startedAt());
             assertTrue(result.toString().endsWith(", tags=[], startedAt=null)"), result.toString());
         }
+    }
+
+    @Test
+    @DisplayName("both factories copy the fired rules, so a caller that keeps its own list can't change a result")
+    void ofCopiesTheFiredRules() {
+        List<Rule> fired = new ArrayList<>(List.of(HIGH));
+
+        RunResult<String> withoutEvaluations = RunResult.of("out", fired, "c");
+        RunResult<String> withEvaluations = RunResult.of("out", fired, List.of(), "c");
+        fired.clear();
+
+        assertEquals(List.of(HIGH), withoutEvaluations.firedRules(), "the result is a view of the caller's list");
+        assertEquals(List.of(HIGH), withEvaluations.firedRules(), "the result is a view of the caller's list");
+    }
+
+    @Test
+    @DisplayName("both factories reject a null among the fired rules")
+    void ofRejectsANullFiredRule() {
+        List<Rule> withNull = new ArrayList<>();
+        withNull.add(null);
+
+        assertThrows(NullPointerException.class, () -> RunResult.of("out", withNull, "c"));
+        assertThrows(NullPointerException.class, () -> RunResult.of("out", withNull, List.of(), "c"));
     }
 
     @Test

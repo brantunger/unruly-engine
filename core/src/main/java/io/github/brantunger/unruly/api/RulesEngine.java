@@ -110,7 +110,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@code null} when it creates a session for the run; or more than one rule matches on a
      *         {@link RulesEngineBuilder#uniqueMatch(java.util.function.Supplier) unique-match} engine, which names
      *         them all and belongs to no rule. Also if the run must stop, which is checked while it waits for a
-     *         compiled copy of the rules, between rules and when each condition or action returns, because its
+     *         compiled copy of the rules, while it reads the engine's rules again after a reload or {@link #close()}
+     *         closed the list it had read, between rules and when each condition or action returns, because its
      *         thread was interrupted, which keeps the interrupt status
      *         set and makes the cause an {@link InterruptedException}, or because it passed the deadline a
      *         {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
@@ -122,7 +123,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         value that isn't an instance of its type; or, with {@link RulesEngineBuilder#requireDeclaredFacts()},
      *         if a declared fact is missing or an undeclared one is supplied. Also if a language's check of a fact
      *         name fails with any other exception, which becomes the cause.
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
+     *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
+     *         an engine invariant has broken rather than that the call was wrong
      * @throws NullPointerException if {@code facts} is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, wherever it
      *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
@@ -150,7 +153,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@link RunResult#evaluations() evaluations} have one entry per loaded rule.
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
+     *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
+     *         an engine invariant has broken rather than that the call was wrong
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     default RunResult<O> runWithResult(FactStore<?> facts) {
@@ -163,8 +168,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *
      * <p>
      * A timeout's deadline is taken from when this method is called, so waiting for a compiled copy of the rules
-     * counts towards it. The engine checks it while waiting, and before and after each condition and each action,
-     * so a run stops between rules, and when the condition or action that was running returns; see
+     * counts towards it. The engine checks it while waiting, while the run reads the engine's rules again after a
+     * reload or {@link #close()} closed the list it had read, and before and after each condition and each action, so
+     * a run stops between rules, and when the condition or action that was running returns; see
      * {@link RulesEngineBuilder#runTimeout(Duration)} for what that does and doesn't stop.
      * </p>
      *
@@ -175,7 +181,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         and with a {@link java.util.concurrent.TimeoutException} cause if the run passes its deadline, or an
      *         {@link InterruptedException} cause if its thread is interrupted, which keeps the interrupt status set
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
+     *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
+     *         an engine invariant has broken rather than that the call was wrong
      * @throws NullPointerException if an argument is {@code null}
      */
     RunResult<O> runWithResult(FactStore<?> facts, RunOptions options);
@@ -193,9 +201,12 @@ public interface RulesEngine<O> extends AutoCloseable {
 
     /**
      * Closes the engine, and releases what its expression languages hold for the rules, such as interpreter contexts.
-     * Runs in progress finish first: the languages' sessions are closed as each run returns, and their compilers after
-     * the last one. Afterwards, {@link #run(FactStore)} and {@link #load(List)} throw
-     * {@link IllegalStateException}. Closing an engine that is already closed does nothing.
+     * A run holding a copy of the rules finishes normally, and so does one waiting for a copy, because a rule list
+     * can't close under a run that has begun borrowing from it: the languages' sessions are closed as each run
+     * returns, and their compilers after the last one. Afterwards, {@link #run(FactStore)} and {@link #load(List)}
+     * throw {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a
+     * copy when this method closed them, because it reads them again and finds a closed engine. Closing an engine
+     * that is already closed does nothing.
      *
      * <p>
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which

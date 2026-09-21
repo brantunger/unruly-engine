@@ -112,13 +112,18 @@ sequenceDiagram
     Note over E: Its sessions are closed, then the compilers
 ```
 
-- A run already in progress finishes normally and returns its result.
+- A run holding a copy of the rules finishes normally and returns its result.
 - Every new `run()`, `runWithResult()`, `validate()` and `rules()` throws `IllegalStateException("The engine is
   closed")` at once.
 - `load()` compiles the whole list first: a list that doesn't compile throws `RuleCompilationException`, and one that
   does is compiled, then dropped with the same `IllegalStateException`.
-- A **nested run** started from an action or a listener of a run that is still going throws it too: a nested run reads
-  the engine's current rules, and a closed engine has none.
+- A **nested run** started from an action or a listener of a run that is still going throws it too: it reads the
+  engine's current rules, and a closed engine has none.
+
+A run that had read the engine's rules but not yet borrowed a copy of them when `close()` closed them reads them
+again, finds a closed engine, and throws the same `IllegalStateException`. One whose thread was interrupted, or whose
+deadline has passed, stops there instead, with a message saying the rules were closed by a reload or by `close()`; see
+[What stops a run](stopping-runs.md#-what-stops-a-run).
 
 Each run's sessions are closed as it returns, and the languages' compilers after the last one. A failure to close a
 session or a compiler is logged at WARN and doesn't fail a run. `RulesEngine` is `AutoCloseable`, so an engine built
@@ -181,10 +186,11 @@ For the load itself:
 > run can use newer rules, which the outer run's checksum doesn't describe.
 
 At the swap, the replaced list is retired: its idle [compiled copies](compiled-copies.md) are closed straight away, a
-copy given back is closed rather than kept, and its compilers close once the last run using it returns. A run that read
-the engine's rules just before the swap uses that list only while a run of it is still going, and may then build a copy
-of it; when the list is already closed, the run starts again on the new rules. Copies aren't carried over, so the first
-runs after each `load()` build them again, unless the engine was built with
+copy given back is closed rather than kept, and its compilers close once the last run using it returns. A run that
+read the engine's rules just before the swap uses that list only while a run of it is still going, and may then build
+a copy of it; when the list is already closed, the run starts again on the new rules, unless its thread was
+interrupted or its deadline has passed, when it stops there instead. Copies aren't carried over, so the first runs
+after each `load()` build them again, unless the engine was built with
 [`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load), when `load()` builds them before the swap.
 
 ## 📑 Compiled copies

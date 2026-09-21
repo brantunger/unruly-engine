@@ -32,7 +32,7 @@ small application CI builds into a GraalVM native image.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite, on the class path, in two source sets | `core/src/test`, `mvel/src/test`, and both `build.gradle` files |
+| 🧪 **Tests** | The JUnit suite, on the class path, in two source sets | `core/src/test`, `mvel/src/test`, both `build.gradle` files, and each test source set's `junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
@@ -51,6 +51,21 @@ Some details behind the table:
   `./gradlew build -x check` only compiles and packages.
 - **The module-path applications** are `withMvel`, `withoutMvel`, `withTestKit` and `withJackson`, each compiled
   with `-Xlint:all -Werror` like the main sources.
+
+Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/groovy/unruly.java-conventions.gradle`),
+so a test that never returns fails the build rather than holding CI until the `build` job's own 20-minute cap. Gradle
+logs `Requesting stop of task ':core:test' as it has exceeded its configured timeout`, stops the test worker, and
+fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML
+report, where the test that never returned shows as skipped.
+
+A test class that waits on threads, latches or deadlines carries a class-level `@Timeout`. `junit-platform.properties`,
+in `core/src/test/resources` and `mvel/src/test/resources`, sets
+`junit.jupiter.execution.timeout.thread.mode.default = separate_thread`, so JUnit runs the test body on a thread of its
+own and aborts it at the deadline, instead of reporting the deadline once the test returns.
+
+`RuleSetTest` opts back out, with `threadMode = SAME_THREAD`, because `@BeforeEach` and `@AfterEach` stay on the
+`Test worker` thread whatever the mode, and its `@AfterEach` checks that the test left no run counted on the thread it
+ran on. One method in it asks for `SEPARATE_THREAD` by name, to test a wait that has no deadline.
 
 The `benchmarks` project is the exception to the javac gate: it compiles JMH's generated code, so it runs with
 `-Xlint:none` instead (`benchmarks/build.gradle`).
