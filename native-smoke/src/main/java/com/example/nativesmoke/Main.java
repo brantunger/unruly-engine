@@ -15,8 +15,8 @@ import java.util.Objects;
  * Runs MVEL rules the way an application would, so CI can build it into a GraalVM native image and run it. It goes
  * through each way the engine and MVEL use reflection: a record fact read by property, a bean output an action assigns
  * to, a map output, and a JDK static method. It also pins down what the engine does with a fact named after a class
- * in an imported package, which is the one path that looks a class file up as a resource and loads it: the name is
- * rejected on the JVM, and accepted in a native image, a known defect this application now holds the image to. The
+ * in an imported package, the one class name the fact-name check resolves for itself: the name is rejected on both
+ * platforms, which an image managed only once the check stopped asking for the class file it serves to nobody. The
  * bean and map engines each run more than MVEL's JIT threshold of about 50 runs, so a native image meets whatever
  * MVEL does after it. It prints one line and exits with 1 if a result is wrong.
  */
@@ -31,17 +31,13 @@ public final class Main {
     /** The part of the message the engine rejects a fact name with, which the fact-name check looks for. */
     private static final String REJECTION = "cannot be used as a fact name";
 
-    /** What the fact-name check does on the JVM, and what it is meant to do everywhere: it rejects the name. */
-    private static final String FACT_NAME_ON_JVM = "rejected,prime";
-
     /**
-     * What the fact-name check does in a native image, which this application asserts so that a change either way is
-     * seen at once. It is a known defect and not the right answer: an image serves no class file as a resource, so
-     * the check finds no {@code java.util.Date} in the imported package and accepts a fact named {@code Date} in
-     * silence. Fixing that flips this expectation to {@link #FACT_NAME_ON_JVM}, {@code "rejected,prime"}, which is
-     * how the fix is proved.
+     * What the fact-name check does, on the JVM and in a native image alike: it rejects a fact named after a class in
+     * an imported package, and accepts one whose package isn't imported. An image answered {@code "accepted,prime"}
+     * until it stopped looking the class file up as a resource, which it serves for no class, and loaded the class
+     * the way MVEL does; this application is what holds both platforms to the one answer.
      */
-    private static final String FACT_NAME_IN_IMAGE = "accepted,prime";
+    private static final String FACT_NAME = "rejected,prime";
 
     /**
      * The fact the rules read.
@@ -95,21 +91,21 @@ public final class Main {
         String bean = beanOutput();
         String map = mapOutput();
         String factName = factNameOutcome();
-        boolean image = nativeImage();
-        boolean ok = "prime".equals(bean) && "standard,raised".equals(map)
-                && (image ? FACT_NAME_IN_IMAGE : FACT_NAME_ON_JVM).equals(factName);
+        boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
                 + " factName=" + factName + " dateResource=" + dateResource()
-                + " dateFactValue=" + dateFactValue() + " image=" + image
+                + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
                 + " jit=" + (Boolean.getBoolean("mvel2.disable.jit") ? "off" : "on"));
         if (!ok) {
             System.exit(1);
         }
     }
 
-    // Which expectation the fact-name check is held to, because the JVM and a native image disagree about it and
-    // both run this binary: CI runs the image, and :native-smoke:installDist runs the same code on the JVM. GraalVM
-    // sets this property only in an image, so no run has to be told which it is; the status line says which it chose.
+    // Which of the two runs of this binary the status line came from: CI runs the image, and the start script
+    // :native-smoke:installDist writes runs the same code on the JVM once something launches it. Give that one
+    // -Dmvel2.disable.jit=true in JAVA_OPTS, because a -D on the script's own command line reaches main as a program
+    // argument and the run keeps jit=on. GraalVM sets this property only in an image, so no run has to be told which
+    // it is. A diagnostic, and nothing is held to it: both platforms are held to one expectation.
     private static boolean nativeImage() {
         return System.getProperty("org.graalvm.nativeimage.imagecode") != null;
     }
@@ -147,10 +143,11 @@ public final class Main {
 
     // Both halves of the fact-name check, in the same binary, so a pass means the package import is what rejects the
     // name and not something else about it: a fact named Date is rejected on an engine that imports the java.util
-    // package, and accepted on one that imports only the Applicant class. Only the package import reaches the two
-    // steps the check takes for a class in an imported package: it looks the class file up as a resource first, and
-    // loads the class only if that found it. A native image need not do either. The rejection is logged at ERROR, so
-    // a green run prints that line before its "native smoke OK:" line.
+    // package, and accepted on one that imports only the Applicant class. Only the package import makes the check
+    // resolve a class name of its own, which is the step the two platforms take differently: a JVM looks the class
+    // file up as a resource first and loads the class only if that found it, and an image, which serves no class
+    // file, loads it straight away. The rejection is logged at ERROR, so a green run prints that line before its
+    // "native smoke OK:" line.
     private static String factNameOutcome() {
         return packageImportRejects() + "," + classImportAccepts();
     }
@@ -187,10 +184,10 @@ public final class Main {
         }
     }
 
-    // A diagnostic, never an assertion: it must not feed into ok or the exit code. It tells which of the two steps
-    // above a factName=accepted would have stopped at: whether the image served the class file as a resource at all.
-    // It asks the loader the engine resolves package imports with, the thread's context loader, as core's
-    // ImportResolver.contextClassLoader does, so the two see the same class path here; the fallback for a thread
+    // A diagnostic, never an assertion: it must not feed into ok or the exit code. It shows why the check has to ask
+    // an image a different question — an image serves no class file as a resource, and prints false here however the
+    // check above ends. It asks the loader the engine resolves package imports with, the thread's context loader, as
+    // core's ImportResolver.contextClassLoader does, so the two see the same class path here; the fallback for a thread
     // without one stands in for that method's library loader, which this application shares a class path with. It is
     // still read separately from the engine, and what the loader answers is nothing the engine promises.
     private static String dateResource() {
@@ -199,14 +196,13 @@ public final class Main {
         return String.valueOf(loader.getResource("java/util/Date.class") != null);
     }
 
-    // A diagnostic, like dateResource, and for the same reason: it must not feed into ok or the exit code, because
-    // what it finds is exactly what nobody knows yet. It settles what an accepted name costs. FactNames says the
-    // check mirrors MVEL, which ignores every error when it looks a name up in an imported package and then reads
-    // the name as the fact; so an image that accepts the name is harmless if MVEL fails to resolve java.util.Date
-    // there too, and hides the fact from every rule if MVEL resolves it anyway. A rule copies whatever MVEL reads
-    // 'Date' as into the output: the fact's own value means rules see the fact, "class java.util.Date" means MVEL
-    // read the class and the fact is invisible. A value, not a null check — the class isn't null either, so
-    // Date != null would settle nothing. Its own engine, so neither half of the check above is disturbed.
+    // A diagnostic, like dateResource, and for the same reason: it must not feed into ok or the exit code. It is what
+    // settled what an accepted name costs, and is kept because it is the one line that would catch the check going
+    // quiet again. A rule copies whatever MVEL reads 'Date' as into the output, and the check rejects the name first,
+    // so "rejected" is what both platforms print; "class java.util.Date" is the image reading the imported class,
+    // which means the check accepted a name MVEL resolves and the fact is invisible to every rule. A value, not a
+    // null check — the class isn't null either, so Date != null would settle nothing. Its own engine, so neither
+    // half of the check above is disturbed.
     private static String dateFactValue() {
         try (RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
                 .imports(Applicant.class.getName(), "java.util").build()) {
