@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.1.3](https://github.com/brantunger/unruly-engine/compare/v2.1.2...v2.1.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* reject a fact named after an imported class in a native image ([#491](https://github.com/brantunger/unruly-engine/issues/491)) ([eb324ee](https://github.com/brantunger/unruly-engine/commit/eb324ee932bb04a142dbf28a0b58c164edeb38f4))
+
 ## [2.1.2](https://github.com/brantunger/unruly-engine/compare/v2.1.1...v2.1.2) (2026-09-21)
 
 
