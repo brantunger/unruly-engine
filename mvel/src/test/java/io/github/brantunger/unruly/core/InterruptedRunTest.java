@@ -55,6 +55,17 @@ class InterruptedRunTest {
 
         private final List<String> calls = new ArrayList<>();
 
+        /** The rule whose action, once it has run and been closed, interrupts the run; {@code null} for none. */
+        private final String interruptAfterExecuting;
+
+        private Callbacks() {
+            this(null);
+        }
+
+        private Callbacks(String interruptAfterExecuting) {
+            this.interruptAfterExecuting = interruptAfterExecuting;
+        }
+
         @Override
         public void beforeRun(RunContext run) {
             calls.add("beforeRun");
@@ -68,6 +79,14 @@ class InterruptedRunTest {
         @Override
         public void beforeExecute(Rule rule, Object output) {
             calls.add("beforeExecute " + rule.getRuleName());
+        }
+
+        @Override
+        public void afterExecute(Rule rule, Object output) {
+            calls.add("afterExecute " + rule.getRuleName());
+            if (rule.getRuleName().equals(interruptAfterExecuting)) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         @Override
@@ -174,6 +193,25 @@ class InterruptedRunTest {
         assertTrue(Thread.currentThread().isInterrupted(), "the interrupt status stays set");
         assertEquals(List.of("beforeRun", "beforeEvaluate a", "beforeEvaluate b", "beforeExecute a", "onError a",
                 "onRunError"), callbacks.calls, "rule a's action is closed with onError, and b's never started");
+    }
+
+    @Test
+    @DisplayName("a run cancelled between two actions stops before the next one, which never starts")
+    void interruptedBetweenTwoActions() {
+        // Interrupting in afterExecute cancels the run once rule a's action is over and closed, so the next thing
+        // the engine does is the check before rule b's action: nothing else stands between the two.
+        Callbacks callbacks = new Callbacks("a");
+        RulesEngine<Map<String, Object>> engine = allMatches(builder -> builder.listener(callbacks),
+                List.of(rule("a", "true", "output.put('a', true)"),
+                        rule("b", "true", "output.put('b', true)")));
+
+        RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
+
+        assertEquals("run() was interrupted before rule 'b'", thrown.getMessage());
+        assertNull(thrown.getRuleName(), "an interrupt isn't that rule's failure");
+        assertTrue(Thread.currentThread().isInterrupted(), "the interrupt status stays set");
+        assertEquals(List.of("beforeRun", "beforeEvaluate a", "beforeEvaluate b", "beforeExecute a", "afterExecute a",
+                "onRunError"), callbacks.calls, "rule b's action was never started, so it gets no callback of its own");
     }
 
     @Test

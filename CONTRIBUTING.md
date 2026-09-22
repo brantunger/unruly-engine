@@ -82,7 +82,7 @@ cd unruly-engine
 
 `:core:test` and `:mvel:test` are separate tasks, so `--tests` has to name a class the project holds, or Gradle
 reports `No tests found for given includes`. [Where things live](#-where-things-live) says which project a test
-belongs to; an unqualified `./gradlew test` runs both.
+belongs to; an unqualified `./gradlew test` runs both, and the benchmarks' workload test with them.
 
 > [!WARNING]
 > In cmd.exe, single quotes aren't quotes: `--tests '*Foo*'` passes them to Gradle, which then reports
@@ -95,15 +95,15 @@ belongs to; an unqualified `./gradlew test` runs both.
 | `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need no MVEL |
 | `mvel` | `unruly-engine` | The MVEL language, the tests that need MVEL or the test kit, and the tests that check the whole build |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
-| `benchmarks` | — | JMH benchmarks; not published, and the build checks its sources without running them |
+| `benchmarks` | — | JMH benchmarks; not published. The build checks their sources and asserts the shape of their workload, but only `jmh` measures anything |
 | `native-smoke` | — | An application CI builds into a GraalVM native image and runs; not published |
 
 Settings shared by the projects are in the convention plugins in `buildSrc/src/main/groovy`. The `core` package is
 internal: its module exports it only to the test kit's module, and a class in it is public only where the builder
 or the test kit needs it.
 
-Where does my test go? There are two test source sets, `core/src/test` and `mvel/src/test`, and the line between
-them is whether the test needs MVEL. A `core` test that runs a rule names a language of its own:
+Where does my test go? The library has two test source sets, `core/src/test` and `mvel/src/test`, and the line
+between them is whether the test needs MVEL. A `core` test that runs a rule names a language of its own:
 `core/src/testFixtures` has `ToyExpressionLanguage`, which evaluates a tiny syntax, and `StubExpressionLanguage`,
 whose rules always match and whose actions are Java. An engine built with no language throws `The engine has no
 expression language`. The paths below are relative to `java/io/github/brantunger/unruly/` in the source set named.
@@ -147,7 +147,7 @@ on JDK 25, and checks the PR title.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite | `core/src/test` and `mvel/src/test` |
+| 🧪 **Tests** | The JUnit suite | `core/src/test`, `mvel/src/test` and `benchmarks/src/test` |
 | 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
@@ -175,8 +175,8 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 
 | Failing task or message | Where the report is | Usual fix |
 | --- | --- | --- |
-| `:core:test`, `:mvel:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
-| `Timeout has been exceeded` on `:core:test` or `:mvel:test` | The console, and `<project>/build/reports/tests/test/index.html` | A test never returned, and the task's 10-minute timeout stopped it; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
+| `:core:test`, `:mvel:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
+| `Timeout has been exceeded` on `:core:test`, `:mvel:test` or `:benchmarks:test` | The console, and `<project>/build/reports/tests/test/index.html` | A test never returned, and the task's 10-minute timeout stopped it; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 | `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html` | Run `./gradlew jacocoTestReport`, open the report, and cover the red lines and yellow branches |
 | `pmdMain` | `<project>/build/reports/pmd/main.html` | Fix the finding; suppress only as [Build and gates](docs/contributing/build-and-gates.md#-pmd-suppressions) shows |
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html`, `test.html`, and `core`'s `testFixtures.html` | Braces on every block, no star or unused imports |

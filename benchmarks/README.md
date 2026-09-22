@@ -1,8 +1,12 @@
 # 📊 Benchmarks
 
-JMH benchmarks of the engine. This project isn't published, and it isn't part of `check`: identical configurations
-differed by up to 1.6x between sweeps on a shared machine, so a pass/fail threshold in CI would only be flaky. Run
-them by hand when a change could affect speed or allocation, and put the before and after numbers in the pull request.
+JMH benchmarks of the engine. This project isn't published, and the measurements aren't part of `check`: identical
+configurations differed by up to 1.6x between sweeps on a shared machine, so a pass/fail threshold in CI would only be
+flaky. Run them by hand when a change could affect speed or allocation, and put the before and after numbers in the
+pull request.
+
+What `check` does run is `RunBenchmarkWorkloadTest`, which asserts the shape of the workload below — how many rules
+match and how deep the first match sits. Those are counts, not timings, so they can't be flaky.
 
 ## 🏃 Running them
 
@@ -30,12 +34,21 @@ Everything after `-PjmhArgs=` goes to JMH, so `-h` lists what it accepts. `-prof
 | Parameter | Values | Why |
 | --- | --- | --- |
 | `rules` | 10, 100, 1000 | Per-rule costs dominate a large list; fixed per-run costs dominate a small one |
-| `policy` | `firstMatch`, `allMatches` | A first-match engine stops at the first match, so it evaluates fewer conditions |
+| `policy` | `firstMatch`, `allMatches` | A first-match engine stops at the first match, so it evaluates fewer conditions — except at 10 rules, where the match is the last one |
 | `facts` | `record`, `map` | A language reaches a record's components and a map's keys by different routes |
 | `listener` | `none`, `noop` | What being called costs, apart from what a listener does |
 | `language` | `mvel`, `noop` | See below |
 
-About one rule in ten matches, so a run does real work without firing everything.
+One rule in ten matches, so a run does real work without firing everything, and the matching tenth carries the lowest
+priorities, so a first-match run evaluates the nine tenths above it before it stops. A rule's threshold falls by one
+for each step down the priority order and crosses the facts' score nine tenths of the way along, which keeps both
+figures at every size: 1 of 10, 10 of 100 and 100 of 1,000 match, and a first-match run evaluates 10, 91 and 901
+conditions.
+
+`facts` is inert for `language=noop`. `NoopLanguage` reads the `score` fact and nothing else, so for those
+configurations the parameter only changes how the fact store is built. That's deliberate: the noop language is the
+cheap baseline, and making it read `applicant` would spend the comparison it exists for. The MVEL conditions read two
+of the applicant's properties, so the `record` and `map` values differ where it matters.
 
 `RunBenchmark.Load` measures `load()`, which compiles the whole rule list — the cost every reload pays.
 

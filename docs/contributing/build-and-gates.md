@@ -24,15 +24,17 @@ usual fix for each.
 ## ✅ What build runs
 
 `build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build, local, CI and
-release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has five projects: `core`
-(`unruly-engine-core`, whose tests need no MVEL), `mvel` (`unruly-engine`, which holds the tests that need MVEL or
-the test kit, and those that check the whole build), `test-kit` (`unruly-engine-test`), and two that aren't
-published: `benchmarks`, whose sources the build checks while only the `jmh` task runs them, and `native-smoke`, a
-small application CI builds into a GraalVM native image.
+release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has five projects. Three are
+published: `core` (`unruly-engine-core`, whose tests need no MVEL), `mvel` (`unruly-engine`, which holds the tests
+that need MVEL or the test kit, and those that check the whole build), and `test-kit` (`unruly-engine-test`).
+
+The other two aren't: `benchmarks`, whose sources the build checks and whose generated workload one test asserts the
+shape of, while only the `jmh` task measures anything, and `native-smoke`, a small application CI builds into a
+GraalVM native image.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite, on the class path, in two source sets | `core/src/test`, `mvel/src/test`, both `build.gradle` files, and each test source set's `junit-platform.properties` |
+| 🧪 **Tests** | The JUnit suite, on the class path, in two source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `benchmarks/src/test`, their `build.gradle` files, and each library test source set's `junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
@@ -67,8 +69,9 @@ own and aborts it at the deadline, instead of reporting the deadline once the te
 `Test worker` thread whatever the mode, and its `@AfterEach` checks that the test left no run counted on the thread it
 ran on. One method in it asks for `SEPARATE_THREAD` by name, to test a wait that has no deadline.
 
-The `benchmarks` project is the exception to the javac gate: it compiles JMH's generated code, so it runs with
-`-Xlint:none` instead (`benchmarks/build.gradle`).
+The `benchmarks` project's main sources are the exception to the javac gate: they compile JMH's generated code, so
+`compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle`). Its test sources are hand-written, so
+`compileTestJava` keeps `-Xlint:all -Werror` like everything else.
 
 The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unruly/` in the source set named:
 
@@ -87,7 +90,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 
 | Task | Report |
 | --- | --- |
-| `:core:test`, `:mvel:test` | `core/build/reports/tests/test/index.html` and `mvel/build/reports/tests/test/index.html` |
+| `:core:test`, `:mvel:test`, `:benchmarks:test` | `core/build/reports/tests/test/index.html`, `mvel/build/reports/tests/test/index.html` and `benchmarks/build/reports/tests/test/index.html` |
 | `jacocoTestReport`, `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html`, the aggregate of every artifact; `build/reports/jacoco/report.xml` for tools |
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html` and `test.html`, and `core`'s `testFixtures.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |

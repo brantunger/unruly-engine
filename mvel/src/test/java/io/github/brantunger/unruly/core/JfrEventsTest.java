@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
@@ -29,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,6 +90,28 @@ class JfrEventsTest {
         }
     }
 
+    /** Something an action can call to start a nested run, which records a run event of its own. */
+    public static final class Nester {
+
+        private final RulesEngine<Map<String, Object>> engine;
+
+        Nester(RulesEngine<Map<String, Object>> engine) {
+            this.engine = engine;
+        }
+
+        /**
+         * Runs the engine again from inside a run of it, one rule deep.
+         *
+         * @return {@code true}, so the action that calls this has something to put in its output
+         */
+        public boolean runNested() {
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("depth", 1);
+            engine.run(facts);
+            return true;
+        }
+    }
+
     private static Rule rule(String name, int priority, String condition) {
         return Rule.builder().ruleName(name).priority(priority).condition(condition)
                 .action("output.put('" + name + "', true)").build();
@@ -142,6 +166,14 @@ class JfrEventsTest {
     private static RecordedEvent runEvent(List<RecordedEvent> all, String checksum) {
         List<RecordedEvent> runs = events(all, RUN_EVENT, event -> checksum.equals(event.getString("ruleSetChecksum")));
         assertEquals(1, runs.size(), "one run event for the checksum " + checksum);
+        return runs.get(0);
+    }
+
+    /** The run event of one numbered run, for a test whose engine runs the same rules more than once. */
+    private static RecordedEvent runEvent(List<RecordedEvent> all, String checksum, long runId) {
+        List<RecordedEvent> runs = events(all, RUN_EVENT, event -> checksum.equals(event.getString("ruleSetChecksum"))
+                && event.getLong("runId") == runId);
+        assertEquals(1, runs.size(), "one run event for run " + runId + " of the checksum " + checksum);
         return runs.get(0);
     }
 
@@ -208,6 +240,43 @@ class JfrEventsTest {
         assertEquals("firstMatch", run.getString("matchPolicy"));
         assertEquals(List.of("jfr-first-miss CONDITION NOT_MATCHED", "jfr-first-hit CONDITION MATCHED",
                 "jfr-first-hit ACTION FIRED"), ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
+    }
+
+    @Test
+    @DisplayName("a run an action starts names the run around it, which names no parent of its own")
+    void nestedRun() throws IOException {
+        List<Long> started = new CopyOnWriteArrayList<>();
+        RuleListener numbers = new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                started.add(run.runId());
+            }
+        };
+        // The same engine, because the run a nested run names as its parent is the one this engine is inside on
+        // this thread: a second engine keeps its own, so its run would have no parent to name. Same engine means
+        // the same checksum for both events, so they're told apart by run id rather than by runEvent(all, checksum).
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .listener(numbers).build();
+        engine.load(List.of(Rule.builder().ruleName("jfr-nested").priority(1).condition("depth == 0")
+                .action("output.put('jfr-nested', nester.runNested())").build()));
+        String checksum = engine.rules().checksum();
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("depth", 0);
+        facts.setValue("nester", new Nester(engine));
+
+        Recording recording = recordEverything();
+        engine.run(facts);
+        List<RecordedEvent> all = stop(recording, "nested");
+
+        assertEquals(2, started.size(), "the run and the one its action started inside it");
+        RecordedEvent outer = runEvent(all, checksum, started.get(0));
+        RecordedEvent nested = runEvent(all, checksum, started.get(1));
+        assertEquals(0L, outer.getLong("parentRunId"), "the outermost run was started from no run");
+        assertEquals(outer.getLong("runId"), nested.getLong("parentRunId"),
+                "the nested run's event names the run its action started it from");
+        assertEquals(List.of("jfr-nested CONDITION NOT_MATCHED"),
+                ruleEvents(all, nested).stream().map(JfrEventsTest::describe).toList(),
+                "the nested run is one rule deep: its facts don't match, so it starts no run of its own");
     }
 
     @Test
