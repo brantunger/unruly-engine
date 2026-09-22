@@ -92,8 +92,8 @@ public class InvalidExpressionException extends UnrulyException {
          * @throws IllegalArgumentException if {@code line} or {@code column} is negative
          */
         public Issue {
-            Objects.requireNonNull(severity, "severity");
-            Objects.requireNonNull(message, "message");
+            Objects.requireNonNull(severity, "severity must not be null");
+            Objects.requireNonNull(message, "message must not be null");
             if (line < 0 || column < 0) {
                 throw new IllegalArgumentException(
                         "line and column must not be negative, but were " + line + " and " + column);

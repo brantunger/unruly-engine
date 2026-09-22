@@ -22,8 +22,10 @@ class ExceptionDetailsTest {
         assertEquals(0, new Issue(Severity.WARNING, 0, 0, "unknown position").line());
         assertThrows(IllegalArgumentException.class, () -> new Issue(Severity.ERROR, -1, 0, "m"));
         assertThrows(IllegalArgumentException.class, () -> new Issue(Severity.ERROR, 0, -1, "m"));
-        assertThrows(NullPointerException.class, () -> new Issue(null, 0, 0, "m"));
-        assertThrows(NullPointerException.class, () -> new Issue(Severity.ERROR, 0, 0, null));
+        assertEquals("severity must not be null",
+                assertThrows(NullPointerException.class, () -> new Issue(null, 0, 0, "m")).getMessage());
+        assertEquals("message must not be null",
+                assertThrows(NullPointerException.class, () -> new Issue(Severity.ERROR, 0, 0, null)).getMessage());
     }
 
     @Test
@@ -86,8 +88,11 @@ class ExceptionDetailsTest {
     @Test
     @DisplayName("an expression needs a rule name, a kind and text")
     void expressionValidated() {
-        assertThrows(NullPointerException.class, () -> new Expression(null, ExpressionKind.ACTION, "a"));
-        assertThrows(NullPointerException.class, () -> new Expression("r", null, "a"));
-        assertThrows(NullPointerException.class, () -> new Expression("r", ExpressionKind.ACTION, null));
+        assertEquals("ruleName must not be null", assertThrows(NullPointerException.class,
+                () -> new Expression(null, ExpressionKind.ACTION, "a")).getMessage());
+        assertEquals("kind must not be null",
+                assertThrows(NullPointerException.class, () -> new Expression("r", null, "a")).getMessage());
+        assertEquals("text must not be null", assertThrows(NullPointerException.class,
+                () -> new Expression("r", ExpressionKind.ACTION, null)).getMessage());
     }
 }

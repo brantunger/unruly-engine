@@ -45,7 +45,8 @@ class ActionResultTest {
         Map<String, Object> nullName = new HashMap<>();
         nullName.put(null, 1);
 
-        assertThrows(NullPointerException.class, () -> ActionResult.set(null));
+        NullPointerException mapRejected = assertThrows(NullPointerException.class, () -> ActionResult.set(null));
+        assertEquals("properties must not be null", mapRejected.getMessage());
 
         NullPointerException nullRejected = assertThrows(NullPointerException.class,
                 () -> ActionResult.set(nullName));

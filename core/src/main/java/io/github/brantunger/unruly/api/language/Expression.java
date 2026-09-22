@@ -21,8 +21,8 @@ public record Expression(String ruleName, ExpressionKind kind, String text) {
      * @throws NullPointerException if {@code ruleName}, {@code kind} or {@code text} is {@code null}
      */
     public Expression {
-        Objects.requireNonNull(ruleName, "ruleName");
-        Objects.requireNonNull(kind, "kind");
-        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(ruleName, "ruleName must not be null");
+        Objects.requireNonNull(kind, "kind must not be null");
+        Objects.requireNonNull(text, "text must not be null");
     }
 }
