@@ -53,9 +53,12 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 // Every jar, and any other archive, gets its entries in a stable order and with a fixed timestamp, so two builds of
-// the same sources produce byte-identical files. This changes nothing today — Gradle 9 already writes them that way,
-// with every entry stamped 1980-02-01 — it only states the intent, so a later change to those defaults can't quietly
-// make the published jars vary. It doesn't stop a project setting either property back.
+// the same sources, on the same JDK build, produce byte-identical files. The JDK build is part of that because javac
+// records the java.base it compiled against, patch level included, in module-info.class: of the nine published jars
+// the three carrying a module descriptor differ between two JDK 21 patch levels in that one entry, and no Gradle
+// setting changes it. The lines below change nothing today — Gradle 9 already writes archives that way, with every
+// entry stamped 1980-02-01 — they only state the intent, so a later change to those defaults can't quietly make the
+// published jars vary. They don't stop a project setting either property back.
 tasks.withType(AbstractArchiveTask).configureEach {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
