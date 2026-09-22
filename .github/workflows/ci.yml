@@ -91,10 +91,22 @@ jobs:
       # Validates the Gradle wrapper, and caches Gradle's dependencies, wrapper and build cache between runs. Runs on
       # main save the cache; pull requests only read it, and each OS has its own. The basic provider is open source;
       # the default, enhanced one isn't. The configuration cache isn't saved, because that needs an encryption key.
+      #
+      # On the ubuntu-latest JDK 21 leg it also injects the dependency-graph plugin into the build, as the
+      # dependency-graph job below does on main, but only generates the graph: nothing is submitted or uploaded, so
+      # the job needs no more than read access. That job can't check the plugin, because dependency-submission runs
+      # Gradle with -Dorg.gradle.dependency.verification=off. Here the build resolves it with verification on, against
+      # the checksum pinned for it in gradle/verification-metadata.xml, so a gradle/actions bump that moves to a new
+      # plugin version fails the pull request until the pin is updated (docs/contributing/dependency-verification.md),
+      # not main after the merge. A plugin that doesn't verify fails the build whatever continue-on-failure says; false
+      # makes the init script fail on a Gradle version the plugin doesn't support, rather than warn and skip it.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-provider: basic
+          dependency-graph: >-
+            ${{ matrix.os == 'ubuntu-latest' && matrix.java-version == '21' && 'generate' || 'disabled' }}
+          dependency-graph-continue-on-failure: false
 
       # `build` runs `check`: Checkstyle, PMD, the 100% JaCoCo gate, the API compatibility check of every artifact,
       # the Javadoc site and each project's Javadoc, so a broken doc comment fails here, and the tests, including the
@@ -273,5 +285,8 @@ jobs:
 
       # Runs the injected :ForceDependencyResolutionPlugin_resolveAllDependencies task,
       # which resolves every configuration without the cost of a full build.
+      # The action runs Gradle with -Dorg.gradle.dependency.verification=off, so nothing this job downloads, the
+      # plugin it injects included, is checked against gradle/verification-metadata.xml. The build job's
+      # ubuntu-latest JDK 21 leg resolves the same plugin with verification on.
       - name: Submit dependency graph
         uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0

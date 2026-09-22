@@ -68,5 +68,6 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | ☕ [Javadoc](https://brantunger.github.io/unruly-engine/latest/) | Everyone | The API reference |
 
 For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [API compatibility](contributing/api-compatibility.md) ·
-[Build and gates](contributing/build-and-gates.md) · [Docs style guide](STYLE.md) · [RELEASING.md](../RELEASING.md) ·
-[SECURITY.md](../SECURITY.md) · [Code of Conduct](../CODE_OF_CONDUCT.md)
+[Build and gates](contributing/build-and-gates.md) ·
+[Dependency verification](contributing/dependency-verification.md) · [Docs style guide](STYLE.md) ·
+[RELEASING.md](../RELEASING.md) · [SECURITY.md](../SECURITY.md) · [Code of Conduct](../CODE_OF_CONDUCT.md)

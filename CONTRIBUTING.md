@@ -154,6 +154,7 @@ on JDK 25, and checks the PR title.
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
+| 🔏 **Dependency verification** | Every dependency and plugin the build downloads has a trusted PGP signature, or otherwise matches its checksum | `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys`; see [Dependency verification](docs/contributing/dependency-verification.md) |
 | 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version | The structural tests in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 
 Three things to know about the gate:
@@ -185,6 +186,7 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 | `japicmp` | `<project>/build/reports/japicmp/report.html` | See [API compatibility](docs/contributing/api-compatibility.md) |
 | `PackageDependencyTest` | The test report | A package used one it may not; `PackageDependencyTest` lists what each package may use |
 | `EngineApiShapeTest`, `SealedContextsTest`, `NullnessAnnotationsTest`, `EngineVisibilityTest`, `ClassFileVersionTest` | The test report | A public type changed shape, or a class targets a newer Java; read the test's `@DisplayName` for the rule it protects |
+| `Dependency verification failed for configuration` | The console, and `build/reports/dependency-verification/at-<epoch-millis>/dependency-verification-report.html` | Usually a changed dependency or plugin: [Dependency verification](docs/contributing/dependency-verification.md#-when-to-regenerate) says what each message means and when to regenerate |
 | A result you don't believe | — | Add `--rerun`, or `--no-build-cache --no-configuration-cache`, to rebuild from scratch |
 
 > [!TIP]
