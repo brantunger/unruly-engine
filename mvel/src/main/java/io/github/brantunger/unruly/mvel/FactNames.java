@@ -130,18 +130,50 @@ final class FactNames {
      * beyond what the JDK may cache softly, and only a class file that exists is loaded.
      * Loading it also rules out a false match from a class directory on a case-insensitive file system, where
      * {@code date.class} finds {@code Date.class}. A class that exists but can't be loaded isn't a class here either:
-     * MVEL's own lookup of a name in an imported package ignores every error, so it reads the name as the fact.
+     * MVEL's own lookup of a name in an imported package ignores every error, so it reads the name as the fact. That
+     * is why every error the load throws is read as "not a class", bar a {@link VirtualMachineError}, where the JVM
+     * itself is failing and a fact name isn't what to report.
+     *
+     * <p>
+     * In a native image the class file isn't looked up at all. An image serves no class file as a resource unless
+     * its resource configuration names it, so the lookup found nothing, this answered "not a class" for every name,
+     * and MVEL — which only loads, and never looks a resource up — read the imported class and hid the fact from
+     * every rule. The lock the lookup exists to avoid isn't there either: an image's {@code ClassLoader.loadClass}
+     * neither synchronizes nor keeps a lock object. So an image loads the class straight away, and the check agrees
+     * with MVEL again.
+     * </p>
      */
     private boolean isClass(String pkg, String name) {
-        if (classLoader.getResource(pkg.replace('.', '/') + '/' + name + ".class") == null) {
+        if (!inNativeImage() && classLoader.getResource(pkg.replace('.', '/') + '/' + name + ".class") == null) {
             return false;
         }
         try {
             Class.forName(pkg + '.' + name, false, classLoader);
             return true;
-        } catch (ClassNotFoundException | LinkageError e) {
+        } catch (ClassNotFoundException e) {
+            return false;
+        } catch (VirtualMachineError e) {
+            // Not core's Failures.isFatal, which the mvel package may not use and which reads a StackOverflowError
+            // as one rule's failure: every error the JVM itself raises propagates out of this lookup today, and a
+            // fact-name check is no place to start absorbing one.
+            throw e;
+        } catch (Error e) {
+            // One catch for the rest, so an image's MissingReflectionRegistrationError — an Error, but not a
+            // LinkageError — reads as "not a class" rather than failing a run MVEL would have completed.
             return false;
         }
+    }
+
+    /**
+     * Tells whether this call is running in a native image, as GraalVM's own {@code ImageInfo.inImageRuntimeCode}
+     * does, without a dependency on its SDK. The property is {@code "runtime"} only in an image, and
+     * {@code "buildtime"} while one is being built, where class loading is an ordinary JVM's and the lock the class
+     * file lookup avoids is real, so the value is compared and not merely tested for. It is read on every call and
+     * never into a field: a field an image's build filled in would answer {@code "buildtime"} for the image's whole
+     * life. Only a name neither cache knows gets this far.
+     */
+    private static boolean inNativeImage() {
+        return "runtime".equals(System.getProperty("org.graalvm.nativeimage.imagecode"));
     }
 
     // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together.

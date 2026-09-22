@@ -24,12 +24,10 @@ the errors an image gives when one is missing.
 
 ## 🚀 Quick start
 
-The engine and MVEL work in a native image when two things are true, with one exception:
+The engine and MVEL work in a native image when two things are true:
 
 1. MVEL runs with its JIT off: the executable is started with `-Dmvel2.disable.jit=true`.
 2. The image registers, for reflection, every class and method your rules read, write or call.
-
-The exception is a fact named after a class in an imported package; see [Gotchas](#-gotchas).
 
 The [native-smoke](../native-smoke/src/main/java/com/example/nativesmoke/Main.java) application in this repository
 does both, and CI builds and runs it on every pull request. These are CI's commands, run from the repository's root;
@@ -43,19 +41,24 @@ native-image --no-fallback -H:+ReportExceptionStackTraces -cp 'native-smoke/buil
 native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
 ```
 
+The engine logs every fact name it rejects at ERROR, so those lines come before the status line a correct image
+ends with:
+
 ```text
-native smoke OK: bean=prime map=standard,raised factName=accepted,prime dateResource=false dateFactValue=class java.util.Date image=true jit=off
+native smoke OK: bean=prime map=standard,raised factName=rejected,prime dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
 `bean` and `map` are what the rules produced, `image=true` says the binary is running as a native image, and
-`jit=off` that MVEL's JIT is off. The rest reports one difference from the JVM, which [Gotchas](#-gotchas) covers:
-`factName=accepted` means the image took a fact named after a class in an imported package, and
-`dateFactValue=class java.util.Date` that a rule then read the name as the class, not as the fact.
+`jit=off` that MVEL's JIT is off. `factName=rejected` means the image rejected a fact named after a class in an
+imported package, as the JVM does. `prime` beside it is the control: an engine that imports the application's own
+class and no package ran its rule as it should.
 
-`dateResource=false` is the diagnostic that says why: the image served no class file for `java.util.Date` as a
-resource. `factName`'s second half, `prime`, is the control beside it: an engine that imports the application's own
-class and no package ran its rule as it should. The same binary on the JVM prints `factName=rejected,prime`,
-`dateResource=true`, `dateFactValue=rejected` and `image=false` instead.
+`dateResource` and `dateFactValue` are diagnostics, and no result is held to them. `dateResource=false` says the
+image served no class file for `java.util.Date` as a resource; the check doesn't ask an image for one, which is why
+the name is rejected all the same. `dateFactValue=rejected` says a rule reading `Date` never ran, because the check
+rejected the fact first. The same code on the JVM prints `dateResource=true` and `image=false`, and every other
+value the same; run it with
+`java -Dmvel2.disable.jit=true -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main`.
 
 Nothing else is needed to build and run an image: no `native-image` option beyond the usual ones, no metadata for
 `unruly-engine-core`, and no change to how you build engines or load rules. `native-image` finds MVEL through its
@@ -129,28 +132,11 @@ write an entry by hand, register the method on the class the error names.
 
 ## 🚧 Gotchas
 
-> [!WARNING]
-> Don't name a fact after a class in a package the engine imports. The JVM rejects such a name; a native image
-> accepts it, rules read it as the class, and the fact is invisible to all of them, with no error. Rename the fact.
-> Fixing this ([#490](https://github.com/brantunger/unruly-engine/issues/490)) will change what an image does with
-> such a name.
-
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A fact named after a class in an imported package** | On the JVM `run()` rejects the name with an `IllegalArgumentException`. In an image it is accepted, and every rule reads it as the class: no exception, no log line, and a run that reports success while the fact is invisible ([#490](https://github.com/brantunger/unruly-engine/issues/490)) | Rename the fact, or don't import that package |
 | **The agent saw only the rules that ran** | A first-match engine stops at the first match, so the agent records nothing for the rules below it. The image fails when production facts reach them | Run the agent with facts that fire each rule, or register by hand |
 | **Rules loaded after the build** | Rules reloaded from a database or a file can use a class or method the image doesn't register. They can load, then fail when they run | Register what new rules may use, and test each rule list in the image before loading it in production |
 | **An entry that only allows lookups** | `queryAllPublicMethods` alone lets MVEL find a method but not call it | List each called method under `methods` |
-
-Why the name slips through: to decide whether `Date` is a class in an imported package, the check looks the class
-file up as a resource first, and loads the class only if that found it
-([FactNames.java](../mvel/src/main/java/io/github/brantunger/unruly/mvel/FactNames.java) says why it does that). The
-image served no class file for `java.util.Date`, so the check found nothing. MVEL loads the class rather than asking
-for it as a resource, so it still resolves the name, and reads it as the class.
-
-A single-class import is checked against the simple names of the classes the engine imported, and never reaches that
-lookup. That's from reading the code; no test has run a fact named after a single imported class in an image, so
-renaming the fact is the answer that doesn't rest on it.
 
 ## 🚨 Errors and what they mean
 
@@ -197,9 +183,10 @@ Linux, and runs it. The application checks its own results and exits with 1 if o
 - loading rules, which computes their checksum with SHA-256, and finding MVEL with `ServiceLoader`;
 - an image without Flight Recorder support.
 
-It also runs a fact named after a class in an imported package, and that is the one thing it found not to work in an
-image: the name was accepted, and a rule read it as `java.util.Date`. The application asserts that, so a change
-either way turns CI red. See [Gotchas](#-gotchas).
+It also runs a fact named after a class in an imported package, the one path where the fact-name check resolves a
+class name: an image rejects such a name, as the JVM does. The application checks that outcome, so a change either
+way turns CI red. A fact named after a single imported class is matched against the simple names of the classes the
+engine already loaded, so it never reaches that lookup; that is from reading the code, and no image has run it.
 
 Not tested: Oracle GraalVM, GraalVM for other JDK versions, Windows and macOS images, the module path, frameworks'
 own native support such as Spring Boot's, listeners, timeouts, the other builder options, a fact named after a

@@ -108,8 +108,8 @@ engine.load(rules);
   is rejected the same way, with the `LinkageError` as the cause. Before 1.6.1 it was imported as a package, and rules
   that used it failed later with `unresolvable property or identifier`.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can no longer be used as a fact name. On the JVM, an engine built with `imports("java.util")`
-  rejects a fact named `Date`; a native image doesn't. See [Fact names MVEL rejects](#fact-names-mvel-rejects).
+- An imported class name can no longer be used as a fact name. On an engine built with `imports("java.util")`, a fact
+  named `Date` is rejected. See [Fact names MVEL rejects](#fact-names-mvel-rejects).
 - A single-class import such as `"java.time.LocalDate"` is resolved by `build()`, with the building thread's
   context class loader. A string that loader can't load as a class, but that is a valid package name, is imported as
   a package.
@@ -152,7 +152,7 @@ These identifiers are rejected too, because MVEL reads them as something else be
 | Primitive type names | `boolean` `byte` `char` `double` `float` `int` `long` `short` |
 | Built-in class names | The 22 in [Classes and imports](#-classes-and-imports), such as `Math`, `String` and `Thread` |
 | Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
-| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")`, on the JVM only |
+| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")` |
 
 ```text
 'Math' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would never see the fact
@@ -163,12 +163,8 @@ These identifiers are rejected too, because MVEL reads them as something else be
 - Names such as `$x`, `_` and `café` are identifiers, so they're accepted, and rules can refer to them.
 - A class in an imported package is looked up with the class loader `load()` captured, as the
   [imports](#-classes-and-imports) are.
-
-> [!WARNING]
-> A class in an imported package is rejected as a fact name on the JVM only. In a native image the lookup finds no
-> such class, so a fact named `Date` is accepted on an engine that imports `java.util`, and every rule reads the name
-> as `java.util.Date` rather than as the fact, with no error. See [Gotchas](../native-image.md#-gotchas) and
-> [#490](https://github.com/brantunger/unruly-engine/issues/490).
+- One that can't be loaded isn't read as a class name, so the fact keeps it, as in MVEL's own lookup; a
+  [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
 
 ### Null and missing facts
 
