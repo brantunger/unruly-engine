@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.2.0](https://github.com/brantunger/unruly-engine/compare/v2.1.5...v2.2.0) (2026-09-22)
+
+
+### Features
+
+* let a language explain a condition's result, and check its sessions in the contract kit ([#500](https://github.com/brantunger/unruly-engine/issues/500)) ([e36ebe5](https://github.com/brantunger/unruly-engine/commit/e36ebe51f60b053c658d2f80854fa6cd5f76ed35))
+
 ## [2.1.5](https://github.com/brantunger/unruly-engine/compare/v2.1.4...v2.1.5) (2026-09-22)
 
 
