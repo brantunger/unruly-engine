@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 
@@ -248,31 +249,54 @@ class FailureReportingTest {
     }
 
     @Test
-    @DisplayName("a fatal Error from beforeRun of a run that stopped waiting for a copy closes that run too")
+    @DisplayName("a fatal Error from beforeRun of a run that stopped waiting for a copy closes that run too, with its"
+            + " own failure rather than one an earlier run left on the thread")
     void fatalErrorFromBeforeRunWhileWaitingForACopy() throws InterruptedException {
+        CountDownLatch firstRunOver = new CountDownLatch(1);
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean armed = new AtomicBoolean();
         Recorder recorder = new Recorder();
         RuleListener fatalForWaiter = new RuleListener() {
             @Override
             public void beforeRun(RunContext run) {
-                if (Thread.currentThread().getName().equals("waiter")) {
-                    throw new OutOfMemoryError("listener");
+                if (armed.get() && Thread.currentThread().getName().equals("waiter")) {
+                    throw new OutOfMemoryError("from beforeRun");
                 }
             }
         };
+        // The waiter's first run dies of a fatal Error in the rule's action; the holder's run keeps the only copy
+        // in its condition until released.
+        CompiledAction action = (context, session) -> {
+            if (Thread.currentThread().getName().equals("waiter")) {
+                throw new OutOfMemoryError("the rule's own error");
+            }
+            return ActionResult.done();
+        };
         RulesEngine<Map<String, Object>> engine = builder(new ToyLanguage((context, expression) -> (c, session) -> {
+            if (!Thread.currentThread().getName().equals("holder")) {
+                return true;
+            }
             holding.countDown();
             return release.await(30, TimeUnit.SECONDS);
-        }, DONE, true)).listener(fatalForWaiter).listener(recorder).maxCopies(1).build();
-        engine.load(rule("hold"));
+        }, action, true)).listener(fatalForWaiter).listener(recorder).maxCopies(1).build();
+        engine.load(rule("boom"));
         Thread holder = new Thread(() -> engine.run(new FactMap<>()), "holder");
-        holder.start();
-        assertTrue(holding.await(30, TimeUnit.SECONDS), "the first run never started");
+        AtomicReference<Throwable> firstThrown = new AtomicReference<>();
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         List<String> waiterCalls = new CopyOnWriteArrayList<>();
         Thread waiter = new Thread(() -> {
             try {
+                try {
+                    engine.run(new FactMap<>());
+                } catch (Throwable t) {
+                    firstThrown.set(t);
+                }
+                firstRunOver.countDown();
+                if (!holding.await(30, TimeUnit.SECONDS)) {
+                    throw new AssertionError("the holder's run never started");
+                }
+                armed.set(true);
                 engine.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofMillis(50)));
             } catch (Throwable t) {
                 thrown.set(t);
@@ -281,17 +305,35 @@ class FailureReportingTest {
             }
         }, "waiter");
 
-        String logs = logsOf(() -> {
-            waiter.start();
-            assertDoesNotThrow(() -> waiter.join(TimeUnit.SECONDS.toMillis(30)));
-        });
-        release.countDown();
-        holder.join(TimeUnit.SECONDS.toMillis(30));
+        String logs;
+        try {
+            logs = logsOf(() -> {
+                waiter.start();
+                assertDoesNotThrow(() -> assertTrue(firstRunOver.await(30, TimeUnit.SECONDS),
+                        "first run never ended"));
+                holder.start();
+                assertDoesNotThrow(() -> waiter.join(TimeUnit.SECONDS.toMillis(30)));
+            });
+        } finally {
+            // However the test ends, neither thread is left waiting to write to the output a later test captures.
+            release.countDown();
+            holder.join(TimeUnit.SECONDS.toMillis(30));
+            waiter.join(TimeUnit.SECONDS.toMillis(30));
+        }
+        // Checked after the finally, so a failure already on its way out isn't masked by one of these.
+        assertFalse(holder.isAlive(), "the holder's run didn't end within 30 seconds");
+        assertFalse(waiter.isAlive(), "the waiter's runs didn't end within 30 seconds");
 
+        assertInstanceOf(OutOfMemoryError.class, firstThrown.get());
         assertTrue(logs.contains("while waiting for a compiled copy of the rules"), logs);
         assertInstanceOf(OutOfMemoryError.class, thrown.get());
-        assertEquals(List.of("beforeRun", "beforeRun", "onRunError"), waiterCalls,
-                "the holder's run opened, then the waiter's run opened and was closed");
+        assertEquals("from beforeRun", thrown.get().getMessage());
+        assertEquals(List.of("beforeRun", "onRunError", "beforeRun", "beforeRun", "onRunError"), waiterCalls,
+                "the waiter's first run opened and failed, the holder's run opened, then the waiter's second run"
+                        + " opened and was closed");
+        String own = recorder.runErrors.get(1).getMessage();
+        assertTrue(own.startsWith("The run failed with java.lang.OutOfMemoryError: from beforeRun"),
+                "onRunError got the previous run's failure: " + own);
     }
 
     @Test
