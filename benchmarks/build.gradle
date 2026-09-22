@@ -3,8 +3,10 @@ plugins {
 }
 
 // Benchmarks of the engine itself. Nothing here is published: the project exists so a change to the engine can be
-// measured rather than argued about. It isn't wired into `check`, because identical configurations differed by up to
-// 1.6x between sweeps on a shared machine, so a pass/fail threshold in CI would only be flaky (see #293).
+// measured rather than argued about. The measurements aren't wired into `check`, because identical configurations
+// differed by up to 1.6x between sweeps on a shared machine, so a pass/fail threshold in CI would only be flaky
+// (see #293). What is wired in is the shape of the workload they generate: `test` asserts what one run evaluates
+// and fires, which is a count and not a timing, so it can't be flaky (see #353).
 
 dependencies {
     implementation project(':mvel')
@@ -12,6 +14,10 @@ dependencies {
     annotationProcessor libs.jmh.generator.annprocess
     // Without a provider, SLF4J prints a warning into every benchmark's output.
     runtimeOnly libs.slf4j.simple
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 // JMH generates the code that runs each @Benchmark. It's machine-written, so it isn't held to the warning settings

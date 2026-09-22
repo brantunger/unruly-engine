@@ -64,29 +64,31 @@ public class RunBenchmark {
     private static final class NoopListener implements RuleListener {
     }
 
-    /** About one rule in ten matches, so a run does some work without firing everything. */
+    /** One rule in ten matches, so a run does some work without firing everything. */
     private static final int MATCHING_SCORE = 700;
 
     private static final String MVEL = "mvel";
     private static final String FIRST_MATCH = "firstMatch";
     private static final String MAP = "map";
 
+    // The parameters, the engine, the facts and ruleList() are package-private so RunBenchmarkWorkloadTest can
+    // assert what one run evaluates and fires. JMH sets a parameter by reflection, so it reaches either one.
     @Param({"10", "100", "1000"})
-    private int rules;
+    int rules;
 
     @Param({FIRST_MATCH, "allMatches"})
-    private String policy;
+    String policy;
 
     @Param({"record", MAP})
-    private String facts;
+    String facts;
 
     @Param({"none", NoopLanguage.LANGUAGE_NAME})
-    private String listener;
+    String listener;
 
     @Param({MVEL, NoopLanguage.LANGUAGE_NAME})
-    private String language;
+    String language;
 
-    private RulesEngine<Map<String, Object>> engine;
+    RulesEngine<Map<String, Object>> engine;
 
     /** Builds the engine these parameters describe and compiles its rules, once for the whole trial. */
     @Setup(Level.Trial)
@@ -116,24 +118,28 @@ public class RunBenchmark {
     }
 
     /**
-     * Builds {@code count} rules whose thresholds are spread over the score range, so about one in ten matches the
-     * facts each run uses, whichever language they're written in.
+     * Builds {@code count} rules whose thresholds fall as their priorities do, so the last tenth of the list matches
+     * the facts each run uses and the nine tenths above it don't, whichever language they're written in.
      *
      * @param count    How many rules to build
      * @param language The name of the language to write them in
      * @return The rules, in the order they're loaded
      */
-    private static List<Rule> ruleList(int count, String language) {
+    static List<Rule> ruleList(int count, String language) {
         List<Rule> ruleList = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            // Thresholds from 620 to 1,020: the ten per cent at or below the facts' score match.
-            int threshold = 620 + i % 100 * 4;
+            // One lower for each step down the priority order, crossing the facts' score nine tenths of the way
+            // along: rule i matches exactly when i >= count * 9 / 10. So one rule in ten matches at 10, 100 and
+            // 1,000 alike, and a first-match run evaluates the nine tenths above the match before it stops. A
+            // threshold tied to i % 100, or to a fixed range, does neither: the match lands in the first hundred
+            // rules however long the list is.
+            int threshold = MATCHING_SCORE + count * 9 / 10 - i;
             String property = "rule" + i;
             ruleList.add(NoopLanguage.LANGUAGE_NAME.equals(language)
                     ? Rule.builder().ruleName(property).language(NoopLanguage.LANGUAGE_NAME)
                             .condition(Integer.toString(threshold)).action(property).priority(count - i).build()
                     : Rule.builder().ruleName(property)
-                            .condition("applicant.creditScore >= " + threshold + " && employed")
+                            .condition("applicant.creditScore >= " + threshold + " && applicant.employed")
                             .action("output.put('" + property + "', true)").priority(count - i).build());
         }
         return ruleList;
@@ -144,7 +150,7 @@ public class RunBenchmark {
      *
      * @return The facts
      */
-    private FactStore<Object> newFacts() {
+    FactStore<Object> newFacts() {
         FactStore<Object> store = new FactMap<>();
         store.setValue("applicant", MAP.equals(facts)
                 ? Map.of("creditScore", MATCHING_SCORE, "name", "Alex", "employed", true)

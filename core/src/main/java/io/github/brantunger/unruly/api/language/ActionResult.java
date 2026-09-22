@@ -51,7 +51,7 @@ public final class ActionResult {
     public static ActionResult set(Map<String, ? extends @Nullable Object> properties) {
         Map<String, @Nullable Object> copy = new LinkedHashMap<>();
         properties.forEach((name, value) -> {
-            Objects.requireNonNull(name, "property name");
+            Objects.requireNonNull(name, "property name must not be null");
             if (name.isEmpty()) {
                 throw new IllegalArgumentException("property name must not be empty");
             }

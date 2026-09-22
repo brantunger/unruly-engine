@@ -40,14 +40,20 @@ class ActionResultTest {
     }
 
     @Test
-    @DisplayName("set() rejects a null map, a null name and an empty name")
+    @DisplayName("set() rejects a null map, and rejects a null or empty name with a message that explains itself")
     void setValidated() {
         Map<String, Object> nullName = new HashMap<>();
         nullName.put(null, 1);
 
         assertThrows(NullPointerException.class, () -> ActionResult.set(null));
-        assertThrows(NullPointerException.class, () -> ActionResult.set(nullName));
-        assertThrows(IllegalArgumentException.class, () -> ActionResult.set(Map.of("", 1)));
+
+        NullPointerException nullRejected = assertThrows(NullPointerException.class,
+                () -> ActionResult.set(nullName));
+        assertEquals("property name must not be null", nullRejected.getMessage());
+
+        IllegalArgumentException emptyRejected = assertThrows(IllegalArgumentException.class,
+                () -> ActionResult.set(Map.of("", 1)));
+        assertEquals("property name must not be empty", emptyRejected.getMessage());
     }
 
     @Test

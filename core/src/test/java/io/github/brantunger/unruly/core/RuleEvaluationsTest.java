@@ -203,6 +203,10 @@ class RuleEvaluationsTest {
 
         assertEquals(matched, RuleEvaluation.of(HIGH, Outcome.MATCHED));
         assertEquals(matched.hashCode(), RuleEvaluation.of(HIGH, Outcome.MATCHED).hashCode());
+        // The outcome is part of the hash too, not only of equals, so two outcomes of one rule don't collide in a
+        // HashSet or a HashMap a caller puts them in. Asserted as an inequality rather than as a number: a literal
+        // would pin Objects.hash's formula and the enum's identity hash, which differs from one JVM to the next.
+        assertNotEquals(matched.hashCode(), RuleEvaluation.of(HIGH, Outcome.NOT_MATCHED).hashCode());
         assertNotEquals(matched, RuleEvaluation.of(HIGH, Outcome.NOT_MATCHED));
         assertNotEquals(matched, RuleEvaluation.of(LOW, Outcome.MATCHED));
         assertNotEquals(matched, "high=MATCHED");
