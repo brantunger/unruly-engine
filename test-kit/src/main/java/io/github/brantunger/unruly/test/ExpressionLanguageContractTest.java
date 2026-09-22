@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
@@ -13,6 +14,8 @@ import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.ConditionResult;
+import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
@@ -24,10 +27,13 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -569,6 +575,213 @@ public abstract class ExpressionLanguageContractTest {
                 };
             }
         };
+    }
+
+    @Test
+    @DisplayName("each copy of the rules gets a session of its own, and closing a session doesn't throw")
+    void sessionsClosed() {
+        SessionWatch sessions = new SessionWatch();
+        // Two copies when the rules load. A language that keeps state gets newSession() called twice, once for each
+        // copy, and each session warmed up; one that returns Session.none() is asked once, and its copy is shared.
+        // Closed by the try, so a failed run still closes the sessions.
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(sessions.watching(language())).copiesAtLoad(2).build()) {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+        } catch (Throwable e) {
+            // The engine is closed by now. The run's failure stays the one reported, with what closing the sessions
+            // threw attached to it.
+            sessions.suppressCloseFailures(e);
+            throw e;
+        }
+
+        // The engine closes every session itself, once, so what's left to check is the language's part: a session
+        // returned to two copies is used by two runs at once and closed twice, and a close() that throws is only
+        // logged at WARN, so nothing else would show either.
+        sessions.assertNoneShared();
+        sessions.assertNoneThrewOnClose();
+    }
+
+    /**
+     * Checks only two things about each condition's detail: that it isn't a session the language's
+     * {@code newSession()} returned, compared by identity, and that its {@code toString()} still works once the engine
+     * has closed the sessions. It doesn't look inside the detail for a session it holds, and a language that returns
+     * {@link Session#none()} has no session to compare with.
+     */
+    @Test
+    @DisplayName("a condition's detail isn't the session it ran with, and can still be read once the session is closed")
+    void conditionDetail() {
+        SessionWatch sessions = new SessionWatch();
+
+        // Closed by the try, so the details are read once the engine has closed the sessions, and a failed run still
+        // closes them.
+        List<RuleEvaluation> evaluations;
+        try (RulesEngine<Map<String, Object>> engine = engine(sessions.watching(language()))) {
+            // One rule that matches and one that doesn't, so the detail of a false condition is checked too.
+            engine.load(List.of(rule("matches", 2, factEquals("x", 1), putFact(SEEN, "x")),
+                    rule("misses", 1, factEquals("x", 2), putFact(SEEN, "x"))));
+            evaluations = engine.runWithResult(new FactMap<>(new Fact<>("x", 1))).evaluations();
+        }
+
+        assertEquals(2, evaluations.size(), "the run didn't report both rules' evaluations");
+        // The result outlives the run, and a caller reads it after the engine has given the session to another run
+        // or closed it, so the detail can't be the session, and printing it can't need the session open.
+        for (RuleEvaluation evaluation : evaluations) {
+            Object detail = evaluation.detail();
+            sessions.assertNotASession(detail);
+            assertDoesNotThrow(() -> String.valueOf(detail),
+                    "the condition's detail can't be read once the engine has closed its session");
+        }
+    }
+
+    /**
+     * Watches the sessions a language returns: whether it returns one instance twice, and whether closing one throws.
+     * Each session the engine gets is wrapped, so its close can be seen, and the language is handed back its own
+     * session, unwrapped, wherever the engine passes one.
+     */
+    private static final class SessionWatch {
+
+        /** Every session the language returned, by identity: two sessions that are merely equal are still two. */
+        private final Set<Session> returned = Collections.synchronizedSet(
+                Collections.newSetFromMap(new IdentityHashMap<>()));
+        private final List<Session> shared = new CopyOnWriteArrayList<>();
+        private final List<Throwable> closeFailures = new CopyOnWriteArrayList<>();
+
+        void assertNoneShared() {
+            if (!shared.isEmpty()) {
+                fail("newSession() returned the same session for two copies of the rules, so two runs use it at once"
+                        + " and the engine closes it twice: " + shared.get(0));
+            }
+        }
+
+        void assertNoneThrewOnClose() {
+            if (!closeFailures.isEmpty()) {
+                fail("a session's close() threw " + closeFailures.get(0)
+                        + ", which the engine only logs at WARN");
+            }
+        }
+
+        // By identity: the engine rethrows a fatal error from close() itself, and try-with-resources has attached
+        // what engine.close() threw to a failed run, so either may be one of these already.
+        @SuppressWarnings("PMD.CompareObjectsWithEquals")
+        void suppressCloseFailures(Throwable runFailure) {
+            List<Throwable> attached = Arrays.asList(runFailure.getSuppressed());
+            for (Throwable failure : closeFailures) {
+                if (failure != runFailure && attached.stream().noneMatch(known -> known == failure)) {
+                    runFailure.addSuppressed(failure);
+                }
+            }
+        }
+
+        void assertNotASession(@Nullable Object detail) {
+            if (returned.contains(detail)) {
+                fail("the condition's detail is the session it ran with, which the engine gives to another run or"
+                        + " closes: " + detail);
+            }
+        }
+
+        // Session.none() is one shared instance, and the engine asks whether a language's session is it by identity.
+        @SuppressWarnings("PMD.CompareObjectsWithEquals")
+        private @Nullable Session watch(@Nullable Session session) {
+            // Passed through as it is: a wrapped Session.none() would make the engine keep a copy of the rules for
+            // each run, where it shares one, and change what's being checked. A null is passed through too, so the
+            // engine still rejects it with its own message.
+            if (session == null || session == Session.none()) {
+                return session;
+            }
+            // Recorded, not failed here: an exception from newSession() would be the engine's failure to create a
+            // session, reported by load() here, not a message about the language's session being shared.
+            if (!returned.add(session)) {
+                shared.add(session);
+            }
+            return new Watched(session);
+        }
+
+        /** The language's own session, which is what its expressions and warmUp() expect. */
+        private static Session unwrap(Session session) {
+            return session instanceof Watched watched ? watched.session : session;
+        }
+
+        ExpressionLanguage watching(ExpressionLanguage language) {
+            return new ExpressionLanguage() {
+                @Override
+                public String name() {
+                    return language.name();
+                }
+
+                @Override
+                public ExpressionCompiler newCompiler(CompileContext context) {
+                    ExpressionCompiler compiler = language.newCompiler(context);
+                    return new ExpressionCompiler() {
+                        @Override
+                        public CompiledCondition compileCondition(Expression expression) {
+                            CompiledCondition condition = compiler.compileCondition(expression);
+                            // Not a lambda: that would implement only evaluate(), and drop the language's detail.
+                            return new CompiledCondition() {
+                                @Override
+                                public @Nullable Object evaluate(EvaluationContext evaluation, Session session)
+                                        throws Exception {
+                                    return condition.evaluate(evaluation, unwrap(session));
+                                }
+
+                                @Override
+                                public ConditionResult evaluateWithDetail(EvaluationContext evaluation,
+                                                                          Session session) throws Exception {
+                                    return condition.evaluateWithDetail(evaluation, unwrap(session));
+                                }
+                            };
+                        }
+
+                        @Override
+                        public CompiledAction compileAction(Expression expression) {
+                            CompiledAction action = compiler.compileAction(expression);
+                            return (actionContext, session) -> action.execute(actionContext, unwrap(session));
+                        }
+
+                        @Override
+                        public Session newSession() {
+                            return watch(compiler.newSession());
+                        }
+
+                        @Override
+                        public void warmUp(Session session) throws Exception {
+                            compiler.warmUp(unwrap(session));
+                        }
+
+                        @Override
+                        public void checkFactName(String name) {
+                            compiler.checkFactName(name);
+                        }
+
+                        @Override
+                        public void close() {
+                            compiler.close();
+                        }
+                    };
+                }
+            };
+        }
+
+        /** A language's session, whose close() records what it throws before throwing it on. */
+        private final class Watched implements Session {
+
+            private final Session session;
+
+            Watched(Session session) {
+                this.session = session;
+            }
+
+            // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception or Error.
+            @Override
+            public void close() {
+                try {
+                    session.close();
+                } catch (Throwable e) {
+                    closeFailures.add(e);
+                    throw e;
+                }
+            }
+        }
     }
 
     @Test

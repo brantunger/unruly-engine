@@ -45,6 +45,7 @@ import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
@@ -1038,7 +1039,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         List<CompiledRule> matched = new ArrayList<>();
         List<RuleEvaluation> evaluations = new ArrayList<>(ruleList.size());
         for (CompiledRule rule : ruleList) {
-            evaluations.add(RuleEvaluation.of(rule.rule(), outcome(rule, copy, facts, matched, untilFirst)));
+            evaluations.add(evaluation(rule, copy, facts, matched, untilFirst));
         }
         // An immutable copy, which the result's own List.copyOf then keeps as it is rather than copying again.
         return new Matches(matched, List.copyOf(evaluations));
@@ -1048,22 +1049,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Evaluates one rule's condition, unless the run skips the rule or is decided already, and adds the rule to
      * {@code matched} when the condition is true.
      *
-     * @return The rule's outcome
+     * @return The rule's outcome, with the detail its language explained the condition with, if it did
      */
-    private RuleEvaluation.Outcome outcome(CompiledRule rule, RuleSet.Copy copy, RunFacts facts,
-                                           List<CompiledRule> matched, boolean untilFirst) {
+    private RuleEvaluation evaluation(CompiledRule rule, RuleSet.Copy copy, RunFacts facts,
+                                      List<CompiledRule> matched, boolean untilFirst) {
         // Before the first-match check, so a skipped rule reads as skipped wherever it is.
         if (facts.selection().skips(rule.rule())) {
-            return RuleEvaluation.Outcome.SKIPPED;
+            return RuleEvaluation.of(rule.rule(), RuleEvaluation.Outcome.SKIPPED);
         }
         if (untilFirst && !matched.isEmpty()) {
-            return RuleEvaluation.Outcome.NOT_EVALUATED;
+            return RuleEvaluation.of(rule.rule(), RuleEvaluation.Outcome.NOT_EVALUATED);
         }
-        if (!matches(rule, copy, facts)) {
-            return RuleEvaluation.Outcome.NOT_MATCHED;
+        ConditionResult condition = matches(rule, copy, facts);
+        if (!Boolean.TRUE.equals(condition.value())) {
+            return RuleEvaluation.of(rule.rule(), RuleEvaluation.Outcome.NOT_MATCHED, condition.detail());
         }
         matched.add(rule);
-        return RuleEvaluation.Outcome.MATCHED;
+        return RuleEvaluation.of(rule.rule(), RuleEvaluation.Outcome.MATCHED, condition.detail());
     }
 
     /**
@@ -1072,10 +1074,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param rule  The rule whose condition to evaluate
      * @param copy  The run's copy of the rules, whose sessions the condition runs with
      * @param facts The run's facts and the views built over them
-     * @return Whether the condition was true
+     * @return What the language returned: a {@link Boolean} value, and the detail it explained it with, if any
      * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    boolean matches(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+    ConditionResult matches(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
         checkNotCancelled(rule, facts.deadline());
         return parseCondition(rule, copy, facts);
     }
@@ -1284,13 +1286,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return output;
     }
 
-    private boolean parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+    private ConditionResult parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
         RuleEvent event = FlightRecorderEvents.startRule();
         String outcome = RuleEvent.FAILED;
         facts.tally().countEvaluated();
         try {
-            boolean result = evaluateCondition(rule, copy, facts);
-            outcome = result ? RuleEvent.MATCHED : RuleEvent.NOT_MATCHED;
+            ConditionResult result = evaluateCondition(rule, copy, facts);
+            outcome = Boolean.TRUE.equals(result.value()) ? RuleEvent.MATCHED : RuleEvent.NOT_MATCHED;
             return result;
         } catch (RuleExecutionException e) {
             outcome = ruleOutcome(e);
@@ -1305,7 +1307,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
-    private boolean evaluateCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+    private ConditionResult evaluateCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
         // The run's evaluation context has its own read-only view, whose messages are about conditions, so a
         // listener that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = facts.forListeners();
@@ -1313,10 +1315,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
-        // condition like `status` (a non-empty string) would silently match instead of failing.
-        Object evaluated;
+        // condition like `status` (a non-empty string) would silently match instead of failing. Always with
+        // evaluateWithDetail, never evaluate, or the detail of a language that explains its conditions is lost.
+        ConditionResult condition;
         try {
-            evaluated = rule.compiledCondition().evaluate(facts.evaluation(),
+            condition = rule.compiledCondition().evaluateWithDetail(facts.evaluation(),
                     copy.sessions().get(rule.language()));
         } catch (Exception e) {
             throw stoppedOrFailed(snapshot, rule, facts.deadline(), e, () -> expressionFailure(snapshot, rule,
@@ -1325,9 +1328,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw expressionFailure(snapshot, rule, ExpressionKind.CONDITION, e);
         }
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
-        // signature, which tells the caller nothing about their rule.
+        // signature, which tells the caller nothing about their rule. So would reading a null result.
+        Object evaluated = condition == null ? null : condition.value();
         String wrongResult = evaluated instanceof Boolean ? null : "Condition for rule '" + rule.displayName()
-                + "' evaluated to " + (evaluated == null ? "null" : "a " + evaluated.getClass().getName())
+                + (condition == null ? "' returned no result from evaluateWithDetail" : "' evaluated to "
+                + (evaluated == null ? "null" : "a " + evaluated.getClass().getName()))
                 + ". A condition expression must evaluate to a boolean.";
         stopIfCancelled(snapshot, rule, ExpressionKind.CONDITION, facts.deadline(), wrongResult);
         if (!(evaluated instanceof Boolean result)) {
@@ -1337,7 +1342,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         notifyAfter(snapshot, rule, "afterEvaluate",
                 listener -> listener.afterEvaluate(rule.rule(), listenerFacts, result));
 
-        return result;
+        return condition;
     }
 
     private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {

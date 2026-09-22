@@ -333,6 +333,17 @@ use the rule, but not which of the three reasons applied. The result holds what 
 `isEnabled()`, its `getValidFrom()` and `getValidTo()` with `result.startedAt()`, and its `getTags()` with
 `result.tags()`.
 
+Since 2.2.0, an evaluation also has `detail()`: what the rule's expression language says about why the condition
+came out as it did, or `null`. Its type and content are the language's own. It's `null` when the language gives none,
+and for a `NOT_EVALUATED` or `SKIPPED` rule, whose condition never ran. In MVEL, the only language the engine ships,
+it's always `null`.
+
+The engine records a detail whenever the language gives one with a `Boolean` value; there's nothing to turn on. It
+isn't part of `equals()` or `hashCode()`, which compare the rule and the outcome, and a listener's `afterEvaluate`
+doesn't receive it. A `RulesEngine` of your own creates an evaluation with a detail with
+`RuleEvaluation.of(rule, outcome, detail)`. A language author returns it as
+[Writing an expression language](languages/custom.md#explaining-a-conditions-result) describes.
+
 > [!IMPORTANT]
 > `run()` returns `null` when no rule fired: no condition was true, or the rule list is empty. A rule that fired always
 > gives a non-`null` output, even when its action changed nothing, so check for `null` before you read the output.
@@ -524,6 +535,9 @@ match on a first-match engine, or `SKIPPED` when the run didn't use the rule bec
 validity window, or without the run's tags. To tell which, compare the rule with the result's `startedAt()` and
 `tags()`. A rule whose condition threw has no outcome, because the run threw instead. See
 [What a run reports](#-what-a-run-reports).
+
+To learn why a condition came out as it did, read the evaluation's `detail()`, if the rule's language gives one.
+MVEL doesn't, so for an MVEL rule it's `null`.
 
 ### How do I switch a rule off, or schedule it?
 

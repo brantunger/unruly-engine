@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,8 @@ import org.opentest4j.AssertionFailedError;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ContractKitChecksTest {
 
     /** Runs one of the kit's checks, by name, on a contract test for {@code language}. */
-    private static void runCheck(ExpressionLanguage language, String check) throws Throwable {
+    static void runCheck(ExpressionLanguage language, String check) throws Throwable {
         runCheck(new ToyExpressionLanguageContractTest() {
             @Override
             protected ExpressionLanguage language() {
@@ -108,6 +111,122 @@ class ContractKitChecksTest {
                 };
             }
         };
+    }
+
+    /** Wraps a language so that its compiler's newSession() returns what {@code sessions} supplies. */
+    static ExpressionLanguage withSessions(ExpressionLanguage language, Supplier<Session> sessions) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return sessions.get();
+                    }
+                };
+            }
+        };
+    }
+
+    /** Wraps a language so that each session it creates is new, and throws when it's closed. */
+    private static ExpressionLanguage throwingClose(ExpressionLanguage language) {
+        return withSessions(language, () -> new Session() {
+            @Override
+            public void close() {
+                throw new IllegalStateException("the session's runtime was already shut down");
+            }
+        });
+    }
+
+    /** Wraps a language so that it creates one session and returns it every time: state shared by every copy. */
+    private static ExpressionLanguage sharedSession(ExpressionLanguage language) {
+        Session shared = new Session() {
+        };
+        return withSessions(language, () -> shared);
+    }
+
+    @Test
+    @DisplayName("a language whose session throws when it's closed fails the session check (#470)")
+    void throwingCloseFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(throwingClose(new ToyExpressionLanguage()), "sessionsClosed"));
+
+        assertEquals("a session's close() threw java.lang.IllegalStateException: the session's runtime was already"
+                + " shut down, which the engine only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a session whose close() throws a fatal error fails the session check with that error (#470)")
+    void fatalCloseReported() {
+        // The engine rethrows a fatal error from close(), the same instance the session threw, from engine.close().
+        ExpressionLanguage fatalClose = withSessions(new ToyExpressionLanguage(), () -> new Session() {
+            @Override
+            public void close() {
+                throw new InternalError("the session's native runtime crashed");
+            }
+        });
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(fatalClose, "sessionsClosed"));
+
+        assertEquals("the session's native runtime crashed", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that returns one session for every copy of the rules fails the session check (#470)")
+    void sharedSessionFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(sharedSession(new ToyExpressionLanguage()), "sessionsClosed"));
+
+        assertTrue(failure.getMessage().startsWith("newSession() returned the same session for two copies of the"
+                + " rules, so two runs use it at once and the engine closes it twice: "), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that returns a new session each time, or none, passes the session check (#470)")
+    void ownSessionsPass() {
+        assertDoesNotThrow(() -> runCheck(withSessions(new ToyExpressionLanguage(), () -> new Session() {
+        }), "sessionsClosed"));
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "sessionsClosed"));
+    }
+
+    @Test
+    @DisplayName("the session check passes Session.none() on unwrapped, so a stateless language's copy is shared (#470)")
+    void noSessionNotWrapped() throws Throwable {
+        AtomicInteger created = new AtomicInteger();
+
+        runCheck(withSessions(new ToyExpressionLanguage(), () -> {
+            created.incrementAndGet();
+            return Session.none();
+        }), "sessionsClosed");
+
+        // Two copies are asked for when the rules load. A wrapped Session.none() is no longer the engine's stateless
+        // session, so it would make a copy for each, and ask for a session twice.
+        assertEquals(1, created.get());
+    }
+
+    @Test
+    @DisplayName("the session check passes a null session on, so the engine still rejects it (#470)")
+    void nullSessionStillRejected() {
+        UnrulyException failure = assertThrows(UnrulyException.class,
+                () -> runCheck(withSessions(new ToyExpressionLanguage(), () -> null), "sessionsClosed"));
+
+        assertTrue(failure.getMessage().endsWith("expression language returned no session"), failure.getMessage());
     }
 
     @Test

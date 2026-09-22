@@ -272,10 +272,10 @@ those are set. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 ### Rule evaluation
 
 What a run found out about one rule, in `RunResult.evaluations()`: the rule and its outcome, `MATCHED`, `NOT_MATCHED`,
-`NOT_EVALUATED` or `SKIPPED`. A first-match engine reports the rules after the match as not evaluated; the other
-policies evaluate every rule the run uses. A [skipped rule](#skipped-rule) is `SKIPPED` on every policy, wherever it
-is. A rule whose condition failed has none, because the run throws instead. See
-[What a run reports](engines-and-runs.md#-what-a-run-reports).
+`NOT_EVALUATED` or `SKIPPED`, and any detail its language gave about the condition. A first-match engine reports the
+rules after the match as not evaluated; the other policies evaluate every rule the run uses. A
+[skipped rule](#skipped-rule) is `SKIPPED` on every policy, wherever it is. A rule whose condition failed has none,
+because the run throws instead. See [What a run reports](engines-and-runs.md#-what-a-run-reports).
 
 ### Rule list
 

@@ -24,7 +24,7 @@ Every method has an empty default implementation, so override only the ones you 
 | `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, each rule's outcome, the rules' checksum, and the run's tags and instant |
 | `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus what the run failed with, **including failures that belong to no rule**. See below the diagram |
 | `beforeEvaluate(rule, facts)` | Before a condition is evaluated | The rule, and a read-only view of the fact values |
-| `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched |
+| `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched. Not the language's [detail](engines-and-runs.md#-what-a-run-reports): read that from `afterRun`'s result |
 | `beforeExecute(rule, output)` | Before an action runs | The rule and the output object |
 | `afterExecute(rule, output)` | After an action completes | The rule and the output object |
 | `onError(rule, error)` | Instead of `afterEvaluate` or `afterExecute`, when the condition or action fails | The rule and the `RuleExecutionException` the run fails with |

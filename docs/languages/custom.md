@@ -50,7 +50,7 @@ sequenceDiagram
     App->>Engine: run(facts), on any thread
     Engine->>Comp: newSession(), when no idle copy is free
     Engine->>Comp: checkFactName(name), for each fact
-    Engine->>Expr: evaluate() or execute(), with the run's session
+    Engine->>Expr: evaluateWithDetail() or execute(), with the run's session
     App->>Engine: load(newRules) or close()
     Engine->>Sess: close(), once no run uses the copy
     Engine->>Comp: close(), after its last session
@@ -62,10 +62,10 @@ sequenceDiagram
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
 | `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
-| `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled | The run's thread, or the `load()` thread | Yes |
+| `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled. Return `Session.none()` or a new session each time | The run's thread, or the `load()` thread | Yes |
 | `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it. Never for `Session.none()`, a session a run creates, or `validate()` | The `load()` thread | No |
-| `evaluate`, `execute` | Each rule the run reaches | The run's thread | Yes, each with its own session |
-| `Session.close()` | Once, when the copy it belongs to is done with (the cases are below) | Depends on the case | Yes, alongside other sessions |
+| `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
+| `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
 | `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
 
 Who closes a session depends on its copy. An extra copy, or a kept copy in use when the rules are retired: its run,
@@ -90,7 +90,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | A new compiler for each rule list |
 | `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
-| `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)` | A `Boolean`; an `ActionResult` |
+| `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
 The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
@@ -150,9 +150,10 @@ public final class MyLanguage implements ExpressionLanguage {
 throws `UnsupportedOperationException`. Actions see the output object as `output` (`ActionContext.OUTPUT_NAME`), and the
 engine already rejects a fact with that name.
 
-**Errors while running.** An exception from `evaluate` or `execute` becomes a `RuleExecutionException` naming the rule;
-a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even wrapped in your own exception. A condition that
-returns anything but a `Boolean`, including `null`, fails the rule: the engine coerces nothing.
+**Errors while running.** An exception from `evaluate`, `evaluateWithDetail` or `execute` becomes a
+`RuleExecutionException` naming the rule; a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even
+wrapped in your own exception. A condition that returns anything but a `Boolean`, including `null`, fails the rule:
+the engine coerces nothing.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the packages and classes from
 `imports(...)` with `classLoader()`, the context class loader of the `load()` or `validate()` thread; `outputType()`,
@@ -164,6 +165,50 @@ facts.
 **Warnings.** For a problem that shouldn't stop a rule loading, call `warn(source, issue)` on the `CompileContext`. The
 engine logs `Condition for rule 'prime-rate' has a warning at line 2, column 5: deprecated` at WARN on
 `io.github.brantunger.unruly.engine`, whatever the issue's severity.
+
+### Explaining a condition's result
+
+Since 2.2.0, a condition can say why it came out as it did. Override `evaluateWithDetail` and return the value together
+with a detail, from one evaluation:
+
+```java
+return new CompiledCondition() {
+    @Override
+    public Object evaluate(EvaluationContext evaluation, Session session) {
+        return parsed.evaluate(evaluation.facts());
+    }
+
+    @Override
+    public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session) {
+        MyTrace trace = parsed.evaluateTraced(evaluation.facts());   // the value and what decided it, in one pass
+        return ConditionResult.of(trace.value(), trace.toString());  // a Boolean, and the detail
+    }
+};
+```
+
+`MyTrace` stands for your language's own record of an evaluation.
+
+The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never calls `evaluate` itself. The default
+returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
+`evaluate` works unchanged. For a `Boolean` it returns a shared constant, `ConditionResult.TRUE` or `FALSE`, so the
+default allocates nothing extra, and neither does `ConditionResult.of(value, null)`.
+
+The value follows `evaluate`'s rule: anything but a `Boolean` fails the rule, and so does a `null` result. Keep
+`evaluate` returning the same value, for the callers that still use it, such as your own tests.
+
+The detail can be any object, or `null`. The application reads it as
+[`RuleEvaluation.detail()`](../engines-and-runs.md#-what-a-run-reports) on the run result. The engine records it for
+every rule it evaluates, whether or not anyone reads it, so keep it cheap to build. It's kept only with a `Boolean`
+value: any other value fails the run, and the detail with it. `afterEvaluate` on a listener
+doesn't receive it.
+
+- **Don't return the session, or hold it.** Sessions are closed when their copy is retired, and reused by later runs.
+- **Keep it usable after `close()`.** An application may keep the run result after the engine is closed, so at least
+  the detail's `toString()` must still work then.
+
+> [!WARNING]
+> A condition that wraps another one must override `evaluateWithDetail` and forward it. A lambda implements only
+> `evaluate`, so the default answers with no detail, and the wrapped condition's detail is silently dropped.
 
 ## 🚨 Errors when rules load
 
@@ -331,8 +376,8 @@ too, a throw is then reported as that rule's failure, logged at ERROR, and a ret
 | `warmUp` | Called on the `load()` thread, one session at a time, after every compile call and before any run sees the compiler |
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
-| A `Session` | Used by one run at a time, possibly on different threads one after another |
-| `Session.close()` | May run while other sessions of the same compiler are in use, so don't tear down what they share |
+| A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return a session it returned before, unless it's `Session.none()`: the engine doesn't check, and the kit's `sessionsClosed` check fails it |
+| `Session.close()` | May run while other sessions of the same compiler are in use, so don't tear down what they share. The kit's `sessionsClosed` check fails a `close()` that throws |
 | `isCancelled()` | Reads the calling thread's interrupt status and the deadline, so call it on the run's thread |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
@@ -440,7 +485,7 @@ needs the rest: a JUnit test engine to run the checks, the JUnit Platform launch
 the checks never run. With Maven and Surefire 3.5.4, the kit alone is enough: Surefire supplies the test engine.
 
 `ExpressionLanguageContractTest` checks the promises above for any language. Extend it and supply expressions in your
-language, one method for each hook. Its fourteen checks:
+language, one method for each hook. Its sixteen checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -457,6 +502,8 @@ language, one method for each hook. Its fourteen checks:
 | `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or `run()` |
 | `copiesAtLoad` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, two runs on two threads each see their own facts, and `x` = 2 fires nothing |
 | `compilerClosed` | `factEquals`, `putFact` | No | Each compiler is closed exactly once, after a reload and after `close()` |
+| `sessionsClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, `newSession()` never returns one instance twice, unless it's `Session.none()`, and no session's `close()` throws anything |
+| `conditionDetail` | `factEquals`, `putFact` | No | For a rule that matches and one that doesn't, the detail isn't a session `newSession()` returned, and its `toString()` still works after `close()` |
 | `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
 
 - Only the four `@Nullable` hooks, `declareVariable`, `reassignOutput`, `unusableFactName` and
@@ -467,8 +514,18 @@ language, one method for each hook. Its fourteen checks:
 - `language()` is called for each check and for each engine a check builds, so return a new instance.
 
 Each check builds `allMatches(HashMap::new).language(language())`, with no imports, options or declared facts, so the
-language must work alone. `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by
-value, so `Long` or `Double` whole numbers pass.
+language must work alone. `copiesAtLoad` and `sessionsClosed` add `copiesAtLoad(2)`, and `compilerClosed`,
+`sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions. `factValue(x)` must not
+coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or `Double` whole numbers pass.
+
+The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
+decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
+shares one copy, calls `newSession()` once and warms nothing up. A `null` from `newSession()` isn't watched, so the
+engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, at the first run in `conditionDetail`.
+
+`conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
+catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
+there. A language that gives no detail passes it with nothing to check.
 
 Two things no check exercises, so passing the kit says nothing about them.
 
@@ -528,6 +585,8 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 | **A condition that doesn't compile** | Its action isn't compiled, so the action's errors appear only after the next `load()` | Expect a second failure after fixing a condition |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause |
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
+| **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
+| **A `close()` that throws** | The engine logs it at WARN and carries on, so nothing but a fatal error reaches the application | Don't throw from `Session.close()`; the kit's `sessionsClosed` check fails it |
 
 ## ❓ Questions you might not think to ask
 
@@ -552,4 +611,9 @@ instead, and listeners aren't involved either.
 No. By default it does nothing, and an engine built with `copiesAtLoad(n)` still makes its copies at load. Implement
 it when a session's first use is costly, such as compiling or loading classes. See
 [Warming up a session](#warming-up-a-session).
+
+### Do I have to implement `evaluateWithDetail`?
+
+No. By default it calls your `evaluate` and gives no detail, so `RuleEvaluation.detail()` is `null` for your rules.
+MVEL doesn't implement it either. See [Explaining a condition's result](#explaining-a-conditions-result).
 
