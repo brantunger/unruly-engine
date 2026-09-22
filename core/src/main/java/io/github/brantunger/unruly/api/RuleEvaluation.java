@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 
 /**
@@ -10,7 +12,9 @@ import java.util.Objects;
  *
  * <p>
  * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
- * against this one. Two evaluations are equal when their rules and outcomes are.
+ * against this one. Two evaluations are equal when their rules and outcomes are, whatever their
+ * {@linkplain #detail() details}: a detail is the language's own object, with whatever {@code equals} it has, so it
+ * is left out of {@code equals} and {@code hashCode}.
  * </p>
  */
 public final class RuleEvaluation {
@@ -40,10 +44,12 @@ public final class RuleEvaluation {
 
     private final Rule evaluated;
     private final Outcome result;
+    private final @Nullable Object explanation;
 
-    private RuleEvaluation(Rule rule, Outcome outcome) {
+    private RuleEvaluation(Rule rule, Outcome outcome, @Nullable Object detail) {
         this.evaluated = Objects.requireNonNull(rule, "rule must not be null");
         this.result = Objects.requireNonNull(outcome, "outcome must not be null");
+        this.explanation = detail;
     }
 
     /**
@@ -56,7 +62,21 @@ public final class RuleEvaluation {
      * @throws NullPointerException if an argument is {@code null}
      */
     public static RuleEvaluation of(Rule rule, Outcome outcome) {
-        return new RuleEvaluation(rule, outcome);
+        return new RuleEvaluation(rule, outcome, null);
+    }
+
+    /**
+     * Creates an evaluation with the detail the rule's condition was explained with. The engine creates its own; this
+     * is for a class that implements {@link RulesEngine}, such as a decorator or a test double, and for tests.
+     *
+     * @param rule    The rule
+     * @param outcome What evaluating its condition found, or that the run skipped it
+     * @param detail  Why the condition evaluated as it did, in its language's own terms, or {@code null} for none
+     * @return The evaluation
+     * @throws NullPointerException if {@code rule} or {@code outcome} is {@code null}
+     */
+    public static RuleEvaluation of(Rule rule, Outcome outcome, @Nullable Object detail) {
+        return new RuleEvaluation(rule, outcome, detail);
     }
 
     /**
@@ -75,6 +95,22 @@ public final class RuleEvaluation {
      */
     public Outcome outcome() {
         return result;
+    }
+
+    /**
+     * Returns why the rule's condition evaluated as it did, in its language's own terms, such as the operands a
+     * comparison read: the {@link io.github.brantunger.unruly.api.language.ConditionResult#detail() detail} the
+     * language returned from
+     * {@link io.github.brantunger.unruly.api.language.CompiledCondition#evaluateWithDetail evaluateWithDetail}. The
+     * engine always records it when the language gives one. What it is, and what it's worth, is up to the language.
+     *
+     * @return The detail, or {@code null} if there is none. On an evaluation the engine created, that's when the
+     *         language gave none, or when the rule was {@link Outcome#SKIPPED skipped} or
+     *         {@link Outcome#NOT_EVALUATED not evaluated}. One created with {@link #of(Rule, Outcome, Object)} has
+     *         whatever detail it was given, whatever its outcome.
+     */
+    public @Nullable Object detail() {
+        return explanation;
     }
 
     @Override

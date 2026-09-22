@@ -35,6 +35,12 @@ import java.util.Set;
  * Its compiled expressions keep no state, so its session is {@link Session#none()}. It relies on the default
  * {@code checkFactName()}.
  * </p>
+ *
+ * <p>
+ * A comparison explains its result with the operands it read, such as {@code "750 >= 700"}, the
+ * {@link ConditionResult#detail() detail} of its {@link CompiledCondition#evaluateWithDetail evaluateWithDetail}. A
+ * condition that is a single operand gives no detail.
+ * </p>
  */
 public final class ToyExpressionLanguage implements ExpressionLanguage {
 
@@ -112,8 +118,21 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
             String left = tokens.get(0);
             String operator = tokens.get(1);
             String right = tokens.get(2);
-            return (context, session) -> compare(operator, value(left, context.facts(), Map.of()),
-                    value(right, context.facts(), Map.of()));
+            return new CompiledCondition() {
+                @Override
+                public Object evaluate(EvaluationContext context, Session session) {
+                    return evaluateWithDetail(context, session).value();
+                }
+
+                // Explains the comparison with the operands it read, as in "750 >= 700".
+                @Override
+                public ConditionResult evaluateWithDetail(EvaluationContext context, Session session) {
+                    Object leftValue = value(left, context.facts(), Map.of());
+                    Object rightValue = value(right, context.facts(), Map.of());
+                    return ConditionResult.of(compare(operator, leftValue, rightValue),
+                            leftValue + " " + operator + " " + rightValue);
+                }
+            };
         }
         throw new IllegalArgumentException("syntax error in condition '" + source + "'");
     }
