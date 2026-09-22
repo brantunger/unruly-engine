@@ -406,8 +406,9 @@ flag, or build a new engine.
 
 unruly-engine is intentionally small. It has no Rete network, no working memory and no forward chaining. Each
 `run()` makes a single pass in priority order — a first-match engine stops at the first match, an all-matches or a
-unique-match engine evaluates every condition and then fires — and actions never trigger re-evaluation. That makes it simple to reason about and a good fit for decision tables and moderate rule sets.
-If you need inference over changing facts, use a full production-rule system.
+unique-match engine evaluates every condition and then fires — and actions never trigger re-evaluation. That makes
+it simple to reason about and a good fit for decision tables and moderate rule sets. If you need inference over
+changing facts, use a full production-rule system.
 
 </details>
 

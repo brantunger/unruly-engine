@@ -83,7 +83,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | `ModulePathTest` | `mvel/src/test` | The module declarations work where they take effect: on the module path, in a new JVM |
 | `TestJdkTest` | `mvel/src/test` | The tests really ran on the JDK `-PtestJdk` asked for |
 
-## 📊 Reports
+## 📒 Reports
 
 | Task | Report |
 | --- | --- |

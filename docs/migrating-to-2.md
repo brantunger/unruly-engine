@@ -273,7 +273,7 @@ ignored. The `core` package is internal and no longer in the Javadoc.
 | `class MyEngine extends AbstractRulesEngine<Decision>` | Implement `RulesEngine`; see [Migrating a language or an engine](migrating-to-2-implementers.md#-if-you-implement-rulesengine) |
 | `AbstractRulesEngine.JIT_PROPERTY` | Delete it; it had no effect |
 
-## 🧱 Rules are immutable and need a name
+## 📜 Rules are immutable and need a name
 
 **What changed:**
 

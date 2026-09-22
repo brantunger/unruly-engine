@@ -97,10 +97,9 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 engine.load(rules);
 ```
 
-> [!IMPORTANT]
-> An engine's imports are set when it's built, and every `load()` compiles with them. A rule that needs a missing
-> import is still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it calls,
-> such as `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
+An engine's imports are set when it's built, and every `load()` compiles with them. A rule that needs a missing
+import is still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it
+calls, such as `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException` from `build()`, and no engine is built.
@@ -210,7 +209,7 @@ unexpectedly.
 | --- | --- | --- |
 | 🔤 **Enums vs strings** | `order.status == 'SHIPPED'` is always `false` when `status` is an enum, with no error | `order.status.name() == 'SHIPPED'` |
 | 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
-| ➗ **Division by zero** | Without [strong typing](#-strong-typing), MVEL divides as doubles, so `total / count` is `Infinity` when `count` is 0, not an error | Check the divisor first: `count != 0 && total / count > 100` |
+| ➗ **Division** | Without [strong typing](#-strong-typing), MVEL divides as doubles, so `total / count` is `Infinity` when `count` is 0, not an error. With it on, MVEL computes in the declared types, so `total / count` on two `Integer` facts is an `Integer` and loses the fraction, and dividing by zero throws `ArithmeticException` | Check the divisor first: `count != 0 && total / count > 100` |
 | 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](#null-and-missing-facts) | `isdef x && x > 1` |

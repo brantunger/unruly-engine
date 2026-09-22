@@ -171,8 +171,8 @@ A run the limit doesn't apply to never waits for a copy. It takes an idle one or
 on an engine built with `unlimitedCopies()`, a run on a virtual thread that isn't nested and finds no idle copy waits
 for a build slot before it makes one.
 
-Only an interrupt fails that wait, with a `RuleExecutionException`; a run that gives up waiting, at half its time left or
-after five seconds without a slot coming back, makes its copy anyway. See
+Only an interrupt fails that wait, with a `RuleExecutionException`; a run that gives up waiting, at half its time
+left or after five seconds without a slot coming back, makes its copy anyway. See
 [Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot). The rest of this section is about runs the
 limit applies to.
 

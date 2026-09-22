@@ -16,7 +16,7 @@ This guide covers what holds whatever the language; the [MVEL guide](languages/m
 
 ---
 
-## 🧬 Anatomy of a rule
+## 🦴 Anatomy of a rule
 
 ```java
 Rule.builder()
@@ -66,7 +66,7 @@ condition isn't evaluated, and its outcome is `SKIPPED`. See
 > Rules are usually Java string literals, so in MVEL use **single quotes** for strings inside them:
 > `"applicant.name == 'Ada'"` reads far better than `"applicant.name == \"Ada\""`.
 
-## 🌐 Choosing a language
+## 🧩 Choosing a language
 
 A rule is written in the language its `language` names, or in the engine's default language when that is `null`, and
 one rule list can mix languages. An engine's languages and imports are set on its builder, so every `load()` compiles
@@ -202,8 +202,8 @@ List<String> findings = engine.run(facts);
 
 `load()` catches many mistakes, but not all of them: a misspelled property, a missing import or a
 non-boolean condition only fails when the rule runs (see
-[Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running)). An MVEL engine
-that [declares its facts](facts.md#-declaring-facts) and turns on
+[Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running)). An MVEL
+engine that [declares its facts](facts.md#-declaring-facts) and turns on
 [strong typing](languages/mvel.md#-strong-typing) catches a misspelled property and an unknown fact at `load()`
 too. Either way, give each rule a test with sample facts that make it match and not match:
 

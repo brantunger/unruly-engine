@@ -114,7 +114,8 @@ documentation lives.
 | Production checklist | 🏭 | Contributing | 🤝 |
 | Development setup | 💻 | Documentation, the guide index | 📚 |
 | Virtual threads | 🧶 | Carrier pinning | 📌 |
-| License | 📄 | | |
+| Flight Recorder events | 📡 | What a run reports | 📊 |
+| Fact names | 🔤 | License | 📄 |
 
 ## 💬 Callouts
 
@@ -131,7 +132,7 @@ documentation lives.
 - **Never inside a list or a table.**
 - A trap the page owns also gets a row in its [Gotchas](#-gotchas-and-questions-you-might-not-think-to-ask) table.
 
-## 📊 Diagrams
+## 🔷 Diagrams
 
 GitHub renders [Mermaid](https://mermaid.js.org/) diagrams in Markdown, so draw diagrams in Mermaid rather than as
 images.
@@ -189,7 +190,8 @@ flowchart TD
 ## 📋 Tables
 
 - Use a table for reference data and for "if you need X, do Y" decisions. Explain in prose.
-- At most 4 columns, and cells of at most about 150 characters. Put a longer explanation under the table.
+- At most 4 columns. Put a longer explanation under the table, except where the cell is the reference itself, as
+  in an exceptions table.
 - **Every column has a header.** The first column holds what the reader scans for.
 - Repeat the key in each row instead of leaving a cell blank to mean "same as above".
 - Centre only ✅/❌ columns.
@@ -259,7 +261,7 @@ Yes. An all-matches run isn't atomic. See [Choosing an engine](../README.md#choo
 
 - [ ] The opening says who the page is for, what they'll be able to do, and what to read first.
 - [ ] The TOC lists every H2. Each H2 has one emoji from the table above, and no H3 has one.
-- [ ] No paragraph or list is longer than about 90 words, and no table cell is longer than about 150 characters.
+- [ ] No paragraph or list is longer than about 90 words, and a long explanation sits under a table, not in a cell.
 - [ ] Each callout's type matches the callout table, and there's at most one for each H2.
 - [ ] Each diagram has at most 12 nodes and labelled edges, uses only the palette classes, and the text says the same.
 - [ ] Every fence has a language, and every example compiles.

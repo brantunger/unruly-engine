@@ -242,20 +242,39 @@ classes can't be loaded, and logs that once at DEBUG. See [Native image](native-
 To keep every run, lower the threshold; to see each rule, enable the rule event. Both can be done on a running JVM:
 
 ```text
-jcmd <pid> JFR.start settings=default io.github.brantunger.unruly.Run#threshold=0ms io.github.brantunger.unruly.Rule#enabled=true
+jcmd <pid> JFR.start settings=default +io.github.brantunger.unruly.Run#threshold=0ms +io.github.brantunger.unruly.Rule#enabled=true
 ```
 
-or in a `.jfc` settings file:
+or on the command line that starts it:
+
+```text
+java -XX:StartFlightRecording:filename=run.jfr,settings=default,+io.github.brantunger.unruly.Run#threshold=0ms,+io.github.brantunger.unruly.Rule#enabled=true -cp ... App
+```
+
+Prefix each event name with `+`, on `jcmd` and on the JVM's command line alike. `settings=default` names a `.jfc`
+file, and a setting is matched against the events that file lists, so a setting for an event it doesn't list is a
+new one: `-XX:StartFlightRecording:help` says to prefix the event name with `+` to add a new event setting. Without
+it the JVM warns `The .jfc option/setting '...' doesn't exist.` and drops the setting, so the rule event stays off
+and the run event keeps its 10 ms threshold.
+
+A `.jfc` file of your own lists the events itself, so it needs no `+`. Pass it as `settings=unruly.jfc`:
 
 ```xml
-<event name="io.github.brantunger.unruly.Run">
-  <setting name="enabled">true</setting>
-  <setting name="threshold">0 ms</setting>
-</event>
-<event name="io.github.brantunger.unruly.Rule">
-  <setting name="enabled">true</setting>
-</event>
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration version="2.0" label="Unruly">
+  <event name="io.github.brantunger.unruly.Run">
+    <setting name="enabled">true</setting>
+    <setting name="threshold">0 ms</setting>
+  </event>
+  <event name="io.github.brantunger.unruly.Rule">
+    <setting name="enabled">true</setting>
+  </event>
+</configuration>
 ```
+
+Keep the `<configuration>` root. A `.jfc` holding two bare `<event>` elements isn't well-formed XML, and a JVM
+started with `settings=` pointing at one logs `Could not parse file` and stops with
+`Error occurred during initialization of VM` rather than running without the events.
 
 Enabled, the rule event costs about 60 ns per condition or action, and a run of a thousand rules is up to two
 thousand events, so enable it to investigate, not permanently. With the run event's threshold at 0 ms, every run
@@ -286,10 +305,9 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 Each failure is logged just before its exception is thrown. Misuse isn't logged: a `null` argument, `run()` before
 `load()`, or an invalid builder setting, such as an import that is neither a class nor a package name.
 
-> [!NOTE]
-> The engine already logs each failure at ERROR. If you also log the exception you catch, you'll see it twice. The
-> problems `validate()` returns are the one case the engine doesn't log: log those yourself if you want them.
-> Lower the engine logger's level if you prefer to handle logging yourself.
+The engine already logs each failure at ERROR, so if you also log the exception you catch, you'll see it twice. The
+problems `validate()` returns are the one case the engine doesn't log: log those yourself if you want them. Lower the
+engine logger's level if you prefer to handle logging yourself.
 
 > [!CAUTION]
 > Failure messages can contain fact values. The JDK, MVEL and your own code put values into exception messages, such
