@@ -119,7 +119,8 @@ build instead of skipping the check.
 
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
 baseline already in the Gradle cache. The lookup is kept for 24 hours, so a new release becomes the baseline within a
-day; pass `-PapiCheck.refresh` to look it up again, as the release workflow does.
+day; pass `-PapiCheck.refresh` to look it up again, as the release workflow does. The build verifies the download
+like every other dependency: see [The API baseline](dependency-verification.md#-the-api-baseline).
 
 ## 📋 Reference
 

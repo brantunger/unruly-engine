@@ -33,7 +33,7 @@ flowchart LR
     end
     subgraph publish["publish job"]
         direction TB
-        E["build, check,<br/>javadoc jars"] --> V["attest the<br/>nine jars"]
+        E["build, check,<br/>javadoc jars, SBOMs"] --> V["attest, attach<br/>the SBOMs"]
         V --> F["sign, upload to<br/>Central Portal"]
         F --> J["push the Javadoc<br/>to gh-pages"]
     end
@@ -58,9 +58,10 @@ flowchart LR
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job
    in the same workflow run. The job checks out the tag, runs the full `build` (including Checkstyle, PMD, the
    coverage gate and the [API compatibility check](docs/contributing/api-compatibility.md) against the previous
-   release) and the javadoc jars, [attests](#-checking-a-release-by-hand) the nine jars it's about to publish,
-   then publishes to the Central Portal, attaches the jars to the GitHub Release and adds the Javadoc to the
-   `gh-pages` branch. A second job, `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
+   release), the javadoc jars and an [SBOM](#the-sboms) for each published module. It
+   [attests](#-checking-a-release-by-hand) the nine jars and three SBOMs, attaches the SBOMs to the GitHub Release,
+   publishes to the Central Portal, attaches the jars and adds the Javadoc to the `gh-pages` branch. A second job,
+   `pages`, then deploys that branch to [GitHub Pages](#-the-javadoc-site).
 
 The Release notes are the changelog entry, with links to [Migrating to 2.0](docs/migrating-to-2.md) and
 [Migrating a language or an engine](docs/migrating-to-2-implementers.md) appended by the `release-please` job. The
@@ -100,8 +101,9 @@ thing that can read them.
 The workflow passes these to Gradle as `ORG_GRADLE_PROJECT_mavenCentralUsername`, `…Password`,
 `…signingInMemoryKey` and `…signingInMemoryKeyPassword`, and only to the publish step, which skips `check`: the full
 build, with its tests and checks, has already run in an earlier step without them. Every action in the workflows is
-pinned to a commit SHA, with its version in a comment, and Dependabot updates both. Signing happens in memory; no GPG keyring is imported
-onto the runner.
+pinned to a commit SHA, with its version in a comment, and Dependabot updates both. A `gradle/actions` bump that
+changes the [dependency-graph plugin](docs/contributing/dependency-verification.md#-the-dependency-graph-plugin)'s
+version also needs its pin updated by hand. Signing happens in memory; no GPG keyring is imported onto the runner.
 
 Build provenance needs no secret. The `publish` job has `id-token: write` and `attestations: write` on top of
 `contents: write`, so the attestation step can sign with the run's own short-lived OIDC token and record the result
@@ -124,6 +126,9 @@ gpg --keyserver keys.openpgp.org --send-keys "$GPG_KEY_ID"
 2. `--send-keys` the new key ID to the keyservers above.
 3. Update `GPG_KEY`, `GPG_PASSWORD` and `GPG_KEY_ID` on the `maven-central` environment.
 4. Leave the old public key on the keyservers, because it still verifies past releases.
+5. Once the first release signed with the new key is on Central, and before the next release, regenerate the
+   dependency verification metadata, or the build can't verify its API baseline: see
+   [The API baseline](docs/contributing/dependency-verification.md#-the-api-baseline).
 
 If the armored export contains more than one secret key, also set `ORG_GRADLE_PROJECT_signingInMemoryKeyId` to
 the short (8-character) key ID so the plugin picks the right one.
@@ -135,9 +140,9 @@ the short (8-character) key ID so the plugin picks the right one.
 
 | Failure | What to do |
 | --- | --- |
-| **Before the upload** (build, Checkstyle, PMD, coverage, API compatibility, Javadoc or the attestation failed) | Nothing shipped, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
+| **Before the upload** (build, Checkstyle, PMD, coverage, API compatibility, Javadoc, the attestation or attaching the SBOMs failed) | Nothing shipped to Central, but the tag and GitHub Release for that version already exist. If the failure was transient, use **Re-run failed jobs**; the job rebuilds from the tag, attests new SBOMs and replaces any already attached. Otherwise, fixing `main` can't repair that tag: edit the GitHub Release to say the version was never published, fix forward on `main`, and ship the next version. |
 | **During the upload** | Check the deployment at <https://central.sonatype.com/publishing/deployments>. A deployment stuck in `FAILED` or `VALIDATED` can be dropped from that page; then re-run the `publish` job. |
-| **After the upload** (attaching the jars or adding the Javadoc to `gh-pages` failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). |
+| **After the upload** (attaching the jars or adding the Javadoc to `gh-pages` failed) | The version is already on Central, so don't re-run the `publish` job; Central would reject the second upload. Attach the jars from `repo1` with `gh release upload vX.Y.Z <jars>`, and republish the Javadoc as shown in [The Javadoc site](#-the-javadoc-site). The SBOMs are already attached: the job attaches them before the upload. |
 | **Only the `pages` job failed** | Everything else shipped. Re-run the failed job, or redeploy with `gh workflow run pages.yml --ref main`. |
 | **The migration guides weren't linked from the notes** (a warning in the `release-please` job) | Cosmetic, and deliberately not a failure: failing there would skip `publish`, and a re-run couldn't repair it, because release-please would find the Release already made and report no new release. The step links every guide or none, so notes that carry the `<!-- migration-guides -->` marker are complete and notes without it are untouched. Add the links by hand in the shape the step writes: `gh release view vX.Y.Z --json body --jq .body > notes.md`, then append a blank line, the marker line, a blank line, a `### 🔼 Upgrading from 1.x` heading, a blank line and one link per guide pinned to the tag, and `gh release edit vX.Y.Z --notes-file notes.md`. If you're repairing a repair of your own, first delete everything from the blank line before the marker to the end, rather than appending a second copy. The warning quotes what `gh` said about each page it couldn't confirm: a 404 means the page really isn't at that tag, anything else (401, 403, a rate limit, a 5xx) means the lookup never got an answer and the link was fine. |
 | **The `Latest` mark didn't move** (a warning in the `release-please` job, and only possible when the version just released isn't the highest one) | Cosmetic, and deliberately not a failure: the tag and the GitHub Release exist, and `publish` goes on to build and upload as usual. Nothing reads the mark — `/latest/` on the Javadoc site is decided by the workflow's `newest` output, not by it — so leaving it is safe. To put it back, run `gh release edit vX.Y.Z --latest` for the highest released version, which the `NEWEST` snippet in [The Javadoc site](#-the-javadoc-site) computes. |
@@ -195,6 +200,36 @@ Unlike the `curl` checks above, this one calls the API, so `gh` has to be logged
 `curl` fail on a 404 instead of saving the error page as the jar, which would then fail verification for the wrong
 reason. The same works for the `-sources.jar` and `-javadoc.jar` files and for the other two artifacts. 2.0.0 is the
 first release with attestations, so an earlier version has none and the command fails for it.
+
+### The SBOMs
+
+From the release after 2.2.0, each release also attaches a [CycloneDX](https://cyclonedx.org/) 1.6 SBOM (software
+bill of materials) for each published module to its GitHub Release, beside the jars. Each is a JSON file named after
+its artifact, such as `unruly-engine-core-$VERSION.cdx.json`. The same provenance attestation covers them, so they
+verify the same way, and the exit code and output rules above apply:
+
+```bash
+gh release download "v$VERSION" --repo brantunger/unruly-engine --pattern '*.cdx.json'
+gh attestation verify "unruly-engine-core-$VERSION.cdx.json" --repo brantunger/unruly-engine
+```
+
+| Question | Answer |
+| --- | --- |
+| Which modules have one? | Each published module: `unruly-engine-core`, `unruly-engine` and `unruly-engine-test` |
+| What does it list? | The module's runtime dependencies, transitive ones included, from its `runtimeClasspath`: no test, build or plugin dependencies. `unruly-engine-test`'s also lists the `org.junit:junit-bom` platform |
+| Is it on Maven Central? | No. It's only on the GitHub Release, and the Central deployment is unchanged |
+| Can I rebuild the same file? | No. Its serial number and timestamp differ on every run, so only the file the release run built matches the attestation |
+| Are its package URLs exact? | Yes, except where one module depends on another: see below |
+
+The package URLs (purls) of the SBOM's own module and of third-party dependencies name the right coordinates, such
+as `pkg:maven/org.slf4j/slf4j-api@2.0.19?type=jar`. A dependency on another of this project's modules is wrong: it
+names the Gradle project instead of the artifact, so `unruly-engine`'s SBOM lists `unruly-engine-core` as
+`pkg:maven/io.github.brantunger/core@<version>?project_path=%3Acore`. A scanner that matches on purls won't
+recognise that entry; the module's own SBOM has the right one,
+`pkg:maven/io.github.brantunger/unruly-engine-core@<version>?project_path=%3Acore`.
+
+The SBOMs are attached right after the attestation and before the upload to Central, because they can't be rebuilt
+the same: a re-run of the job builds, attests and attaches new ones in their place. Releases up to 2.2.0 have none.
 
 ## ☕ The Javadoc site
 

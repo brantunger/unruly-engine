@@ -4,6 +4,7 @@ import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.SourcesJar
 import java.lang.module.ModuleDescriptor
 import me.champeau.gradle.japicmp.JapicmpTask
+import org.cyclonedx.gradle.CyclonedxDirectTask
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import unruly.conventions.ApiCheckExtension
 import unruly.conventions.Jars
@@ -13,6 +14,7 @@ plugins {
     id 'jacoco'
     id 'com.vanniktech.maven.publish'
     id 'me.champeau.gradle.japicmp'
+    id 'org.cyclonedx.bom'
 }
 
 // JaCoCo's version is in gradle/libs.versions.toml, where Dependabot updates it.
@@ -280,4 +282,27 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
 
 tasks.named('check') {
     dependsOn japicmp
+}
+
+// A CycloneDX SBOM of each published artifact, which the release workflow attaches to the GitHub Release and covers
+// with the same provenance attestation as the jars. It lists what a user's build resolves for the artifact, so only
+// runtimeClasspath: the plugin's default takes every configuration, Checkstyle's, PMD's and the tests' included. The
+// file is named after the artifact, like its jar, because the three projects' default bom.json would collide as
+// assets of one Release. JSON only; the XML copy would say the same thing.
+//
+// It isn't part of the publication, so Central gets no SBOM: an entry for another of this build's modules names the
+// Gradle project rather than the artifact, as in pkg:maven/io.github.brantunger/core@<version>, and the serial
+// number and timestamp differ on every run, so the file isn't reproducible like the jars. `assemble` builds it, so
+// every build checks that the plugin still works; the three take well under a second.
+def bom = tasks.named('cyclonedxDirectBom', CyclonedxDirectTask) {
+    includeConfigs = ['runtimeClasspath']
+    componentName = base.archivesName
+    jsonOutput = layout.buildDirectory.file(base.archivesName.map { name ->
+        "reports/cyclonedx-direct/${name}-${projectVersion}.cdx.json"
+    })
+    xmlOutput.unsetConvention()
+}
+
+tasks.named('assemble') {
+    dependsOn bom
 }
