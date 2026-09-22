@@ -14,13 +14,21 @@ import java.util.Objects;
 /**
  * Runs MVEL rules the way an application would, so CI can build it into a GraalVM native image and run it. It goes
  * through each way the engine and MVEL use reflection: a record fact read by property, a bean output an action assigns
- * to, a map output, and a JDK static method. Each engine runs more than MVEL's JIT threshold of about 50 runs, so a
- * native image meets whatever MVEL does after it. It prints one line and exits with 1 if a result is wrong.
+ * to, a map output, and a JDK static method. It also checks that a fact named after a class in an imported package is
+ * rejected, which is the one path that looks a class file up as a resource and loads it. The bean and map engines
+ * each run more than MVEL's JIT threshold of about 50 runs, so a native image meets whatever MVEL does after it. It
+ * prints one line and exits with 1 if a result is wrong.
  */
 public final class Main {
 
-    /** How many times each engine runs, well past the number of runs after which MVEL's JIT optimizer steps in. */
+    /**
+     * How many times the bean and map engines run, well past the number of runs after which MVEL's JIT optimizer
+     * steps in.
+     */
     private static final int RUNS = 200;
+
+    /** The part of the message the engine rejects a fact name with, which the fact-name check looks for. */
+    private static final String REJECTION = "cannot be used as a fact name";
 
     /**
      * The fact the rules read.
@@ -73,22 +81,23 @@ public final class Main {
     public static void main(String[] args) {
         String bean = beanOutput();
         String map = mapOutput();
-        boolean ok = "prime".equals(bean) && "standard,raised".equals(map);
+        String factName = factNameOutcome();
+        boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && "rejected,prime".equals(factName);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
+                + " factName=" + factName + " dateResource=" + dateResource()
                 + " jit=" + (Boolean.getBoolean("mvel2.disable.jit") ? "off" : "on"));
         if (!ok) {
             System.exit(1);
         }
     }
 
+    // The java.util import is here, and not only on the fact-name engines below, because those run once each: this is
+    // the only engine that resolves a package import past MVEL's JIT threshold, and the only one that works the
+    // check's cache of names that aren't classes over many runs.
     private static String beanOutput() {
         try (RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
-                .imports(Applicant.class.getName()).build()) {
-            engine.load(List.of(
-                    Rule.builder().ruleName("prime").priority(2).condition("applicant.creditScore >= 750")
-                            .action("output.rate = 'prime'").build(),
-                    Rule.builder().ruleName("standard").priority(1).condition("applicant.creditScore < 750")
-                            .action("output.rate = 'standard'").build()));
+                .imports(Applicant.class.getName(), "java.util").build()) {
+            engine.load(decisionRules());
             LoanDecision decision = new LoanDecision();
             for (int i = 0; i < RUNS; i++) {
                 decision = engine.run(applicant(760 + i % 10, 50_000));
@@ -111,6 +120,75 @@ public final class Main {
             }
             return Objects.toString(output.get("rate")) + "," + Objects.toString(output.get("limit"));
         }
+    }
+
+    // Both halves of the fact-name check, in the same binary, so a pass means the package import is what rejects the
+    // name and not something else about it: a fact named Date is rejected on an engine that imports the java.util
+    // package, and accepted on one that imports only the Applicant class. Only the package import reaches the two
+    // steps the check takes for a class in an imported package: it looks the class file up as a resource first, and
+    // loads the class only if that found it. A native image need not do either. The rejection is logged at ERROR, so
+    // a green run prints that line before its "native smoke OK:" line.
+    private static String factNameOutcome() {
+        return packageImportRejects() + "," + classImportAccepts();
+    }
+
+    private static String packageImportRejects() {
+        try (RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+                .imports(Applicant.class.getName(), "java.util").build()) {
+            engine.load(decisionRules());
+            FactStore<Object> facts = datedApplicant();
+            try {
+                engine.run(facts);
+                return "accepted";
+            } catch (IllegalArgumentException e) {
+                // The message must name the fact too: the engine rejects an output fact with a message that ends the
+                // same way, and a run's facts are checked in no particular order.
+                String message = String.valueOf(e.getMessage());
+                return message.contains(REJECTION) && message.contains("'Date'")
+                        ? "rejected" : "unexpected: " + message;
+            }
+        }
+    }
+
+    private static String classImportAccepts() {
+        try (RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+                .imports(Applicant.class.getName()).build()) {
+            engine.load(decisionRules());
+            FactStore<Object> facts = datedApplicant();
+            try {
+                LoanDecision decision = engine.run(facts);
+                return decision == null ? "no match" : decision.getRate();
+            } catch (IllegalArgumentException e) {
+                return "unexpected: " + e.getMessage();
+            }
+        }
+    }
+
+    // A diagnostic, never an assertion: it must not feed into ok or the exit code. It tells which of the two steps
+    // above a factName=accepted would have stopped at: whether the image served the class file as a resource at all.
+    // It asks the loader the engine resolves package imports with, the thread's context loader, as core's
+    // ImportResolver.contextClassLoader does, so the two see the same class path here; the fallback for a thread
+    // without one stands in for that method's library loader, which this application shares a class path with. It is
+    // still read separately from the engine, and what the loader answers is nothing the engine promises.
+    private static String dateResource() {
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        ClassLoader loader = context != null ? context : ClassLoader.getSystemClassLoader();
+        return String.valueOf(loader.getResource("java/util/Date.class") != null);
+    }
+
+    private static List<Rule> decisionRules() {
+        return List.of(
+                Rule.builder().ruleName("prime").priority(2).condition("applicant.creditScore >= 750")
+                        .action("output.rate = 'prime'").build(),
+                Rule.builder().ruleName("standard").priority(1).condition("applicant.creditScore < 750")
+                        .action("output.rate = 'standard'").build());
+    }
+
+    // An applicant, and a fact named after java.util.Date, which no rule reads: having it in the store is enough.
+    private static FactStore<Object> datedApplicant() {
+        FactStore<Object> facts = applicant(760, 50_000);
+        facts.setValue("Date", "2026-01-01");
+        return facts;
     }
 
     private static FactStore<Object> applicant(int creditScore, int income) {
