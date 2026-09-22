@@ -1,0 +1,8 @@
+module:io.github.brantunger.unruly
+io.github.brantunger.unruly.mvel
+module:io.github.brantunger.unruly.core
+io.github.brantunger.unruly.api
+io.github.brantunger.unruly.api.exception
+io.github.brantunger.unruly.api.language
+module:io.github.brantunger.unruly.test
+io.github.brantunger.unruly.test
