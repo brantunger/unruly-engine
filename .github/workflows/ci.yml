@@ -29,6 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+          persist-credentials: false
 
       # Documentation only: every changed path is under docs/ or ends in .md, and none is under a src/ directory.
       # Anything else, or an empty diff, counts as code. --no-renames lists a moved file's old path too, so moving a
@@ -68,6 +69,8 @@ jobs:
             java-version: '25'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Compilation always uses the Java 21 toolchain, and Gradle doesn't download one (gradle.properties turns
       # auto-download off), so the JDK 25 leg installs 21 as well. setup-java lists each JDK it installs in
@@ -156,6 +159,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # GraalVM Community Edition 21.0.2, the release docs/native-image.md was tested with, as JAVA_HOME; Gradle's
       # Java 21 toolchain finds it too.
@@ -194,6 +199,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+          persist-credentials: false
 
       - name: Links, anchors and table rows
         continue-on-error: true
@@ -253,6 +259,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0

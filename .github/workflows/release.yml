@@ -56,9 +56,11 @@ jobs:
       # The links are pinned to the tag, not to `main`: the notes are permanent, and a page that later moves or is
       # renamed would leave a dead link behind in every past release. Nothing checks a link written in a workflow
       # file — config/docs/check_docs.py only checks the pages, the Java sources and the Javadoc overview — so each
-      # page is looked up at the tag first and one that can't be confirmed is left out with a warning instead of
-      # published as a 404. The lookup can also fail for a reason that isn't a missing page, so the warning says
-      # what gh reported rather than claiming the page is gone.
+      # page is looked up at the tag first and one that can't be confirmed is never published as a 404. It's every
+      # page or none, because the marker below is the step's only "already done" test: notes written while one page
+      # was unconfirmed could never gain its link, whereas notes left untouched can still be repaired by hand. The
+      # lookup can also fail for a reason that isn't a missing page, so the warning says what gh reported rather
+      # than claiming the page is gone.
       # Like the Latest mark below this is cosmetic, so every way of failing to add the links only warns. Only a
       # broken environment still fails the job: an empty tag, which would mean release-please's own output is
       # broken, or a RUNNER_TEMP that can't be written. A failure here would skip `publish` and strand a version
@@ -88,21 +90,28 @@ jobs:
               ;;
           esac
           links=''
+          missing=''
+          absent=0
+          wanted=0
           while read -r path title; do
+            wanted=$((wanted + 1))
             # gh's own message is kept and reported, because it says 404 for a page that isn't at the tag and
             # something else — 401, 403, a rate limit, a 5xx — for a lookup that never got an answer. --silent
             # drops the body; the message is collapsed onto one line so it fits in the warning.
             if reason=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${TAG}" --silent 2>&1); then
               links="${links}- [${title}](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/${path})"$'\n'
             else
+              absent=$((absent + 1))
+              missing="${missing:+${missing}, }${path}"
               echo "::warning::Couldn't confirm ${path} is in ${TAG}, so the release notes don't link it: ${reason//$'\n'/ }. See RELEASING.md."
             fi
           done <<'EOF'
           docs/migrating-to-2.md Migrating to 2.0
           docs/migrating-to-2-implementers.md Migrating a language or an engine
           EOF
-          if [ -z "$links" ]; then
-            echo "::warning::Neither migration guide could be confirmed in ${TAG}, so the release notes link neither. See RELEASING.md."
+          # Every guide or none: a marker written beside one link would lock the other out for ever.
+          if [ "$absent" -gt 0 ]; then
+            echo "::warning::Couldn't confirm ${absent} of ${wanted} migration guides in ${TAG} (${missing}), so the release notes link none of them. See RELEASING.md."
             exit 0
           fi
           notes="${RUNNER_TEMP}/release-notes.md"
