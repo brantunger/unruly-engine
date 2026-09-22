@@ -126,7 +126,7 @@ no copies at all, so no [copy limit](migrating-to-2.md#-compiled-copies-are-limi
 `ExpressionCompiler.warmUp(Session)` is new and optional: it lets a language compile when a session is created rather
 than on its first run. See [Warming up a session](languages/custom.md#warming-up-a-session).
 
-## 📝 Languages compile an Expression
+## 🔩 Languages compile an Expression
 
 **What changed:**
 

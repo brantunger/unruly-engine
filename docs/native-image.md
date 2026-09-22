@@ -110,8 +110,9 @@ the class path. For the sample's rules:
 | Call a JDK static method: `Math.max(applicant.income, 0)` | That method | `java.lang.Math`: `max(int, int)` |
 
 The sample also sets `queryAllPublicMethods` on each class, and `allPublicFields` on its own two. Its
-[reflect-config.json](../native-smoke/src/main/resources/META-INF/native-image/com.example/native-smoke/reflect-config.json)
-is the full file. Other shapes, such as a bean fact's getters, a `Map` fact or a public field, weren't tested.
+`reflect-config.json` is
+[the full file](../native-smoke/src/main/resources/META-INF/native-image/com.example/native-smoke/reflect-config.json).
+Other shapes, such as a bean fact's getters, a `Map` fact or a public field, weren't tested.
 
 ### Finding what to register
 

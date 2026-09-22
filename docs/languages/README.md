@@ -19,7 +19,7 @@ without one gets, and pick the artifacts and module declarations your build need
 
 ---
 
-## 🎯 Choosing a language per rule
+## 🧩 Choosing a language per rule
 
 A rule is written in the [expression language](../glossary.md#expression-language) its `language` names, or in the
 engine's [default language](../glossary.md#default-language) when that is `null`, which is [MVEL](mvel.md) when MVEL

@@ -135,7 +135,7 @@ it returns `null` in all three cases.
 that a fact was supplied. See [Null and missing facts in MVEL](languages/mvel.md#null-and-missing-facts) for the
 messages and for a `Map` fact without a key.
 
-## 🔍 Reading a fact's properties
+## 🧲 Reading a fact's properties
 
 The engine hands each language the fact values as they are. It doesn't read properties itself: when a rule writes
 `applicant.creditScore`, the rule's language decides what that means and what happens when the property isn't there.

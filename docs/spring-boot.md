@@ -189,6 +189,8 @@ public ResponseEntity<String> ruleFailed(RuleExecutionException e) {
                     || e.getCause() instanceof InterruptedException);
     if (stopped) {
         log.warn("A loan decision was stopped: {}", e.getMessage());   // the caller asked for it: not a failure
+    } else if (e.getRuleName() == null) {                         // a failure that belongs to no one rule
+        log.error("A loan decision failed, but no one rule did: {}", e.getMessage(), e);
     } else {
         log.error("Rule '{}' failed", e.getRuleName(), e);
     }
@@ -209,7 +211,12 @@ rule whose Java code throws an `Error` once the run must stop: that names the ru
 and answers 500 rather than 503. See
 [telling a stop from a rule bug](stopping-runs.md#how-do-i-tell-a-timeout-an-interrupt-and-a-rule-bug-apart).
 
-The engine has logged both already — a stop at WARN, a rule failure at ERROR — so each line above is a second copy
+A stop isn't the only failure that names no rule, which is why the middle branch is there. `getRuleName()` is also
+`null` when the output supplier threw or returned `null`, when an expression language couldn't create a session for
+the run, and when more than one rule matched on a unique-match engine. Without that branch each of those logs
+`Rule 'null' failed`. [What happens on each failure](error-handling.md#-what-happens-on-each-failure) lists them.
+
+The engine has logged each already — a stop at WARN, every failure at ERROR — so each line above is a second copy
 with your own context. [Logging setup](listeners-and-logging.md#-logging-setup) says how to turn the engine's own
 logging down if you'd rather log only your own.
 

@@ -29,7 +29,7 @@ guides before the first request reaches it.
       language that fails making a `copiesAtLoad(n)` copy; see
       [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it).
 
-## 🚦 Before the first request
+## 🛫 Before the first request
 
 - [ ] `load()` runs at startup, so a broken rule stops the application from starting; see
       [Configure the engine](spring-boot.md#-configure-the-engine).
