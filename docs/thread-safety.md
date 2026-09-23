@@ -73,9 +73,9 @@ stateDiagram-v2
         "load() must be called before run()"
     end note
     note right of Closed
-        run() and rules() throw IllegalStateException
-        "The engine is closed". load() compiles the
-        list, then throws it. Runs already going finish.
+        run(), load() and rules() throw
+        IllegalStateException "The engine is closed",
+        at once. Runs already going finish.
     end note
 ```
 
@@ -83,7 +83,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | Built, nothing loaded | `IllegalStateException`, at once | Compiles the list and swaps it in | No rules, the checksum of an empty list, no load time |
 | Loaded | Runs the rules | Compiles the new list, then swaps it in | The loaded rules, their checksum and load time |
-| Closed | `IllegalStateException`, at once | Compiles the list, then throws `IllegalStateException` without loading it | `IllegalStateException` |
+| Closed | `IllegalStateException`, at once | `IllegalStateException`, at once, without compiling the list | `IllegalStateException` |
 
 A `run()` before the first `load()` fails **at once**: it doesn't wait for a `load()` that is still compiling on
 another thread. Load your rules before the application accepts traffic. `validate()` works in every state but
@@ -113,10 +113,9 @@ sequenceDiagram
 ```
 
 - A run holding a copy of the rules finishes normally and returns its result.
-- Every new `run()`, `runWithResult()`, `validate()` and `rules()` throws `IllegalStateException("The engine is
-  closed")` at once.
-- `load()` compiles the whole list first: a list that doesn't compile throws `RuleCompilationException`, and one that
-  does is compiled, then dropped with the same `IllegalStateException`.
+- Every new `run()`, `runWithResult()`, `load()`, `validate()` and `rules()` throws `IllegalStateException("The engine
+  is closed")` at once. `load()` compiles nothing and logs no ERROR, even for a list that wouldn't compile; a `null`
+  list still throws `NullPointerException`.
 - A **nested run** started from an action or a listener of a run that is still going throws it too: it reads the
   engine's current rules, and a closed engine has none.
 
@@ -124,6 +123,11 @@ A run that had read the engine's rules but not yet borrowed a copy of them when 
 again, finds a closed engine, and throws the same `IllegalStateException`. One whose thread was interrupted, or whose
 deadline has passed, stops there instead, with a message saying the rules were closed by a reload or by `close()`; see
 [What stops a run](stopping-runs.md#-what-stops-a-run).
+
+A `load()` that found the engine still open isn't stopped by `close()`. If it fails, it throws what it would on an open
+engine, such as `RuleCompilationException`. If it succeeds, its rules are either dropped with the same
+`IllegalStateException` or, if it swapped them in just before `close()`, closed with the rest, so a closed engine never
+serves them.
 
 Each run's sessions are closed as it returns, and the languages' compilers after the last one. A failure to close a
 session or a compiler is logged at WARN and doesn't fail a run. `RulesEngine` is `AutoCloseable`, so an engine built

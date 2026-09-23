@@ -254,8 +254,8 @@ public class LoanRulesReloader {
         try {
             loanRulesEngine.load(ruleRepository.findLoanRules());
         } catch (RuleCompilationException e) {
-            // The previous rules stay in place, so traffic is unaffected. Don't swallow it: alert someone.
-            log.error("The loan rules did not compile, so the engine is still serving the previous ones", e);
+            // Nothing was loaded: an open engine keeps serving the previous rules. Don't swallow it: alert someone.
+            log.error("The loan rules did not compile, so none of them were loaded", e);
         } catch (IllegalStateException e) {
             // Only during shutdown, if this reload outran the phase timeout; see "Shutting down" below.
             log.info("The loan rules engine is closed, so the reloaded rules were dropped");
@@ -338,8 +338,10 @@ By the time the engine closes, the connector has stopped and no new request can 
 > delivered. `graceful` is the default from Spring Boot 3.4.0; on 3.3 and earlier, set it yourself.
 
 ```properties
-server.shutdown=graceful                          # the default since Spring Boot 3.4.0
-spring.lifecycle.timeout-per-shutdown-phase=30s   # the default: how long each phase may take to stop
+# The default since Spring Boot 3.4.0
+server.shutdown=graceful
+# The default: how long each phase may take to stop
+spring.lifecycle.timeout-per-shutdown-phase=30s
 ```
 
 With graceful shutdown, a request that was already running a rule finished normally, and the engine bean was closed
@@ -353,9 +355,13 @@ Spring stops the task scheduler before it destroys any bean, and waits up to
 window always sees an open engine.
 
 A reload that outruns the window is interrupted, and the beans are destroyed while it is still going. If it ignores the
-interrupt it can then reach a closed engine, which compiles the list and drops it with
-`IllegalStateException("The engine is closed")`. Catch it, as the [reload example](#-reload-rules-without-restarting)
-does, so a slow reload can't turn every shutdown into a stack trace.
+interrupt it can then reach a closed engine, which throws `IllegalStateException("The engine is closed")` at once,
+without compiling the list.
+
+A reload already under way when the engine closes isn't stopped. If it fails, it throws what it would on an open
+engine, usually `RuleCompilationException`; otherwise its rules are dropped with the same `IllegalStateException`, or
+closed with the engine. Catch both, as the [reload example](#-reload-rules-without-restarting) does, so a slow reload
+can't turn every shutdown into a stack trace.
 
 ## 🪵 Logging
 

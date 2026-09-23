@@ -487,8 +487,9 @@ stateDiagram-v2
   rules.
 - **Loaded:** runs and reloads, from any number of threads.
 - **Closed:** `run()`, `runWithResult()`, `load()`, `validate()` and `rules()` throw `IllegalStateException`
-  (`The engine is closed`). `close()` returns at once, runs in progress finish, except in the race
-  [Closing](thread-safety.md#closing) describes, and closing again does nothing.
+  (`The engine is closed`) at once. `close()` returns at once, and runs in progress finish, except in the race
+  [Closing](thread-safety.md#closing) describes. A `load()` already under way isn't stopped, but the closed engine
+  never serves what it loads. Closing again does nothing.
 
 Runs in flight during a reload, two loads at once, and what `close()` releases are in
 [Thread safety](thread-safety.md#-reloading-rules-while-running) and [Closing](thread-safety.md#closing).

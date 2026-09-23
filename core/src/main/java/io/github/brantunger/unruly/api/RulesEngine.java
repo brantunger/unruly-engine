@@ -56,7 +56,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@link RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)} makes its copies of them, and a language
      *         that throws while creating or warming up a session for one, or returns {@code null} instead of a
      *         session, fails the load with this exception, naming the language, on its own.
-     * @throws IllegalStateException if the engine is closed
+     * @throws IllegalStateException if the engine is closed; this is checked before anything in the list, so a closed
+     *         engine throws it even for a list that would fail to load
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
      *                               compiling or making copies, also as the cause of another exception, is logged and
@@ -207,8 +208,12 @@ public interface RulesEngine<O> extends AutoCloseable {
      * can't close under a run that has begun borrowing from it: the languages' sessions are closed as each run
      * returns, and their compilers after the last one. Afterwards, {@link #run(FactStore)} and {@link #load(List)}
      * throw {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a
-     * copy when this method closed them, because it reads them again and finds a closed engine. Closing an engine
-     * that is already closed does nothing.
+     * copy when this method closed them, because it reads them again and finds a closed engine. A {@code load()}
+     * that found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on
+     * an open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules in first,
+     * and this method closes them like any others, or it finds the engine closed, closes its rules rather than
+     * swapping them in, and throws {@link IllegalStateException}. Closing an engine that is already closed does
+     * nothing.
      *
      * <p>
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
