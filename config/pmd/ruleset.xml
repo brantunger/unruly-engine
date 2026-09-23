@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<ruleset name="Unruly PMD Ruleset"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>Unruly PMD Ruleset</description>
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="GuardLogStatement"/>
+    </rule>
+    <rule ref="category/java/multithreading.xml">
+        <!-- A run reads its thread's interrupt flag to stop, sets it again when it catches an InterruptedException,
+             and reads whether the thread is virtual to decide what copy of the rules it gets; the contract kit runs
+             a language on a thread pool to show runs can overlap. -->
+        <exclude name="DoNotUseThreads"/>
+        <!-- Each map it flags is used by one thread, such as a run's facts; or is built before another thread can see
+             it and only read afterwards, such as a copy's sessions; or is an MVEL session's compiled expressions,
+             which one run at a time uses, handed from run to run through the rule list's concurrent queue. -->
+        <exclude name="UseConcurrentHashMap"/>
+        <!-- The engine's rule set and closed flag, and a rule list's shared sessions and retired flag, are written
+             by load(), close() or the run that finds no language keeps state, and read by every run on other
+             threads without taking a lock. -->
+        <exclude name="AvoidUsingVolatile"/>
+        <!-- Only load() and close() lock the engine's private monitor, never a run: they hold it to check or set the
+             closed flag and swap the rule set, so runs never wait for it and never pin their virtual threads on it. -->
+        <exclude name="AvoidSynchronizedStatement"/>
+        <!-- No method is synchronized today. Excluded with AvoidSynchronizedStatement, because what matters for
+             either is whether runs wait on the monitor, not whether a method or a block holds it. -->
+        <exclude name="AvoidSynchronizedAtMethodLevel"/>
+    </rule>
+    <rule ref="category/java/errorprone.xml">
+        <!-- The engine runs languages, listeners and setters it doesn't know, and turns anything they throw into a
+             failure of the rule, the run or the rule list, so catching Exception and Error is how it works. -->
+        <exclude name="AvoidCatchingGenericException"/>
+    </rule>
+</ruleset>

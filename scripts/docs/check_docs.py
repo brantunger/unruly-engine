@@ -3,7 +3,7 @@
 # - a link to https://github.com/brantunger/unruly-engine/blob/main/<page>.md#<anchor>, from a page, a .java file or
 #   the Javadoc overview, whose page or anchor doesn't exist on this branch;
 # - a table row holding `||` outside code, which is two rows joined into one line.
-# Usage: python config/docs/check_docs.py  (from the repository root). Exit code 1 when anything is reported.
+# Usage: python scripts/docs/check_docs.py  (from the repository root). Exit code 1 when anything is reported.
 import io
 import os
 import re

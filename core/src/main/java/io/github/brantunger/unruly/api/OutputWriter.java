@@ -55,6 +55,6 @@ public interface OutputWriter<O> {
      */
     @SuppressWarnings("unchecked")
     static <O> OutputWriter<O> beansAndMaps() {
-        return (OutputWriter<O>) (OutputWriter<?>) BeansAndMapsWriter.INSTANCE;
+        return (OutputWriter<O>) BeansAndMapsWriter.INSTANCE;
     }
 }

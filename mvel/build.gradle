@@ -85,8 +85,9 @@ apiCheck {
 }
 
 // The tests left here are the ones that need MVEL: those of the MVEL language itself, those that need its expression
-// syntax, its compile errors or its fact-name rules, those whose subject is MVEL being the default language, and the
-// contract tests, which use the test kit. The tests of the engine that only need some language name the toy or stub
+// syntax, its compile errors or its fact-name rules, those whose subject is MVEL being the default language, and
+// those of the test kit run against MVEL. The test kit's other tests run it against the toy or stub language and
+// live in test-kit/src/test. The tests of the engine that only need some language name the toy or stub
 // language from core's test fixtures and live in core/src/test; the build-infra tests (ModulePathTest,
 // PackageDependencyTest, ClassFileVersionTest, TestJdkTest) are here because they check the whole build. Every
 // source set runs on the class path, so a test in a package can use its package-private classes, wherever the

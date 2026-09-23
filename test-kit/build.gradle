@@ -13,6 +13,13 @@ dependencies {
     api project(':core')
     // Part of the kit's API: the contract test is a JUnit Jupiter test class.
     api libs.junit.jupiter.api
+
+    // The toy and stub languages the kit's own tests run it against, shared with core's and mvel's tests.
+    testImplementation testFixtures(project(':core'))
+    testImplementation platform(libs.junit.bom)
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly libs.slf4j.simple
 }
 
 mavenPublishing {

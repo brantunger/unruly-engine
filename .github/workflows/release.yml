@@ -58,7 +58,7 @@ jobs:
       # that is a permanent record.
       # The links are pinned to the tag, not to `main`: the notes are permanent, and a page that later moves or is
       # renamed would leave a dead link behind in every past release. Nothing checks a link written in a workflow
-      # file — config/docs/check_docs.py only checks the pages, the Java sources and the Javadoc overview — so each
+      # file — scripts/docs/check_docs.py only checks the pages, the Java sources and the Javadoc overview — so each
       # page is looked up at the tag first and one that can't be confirmed is never published as a 404. It's every
       # page or none, because the marker below is the step's only "already done" test: notes written while one page
       # was unconfirmed could never gain its link, whereas notes left untouched can still be repaired by hand. The
