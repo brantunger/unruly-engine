@@ -59,7 +59,7 @@ guides before the first request reaches it.
 - [ ] A decision you must explain is recorded with `runWithResult()`: `firedRules()`, `evaluations()`,
       `ruleSetChecksum()`, the run's `tags()` and `startedAt()`, which explain a `SKIPPED` rule, and the engine's
       [match policy](glossary.md#match-policy), because the checksum doesn't cover the policy; see
-      [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
+      [Auditing a decision](run-results.md#-auditing-a-decision).
 
 ## 🧵 Threads and stopping
 

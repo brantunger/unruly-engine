@@ -16,7 +16,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 ## 🏭 Running in production
 
 1. [Before you go to production](production.md): the checklist, and [Security](../README.md#-security).
-2. [What a run reports](engines-and-runs.md#-what-a-run-reports) and
+2. [What a run reports](run-results.md#-what-a-run-reports) and
    [Handling failures](error-handling.md#-handling-failures).
 3. [Stopping a run](stopping-runs.md): timeouts and interrupts.
 4. [Thread safety at a glance](thread-safety.md#-at-a-glance), [Compiled copies](compiled-copies.md) and, if your
@@ -31,7 +31,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 2. [Lifecycle at a glance](languages/custom.md#-lifecycle-at-a-glance) and
    [Implementing the interfaces](languages/custom.md#-implementing-the-interfaces).
 3. [Thread safety](languages/custom.md#-thread-safety) and [Stopping a run](languages/custom.md#-stopping-a-run).
-4. [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit).
+4. [The contract test kit](languages/contract-kit.md): adding `unruly-engine-test` and what its checks promise.
 5. [Packaging](languages/custom.md#-packaging).
 
 ## 🔼 Upgrading from 1.x
@@ -46,15 +46,18 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | Guide | For | Covers |
 | --- | --- | --- |
 | 📜 [Writing rules](writing-rules.md) | Rule authors | Anatomy of a rule, choosing a language, what rules may change, loading rules from data, and testing rules |
-| 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, which rules a run uses, first match, all matches or unique match, the output object, what a run reports and why each rule did or didn't apply, checksums for auditing, and reloading |
+| 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, which rules a run uses, first match, all matches or unique match, the output object, and reloading |
+| 🏁 [Run results and audits](run-results.md) | Application developers | What a run reports and why each rule did or didn't apply, the loaded rules, and what to record to audit a decision, checksums included |
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, and comparison gotchas |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
-| 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions, packaging and the contract test kit for a language of your own |
+| 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions and packaging for a language of your own |
+| 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, what each of its checks promises, and testing a compiler without an engine |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
 | 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: turning MVEL's JIT off, registering reflection, the errors a missing registration gives, Flight Recorder, and what was tested |
 | 🌱 [Spring Boot](spring-boot.md) | Application developers | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | Application developers | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
-| 🚨 [Error handling](error-handling.md) | Application developers | Every exception by method, what's caught when rules load and what only at run time |
+| 🚨 [Error handling](error-handling.md) | Application developers | Exception types, what's caught when rules load and what only at run time, and what happens on each failure |
+| 🧨 [Exceptions by method](exceptions-by-method.md) | Application developers | Every exception by method, and what the engine does with an exception's text in its messages |
 | 🩺 [Troubleshooting](troubleshooting.md) | Everyone | Symptoms and exception messages from `build()`, `load()` and `run()`, each linked to the guide that explains it |
 | 🏭 [Before you go to production](production.md) | Application developers | A checklist: rules and their source, startup, failures, auditing, threads and shutdown |
 | ⏳ [Stopping a run](stopping-runs.md) | Application developers | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |

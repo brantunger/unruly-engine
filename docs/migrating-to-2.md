@@ -489,8 +489,8 @@ but an interrupt there fails the run with
 names its parent, so a run started from an action no longer needs a `ThreadLocal` to be told apart.
 
 A run keeps the checksum of the rules it started with, so it can differ from `rules().checksum()` after a reload:
-that's what an audit needs. [What a run reports](engines-and-runs.md#-what-a-run-reports) owns the outcomes and
-[Auditing a decision](engines-and-runs.md#-auditing-a-decision) the checksum's layout.
+that's what an audit needs. [What a run reports](run-results.md#-what-a-run-reports) owns the outcomes and
+[Auditing a decision](run-results.md#-auditing-a-decision) the checksum's layout.
 
 **Who is affected:** nobody has to change anything. Listeners and callers compile unchanged; a class that implements
 `RulesEngine` has [its own section](migrating-to-2-implementers.md#-if-you-implement-rulesengine).
@@ -529,7 +529,7 @@ the engine's messages. None of it is a compile error.
 | Parsing MVEL's `'+=' at position 13` for an assignment or `import_static` in a condition | `at line 1, column 14`, carried as an `InvalidExpressionException.Issue` as well as in the text |
 
 1.x already escaped rule, fact and language *names*, and already shortened names to 200 characters and copied text
-to 1,000; [Exceptions by method](error-handling.md#-exceptions-by-method) owns those rules, and
+to 1,000; [Exceptions by method](exceptions-by-method.md) owns those rules, and
 [Logging setup](listeners-and-logging.md#-logging-setup) owns every line and its level. A positioned compile error
 reads `Condition for rule 'r' failed to compile at line 1, column 6: Malformed expression`, and
 [Errors when rules load](languages/mvel.md#-errors-when-rules-load) covers what MVEL puts in one.
@@ -539,7 +539,7 @@ rejects outright reads `Condition for rule 'prime-rate' contains an assignment (
 with no `failed to compile`.
 
 When several rules fail, one exception reports them all, so `getCause()` is one level deeper than for a single rule:
-the combined exception wraps the first failure. [Exceptions by method](error-handling.md#-exceptions-by-method) owns
+the combined exception wraps the first failure. [Exceptions by method](exceptions-by-method.md) owns
 the message shape and what `failures()` holds.
 
 To replace the logger name, for example:

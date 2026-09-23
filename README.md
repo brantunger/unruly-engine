@@ -88,7 +88,7 @@ implementation("io.github.brantunger:unruly-engine:2.3.8")
 `unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/README.md),
 depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
 `unruly-engine-test` at the same version. With Maven, declare it after the engine, or an older kit can downgrade
-`unruly-engine-core`; see [Testing with the contract kit](docs/languages/custom.md#-testing-with-the-contract-kit).
+`unruly-engine-core`; see [Testing with the contract kit](docs/languages/contract-kit.md).
 
 <details>
 <summary><b>On the module path</b></summary>
@@ -228,7 +228,7 @@ when the application shuts down.
 
 > [!IMPORTANT]
 > `run()` returns **`null`** when no rule fires, so always check for it. See
-> [What a run reports](docs/engines-and-runs.md#-what-a-run-reports).
+> [What a run reports](docs/run-results.md#-what-a-run-reports).
 
 Three more things people get wrong on day one:
 
@@ -387,7 +387,7 @@ Symptoms and exception messages are in [Troubleshooting](docs/troubleshooting.md
 
 No rule fired: no condition was true, or the rule list is empty. The output supplier isn't even called in that case.
 Check for `null`, or, on a first-match engine, add a lowest-priority catch-all rule with the condition `true`. See
-[What a run reports](docs/engines-and-runs.md#-what-a-run-reports).
+[What a run reports](docs/run-results.md#-what-a-run-reports).
 
 </details>
 

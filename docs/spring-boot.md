@@ -176,10 +176,10 @@ public record LoanAudit(LoanDecision decision, List<String> firedRules, String r
 ```
 
 Return `LoanAudit.of(result)` from the handler. See
-[Auditing a decision](engines-and-runs.md#-auditing-a-decision) for what else to record.
+[Auditing a decision](run-results.md#-auditing-a-decision) for what else to record.
 
 Handle what `run()` throws in the controller itself, so that a run the caller stopped and a rule that failed don't get
-the same response. [Exceptions by method](error-handling.md#-exceptions-by-method) lists them all.
+the same response. [Exceptions by method](exceptions-by-method.md) lists them all.
 
 ```java
 @ExceptionHandler(RuleExecutionException.class)          // a rule failed, or the run was stopped

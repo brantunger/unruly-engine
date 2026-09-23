@@ -54,7 +54,7 @@ A lowercase hex SHA-256 that identifies a loaded rule list: each rule's name, pr
 [resolved language](#resolved-language), condition, action, whether it's enabled, its
 [validity window](#validity-window) and its [tags](#tag), in [evaluation order](#evaluation-order), but not its
 description, and not the match policy. `RuleSetInfo.checksum()` gives the engine's current one, and
-`RunResult.ruleSetChecksum()` the one a run used. See [Auditing a decision](engines-and-runs.md#-auditing-a-decision).
+`RunResult.ruleSetChecksum()` the one a run used. See [Auditing a decision](run-results.md#-auditing-a-decision).
 
 ### Close
 
@@ -88,7 +88,7 @@ runs, and the engine itself rejects any write to the facts. See [Writing rules](
 
 `ExpressionLanguageContractTest`, in the `unruly-engine-test` artifact, which a language's own test extends to check the
 promises every language must keep. The same artifact has `LanguageTestContexts` for testing a compiler without an
-engine. See [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit).
+engine. See [Testing with the contract kit](languages/contract-kit.md).
 
 ### Copies at load
 
@@ -160,7 +160,7 @@ request is the simplest. See [Reusing and sharing a store](facts.md#-reusing-and
 A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, found anywhere in the cause chain.
 The engine logs it and rethrows the same error from `load()`, `validate()`, `run()` or `close()`; every other `Error`
 from a rule is reported as that rule's failure. A `Throwable` that is neither an `Exception` nor an `Error` is never
-fatal: the engine treats it like an exception. See [Exceptions by method](error-handling.md#-exceptions-by-method).
+fatal: the engine treats it like an exception. See [Exceptions by method](exceptions-by-method.md).
 
 ### First-match engine
 
@@ -195,7 +195,7 @@ started with. See [Reloading rules](engines-and-runs.md#-reloading-rules).
 
 The rules an engine runs now, reported by `rules()` as a `RuleSetInfo`: `rules()` in
 [evaluation order](#evaluation-order), `checksum()` and `loadedAt()`. Before the first `load()` it has no rules, the
-checksum of an empty list and a `null` load time. See [The loaded rules](engines-and-runs.md#the-loaded-rules).
+checksum of an empty list and a `null` load time. See [The loaded rules](run-results.md#the-loaded-rules).
 
 ### Match and fire
 
@@ -276,7 +276,7 @@ What a run found out about one rule, in `RunResult.evaluations()`: the rule and 
 `NOT_EVALUATED` or `SKIPPED`, and any detail its language gave about the condition. A first-match engine reports the
 rules after the match as not evaluated; the other policies evaluate every rule the run uses. A
 [skipped rule](#skipped-rule) is `SKIPPED` on every policy, wherever it is. A rule whose condition failed has none,
-because the run throws instead. See [What a run reports](engines-and-runs.md#-what-a-run-reports).
+because the run throws instead. See [What a run reports](run-results.md#-what-a-run-reports).
 
 ### Rule list
 
@@ -309,7 +309,7 @@ setting; `RunOptions.defaults()` changes nothing. See [Stopping a run](stopping-
 The `RunResult` that `runWithResult(...)` returns: `output()`, `firedRules()` in firing order, `evaluations()` with
 every rule's outcome, `ruleSetChecksum()`, and the run's `tags()` and `startedAt()`, as on the
 [run context](#run-context). Its output is `null` exactly when no rule fired; a failed run throws instead of returning
-one. See [What a run reports](engines-and-runs.md#-what-a-run-reports).
+one. See [What a run reports](run-results.md#-what-a-run-reports).
 
 ### Session
 

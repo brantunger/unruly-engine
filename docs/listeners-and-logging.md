@@ -24,7 +24,7 @@ Every method has an empty default implementation, so override only the ones you 
 | `afterRun(run, result)` | When a run has finished | ... plus the `RunResult`: the output, the rules that fired, each rule's outcome, the rules' checksum, and the run's tags and instant |
 | `onRunError(run, error)` | Instead of `afterRun`, when the run fails | ... plus what the run failed with, **including failures that belong to no rule**. See below the diagram |
 | `beforeEvaluate(rule, facts)` | Before a condition is evaluated | The rule, and a read-only view of the fact values |
-| `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched. Not the language's [detail](engines-and-runs.md#-what-a-run-reports): read that from `afterRun`'s result |
+| `afterEvaluate(rule, facts, matched)` | After a condition evaluates to a boolean | ... plus whether it matched. Not the language's [detail](run-results.md#-what-a-run-reports): read that from `afterRun`'s result |
 | `beforeExecute(rule, output)` | Before an action runs | The rule and the output object |
 | `afterExecute(rule, output)` | After an action completes | The rule and the output object |
 | `onError(rule, error)` | Instead of `afterEvaluate` or `afterExecute`, when the condition or action fails | The rule and the `RuleExecutionException` the run fails with |
@@ -294,7 +294,7 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 | `io.github.brantunger.unruly.engine` | `ERROR` | A fact `run()` rejects, or a fact name a language failed to check |
 | `io.github.brantunger.unruly.engine` | `ERROR` | An output supplier that fails, or a language that fails to create a session for a run, or to create or warm up one for a copy `load()` makes with `copiesAtLoad(n)` |
 | `io.github.brantunger.unruly.engine` | `ERROR` | A listener that throws a fatal `Error` from a callback other than `onError`, such as `A listener threw java.lang.OutOfMemoryError in afterRun` |
-| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception: `Listener threw exception in <callback>: <class>: <message>`, escaped and shortened to 1,000 characters (no `: <message>` when it has none), then a root-cause note such as ` (caused by java.io.IOException: disk full)` when the message would otherwise hide the root cause; see [Error handling](error-handling.md#-exceptions-by-method) |
+| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception: `Listener threw exception in <callback>: <class>: <message>`, escaped and shortened to 1,000 characters (no `: <message>` when it has none), then a root-cause note such as ` (caused by java.io.IOException: disk full)` when the message would otherwise hide the root cause; see [Exception messages](exceptions-by-method.md) |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run stopped because its thread was interrupted or it passed its deadline, once when a nested run's stop reaches the run around it for the same interrupt or deadline |
 | `io.github.brantunger.unruly.engine` | `WARN` | A warning a language reports through `CompileContext.warn` while `load()` compiles |
 | `io.github.brantunger.unruly.engine` | `WARN` | A language failed to close a session or a compiler |

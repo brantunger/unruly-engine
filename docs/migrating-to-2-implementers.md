@@ -94,7 +94,7 @@ error: class is not allowed to extend sealed class: EvaluationContext (as it is 
   run a condition such as `applicant.creditScore == 750` against a record, a JavaBean and a map fact, and against a
   misspelled property. A language that reads facts with `FactProperties.read` passes them.
 
-See [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit).
+See [Testing with the contract kit](languages/contract-kit.md).
 
 ## 📑 Languages keep run state in sessions
 
@@ -171,7 +171,7 @@ column, is in [Errors when rules load](languages/mvel.md#-errors-when-rules-load
 the output itself, as before. `ActionResult.set(properties)` returns values for the engine to set on the output: with
 `put` on a `Map`, or with the output's public setters. This lets languages without side effects, such as CEL or
 JsonLogic, write actions. In `ExpressionLanguageContractTest`, a hook such as `reassignOutput()` may return `null` to
-skip its check; [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit) lists them.
+skip its check; [Testing with the contract kit](languages/contract-kit.md) lists them.
 
 **Who is affected:** authors of expression languages. Rule authors change nothing.
 

@@ -63,7 +63,7 @@ documentation lives.
 - **The TOC** lists every H2, in order, when a page has three or more.
 - **Leave out a section the page has nothing for.** A reference page such as this one has no common task or gotchas.
 - **Length:** a guide aims for at most about 1,500 words of prose and 8 H2s. Split a guide that grows past about
-  2,500 words.
+  2,500 words; `scripts/docs/check_style.py` reports one that does.
 - **One owner per rule.** When two pages need the same rule, one page states it and the other links to it.
 - **Before a major release,** a guide that describes the unreleased version says so in a NOTE under its H1, with a
   link to the same page at the last released tag. Remove the notes in a `docs:` PR merged just before the release
@@ -250,7 +250,7 @@ Yes. An all-matches run isn't atomic. See [Choosing an engine](../README.md#choo
 - `@see` links point to the guide that owns the type's topic. The contract belongs in the Javadoc; the reasons and the
   worked cases belong in the guide.
 - `@throws` lists every exception the method throws, in the words of the guide's
-  [Exceptions by method](../error-handling.md#-exceptions-by-method) table. That table owns the full list, and the
+  [Exceptions by method](../exceptions-by-method.md) table. That table owns the full list, and the
   Javadoc owns each method's part of it.
 - Use `{@snippet :}` for examples.
 - Javadoc in `unruly-engine-core` names MVEL only as an example, as in "a language such as MVEL".
