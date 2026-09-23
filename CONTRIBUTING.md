@@ -100,7 +100,9 @@ project a test belongs to; an unqualified `./gradlew test` runs all three, and t
 
 Settings shared by the projects are in the convention plugins in `buildSrc/src/main/groovy`. The `core` package is
 internal: its module exports it only to the test kit's module, and a class in it is public only where the builder
-or the test kit needs it.
+or the test kit needs it. The constructors the test kit calls are the exception: an older kit may run on a
+newer `core`, so the build checks them against the latest release; see
+[The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core).
 
 Where does my test go? The library has three test source sets. The line between `core/src/test` and
 `mvel/src/test` is whether the test needs MVEL, and `test-kit/src/test` holds the tests that use the test kit but
@@ -156,10 +158,10 @@ on JDK 25, and checks the PR title.
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
-| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
+| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🔏 **Dependency verification** | Every dependency and plugin the build downloads has a trusted PGP signature, or otherwise matches its checksum | `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys`; see [Dependency verification](docs/contributing/dependency-verification.md) |
-| 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version | The structural tests in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
+| 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 
 Three things to know about the gate:
 
@@ -193,6 +195,9 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 | `compileJava`, `compileTestJava`, `compileTestFixturesJava` with `-Werror` | The console | Fix the warning; every javac lint is on |
 | `javadoc` | The console | Every public member needs a comment with `@param`, `@return` and `@throws`, and every `{@link}` must resolve |
 | `japicmp` | `<project>/build/reports/japicmp/report.html` | See [API compatibility](docs/contributing/api-compatibility.md) |
+| `:core:japicmpTestKitLinkage` | The console, and `core/build/reports/japicmp/test-kit-linkage.html` | A `core` constructor the test kit calls was removed or changed: keep the old one. Or a line of `config/japicmp/test-kit-linkage.txt` matches no member: fix or delete it. See [The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core) |
+| `names config/japicmp/test-kit-linkage.txt as apiCheck.testKitLinkage, but there is no such file` | The console | The linkage file is missing: restore it, or fix the path in `core/build.gradle` |
+| `TestKitLinkageTest` | The test report | The test kit's references into `core` and `config/japicmp/test-kit-linkage.txt` differ: add or delete the line |
 | `PackageDependencyTest` | The test report | A package used one it may not; `PackageDependencyTest` lists what each package may use |
 | `EngineApiShapeTest`, `SealedContextsTest`, `NullnessAnnotationsTest`, `EngineVisibilityTest`, `ClassFileVersionTest` | The test report | A public type changed shape, or a class targets a newer Java; read the test's `@DisplayName` for the rule it protects |
 | `Dependency verification failed for configuration` | The console, and `build/reports/dependency-verification/at-<epoch-millis>/dependency-verification-report.html` | Usually a changed dependency or plugin: [Dependency verification](docs/contributing/dependency-verification.md#-when-to-regenerate) says what each message means and when to regenerate |

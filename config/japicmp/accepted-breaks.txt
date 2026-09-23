@@ -5,7 +5,9 @@
 # public or protected member. A break that is intended, for a major release, goes here with its reason. One file serves
 # every artifact, because each element is fully qualified. japicmp can't see an interface becoming sealed. The
 # packages in a project's apiCheck block are never compared, so they need no lines; the internal package
-# io.github.brantunger.unruly.core is one. Each line is:
+# io.github.brantunger.unruly.core is one, except the members the test kit links against, which
+# test-kit-linkage.txt lists or the released test kit uses, which ./gradlew :core:japicmpTestKitLinkage checks: a
+# break to one of them needs a line here too, naming the member, its class or its package. Each line is:
 #
 #   <major version> | <kind> | <element> | <justification>
 #

@@ -1,3 +1,5 @@
+import unruly.conventions.FilesSystemProperty
+
 plugins {
     id 'unruly.library'
 }
@@ -34,4 +36,17 @@ mavenPublishing {
 
 apiCheck {
     artifactId = artifact
+}
+
+tasks.named('test', Test) {
+    // Read by TestKitLinkageTest: the kit's compiled classes, and the list of core members they may use, which
+    // core's japicmpTestKitLinkage checks.
+    jvmArgumentProviders.add(objects.newInstance(FilesSystemProperty).tap {
+        name = 'unruly.test-kit.classes'
+        files.from(sourceSets.main.output.classesDirs)
+    })
+    jvmArgumentProviders.add(objects.newInstance(FilesSystemProperty).tap {
+        name = 'unruly.test-kit.linkage'
+        files.from(layout.settingsDirectory.file('config/japicmp/test-kit-linkage.txt'))
+    })
 }
