@@ -137,7 +137,8 @@ than on its first run. See [Warming up a session](languages/custom.md#warming-up
 
 `load()` now compiles every rule and then throws once. `RuleCompilationException.failures()` has each broken rule's
 exception, a language that couldn't create its compiler, and each rejected declared fact name. `getExpressionKind()`
-and `issues()` say what failed and where, on `RuleExecutionException` too.
+says whether a condition or an action failed, on `RuleExecutionException` too, and `issues()` on
+`RuleCompilationException` says where in the text.
 
 Compile error messages name the expression, and your message is a fragment the engine completes: it writes
 `Condition for rule 'r' ` or `Action for rule 'r' ` and then your `InvalidExpressionException`'s message, adding

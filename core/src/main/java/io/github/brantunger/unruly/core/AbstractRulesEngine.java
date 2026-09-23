@@ -631,12 +631,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param ruleList The List of {@link Rule} objects to compile.
      * @throws RuleCompilationException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
-     * @throws IllegalStateException if the engine is closed
+     * @throws IllegalStateException if the engine is closed; this is checked before anything in the list, so a closed
+     *                               engine throws it even for a list that would fail to load
      */
     // The rule set closes the compilers, or this method does if the rule list fails to load.
     @Override
     public void load(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
+        // Checked here so a closed engine rejects any list, and again under the lock, for a close() that runs while
+        // this compiles.
+        if (closed) {
+            throw new IllegalStateException(CLOSED_MESSAGE);
+        }
         // A null rule or a duplicate name stops the load before anything is compiled: duplicate names would make
         // error messages, exceptions and listener logs ambiguous.
         List<RuleCompilationException> listProblems = listProblems(ruleList, true);
@@ -699,8 +705,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * with a run counted on it can't close. Their sessions are closed as each one returns, and the languages'
      * compilers after the last one. Afterwards, {@code run()} and {@link #load(List)} throw
      * {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a copy
-     * when this method closed them, because it reads them again and finds a closed engine. Closing it again does
-     * nothing.
+     * when this method closed them, because it reads them again and finds a closed engine. A {@code load()} that
+     * found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on an
+     * open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules in first, and
+     * this method retires them like any others, or it finds the engine closed, retires its rules rather than swapping
+     * them in, and throws {@link IllegalStateException}. Closing it again does nothing.
      */
     // A closed engine has no rule set.
     @SuppressWarnings("PMD.NullAssignment")

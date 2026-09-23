@@ -295,7 +295,7 @@ class LanguageSessionsTest {
                 assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>())).getMessage());
         List<Rule> rules = List.of(rule("b", "confined"));
         assertEquals(CLOSED, assertThrows(IllegalStateException.class, () -> engine.load(rules)).getMessage());
-        assertEquals(2, confined.compilersClosed.get(), "the compiler of the rules loaded after the engine closed");
+        assertEquals(1, confined.compilersClosed.get(), "a load after the engine closed closed no second compiler");
     }
 
     @Test
