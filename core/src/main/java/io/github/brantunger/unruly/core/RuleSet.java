@@ -73,7 +73,8 @@ import java.util.function.LongSupplier;
  * <p>
  * Once {@link #retire()} is called, because a reload replaced the rule list or the engine was closed, idle copies are
  * closed at once, and a copy given back is closed instead of kept. When no run holds a copy any more, the rule set
- * closes the compilers, and then lends no more copies.
+ * closes the compilers, and then lends no more copies. A fatal {@link Error} from closing one copy doesn't stop the
+ * others being closed, nor the compilers after them: the first is returned for the caller to throw once they have.
  * </p>
  */
 final class RuleSet {
@@ -266,23 +267,26 @@ final class RuleSet {
      *                                likewise leaves it holding none
      * @throws RuleExecutionException if a language fails to create a session for a new copy, which is logged at ERROR.
      *                                A fatal {@link Error} is then rethrown unchanged.
+     * @throws Error                  a fatal {@link Error} from closing a retired rule set that this failed borrow was
+     *                                the last to use, in place of a failure that isn't fatal, which it carries as
+     *                                suppressed
      */
+    // Any Throwable: a failed borrow must leave however it ends, as a finally would, and a failure that isn't fatal is
+    // kept under a fatal Error from closing.
     Copy borrow(Instant deadline) throws InterruptedException, TimeoutException {
         if (!enter()) {
             return null;
         }
-        boolean lent = false;
+        Copy borrowed;
         try {
-            Copy borrowed = lend(deadline);
-            lent = true;
-            // Counted only once the copy is the caller's, so a failed borrow leaves nothing behind.
-            runsOnThread()[0]++;
-            return borrowed;
-        } finally {
-            if (!lent) {
-                leave();
-            }
+            borrowed = lend(deadline);
+        } catch (Throwable t) {
+            Failures.throwIfPresent(Failures.fatalInsteadOf(t, leave()));
+            throw t;
         }
+        // Counted only once the copy is the caller's, so a failed borrow leaves nothing behind.
+        runsOnThread()[0]++;
+        return borrowed;
     }
 
     /**
@@ -293,27 +297,34 @@ final class RuleSet {
      *
      * @param count How many copies to make; zero makes none
      * @throws RuleExecutionException if a language throws or returns {@code null} from {@code newSession()}, or
-     *                                throws from {@code warmUp()}. It's logged at ERROR, and the copies already made
-     *                                stay idle for {@link #retire()} to close. A fatal {@link Error} is rethrown
-     *                                unchanged.
+     *                                throws from {@code warmUp()}. It's logged at ERROR, and the copies already made,
+     *                                the one that failed too, even if only some of its sessions were made, stay idle
+     *                                for {@link #retire()} to close. A fatal {@link Error} is rethrown unchanged.
      */
     void prepareCopies(int count) {
         for (int made = 0; made < count; made++) {
-            Map<String, Session> sessions = newSessions();
+            Map<String, Session> sessions = new LinkedHashMap<>();
+            boolean complete = false;
+            try {
+                addSessions(sessions);
+                complete = true;
+            } finally {
+                if (!complete) {
+                    // Idle, so the sessions made before a language failed are closed with the other copies when
+                    // load() retires the rule set, and a fatal Error from closing them is weighed against the load's
+                    // failure there.
+                    idle.add(sessions);
+                }
+            }
             if (statelessSessions(sessions)) {
                 sharedSessions = sessions;
                 return;
             }
-            boolean warmed = false;
-            try {
-                warmUp(sessions);
-                warmed = true;
-            } finally {
-                if (!warmed) {
-                    Closing.sessions(sessions);
-                }
-            }
+            // Idle before it's warmed up, so a copy that fails to warm up is closed with the others when load() retires
+            // the rule set, and a fatal Error from closing it is weighed against the load's failure there. No run can
+            // see the rule set yet.
             idle.add(sessions);
+            warmUp(sessions);
         }
     }
 
@@ -343,33 +354,40 @@ final class RuleSet {
 
     /**
      * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
-     * is retired; any other copy's sessions are closed.
+     * is retired; any other copy's sessions are closed. The last copy given back to a retired rule set closes its
+     * compilers too.
      *
      * @param borrowed The copy, which the caller must no longer use
+     * @return The first fatal {@link Error} closing the copy's sessions or the compilers threw, for the caller to
+     *         throw, or {@code null} if none did
      */
-    void release(Copy borrowed) {
+    Error release(Copy borrowed) {
+        Error fatal = null;
         try {
             if (borrowed.kind() == Kind.KEPT) {
                 // Kept before the permit is released, so a run that was waiting finds this copy.
-                keep(borrowed.sessions());
+                fatal = keep(borrowed.sessions());
             } else if (borrowed.kind() == Kind.EXTRA) {
-                Closing.sessions(borrowed.sessions());
+                fatal = Closing.sessions(borrowed.sessions());
             }
             // A shared copy needs nothing: its sessions belong to every run, and are Session.none(), which has
             // nothing to close.
         } finally {
             endRunOnThread();
             giveBack(borrowed.held());
-            leave();
+            fatal = Failures.first(fatal, leave());
         }
+        return fatal;
     }
 
-    private void keep(Map<String, Session> sessions) {
+    // Keeps a copy given back for a later run, or closes its sessions if the rule set is retired, returning the first
+    // fatal Error from closing them.
+    private Error keep(Map<String, Session> sessions) {
         if (retired) {
-            Closing.sessions(sessions);
-        } else {
-            idle.add(sessions);
+            return Closing.sessions(sessions);
         }
+        idle.add(sessions);
+        return null;
     }
 
     /**
@@ -404,15 +422,21 @@ final class RuleSet {
     /**
      * Retires the rule set, which runs no longer start with: closes the idle copies, and the compilers too if no run
      * holds a copy. Otherwise, the compilers are closed when the last copy is given back. Calling it again does
-     * nothing more.
+     * nothing more. A fatal {@link Error} from closing one copy doesn't stop the others being closed, nor the
+     * compilers after them.
+     *
+     * @return The first fatal {@link Error} closing threw, for the caller to throw, or {@code null} if none did
      */
-    void retire() {
+    Error retire() {
         retired = true;
+        Error fatal = null;
         try {
-            closeIdle();
+            fatal = closeIdle();
         } finally {
-            closeIfUnused();
+            // Also after a Throwable closing doesn't catch, so the compilers are still closed.
+            fatal = Failures.first(fatal, closeIfUnused());
         }
+        return fatal;
     }
 
     private Copy lend(Instant deadline) throws InterruptedException, TimeoutException {
@@ -588,27 +612,37 @@ final class RuleSet {
         return users.getAndUpdate(count -> count == CLOSED ? CLOSED : count + 1) != CLOSED;
     }
 
-    // Uncounts a run that gave back its copy, closing a retired rule set that no run uses any more.
-    private void leave() {
+    // Uncounts a run that gave back its copy, closing a retired rule set that no run uses any more. Returns the first
+    // fatal Error from closing it.
+    private Error leave() {
         if (users.decrementAndGet() == 0 && retired) {
-            closeIfUnused();
+            return closeIfUnused();
         }
+        return null;
     }
 
-    private void closeIfUnused() {
-        if (users.compareAndSet(0, CLOSED)) {
-            try {
-                closeIdle();
-            } finally {
-                Closing.compilers(compilers);
-            }
+    // Closes the idle copies and then the compilers, once, if no run holds a copy. Returns the first fatal Error from
+    // closing them.
+    private Error closeIfUnused() {
+        if (!users.compareAndSet(0, CLOSED)) {
+            return null;
         }
+        Error fatal = null;
+        try {
+            fatal = closeIdle();
+        } finally {
+            fatal = Failures.first(fatal, Closing.compilers(compilers));
+        }
+        return fatal;
     }
 
-    private void closeIdle() {
+    // Closes every idle copy, even after one throws a fatal Error, and returns the first such error.
+    private Error closeIdle() {
+        Error fatal = null;
         for (Map<String, Session> sessions = idle.poll(); sessions != null; sessions = idle.poll()) {
-            Closing.sessions(sessions);
+            fatal = Failures.first(fatal, Closing.sessions(sessions));
         }
+        return fatal;
     }
 
     // Gives back what a run held with its copy, which tells a run that is waiting that they are still coming back.
@@ -627,21 +661,29 @@ final class RuleSet {
 
     /**
      * Creates a session for each language the rules use. If a language fails, the sessions already created for the
-     * copy are closed.
+     * copy are closed, and a fatal {@link Error} from closing them is thrown in place of a failure that isn't fatal.
      */
+    // Any Throwable: the sessions already made must be closed however this ends, as a finally would, and a failure that
+    // isn't fatal is kept under a fatal Error from closing.
     private Map<String, Session> newSessions() {
         Map<String, Session> sessions = new LinkedHashMap<>();
-        boolean made = false;
         try {
-            for (Map.Entry<String, ExpressionCompiler> compiler : compilers.entrySet()) {
-                sessions.put(compiler.getKey(), newSession(compiler.getKey(), compiler.getValue()));
-            }
-            made = true;
+            addSessions(sessions);
             return sessions;
-        } finally {
-            if (!made) {
-                Closing.sessions(sessions);
-            }
+        } catch (Throwable t) {
+            Failures.throwIfPresent(Failures.fatalInsteadOf(t, Closing.sessions(sessions)));
+            throw t;
+        }
+    }
+
+    /**
+     * Adds a session for each language the rules use to {@code sessions}, stopping at the first language that fails.
+     *
+     * @param sessions The copy's sessions so far, by language name
+     */
+    private void addSessions(Map<String, Session> sessions) {
+        for (Map.Entry<String, ExpressionCompiler> compiler : compilers.entrySet()) {
+            sessions.put(compiler.getKey(), newSession(compiler.getKey(), compiler.getValue()));
         }
     }
 

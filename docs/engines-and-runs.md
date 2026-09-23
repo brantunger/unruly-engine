@@ -461,6 +461,8 @@ What a caller sees when it calls `load()` on an engine that already has rules:
   old rules or the new ones, never a mix.
 - **A failed load changes nothing.** If any rule fails, `load()` throws a `RuleCompilationException`, and the old
   rules, their checksum and their `loadedAt()` stay. Runs keep using them.
+- **A fatal error can follow a swap:** see [A fatal error while closing](thread-safety.md#a-fatal-error-while-closing);
+  the new rules stay loaded.
 - **A run in progress finishes with the rules it started with,** so its `ruleSetChecksum()` can differ from
   `rules().checksum()` read after it returns.
 - **Only the rules change.** The match policy, output supplier, languages, imports, listeners, options and every other

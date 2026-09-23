@@ -274,6 +274,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                               a closed rule list {@value #RULE_READS_PER_RUN} times in a row, which means the
      *                               engine's own invariant has broken
      */
+    // Any Throwable: the copy must be given back however the run ends, as a finally would, and a failure that isn't
+    // fatal is kept under a fatal Error from closing.
     RunResult<O> runInScope(FactStore<?> facts, Duration timeout, Set<String> tags, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
         // Misuse, before the run is numbered or recorded: it reaches no listener and no recording either.
@@ -313,15 +315,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
-            // outlive its rule lists, so a permit that isn't returned would lower its limit for good.
+            // outlive its rule lists, so a permit that isn't returned would lower its limit for good. A fatal Error
+            // from closing the rules as it's given back replaces a failure of the run that isn't fatal.
+            RunResult<O> result;
             try {
-                RunResult<O> result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally,
-                        selection, body);
-                outcome = RunEvent.COMPLETED;
-                return result;
-            } finally {
-                rules.release(copy);
+                result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally, selection,
+                        body);
+            } catch (Throwable t) {
+                Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.release(copy)));
+                throw t;
             }
+            Failures.throwIfPresent(rules.release(copy));
+            outcome = RunEvent.COMPLETED;
+            return result;
         } catch (RuntimeException e) {
             outcome = ReportedFailure.isStop(e) ? RunEvent.STOPPED : RunEvent.FAILED;
             throw e;
@@ -631,6 +637,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * rule list that fails to load closes the compilers it created, and the sessions of any copies it made.
      * </p>
      *
+     * <p>
+     * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once everything being
+     * closed has been closed: the first, if there are several. A rule list that fails to load throws it in place of
+     * its own failure, which the error carries as a suppressed exception, unless that failure is itself a fatal error,
+     * which came first and is thrown instead. A reload throws it after swapping its rules in, when it closes the rule
+     * list they replaced: the new rules stay loaded, and runs use them.
+     * </p>
+     *
      * @param ruleList The List of {@link Rule} objects to compile.
      * @throws RuleCompilationException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
@@ -661,27 +675,29 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throwIfAnyFailed(compilation.failures);
             loaded = new RuleSet(compilation.compiled, compilation.used, copyLimit, copyPermits);
         } catch (RuntimeException | Error e) {
-            compilation.closeCompilers();
+            Failures.throwIfPresent(Failures.fatalInsteadOf(e, compilation.closeCompilers()));
             throw e;
         }
         prepareCopies(loaded);
         RuleSet replaced;
         synchronized (lifecycle) {
             if (closed) {
-                loaded.retire();
-                throw new IllegalStateException(CLOSED_MESSAGE);
+                IllegalStateException failure = new IllegalStateException(CLOSED_MESSAGE);
+                retireBefore(loaded, failure);
+                throw failure;
             }
             replaced = ruleSet;
             ruleSet = loaded;
         }
         if (replaced != null) {
-            replaced.retire();
+            Failures.throwIfPresent(replaced.retire());
         }
     }
 
     /**
      * Makes the copies of the rules the engine was built to make at load. From here on the rule set owns the
-     * compilers, so a failure retires it, which closes the copies made so far and then the compilers, once.
+     * compilers, so a failure retires it, which closes the copies made so far, the one that failed too, and then the
+     * compilers, once.
      *
      * @param loaded The rule set, which no run can see yet
      * @throws RuleCompilationException if a language can't create or warm up a session: already logged, as
@@ -689,17 +705,33 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     // The cause is what the language threw, as when a language can't create its compiler: the ReportedFailure around
     // it is the engine's own wrapper for a run, and was logged when it was made.
+    // Any Throwable: the rules must be closed however this ends, as a finally would, and a failure that isn't fatal is
+    // kept under a fatal Error from closing.
     @SuppressWarnings("PMD.PreserveStackTrace")
     private void prepareCopies(RuleSet loaded) {
         try {
             loaded.prepareCopies(copiesAtLoad);
         } catch (ReportedFailure e) {
-            loaded.retire();
-            throw new RuleCompilationException(e.getMessage(), e.getCause());
-        } catch (RuntimeException | Error e) {
-            loaded.retire();
-            throw e;
+            RuleCompilationException failure = new RuleCompilationException(e.getMessage(), e.getCause());
+            retireBefore(loaded, failure);
+            throw failure;
+        } catch (Throwable t) {
+            retireBefore(loaded, t);
+            throw t;
         }
+    }
+
+    /**
+     * Retires a rule set that {@code load()} won't swap in, before the caller throws {@code failure}: closes its
+     * copies, and then its compilers. A fatal {@link Error} from closing them is thrown here instead, carrying
+     * {@code failure} as suppressed, unless {@code failure} is a fatal error itself, which came first (see
+     * {@link Failures#fatalInsteadOf}).
+     *
+     * @param loaded  The rule set, which no run can see
+     * @param failure What the caller throws next
+     */
+    private static void retireBefore(RuleSet loaded, Throwable failure) {
+        Failures.throwIfPresent(Failures.fatalInsteadOf(failure, loaded.retire()));
     }
 
     /**
@@ -713,6 +745,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules in first, and
      * this method retires them like any others, or it finds the engine closed, retires its rules rather than swapping
      * them in, and throws {@link IllegalStateException}. Closing it again does nothing.
+     *
+     * <p>
+     * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once every idle copy,
+     * and the compilers if no run holds a copy, has been closed: the first, if there are several. The engine is closed
+     * all the same, so closing it again does nothing. A copy a run still holds is closed when the run gives it back,
+     * and a fatal error from that reaches the run.
+     * </p>
      */
     // A closed engine has no rule set.
     @SuppressWarnings("PMD.NullAssignment")
@@ -728,7 +767,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             ruleSet = null;
         }
         if (replaced != null) {
-            replaced.retire();
+            Failures.throwIfPresent(replaced.retire());
         }
     }
 
@@ -742,6 +781,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code copiesAtLoad(0)} nothing is outside what it can see.
      * </p>
      */
+    // Any Throwable: the compilers must be closed however this ends, as a finally would, and a failure that isn't
+    // fatal is kept under a fatal Error from closing.
     @Override
     public List<RuleCompilationException> validate(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
@@ -752,9 +793,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Compilation compilation = new Compilation(false);
         try {
             compilation.compile(ruleList.stream().filter(Objects::nonNull).toList());
-        } finally {
-            compilation.closeCompilers();
+        } catch (Throwable t) {
+            Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
+            throw t;
         }
+        Failures.throwIfPresent(compilation.closeCompilers());
         problems.addAll(compilation.failures);
         return Collections.unmodifiableList(problems);
     }
@@ -859,9 +902,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             failures.add(failure);
         }
 
-        /** Closes the compilers created, when the rule list isn't kept. */
-        void closeCompilers() {
-            Closing.compilers(compilers.created());
+        /**
+         * Closes the compilers created, when the rule list isn't kept.
+         *
+         * @return The first fatal {@link Error} a compiler threw, for the caller to throw, or {@code null} if none did
+         */
+        Error closeCompilers() {
+            return Closing.compilers(compilers.created());
         }
     }
 

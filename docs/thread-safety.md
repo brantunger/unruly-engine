@@ -130,8 +130,34 @@ engine, such as `RuleCompilationException`. If it succeeds, its rules are either
 serves them.
 
 Each run's sessions are closed as it returns, and the languages' compilers after the last one. A failure to close a
-session or a compiler is logged at WARN and doesn't fail a run. `RulesEngine` is `AutoCloseable`, so an engine built
-for a short task can go in a try-with-resources block. Closing an engine twice does nothing the second time.
+session or a compiler is logged at WARN and doesn't fail the run, `load()` or `close()` that closes them, unless it's
+a [fatal error](glossary.md#fatal-error); see [A fatal error while closing](#a-fatal-error-while-closing).
+`RulesEngine` is `AutoCloseable`, so an engine built for a short task can go in a try-with-resources block. Closing an
+engine twice does nothing the second time.
+
+### A fatal error while closing
+
+Closing a rule list's sessions and compilers is never cut short. When one of them throws a fatal error, such as an
+`OutOfMemoryError`, the engine still closes every idle session of that list, then its compilers if no run is still
+using it, and only then rethrows the error. If several are fatal, the first is rethrown and the others are only
+logged at WARN.
+
+A failure of the call's own that isn't fatal loses to a fatal error from closing, which keeps it in
+`getSuppressed()`. That's a failed `load()`'s own failure (a `RuleCompilationException`, or the
+`IllegalStateException` of an engine closed while it compiled), or a run's failure when that run is the one that
+closes. A fatal failure of the call's own came first, so it's thrown instead, and the one from closing is only logged
+at WARN.
+
+The call that closes throws it:
+
+- `close()`, and `validate()`, which closes the compilers it created.
+- A `load()` that replaced the rules (after the swap; see
+  [Reloading rules while running](#-reloading-rules-while-running)), failed, or found the engine closed.
+
+A run throws it too, even when its rules ran without failing. A run that gives back an extra copy, or a copy of rules
+a reload or `close()` retired, closes that copy, and the last one closes the retired rules' compilers too; a run whose
+new copy was only partly made closes the sessions it made; and a run whose borrow failed while it was the last user
+closes the retired rules' compilers.
 
 ### Draining before you close
 
@@ -180,6 +206,8 @@ For the load itself:
 
 - If the new list fails to compile, or a language fails to create or warm up a session for a copy at load, nothing
   is swapped, the old rules stay in place, and the sessions and compilers the failed load created are closed.
+- A [fatal error while closing](#a-fatal-error-while-closing) the replaced rules is thrown after the swap: the new
+  rules serve.
 - When two threads call `load()` at once, both compile the list they were given, and the one that finishes last wins:
   the last to swap in its rules, after making any copies at load.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
