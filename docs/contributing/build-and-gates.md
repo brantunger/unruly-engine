@@ -150,6 +150,11 @@ A pull request that changes only documentation skips the build matrix and `nativ
 file is under `docs/` or ends in `.md`, and none is under a `src/` directory. The `changes` job decides that, on
 pull requests only. When it fails, the build and `native-image` run anyway, and a push never skips them.
 
+A new push to a pull request cancels the run it supersedes. A run on `main` is never cancelled once it has started:
+the next push to `main` waits for it, so a run that starts isn't cut off before its cache save and its coverage
+upload. It isn't a queue, though. GitHub keeps only one waiting run per branch, so a push to `main` that lands while
+an earlier one is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
+
 `docs-and-hygiene` only warns for now: a failed step shows as an annotation, and the job stays green. Later, its
 checks will block. A page written before STYLE.md may have findings in lines you didn't touch. Run the checks
 before you push, from the repository root, with Python 3:
