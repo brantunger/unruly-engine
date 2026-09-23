@@ -404,7 +404,8 @@ new session when they do, such as a single-threaded interpreter context. A rule 
 A `newSession()` that throws or returns `null` fails the run that needed the session with a `RuleExecutionException`,
 logged at ERROR, and closes the sessions other languages already made for that copy; it happens before `beforeRun`,
 so no listener is told. A fatal error from closing them is thrown instead, with the `RuleExecutionException` in its
-`getSuppressed()`.
+`getSuppressed()` unless it can't keep one; see
+[A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing).
 
 A `close()` that throws is logged at WARN and the rest are still closed. Only a fatal error is rethrown, once every
 idle session of the rule list is closed, and its compilers too if no run still uses it; if there are several, the
@@ -425,8 +426,9 @@ the copies are still made. MVEL compiles every condition and action into the ses
 
 A fatal error from closing a failed load's sessions and compilers wins over the load's own failure (a
 `RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), which it keeps in
-`getSuppressed()`. If the load itself failed with a fatal error, that one came first and is thrown instead, and the
-one from closing is only logged at WARN.
+`getSuppressed()` unless it can't keep one; see
+[A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing). If the load itself failed with a
+fatal error, that one came first and is thrown instead, and the one from closing is only logged at WARN.
 
 ## 📦 Packaging
 

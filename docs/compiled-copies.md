@@ -203,13 +203,14 @@ it: the run calls `beforeRun` and then `onRunError`, although it never held a co
 > [!WARNING]
 > A run whose deadline is less than five seconds away never gives up waiting for an extra copy: it waits until its
 > deadline and then fails with a `TimeoutException` cause, saying every copy was in use. A run started on a thread
-> that already holds a copy never waits, deadline or not: it takes a free copy, or an extra one.
+> that holds or is getting a copy never waits, deadline or not: it takes a free copy, or an extra one.
 
 Two kinds of run never wait for a copy, so a limit can't deadlock an engine.
 
-**A run started on a thread that is already holding a copy**, from an action or a listener of the run that holds it.
-The copy it would wait for may be that one. This covers a run on any engine and any rule list, including rules a
-`load()` has since replaced.
+**A run started on a thread that holds or is getting a copy**: from an action or a listener of the run that holds
+it, or from language code, such as `newSession()` or a log appender, while that run is still getting its copy. That
+run can't go on, or give a copy back, until this one returns, so the wait might never end. This covers a run on any
+engine and any rule list, including rules a `load()` has since replaced.
 
 A run that stopped while waiting for a copy holds none, so a run started from its callbacks isn't covered by this
 rule, but it doesn't wait either: it inherits that run's passed deadline, or sees the same interrupt, so it takes a

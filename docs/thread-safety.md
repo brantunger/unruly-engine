@@ -143,10 +143,10 @@ using it, and only then rethrows the error. If several are fatal, the first is r
 logged at WARN.
 
 A failure of the call's own that isn't fatal loses to a fatal error from closing, which keeps it in
-`getSuppressed()`. That's a failed `load()`'s own failure (a `RuleCompilationException`, or the
-`IllegalStateException` of an engine closed while it compiled), or a run's failure when that run is the one that
-closes. A fatal failure of the call's own came first, so it's thrown instead, and the one from closing is only logged
-at WARN.
+`getSuppressed()`, or logs it at WARN if it can't keep one (see below). That's a failed `load()`'s own failure (a
+`RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), or a run's failure
+when that run is the one that closes. A fatal failure of the call's own came first, so it's thrown instead, and the
+one from closing is only logged at WARN.
 
 The call that closes throws it:
 
@@ -154,10 +154,17 @@ The call that closes throws it:
 - A `load()` that replaced the rules (after the swap; see
   [Reloading rules while running](#-reloading-rules-while-running)), failed, or found the engine closed.
 
-A run throws it too, even when its rules ran without failing. A run that gives back an extra copy, or a copy of rules
-a reload or `close()` retired, closes that copy, and the last one closes the retired rules' compilers too; a run whose
-new copy was only partly made closes the sessions it made; and a run whose borrow failed while it was the last user
-closes the retired rules' compilers.
+A run throws it too, even when its rules ran without failing. A run that gives back an extra copy, a copy that
+couldn't be kept for a later run, or a copy of rules a reload or `close()` retired, closes that copy, and the last one
+closes the retired rules' compilers too; a run whose new copy was only partly made closes the sessions it made; and a
+run whose borrow failed while it was the last user closes the retired rules' compilers.
+
+A borrow that an interrupt or the deadline stopped then throws the fatal error, carrying the raw
+`InterruptedException` or `TimeoutException`. No listener hears of the run and no stop is logged; an interrupted thread
+stays interrupted.
+
+An `OutOfMemoryError` the JVM throws itself can't keep suppressed exceptions, so the engine logs the failure it
+replaces at WARN instead; see [Logging setup](listeners-and-logging.md#-logging-setup).
 
 ### Draining before you close
 

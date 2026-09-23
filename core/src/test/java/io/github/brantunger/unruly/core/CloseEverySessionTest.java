@@ -21,14 +21,23 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import java.time.Instant;
+import java.util.AbstractMap;
+import java.util.AbstractQueue;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -44,6 +53,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * closes every idle session, then the compilers, and only then throws, whether a {@code close()}, a reload, a load that
  * failed or the last run to give back a copy did the closing. A fatal error beats any other failure, which it carries
  * as suppressed, and of two fatal errors the first wins; the other is only logged.
+ *
+ * <p>
+ * #539-#543: the same holds for a copy the idle queue can't take, a copy that can't be lent once it's made, a
+ * {@code Throwable} that is neither an {@code Exception} nor an {@code Error} from compiling at load or from closing a
+ * session, and a run interrupted while it waits for a copy, which keeps its thread's interrupt status.
+ * </p>
  */
 @DisplayName("closing a rule list closes every session and then the compilers, and throws the first fatal Error")
 class CloseEverySessionTest {
@@ -200,6 +215,116 @@ class CloseEverySessionTest {
         List<String> closed = new ArrayList<>(sessions(from, to));
         closed.add("compiler");
         return closed;
+    }
+
+    /**
+     * A compiler for a rule set made by hand, which records, in order, each session it made and itself as they're
+     * closed, as {@link RecordingLanguage} does, and throws {@code closeFailure} from its own {@code close()}, which
+     * records whether its thread's interrupt status was set. Its sessions are numbered from 1.
+     */
+    private static final class RecordingCompiler implements ExpressionCompiler {
+        final List<String> closed = new CopyOnWriteArrayList<>();
+        final AtomicInteger sessionsMade = new AtomicInteger();
+        volatile Throwable closeFailure;
+        volatile boolean closedInterrupted;
+
+        @Override
+        public CompiledCondition compileCondition(Expression source) {
+            throw new UnsupportedOperationException("not compiled");
+        }
+
+        @Override
+        public CompiledAction compileAction(Expression source) {
+            throw new UnsupportedOperationException("not compiled");
+        }
+
+        @Override
+        public Session newSession() {
+            int number = sessionsMade.incrementAndGet();
+            return new Session() {
+                @Override
+                public void close() {
+                    closed.add("session " + number);
+                }
+            };
+        }
+
+        @Override
+        public void close() {
+            closed.add("compiler");
+            closedInterrupted = Thread.currentThread().isInterrupted();
+            throwIfSet(closeFailure);
+        }
+    }
+
+    /**
+     * An idle queue that fails the way one that can't allocate room for a copy does: the next {@code add()} throws
+     * {@code addFailure}, once. With {@code pollFailure} set, the next copy it gives out throws that, once, when it's
+     * lent and the rule set first reads its sessions.
+     */
+    private static final class FailingQueue extends AbstractQueue<Map<String, Session>> {
+        final AtomicReference<Throwable> addFailure = new AtomicReference<>();
+        final AtomicReference<Throwable> pollFailure = new AtomicReference<>();
+        private final Queue<Map<String, Session>> copies = new ConcurrentLinkedQueue<>();
+
+        @Override
+        public boolean offer(Map<String, Session> sessions) {
+            throwIfSet(addFailure.getAndSet(null));
+            return copies.offer(sessions);
+        }
+
+        @Override
+        public Map<String, Session> poll() {
+            Map<String, Session> sessions = copies.poll();
+            Throwable failure = pollFailure.getAndSet(null);
+            return failure == null || sessions == null ? sessions : new FailingSessions(sessions, failure);
+        }
+
+        @Override
+        public Map<String, Session> peek() {
+            return copies.peek();
+        }
+
+        @Override
+        public Iterator<Map<String, Session>> iterator() {
+            return copies.iterator();
+        }
+
+        @Override
+        public int size() {
+            return copies.size();
+        }
+    }
+
+    /** A copy's sessions whose {@code values()} throws {@code failure} once; closing them reads the entries. */
+    private static final class FailingSessions extends AbstractMap<String, Session> {
+        private final Map<String, Session> sessions;
+        private final AtomicReference<Throwable> failure;
+
+        FailingSessions(Map<String, Session> sessions, Throwable failure) {
+            this.sessions = sessions;
+            this.failure = new AtomicReference<>(failure);
+        }
+
+        @Override
+        public Set<Entry<String, Session>> entrySet() {
+            return sessions.entrySet();
+        }
+
+        @Override
+        public Collection<Session> values() {
+            throwIfSet(failure.getAndSet(null));
+            return sessions.values();
+        }
+    }
+
+    /**
+     * A rule set of no rules in one language, made by hand, whose runs share {@code permits}, a limit of one copy,
+     * and wait for a copy until they're interrupted.
+     */
+    private static RuleSet ruleSet(RecordingCompiler compiler, CopyPermits permits, Queue<Map<String, Session>> idle) {
+        // A stall window no test outlasts, so that a run waits for a copy however slow the machine is.
+        return new RuleSet(List.of(), Map.of(LANGUAGE, compiler), CopyLimit.of(1), permits, Long.MAX_VALUE, idle);
     }
 
     @Test
@@ -529,9 +654,9 @@ class CloseEverySessionTest {
     }
 
     @Test
-    @DisplayName("close() with a session that throws a Throwable that is neither an Exception nor an Error still"
-            + " closes the other copies and the compiler")
-    void rawThrowableFromSessionCloseStillClosesTheRest() {
+    @DisplayName("close() with a session that throws a Throwable that is neither an Exception nor an Error logs it,"
+            + " closes the other copies and the compiler, and throws nothing")
+    void rawThrowableFromSessionCloseLoggedAndTheRestClosed() {
         Throwable raw = new Throwable("raw");
         RecordingLanguage language = new RecordingLanguage();
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
@@ -539,10 +664,31 @@ class CloseEverySessionTest {
         language.sessionCloseFailures.put(1, raw);
         AtomicReference<Throwable> thrown = new AtomicReference<>();
 
+        String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
+
+        assertNull(thrown.get());
+        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
+                + "' expression language failed to close a session: raw"), logs);
+    }
+
+    @Test
+    @DisplayName("a Throwable that is neither an Exception nor an Error from one language's session close() doesn't"
+            + " stop the same copy's other sessions from closing")
+    void rawThrowableFromOneLanguagesCloseStillClosesTheOthers() {
+        Throwable raw = new Throwable("raw");
+        RecordingLanguage first = new RecordingLanguage();
+        RecordingLanguage second = new RecordingLanguage("second");
+        RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
+        engine.load(rulesInBoth(first, second));
+        first.sessionCloseFailures.put(1, raw);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
         logsOf(() -> thrown.set(thrownBy(engine::close)));
 
-        assertSame(raw, thrown.get());
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(List.of("session 1", "compiler"), second.closed, "the same copy's other session");
+        assertEquals(List.of("session 1", "compiler"), first.closed);
+        assertNull(thrown.get());
     }
 
     @Test
@@ -835,6 +981,282 @@ class CloseEverySessionTest {
         assertSame(fatal, thrown.get());
         assertArrayEquals(new Throwable[] {raw}, fatal.getSuppressed());
         assertEquals(List.of("compiler"), first.closed);
+    }
+
+    @Test
+    @DisplayName("a load whose compiling throws a Throwable that is neither an Exception nor an Error closes the"
+            + " compilers already created")
+    void rawThrowableFromCompilingAtLoadClosesTheCompilers() {
+        Throwable raw = new Throwable("raw");
+        RecordingLanguage first = new RecordingLanguage();
+        RecordingLanguage second = new RecordingLanguage("second");
+        second.newCompilerFailure = raw;
+        RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
+        List<Rule> rules = rulesInBoth(first, second);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+
+        assertSame(raw, thrown.get());
+        assertEquals(List.of("compiler"), first.closed, "the first language's compiler was created, so it's closed");
+    }
+
+    @Test
+    @DisplayName("a copy given back that the idle queue can't take with a fatal Error is closed, and the error is"
+            + " returned for the run to throw")
+    void fatalFromKeepingACopyClosesIt() throws InterruptedException, TimeoutException {
+        OutOfMemoryError fatal = new OutOfMemoryError("keeping the copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        FailingQueue idle = new FailingQueue();
+        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
+        RuleSet.Copy copy = rules.borrow(null);
+        idle.addFailure.set(fatal);
+        AtomicReference<Error> returned = new AtomicReference<>();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> thrown.set(thrownBy(() -> returned.set(rules.release(copy)))));
+
+        assertNull(thrown.get(), "returned, for the run to weigh against its own failure");
+        assertSame(fatal, returned.get());
+        assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later run, so"
+                + " its sessions were closed: keeping the copy"), logs);
+        rules.release(rules.borrow(Instant.now().plusSeconds(10)));
+        assertEquals(2, compiler.sessionsMade.get(), "the next run made a copy of its own under the limit");
+    }
+
+    @Test
+    @DisplayName("a copy given back that the idle queue can't take with a failure that isn't fatal is closed, and the"
+            + " failure only logged")
+    void nonFatalFromKeepingACopyClosesIt() throws InterruptedException, TimeoutException {
+        RecordingCompiler compiler = new RecordingCompiler();
+        FailingQueue idle = new FailingQueue();
+        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
+        RuleSet.Copy copy = rules.borrow(null);
+        idle.addFailure.set(new IllegalStateException("queue full"));
+        AtomicReference<Error> returned = new AtomicReference<>();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> thrown.set(thrownBy(() -> returned.set(rules.release(copy)))));
+
+        assertNull(thrown.get());
+        assertNull(returned.get());
+        assertEquals(List.of("session 1"), compiler.closed);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later run, so"
+                + " its sessions were closed: queue full"), logs);
+    }
+
+    @Test
+    @DisplayName("a load whose idle queue can't take a copy with a fatal Error leaves no session it made unclosed")
+    void fatalFromKeepingACopyAtLoadLeavesNoSessionOpen() {
+        OutOfMemoryError fatal = new OutOfMemoryError("keeping the copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        FailingQueue idle = new FailingQueue();
+        idle.addFailure.set(fatal);
+        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
+
+        Throwable thrown = thrownBy(() -> rules.prepareCopies(1));
+        assertNull(rules.retire());
+
+        assertSame(fatal, thrown);
+        assertEquals(sessionsThenCompiler(1, compiler.sessionsMade.get()), compiler.closed,
+                "every session made, then the compiler");
+    }
+
+    @Test
+    @DisplayName("a kept copy that fails with a fatal Error as it's lent is closed, and the permit taken for it given"
+            + " back, so the next run still gets a copy under the limit")
+    void fatalFromLendingAKeptCopyClosesItAndGivesBackThePermit() throws InterruptedException, TimeoutException {
+        OutOfMemoryError fatal = new OutOfMemoryError("lending the copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        FailingQueue idle = new FailingQueue();
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet rules = ruleSet(compiler, permits, idle);
+        rules.prepareCopies(1);
+        idle.pollFailure.set(fatal);
+
+        Throwable thrown = thrownBy(() -> rules.borrow(null));
+
+        assertSame(fatal, thrown);
+        assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be lent");
+        assertEquals(1, permits.available().availablePermits(), "the permit taken for it was given back");
+        rules.release(rules.borrow(Instant.now().plusSeconds(10)));
+        assertEquals(2, compiler.sessionsMade.get(), "the next run made a copy of its own under the limit");
+    }
+
+    @Test
+    @DisplayName("guard: a nested run that fails to get a copy leaves the run around it counted, so a later nested"
+            + " run still takes an extra copy at once")
+    void failedNestedBorrowLeavesTheOuterRunCounted() {
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1), 1);
+        engine.load(rules("r"));
+        AtomicBoolean nesting = new AtomicBoolean();
+        AtomicReference<Throwable> failedNested = new AtomicReference<>();
+        AtomicReference<Map<String, Object>> laterNested = new AtomicReference<>();
+        language.duringAction = () -> {
+            if (nesting.compareAndSet(false, true)) {
+                language.duringNewSession = () -> {
+                    throw new IllegalStateException("no session");
+                };
+                failedNested.set(thrownBy(() -> engine.run(new FactMap<>())));
+                language.duringNewSession = () -> {
+                };
+                laterNested.set(engine.run(new FactMap<>()));
+            }
+        };
+
+        String logs = logsOf(() -> engine.run(new FactMap<>()));
+
+        assertInstanceOf(RuleExecutionException.class, failedNested.get());
+        assertEquals(Map.of("r", true), laterNested.get());
+        assertFalse(logs.contains("made an extra copy"), "the later nested run didn't wait for a copy: " + logs);
+    }
+
+    @Test
+    @DisplayName("guard: a run of another engine that a language starts while a run gets its copy leaves that run"
+            + " counted, so a run nested in it takes an extra copy at once, on every run of the thread")
+    void runStartedWhileGettingACopyLeavesTheRunCounted() {
+        RecordingLanguage other = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> otherEngine = engine(other, 0);
+        otherEngine.load(rules("o"));
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1), 0);
+        engine.load(rules("r"));
+        AtomicBoolean firstSession = new AtomicBoolean(true);
+        language.duringNewSession = () -> {
+            if (firstSession.compareAndSet(true, false)) {
+                otherEngine.run(new FactMap<>());
+            }
+        };
+        AtomicBoolean nesting = new AtomicBoolean();
+        List<Map<String, Object>> nested = new CopyOnWriteArrayList<>();
+        language.duringAction = () -> {
+            if (nesting.compareAndSet(false, true)) {
+                nested.add(engine.run(new FactMap<>()));
+            }
+        };
+        // A thread of its own, so a count this leaves broken breaks no other test.
+        Thread thread = new Thread(() -> {
+            engine.run(new FactMap<>());
+            // Again on the same thread, whose count a first run left broken would break for good.
+            nesting.set(false);
+            engine.run(new FactMap<>());
+        });
+
+        // Time for a run that isn't counted to wait out the stall window twice, so it fails on what it logs.
+        String logs = logsOf(() -> {
+            thread.start();
+            try {
+                thread.join(TimeUnit.SECONDS.toMillis(30));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        });
+
+        assertFalse(thread.isAlive(), "timed out");
+        assertEquals(List.of(Map.of("r", true), Map.of("r", true)), nested);
+        assertFalse(logs.contains("made an extra copy"), "the nested runs didn't wait for a copy: " + logs);
+    }
+
+    @Test
+    @DisplayName("a fatal Error that replaces a failure caused by an interrupt sets the thread's interrupt status")
+    void fatalInsteadOfAnInterruptKeepsTheInterruptStatus() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing");
+        InterruptedException interrupted = new InterruptedException();
+        AtomicBoolean status = new AtomicBoolean();
+        Thread thread = new Thread(() -> {
+            Failures.fatalInsteadOf(interrupted, fatal);
+            status.set(Thread.currentThread().isInterrupted());
+        });
+
+        thread.start();
+        join(thread);
+
+        assertTrue(status.get(), "the thread's interrupt status");
+        assertArrayEquals(new Throwable[] {interrupted}, fatal.getSuppressed());
+    }
+
+    @Test
+    @DisplayName("a run interrupted while it waits for a copy, whose leaving closes retired rules with a fatal Error,"
+            + " keeps its thread's interrupt status")
+    void interruptedWaitThenFatalCloseKeepsTheInterruptStatus() throws InterruptedException, TimeoutException {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet held = ruleSet(new RecordingCompiler(), permits, new ConcurrentLinkedQueue<>());
+        RecordingCompiler compiler = new RecordingCompiler();
+        RuleSet waitedFor = ruleSet(compiler, permits, new ConcurrentLinkedQueue<>());
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+        Thread waiter = new Thread(() -> {
+            thrown.set(thrownBy(() -> waitedFor.borrow(null)));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        });
+        // The one permit, held with a copy of the other rule set, so the waiter waits for it.
+        RuleSet.Copy copy = held.borrow(null);
+        try {
+            logsOf(() -> {
+                waiter.start();
+                awaitQueued(permits);
+                compiler.closeFailure = fatal;
+                // Retired while the waiter is its only user, so the waiter's leaving closes the compiler.
+                assertNull(waitedFor.retire());
+                waiter.interrupt();
+                join(waiter);
+            });
+        } finally {
+            held.release(copy);
+        }
+
+        assertSame(fatal, thrown.get());
+        assertInstanceOf(InterruptedException.class, fatal.getSuppressed()[0]);
+        assertTrue(interrupted.get(), "the thread's interrupt status");
+        assertEquals(List.of("compiler"), compiler.closed);
+        assertTrue(compiler.closedInterrupted, "the interrupt status was set again before the compiler was closed");
+    }
+
+    @Test
+    @DisplayName("a fatal Error that can't carry the failure it replaces, as the JVM's own OutOfMemoryError can't,"
+            + " logs that failure at WARN")
+    void fatalThatCantCarryTheFailureLogsIt() {
+        // Suppression disabled, as on an OutOfMemoryError the JVM keeps ready, which no constructor built.
+        Error fatal = new Error("preallocated", null, false, false) {
+        };
+        IllegalStateException failure = new IllegalStateException("the engine is closed");
+        AtomicReference<Error> result = new AtomicReference<>();
+
+        String logs = logsOf(() -> result.set(Failures.fatalInsteadOf(failure, fatal)));
+
+        assertSame(fatal, result.get());
+        assertEquals(0, fatal.getSuppressed().length);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A failure was replaced by the fatal error " + fatal
+                + ", which can't carry it as a suppressed exception: java.lang.IllegalStateException: the engine is"
+                + " closed"), logs);
+    }
+
+    @Test
+    @DisplayName("guard: a fatal Error that carries the failure it replaces logs nothing more")
+    void fatalThatCarriesTheFailureLogsNothing() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing");
+        IllegalStateException failure = new IllegalStateException("the engine is closed");
+
+        String logs = logsOf(() -> Failures.fatalInsteadOf(failure, fatal));
+
+        assertArrayEquals(new Throwable[] {failure}, fatal.getSuppressed());
+        assertEquals("", logs);
+    }
+
+    /**
+     * Waits until a run is queued for one of {@code permits}, which it can only be once it's counted on its rule set
+     * and waiting for a copy: a thread merely parked with a timeout may be waiting for something else.
+     */
+    private static void awaitQueued(CopyPermits permits) {
+        long giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!permits.available().hasQueuedThreads()) {
+            assertTrue(System.nanoTime() < giveUp, "the run never started waiting for a copy");
+            Thread.onSpinWait();
+        }
     }
 
     /**

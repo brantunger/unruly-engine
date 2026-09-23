@@ -207,8 +207,8 @@ thread, it takes a free copy or fails at once.
   nothing of its own, and its rule gets one `onError`, the run one `onRunError`.
 - **`parent()` names the outer run only on the same engine.** A run on another engine has no parent, although it
   still inherits the deadline; see [Callbacks](listeners-and-logging.md#-callbacks).
-- **A nested run never waits for a copy** while a run on its thread holds one; a run started from the callbacks of a
-  run that stopped while waiting holds none, and fails at once instead. See
+- **A nested run never waits for a copy** while a run on its thread holds or is getting one; a run started from the
+  callbacks of a run that stopped while waiting holds none, and fails at once instead. See
   [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ## ❓ Questions you might not think to ask

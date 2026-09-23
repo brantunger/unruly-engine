@@ -8,10 +8,11 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 /**
- * Closes the sessions and compilers expression languages created for a rule list. A failure to close is logged at WARN
- * and doesn't fail the run or the load that closes them; the rest are still closed. A fatal {@link Error} (see
+ * Closes the sessions and compilers expression languages created for a rule list. Whatever a {@code close()} throws,
+ * any {@link Throwable}, is logged at WARN, and the rest are still closed. A fatal {@link Error} (see
  * {@link Failures#fatalError}) is returned unchanged once everything has been closed, for the caller to throw once it
- * has closed the rest of what it closes: the first, if several were thrown.
+ * has closed the rest of what it closes: the first, if several were thrown. Nothing else a {@code close()} throws
+ * reaches the caller.
  */
 final class Closing {
 
@@ -40,12 +41,14 @@ final class Closing {
         return closeAll(compilers, "its compiler");
     }
 
+    // Any Throwable: one that stopped the loop would leave the rest open, and callers that close more after this, such
+    // as the compilers after the sessions, would never reach them.
     private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
         Error fatal = null;
         for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
             try {
                 resource.getValue().close();
-            } catch (Exception | Error e) {
+            } catch (Throwable e) {
                 Failures.keepInterruptStatus(e);
                 log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(resource.getKey()), what,
                         Failures.describe(e));
