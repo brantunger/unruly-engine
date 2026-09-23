@@ -22,8 +22,8 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Inst
      * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
      */
     public EngineActionContext {
-        facts = ReadOnlyFacts.forActions(Objects.requireNonNull(facts, "facts"));
-        Objects.requireNonNull(output, "output");
+        facts = ReadOnlyFacts.forActions(Objects.requireNonNull(facts, "facts must not be null"));
+        Objects.requireNonNull(output, "output must not be null");
     }
 
     @Override

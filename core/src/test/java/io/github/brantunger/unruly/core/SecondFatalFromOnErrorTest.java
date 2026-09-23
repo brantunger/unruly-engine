@@ -12,6 +12,7 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -104,6 +105,19 @@ class SecondFatalFromOnErrorTest {
         Outcome outcome = run("boom.x", false, error -> second);
 
         assertKept(outcome, RULE_ERROR, second);
+    }
+
+    @Test
+    @DisplayName("the log names the root cause the listener's error hides when it has no message")
+    void hiddenCauseLogged() {
+        OutOfMemoryError second = new OutOfMemoryError();
+        second.initCause(new IOException("disk full"));
+
+        Outcome outcome = run("boom.x", false, error -> second);
+
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, "
+                + "kept on the failure: java.lang.OutOfMemoryError (caused by java.io.IOException: disk full)"),
+                outcome.logs());
     }
 
     @Test

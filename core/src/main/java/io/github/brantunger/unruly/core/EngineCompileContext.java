@@ -44,11 +44,26 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws IllegalArgumentException if a fact is declared with the name {@code output}
      */
     public EngineCompileContext {
+        Objects.requireNonNull(packageImports, "packageImports must not be null");
+        Objects.requireNonNull(classImports, "classImports must not be null");
+        Objects.requireNonNull(classLoader, "classLoader must not be null");
+        Objects.requireNonNull(outputType, "outputType must not be null");
+        Objects.requireNonNull(options, "options must not be null");
+        Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
+        for (String packageName : packageImports) {
+            Objects.requireNonNull(packageName, "packageImports must not contain null");
+        }
+        for (Class<?> importedClass : classImports) {
+            Objects.requireNonNull(importedClass, "classImports must not contain null");
+        }
+        options.forEach((name, value) -> {
+            Objects.requireNonNull(name, "options must not contain null");
+            Objects.requireNonNull(value, "options must not contain null");
+        });
         packageImports = Set.copyOf(packageImports);
         classImports = Set.copyOf(classImports);
-        Objects.requireNonNull(classLoader, "classLoader");
-        Objects.requireNonNull(outputType, "outputType");
         options = Map.copyOf(options);
+        // declaredType names a null fact name or type itself.
         Map<String, Class<?>> declared = new LinkedHashMap<>();
         declaredFacts.forEach((name, type) -> declared.put(name, declaredType(name, type)));
         declaredFacts = Map.copyOf(declared);
@@ -112,8 +127,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      */
     @Override
     public void warn(Expression source, InvalidExpressionException.Issue issue) {
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(issue, "issue");
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(issue, "issue must not be null");
         if (warningsLogged) {
             log.warn("{} has a warning{}: {}", Failures.expression(source.kind(), source.ruleName()),
                     Failures.position(issue), Failures.escape(Failures.truncate(issue.message())));

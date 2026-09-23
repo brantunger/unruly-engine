@@ -577,6 +577,11 @@ declared facts and the output type passes. Test what your language does with eac
 expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
 `evaluation(facts, deadline)` gives a real `isCancelled()`.
 
+A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
+`facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
+such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
+`type must not be null`. A fact's value may be `null`, and these contexts don't check fact names.
+
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import io.github.brantunger.unruly.test.LanguageTestContexts;

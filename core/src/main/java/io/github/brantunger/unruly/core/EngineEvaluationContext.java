@@ -27,7 +27,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, Instant deadlin
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     public EngineEvaluationContext {
-        facts = ReadOnlyFacts.forConditions(Objects.requireNonNull(facts, "facts"));
+        facts = ReadOnlyFacts.forConditions(Objects.requireNonNull(facts, "facts must not be null"));
     }
 
     @Override
