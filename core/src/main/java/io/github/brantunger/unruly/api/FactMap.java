@@ -40,8 +40,8 @@ import java.util.function.BiFunction;
  *
  * @param <T> The object/value type of the facts
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md">Facts</a>
- * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md#-reusing-and-sharing-a-store">Reusing
- *      and sharing a store</a>
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md#-reusing-and-sharing-a-store">
+ *      Reusing and sharing a store</a>
  */
 public class FactMap<T extends @Nullable Object> implements FactStore<T>, Map<String, @Nullable FactReference<T>> {
 

@@ -97,8 +97,9 @@ class AddImportValidationTest {
     @ParameterizedTest(name = "\"{0}\"")
     @ValueSource(strings = {"", "not a package!!", "java..util", "java.", ".java", "1abc", "java.util.1x"})
     void invalidNamesRejected(String name) {
-        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .imports(name);
+        RulesEngineBuilder<Map<String, Object>> builder =
+                RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                        .imports(name);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, builder::build);
         assertEquals("'" + name + "' is neither a class nor a valid package name", ex.getMessage());
@@ -107,8 +108,9 @@ class AddImportValidationTest {
     @Test
     @DisplayName("a well-formed package name that doesn't exist is accepted")
     void unknownPackageAccepted() {
-        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .imports("com.does.not.exist");
+        RulesEngineBuilder<Map<String, Object>> builder =
+                RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                        .imports("com.does.not.exist");
 
         assertDoesNotThrow(builder::build);
     }
@@ -117,8 +119,9 @@ class AddImportValidationTest {
     @ValueSource(strings = {"java.util", "java.time.LocalDate"})
     @DisplayName("an invalid name fails build() after a valid package or class name, so no engine is created")
     void invalidNameAfterValidNameFailsBuild(String valid) {
-        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .imports(new LinkedHashSet<>(List.of(valid, "not a package!!")));
+        RulesEngineBuilder<Map<String, Object>> builder =
+                RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                        .imports(new LinkedHashSet<>(List.of(valid, "not a package!!")));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, builder::build);
         assertEquals("'not a package!!' is neither a class nor a valid package name", ex.getMessage());
@@ -128,9 +131,10 @@ class AddImportValidationTest {
     @DisplayName("a language gets unmodifiable imports that later calls on the builder don't change")
     void compileContextImportsAreAnUnmodifiableSnapshot() {
         AtomicReference<CompileContext> captured = new AtomicReference<>();
-        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .language(capturing(captured))
-                .imports("java.util", "java.time.LocalDate");
+        RulesEngineBuilder<Map<String, Object>> builder =
+                RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                        .language(capturing(captured))
+                        .imports("java.util", "java.time.LocalDate");
         RulesEngine<Map<String, Object>> engine = builder.build();
         CompileContext context = loadedContext(engine, captured);
 

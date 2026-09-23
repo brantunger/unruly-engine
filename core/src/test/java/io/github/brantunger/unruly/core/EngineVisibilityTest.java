@@ -45,10 +45,12 @@ class EngineVisibilityTest {
         assertEquals(0, Engines.class.getConstructors().length);
         EngineConfiguration<Object> unlimited = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
                 null, List.of(), List.of(),
-                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
+                Map.of(), false);
         EngineConfiguration<Object> limited = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
                 null, List.of(), List.of(),
-                CopyLimit.of(2), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                CopyLimit.of(2), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
+                Map.of(), false);
 
         assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
         assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));

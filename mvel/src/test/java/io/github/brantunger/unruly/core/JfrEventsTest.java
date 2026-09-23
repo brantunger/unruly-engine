@@ -442,7 +442,8 @@ class JfrEventsTest {
     }
 
     @Test
-    @DisplayName("by default the run event is on with a 10 ms threshold, and the rule event is off without a stack trace")
+    @DisplayName("by default the run event is on with a 10 ms threshold, and the rule event is off without a stack"
+            + " trace")
     void defaults() throws IOException {
         RulesEngine<Map<String, Object>> engine =
                 RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();

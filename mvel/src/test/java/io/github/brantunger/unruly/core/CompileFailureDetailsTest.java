@@ -134,7 +134,8 @@ class CompileFailureDetailsTest {
     }
 
     @Test
-    @DisplayName("blank expressions name their kind, and a rule in an unknown language, which has none, is reported too")
+    @DisplayName("blank expressions name their kind, and a rule in an unknown language, which has none, is reported"
+            + " too")
     void blankAndUnknownLanguageRulesCollected() {
         List<Rule> rules = List.of(
                 rule("blank condition", " ", "output.put('k', 1)"),
@@ -208,8 +209,8 @@ class CompileFailureDetailsTest {
 
         assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Condition for rule 'w' has a warning at "
                 + "line 2, column 5: deprecated"), logs);
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'w' has a warning at line 3: "
-                + "odd spacing"), logs);
+        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'w' has a warning at "
+                + "line 3: odd spacing"), logs);
         assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'v' has a warning: "
                 + "reported as a warning"), logs);
         FactStore<Object> facts = new FactMap<>();

@@ -183,7 +183,8 @@ class RuleSetTest {
             }
         };
         // A daemon, so that a thread which never ended couldn't keep the JVM from exiting.
-        Thread holder = virtual ? Thread.ofVirtual().unstarted(holding) : Thread.ofPlatform().daemon().unstarted(holding);
+        Thread holder = virtual ? Thread.ofVirtual().unstarted(holding)
+                : Thread.ofPlatform().daemon().unstarted(holding);
         holder.start();
         assertTrue(lent.await(30, TimeUnit.SECONDS), "the only copy was never lent");
         if (failure.get() != null) {
@@ -526,7 +527,8 @@ class RuleSetTest {
     void statelessListLearnsFromAnExtraCopy() throws Exception {
         CopyPermits permits = new CopyPermits(1);
         RuleSet needsCopies = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1), permits, 1);
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1),
+                permits, 1);
         ExpressionCompiler stateless = new ExpressionCompiler() {
             @Override
             public CompiledCondition compileCondition(Expression expression) {

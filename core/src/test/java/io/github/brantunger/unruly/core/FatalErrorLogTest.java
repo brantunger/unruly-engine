@@ -73,7 +73,8 @@ class FatalErrorLogTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"beforeEvaluate", "beforeExecute"})
-    @DisplayName("an OutOfMemoryError from a before* callback names the callback and the rule, in the log and in onError")
+    @DisplayName("an OutOfMemoryError from a before* callback names the callback and the rule, in the log and in"
+            + " onError")
     void beforeCallbackThrowsFatalError(String callback) {
         OutOfMemoryError oom = new OutOfMemoryError("listener oom");
         AtomicReference<RuleExecutionException> reported = new AtomicReference<>();

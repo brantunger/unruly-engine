@@ -63,8 +63,8 @@ class LanguageSessionsTest {
     }
 
     /**
-     * A language whose sessions are single-threaded resources. A condition is always true, and an action puts the rule's
-     * action text into the output, with the number of the session it ran with.
+     * A language whose sessions are single-threaded resources. A condition is always true, and an action puts the
+     * rule's action text into the output, with the number of the session it ran with.
      */
     static final class ConfinedLanguage implements ExpressionLanguage {
         final String name;
@@ -442,7 +442,8 @@ class LanguageSessionsTest {
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
-                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
+                Map.of(), false);
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
             @Override
             RuleSet currentRules() {

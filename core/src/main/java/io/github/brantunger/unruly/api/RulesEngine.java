@@ -13,17 +13,19 @@ import java.util.List;
  *
  * <p>
  * <b>Lifecycle:</b> compile the rules with {@link #load(List)}, then call {@link #run(FactStore)} or
- * {@link #runWithResult(FactStore)} as often as needed, from any number of threads. Rules are evaluated in descending priority order; equal priorities keep their list order,
- * and a {@code null} priority sorts last. {@code load} may be called again at any time to swap in new rules atomically.
- * Close the engine with {@link #close()} once it's no longer needed.
+ * {@link #runWithResult(FactStore)} as often as needed, from any number of threads. Rules are evaluated in descending
+ * priority order; equal priorities keep their list order, and a {@code null} priority sorts last. {@code load} may be
+ * called again at any time to swap in new rules atomically. Close the engine with {@link #close()} once it's no longer
+ * needed.
  * </p>
  *
  * <p>
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
  * Implement {@link #load(List)}, {@link #validate(List)}, {@link #runWithResult(FactStore, RunOptions)} and
- * {@link #rules()}; {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A method added in a later 2.x release is a {@code default} method, so an existing
- * implementation keeps compiling. {@link RunResult#of(Object, List, List, String)} and
- * {@link RuleSetInfo#of(List, String, java.time.Instant)} create the values an implementation returns.
+ * {@link #rules()}; {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A
+ * method added in a later 2.x release is a {@code default} method, so an existing implementation keeps compiling.
+ * {@link RunResult#of(Object, List, List, String)} and {@link RuleSetInfo#of(List, String, java.time.Instant)} create
+ * the values an implementation returns.
  * </p>
  *
  * @param <O> The output object type to instantiate

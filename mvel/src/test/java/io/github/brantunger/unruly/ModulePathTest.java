@@ -148,7 +148,8 @@ class ModulePathTest {
     }
 
     @Test
-    @DisplayName("a module that requires the test kit gets the engine's contexts, and runs the contract test with JUnit")
+    @DisplayName("a module that requires the test kit gets the engine's contexts, and runs the contract test with"
+            + " JUnit")
     void withTestKit() throws Exception {
         String output = run("withTestKit", "com.example.withtestkit", MODULE_PATH);
 

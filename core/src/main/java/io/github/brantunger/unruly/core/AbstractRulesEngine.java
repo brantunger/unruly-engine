@@ -1085,7 +1085,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Stops a run that must not go on to {@code rule}, because its thread has been interrupted or it has passed its
      * deadline. Checked before each condition and before each action, and again when each returns
-     * ({@link #stopIfCancelled}), which is as often as the engine gets control back: an expression that doesn't return can only be stopped by a language that can stop inside one, through
+     * ({@link #stopIfCancelled}), which is as often as the engine gets control back: an expression that doesn't return
+     * can only be stopped by a language that can stop inside one, through
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}.
      *
      * <p>

@@ -83,7 +83,8 @@ class LanguageTestContextsTest {
     }
 
     @Test
-    @DisplayName("an action context copies the facts, keeps the output, and rejects writes to the facts as the engine does")
+    @DisplayName("an action context copies the facts, keeps the output, and rejects writes to the facts as the engine"
+            + " does")
     void action() {
         Map<String, Object> output = new HashMap<>();
 
@@ -100,7 +101,8 @@ class LanguageTestContextsTest {
     @DisplayName("a language's compiled condition and action can be tested without an engine")
     void unitTestLanguage() throws Exception {
         ExpressionCompiler compiler = new ToyExpressionLanguage().newCompiler(LanguageTestContexts.compile());
-        CompiledCondition condition = compiler.compileCondition(new Expression("r", ExpressionKind.CONDITION, "x == 1"));
+        CompiledCondition condition =
+                compiler.compileCondition(new Expression("r", ExpressionKind.CONDITION, "x == 1"));
         CompiledAction action = compiler.compileAction(new Expression("r", ExpressionKind.ACTION, "put seen x"));
         Session session = compiler.newSession();
         Map<String, Object> output = new HashMap<>();
@@ -117,7 +119,8 @@ class LanguageTestContextsTest {
         ExpressionCompiler compiler = new MvelExpressionLanguage().newCompiler(
                 LanguageTestContexts.compile(Set.of("java.util"), Set.of(), getClass().getClassLoader()));
         CompiledCondition condition = compiler.compileCondition(new Expression("r", ExpressionKind.CONDITION, "x > 1"));
-        CompiledAction action = compiler.compileAction(new Expression("r", ExpressionKind.ACTION, "output.put('seen', new ArrayList(x))"));
+        CompiledAction action = compiler.compileAction(
+                new Expression("r", ExpressionKind.ACTION, "output.put('seen', new ArrayList(x))"));
         Session session = compiler.newSession();
         Map<String, Object> output = new HashMap<>();
 

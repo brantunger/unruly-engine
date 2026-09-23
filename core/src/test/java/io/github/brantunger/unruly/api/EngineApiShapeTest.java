@@ -42,7 +42,8 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("a run's result, its evaluations and the loaded rules are final classes, and a run's context is sealed to the engine")
+    @DisplayName("a run's result, its evaluations and the loaded rules are final classes, and a run's context is sealed"
+            + " to the engine")
     // Loaded by name, so this test compiles against a release that doesn't have these types yet.
     void runTypes() throws ClassNotFoundException {
         Class<?> runResult = Class.forName("io.github.brantunger.unruly.api.RunResult");
@@ -61,7 +62,8 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("RulesEngineBuilder.firstMatch, allMatches and uniqueMatch return a builder; stateless and stateful are gone")
+    @DisplayName("RulesEngineBuilder.firstMatch, allMatches and uniqueMatch return a builder; stateless and stateful"
+            + " are gone")
     void builderFactories() throws NoSuchMethodException {
         for (String factory : List.of("firstMatch", "allMatches", "uniqueMatch")) {
             Method method = RulesEngineBuilder.class.getMethod(factory, Supplier.class);
@@ -74,17 +76,19 @@ class EngineApiShapeTest {
     }
 
     @Test
-    @DisplayName("the builder sets the languages, imports, listeners, facts, copy limit, copies at load, timeout, clock, output and options")
+    @DisplayName("the builder sets the languages, imports, listeners, facts, copy limit, copies at load, timeout,"
+            + " clock, output and options")
     // The copy limit has two setters: maxCopies(n) for every thread, and unlimitedCopies() to turn it off.
     void builderSettings() {
-        assertEquals(List.of("allMatches", "build", "clock", "copiesAtLoad", "defaultLanguage", "fact", "facts", "firstMatch", "imports",
-                "imports", "language", "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter",
-                "requireDeclaredFacts", "runTimeout", "uniqueMatch", "unlimitedCopies"),
+        assertEquals(List.of("allMatches", "build", "clock", "copiesAtLoad", "defaultLanguage", "fact", "facts",
+                "firstMatch", "imports", "imports", "language", "listener", "listeners", "maxCopies", "option",
+                "outputType", "outputWriter", "requireDeclaredFacts", "runTimeout", "uniqueMatch", "unlimitedCopies"),
                 names(RulesEngineBuilder.class));
     }
 
     @Test
-    @DisplayName("a language is given the imports, the class loader, the output type, the declared facts and its options")
+    @DisplayName("a language is given the imports, the class loader, the output type, the declared facts and its"
+            + " options")
     void compileContextSettings() {
         assertEquals(List.of("allFactsDeclared", "classImports", "classLoader", "declaredFacts", "options",
                 "outputType", "packageImports", "warn"),

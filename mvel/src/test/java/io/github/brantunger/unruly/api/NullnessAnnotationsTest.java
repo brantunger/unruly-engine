@@ -74,7 +74,8 @@ class NullnessAnnotationsTest {
     }
 
     @Test
-    @DisplayName("Rule's optional fields are @Nullable on its accessors, builder and equals, and its required ones aren't")
+    @DisplayName("Rule's optional fields are @Nullable on its accessors, builder and equals, and its required ones"
+            + " aren't")
     void ruleNullness() throws NoSuchMethodException {
         Map<String, Class<?>> optional = Map.of("Priority", Integer.class, "Description", String.class,
                 "Language", String.class);

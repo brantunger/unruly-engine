@@ -5,8 +5,8 @@ import org.jspecify.annotations.Nullable;
 import java.util.Set;
 
 /**
- * Finds assignments in a condition's source text, so {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} can
- * reject them before the rule ever runs.
+ * Finds assignments in a condition's source text, so
+ * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} can reject them before the rule ever runs.
  *
  * <p>
  * The text is scanned instead of MVEL's compiled tree because MVEL compiles method arguments lazily, on first

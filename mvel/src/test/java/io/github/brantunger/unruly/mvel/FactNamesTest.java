@@ -108,7 +108,8 @@ class FactNamesTest {
     }
 
     @Test
-    @DisplayName("a class file that can't be loaded isn't a class, as MVEL's own lookup in an imported package treats it")
+    @DisplayName("a class file that can't be loaded isn't a class, as MVEL's own lookup in an imported package treats"
+            + " it")
     void unloadableClassFile(@TempDir Path dir) throws IOException {
         Files.createDirectories(dir.resolve("broken"));
         Files.write(dir.resolve("broken").resolve("Thing.class"), new byte[] {1, 2, 3});

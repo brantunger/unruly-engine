@@ -195,7 +195,10 @@ class RunDeadlineTest {
         }
     }
 
-    /** Whether a throwable or any of its causes has a message containing {@code text}; MVEL wraps what a method threw. */
+    /**
+     * Whether a throwable or any of its causes has a message containing {@code text}; MVEL wraps what a method
+     * threw.
+     */
     private static boolean chainMentions(Throwable thrown, String text) {
         for (Throwable t = thrown; t != null; t = t.getCause()) {
             if (String.valueOf(t.getMessage()).contains(text)) {

@@ -77,8 +77,8 @@ public final class FactProperties {
      *     though {@link #toData} gives those keys a string form.</li>
      *     <li>A record: the component of that name, or one of its own getters when no component matches.</li>
      *     <li>Anything else: the public no-argument {@code getProperty()}, or {@code isProperty()} when it returns a
-     *     {@code boolean} or a {@link Boolean}. A class declaring both resolves to {@code getProperty()}, so the choice never depends on
-     *     the order reflection reports methods in. Public fields aren't read.</li>
+     *     {@code boolean} or a {@link Boolean}. A class declaring both resolves to {@code getProperty()}, so the choice
+     *     never depends on the order reflection reports methods in. Public fields aren't read.</li>
      * </ul>
      *
      * <p>

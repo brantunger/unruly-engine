@@ -41,7 +41,8 @@ class ActionFactsWriteTest {
     }
 
     private static Rule rule(String name, int priority, String action) {
-        return Rule.builder().ruleName(name).language("writer").priority(priority).condition("c").action(action).build();
+        return Rule.builder().ruleName(name).language("writer").priority(priority).condition("c").action(action)
+                .build();
     }
 
     private static FactStore<Object> x(int value) {

@@ -20,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class NullFactNameTest {
 
     @Test
-    @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException, logged at ERROR")
+    @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException, logged at"
+            + " ERROR")
     void nullNameRejected() {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()));

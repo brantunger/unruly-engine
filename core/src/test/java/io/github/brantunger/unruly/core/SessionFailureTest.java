@@ -76,7 +76,10 @@ class SessionFailureTest {
         });
     }
 
-    /** Loads one rule in language {@code x}, whose newSession() calls {@code whileOverlapping} during an overlapping run. */
+    /**
+     * Loads one rule in language {@code x}, whose newSession() calls {@code whileOverlapping} during an overlapping
+     * run.
+     */
     private void load(Supplier<Session> whileOverlapping) {
         build(language("x", () -> overlapping.get() ? whileOverlapping.get() : aSession()));
         engine.load(List.of(rule("r", "x", 1)));
@@ -93,7 +96,8 @@ class SessionFailureTest {
     }
 
     @Test
-    @DisplayName("a newSession() that throws fails the run with a RuleExecutionException naming the language, and is logged")
+    @DisplayName("a newSession() that throws fails the run with a RuleExecutionException naming the language, and is"
+            + " logged")
     void sessionThrows() {
         IllegalStateException cause = new IllegalStateException("interpreter context can't be created");
         load(() -> {

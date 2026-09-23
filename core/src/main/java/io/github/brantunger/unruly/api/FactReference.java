@@ -8,8 +8,8 @@ import org.jspecify.annotations.Nullable;
  * gets the same object the fact holds.
  *
  * <p>
- * A fact's name and value don't change: a {@link FactStore} keeps a fact under its name, and to change a value it stores
- * a new fact. {@link Fact} is the built-in implementation.
+ * A fact's name and value don't change: a {@link FactStore} keeps a fact under its name, and to change a value it
+ * stores a new fact. {@link Fact} is the built-in implementation.
  * </p>
  *
  * @param <T> The object/value type of the fact. A fact's value can be {@code null}.

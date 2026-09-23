@@ -342,8 +342,8 @@ final class RuleSet {
     }
 
     /**
-     * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set is
-     * retired; any other copy's sessions are closed.
+     * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
+     * is retired; any other copy's sessions are closed.
      *
      * @param borrowed The copy, which the caller must no longer use
      */

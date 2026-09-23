@@ -43,7 +43,8 @@ class OutputReassignmentTest {
             "java.util.Map output = new java.util.HashMap()",
     })
     void mapOutputReassignmentThrows(String action) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         engine.load(List.of(rule("replaces", 1, action)));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -63,7 +64,8 @@ class OutputReassignmentTest {
     @Test
     @DisplayName("changing the output in place and assigning other locals still work")
     void inPlaceChangesStillWork() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
         engine.load(List.of(
                 rule("put", 4, "output.put('a', 1)"),
                 rule("with", 3, "with (output) { put('w', 2) }"),

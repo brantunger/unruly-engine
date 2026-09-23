@@ -194,7 +194,8 @@ class CompiledRuleCopiesTest {
     }
 
     @Test
-    @DisplayName("a run that starts while another holds the only session gets its own, for the condition and the action")
+    @DisplayName("a run that starts while another holds the only session gets its own, for the condition and the"
+            + " action")
     void overlappingRunGetsItsOwnSession() {
         CountingLanguage language = new CountingLanguage();
         AtomicReference<StatefulRulesEngine<Map<String, Object>>> self = new AtomicReference<>();

@@ -59,7 +59,8 @@ class CaseInsensitiveClassDirectoryTest {
     @Test
     @DisplayName("the README quick start's rule compiles and runs when 'applicant' finds Applicant.class")
     void wrongNameIsNotAClass() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         ClassLoader caseInsensitive = loaderThrowing(new NoClassDefFoundError("applicant (wrong name: Applicant)"));
 
         Map<String, Object> output = withContextClassLoader(caseInsensitive, () -> {
@@ -75,7 +76,8 @@ class CaseInsensitiveClassDirectoryTest {
     @Test
     @DisplayName("any other NoClassDefFoundError from the lookup fails the rule list, naming the rule")
     void otherLinkageErrorFailsTheLoad() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         NoClassDefFoundError missingDependency = new NoClassDefFoundError("com/example/MissingDependency");
 
         RuleCompilationException thrown = assertThrows(RuleCompilationException.class,

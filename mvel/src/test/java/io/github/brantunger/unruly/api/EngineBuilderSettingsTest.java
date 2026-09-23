@@ -64,7 +64,8 @@ class EngineBuilderSettingsTest {
     class Languages {
 
         @Test
-        @DisplayName("language() rejects a null language, a null or blank name, and a second language with the same name")
+        @DisplayName("language() rejects a null language, a null or blank name, and a second language with the same"
+                + " name")
         void languageChecked() {
             assertEquals("language must not be null",
                     assertThrows(NullPointerException.class, () -> builder().language(null)).getMessage());

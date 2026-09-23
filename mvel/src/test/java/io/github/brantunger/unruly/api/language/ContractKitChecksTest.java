@@ -206,7 +206,8 @@ class ContractKitChecksTest {
     }
 
     @Test
-    @DisplayName("the session check passes Session.none() on unwrapped, so a stateless language's copy is shared (#470)")
+    @DisplayName("the session check passes Session.none() on unwrapped, so a stateless language's copy is shared"
+            + " (#470)")
     void noSessionNotWrapped() throws Throwable {
         AtomicInteger created = new AtomicInteger();
 

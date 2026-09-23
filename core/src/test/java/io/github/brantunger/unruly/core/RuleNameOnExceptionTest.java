@@ -54,7 +54,8 @@ class RuleNameOnExceptionTest {
     @DisplayName("a failing condition, a failing action and a non-boolean condition name their rule")
     void runFailures() {
         engine.load(List.of(rule("condition", "missing > 1", "put a 1")));
-        assertEquals("condition", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
+        assertEquals("condition",
+                thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
 
         engine.load(List.of(rule("action", "true", "put a missing")));
         assertEquals("action", thrown(RuleExecutionException.class, () -> engine.run(new FactMap<>())).getRuleName());
@@ -67,7 +68,8 @@ class RuleNameOnExceptionTest {
     }
 
     @Test
-    @DisplayName("a rule that fails to compile, has a blank expression, a language the engine lacks or a duplicate name is named")
+    @DisplayName("a rule that fails to compile, has a blank expression, a language the engine lacks or a duplicate name"
+            + " is named")
     void compilationFailures() {
         assertEquals("syntax", thrown(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("syntax", "applicant.creditScore >=", "put a 1")))).getRuleName());

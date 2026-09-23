@@ -189,7 +189,10 @@ final class FactNames {
         return true;
     }
 
-    /** MVEL's literals ({@code empty}, {@code null}, {@code Math} …), its word operators ({@code in}, {@code with} …) and {@code this}. */
+    /**
+     * MVEL's literals ({@code empty}, {@code null}, {@code Math} …), its word operators ({@code in}, {@code with} …)
+     * and {@code this}.
+     */
     private static Set<String> reservedWords() {
         Set<String> words = new HashSet<>(AbstractParser.LITERALS.keySet());
         for (String operator : AbstractParser.OPERATORS.keySet()) {

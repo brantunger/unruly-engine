@@ -39,7 +39,8 @@ class FactMapNullArgumentTest {
     void nullFact() {
         FactMap<Object> facts = new FactMap<>();
 
-        NullPointerException ex = assertThrows(NullPointerException.class, () -> facts.put((FactReference<Object>) null));
+        NullPointerException ex = assertThrows(NullPointerException.class,
+                () -> facts.put((FactReference<Object>) null));
         assertEquals("fact must not be null", ex.getMessage());
     }
 

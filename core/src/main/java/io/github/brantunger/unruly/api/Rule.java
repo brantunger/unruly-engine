@@ -119,7 +119,10 @@ public final class Rule {
     /** Free text for your own use; the engine ignores it, but listeners receive it. */
     private final @Nullable String description;
 
-    /** The name of the expression language the condition and action are written in, or {@code null} for the engine's default language. */
+    /**
+     * The name of the expression language the condition and action are written in, or {@code null} for the engine's
+     * default language.
+     */
     private final @Nullable String language;
 
     /** Whether runs use the rule. */

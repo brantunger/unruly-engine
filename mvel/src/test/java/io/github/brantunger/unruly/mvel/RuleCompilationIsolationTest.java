@@ -38,7 +38,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("a typed local in one action doesn't change how another rule computes")
         void typedLocalDoesNotLeakIntoAction() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             engine.load(List.of(
                     rule("declares", 2, "true", "String total = 'n/a'; output.put('a', total)"),
                     rule("reads", 1, "total > 5", "output.put('b', total + 1)")));
@@ -51,7 +52,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("a typed local in one action doesn't stop another rule's condition matching")
         void typedLocalDoesNotLeakIntoCondition() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             engine.load(List.of(
                     rule("declares", 2, "true", "String total = 'n/a'; output.put('a', total)"),
                     rule("matches", 1, "total + 1 == 42", "output.put('b', true)")));
@@ -64,7 +66,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("two rules may declare the same local with different types")
         void conflictingTypesInOneList() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             engine.load(List.of(
                     rule("string", 2, "true", "String x = 'a'; output.put('a', x)"),
                     rule("int", 1, "true", "int x = 5; output.put('b', x)")));
@@ -77,7 +80,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("a local's type from an earlier rule list doesn't break a later reload")
         void conflictingTypesAcrossReloads() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             engine.load(List.of(rule("string", 1, "true", "String x = 'a'; output.put('a', x)")));
 
             engine.load(List.of(rule("int", 1, "true", "int x = 5; output.put('b', x)")));
@@ -96,7 +100,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("an import in one rule isn't visible to another rule in the same list")
         void importDoesNotLeakWithinList() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             engine.load(List.of(rule("imports", 2, "true", IMPORTS), rule("uses", 1, "true", USES)));
 
             RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -106,7 +111,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("an import in a replaced rule list isn't visible after a reload")
         void importDoesNotLeakAcrossReloads() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             engine.load(List.of(rule("imports", 1, "true", IMPORTS)));
             engine.load(List.of(rule("uses", 1, "true", USES)));
 
@@ -116,7 +122,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("an import in a rule list that failed to compile isn't visible afterwards")
         void importDoesNotLeakFromFailedLoad() {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .build();
             assertThrows(RuleCompilationException.class, () -> engine.load(List.of(
                     rule("imports", 2, "true", IMPORTS),
                     rule("broken", 1, "x == == 1", "output.put('c', 1)"))));
@@ -133,7 +140,8 @@ class RuleCompilationIsolationTest {
         @Test
         @DisplayName("reloading rules while other threads run the engine doesn't make runs fail")
         void reloadDuringRun() throws InterruptedException {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .build();
             engine.load(List.of(rule("a", 1, "x > 0", "output.put('a', x)")));
             AtomicBoolean stop = new AtomicBoolean();
             AtomicInteger runs = new AtomicInteger();
@@ -176,13 +184,15 @@ class RuleCompilationIsolationTest {
 
             assertTrue(runs.get() > 0);
             assertTrue(reloads.get() > 0, "no reload succeeded");
-            assertTrue(failures.isEmpty(), () -> failures.size() + " runs or reloads failed, first: " + failures.peek());
+            assertTrue(failures.isEmpty(),
+                    () -> failures.size() + " runs or reloads failed, first: " + failures.peek());
         }
 
         @Test
         @DisplayName("load() may be called from several threads at once")
         void concurrentReloads() throws InterruptedException {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .build();
             ConcurrentLinkedQueue<Exception> failures = new ConcurrentLinkedQueue<>();
             ExecutorService pool = Executors.newFixedThreadPool(4);
 

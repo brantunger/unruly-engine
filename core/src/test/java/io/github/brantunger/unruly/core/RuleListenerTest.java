@@ -105,7 +105,8 @@ public class RuleListenerTest {
             }
         };
 
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new, builder -> builder.language(new ToyExpressionLanguage())
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new, builder -> builder
+                .language(new ToyExpressionLanguage())
                 .listener(badListener).listeners(List.of(new LoggingRuleListener())));
 
         Rule rule1 = Rule.builder()
