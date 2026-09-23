@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.2](https://github.com/brantunger/unruly-engine/compare/v2.3.1...v2.3.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* say which argument is null in the context records and the test kit, and name the root cause in class-naming failure messages ([#545](https://github.com/brantunger/unruly-engine/issues/545)) ([4e0953e](https://github.com/brantunger/unruly-engine/commit/4e0953eed775b4a9a1c2f4539cecdf5cc7fc201e))
+
 ## [2.3.1](https://github.com/brantunger/unruly-engine/compare/v2.3.0...v2.3.1) (2026-09-23)
 
 
