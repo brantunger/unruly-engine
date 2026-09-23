@@ -27,7 +27,8 @@ import java.util.Objects;
  * @param clock           The clock a run reads when it starts, to decide which rules are within their validity window
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
- * @param declaredFacts   The declared type of each fact, by name, empty if none were declared
+ * @param declaredFacts   The declared type of each fact, by name, empty if none were declared. A primitive type is
+ *                        kept as its wrapper, and no fact may be named {@code output}
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param <O>             The type of the output object
@@ -39,23 +40,54 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
                                      Map<String, Map<String, String>> options,
                                      Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
 
+    // The message for a null language name, language's options, option name or option value.
+    private static final String NULL_OPTION = "options must not contain null";
+
     /**
-     * Keeps unmodifiable copies of the lists and options, so later changes to the builder don't change an engine.
+     * Keeps unmodifiable copies of the lists, options and declarations, so later changes to the builder don't change
+     * an engine. A declared type is checked and kept as {@link EngineCompileContext#declaredType(String, Class)} keeps
+     * it.
      *
-     * @throws NullPointerException if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
-     *                              element, is {@code null}
+     * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
+     *                                  element, is {@code null}
+     * @throws IllegalArgumentException if a fact is declared with the name {@code output}
      */
     public EngineConfiguration {
+        Objects.requireNonNull(languages, "languages must not be null");
+        Objects.requireNonNull(imports, "imports must not be null");
+        Objects.requireNonNull(listeners, "listeners must not be null");
+        Objects.requireNonNull(copyLimit, "copyLimit must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(outputType, "outputType must not be null");
+        Objects.requireNonNull(outputWriter, "outputWriter must not be null");
+        Objects.requireNonNull(options, "options must not be null");
+        Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
+        for (ExpressionLanguage language : languages) {
+            Objects.requireNonNull(language, "languages must not contain null");
+        }
+        for (String name : imports) {
+            Objects.requireNonNull(name, "imports must not contain null");
+        }
+        for (RuleListener listener : listeners) {
+            Objects.requireNonNull(listener, "listeners must not contain null");
+        }
+        options.forEach((language, values) -> {
+            Objects.requireNonNull(language, NULL_OPTION);
+            Objects.requireNonNull(values, NULL_OPTION);
+            values.forEach((name, value) -> {
+                Objects.requireNonNull(name, NULL_OPTION);
+                Objects.requireNonNull(value, NULL_OPTION);
+            });
+        });
         languages = List.copyOf(languages);
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
-        Objects.requireNonNull(copyLimit, "copyLimit");
-        Objects.requireNonNull(clock, "clock");
-        Objects.requireNonNull(outputType, "outputType");
-        Objects.requireNonNull(outputWriter, "outputWriter");
-        declaredFacts = Map.copyOf(declaredFacts);
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();
         options.forEach((language, values) -> copied.put(language, Map.copyOf(values)));
         options = Collections.unmodifiableMap(copied);
+        // declaredType names a null fact name or type itself.
+        Map<String, Class<?>> declared = new LinkedHashMap<>();
+        declaredFacts.forEach((name, type) -> declared.put(name, EngineCompileContext.declaredType(name, type)));
+        declaredFacts = Map.copyOf(declared);
     }
 }
