@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.8](https://github.com/brantunger/unruly-engine/compare/v2.3.7...v2.3.8) (2026-09-23)
+
+
+### Bug Fixes
+
+* close every engine the contract kit's checks build, and report a check's own failure rather than a close failure ([#564](https://github.com/brantunger/unruly-engine/issues/564)) ([e9afc3f](https://github.com/brantunger/unruly-engine/commit/e9afc3f313e1c976391e71c029f49284f6f70124))
+
 ## [2.3.7](https://github.com/brantunger/unruly-engine/compare/v2.3.6...v2.3.7) (2026-09-23)
 
 
