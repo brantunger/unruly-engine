@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.2.2](https://github.com/brantunger/unruly-engine/compare/v2.2.1...v2.2.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* call the most specific overloaded setter, as Java would, instead of the first by type name ([#526](https://github.com/brantunger/unruly-engine/issues/526)) ([dfe4514](https://github.com/brantunger/unruly-engine/commit/dfe45141e5f1176713c919bbc3b7c8df05b0acb7))
+
 ## [2.2.1](https://github.com/brantunger/unruly-engine/compare/v2.2.0...v2.2.1) (2026-09-23)
 
 
