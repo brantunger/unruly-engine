@@ -6,7 +6,7 @@ answer links to the guide that owns it.
 **Who it's for:** everyone.
 **You'll be able to:** find out why a rule didn't fire, read an exception from `build()`, `load()` or `run()`, and
 work out why rules that pass in tests fail in production.
-**Before you start:** nothing. [Error handling](error-handling.md) lists every exception by method.
+**Before you start:** nothing. [Exceptions by method](exceptions-by-method.md) lists each method's exceptions.
 
 [← Documentation index](README.md)
 
@@ -57,7 +57,7 @@ run skipped reads `SKIPPED` in `runWithResult(facts).evaluations()`; see
 
 No rule fired: no condition was true, or the rule list is empty. The [output supplier](glossary.md#output-supplier)
 isn't called. See
-[What a run reports](engines-and-runs.md#-what-a-run-reports).
+[What a run reports](run-results.md#-what-a-run-reports).
 
 ### Only one rule fired, but several conditions are true
 
@@ -90,7 +90,7 @@ The output supplier returns a shared object, so every run adds to it. See
 ### How do I see why a rule didn't apply?
 
 Read `runWithResult(facts).evaluations()`: one outcome for every loaded rule. See
-[What a run reports](engines-and-runs.md#-what-a-run-reports).
+[What a run reports](run-results.md#-what-a-run-reports).
 
 ### A rule's outcome is SKIPPED
 
@@ -111,10 +111,10 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 | `The engine has no expression language: add one with language(), or put a language on the class path or, with a provides clause, on the module path` | No language was given and `ServiceLoader` found none: `unruly-engine-core` alone, or a shaded jar without MVEL's service file | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language); for shaded jars, [Expression languages are found with ServiceLoader](migrating-to-2.md#-expression-languages-are-found-with-serviceloader) |
 | `The engine has several expression languages, ` | Two or more languages, and no default | Name one with `defaultLanguage(...)`; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `The default language '` | `defaultLanguage(...)` names a language the engine doesn't have | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
-| `Options are given for the expression language '` | `option(...)` names a language the engine doesn't have | [Exceptions by method](error-handling.md#-exceptions-by-method) |
-| `Two expression languages are named '` | `language(...)` was given two languages with the same name | [Exceptions by method](error-handling.md#-exceptions-by-method) |
-| `An expression language's name must not be null or blank` | `language(...)` was given a language whose `name()` is `null` or blank | [Exceptions by method](error-handling.md#-exceptions-by-method) |
-| `The expression language ... found with ServiceLoader has a null or blank name` | A language jar on the class path has no name | [Exceptions by method](error-handling.md#-exceptions-by-method) |
+| `Options are given for the expression language '` | `option(...)` names a language the engine doesn't have | [Exceptions by method](exceptions-by-method.md) |
+| `Two expression languages are named '` | `language(...)` was given two languages with the same name | [Exceptions by method](exceptions-by-method.md) |
+| `An expression language's name must not be null or blank` | `language(...)` was given a language whose `name()` is `null` or blank | [Exceptions by method](exceptions-by-method.md) |
+| `The expression language ... found with ServiceLoader has a null or blank name` | A language jar on the class path has no name | [Exceptions by method](exceptions-by-method.md) |
 | `The expression languages ... found with ServiceLoader are both named '` | Two language jars on the class path use the same name | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `'...' is neither a class nor a valid package name` | An import such as `"java.util."` | [Classes and imports](languages/mvel.md#-classes-and-imports) |
 | `Can't import '...': the class exists but can't be loaded` | An imported class depends on a class missing from the class path | [Classes and imports](languages/mvel.md#-classes-and-imports) |
@@ -131,11 +131,11 @@ language that can't create its compiler and a rejected [declared fact](glossary.
 them. The previous rules stay loaded. `validate(rules)` returns the same problems without loading anything, except a
 language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it) and
-[Exceptions by method](error-handling.md#-exceptions-by-method).
+[Exceptions by method](exceptions-by-method.md).
 
 | Message contains | Fix |
 | --- | --- |
-| `ruleName must not be null`, `must not be blank` | An `IllegalStateException` from `Rule.builder().build()`, not from `load()`: give the rule a name, condition and action. See [Exceptions by method](error-handling.md#-exceptions-by-method) |
+| `ruleName must not be null`, `must not be blank` | An `IllegalStateException` from `Rule.builder().build()`, not from `load()`: give the rule a name, condition and action. See [Exceptions by method](exceptions-by-method.md) |
 | `Duplicate rule name '` | Two rules share a name. Thrown before anything compiles; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `has a blank condition expression`, `has a blank action expression` | Fill in the expression; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `is written in '...', which isn't one of the engine's expression languages` | The rule's `language` names one the engine doesn't have; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
@@ -183,12 +183,12 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT is on: start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](native-image.md#-mvels-jit-must-be-off) |
 | `RuleExecutionException` | `MissingReflectionRegistrationError` as the cause | In a native image, a class or method the rule uses isn't registered for reflection; see [Registering your classes](native-image.md#-registering-your-classes) |
 | `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, after about 50 runs in quick succession | That class isn't reachable from the context class loader of the thread that called `load()`; see [Class loaders](thread-safety.md#-class-loaders) |
-| `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](error-handling.md#-exceptions-by-method). On the module path, see [Installation](../README.md#-installation) |
+| `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](exceptions-by-method.md). On the module path, see [Installation](../README.md#-installation) |
 
 A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
 `io.github.brantunger.unruly.core.ReportedFailure`, the engine's internal subclass of `RuleExecutionException`. Catch
 `RuleExecutionException`, never the class name. Line breaks in a language's message are escaped in the engine's
-message; the original is `getCause()`. See [Exceptions by method](error-handling.md#-exceptions-by-method).
+message; the original is `getCause()`. See [Exceptions by method](exceptions-by-method.md).
 
 ## 🚢 It works in tests but not in production
 

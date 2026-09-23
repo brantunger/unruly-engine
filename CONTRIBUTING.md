@@ -262,7 +262,7 @@ diagrams, examples and a checklist to run before you open a pull request. Its
   implements it, which threads call it, nullness beyond `@NullMarked`, and `@see` links to the guide that owns the
   topic.
 - `@throws` lists every exception the method throws, in the words of
-  [Exceptions by method](docs/error-handling.md#-exceptions-by-method).
+  [Exceptions by method](docs/exceptions-by-method.md).
 - Examples use `{@snippet :}`.
 - Javadoc in `unruly-engine-core` names MVEL only as an example: "a language such as MVEL".
 - Use the [glossary](docs/glossary.md)'s terms: **output supplier**, **rule list**, **run**, **compiled copy**,

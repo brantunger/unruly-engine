@@ -159,8 +159,10 @@ upload. It isn't a queue, though. GitHub keeps only one waiting run per branch, 
 an earlier one is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
 
 `docs-and-hygiene` only warns for now: a failed step shows as an annotation, and the job stays green. Later, its
-checks will block. A page written before the style guide may have findings in lines you didn't touch. Run the checks
-before you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
+checks will block. A page written before the style guide may have findings in lines you didn't touch.
+`check_style.py` also reports a page over 2,500 words of prose that `scripts/docs/long-pages.txt` doesn't list, and a
+listed page that grew past its number: split the page, and lower its number when it shrinks. Run the checks before
+you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
 
 ```bash
 python scripts/docs/check_docs.py

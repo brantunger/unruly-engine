@@ -1,11 +1,11 @@
 # 🔨 Writing an expression language
 
 How to implement `ExpressionLanguage` so rules can be written in a language of your own, and what the engine calls,
-when, and on which thread.
+when, and on which thread. [The contract test kit](contract-kit.md) covers testing the language.
 
 **Who it's for:** language authors.
 **You'll be able to:** implement the four interfaces, report compile errors the way the engine expects, read facts of
-any shape, keep run state in sessions, package the language for both paths, and check it with the contract test kit.
+any shape, keep run state in sessions, and package the language for both paths.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
 [Compiled copies](../compiled-copies.md). Moving a language from 1.x?
 [Migrating a language or an engine](../migrating-to-2-implementers.md) lists what changed.
@@ -95,7 +95,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
 sealed, so only the engine implements them; tests create them with
-[`LanguageTestContexts`](#-testing-with-the-contract-kit). A method added to an interface you implement is a
+[`LanguageTestContexts`](contract-kit.md). A method added to an interface you implement is a
 `default` method, so a language written against an earlier 2.x release keeps compiling and working.
 
 ```java
@@ -204,7 +204,7 @@ The value follows `evaluate`'s rule: anything but a `Boolean` fails the rule, an
 may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
 
 The detail can be any object, or `null`. The application reads it as
-[`RuleEvaluation.detail()`](../engines-and-runs.md#-what-a-run-reports) on the run result. The engine records it for
+[`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for
 every rule it evaluates, whether or not anyone reads it, so keep it cheap to build. It's kept only with a `Boolean`
 value: any other value fails the run, and the detail with it. `afterEvaluate` on a listener
 doesn't receive it.
@@ -237,7 +237,7 @@ reaches that one:
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine copies your message the way
-[Exceptions by method](../error-handling.md#-exceptions-by-method) describes: shortened and escaped, with the root
+[Exceptions by method](../exceptions-by-method.md) describes: shortened and escaped, with the root
 cause's class named when a message is missing. An exception with no message and no cause is described by its class
 name alone.
 
@@ -286,7 +286,7 @@ application `opens` it; see [Packaging](#-packaging).
 
 A language is expected to compare whole numbers of different types by value on the way in, so a condition written for
 `x` = 1 matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that deliberately
-doesn't can skip the [contract kit](#-testing-with-the-contract-kit)'s check by overriding
+doesn't can skip the [contract kit](contract-kit.md)'s check by overriding
 `comparesWholeNumbersByValue()` in its test to return `false`.
 
 `FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
@@ -482,174 +482,8 @@ read and write them by reflection. Only MVEL has been tested in an image; see [N
 
 ## 🧪 Testing with the contract kit
 
-The `unruly-engine-test` artifact, at the same version as the engine, has two tools for a language's tests. Add it
-with test scope, together with what a Gradle build needs to run the checks:
-
-```groovy
-dependencies {
-    testImplementation 'io.github.brantunger:unruly-engine-test:<version>'
-
-    testImplementation platform('org.junit:junit-bom:6.1.3')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-tasks.named('test') {
-    useJUnitPlatform()
-}
-```
-
-With Maven, declare `unruly-engine-core` too, and give it and the kit one version, here a property `unruly.version`
-set to the engine's version:
-
-```xml
-<dependencies>
-    <dependency>
-        <groupId>io.github.brantunger</groupId>
-        <artifactId>unruly-engine-core</artifactId>
-        <version>${unruly.version}</version>
-    </dependency>
-    <dependency>
-        <groupId>io.github.brantunger</groupId>
-        <artifactId>unruly-engine-test</artifactId>
-        <version>${unruly.version}</version>
-        <scope>test</scope>
-    </dependency>
-</dependencies>
-
-<build>
-    <plugins>
-        <plugin>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <version>3.5.4</version>
-        </plugin>
-    </plugins>
-</build>
-```
-
-> [!WARNING]
-> With Maven, when a POM doesn't name `unruly-engine-core` itself, the first of `unruly-engine` and
-> `unruly-engine-test` it declares sets core's version. An older kit declared first downgrades core, for the
-> application too, so a newer engine runs on the kit's older core.
-
-A POM that declares `unruly-engine-core`, as above, gets that version whatever the order. A POM that gets core only
-through `unruly-engine` needs one of these: declare `unruly-engine` before the kit, keep the two versions equal, or pin
-`unruly-engine-core` in `<dependencyManagement>`. Gradle takes the highest version of core, whatever the order.
-
-The kit is built with JUnit Jupiter 6, and brings `unruly-engine-core` and `junit-jupiter-api`. A Gradle build still
-needs the rest: a JUnit test engine to run the checks, the JUnit Platform launcher to start it, and
-`useJUnitPlatform()`, because a Gradle `Test` task runs JUnit 4 unless it is told otherwise, and without that setting
-the checks never run. With Maven and Surefire 3.5.4, the block above is enough: Surefire supplies the test engine.
-
-`ExpressionLanguageContractTest` checks the promises above for any language. Extend it and supply expressions in your
-language, one method for each hook. Its seventeen checks:
-
-| Check | Hooks | Skippable? | Passes when |
-| --- | --- | --- | --- |
-| `conditionReadsFacts` | `factEquals`, `putFact` | No | Fires for `x` = 1, not for 2 |
-| `conditionReadsWholeNumbers` | `factEquals`, `putFact` | `comparesWholeNumbersByValue()` returns `false` | Fires for `x` = 1 given a `Long`, a `Short` or a `BigDecimal` fact, not for `2L` |
-| `conditionMustBeBoolean` | `factValue`, `putFact` | No | `true` fires; `null`, `"true"` and `1` fail the rule |
-| `conditionAssignmentRejected` | `assignment`, `putFact` | `assignment()` returns `null` | `load()` or `run()` throws an `UnrulyException` naming the rule and `CONDITION` |
-| `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or `run()` throws an `UnrulyException` |
-| `actionVariablesStayLocal` | `alwaysTrue`, `declareVariable`, `putFact` | `declareVariable()` returns `null` | A later rule still sees the fact's value |
-| `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
-| `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
-| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException` |
-| `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
-| `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or `run()` |
-| `copiesAtLoad` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, two runs on two threads each see their own facts, and `x` = 2 fires nothing |
-| `compilerClosed` | `factEquals`, `putFact` | No | Each compiler is closed exactly once, after a reload and after `close()` |
-| `sessionsClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, `newSession()` never returns one instance twice, unless it's `Session.none()`, and no session's `close()` throws anything |
-| `conditionDetail` | `factEquals`, `putFact` | No | For a rule that matches and one that doesn't, the detail isn't a session `newSession()` returned, and its `toString()` still works after `close()` |
-| `evaluateAgreesWithDetail` | `factEquals` | No | For `x` = 1 and for 2, a compiled condition's `evaluate` returns the value `evaluateWithDetail` reports |
-| `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
-
-- Only the five `@Nullable` hooks, `assignment`, `declareVariable`, `reassignOutput`, `unusableFactName` and
-  `missingFactProperty`, may return `null`. `comparesWholeNumbersByValue()` is a boolean opt-out rather than one of
-  them, and returning `false` skips its check.
-- Since 2.3.0, a language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`,
-  rather than a syntax error standing in for one.
-- `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
-- `language()` is called for each check and for each engine a check builds, so return a new instance.
-
-Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())`,
-with no imports, options or declared facts, so the language must work alone, and closes the engine when the check
-ends, whether it passes or fails. `copiesAtLoad` and `sessionsClosed` add `copiesAtLoad(2)`, and `compilerClosed`,
-`sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions. `factValue(x)` must not
-coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or `Double` whole numbers pass.
-
-The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
-decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
-shares one copy, calls `newSession()` once and warms nothing up. A `null` from `newSession()` isn't watched, so the
-engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, at the first run in `conditionDetail`.
-
-`conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
-catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
-there. A language that gives no detail passes it with nothing to check.
-
-`conditionAssignmentRejected` accepts a rejection at either step, as `outputNotReplaceable` does: `load()` may reject
-the condition when it compiles, or the condition may fail when it runs, for example by writing to the read-only
-`facts()`, or by evaluating to the assigned value, which isn't a boolean. A condition that assigns and evaluates to
-`true` or `false` without throwing fails the check.
-
-`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and evaluates it in a session
-of its own. The engine calls only `evaluateWithDetail`, so without this check an `evaluate` that returned the wrong
-value would pass every other check, and a condition that wraps yours would still see it. A language that doesn't
-override `evaluateWithDetail` passes: the default returns what `evaluate` does.
-
-Two things no check exercises, so passing the kit says nothing about them.
-
-**Cancellation.** No check runs the rules with an interrupt, a deadline or a timeout. A runtime that clears the
-thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does, passes the kit and still hides the
-caller's interrupt from the engine.
-
-The hole is a narrow one. The engine checks before each condition and each action, and again when each returns, so an
-interrupt raised between rules always stops the run, and the deadline path is unaffected. Only an interrupt raised and
-swallowed inside one expression escapes; see [Stopping a run](#-stopping-a-run).
-
-**The `CompileContext`.** Every check compiles with an empty `CompileContext`, through an engine or, in
-`evaluateAgreesWithDetail`, through `LanguageTestContexts.compile()`, so a language that ignores imports, options,
-declared facts and the output type passes. Test what your language does with each of them yourself;
-[Implementing the interfaces](#-implementing-the-interfaces) says what the context carries.
-
-`LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or a compiled
-expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
-`evaluation(facts, deadline)` gives a real `isCancelled()`.
-
-A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
-`facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
-such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
-`type must not be null`. A fact's value may be `null`, and these contexts don't check fact names.
-
-```java
-import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
-import io.github.brantunger.unruly.test.LanguageTestContexts;
-
-class MyLanguageContractTest extends ExpressionLanguageContractTest {
-    @Override
-    protected ExpressionLanguage language() {
-        return new MyLanguage();
-    }
-
-    @Override
-    protected String factEquals(String fact, int value) {
-        return fact + " == " + value;
-    }
-
-    // ... one method for each expression the checks need
-
-    @Test
-    void conditionComparesFacts() throws Exception {
-        ExpressionCompiler compiler = language().newCompiler(LanguageTestContexts.compile());
-        CompiledCondition condition = compiler.compileCondition(
-                new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
-
-        assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1)), compiler.newSession()));
-    }
-}
-```
-
-On the module path, the kit is the module `io.github.brantunger.unruly.test`; see [Packaging](#-packaging).
+[The contract test kit](contract-kit.md) covers adding `unruly-engine-test` to a language's tests, and what each of its
+checks promises.
 
 ## 🚧 Gotchas
 
@@ -663,7 +497,6 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
 | **A `close()` that throws** | The engine logs it at WARN and carries on, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw from `Session.close()`; the kit's `sessionsClosed` check fails it |
-| **An older kit declared first, with Maven** | Unless the POM declares `unruly-engine-core` itself, Maven takes core's version from the kit, so a newer `unruly-engine` runs on the older core | Declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`; see [Testing with the contract kit](#-testing-with-the-contract-kit) |
 
 ## ❓ Questions you might not think to ask
 

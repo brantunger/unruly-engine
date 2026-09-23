@@ -129,7 +129,7 @@ What it doesn't change:
 
 A language that fails to create or warm up a session for a copy fails `load()` with a `RuleCompilationException` that
 names the language, and the rules loaded before stay loaded; see
-[Exceptions by method](error-handling.md#-exceptions-by-method).
+[Exceptions by method](exceptions-by-method.md).
 
 ### What a run waits for
 
