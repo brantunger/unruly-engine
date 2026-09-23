@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.7](https://github.com/brantunger/unruly-engine/compare/v2.3.6...v2.3.7) (2026-09-23)
+
+
+### Bug Fixes
+
+* treat a Throwable that is neither an Exception nor an Error as a failure everywhere, and report a stopped wait before a fatal error from leaving ([#561](https://github.com/brantunger/unruly-engine/issues/561)) ([f8ff381](https://github.com/brantunger/unruly-engine/commit/f8ff381ea6e4c2af490bbe2e026ae6134a106ec9))
+
 ## [2.3.6](https://github.com/brantunger/unruly-engine/compare/v2.3.5...v2.3.6) (2026-09-23)
 
 
