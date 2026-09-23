@@ -71,7 +71,8 @@ class RuleJsonJackson2Test {
         List<Rule> rules = read(MAPPER, JSON);
 
         assertEquals(EXPECTED, rules);
-        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build()) {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build()) {
             engine.load(rules);
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("applicant", Map.of("score", 780));

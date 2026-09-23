@@ -174,7 +174,8 @@ class CompileFailureTest {
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
 
-        assertEquals("Condition for rule 'r' failed to compile: the expression is too long or too deeply nested to compile",
+        assertEquals("Condition for rule 'r' failed to compile: the expression is too long or too deeply nested to "
+                + "compile",
                 ex.getMessage());
         assertSame(overflow, ex.getCause());
     }

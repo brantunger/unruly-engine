@@ -206,8 +206,8 @@ class ExpressionLanguageRegistrationTest {
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> builder.language(unnamed));
 
-        assertEquals("An expression language's name must not be null or blank: " + ToyExpressionLanguage.class.getName(),
-                ex.getMessage());
+        assertEquals("An expression language's name must not be null or blank: "
+                + ToyExpressionLanguage.class.getName(), ex.getMessage());
     }
 
     @Test

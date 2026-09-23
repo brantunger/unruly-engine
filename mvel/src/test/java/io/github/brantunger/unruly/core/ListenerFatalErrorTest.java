@@ -149,7 +149,8 @@ class ListenerFatalErrorTest {
         OutOfMemoryError first = new OutOfMemoryError("first");
         OutOfMemoryError second = new OutOfMemoryError("second");
         StatefulRulesEngine<Map<String, Object>> engine = engine("true",
-                listener("L1", "afterExecute", first), listener("L2", "afterExecute", second), listener("L3", null, null));
+                listener("L1", "afterExecute", first), listener("L2", "afterExecute", second),
+                listener("L3", null, null));
 
         assertSame(first, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
         assertEquals(List.of("L1.afterExecute", "L2.afterExecute", "L3.afterExecute"),

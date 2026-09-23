@@ -214,7 +214,7 @@ class RunContextIdentityTest {
 
         engine.run(new FactMap<>(new Fact<Object>("card", SECRET)));
 
-        assertEquals(List.of("EvaluationContext(deadline=none)", "ActionContext(output=java.util.HashMap, deadline=none)"),
-                described);
+        assertEquals(List.of("EvaluationContext(deadline=none)",
+                "ActionContext(output=java.util.HashMap, deadline=none)"), described);
     }
 }

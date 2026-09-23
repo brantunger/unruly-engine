@@ -37,7 +37,8 @@ class FlightRecorderEventsTest {
     }
 
     @Test
-    @DisplayName("events whose registration fails, as in a native image without JFR support, aren't used, and it's logged at DEBUG")
+    @DisplayName("events whose registration fails, as in a native image without JFR support, aren't used, and it's"
+            + " logged at DEBUG")
     void registrationFails() {
         boolean[] usable = new boolean[1];
 

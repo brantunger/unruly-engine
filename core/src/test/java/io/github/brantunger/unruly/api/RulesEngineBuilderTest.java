@@ -42,7 +42,8 @@ public class RulesEngineBuilderTest {
     }
 
     @Test
-    @DisplayName("a builder is created only with firstMatch(), allMatches() or uniqueMatch(): its constructors are private")
+    @DisplayName("a builder is created only with firstMatch(), allMatches() or uniqueMatch(): its constructors are"
+            + " private")
     void testPrivateConstructors() {
         for (Constructor<?> constructor : RulesEngineBuilder.class.getDeclaredConstructors()) {
             assertTrue(Modifier.isPrivate(constructor.getModifiers()), constructor.toString());

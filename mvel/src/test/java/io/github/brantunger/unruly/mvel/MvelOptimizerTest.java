@@ -41,7 +41,8 @@ public class MvelOptimizerTest {
     @Test
     @DisplayName("loading and running the engine leaves MVEL's global optimizer setting alone")
     void mvelOptimizerUntouched() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
         engine.run(new FactMap<>());
 
@@ -62,7 +63,8 @@ public class MvelOptimizerTest {
         List<Throwable> failures = new ArrayList<>();
 
         for (int trial = 0; trial < 200; trial++) {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .build();
             engine.load(List.of(Rule.builder()
                     .ruleName("poly")
                     .priority(1)
@@ -125,7 +127,8 @@ public class MvelOptimizerTest {
         List<Throwable> failures = new CopyOnWriteArrayList<>();
 
         for (int trial = 0; trial < 300; trial++) {
-            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+            RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                    .build();
             engine.load(List.of(Rule.builder()
                     .ruleName("prime-rate")
                     .condition("applicant.creditScore >= 750")

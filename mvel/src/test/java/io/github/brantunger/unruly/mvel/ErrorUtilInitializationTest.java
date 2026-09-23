@@ -15,9 +15,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class ErrorUtilInitializationTest {
 
     /**
-     * Runs {@link DeepRuleScenario} in a new JVM, where no MVEL class has been initialized yet. The scenario doesn't run
-     * in this JVM: other tests have initialized MVEL here already, and the coverage agent instruments classes as they
-     * load, which changes how much stack the overflowing compile has left.
+     * Runs {@link DeepRuleScenario} in a new JVM, where no MVEL class has been initialized yet. The scenario doesn't
+     * run in this JVM: other tests have initialized MVEL here already, and the coverage agent instruments classes as
+     * they load, which changes how much stack the overflowing compile has left.
      */
     private static String runScenario() throws IOException, InterruptedException {
         Path java = Path.of(System.getProperty("java.home"), "bin", "java");

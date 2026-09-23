@@ -39,8 +39,9 @@ class LinkageErrorTest {
     private static final String LANGUAGE = "failing";
 
     private static Stream<Error> linkageErrors() {
-        return Stream.of(new NoClassDefFoundError("com/acme/Missing"), new IllegalAccessError("cannot access Applicant"),
-                new IncompatibleClassChangeError("changed"), new ExceptionInInitializerError("static init"));
+        return Stream.of(new NoClassDefFoundError("com/acme/Missing"),
+                new IllegalAccessError("cannot access Applicant"), new IncompatibleClassChangeError("changed"),
+                new ExceptionInInitializerError("static init"));
     }
 
     private static Rule rule(String name, String action) {

@@ -148,8 +148,8 @@ on JDK 25, and checks the PR title.
 | Gate | Checks | Configured in |
 | --- | --- | --- |
 | 🧪 **Tests** | The JUnit suite | `core/src/test`, `mvel/src/test` and `benchmarks/src/test` |
-| 📏 **Checkstyle** | Main and test sources | `config/checkstyle/checkstyle.xml` |
-| 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| 📏 **Checkstyle** | Main and test sources: lines of at most 120 columns, no tabs, a final newline, braces, no star or unused imports | `config/checkstyle/checkstyle.xml` |
+| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
@@ -165,6 +165,11 @@ Three things to know about the gate:
   lambdas leave instructions JaCoCo can't reach.
 - A Gradle deprecation fails every build (`org.gradle.warning.mode=fail` in `gradle.properties`).
 
+> [!IMPORTANT]
+> A line over 120 columns in a main, test or test-fixtures source fails Checkstyle; only `package` and `import` lines
+> are exempt. So do a tab and a file without a final newline. Wrap the line, indent with spaces, and end the file
+> with a newline.
+
 On every pull request and push to `main`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows
 and macOS, the tests again on **JDK 25** on Linux, and the native-image check, except on a
 [documentation-only pull request](docs/contributing/build-and-gates.md#-ci). It also checks the PR title, and warns,
@@ -179,8 +184,8 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 | `:core:test`, `:mvel:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
 | `Timeout has been exceeded` on `:core:test`, `:mvel:test` or `:benchmarks:test` | The console, and `<project>/build/reports/tests/test/index.html` | A test never returned, and the task's 10-minute timeout stopped it; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 | `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html` | Run `./gradlew jacocoTestReport`, open the report, and cover the red lines and yellow branches |
-| `pmdMain` | `<project>/build/reports/pmd/main.html` | Fix the finding; suppress only as [Build and gates](docs/contributing/build-and-gates.md#-pmd-suppressions) shows |
-| `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html`, `test.html`, and `core`'s `testFixtures.html` | Braces on every block, no star or unused imports |
+| `pmdMain` | `<project>/build/reports/pmd/main.html` | Fix the finding; suppress only as [Build and gates](docs/contributing/build-and-gates.md#-pmd-suppressions) shows. Tests are never checked |
+| `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html`, `test.html`, and `core`'s `testFixtures.html` | Wrap lines over 120 columns, replace tabs with spaces, end the file with a newline, brace every block, drop star and unused imports |
 | `compileJava`, `compileTestJava`, `compileTestFixturesJava` with `-Werror` | The console | Fix the warning; every javac lint is on |
 | `javadoc` | The console | Every public member needs a comment with `@param`, `@return` and `@throws`, and every `{@link}` must resolve |
 | `japicmp` | `<project>/build/reports/japicmp/report.html` | See [API compatibility](docs/contributing/api-compatibility.md) |

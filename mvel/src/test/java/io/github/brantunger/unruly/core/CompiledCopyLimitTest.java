@@ -46,8 +46,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class CompiledCopyLimitTest {
 
     /**
-     * A language whose condition waits for {@link #gate} to open, and which counts the sessions it makes, each a copy of
-     * its one-rule list, and the runs in progress.
+     * A language whose condition waits for {@link #gate} to open, and which counts the sessions it makes, each a copy
+     * of its one-rule list, and the runs in progress.
      */
     private static final class GateLanguage implements ExpressionLanguage {
 
@@ -199,7 +199,8 @@ class CompiledCopyLimitTest {
     }
 
     @Test
-    @DisplayName("a run nested in another on the same thread doesn't wait for the only copy, and its extra copy isn't kept")
+    @DisplayName("a run nested in another on the same thread doesn't wait for the only copy, and its extra copy isn't"
+            + " kept")
     void nestedRunGetsAnExtraCopy() {
         GateLanguage language = new GateLanguage();
         language.gate.countDown();
@@ -237,7 +238,8 @@ class CompiledCopyLimitTest {
     }
 
     @Test
-    @DisplayName("an interrupt while waiting fails the run, keeps the interrupt status and is logged, and takes no copy")
+    @DisplayName("an interrupt while waiting fails the run, keeps the interrupt status and is logged, and takes no"
+            + " copy")
     void interruptWhileWaiting() throws InterruptedException {
         GateLanguage language = new GateLanguage();
         RulesEngine<Map<String, Object>> engine = engine(language, 1);
@@ -299,7 +301,8 @@ class CompiledCopyLimitTest {
         assertTrue(logs.contains("The 'gate' expression language failed to create a session"), logs);
         assertTrue(logs.contains("session failed"), logs);
         assertEquals(Map.of(), otherThreadOutput.get(), "a run on another thread didn't get a copy");
-        assertEquals(2, language.sessionsMade.get(), "the failed session, then one kept session that every later run reuses");
+        assertEquals(2, language.sessionsMade.get(),
+                "the failed session, then one kept session that every later run reuses");
     }
 
     @Test
@@ -338,7 +341,8 @@ class CompiledCopyLimitTest {
     @DisplayName("firstMatch and allMatches with maxCopies build engines of the right kind")
     void builderMethodsBuildTheRightEngine() {
         List<Rule> rules = List.of(
-                Rule.builder().ruleName("high").priority(2).condition("true").action("output.put('high', true)").build(),
+                Rule.builder().ruleName("high").priority(2).condition("true").action("output.put('high', true)")
+                        .build(),
                 Rule.builder().ruleName("low").priority(1).condition("true").action("output.put('low', true)").build());
         RulesEngine<Map<String, Object>> firstMatch = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .maxCopies(1).build();

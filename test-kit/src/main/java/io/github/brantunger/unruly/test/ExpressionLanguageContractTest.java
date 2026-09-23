@@ -514,7 +514,8 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's closed")
+    @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's"
+            + " closed")
     void compilerClosed() {
         ExpressionLanguage language = language();
         List<AtomicInteger> closes = new CopyOnWriteArrayList<>();

@@ -35,8 +35,8 @@ GraalVM native image.
 | Gate | Checks | Configured in |
 | --- | --- | --- |
 | 🧪 **Tests** | The JUnit suite, on the class path, in two source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `benchmarks/src/test`, their `build.gradle` files, and each library test source set's `junit-platform.properties` |
-| 📏 **Checkstyle** | Main and test sources: `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
-| 🔍 **PMD** | Main sources, with the best-practices and error-prone rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| 📏 **Checkstyle** | Main and test sources: UTF-8, lines of at most 120 columns, no tabs, a final newline, `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
+| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
@@ -46,13 +46,33 @@ GraalVM native image.
 Some details behind the table:
 
 - **Checkstyle's** `AvoidStarImport` allows static member imports, so `import static ...Assertions.*` is fine.
-- **PMD** excludes two rules: `GuardLogStatement` from best-practices, and `AvoidCatchingGenericException` from
-  error-prone, because the engine catches whatever a language, listener or setter throws and turns it into a failure.
+- **PMD** excludes `GuardLogStatement` from best-practices, and `AvoidCatchingGenericException` from error-prone,
+  because the engine catches whatever a language, listener or setter throws and turns it into a failure.
 - **Coverage** excludes `io/github/brantunger/unruly/test/ExpressionLanguageContractTest*`: its always-throwing
   lambdas leave instructions JaCoCo can't reach. `-x test` fails the gate with `No JaCoCo execution data`;
   `./gradlew build -x check` only compiles and packages.
 - **The module-path applications** are `withMvel`, `withoutMvel`, `withTestKit` and `withJackson`, each compiled
   with `-Xlint:all -Werror` like the main sources.
+
+**Checkstyle's** `LineLength` fails a line over 120 columns in any main, test or test-fixtures source, except a
+`package` or `import` line. The applications under `mvel/src/test/resources/module-path` are test resources, which
+Checkstyle doesn't read. `FileTabCharacter` fails a tab, and `NewlineAtEndOfFile` a file without a final newline.
+Checkstyle reads every file as UTF-8.
+
+**PMD's multithreading** rule set runs without five of its rules. The ruleset says why next to each:
+
+| Excluded rule | Why |
+| --- | --- |
+| `DoNotUseThreads` | A run reads its thread's interrupt flag, sets it again after catching an `InterruptedException`, and reads whether the thread is virtual; the contract kit runs a language on a thread pool |
+| `UseConcurrentHashMap` | Each flagged map is used by one thread; or built before another thread sees it and only read after; or is an MVEL session's compiled expressions, which one run at a time uses, handed on through a concurrent queue |
+| `AvoidUsingVolatile` | The engine's and a rule list's shared fields are written by `load()`, `close()` or the run that finds no language keeps state, and read by every run without a lock |
+| `AvoidSynchronizedStatement` | Only `load()` and `close()` lock the engine's private monitor, so runs never wait on it or pin their virtual threads |
+| `AvoidSynchronizedAtMethodLevel` | No method is synchronized today; excluded with `AvoidSynchronizedStatement`, because what matters is whether runs wait on the monitor |
+
+**The build never runs PMD on test sources, by decision.** On them this rule set finds 2,885 violations (measured at
+`0367bb2`), 2,576 of them an assertion without a message, a test with several assertions, or a resource a test doesn't
+close. The seven multithreading rules it keeps find none. The decision is recorded in
+`buildSrc/src/main/groovy/unruly.java-conventions.gradle`, and `check` runs `pmdMain` only.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/groovy/unruly.java-conventions.gradle`),
 so a test that never returns fails the build rather than holding CI until the `build` job's own 20-minute cap. Gradle
@@ -170,9 +190,10 @@ and a missing one fails the build naming the version. The build passes `unruly.t
 
 ## 🔕 PMD suppressions
 
-PMD runs on the main sources of every project. A finding is fixed, unless the code is right and the rule is wrong
-for it; then the suppression is as narrow as PMD allows, and a comment on the line above says why. That is the shape
-every existing suppression has. For example, `core/src/main/java/io/github/brantunger/unruly/core/RuleSet.java`:
+PMD runs on the main sources of every project, and never on tests ([why](#-what-build-runs)). A finding is fixed,
+unless the code is right and the rule is wrong for it; then the suppression is as narrow as PMD allows, and a comment
+on the line above says why. That is the shape every existing suppression has. For example,
+`core/src/main/java/io/github/brantunger/unruly/core/RuleSet.java`:
 
 ```java
 /** Whether every language of these rules returned {@link Session#none()}, so a copy holds nothing of its own. */

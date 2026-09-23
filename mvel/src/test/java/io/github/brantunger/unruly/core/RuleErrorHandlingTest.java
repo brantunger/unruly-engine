@@ -65,7 +65,8 @@ class RuleErrorHandlingTest {
         void actionStackOverflow() {
             StatefulRulesEngine<Map<String, Object>> engine = engine("true", "def f(n) { f(n + 1) }; f(1)");
 
-            RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+            RuleExecutionException thrown =
+                    assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
             assertInstanceOf(StackOverflowError.class, thrown.getCause());
             assertTrue(thrown.getMessage().contains("rule 'failing'"));
@@ -78,7 +79,8 @@ class RuleErrorHandlingTest {
         void actionAssertionError() {
             StatefulRulesEngine<Map<String, Object>> engine = engine("true", "assert false");
 
-            RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+            RuleExecutionException thrown =
+                    assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
             assertInstanceOf(AssertionError.class, thrown.getCause());
             assertEquals(List.of("beforeEvaluate", "afterEvaluate", "beforeExecute", "onError"), events);
@@ -89,7 +91,8 @@ class RuleErrorHandlingTest {
         void conditionAssertionError() {
             StatefulRulesEngine<Map<String, Object>> engine = engine("assert false", "output.put('k', 1)");
 
-            RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+            RuleExecutionException thrown =
+                    assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
             assertInstanceOf(AssertionError.class, thrown.getCause());
             assertEquals(List.of("beforeEvaluate", "onError"), events);
@@ -120,7 +123,8 @@ class RuleErrorHandlingTest {
             });
             engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
 
-            RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+            RuleExecutionException thrown =
+                    assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
             assertSame(overflow, thrown.getCause());
         }

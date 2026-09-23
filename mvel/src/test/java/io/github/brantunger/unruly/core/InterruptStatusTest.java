@@ -226,7 +226,8 @@ class InterruptStatusTest {
     @Test
     @DisplayName("an MVEL action interrupted in Thread.sleep fails the run, and the caller still sees the interrupt")
     void mvelActionInterrupted() throws InterruptedException {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         engine.load(List.of(Rule.builder().ruleName("sleepy").condition("true")
                 .action("java.lang.Thread.sleep(20000)").build()));
         AtomicReference<Throwable> thrown = new AtomicReference<>();

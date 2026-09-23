@@ -545,12 +545,13 @@ public final class RulesEngineBuilder<O> {
      *                                  a language given an {@link #option(String, String, String) option}, isn't one
      *                                  of its languages; or if a language found with
      *                                  {@link java.util.ServiceLoader} has a {@code null} or blank name, or two found
-     *                                  languages have the same name. Anything {@code ServiceLoader} or a language throws
-     *                                  while it's found, such as a {@link java.util.ServiceConfigurationError}, is thrown
-     *                                  unchanged.
+     *                                  languages have the same name. Anything {@code ServiceLoader} or a language
+     *                                  throws while it's found, such as a {@link java.util.ServiceConfigurationError},
+     *                                  is thrown unchanged.
      * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
      *                                  class that exists but can't be loaded, for example because a class it depends on
-     *                                  is missing; or if {@link #copiesAtLoad(int)} is more than {@link #maxCopies(int)}
+     *                                  is missing; or if {@link #copiesAtLoad(int)} is more than
+     *                                  {@link #maxCopies(int)}
      */
     public RulesEngine<O> build() {
         CopyLimit limit = copies != null ? copies : CopyLimit.forVirtualThreads();

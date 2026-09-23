@@ -37,8 +37,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * An engine, or one {@code run} call, can be given a timeout. The deadline it sets is checked where an interrupt is,
- * before each condition and each action and when each returns, and it is passed to the language, so a language that can stop inside
- * an expression can honour it there too. MVEL can't, so a rule written in MVEL always runs to its end.
+ * before each condition and each action and when each returns, and it is passed to the language, so a language that can
+ * stop inside an expression can honour it there too. MVEL can't, so a rule written in MVEL always runs to its end.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("a run stops between rules, or when an expression returns, once it has passed its deadline")
@@ -162,7 +162,8 @@ class RunTimeoutTest {
         assertTrue(thrown.getMessage().endsWith(" during rule 'a'"), thrown.getMessage());
         assertInstanceOf(TimeoutException.class, thrown.getCause());
         assertNull(thrown.getRuleName(), "a deadline isn't that rule's failure");
-        assertEquals(List.of(), fired.rules, "the slow action returned past the deadline, so it isn't counted as fired");
+        assertEquals(List.of(), fired.rules,
+                "the slow action returned past the deadline, so it isn't counted as fired");
         assertTrue(fired.runFailed, "the run itself is reported to listeners");
         assertFalse(Thread.currentThread().isInterrupted(), "a deadline doesn't interrupt the thread");
     }

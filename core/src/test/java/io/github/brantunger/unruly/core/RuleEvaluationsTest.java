@@ -99,8 +99,9 @@ class RuleEvaluationsTest {
     void noMatchReportsEveryRuleNotMatched() {
         Rule never = Rule.builder().ruleName("never").priority(1).condition("false").action("put n 1")
                 .build();
-        for (Supplier<RulesEngineBuilder<Map<String, Object>>> builder : List.<Supplier<RulesEngineBuilder<Map<String, Object>>>>of(
-                RuleEvaluationsTest::firstMatch, RuleEvaluationsTest::allMatches, RuleEvaluationsTest::uniqueMatch)) {
+        for (Supplier<RulesEngineBuilder<Map<String, Object>>> builder :
+                List.<Supplier<RulesEngineBuilder<Map<String, Object>>>>of(RuleEvaluationsTest::firstMatch,
+                        RuleEvaluationsTest::allMatches, RuleEvaluationsTest::uniqueMatch)) {
             RunResult<Map<String, Object>> result = loaded(builder.get(), HIGH, never).runWithResult(new FactMap<>());
 
             assertNull(result.output());

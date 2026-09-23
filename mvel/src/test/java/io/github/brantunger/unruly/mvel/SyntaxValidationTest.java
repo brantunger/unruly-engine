@@ -34,7 +34,8 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a doubled operator in a condition is rejected at compile time")
     void doubledOperatorInConditionRejected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("x == == 1", "output.put('k', 1)"))));
@@ -44,7 +45,8 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a doubled operator in an action is rejected at compile time")
     void doubledOperatorInActionRejected() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
 
         assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("true", "x == == 1"))));
@@ -53,7 +55,8 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("a compile error keeps MVEL's exception as its cause")
     void compileErrorKeepsCause() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("x >= ", "output.put('k', 1)"))));
@@ -86,7 +89,8 @@ class SyntaxValidationTest {
             "score = 10; output.put('s', score)",
     })
     void validActionsStillCompile(String action) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
 
         assertDoesNotThrow(() -> engine.load(List.of(rule("true", action))));
     }
@@ -107,7 +111,8 @@ class SyntaxValidationTest {
     @Test
     @DisplayName("known limitation: a stray closing parenthesis is only reported at run()")
     void strayParenthesisOnlyFailsAtRun() {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
         engine.load(List.of(rule("true)", "output.put('k', 1)")));
 
         assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));

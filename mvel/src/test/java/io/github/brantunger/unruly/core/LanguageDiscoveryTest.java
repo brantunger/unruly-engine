@@ -111,7 +111,8 @@ class LanguageDiscoveryTest {
         Path file = servicesRoot.resolve(SERVICES_FILE);
         Files.createDirectories(file.getParent());
         Files.writeString(file, Arrays.stream(languages).map(Class::getName).collect(Collectors.joining("\n")));
-        return new URLClassLoader(new URL[]{servicesRoot.toUri().toURL()}, LanguageDiscoveryTest.class.getClassLoader());
+        return new URLClassLoader(new URL[]{servicesRoot.toUri().toURL()},
+                LanguageDiscoveryTest.class.getClassLoader());
     }
 
     private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {

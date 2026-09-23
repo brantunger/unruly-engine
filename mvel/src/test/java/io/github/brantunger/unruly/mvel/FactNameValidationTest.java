@@ -21,7 +21,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class FactNameValidationTest {
 
     private static RulesEngine<Map<String, Object>> engine(String condition) {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
         engine.load(List.of(rule(condition)));
         return engine;
     }
@@ -43,7 +44,8 @@ class FactNameValidationTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"empty", "nil", "null", "true", "this", "isdef", "in", "with", "var", "def", "Math", "String"})
+    @ValueSource(strings = {"empty", "nil", "null", "true", "this", "isdef", "in", "with", "var", "def", "Math",
+            "String"})
     void reservedNamesRejected(String name) {
         RulesEngine<Map<String, Object>> engine = engine("true");
 

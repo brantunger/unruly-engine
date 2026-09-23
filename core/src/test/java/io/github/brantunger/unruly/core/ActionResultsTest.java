@@ -32,8 +32,8 @@ class ActionResultsTest {
 
     /**
      * A language whose conditions are always true and whose actions return properties instead of changing the output.
-     * An action is {@code name=value} pairs separated by {@code ;}. A value is {@code true}, {@code false}, {@code null},
-     * an integer, a decimal number or text. The action {@code nothing} returns {@code null}.
+     * An action is {@code name=value} pairs separated by {@code ;}. A value is {@code true}, {@code false},
+     * {@code null}, an integer, a decimal number or text. The action {@code nothing} returns {@code null}.
      */
     private static final ExpressionLanguage PATCH = new ExpressionLanguage() {
         @Override
@@ -169,7 +169,8 @@ class ActionResultsTest {
     }
 
     @Test
-    @DisplayName("in a run that fires every match, rules' properties are set in firing order, so a later rule overwrites an earlier one")
+    @DisplayName("in a run that fires every match, rules' properties are set in firing order, so a later rule"
+            + " overwrites an earlier one")
     void firingOrder() {
         RulesEngine<Map<String, Object>> engine = stateful(LinkedHashMap::new,
                 rule("first", 2, "rate=1;first=true"),
@@ -198,7 +199,8 @@ class ActionResultsTest {
     }
 
     @Test
-    @DisplayName("a property without a setter that accepts the value fails the rule as an action, and listeners hear of it")
+    @DisplayName("a property without a setter that accepts the value fails the rule as an action, and listeners hear of"
+            + " it")
     void noSetter() {
         List<RuleExecutionException> errors = new ArrayList<>();
         RulesEngine<Decision> engine = RulesEngineBuilder.allMatches(Decision::new).language(PATCH)
