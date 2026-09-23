@@ -107,8 +107,8 @@ public interface ExpressionCompiler extends AutoCloseable {
 
     /**
      * Releases what the compiler holds. The engine calls it once, after closing every session the compiler created. By
-     * default, does nothing. An exception it throws is logged at WARN and not thrown, except a fatal {@link Error},
-     * which is rethrown unchanged.
+     * default, does nothing. Anything it throws is logged at WARN, and the engine still closes the other compilers.
+     * Only a fatal {@link Error} is then rethrown, unchanged, unless a fatal error of the call's own came first.
      */
     @Override
     default void close() {

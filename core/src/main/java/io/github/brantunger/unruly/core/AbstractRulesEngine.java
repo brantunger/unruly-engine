@@ -640,7 +640,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * <p>
      * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once everything being
      * closed has been closed: the first, if there are several. A rule list that fails to load throws it in place of
-     * its own failure, which the error carries as a suppressed exception, unless that failure is itself a fatal error,
+     * its own failure, which the error carries as a suppressed exception, or which is logged at WARN if the error
+     * can't carry one, as the JVM's own {@link OutOfMemoryError} can't; unless that failure is itself a fatal error,
      * which came first and is thrown instead. A reload throws it after swapping its rules in, when it closes the rule
      * list they replaced: the new rules stay loaded, and runs use them.
      * </p>
@@ -674,9 +675,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             compilation.compile(ruleList);
             throwIfAnyFailed(compilation.failures);
             loaded = new RuleSet(compilation.compiled, compilation.used, copyLimit, copyPermits);
-        } catch (RuntimeException | Error e) {
-            Failures.throwIfPresent(Failures.fatalInsteadOf(e, compilation.closeCompilers()));
-            throw e;
+        } catch (Throwable t) {
+            // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.
+            Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
+            throw t;
         }
         prepareCopies(loaded);
         RuleSet replaced;
@@ -724,8 +726,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Retires a rule set that {@code load()} won't swap in, before the caller throws {@code failure}: closes its
      * copies, and then its compilers. A fatal {@link Error} from closing them is thrown here instead, carrying
-     * {@code failure} as suppressed, unless {@code failure} is a fatal error itself, which came first (see
-     * {@link Failures#fatalInsteadOf}).
+     * {@code failure} as suppressed, or logging it at WARN if the error can't carry one, unless {@code failure} is a
+     * fatal error itself, which came first (see {@link Failures#fatalInsteadOf}).
      *
      * @param loaded  The rule set, which no run can see
      * @param failure What the caller throws next

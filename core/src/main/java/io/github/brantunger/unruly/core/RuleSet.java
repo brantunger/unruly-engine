@@ -88,8 +88,9 @@ final class RuleSet {
     // How long a run waits without one copy being given back before it decides they aren't coming back. Long
     // enough that only a rule slower than this, or a run waiting for another thread's run, reaches it.
     private static final long STALL_WINDOW_MILLIS = 5000;
-    // Runs in progress on this thread, whatever engine or rule list they use, so a nested run never waits for a copy
-    // its own thread may be holding. Removed when the outermost run ends, so a pooled thread keeps nothing.
+    // Runs in progress on this thread, whatever engine or rule list they use, each counted from when it starts to get
+    // its copy, so a nested run never waits for a copy its own thread may be holding. Removed when the outermost run
+    // ends, so a pooled thread keeps nothing.
     // A plain ThreadLocal, not withInitial(): a lambda in a static initializer has to be bootstrapped while the
     // class is being initialized, which deadlocks when several threads load this class at once.
     private static final ThreadLocal<int[]> RUNS_ON_THREAD = new ThreadLocal<>();
@@ -99,7 +100,7 @@ final class RuleSet {
     // Identify these rules, and when they were loaded, for RulesEngine.rules() and every run's result.
     private final String ruleChecksum;
     private final Instant loadTime;
-    private final Queue<Map<String, Session>> idle = new ConcurrentLinkedQueue<>();
+    private final Queue<Map<String, Session>> idle;
     private final CopyLimit copyLimit;
     // With a limit, one permit for each kept copy that a limited run holds, shared with the engine's other rule sets.
     private final CopyPermits permits;
@@ -114,7 +115,7 @@ final class RuleSet {
 
     /** What {@link #release(Copy)} does with a copy when the run that borrowed it gives it back. */
     enum Kind {
-        /** Kept for a later run, unless the rule set has been retired. */
+        /** Kept for a later run, unless the rule set has been retired or the idle queue can't take it. */
         KEPT,
         /** An extra copy made above the limit: its sessions are closed. */
         EXTRA,
@@ -193,6 +194,22 @@ final class RuleSet {
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
             CopyPermits permits, long stallWindowMillis) {
+        this(compiledRules, compilers, limit, permits, stallWindowMillis, new ConcurrentLinkedQueue<>());
+    }
+
+    /**
+     * Creates a rule set whose idle copies wait in {@code idle}. It is a deliberate test seam too: it lets a test hand
+     * the rule set a queue that fails, as one that can't allocate room for a copy does, which nothing but a test needs.
+     *
+     * @param compiledRules     The compiled rules, in the order they run
+     * @param compilers         The compilers of the languages the rules use, by language name
+     * @param limit             How many copies runs may hold at once, and which runs that applies to
+     * @param permits           The permits for {@code limit}, which other rule sets may share
+     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
+     * @param idle              The queue the idle copies wait in, which runs share, so it must be thread-safe
+     */
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
+            CopyPermits permits, long stallWindowMillis, Queue<Map<String, Session>> idle) {
         this.compiledRules = List.copyOf(compiledRules);
         this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
         this.ruleChecksum = Checksums.ofRules(this.compiledRules);
@@ -200,6 +217,7 @@ final class RuleSet {
         this.copyLimit = limit;
         this.permits = permits;
         this.stallWindow = stallWindowMillis;
+        this.idle = idle;
     }
 
     /**
@@ -251,42 +269,59 @@ final class RuleSet {
     /**
      * Takes a copy of the rules that no other run is using, making a new one if necessary. With a limit, waits for a
      * copy when all of them are in use, unless the current thread already holds one: then an extra copy that isn't
-     * kept is made instead. A copy that fails to be made isn't kept, and doesn't count toward the limit. Without a
-     * limit, a run on a virtual thread that has to make a copy waits for a build slot first: with a deadline, for at
-     * most half the time it has left; without one, for as long as slots keep coming back.
+     * kept is made instead. So is a run started on the same thread while another run is getting its copy, as a
+     * language creating a session may start one: it counts as nested in that run. A copy that fails to be made isn't
+     * kept, and doesn't count toward the limit. Without a limit, a run on a virtual thread that has to make a copy
+     * waits for a build slot first: with a deadline, for at most half the time it has left; without one, for as long
+     * as slots keep coming back.
      *
      * @return A copy for the caller alone, to give back with {@link #release(Copy)}, or {@code null} if the rule set is
      *         closed: it was retired, and every copy was given back
      * @param deadline When the run must stop, or {@code null} if it has none. Waiting for a copy that is in use stops
      *                 there; waiting for a build slot gives up at half the time left, and the run makes its copy.
      * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use, or for a
-     *                                build slot. A thread whose interrupt status is already set still gets a free copy,
-     *                                or makes one; the run then stops at its first rule. A thread that throws holds no
-     *                                copy.
+     *                                build slot; its interrupt status is set again before this is thrown. A thread
+     *                                whose interrupt status is already set still gets a free copy, or makes one; the
+     *                                run then stops at its first rule. A thread that throws holds no copy.
      * @throws TimeoutException       if the deadline passes while the thread waits for a copy that is in use, which
      *                                likewise leaves it holding none
      * @throws RuleExecutionException if a language fails to create a session for a new copy, which is logged at ERROR.
      *                                A fatal {@link Error} is then rethrown unchanged.
      * @throws Error                  a fatal {@link Error} from closing a retired rule set that this failed borrow was
      *                                the last to use, in place of a failure that isn't fatal, which it carries as
-     *                                suppressed
+     *                                suppressed, or logs at WARN if the error can't carry one
      */
     // Any Throwable: a failed borrow must leave however it ends, as a finally would, and a failure that isn't fatal is
     // kept under a fatal Error from closing.
     Copy borrow(Instant deadline) throws InterruptedException, TimeoutException {
+        // Found or made before anything is held, so that failing to make it leaves nothing to give back.
+        int[] runs = runsOnThread();
+        // A run already in progress on this thread, whatever engine or rule list it uses, makes this one nested.
+        boolean nested = runs[0] > 0;
         if (!enter()) {
+            forgetIfIdle(runs[0]);
             return null;
         }
-        Copy borrowed;
+        // Counted before the copy is lent, by a step that can't fail, and uncounted if lending fails. So a run that a
+        // language starts on this thread while this one gets its copy finds this one in progress, and when it ends it
+        // leaves the thread's count in place rather than removing it from under this run.
+        runs[0]++;
         try {
-            borrowed = lend(deadline);
+            return lend(deadline, nested);
         } catch (Throwable t) {
-            Failures.throwIfPresent(Failures.fatalInsteadOf(t, leave()));
+            Failures.throwIfPresent(failedBorrow(t));
             throw t;
         }
-        // Counted only once the copy is the caller's, so a failed borrow leaves nothing behind.
-        runsOnThread()[0]++;
-        return borrowed;
+    }
+
+    // Uncounts a run whose borrow failed, and leaves the rule set, returning the fatal Error to throw in place of
+    // failure, if closing the rule set as it leaves threw one (see Failures.fatalInsteadOf). Uncounted first, which
+    // allocates nothing and can't fail, so the run never stays counted. The interrupt status is set again next, if an
+    // interrupt caused the failure, so that closing the rules as the run leaves sees it.
+    private Error failedBorrow(Throwable failure) {
+        endRunOnThread();
+        Failures.keepInterruptStatus(failure);
+        return Failures.fatalInsteadOf(failure, leave());
     }
 
     /**
@@ -304,26 +339,18 @@ final class RuleSet {
     void prepareCopies(int count) {
         for (int made = 0; made < count; made++) {
             Map<String, Session> sessions = new LinkedHashMap<>();
-            boolean complete = false;
-            try {
-                addSessions(sessions);
-                complete = true;
-            } finally {
-                if (!complete) {
-                    // Idle, so the sessions made before a language failed are closed with the other copies when
-                    // load() retires the rule set, and a fatal Error from closing them is weighed against the load's
-                    // failure there.
-                    idle.add(sessions);
-                }
-            }
+            // Idle before any of its sessions is made, and filled in place, so the sessions made before a language
+            // failed, and a copy that fails to warm up, are closed with the other copies when load() retires the rule
+            // set, and a fatal Error from closing them is weighed against the load's failure there. A queue that can't
+            // take the copy fails before anything is made. No run can see the rule set yet.
+            idle.add(sessions);
+            addSessions(sessions);
             if (statelessSessions(sessions)) {
+                // Left idle, which is harmless: no run takes an idle copy once the sessions are shared, and closing
+                // Session.none() does nothing.
                 sharedSessions = sessions;
                 return;
             }
-            // Idle before it's warmed up, so a copy that fails to warm up is closed with the others when load() retires
-            // the rule set, and a fatal Error from closing it is weighed against the load's failure there. No run can
-            // see the rule set yet.
-            idle.add(sessions);
             warmUp(sessions);
         }
     }
@@ -354,12 +381,12 @@ final class RuleSet {
 
     /**
      * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
-     * is retired; any other copy's sessions are closed. The last copy given back to a retired rule set closes its
-     * compilers too.
+     * is retired, or the idle queue can't take it; any other copy's sessions are closed. The last copy given back to a
+     * retired rule set closes its compilers too.
      *
      * @param borrowed The copy, which the caller must no longer use
-     * @return The first fatal {@link Error} closing the copy's sessions or the compilers threw, for the caller to
-     *         throw, or {@code null} if none did
+     * @return The first fatal {@link Error} keeping the copy, or closing its sessions or the compilers, threw, for the
+     *         caller to throw, or {@code null} if none did
      */
     Error release(Copy borrowed) {
         Error fatal = null;
@@ -373,6 +400,9 @@ final class RuleSet {
             // A shared copy needs nothing: its sessions belong to every run, and are Session.none(), which has
             // nothing to close.
         } finally {
+            // Uncounted first, which allocates nothing and can't fail, so the run is uncounted however giving the copy
+            // back ends, and a run that closing the rules starts on this thread isn't nested in it, as after a failed
+            // borrow.
             endRunOnThread();
             giveBack(borrowed.held());
             fatal = Failures.first(fatal, leave());
@@ -381,24 +411,24 @@ final class RuleSet {
     }
 
     // Keeps a copy given back for a later run, or closes its sessions if the rule set is retired, returning the first
-    // fatal Error from closing them.
+    // fatal Error from closing them. A copy the idle queue can't take, as when it can't allocate room for it, is closed
+    // too, rather than lost with its sessions open, and what the queue threw is logged at WARN, and returned first if
+    // it's fatal.
+    // Any Throwable: the sessions must be closed however keeping them fails, and the run must still leave.
     private Error keep(Map<String, Session> sessions) {
         if (retired) {
             return Closing.sessions(sessions);
         }
-        idle.add(sessions);
+        try {
+            idle.add(sessions);
+        } catch (Throwable t) {
+            Error closeFatal = Closing.sessions(sessions);
+            Failures.keepInterruptStatus(t);
+            log.warn("A copy of the rules couldn't be kept for a later run, so its sessions were closed: {}",
+                    Failures.describe(t));
+            return Failures.first(Failures.fatalError(t), closeFatal);
+        }
         return null;
-    }
-
-    /**
-     * Whether this thread is already running rules. Read rather than {@link #runsOnThread()} so that a borrow which
-     * fails leaves no entry behind on a thread that isn't running anything. An entry exists only while the count is
-     * above zero, because {@link #endRunOnThread()} removes it when the outermost run ends.
-     *
-     * @return {@code true} if a run on this thread is in progress
-     */
-    private static boolean nestedRun() {
-        return RUNS_ON_THREAD.get() != null;
     }
 
     /** How many runs this thread has in progress, whatever engine or rule list they use. */
@@ -411,10 +441,19 @@ final class RuleSet {
         return runs;
     }
 
+    // Uncounts a run that borrow() counted on this thread. Its count is there until then, so reading it allocates
+    // nothing, and can't fail.
     private static void endRunOnThread() {
-        int[] runs = runsOnThread();
+        int[] runs = RUNS_ON_THREAD.get();
         runs[0]--;
-        if (runs[0] == 0) {
+        forgetIfIdle(runs[0]);
+    }
+
+    // Removes this thread's count once no run is in progress on it: when the outermost run ends, and after a borrow
+    // that got no copy, or found the rule set closed, on a thread that isn't running anything, so a pooled thread
+    // keeps nothing.
+    private static void forgetIfIdle(int runs) {
+        if (runs == 0) {
             RUNS_ON_THREAD.remove();
         }
     }
@@ -433,13 +472,13 @@ final class RuleSet {
         try {
             fatal = closeIdle();
         } finally {
-            // Also after a Throwable closing doesn't catch, so the compilers are still closed.
+            // Also if closing the idle copies throws, so the compilers are still closed.
             fatal = Failures.first(fatal, closeIfUnused());
         }
         return fatal;
     }
 
-    private Copy lend(Instant deadline) throws InterruptedException, TimeoutException {
+    private Copy lend(Instant deadline, boolean nested) throws InterruptedException, TimeoutException {
         Map<String, Session> shared = sharedSessions;
         if (shared != null) {
             return new Copy(shared, Kind.SHARED, Held.NOTHING);
@@ -447,25 +486,16 @@ final class RuleSet {
         if (!copyLimit.appliesToCurrentThread()) {
             // A thread pool's size bounds the copies its runs make, and virtual threads have nothing but the build
             // slots. A nested run never waits for one: its own thread may hold the slot it would wait for.
-            return copyLimit.limits() || !Thread.currentThread().isVirtual() || nestedRun()
+            return copyLimit.limits() || !Thread.currentThread().isVirtual() || nested
                     ? keptCopy(Held.NOTHING) : slottedCopy(deadline);
         }
         // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
-        boolean nested = nestedRun();
         if (nested ? !permits.available().tryAcquire()
                 : !awaitPermit(permits.available(), permits::returned, stallWindow, deadline)) {
             // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of
             // these rules has learned whether they need copies at all. An extra copy can learn it too, and then
             // nothing overflowed.
-            Map<String, Session> sessions = newSessions();
-            if (statelessSessions(sessions)) {
-                sharedSessions = sessions;
-                return new Copy(sessions, Kind.SHARED, Held.NOTHING);
-            }
-            if (!nested) {
-                warnAboutOverflow();
-            }
-            return new Copy(sessions, Kind.EXTRA, Held.NOTHING);
+            return copy(newSessions(), Kind.EXTRA, Held.NOTHING, !nested);
         }
         return keptCopy(Held.PERMIT);
     }
@@ -499,11 +529,11 @@ final class RuleSet {
                         giveBack(held);
                     }
                 }
-                return keptCopy(sessions, held);
+                return copy(sessions, Kind.KEPT, held, false);
             }
             giveBack(held);
         }
-        return keptCopy(sessions, Held.NOTHING);
+        return copy(sessions, Kind.KEPT, Held.NOTHING, false);
     }
 
     /**
@@ -566,26 +596,49 @@ final class RuleSet {
                 giveBack(held);
             }
         }
-        return keptCopy(sessions, held);
+        return copy(sessions, Kind.KEPT, held, false);
     }
 
     /**
-     * Lends the given sessions as a copy the run keeps until it gives it back. The first copy decides whether the
-     * rules need copies at all: when no language keeps state between runs, its sessions become the ones every run
-     * shares, and the run gives back at once what it took for the copy.
+     * Lends the given sessions as a copy. The first copy decides whether the rules need copies at all: when no
+     * language keeps state between runs, its sessions become the ones every run shares, and the run gives back at once
+     * what it took for the copy. If lending fails, as when the copy can't be allocated, its sessions are closed and
+     * what the run took for it is given back, so a failed borrow holds nothing; a fatal {@link Error} from closing
+     * them is thrown in place of a failure that isn't fatal.
      *
-     * @param sessions The copy's sessions
+     * @param sessions The copy's sessions, which only this run holds
+     * @param kind     What happens to the copy when it's given back, unless its sessions are shared
      * @param held     What the run took for this copy
+     * @param overflow Whether to warn, once, that the run made an extra copy after waiting for a kept one, unless its
+     *                 sessions are shared
      * @return The copy
      */
-    private Copy keptCopy(Map<String, Session> sessions, Held held) {
-        if (statelessSessions(sessions)) {
-            // Nothing in the rules changes while they run, so one set of sessions serves every run at once.
+    // Any Throwable: the sessions, and what the run took for them, must be given up however lending ends, as a finally
+    // would, and a failure that isn't fatal is kept under a fatal Error from closing.
+    private Copy copy(Map<String, Session> sessions, Kind kind, Held held, boolean overflow) {
+        Copy copy;
+        try {
+            if (statelessSessions(sessions)) {
+                copy = new Copy(sessions, Kind.SHARED, Held.NOTHING);
+            } else {
+                if (overflow) {
+                    warnAboutOverflow();
+                }
+                copy = new Copy(sessions, kind, held);
+            }
+        } catch (Throwable t) {
+            // Given back first, as it can't fail, so that closing the sessions can't lose it for good.
+            giveBack(held);
+            Failures.throwIfPresent(Failures.fatalInsteadOf(t, Closing.sessions(sessions)));
+            throw t;
+        }
+        if (copy.kind() == Kind.SHARED) {
+            // Nothing in the rules changes while they run, so one set of sessions serves every run at once. Given back
+            // only once nothing can fail, so that a failure never gives back the same thing twice.
             sharedSessions = sessions;
             giveBack(held);
-            return new Copy(sessions, Kind.SHARED, Held.NOTHING);
         }
-        return new Copy(sessions, Kind.KEPT, held);
+        return copy;
     }
 
     /** Whether every language of these rules returned {@link Session#none()}, so a copy holds nothing of its own. */

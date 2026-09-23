@@ -3,6 +3,8 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,8 +15,8 @@ import java.util.Set;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
- * unchanged, and how an exception is described in an error message. Nothing here logs, so every failure is still
- * logged under the engine's logger name, {@code io.github.brantunger.unruly.engine}.
+ * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf} logs, and under the
+ * engine's logger name, {@code io.github.brantunger.unruly.engine}, as every failure is logged.
  * <b>Internal:</b> this class may change in any release. It's public only so that {@code api.LoggingRuleListener}
  * can escape text the way the engine does, rather than keeping a copy of the escaping that could drift.
  */
@@ -25,6 +27,8 @@ public final class Failures {
 
     /** How much of a fact, rule or language name a message includes; see {@link #quote}. */
     static final int MAX_NAME_LENGTH = 200;
+
+    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
     private Failures() {
     }
@@ -123,19 +127,33 @@ public final class Failures {
      * Chooses what the caller throws when closing what a failure left behind threw a fatal {@link Error}: a fatal
      * error beats any other failure, and of two fatal errors the first wins. So {@code closeFatal} replaces
      * {@code failure} only when neither {@code failure} nor any of its causes is fatal (see {@link #fatalError}), and
-     * then carries it as a suppressed exception. A fatal error that loses was logged when it was caught, and goes no
-     * further.
+     * then carries it as a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal
+     * error that loses was logged when it was caught, and goes no further.
+     *
+     * <p>
+     * A {@code failure} caused by an interrupt sets the thread's interrupt status again when it's replaced (see
+     * {@link #keepInterruptStatus}), because the caller that would have set it never sees it. The fatal error that
+     * can't carry a suppressed exception is one built with suppression disabled, as the {@link OutOfMemoryError} the
+     * JVM keeps ready for when it has no memory left is: it would lose {@code failure}, so it's logged instead.
+     * </p>
      *
      * @param failure    What was being thrown when the closing began
      * @param closeFatal The fatal error closing threw, or {@code null} if it threw none
-     * @return {@code closeFatal}, with {@code failure} added to its suppressed exceptions, if the caller throws it in
-     *         place of {@code failure}; otherwise {@code null}, and the caller throws {@code failure}
+     * @return {@code closeFatal}, with {@code failure} added to its suppressed exceptions, or logged if it can't carry
+     *         one, if the caller throws it in place of {@code failure}; otherwise {@code null}, and the caller throws
+     *         {@code failure}
      */
     static Error fatalInsteadOf(Throwable failure, Error closeFatal) {
         if (closeFatal == null || fatalError(failure) != null) {
             return null;
         }
+        keepInterruptStatus(failure);
         closeFatal.addSuppressed(failure);
+        // A fatal error built with suppression disabled ignores addSuppressed().
+        if (closeFatal.getSuppressed().length == 0) {
+            log.warn("A failure was replaced by the fatal error {}, which can't carry it as a suppressed exception: {}",
+                    describeWithClass(closeFatal), describeWithClass(failure));
+        }
         return closeFatal;
     }
 

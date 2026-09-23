@@ -64,8 +64,10 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               then rethrown unchanged. So is one a language throws while closing a session or a
      *                               compiler, once everything being closed has been closed: the first, if there are
      *                               several. When a load that failed closes what it made, that error is thrown in
-     *                               place of the load's own failure, which it carries as a suppressed exception,
-     *                               unless the load failed with a fatal error, which came first and is thrown instead.
+     *                               place of the load's own failure, unless the load failed with a fatal error, which
+     *                               came first and is thrown instead. The error carries the failure it replaces as a
+     *                               suppressed exception; if it can't carry one, as an {@link OutOfMemoryError} the
+     *                               JVM throws itself can't, that failure is logged at WARN.
      *                               When a reload closes the rules it replaced, it is thrown after the new rules were
      *                               swapped in: they stay loaded, and runs use them.
      */
@@ -143,15 +145,18 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
      *                               language checking a name, creating a session or closing one, or a listener), is
      *                               rethrown unchanged, also when it arrives as the cause of another exception. A
-     *                               run that gives back an extra copy, made because every kept copy was in use, or a
-     *                               copy of rules a reload or {@link #close()} replaced, closes that copy, and the
-     *                               last one to give back a copy of replaced rules closes their compilers too; a run
-     *                               whose new copy was only partly made closes the sessions it made; and a run that
-     *                               fails to get a copy closes the compilers without having held one, if it was the
-     *                               last to use the rules. A fatal error from that closing reaches the run: it's
+     *                               run that gives back an extra copy, made because every kept copy was in use, a
+     *                               copy that couldn't be kept for a later run, or a copy of rules a reload or
+     *                               {@link #close()} replaced, closes that copy, and the last one to give back a copy
+     *                               of replaced rules closes their compilers too; a run whose new copy was only
+     *                               partly made closes the sessions it made; and a run that fails to get a copy
+     *                               closes the compilers without having held one, if it was the last to use the
+     *                               rules. A fatal error from that closing reaches the run: it's
      *                               thrown even when the rules ran without failing, and in place of a failure of the
-     *                               run that isn't fatal, which it carries as a suppressed exception; a fatal error of
-     *                               the run's own came first, and is thrown instead.
+     *                               run that isn't fatal, which it carries as a suppressed exception; if it can't
+     *                               carry one, as an {@link OutOfMemoryError} the JVM throws itself can't, that
+     *                               failure is logged at WARN. A fatal error of the run's own came first, and is
+     *                               thrown instead.
      *                               Every other {@link Error} from a rule, the output supplier, an output writer or
      *                               a language creating a session, including a {@link LinkageError}, is reported as
      *                               a {@code RuleExecutionException}; one from a language's check of a fact name as
