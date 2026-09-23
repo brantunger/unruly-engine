@@ -73,6 +73,13 @@ implementation("io.github.brantunger:unruly-engine:2.3.8")
     <artifactId>unruly-engine</artifactId>
     <version>2.3.8</version>
 </dependency>
+<!-- Only to test a language of your own. Declare it after unruly-engine. -->
+<dependency>
+    <groupId>io.github.brantunger</groupId>
+    <artifactId>unruly-engine-test</artifactId>
+    <version>2.3.8</version>
+    <scope>test</scope>
+</dependency>
 ```
 <!-- x-release-please-end -->
 
@@ -80,7 +87,8 @@ implementation("io.github.brantunger:unruly-engine:2.3.8")
 
 `unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/README.md),
 depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
-`unruly-engine-test`; see [Testing with the contract kit](docs/languages/custom.md#-testing-with-the-contract-kit).
+`unruly-engine-test` at the same version. With Maven, declare it after the engine, or an older kit can downgrade
+`unruly-engine-core`; see [Testing with the contract kit](docs/languages/custom.md#-testing-with-the-contract-kit).
 
 <details>
 <summary><b>On the module path</b></summary>

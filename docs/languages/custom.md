@@ -499,10 +499,47 @@ tasks.named('test') {
 }
 ```
 
+With Maven, declare `unruly-engine-core` too, and give it and the kit one version, here a property `unruly.version`
+set to the engine's version:
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.github.brantunger</groupId>
+        <artifactId>unruly-engine-core</artifactId>
+        <version>${unruly.version}</version>
+    </dependency>
+    <dependency>
+        <groupId>io.github.brantunger</groupId>
+        <artifactId>unruly-engine-test</artifactId>
+        <version>${unruly.version}</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+
+<build>
+    <plugins>
+        <plugin>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.5.4</version>
+        </plugin>
+    </plugins>
+</build>
+```
+
+> [!WARNING]
+> With Maven, when a POM doesn't name `unruly-engine-core` itself, the first of `unruly-engine` and
+> `unruly-engine-test` it declares sets core's version. An older kit declared first downgrades core, for the
+> application too, so a newer engine runs on the kit's older core.
+
+A POM that declares `unruly-engine-core`, as above, gets that version whatever the order. A POM that gets core only
+through `unruly-engine` needs one of these: declare `unruly-engine` before the kit, keep the two versions equal, or pin
+`unruly-engine-core` in `<dependencyManagement>`. Gradle takes the highest version of core, whatever the order.
+
 The kit is built with JUnit Jupiter 6, and brings `unruly-engine-core` and `junit-jupiter-api`. A Gradle build still
 needs the rest: a JUnit test engine to run the checks, the JUnit Platform launcher to start it, and
 `useJUnitPlatform()`, because a Gradle `Test` task runs JUnit 4 unless it is told otherwise, and without that setting
-the checks never run. With Maven and Surefire 3.5.4, the kit alone is enough: Surefire supplies the test engine.
+the checks never run. With Maven and Surefire 3.5.4, the block above is enough: Surefire supplies the test engine.
 
 `ExpressionLanguageContractTest` checks the promises above for any language. Extend it and supply expressions in your
 language, one method for each hook. Its seventeen checks:
@@ -626,6 +663,7 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
 | **A `close()` that throws** | The engine logs it at WARN and carries on, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw from `Session.close()`; the kit's `sessionsClosed` check fails it |
+| **An older kit declared first, with Maven** | Unless the POM declares `unruly-engine-core` itself, Maven takes core's version from the kit, so a newer `unruly-engine` runs on the older core | Declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`; see [Testing with the contract kit](#-testing-with-the-contract-kit) |
 
 ## ❓ Questions you might not think to ask
 
