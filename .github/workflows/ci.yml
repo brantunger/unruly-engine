@@ -207,9 +207,9 @@ jobs:
       - name: Run it
         run: native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
 
-  # Checks documentation and repository hygiene with Python and git, without Gradle. Each step only warns until the
-  # checks have run on a week of pull requests (continue-on-error); then they block. See
-  # docs/contributing/build-and-gates.md for running them locally.
+  # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint, without
+  # Gradle. Each step only warns until the checks have run on a week of pull requests (continue-on-error); then they
+  # block. See docs/contributing/build-and-gates.md for running them locally.
   docs-and-hygiene:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -234,6 +234,23 @@ jobs:
             exit 1
           fi
 
+      # actionlint checks the workflows, and the shell in their run blocks with the runner's shellcheck. The tarball
+      # isn't an action, so Dependabot doesn't bump it: to update, change the version and take the sha256 from the
+      # linux_amd64 line of the release's actionlint_<version>_checksums.txt.
+      - name: Workflows
+        continue-on-error: true
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$tarball"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
+          shellcheck --version   # without shellcheck, actionlint silently drops its shellcheck rule
+          "$RUNNER_TEMP/actionlint" -color
+
       # Only the pages a pull request changes: pages written before docs/contributing/style.md still have findings.
       # CHANGELOG.md is written by release-please.
       - name: Style of the changed pages
@@ -242,7 +259,8 @@ jobs:
         run: |
           pages=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- '*.md' ':!CHANGELOG.md')
           if [ -n "$pages" ]; then
-            python3 scripts/docs/check_style.py $pages
+            mapfile -t files <<< "$pages"
+            python3 scripts/docs/check_style.py "${files[@]}"
           fi
 
   # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the
