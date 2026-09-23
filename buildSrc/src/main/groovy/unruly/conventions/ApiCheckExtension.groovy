@@ -1,5 +1,6 @@
 package unruly.conventions
 
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 
@@ -31,4 +32,12 @@ abstract class ApiCheckExtension {
      * build's version is no higher than this, the check is skipped; after that, a missing baseline fails the build.
      */
     abstract Property<String> getFirstRelease()
+
+    /**
+     * The file listing the members of this artifact that the published test kit links against, one per line. When it
+     * is set, a second check, japicmpTestKitLinkage, compares only those members, and those of the excluded packages
+     * that the test kit released at the baseline's version uses, with the baseline, so a change that would give an
+     * older test kit a NoSuchMethodError fails the build.
+     */
+    abstract RegularFileProperty getTestKitLinkage()
 }

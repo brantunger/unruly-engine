@@ -7,6 +7,7 @@ import me.champeau.gradle.japicmp.JapicmpTask
 import org.cyclonedx.gradle.CyclonedxDirectTask
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import unruly.conventions.ApiCheckExtension
+import unruly.conventions.JapicmpReport
 import unruly.conventions.Jars
 
 plugins {
@@ -282,6 +283,154 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
 
 tasks.named('check') {
     dependsOn japicmp
+}
+
+// The members of an internal package that the published test kit links against, such as the core constructors
+// LanguageTestContexts calls. A user's build can pair an older test kit with a newer core, so a change to one of them
+// breaks that kit with a NoSuchMethodError, although the package is left out of the check above. This second check
+// compares only them: japicmp applies excludes before includes, so the check above can't include them, and including
+// them there would narrow it to them. The project names the file in apiCheck { testKitLinkage = ... }; its header
+// describes the format.
+//
+// The file lists what this version's kit uses. The members the kit released at the baseline's version uses, read from
+// its jar, are checked too, so deleting a line from the file doesn't stop the check on a member that kit calls. Kits
+// older than that one aren't read.
+afterEvaluate {
+    if (!apiCheck.testKitLinkage.present) {
+        return
+    }
+    def linkageFile = apiCheck.testKitLinkage.get().asFile
+    def linkageName = rootProject.relativePath(linkageFile).replace(File.separatorChar, '/' as char)
+    if (!linkageFile.isFile()) {
+        throw new GradleException("${project.name}/build.gradle names ${linkageName} as apiCheck.testKitLinkage, " +
+                "but there is no such file")
+    }
+    def linkedMembers = providers.fileContents(apiCheck.testKitLinkage).asText.map { text ->
+        def entries = []
+        text.readLines().eachWithIndex { raw, i ->
+            def line = raw.trim()
+            if (!line || line.startsWith('#')) {
+                return
+            }
+            if (!(line ==~ /[\w.$]+#[\w$]+(\([\w.$\[\],]*\))?/)) {
+                throw new GradleException("${linkageName}:${i + 1}: expected a member as japicmp names it, such as " +
+                        "'io.github.brantunger.unruly.core.EngineEvaluationContext#EngineEvaluationContext(" +
+                        "java.util.Map,java.time.Instant)', got: $line")
+            }
+            entries << line
+        }
+        entries
+    }
+
+    // The members of the packages the check above leaves out that the released kit uses. The kit is released with
+    // the same version as this artifact, so it is resolved at the baseline's version, and read once.
+    def testKitArtifact = 'unruly-engine-test'
+    def releasedKit = null
+    def releasedKitMembers = apiBaseline.zip(apiCheck.excludedPackages) { baseline, packages ->
+        if (releasedKit == null) {
+            if (baseline.skip) {
+                releasedKit = [name: testKitArtifact, version: baseline.version, members: []]
+            } else {
+                def notation = "${projectGroup}:${testKitArtifact}:${baseline.version}@jar"
+                def kit = configurations.detachedConfiguration(dependencies.create(notation))
+                kit.transitive = false
+                def jar
+                try {
+                    jar = kit.singleFile
+                } catch (Exception e) {
+                    throw new GradleException("Can't resolve ${notation} from Maven Central, the released test kit " +
+                            "whose links into ${baseline.name} the linkage check compares", e)
+                }
+                // The kit was compiled against the baseline, so its references are resolved against it.
+                releasedKit = [name   : testKitArtifact, version: baseline.version,
+                               members: Jars.membersUsed(jar, packages, baseline.archives.files) as List]
+            }
+        }
+        releasedKit
+    }
+
+    // The members compared: those the file lists and those the released kit uses, except any that an accepted break
+    // applying against the baseline names, by the member, its class or its package. An intended break is accepted as
+    // in the check above, by a line in config/japicmp/accepted-breaks.txt. It is left out of the includes rather than
+    // excluded: japicmp keeps a class whose included member is excluded, and reports it as removed from the jar that
+    // no longer has the member.
+    // An element is compared without its spaces, as the check above trims it: the linkage file's names have none.
+    def acceptedElements = acceptedBreaks.zip(apiBaselineMajor) { entries, major ->
+        entries.findAll { it.major > major }.collect { it.element.replaceAll(/\s+/, '') } as Set
+    }
+    def notAccepted = { Collection<String> entries, Set<String> accepted ->
+        entries.findAll { entry ->
+            def owner = entry.substring(0, entry.indexOf('#'))
+            !(entry in accepted || owner in accepted || owner.substring(0, owner.lastIndexOf('.')) in accepted)
+        }
+    }
+    def listedMembers = linkedMembers.zip(acceptedElements) { entries, accepted -> notAccepted(entries, accepted) }
+    def checkedMembers = linkedMembers.zip(releasedKitMembers) { entries, kit -> (entries + kit.members).unique() }
+            .zip(acceptedElements) { entries, accepted -> notAccepted(entries, accepted) }
+
+    def linkage = tasks.register('japicmpTestKitLinkage', JapicmpTask) {
+        group = 'verification'
+        description = 'Checks the members the published test kit links against with the newest release on Maven ' +
+                'Central up to this version.'
+        oldArchives.from(apiBaseline.map { baseline -> baseline.archives })
+        oldClasspath.from(apiBaseline.map { baseline -> baseline.classpath })
+        newArchives.from(tasks.named('jar'))
+        // The jar too: the linked members' classes implement the API's interfaces, which japicmp loads from here.
+        newClasspath.from(configurations.runtimeClasspath, tasks.named('jar'))
+        accessModifier = 'public'
+        onlyModified = false
+        failOnModification = true
+        failOnSourceIncompatibility = true
+        // japicmp compares every member of a kind it has no include for, so a kind with none of the members gets one
+        // that matches nothing.
+        methodIncludes = checkedMembers.map { entries -> entries.findAll { it.contains('(') } ?: ['none.None#none()'] }
+        fieldIncludes = checkedMembers.map { entries -> entries.findAll { !it.contains('(') } ?: ['none.None#none'] }
+
+        htmlOutputFile = layout.buildDirectory.file('reports/japicmp/test-kit-linkage.html')
+        txtOutputFile = layout.buildDirectory.file('reports/japicmp/test-kit-linkage.txt')
+
+        onlyIf('the artifact has a release to compare with') { task ->
+            def baseline = apiBaseline.get()
+            if (baseline.skip) {
+                task.logger.lifecycle("Skipping the test kit's linkage check: ${baseline.note}, and has no release " +
+                        "to compare with")
+            }
+            !baseline.skip
+        }
+        // Without an include, japicmp would compare every public member of the jar.
+        onlyIf('a linked member is left to compare') { task ->
+            if (checkedMembers.get().isEmpty()) {
+                task.logger.lifecycle("Skipping the test kit's linkage check: ${linkageName} lists no member that " +
+                        "config/japicmp/accepted-breaks.txt doesn't accept a break to")
+            }
+            !checkedMembers.get().isEmpty()
+        }
+
+        doFirst { task ->
+            def baseline = apiBaseline.get()
+            def kit = releasedKitMembers.get()
+            task.logger.lifecycle("Comparing the members the test kit links against, as ${linkageName} lists them " +
+                    "and as ${kit.name} ${kit.version} uses them, with ${baseline.name} ${baseline.version}" +
+                    "${baseline.note}")
+        }
+
+        // japicmp compares a line that matches no member with nothing, and passes. The report lists every member it
+        // compared, changed or not, because onlyModified is off, so a line that isn't in it fails the check: a typo,
+        // or a member that neither the baseline nor this jar has. The released kit's members aren't looked for: it
+        // was compiled against the baseline, so each of them is there.
+        doLast { task ->
+            def unmatched = JapicmpReport.unlisted(task.txtOutputFile.get().asFile.readLines(), listedMembers.get())
+            if (unmatched) {
+                throw new GradleException("${linkageName} lists members that neither ${apiBaseline.get().name} " +
+                        "${apiBaseline.get().version} nor this jar has, so nothing checks them. Fix their " +
+                        "spelling, or delete them:\n  ${unmatched.join('\n  ')}")
+            }
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn linkage
+    }
 }
 
 // A CycloneDX SBOM of each published artifact, which the release workflow attaches to the GitHub Release and covers

@@ -39,9 +39,9 @@ GraalVM native image.
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
-| 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
+| 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
-| 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version | The structural tests below |
+| 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests below |
 
 Some details behind the table:
 
@@ -104,6 +104,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | `core/EngineVisibilityTest` | `core/src/test` | The engine classes aren't public and can only be created through `RulesEngineBuilder` |
 | `ClassFileVersionTest` | `mvel/src/test` | The published classes are compiled for Java 21 |
 | `ModulePathTest` | `mvel/src/test` | The module declarations work where they take effect: on the module path, in a new JVM |
+| `test/TestKitLinkageTest` | `test-kit/src/test` | `config/japicmp/test-kit-linkage.txt` lists exactly the `core` members the test kit's classes use |
 | `TestJdkTest` | `mvel/src/test` | The tests really ran on the JDK `-PtestJdk` asked for |
 
 ## 📒 Reports
@@ -115,12 +116,14 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html` and `test.html`, and `core`'s `testFixtures.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |
 | `japicmp` | `<project>/build/reports/japicmp/report.html` and `report.txt`, for `core`, `mvel` and `test-kit` |
+| `:core:japicmpTestKitLinkage` | `core/build/reports/japicmp/test-kit-linkage.html` and `test-kit-linkage.txt` |
 | `javadoc` | `build/docs/javadoc/index.html` for the site; the console for the warnings that failed it |
 | `cyclonedxDirectBom`, which `assemble` runs | `<project>/build/reports/cyclonedx-direct/<artifact>-<version>.cdx.json`, the SBOM a release attaches, for `core`, `mvel` and `test-kit` |
 
-Every published project writes a japicmp report; [API compatibility](api-compatibility.md#-baselines) explains which
-release each one is compared with. `jacocoTestCoverageVerification` fails on the console; the HTML report from
-`jacocoTestReport` shows the uncovered lines and branches.
+Every published project writes a japicmp report, and `core` a second one for the constructors the test kit calls;
+[API compatibility](api-compatibility.md#-baselines) explains which release each one is compared with.
+`jacocoTestCoverageVerification` fails on the console; the HTML report from `jacocoTestReport` shows the uncovered
+lines and branches.
 
 ## 💾 The build cache and the configuration cache
 

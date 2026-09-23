@@ -1,0 +1,22 @@
+# The members of the internal package io.github.brantunger.unruly.core that the published test kit,
+# unruly-engine-test, links against (./gradlew :core:japicmpTestKitLinkage, which ./gradlew build runs).
+#
+# A user's build can pair an older test kit with a newer unruly-engine-core, so each of these members is API for every
+# released kit, although the package is left out of the API compatibility check. The linkage check compares these
+# members, and those that the test kit released at the baseline's version uses, read from its jar, with the baseline:
+# core's newest release on Maven Central that is no higher than the version in gradle.properties. It fails on a
+# binary- or source-incompatible change to one of them, and on a line here that matches no member, so a misspelt line
+# can't check nothing. A member added since the release passes. So to change one of them, add the new member and keep
+# the old one.
+#
+# Once the kit stops using a member, its line goes, and the released kit's jar keeps the member checked until the next
+# release becomes the baseline. After that nothing checks it, although older kits still call it. So remove such a
+# member only in a major release, with a line in accepted-breaks.txt, which is also the only way to accept a break to
+# one of these members.
+#
+# TestKitLinkageTest, in test-kit/src/test, fails unless this file lists exactly the members of the core package that
+# the test kit's classes use. Each line is one member, as japicmp names it: parameter types are fully qualified and
+# without generics, and a constructor is named after its class, as in accepted-breaks.txt.
+io.github.brantunger.unruly.core.EngineActionContext#EngineActionContext(java.util.Map,java.lang.Object,java.time.Instant)
+io.github.brantunger.unruly.core.EngineCompileContext#EngineCompileContext(java.util.Set,java.util.Set,java.lang.ClassLoader,java.lang.Class,java.util.Map,java.util.Map,boolean)
+io.github.brantunger.unruly.core.EngineEvaluationContext#EngineEvaluationContext(java.util.Map,java.time.Instant)
