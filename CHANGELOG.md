@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.4](https://github.com/brantunger/unruly-engine/compare/v2.3.3...v2.3.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* close every session and compiler when closing, keeping or making a copy fails with any Throwable, and keep the interrupt status ([#554](https://github.com/brantunger/unruly-engine/issues/554)) ([0bacfaf](https://github.com/brantunger/unruly-engine/commit/0bacfaff8d7d4527f9e32853c9471edd1497dbb8))
+
 ## [2.3.3](https://github.com/brantunger/unruly-engine/compare/v2.3.2...v2.3.3) (2026-09-23)
 
 
