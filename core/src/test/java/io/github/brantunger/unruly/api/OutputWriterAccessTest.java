@@ -39,6 +39,39 @@ class OutputWriterAccessTest {
         }
     }
 
+    /** A class that isn't public, with a public setter. */
+    static class Tagging {
+        String tag;
+
+        public void setTag(String tag) {
+            this.tag = tag;
+        }
+    }
+
+    /**
+     * A public class that inherits the setter, so the compiler gives it a bridge with the same parameter, and declares
+     * a setter of its own.
+     */
+    public static final class Tagged extends Tagging {
+        String label;
+
+        public void setLabel(String label) {
+            this.label = label;
+        }
+    }
+
+    @Test
+    @DisplayName("a public class's setter inherited from a class that isn't public is written through its bridge")
+    void inheritedFromAClassThatIsNotPublic() throws Exception {
+        Tagged output = new Tagged();
+
+        OutputWriter.beansAndMaps().set(output, "tag", "a");
+        OutputWriter.beansAndMaps().set(output, "label", "b");
+
+        assertEquals("a", output.tag);
+        assertEquals("b", output.label);
+    }
+
     @Test
     @DisplayName("a class that isn't public is written through the public interface that declares the setter")
     void throughAPublicInterface() throws Exception {
@@ -135,6 +168,38 @@ class OutputWriterAccessTest {
             }
             """;
 
+    private static final String GENERIC_IMPLEMENTATION = """
+            package com.example.impl;
+
+            public final class GenericImplementation implements com.example.api.Settable<Integer> {
+                public void setValue(Integer value) {
+                }
+            }
+            """;
+
+    private static final String COUNTING = """
+            package com.example.api;
+
+            class Counting {
+                private Integer count;
+
+                public void setCount(Integer count) {
+                    this.count = count;
+                }
+
+                public Integer getCount() {
+                    return count;
+                }
+            }
+            """;
+
+    private static final String COUNTED = """
+            package com.example.api;
+
+            public final class Counted extends Counting {
+            }
+            """;
+
     private static final String FACTORY = """
             package com.example.api;
 
@@ -156,6 +221,14 @@ class OutputWriterAccessTest {
 
                 public static Object valueOf(Object generic) {
                     return ((Generic) generic).getValue();
+                }
+
+                public static Object genericImplementation() {
+                    return new com.example.impl.GenericImplementation();
+                }
+
+                public static Object counted() {
+                    return new Counted();
                 }
             }
             """;
@@ -195,6 +268,42 @@ class OutputWriterAccessTest {
     }
 
     @Test
+    @DisplayName("on the module path, a value of another type isn't passed through the exported interface's bridge")
+    void genericInterfaceRefusesAnotherType(@TempDir Path classes) throws Exception {
+        Object output = outputs(classes, "exports com.example.api;").getMethod("generic").invoke(null);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(output, "value", "text"));
+
+        assertEquals("com.example.api.Generic has no public method setValue that accepts a java.lang.String",
+                thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("on the module path, a value of another type isn't passed through the bridge of a public class in an"
+            + " unexported package")
+    void unexportedGenericImplementationRefusesAnotherType(@TempDir Path classes) throws Exception {
+        Object output = outputs(classes, "exports com.example.api;").getMethod("genericImplementation").invoke(null);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(output, "value", "text"));
+
+        assertEquals("com.example.impl.GenericImplementation has no public method setValue that accepts a"
+                + " java.lang.String", thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("on the module path, a public class's setter inherited from a class that isn't public is written"
+            + " through its bridge")
+    void inheritedFromAClassThatIsNotPublicOnTheModulePath(@TempDir Path classes) throws Exception {
+        Object output = outputs(classes, "exports com.example.api;").getMethod("counted").invoke(null);
+
+        OutputWriter.beansAndMaps().set(output, "count", 4);
+
+        assertEquals(4, FactProperties.read(output, "count"));
+    }
+
+    @Test
     @DisplayName("on the module path, a class that isn't public in an opened package is written directly")
     void opened(@TempDir Path classes) throws Exception {
         Object output = outputs(classes, "opens com.example.api;").getMethod("hidden").invoke(null);
@@ -216,7 +325,10 @@ class OutputWriterAccessTest {
                 null, List.of(source("module-info", moduleInfo), source("com/example/api/Scored", API),
                         source("com/example/impl/Implementation", IMPLEMENTATION),
                         source("com/example/api/Hidden", HIDDEN), source("com/example/api/Settable", SETTABLE),
-                        source("com/example/api/Generic", GENERIC), source("com/example/api/Outputs", FACTORY))).call();
+                        source("com/example/api/Generic", GENERIC),
+                        source("com/example/impl/GenericImplementation", GENERIC_IMPLEMENTATION),
+                        source("com/example/api/Counting", COUNTING), source("com/example/api/Counted", COUNTED),
+                        source("com/example/api/Outputs", FACTORY))).call();
         String errors = diagnostics.getDiagnostics().stream()
                 .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
                 .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))

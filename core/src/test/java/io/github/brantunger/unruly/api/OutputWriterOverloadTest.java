@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Of an output's overloaded setters that accept a value, the default {@link OutputWriter} calls the most specific,
  * as Java would, and not the one whose parameter type's name sorts first (#503).
+ * A bridge method the compiler adds for an override takes only the types the override does (#525).
  */
 @DisplayName("the default OutputWriter calls the most specific of the overloaded setters that accept a value")
 class OutputWriterOverloadTest {
@@ -211,6 +214,82 @@ class OutputWriterOverloadTest {
         }
     }
 
+    /** A generic setter. */
+    public static class Box<T> {
+        public void setContent(T content) {
+        }
+    }
+
+    /** A generic setter overridden for an Integer, so the class also has a bridge that takes any object. */
+    public static final class IntegerBox extends Box<Integer> {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+    }
+
+    /** A generic setter overridden for an Integer, beside an overload for text. */
+    public static final class IntegerOrTextBox extends Box<Integer> {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+
+        public void setContent(String content) {
+            setter = "String";
+        }
+    }
+
+    /** A generic setter narrowed to a number. */
+    public static class NumberBox<T extends Number> extends Box<T> {
+        @Override
+        public void setContent(T content) {
+        }
+    }
+
+    /** A number setter overridden for an Integer, so the class has bridges for a number and for any object. */
+    public static final class IntegerNumberBox extends NumberBox<Integer> {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+    }
+
+    /** A generic setter overridden for an Integer, which it keeps as text through a private overload. */
+    public static final class IntegerAsTextBox extends Box<Integer> {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setContent(String.valueOf(content));
+        }
+
+        private void setContent(String content) {
+            setter = "Integer as " + content;
+        }
+    }
+
+    /** A generic setter overridden for an Integer, beside a static method of the same name for text. */
+    public static final class IntegerBesideStaticBox extends Box<Integer> {
+        static String parsed;
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+
+        public static void setContent(String content) {
+            parsed = content;
+        }
+    }
+
     private static String set(Object output, String property, Object value) throws Exception {
         OutputWriter.beansAndMaps().set(output, property, value);
         return (String) output.getClass().getDeclaredField("setter").get(output);
@@ -297,10 +376,105 @@ class OutputWriterOverloadTest {
     }
 
     @Test
+    @DisplayName("a value of another type isn't passed to an override through its bridge, which takes any object")
+    void bridgeTakesOnlyTheOverridesType() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerBox(), "content", "text"));
+
+        assertEquals(IntegerBox.class.getName() + " has no public method setContent that accepts a java.lang.String",
+                thrown.getMessage());
+        assertEquals("Integer", set(new IntegerBox(), "content", 5));
+    }
+
+    @Test
+    @DisplayName("a value of another type isn't passed to an override through either of its two bridges")
+    void twoBridges() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerNumberBox(), "content", 5L));
+
+        assertEquals(IntegerNumberBox.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.Long", thrown.getMessage());
+        assertEquals("Integer", set(new IntegerNumberBox(), "content", 1));
+    }
+
+    @Test
+    @DisplayName("an override and an overload beside it each take their own type")
+    void overrideBesideAnOverload() throws Exception {
+        assertEquals("String", set(new IntegerOrTextBox(), "content", "s"));
+        assertEquals("Integer", set(new IntegerOrTextBox(), "content", 1));
+    }
+
+    @Test
+    @DisplayName("a value that neither an override nor an overload beside it takes isn't passed through the bridge")
+    void overrideBesideAnOverloadRefusesAThirdType() {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerOrTextBox(), "content", 5L));
+
+        assertEquals(IntegerOrTextBox.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.Long", thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("a value that only a private overload beside an override takes isn't passed through the bridge")
+    void privateOverloadBesideAnOverride() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerAsTextBox(), "content", "text"));
+
+        assertEquals(IntegerAsTextBox.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.String", thrown.getMessage());
+        assertEquals("Integer as 5", set(new IntegerAsTextBox(), "content", 5));
+    }
+
+    @Test
+    @DisplayName("a value that only a static method beside an override takes isn't passed through the bridge")
+    void staticMethodBesideAnOverride() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerBesideStaticBox(), "content", "text"));
+
+        assertEquals(IntegerBesideStaticBox.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.String", thrown.getMessage());
+        assertNull(IntegerBesideStaticBox.parsed);
+        assertEquals("Integer", set(new IntegerBesideStaticBox(), "content", 5));
+    }
+
+    @Test
     @DisplayName("through the engine, each property an action returns goes to its most specific setter")
     void throughTheEngine() {
         ActionResult result = ActionResult.set(Map.of("amount", new BigDecimal("1.5"), "label", "x"));
-        ExpressionLanguage language = new ExpressionLanguage() {
+        RulesEngine<Receipt> engine = RulesEngineBuilder.<Receipt>allMatches(Receipt::new).language(returning(result))
+                .build();
+        engine.load(List.of(Rule.builder().ruleName("r").priority(1).language("fixed").condition("c").action("a")
+                .build()));
+
+        Receipt receipt = engine.run(new FactMap<>());
+
+        assertEquals("BigDecimal", receipt.amountSetter);
+        assertEquals("String", receipt.labelSetter);
+    }
+
+    @Test
+    @DisplayName("through the engine, a value of another type for an override fails the rule, as no setter accepts"
+            + " it")
+    void bridgeThroughTheEngine() {
+        ActionResult result = ActionResult.set(Map.of("content", "text"));
+        RulesEngine<IntegerBox> engine = RulesEngineBuilder.<IntegerBox>allMatches(IntegerBox::new)
+                .language(returning(result)).build();
+        engine.load(List.of(Rule.builder().ruleName("r").priority(1).language("fixed").condition("c").action("a")
+                .build()));
+
+        RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+        String reason = IntegerBox.class.getName() + " has no public method setContent that accepts a java.lang.String";
+        assertEquals("Failed to set 'content' on the output for rule 'r': " + reason, thrown.getMessage());
+        assertEquals("r", thrown.getRuleName());
+        assertEquals(ExpressionKind.ACTION, thrown.getExpressionKind());
+        assertInstanceOf(IllegalArgumentException.class, thrown.getCause());
+        assertEquals(reason, thrown.getCause().getMessage());
+    }
+
+    /** A language named {@code fixed} whose conditions are all true and whose actions all return the result. */
+    private static ExpressionLanguage returning(ActionResult result) {
+        return new ExpressionLanguage() {
             @Override
             public String name() {
                 return "fixed";
@@ -326,14 +500,6 @@ class OutputWriterOverloadTest {
                 };
             }
         };
-        RulesEngine<Receipt> engine = RulesEngineBuilder.<Receipt>allMatches(Receipt::new).language(language).build();
-        engine.load(List.of(Rule.builder().ruleName("r").priority(1).language("fixed").condition("c").action("a")
-                .build()));
-
-        Receipt receipt = engine.run(new FactMap<>());
-
-        assertEquals("BigDecimal", receipt.amountSetter);
-        assertEquals("String", receipt.labelSetter);
     }
 
     /** An output with two overloaded setters, as an engine's rules set them. */
