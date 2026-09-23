@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.5](https://github.com/brantunger/unruly-engine/compare/v2.3.4...v2.3.5) (2026-09-23)
+
+
+### Bug Fixes
+
+* fall through only to a generic setter's bridge when the most specific setter can't be reached, and let a visibility bridge take its own parameter ([#557](https://github.com/brantunger/unruly-engine/issues/557)) ([450bba1](https://github.com/brantunger/unruly-engine/commit/450bba1b26978ef257c826bd431e72dfa0ea3c43))
+
 ## [2.3.4](https://github.com/brantunger/unruly-engine/compare/v2.3.3...v2.3.4) (2026-09-23)
 
 
