@@ -401,10 +401,10 @@ new session when they do, such as a single-threaded interpreter context. A rule 
 > Only the `Session.none()` instance counts as stateless: the engine checks identity, not `equals`. A stateless
 > `new MySession()` silently turns on copies and the copy limit for every rule list that uses your language.
 
-A `newSession()` that throws or returns `null` fails the run that needed the session with a `RuleExecutionException`,
-logged at ERROR, and closes the sessions other languages already made for that copy; it happens before `beforeRun`,
-so no listener is told. A fatal error from closing them is thrown instead, with the `RuleExecutionException` in its
-`getSuppressed()` unless it can't keep one; see
+A `newSession()` that throws, even a `Throwable` that is neither an `Exception` nor an `Error`, or returns `null` fails
+the run that needed the session with a `RuleExecutionException`, logged at ERROR, and closes the sessions other
+languages already made for that copy; it happens before `beforeRun`, so no listener is told. A fatal error from closing
+them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one; see
 [A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing).
 
 A `close()` that throws is logged at WARN and the rest are still closed. Only a fatal error is rethrown, once every

@@ -66,7 +66,7 @@ first one that finds either:
 | Where the engine checks | The message ends with |
 | --- | --- |
 | Before each condition and each action | `before rule 'x'` |
-| When a condition or action returns, or throws an exception with no `Error` in its cause chain | `during rule 'x'` |
+| When a condition or action returns, or throws anything with no `Error` in its cause chain | `during rule 'x'` |
 | While the run waits for a compiled copy | `while waiting for a compiled copy of the rules: all N were in use` |
 | While the run waits for a build slot, interrupts only | `while waiting to make a compiled copy of the rules: every build slot was in use` |
 | While the run reads the engine's rules again, after a reload or `close()` closed the list it had read | `while reading the engine's rules again: the rules this run read had been closed by a reload or by close()` |
@@ -105,9 +105,12 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 - **An interrupt that a rule, listener, output supplier or language throws is put back.** When an
   `InterruptedException` is anywhere in the cause chain of what they throw, the engine sets the interrupt status again.
   A condition or action that throws it stops the run. A listener's exception is logged, and the next check stops the
-  run if a condition or action is still to come; after the last one has returned, `run()` returns with the status set.
-  An output supplier or a session that fails that way fails the run as usual, with the status set. Code that catches
-  `InterruptedException` and neither rethrows it nor restores the status hides the interrupt from the engine.
+  run if a condition or action is still to come; after the last one has returned, `run()` returns with the status set,
+  unless a later listener clears it. An output supplier or a session that fails that way fails the run as usual, not
+  as a stop: the status is set when it fails, but a listener or a language's `close()` can clear it after. Code that
+  catches `InterruptedException` and neither rethrows it nor restores the status hides the interrupt from the engine.
+  Only a run that stopped for an interrupt always throws with the status set, even if a listener or a language's
+  `close()` cleared it.
   An `InterruptedIOException` isn't treated as an interrupt.
 
 ## 🐢 What a timeout doesn't do
@@ -140,7 +143,7 @@ A [stop](glossary.md#stop) reaches `onRunError` like a failure that belongs to n
 depends on where the run stopped:
 
 - **Before a rule:** nothing for that rule, because it never started.
-- **When a condition or action returns, or throws an exception with no `Error` in its cause chain:** that rule's
+- **When a condition or action returns, or throws anything with no `Error` in its cause chain:** that rule's
   `beforeEvaluate` or `beforeExecute` is closed with `onError`, and its exception is the stop, with no rule name.
   Don't count it as a rule failure.
 - **While waiting for a copy, or reading the rules again:** `beforeRun` is sent only when that ends, then
@@ -172,7 +175,7 @@ failure, stops included.
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A bug near the deadline** | A condition or action that returns a wrong result, or throws an exception with no `Error` in its cause chain, once the run must stop is reported as a stop: no rule name, WARN, and the bug only in `getSuppressed()` | Check `getSuppressed()` before you dismiss a stop |
+| **A bug near the deadline** | A condition or action that returns a wrong result, or throws anything with no `Error` in its cause chain, once the run must stop is reported as a stop: no rule name, WARN, and the bug only in `getSuppressed()` | Check `getSuppressed()` before you dismiss a stop |
 | **An interrupted pooled thread** | The engine leaves the interrupt status set, so an executor shutting down or `Future.cancel(true)` still sees it, and every later run on that thread stops before its first rule | Call `Thread.interrupted()` after catching whatever the run threw, a stop or a rule failure, before the thread serves more work |
 | **A sleeping rule** | A timeout doesn't wake it: `Thread.sleep` or a blocking call runs to its end | Give the call its own timeout. A language can read `EvaluationContext.deadline()` |
 | **A slow listener after the last rule** | The run returns normally although it passed its deadline | Time the listener's work yourself |
@@ -221,7 +224,7 @@ returns. See [What a timeout doesn't do](#-what-a-timeout-doesnt-do).
 ### How do I tell a timeout, an interrupt and a rule bug apart?
 
 A rule failure has a `getRuleName()`. A stop has none, and its cause is a `TimeoutException` or an
-`InterruptedException`. Once the run must stop, a rule's own exception becomes a stop unless an `Error` is anywhere
+`InterruptedException`. Once the run must stop, what a rule throws becomes a stop unless an `Error` is anywhere
 in its cause chain, so look in `getSuppressed()` too. See [Quick start](#-quick-start) and
 [What stops a run](#-what-stops-a-run).
 

@@ -159,9 +159,8 @@ couldn't be kept for a later run, or a copy of rules a reload or `close()` retir
 closes the retired rules' compilers too; a run whose new copy was only partly made closes the sessions it made; and a
 run whose borrow failed while it was the last user closes the retired rules' compilers.
 
-A borrow that an interrupt or the deadline stopped then throws the fatal error, carrying the raw
-`InterruptedException` or `TimeoutException`. No listener hears of the run and no stop is logged; an interrupted thread
-stays interrupted.
+A stopped wait for a copy, or for a build slot to make one, is reported first: its WARN line, `beforeRun`, then
+`onRunError`. The fatal error carries the stop's `RuleExecutionException`; an interrupted thread stays interrupted.
 
 An `OutOfMemoryError` the JVM throws itself can't keep suppressed exceptions, so the engine logs the failure it
 replaces at WARN instead; see [Logging setup](listeners-and-logging.md#-logging-setup).

@@ -10,6 +10,9 @@ final class RunTally {
     private int evaluated;
     private int fired;
     private boolean stopped;
+    // Not for the event: whether an interrupt stopped the run, so the engine can set the thread's interrupt status
+    // again, which a listener told of the stop, or a language's close(), may have cleared.
+    private boolean interrupted;
 
     /** Counts a condition evaluated. */
     void countEvaluated() {
@@ -36,6 +39,20 @@ final class RunTally {
      */
     boolean hasStopped() {
         return stopped;
+    }
+
+    /** Records that an interrupt stopped the run, whether or not the stop reached the listeners. */
+    void markInterrupted() {
+        interrupted = true;
+    }
+
+    /**
+     * Tells whether an interrupt stopped the run, as {@link #markInterrupted()} recorded.
+     *
+     * @return {@code true} if it did
+     */
+    boolean wasInterrupted() {
+        return interrupted;
     }
 
     /**

@@ -8,11 +8,12 @@ import java.util.Map;
 /**
  * A listener interface to hook into the lifecycle of rule evaluation and execution.
  * Implement this interface to receive callbacks before and after rules are evaluated and executed.
- * Any exception thrown by a listener, including a {@link StackOverflowError}, an {@link AssertionError} or a
- * {@link LinkageError} such as {@link NoClassDefFoundError}, is caught and logged by the engine, ensuring the core
- * execution is not interrupted. A {@link VirtualMachineError} such as an {@link OutOfMemoryError} propagates out of
- * {@code run()} once every listener has received the same callback, also when it is the cause of an exception the
- * listener throws. If it came from a {@code before*} callback, the condition
+ * Anything a listener throws, including a {@link StackOverflowError}, an {@link AssertionError}, a
+ * {@link LinkageError} such as {@link NoClassDefFoundError}, or a {@link Throwable} that is neither an
+ * {@link Exception} nor an {@link Error}, is caught and logged by the engine, ensuring the core execution is not
+ * interrupted, except the fatal errors described next. A {@link VirtualMachineError} such as an
+ * {@link OutOfMemoryError} propagates out of {@code run()} once every listener has received the same callback, also
+ * when it is the cause of an exception the listener throws. If it came from a {@code before*} callback, the condition
  * or action doesn't run, and every listener first gets {@link #onError} to close that callback.
  * When {@link #onError} closes a failure that is fatal itself, whether the rule or a {@code before*} callback threw
  * that error, and a listener throws another {@link VirtualMachineError} there, the failure's own error is still the
@@ -146,7 +147,8 @@ public interface RuleListener {
      *
      * <p>
      * {@code error} is the exception that {@code run()} throws once all listeners have been notified. An
-     * {@link Error} the condition or action throws is wrapped in it; for a fatal {@link VirtualMachineError} such as
+     * {@link Error} the condition or action throws is wrapped in it, and so is a {@link Throwable} that is neither an
+     * {@link Exception} nor an {@link Error}; for a fatal {@link VirtualMachineError} such as
      * an {@link OutOfMemoryError}, {@code error} wraps it and {@code run()} rethrows the original error instead.
      * Errors found while compiling rules in {@code load()} are not reported here.
      * </p>

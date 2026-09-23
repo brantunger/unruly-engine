@@ -3,6 +3,8 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.OutputWriter;
+import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
@@ -39,12 +41,22 @@ class ClosedRulesRetryTest {
      */
     private static AbstractRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
                                                                        Duration runTimeout) {
+        return engineFindingClosedRules(closedReads, reads, runTimeout, List.of());
+    }
+
+    /**
+     * An engine like {@link #engineFindingClosedRules(int, AtomicInteger, Duration)}, whose runs go to
+     * {@code listeners}.
+     */
+    private static AbstractRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
+                                                                       Duration runTimeout,
+                                                                       List<RuleListener> listeners) {
         // A rule set no run holds a copy of, retired: retiring closes it there and then, which is the state a run
         // can find when a reload, or a close of the engine, retired the rules it had just read.
         RuleSet closedRules = new RuleSet(List.of(), Map.of(), CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
         closedRules.retire();
         EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
-                null, List.of(), List.of(), CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
+                null, List.of(), listeners, CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
                 OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
             @Override
@@ -127,6 +139,30 @@ class ClosedRulesRetryTest {
         } finally {
             Thread.interrupted();
         }
+    }
+
+    @Test
+    @DisplayName("a run interrupted while its rules are closed, whose listener clears the interrupt status, returns"
+            + " with the status set")
+    void anInterruptedRunKeepsTheStatusAListenerClears() {
+        AtomicInteger reads = new AtomicInteger();
+        AbstractRulesEngine<String> engine = engineFindingClosedRules(5, reads, null, List.of(new RuleListener() {
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                // As a listener that swallows an InterruptedException does.
+                Thread.interrupted();
+            }
+        }));
+        Thread.currentThread().interrupt();
+        boolean interrupted;
+        try {
+            assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+        } finally {
+            // Cleared for the tests after this one, whatever happened.
+            interrupted = Thread.interrupted();
+        }
+
+        assertTrue(interrupted, "the interrupt status after run()");
     }
 
     @Test
