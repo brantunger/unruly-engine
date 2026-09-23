@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.6](https://github.com/brantunger/unruly-engine/compare/v2.3.5...v2.3.6) (2026-09-23)
+
+
+### Bug Fixes
+
+* name the null argument or element in EngineConfiguration's checks, and refuse a null options language key ([#559](https://github.com/brantunger/unruly-engine/issues/559)) ([a539ec8](https://github.com/brantunger/unruly-engine/commit/a539ec86c0c7ca518289b98c53591f0e21ba4cd1))
+
 ## [2.3.5](https://github.com/brantunger/unruly-engine/compare/v2.3.4...v2.3.5) (2026-09-23)
 
 
