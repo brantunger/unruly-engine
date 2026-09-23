@@ -108,6 +108,38 @@ public final class Failures {
     }
 
     /**
+     * Chooses which of two fatal errors, from two things closed one after the other, the caller throws: the first. The
+     * other was logged when it was caught, as {@link Closing} logs every failure to close, and goes no further.
+     *
+     * @param first  The fatal error from what was closed first, or {@code null}
+     * @param second The fatal error from what was closed after it, or {@code null}
+     * @return {@code first} if there is one, else {@code second}, which may be {@code null}
+     */
+    static Error first(Error first, Error second) {
+        return first != null ? first : second;
+    }
+
+    /**
+     * Chooses what the caller throws when closing what a failure left behind threw a fatal {@link Error}: a fatal
+     * error beats any other failure, and of two fatal errors the first wins. So {@code closeFatal} replaces
+     * {@code failure} only when neither {@code failure} nor any of its causes is fatal (see {@link #fatalError}), and
+     * then carries it as a suppressed exception. A fatal error that loses was logged when it was caught, and goes no
+     * further.
+     *
+     * @param failure    What was being thrown when the closing began
+     * @param closeFatal The fatal error closing threw, or {@code null} if it threw none
+     * @return {@code closeFatal}, with {@code failure} added to its suppressed exceptions, if the caller throws it in
+     *         place of {@code failure}; otherwise {@code null}, and the caller throws {@code failure}
+     */
+    static Error fatalInsteadOf(Throwable failure, Error closeFatal) {
+        if (closeFatal == null || fatalError(failure) != null) {
+            return null;
+        }
+        closeFatal.addSuppressed(failure);
+        return closeFatal;
+    }
+
+    /**
      * Describes an exception for an error message:
      * <ul>
      *     <li>its message, or its class name if it has none (NPEs and bare RuntimeExceptions carry no message)</li>

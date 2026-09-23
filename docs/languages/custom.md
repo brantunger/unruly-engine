@@ -403,8 +403,12 @@ new session when they do, such as a single-threaded interpreter context. A rule 
 
 A `newSession()` that throws or returns `null` fails the run that needed the session with a `RuleExecutionException`,
 logged at ERROR, and closes the sessions other languages already made for that copy; it happens before `beforeRun`,
-so no listener is told. A `close()` that throws is logged at WARN and the rest are still closed; only a fatal error
-is rethrown.
+so no listener is told. A fatal error from closing them is thrown instead, with the `RuleExecutionException` in its
+`getSuppressed()`.
+
+A `close()` that throws is logged at WARN and the rest are still closed. Only a fatal error is rethrown, once every
+idle session of the rule list is closed, and its compilers too if no run still uses it; if there are several, the
+first. See [A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing).
 
 ### Warming up a session
 
@@ -418,6 +422,11 @@ the copies are still made. MVEL compiles every condition and action into the ses
 - **If it throws:** `load()` fails with a `RuleCompilationException` naming your language, logged at ERROR; the rules
   loaded before stay loaded, and the failed load's sessions and compilers are closed. A fatal error is logged and
   rethrown unchanged.
+
+A fatal error from closing a failed load's sessions and compilers wins over the load's own failure (a
+`RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), which it keeps in
+`getSuppressed()`. If the load itself failed with a fatal error, that one came first and is thrown instead, and the
+one from closing is only logged at WARN.
 
 ## 📦 Packaging
 
@@ -609,7 +618,7 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause |
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
-| **A `close()` that throws** | The engine logs it at WARN and carries on, so nothing but a fatal error reaches the application | Don't throw from `Session.close()`; the kit's `sessionsClosed` check fails it |
+| **A `close()` that throws** | The engine logs it at WARN and carries on, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw from `Session.close()`; the kit's `sessionsClosed` check fails it |
 
 ## ❓ Questions you might not think to ask
 

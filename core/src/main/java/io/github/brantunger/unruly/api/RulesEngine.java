@@ -61,7 +61,13 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
      *                               compiling or making copies, also as the cause of another exception, is logged and
-     *                               then rethrown unchanged
+     *                               then rethrown unchanged. So is one a language throws while closing a session or a
+     *                               compiler, once everything being closed has been closed: the first, if there are
+     *                               several. When a load that failed closes what it made, that error is thrown in
+     *                               place of the load's own failure, which it carries as a suppressed exception,
+     *                               unless the load failed with a fatal error, which came first and is thrown instead.
+     *                               When a reload closes the rules it replaced, it is thrown after the new rules were
+     *                               swapped in: they stay loaded, and runs use them.
      */
     void load(List<Rule> ruleList);
 
@@ -95,7 +101,10 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws NullPointerException  if the list itself is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
      *                               compiling, also as the cause of another exception, is logged and then rethrown
-     *                               unchanged
+     *                               unchanged. So is one a language throws while closing a compiler, once every
+     *                               compiler created has been closed: the first, if there are several, unless
+     *                               compiling threw a fatal error, which came first and is thrown instead. Either way
+     *                               the problems found aren't returned.
      */
     List<RuleCompilationException> validate(List<Rule> ruleList);
 
@@ -133,7 +142,16 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, wherever it
      *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
      *                               language checking a name, creating a session or closing one, or a listener), is
-     *                               rethrown unchanged, also when it arrives as the cause of another exception.
+     *                               rethrown unchanged, also when it arrives as the cause of another exception. A
+     *                               run that gives back an extra copy, made because every kept copy was in use, or a
+     *                               copy of rules a reload or {@link #close()} replaced, closes that copy, and the
+     *                               last one to give back a copy of replaced rules closes their compilers too; a run
+     *                               whose new copy was only partly made closes the sessions it made; and a run that
+     *                               fails to get a copy closes the compilers without having held one, if it was the
+     *                               last to use the rules. A fatal error from that closing reaches the run: it's
+     *                               thrown even when the rules ran without failing, and in place of a failure of the
+     *                               run that isn't fatal, which it carries as a suppressed exception; a fatal error of
+     *                               the run's own came first, and is thrown instead.
      *                               Every other {@link Error} from a rule, the output supplier, an output writer or
      *                               a language creating a session, including a {@link LinkageError}, is reported as
      *                               a {@code RuleExecutionException}; one from a language's check of a fact name as
@@ -217,7 +235,10 @@ public interface RulesEngine<O> extends AutoCloseable {
      *
      * <p>
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
-     * is rethrown unchanged. By default, this method does nothing.
+     * is rethrown unchanged once every idle session, and the compilers if no run holds a copy, has been closed: the
+     * first, if there are several. The engine is closed all the same, so closing it again does nothing. A copy a run
+     * still holds is closed when the run gives it back, and a fatal error from that reaches the run. By default, this
+     * method does nothing.
      * </p>
      */
     @Override

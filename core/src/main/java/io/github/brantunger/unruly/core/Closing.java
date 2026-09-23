@@ -10,7 +10,8 @@ import java.util.Map;
 /**
  * Closes the sessions and compilers expression languages created for a rule list. A failure to close is logged at WARN
  * and doesn't fail the run or the load that closes them; the rest are still closed. A fatal {@link Error} (see
- * {@link Failures#fatalError}) is rethrown unchanged once everything has been closed.
+ * {@link Failures#fatalError}) is returned unchanged once everything has been closed, for the caller to throw once it
+ * has closed the rest of what it closes: the first, if several were thrown.
  */
 final class Closing {
 
@@ -23,21 +24,23 @@ final class Closing {
      * Closes the sessions of one copy of the rules.
      *
      * @param sessions The sessions by language name
+     * @return The first fatal {@link Error} a session threw, or {@code null} if none did
      */
-    static void sessions(Map<String, Session> sessions) {
-        closeAll(sessions, "a session");
+    static Error sessions(Map<String, Session> sessions) {
+        return closeAll(sessions, "a session");
     }
 
     /**
      * Closes the compilers of a rule list.
      *
      * @param compilers The compilers by language name
+     * @return The first fatal {@link Error} a compiler threw, or {@code null} if none did
      */
-    static void compilers(Map<String, ExpressionCompiler> compilers) {
-        closeAll(compilers, "its compiler");
+    static Error compilers(Map<String, ExpressionCompiler> compilers) {
+        return closeAll(compilers, "its compiler");
     }
 
-    private static void closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
+    private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
         Error fatal = null;
         for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
             try {
@@ -51,6 +54,6 @@ final class Closing {
                 }
             }
         }
-        Failures.throwIfPresent(fatal);
+        return fatal;
     }
 }
