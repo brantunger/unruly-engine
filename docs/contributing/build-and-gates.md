@@ -34,9 +34,9 @@ GraalVM native image.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite, on the class path, in two source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `benchmarks/src/test`, their `build.gradle` files, and each library test source set's `junit-platform.properties` |
+| 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their `build.gradle` files, and `core/src/testFixtures/resources/junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: UTF-8, lines of at most 120 columns, no tabs, a final newline, `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
-| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
@@ -59,7 +59,7 @@ Some details behind the table:
 Checkstyle doesn't read. `FileTabCharacter` fails a tab, and `NewlineAtEndOfFile` a file without a final newline.
 Checkstyle reads every file as UTF-8.
 
-**PMD's multithreading** rule set runs without five of its rules. The ruleset says why next to each:
+**PMD's multithreading** rule set runs without five of its rules. `config/pmd/ruleset.xml` says why next to each:
 
 | Excluded rule | Why |
 | --- | --- |
@@ -80,8 +80,8 @@ logs `Requesting stop of task ':core:test' as it has exceeded its configured tim
 fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML
 report, where the test that never returned shows as skipped.
 
-A test class that waits on threads, latches or deadlines carries a class-level `@Timeout`. `junit-platform.properties`,
-in `core/src/test/resources` and `mvel/src/test/resources`, sets
+A test class that waits on threads, latches or deadlines carries a class-level `@Timeout`. The test fixtures'
+`junit-platform.properties`, which the tests of `core`, `mvel` and `test-kit` share, sets
 `junit.jupiter.execution.timeout.thread.mode.default = separate_thread`, so JUnit runs the test body on a thread of its
 own and aborts it at the deadline, instead of reporting the deadline once the test returns.
 
@@ -110,7 +110,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 
 | Task | Report |
 | --- | --- |
-| `:core:test`, `:mvel:test`, `:benchmarks:test` | `core/build/reports/tests/test/index.html`, `mvel/build/reports/tests/test/index.html` and `benchmarks/build/reports/tests/test/index.html` |
+| `:core:test`, `:mvel:test`, `:test-kit:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html`, for `core`, `mvel`, `test-kit` and `benchmarks` |
 | `jacocoTestReport`, `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html`, the aggregate of every artifact; `build/reports/jacoco/report.xml` for tools |
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html` and `test.html`, and `core`'s `testFixtures.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |
@@ -140,9 +140,9 @@ so a second build reuses task outputs, including those of another branch, and th
 | Job | Runs | Why |
 | --- | --- | --- |
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
-| JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
+| JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
-| `docs-and-hygiene` on `ubuntu-latest` | `config/docs/check_docs.py`, a line-ending check, and `config/docs/check_style.py` on the pages a pull request changes | Broken links and anchors, joined table rows, files stored with CRLF, and [STYLE.md](../STYLE.md)'s mechanical rules |
+| `docs-and-hygiene` on `ubuntu-latest` | `scripts/docs/check_docs.py`, a line-ending check, and `scripts/docs/check_style.py` on the pages a pull request changes | Broken links and anchors, joined table rows, files stored with CRLF, and the [style guide](style.md)'s mechanical rules |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Fails when `build`, `native-image` or `docs-and-hygiene` failed or was cancelled; a skipped job counts as passed, and `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
@@ -156,12 +156,12 @@ upload. It isn't a queue, though. GitHub keeps only one waiting run per branch, 
 an earlier one is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
 
 `docs-and-hygiene` only warns for now: a failed step shows as an annotation, and the job stays green. Later, its
-checks will block. A page written before STYLE.md may have findings in lines you didn't touch. Run the checks
+checks will block. A page written before the style guide may have findings in lines you didn't touch. Run the checks
 before you push, from the repository root, with Python 3:
 
 ```bash
-python config/docs/check_docs.py
-python config/docs/check_style.py docs/facts.md   # the pages you changed
+python scripts/docs/check_docs.py
+python scripts/docs/check_style.py docs/facts.md   # the pages you changed
 git ls-files --eol | grep -E '^i/(crlf|mixed)'   # lists files stored with CRLF; prints nothing when all is well
 ```
 
@@ -190,7 +190,7 @@ and a missing one fails the build naming the version. The build passes `unruly.t
 `TestJdkTest` fails if the JVM running them doesn't match.
 
 ```bash
-./gradlew :core:test :mvel:test -PtestJdk=25
+./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25
 ```
 
 ## 🔕 PMD suppressions
@@ -209,8 +209,8 @@ on the line above says why. That is the shape every existing suppression has. Fo
 
 The annotation names one rule with its `PMD.` prefix and sits on the smallest scope that has the finding: a method
 or field, or, for `Rule.RuleBuilder`, the class whose every setter triggers `AvoidFieldNameMatchingMethodName`.
-Excluding a rule for every project is done once, in `buildSrc/src/main/groovy/unruly.java-conventions.gradle`,
-with a comment, as `AvoidCatchingGenericException` is.
+Excluding a rule for every project is done once, in `config/pmd/ruleset.xml`, with a comment, as
+`AvoidCatchingGenericException` is.
 
 ## ☕ Javadoc and doclint
 

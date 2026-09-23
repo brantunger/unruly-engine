@@ -121,10 +121,11 @@ jobs:
         run: ./gradlew build jacocoTestReport
 
       # Compilation always uses the Java 21 toolchain, so only the tests depend on this JDK; -PtestJdk runs them on it.
-      # Both test tasks: core has its own tests, and mvel the ones that need MVEL.
+      # All three test tasks: core has its own tests, mvel the ones that need MVEL, the kit's MVEL tests among them,
+      # and test-kit the kit's other tests.
       - name: Test on JDK ${{ matrix.java-version }}
         if: matrix.java-version != '21'
-        run: ./gradlew :core:test :mvel:test -PtestJdk=${{ matrix.java-version }}
+        run: ./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=${{ matrix.java-version }}
 
       # Artifact names must be unique within a run, and three jobs run on JDK 21, so the OS is part of each name.
       - name: Upload API Compatibility Report
@@ -150,6 +151,7 @@ jobs:
             build/reports/jacoco/
             core/build/test-results/test/
             mvel/build/test-results/test/
+            test-kit/build/test-results/test/
 
       # Codecov gets one report per run, from Linux, and a failed upload fails the job. The upload authenticates
       # with the job's OIDC token, which GitHub doesn't issue to a pull request from a fork or to any run Dependabot
@@ -219,7 +221,7 @@ jobs:
 
       - name: Links, anchors and table rows
         continue-on-error: true
-        run: python3 config/docs/check_docs.py
+        run: python3 scripts/docs/check_docs.py
 
       # Every text file is stored with LF (.gitattributes); a file committed with CRLF, or with both, shows here.
       - name: Line endings
@@ -232,7 +234,7 @@ jobs:
             exit 1
           fi
 
-      # Only the pages a pull request changes: pages written before docs/STYLE.md still have findings.
+      # Only the pages a pull request changes: pages written before docs/contributing/style.md still have findings.
       # CHANGELOG.md is written by release-please.
       - name: Style of the changed pages
         if: github.event_name == 'pull_request'
@@ -240,7 +242,7 @@ jobs:
         run: |
           pages=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- '*.md' ':!CHANGELOG.md')
           if [ -n "$pages" ]; then
-            python3 config/docs/check_style.py $pages
+            python3 scripts/docs/check_style.py $pages
           fi
 
   # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the

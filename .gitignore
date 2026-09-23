@@ -29,14 +29,12 @@ gradle-app.setting
 *.tar.gz
 *.rar
 
-# Eclipse / STS
+# Eclipse
 .apt_generated
 .classpath
 .factorypath
 .project
 .settings/
-.springBeans
-.sts4-cache
 bin/
 
 # IntelliJ IDEA
@@ -55,6 +53,3 @@ out/
 
 # VS Code
 .vscode/
-
-# Misc
-HELP.md

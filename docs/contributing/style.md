@@ -5,10 +5,10 @@ The rules every page in this repository follows: its shape, emojis, callouts, di
 **Who it's for:** contributors writing or reviewing documentation.
 **You'll be able to:** start a new page from the template, choose the right callout, emoji and diagram, and check a
 page before you open a pull request.
-**Before you start:** nothing. [CONTRIBUTING.md](../CONTRIBUTING.md#-documentation) says where each kind of
+**Before you start:** nothing. [CONTRIBUTING.md](../../CONTRIBUTING.md#-documentation) says where each kind of
 documentation lives.
 
-[← Documentation index](README.md)
+[← Documentation index](../README.md)
 
 - [Page template](#-page-template)
 - [Writing](#-writing)
@@ -74,8 +74,8 @@ documentation lives.
 - One idea per paragraph. A paragraph or list longer than about 90 words gets split, or its items become H3s.
 - Hard-wrap prose at 120 characters. Don't wrap table rows.
 - The guides describe the engine, whatever the expression language. Start a statement that is only true of MVEL with
-  "In MVEL, …", or put it in [languages/mvel.md](languages/mvel.md).
-- Use one name for each idea, the one the [glossary](glossary.md) uses: **match policy** (not "engine type" or "hit
+  "In MVEL, …", or put it in [languages/mvel.md](../languages/mvel.md).
+- Use one name for each idea, the one the [glossary](../glossary.md) uses: **match policy** (not "engine type" or "hit
   policy"; "first-match engine" and "all-matches engine" are fine), **output supplier** (not "output factory"),
   **rule list**, **run**, **compiled copy**, **session**.
 - Say what happens, not what "should" happen. When the engine doesn't guarantee something, say that.
@@ -216,7 +216,7 @@ flowchart TD
 - Use relative links to pages and anchors, and check the anchors after renaming a heading. GitHub lowercases the
   heading, turns spaces into hyphens and drops emojis and most punctuation. A heading that starts with an emoji keeps
   the space after it as a leading hyphen: `## 🚀 Quick start` is `#-quick-start`.
-- Link a term to the [glossary](glossary.md) the first time a page uses it, and at most once for each section.
+- Link a term to the [glossary](../glossary.md) the first time a page uses it, and at most once for each section.
 - A glossary entry defines a term in a sentence or two and links to the page that owns it. It never holds a rule that
   isn't stated on that page.
 
@@ -250,7 +250,7 @@ Yes. An all-matches run isn't atomic. See [Choosing an engine](../README.md#choo
 - `@see` links point to the guide that owns the type's topic. The contract belongs in the Javadoc; the reasons and the
   worked cases belong in the guide.
 - `@throws` lists every exception the method throws, in the words of the guide's
-  [Exceptions by method](error-handling.md#-exceptions-by-method) table. That table owns the full list, and the
+  [Exceptions by method](../error-handling.md#-exceptions-by-method) table. That table owns the full list, and the
   Javadoc owns each method's part of it.
 - Use `{@snippet :}` for examples.
 - Javadoc in `unruly-engine-core` names MVEL only as an example, as in "a language such as MVEL".

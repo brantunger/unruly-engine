@@ -1,7 +1,7 @@
 plugins {
     id 'unruly.library'
-    // core's tests share fixtures with mvel's: the tests that need MVEL stay there, and both source sets use the
-    // same engines, log capture and test languages.
+    // core's tests share fixtures with mvel's and test-kit's: the tests that need MVEL or the test kit are there, and
+    // all three source sets use the same engines, log capture, test languages and junit-platform.properties.
     id 'java-test-fixtures'
 }
 

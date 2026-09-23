@@ -78,11 +78,11 @@ cd unruly-engine
 | The full gate | `./gradlew clean build` | `./gradlew clean build` | `gradlew clean build` |
 | One test class | `./gradlew :mvel:test --tests '*StatefulSemanticsTest*'` | `./gradlew :mvel:test --tests '*StatefulSemanticsTest*'` | `gradlew :mvel:test --tests "*StatefulSemanticsTest*"` |
 | The coverage report | `./gradlew jacocoTestReport` | `./gradlew jacocoTestReport` | `gradlew jacocoTestReport` |
-| The tests on JDK 25 | `./gradlew :core:test :mvel:test -PtestJdk=25` | `./gradlew :core:test :mvel:test -PtestJdk=25` | `gradlew :core:test :mvel:test -PtestJdk=25` |
+| The tests on JDK 25 | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | `gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` |
 
-`:core:test` and `:mvel:test` are separate tasks, so `--tests` has to name a class the project holds, or Gradle
-reports `No tests found for given includes`. [Where things live](#-where-things-live) says which project a test
-belongs to; an unqualified `./gradlew test` runs both, and the benchmarks' workload test with them.
+`:core:test`, `:mvel:test` and `:test-kit:test` are separate tasks, so `--tests` has to name a class the project
+holds, or Gradle reports `No tests found for given includes`. [Where things live](#-where-things-live) says which
+project a test belongs to; an unqualified `./gradlew test` runs all three, and the benchmarks' workload test with them.
 
 > [!WARNING]
 > In cmd.exe, single quotes aren't quotes: `--tests '*Foo*'` passes them to Gradle, which then reports
@@ -92,9 +92,9 @@ belongs to; an unqualified `./gradlew test` runs both, and the benchmarks' workl
 
 | Project | Publishes | Contains |
 | --- | --- | --- |
-| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need no MVEL |
-| `mvel` | `unruly-engine` | The MVEL language, the tests that need MVEL or the test kit, and the tests that check the whole build |
-| `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts` |
+| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need neither MVEL nor the test kit |
+| `mvel` | `unruly-engine` | The MVEL language, the tests that need MVEL, and the tests that check the whole build |
+| `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts`, and the tests that use them without MVEL |
 | `benchmarks` | — | JMH benchmarks; not published. The build checks their sources and asserts the shape of their workload, but only `jmh` measures anything |
 | `native-smoke` | — | An application CI builds into a GraalVM native image and runs; not published |
 
@@ -102,8 +102,11 @@ Settings shared by the projects are in the convention plugins in `buildSrc/src/m
 internal: its module exports it only to the test kit's module, and a class in it is public only where the builder
 or the test kit needs it.
 
-Where does my test go? The library has two test source sets, `core/src/test` and `mvel/src/test`, and the line
-between them is whether the test needs MVEL. A `core` test that runs a rule names a language of its own:
+Where does my test go? The library has three test source sets. The line between `core/src/test` and
+`mvel/src/test` is whether the test needs MVEL, and `test-kit/src/test` holds the tests that use the test kit but
+not MVEL.
+
+A test in `core` or `test-kit` that runs a rule names a language of its own:
 `core/src/testFixtures` has `ToyExpressionLanguage`, which evaluates a tiny syntax, and `StubExpressionLanguage`,
 whose rules always match and whose actions are Java. An engine built with no language throws `The engine has no
 expression language`. The paths below are relative to `java/io/github/brantunger/unruly/` in the source set named.
@@ -115,9 +118,9 @@ expression language`. The paths below are relative to `java/io/github/brantunger
 | What the engine does with a rule, whatever language it is written in | `core/src/test`, the same package | `RulesEngineBuilder.language()` gives the engine the toy or stub language, so `core` can load and run rules |
 | Anything only MVEL does: its expression syntax, its compile errors, its fact-name rules, or its being the default | `mvel/src/test`, the same package | The toy and stub languages can't reproduce it, so moving the test would delete the coverage |
 | The MVEL language | `mvel/src/test`, under `mvel/` | Everything that is only true of MVEL stays in the `mvel` package |
-| The test kit | `mvel/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test | `test-kit` depends on `core`, so a `core` test can't depend on the kit |
-| What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` and for a toy language through `api/language/ToyExpressionLanguageContractTest` |
-| A helper both source sets need | `core/src/testFixtures`, the same package | `mvel` gets it with `testImplementation testFixtures(project(':core'))`, so it can't drift into two copies |
+| The test kit | `test-kit/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test's checks | These tests use `core`'s toy and stub languages, never MVEL, and a case that needs MVEL stays in `mvel/src/test`, as `test/LanguageTestContextsMvelTest` does. They can't go in `core`, because `test-kit` depends on `core` |
+| What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` in `mvel/src/test`, and for a toy language through `api/language/ToyExpressionLanguageContractTest` in `test-kit/src/test` |
+| A helper more than one source set needs | `core/src/testFixtures`, the same package | `core`'s tests see it, and `mvel` and `test-kit` get it with `testImplementation testFixtures(project(':core'))`, so it can't drift into copies |
 | Module-path behaviour | A sample application under `mvel/src/test/resources/module-path/` | `ModulePathTest` compiles each one against the built jars and runs it in a new JVM |
 
 ## 🧪 Prove your test fails first
@@ -134,7 +137,8 @@ cp mvel/src/test/java/io/github/brantunger/unruly/core/NullPriorityTest.java \
 git worktree remove --force ../unruly-main
 ```
 
-A test in `core/src/test` is copied to the same path under `core/` instead, and run with `:core:test`.
+A test in `core/src/test` or `test-kit/src/test` is copied to the same path under its own project instead, and run
+with `:core:test` or `:test-kit:test`.
 
 Expect `FAILED`, and name the failing assertion in the PR description. A test that uses API your PR adds fails to
 compile on `main` instead; say so in the PR. On Windows, delete the worktree's `build` and `.gradle` directories
@@ -147,9 +151,9 @@ on JDK 25, and checks the PR title.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite | `core/src/test`, `mvel/src/test` and `benchmarks/src/test` |
+| 🧪 **Tests** | The JUnit suite | `core/src/test`, `mvel/src/test`, `test-kit/src/test` and `benchmarks/src/test` |
 | 📏 **Checkstyle** | Main and test sources: lines of at most 120 columns, no tabs, a final newline, braces, no star or unused imports | `config/checkstyle/checkstyle.xml` |
-| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt` |
@@ -181,8 +185,8 @@ check; maintainers merge when CI and the title check are green. The reports, cac
 
 | Failing task or message | Where the report is | Usual fix |
 | --- | --- | --- |
-| `:core:test`, `:mvel:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
-| `Timeout has been exceeded` on `:core:test`, `:mvel:test` or `:benchmarks:test` | The console, and `<project>/build/reports/tests/test/index.html` | A test never returned, and the task's 10-minute timeout stopped it; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
+| `:core:test`, `:mvel:test`, `:test-kit:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html` | Read the failed test's assertion; the structural tests below have their own rows |
+| `Timeout has been exceeded` on `:core:test`, `:mvel:test`, `:test-kit:test` or `:benchmarks:test` | The console, and `<project>/build/reports/tests/test/index.html` | A test never returned, and the task's 10-minute timeout stopped it; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 | `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html` | Run `./gradlew jacocoTestReport`, open the report, and cover the red lines and yellow branches |
 | `pmdMain` | `<project>/build/reports/pmd/main.html` | Fix the finding; suppress only as [Build and gates](docs/contributing/build-and-gates.md#-pmd-suppressions) shows. Tests are never checked |
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html`, `test.html`, and `core`'s `testFixtures.html` | Wrap lines over 120 columns, replace tabs with spaces, end the file with a newline, brace every block, drop star and unused imports |
@@ -245,9 +249,9 @@ caught before it can silently skip a release.
   [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for all the
   modules. `./gradlew clean build` generates it too, and fails on any warning.
 
-When writing docs, follow the [docs style guide](docs/STYLE.md): the page template, emojis, callouts, diagrams,
-examples and a checklist to run before you open a pull request. Its [Javadoc](docs/STYLE.md#-javadoc) section
-lists the Javadoc rules:
+When writing docs, follow the [docs style guide](docs/contributing/style.md): the page template, emojis, callouts,
+diagrams, examples and a checklist to run before you open a pull request. Its
+[Javadoc](docs/contributing/style.md#-javadoc) section lists the Javadoc rules:
 
 - A class's Javadoc opens with one sentence of purpose, then, only where they apply and in this order: who
   implements it, which threads call it, nullness beyond `@NullMarked`, and `@see` links to the guide that owns the

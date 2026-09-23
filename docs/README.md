@@ -69,5 +69,5 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 
 For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [API compatibility](contributing/api-compatibility.md) ·
 [Build and gates](contributing/build-and-gates.md) ·
-[Dependency verification](contributing/dependency-verification.md) · [Docs style guide](STYLE.md) ·
+[Dependency verification](contributing/dependency-verification.md) · [Docs style guide](contributing/style.md) ·
 [RELEASING.md](../RELEASING.md) · [SECURITY.md](../SECURITY.md) · [Code of Conduct](../CODE_OF_CONDUCT.md)

@@ -1,8 +1,8 @@
-# The mechanical checks from docs/STYLE.md, for the pages a pull request changes.
-# Usage: python config/docs/check_style.py <page.md>...  (from the repository root)
+# The mechanical checks from docs/contributing/style.md, for the pages a pull request changes.
+# Usage: python scripts/docs/check_style.py <page.md>...  (from the repository root)
 # Reports: more than one callout under an H2, or two in a row; a paragraph or list over 90 words; a line over 120
-# characters outside tables and callouts; a flowchart classDef that differs from STYLE.md's palette. Prints each
-# page's word count too (STYLE.md: aim for 1,500, split past 2,500). Exit code 1 when anything is reported.
+# characters outside tables and callouts; a flowchart classDef that differs from style.md's palette. Prints each
+# page's word count too (style.md: aim for 1,500, split past 2,500). Exit code 1 when anything is reported.
 import io
 import os
 import re
@@ -44,11 +44,11 @@ for page in sys.argv[1:]:
         if inside:
             m = re.match(r'\s*classDef\s+(\w+)\s+(.*\S)', line)
             if m and m.group(1) in PALETTE and m.group(2) != PALETTE[m.group(1)]:
-                report(page, i, f'classDef {m.group(1)} differs from the palette in docs/STYLE.md')
+                report(page, i, f'classDef {m.group(1)} differs from the palette in docs/contributing/style.md')
             continue
         if line.strip() == '' or line.startswith(('|', '#')):
             if block_words > 90:
-                report(page, block_start, f'a {block_words}-word paragraph or list (STYLE.md: about 90 at most)')
+                report(page, block_start, f'a {block_words}-word paragraph or list (style.md: about 90 at most)')
             block_start, block_words = None, 0
         else:
             block_start = block_start or i
@@ -69,7 +69,7 @@ for page in sys.argv[1:]:
             report(page, i, f'{len(line)} characters (the limit is 120 outside tables and callouts)')
     for h, (n, line) in callouts.items():
         if n > 1:
-            report(page, line, f'{n} callouts under {h} (STYLE.md: one at most)')
+            report(page, line, f'{n} callouts under {h} (style.md: one at most)')
     prose = re.sub(r'```.*?```', '', text, flags=re.S)
     print(f'{page}: {len(prose.split())} words of prose')
 sys.exit(1 if problems else 0)
