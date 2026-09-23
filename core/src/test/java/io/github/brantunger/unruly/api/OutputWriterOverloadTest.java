@@ -16,15 +16,19 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Of an output's overloaded setters that accept a value, the default {@link OutputWriter} calls the most specific,
  * as Java would, and not the one whose parameter type's name sorts first (#503).
- * A bridge method the compiler adds for an override takes only the types the override does (#525).
+ * A bridge method the compiler adds for an override takes only the types the override does (#525), also where the
+ * class inherits the override (#549). A bridge that makes a setter of a class that isn't public callable takes what
+ * that setter does (#555).
  */
 @DisplayName("the default OutputWriter calls the most specific of the overloaded setters that accept a value")
 class OutputWriterOverloadTest {
@@ -261,6 +265,20 @@ class OutputWriterOverloadTest {
         }
     }
 
+    /** A number setter overridden for an Integer, beside an overload for text, which isn't a number. */
+    public static final class IntegerNumberOrTextBox extends NumberBox<Integer> {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+
+        public void setContent(String content) {
+            setter = "String";
+        }
+    }
+
     /** A generic setter overridden for an Integer, which it keeps as text through a private overload. */
     public static final class IntegerAsTextBox extends Box<Integer> {
         String setter;
@@ -287,6 +305,296 @@ class OutputWriterOverloadTest {
 
         public static void setContent(String content) {
             parsed = content;
+        }
+    }
+
+    /** A generic setter on an interface. */
+    public interface Holder<T> {
+        void setContent(T content);
+    }
+
+    /** A setter for an Integer. */
+    public static class IntegerSetter {
+        String setter;
+
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+    }
+
+    /** A class that inherits the generic setter's implementation, so it has a bridge but no override of its own. */
+    public static final class InheritedIntegerHolder extends IntegerSetter implements Holder<Integer> {
+    }
+
+    /** A setter for an Integer, beside a protected, a static and a private method of the same name for other types. */
+    public static class IntegerBesideOthers {
+        static Long parsed;
+        String setter;
+
+        public void setContent(Integer content) {
+            setContent(content.doubleValue());
+        }
+
+        protected void setContent(String content) {
+            setter = "String";
+        }
+
+        public static void setContent(Long content) {
+            parsed = content;
+        }
+
+        private void setContent(Double content) {
+            setter = "Integer as " + content;
+        }
+    }
+
+    /** A class that inherits the generic setter's implementation and the methods beside it. */
+    public static final class InheritedBesideOthersHolder extends IntegerBesideOthers implements Holder<Integer> {
+    }
+
+    /** The generic setter overridden in an interface, so the interface has the bridge. */
+    public interface IntegerHolder extends Holder<Integer> {
+        @Override
+        default void setContent(Integer content) {
+            record("Integer");
+        }
+
+        void record(String setter);
+    }
+
+    /** A class that takes the generic setter's override, and its bridge, from an interface. */
+    public static final class DefaultIntegerHolder implements IntegerHolder {
+        String setter;
+
+        @Override
+        public void record(String setter) {
+            this.setter = setter;
+        }
+    }
+
+    /** A class that implements the generic interface but leaves its setter to a subclass. */
+    public abstract static class PartialHolder implements Holder<Integer> {
+    }
+
+    /** The generic setter overridden in a subclass of a class that inherits it from the interface. */
+    public static final class LateIntegerHolder extends PartialHolder {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+    }
+
+    /** A setter for text. */
+    public static class TextNote {
+        String setter;
+
+        public void setNote(String note) {
+            setter = "TextNote.setNote(String)";
+        }
+    }
+
+    /** Not public: its public setter is callable through a public subclass only by the bridge javac adds there. */
+    static class AnyNote extends TextNote {
+        public void setNote(Object note) {
+            setter = "AnyNote.setNote(Object)";
+        }
+    }
+
+    /** A public class that inherits a setter from a class that isn't public, beside a narrower one it inherits. */
+    public static final class VisibleNote extends AnyNote {
+    }
+
+    /** Not public: its public setter is callable through a public subclass only by the bridge javac adds there. */
+    static class HiddenSetter {
+        String setter;
+
+        public void setX(Object x) {
+            setter = "Hidden.Object";
+        }
+    }
+
+    /** A public class with a narrower overload of the setter it inherits from a class that isn't public. */
+    public static final class VisibleSetter extends HiddenSetter {
+        public void setX(String x) {
+            setter = "Visible.String";
+        }
+    }
+
+    /** Not public, with a setter declared with a type variable. */
+    abstract static class TypedNote<T> {
+        String setter;
+
+        public void setNote(T note) {
+            setter = "TypedNote.setNote(T)";
+        }
+    }
+
+    /** A public class that inherits that setter for text, through a bridge that takes any object. */
+    public static final class TextTypedNote extends TypedNote<String> {
+    }
+
+    /** A public class that inherits that setter raw, through a bridge that takes any object. */
+    @SuppressWarnings("rawtypes")
+    public static final class RawTypedNote extends TypedNote {
+    }
+
+    /** Not public, with a setter declared with a type variable bounded by a character sequence. */
+    abstract static class CharsNote<T extends CharSequence> {
+        String setter;
+
+        public void setNote(T note) {
+            setter = "CharsNote.setNote(T)";
+        }
+    }
+
+    /** A public class that inherits that setter for text, through a bridge that takes a character sequence. */
+    public static final class TextCharsNote extends CharsNote<String> {
+    }
+
+    /** Not public, with a generic setter method. */
+    static class AnyTypeNote {
+        String setter;
+
+        public <U> void setNote(U note) {
+            setter = "AnyTypeNote.setNote(U)";
+        }
+    }
+
+    /** A public class that inherits that setter, through a bridge that takes any object. */
+    public static final class VisibleAnyTypeNote extends AnyTypeNote {
+    }
+
+    /** A setter for an array of a type variable. */
+    public abstract static class TypedArray<T> {
+        String setter;
+
+        public abstract void setItems(T[] items);
+    }
+
+    /** That setter overridden for an array of text, so the class also has a bridge that takes any array of objects. */
+    public static final class TextArray extends TypedArray<String> {
+        @Override
+        public void setItems(String[] items) {
+            setter = "String[]";
+        }
+    }
+
+    /** A setter for an array list. */
+    public static class ArrayListNote {
+        String setter;
+
+        public void setList(ArrayList<?> list) {
+            setter = "ArrayListNote.setList(ArrayList)";
+        }
+    }
+
+    /** Not public, with a setter for a list of text, which a public subclass inherits through a bridge. */
+    static class ListNote extends ArrayListNote {
+        public void setList(List<String> list) {
+            setter = "ListNote.setList(List)";
+        }
+    }
+
+    /** A public class that inherits the setter for a list, beside the narrower one for an array list. */
+    public static final class VisibleListNote extends ListNote {
+    }
+
+    /** A generic setter's override, beside a supplier's method, which has a bridge with no parameter. */
+    public static final class SuppliedHolder implements Holder<String>, Supplier<String> {
+        String setter;
+
+        @Override
+        public void setContent(String content) {
+            setter = "String";
+        }
+
+        @Override
+        public String get() {
+            return "";
+        }
+    }
+
+    /** A generic setter's override, beside a copy method with a narrower return type, which has a bridge. */
+    public static final class CloneableHolder implements Holder<String>, Cloneable {
+        String setter;
+
+        @Override
+        public void setContent(String content) {
+            setter = "String";
+        }
+
+        @Override
+        public CloneableHolder clone() {
+            try {
+                return (CloneableHolder) super.clone();
+            } catch (CloneNotSupportedException e) {
+                throw new AssertionError(e);
+            }
+        }
+    }
+
+    /** A method with no parameter. */
+    public static class SelfBase {
+        public Object getSelf() {
+            return this;
+        }
+    }
+
+    /** A generic setter's override, beside an override of that method with a narrower return type. */
+    public static final class SelfHolder extends SelfBase implements Holder<String> {
+        String setter;
+
+        @Override
+        public void setContent(String content) {
+            setter = "String";
+        }
+
+        @Override
+        public SelfHolder getSelf() {
+            return this;
+        }
+    }
+
+    /** A method with no parameter, of a setter's name. */
+    public static class NamesakeBase {
+        public Object setContent() {
+            return null;
+        }
+    }
+
+    /** A generic setter's override, beside a namesake with no parameter and a narrower return type, and its bridge. */
+    public static final class NamesakeHolder extends NamesakeBase implements Holder<String> {
+        String setter;
+
+        @Override
+        public void setContent(String content) {
+            setter = "String";
+        }
+
+        @Override
+        public String setContent() {
+            return setter;
+        }
+    }
+
+    /** A setter on an interface for any object. */
+    public interface Labelled {
+        void setLabel(Object label);
+    }
+
+    /** The interface's setter, beside one of the class's own for text. */
+    public static final class LabelledLabels implements Labelled {
+        String setter;
+
+        @Override
+        public void setLabel(Object label) {
+            setter = "Object";
+        }
+
+        public void setLabel(String label) {
+            setter = "String";
         }
     }
 
@@ -415,6 +723,19 @@ class OutputWriterOverloadTest {
     }
 
     @Test
+    @DisplayName("an override and an overload beside it each take their own type, and neither of the override's two"
+            + " bridges takes a third")
+    void twoBridgesBesideAnOverload() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerNumberOrTextBox(), "content", 5L));
+
+        assertEquals(IntegerNumberOrTextBox.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.Long", thrown.getMessage());
+        assertEquals("String", set(new IntegerNumberOrTextBox(), "content", "s"));
+        assertEquals("Integer", set(new IntegerNumberOrTextBox(), "content", 1));
+    }
+
+    @Test
     @DisplayName("a value that only a private overload beside an override takes isn't passed through the bridge")
     void privateOverloadBesideAnOverride() throws Exception {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
@@ -435,6 +756,166 @@ class OutputWriterOverloadTest {
                 + " java.lang.String", thrown.getMessage());
         assertNull(IntegerBesideStaticBox.parsed);
         assertEquals("Integer", set(new IntegerBesideStaticBox(), "content", 5));
+    }
+
+    @Test
+    @DisplayName("a value of another type isn't passed through the bridge for an implementation the class inherits")
+    void bridgeForAnInheritedImplementation() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(new InheritedIntegerHolder(), "content", "text"));
+
+        assertEquals(InheritedIntegerHolder.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.String", thrown.getMessage());
+        InheritedIntegerHolder holder = new InheritedIntegerHolder();
+        OutputWriter.beansAndMaps().set(holder, "content", 5);
+        assertEquals("Integer", holder.setter);
+    }
+
+    @Test
+    @DisplayName("a value that only a protected, a static or a private method beside an inherited implementation"
+            + " takes isn't passed through the bridge")
+    void bridgeForAnInheritedImplementationBesideOtherMethods() throws Exception {
+        for (Object value : List.of("text", 5L, 1.5)) {
+            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                    () -> OutputWriter.beansAndMaps().set(new InheritedBesideOthersHolder(), "content", value));
+
+            assertEquals(InheritedBesideOthersHolder.class.getName() + " has no public method setContent that"
+                    + " accepts a " + value.getClass().getName(), thrown.getMessage());
+        }
+        assertNull(IntegerBesideOthers.parsed);
+        InheritedBesideOthersHolder holder = new InheritedBesideOthersHolder();
+        OutputWriter.beansAndMaps().set(holder, "content", 5);
+        assertEquals("Integer as 5.0", holder.setter);
+    }
+
+    @Test
+    @DisplayName("a value of another type isn't passed through a bridge that an interface has for its override")
+    void bridgeInAnInterface() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(new DefaultIntegerHolder(), "content", "text"));
+
+        assertEquals(DefaultIntegerHolder.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.String", thrown.getMessage());
+        assertEquals("Integer", set(new DefaultIntegerHolder(), "content", 5));
+    }
+
+    @Test
+    @DisplayName("a value of another type isn't passed through the bridge of an override whose superclass inherits the"
+            + " generic setter from an interface")
+    void bridgeBelowAClassThatInheritsTheGenericSetter() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(new LateIntegerHolder(), "content", "text"));
+
+        assertEquals(LateIntegerHolder.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.String", thrown.getMessage());
+        assertEquals("Integer", set(new LateIntegerHolder(), "content", 5));
+    }
+
+    @Test
+    @DisplayName("a value only a setter inherited from a class that isn't public takes goes through its bridge, beside"
+            + " a narrower setter inherited from further up")
+    void inheritedThroughAVisibilityBridgeBesideANarrowerSetter() throws Exception {
+        VisibleNote note = new VisibleNote();
+
+        OutputWriter.beansAndMaps().set(note, "note", 42);
+
+        assertEquals("AnyNote.setNote(Object)", note.setter);
+        OutputWriter.beansAndMaps().set(note, "note", "s");
+        assertEquals("TextNote.setNote(String)", note.setter);
+    }
+
+    @Test
+    @DisplayName("a setter declared with a type variable in a class that isn't public is written through the bridge"
+            + " of a public subclass")
+    void visibilityBridgeForATypeVariable() throws Exception {
+        TextTypedNote typed = new TextTypedNote();
+        OutputWriter.beansAndMaps().set(typed, "note", "hi");
+        assertEquals("TypedNote.setNote(T)", typed.setter);
+
+        RawTypedNote raw = new RawTypedNote();
+        OutputWriter.beansAndMaps().set(raw, "note", "hi");
+        assertEquals("TypedNote.setNote(T)", raw.setter);
+
+        TextCharsNote chars = new TextCharsNote();
+        OutputWriter.beansAndMaps().set(chars, "note", "hi");
+        assertEquals("CharsNote.setNote(T)", chars.setter);
+
+        VisibleAnyTypeNote any = new VisibleAnyTypeNote();
+        OutputWriter.beansAndMaps().set(any, "note", "hi");
+        assertEquals("AnyTypeNote.setNote(U)", any.setter);
+    }
+
+    @Test
+    @DisplayName("an array of another type isn't passed to an override for an array through its bridge")
+    void bridgeForAnArrayOfATypeVariable() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(new TextArray(), "items", new Integer[] {1}));
+
+        assertEquals(TextArray.class.getName() + " has no public method setItems that accepts a [Ljava.lang.Integer;",
+                thrown.getMessage());
+        TextArray items = new TextArray();
+        OutputWriter.beansAndMaps().set(items, "items", new String[] {"a"});
+        assertEquals("String[]", items.setter);
+    }
+
+    @Test
+    @DisplayName("a list goes through the bridge to a setter for a list of text in a class that isn't public, beside a"
+            + " narrower one for an array list")
+    void visibilityBridgeForAParameterizedType() throws Exception {
+        VisibleListNote note = new VisibleListNote();
+
+        OutputWriter.beansAndMaps().set(note, "list", new LinkedList<String>());
+
+        assertEquals("ListNote.setList(List)", note.setter);
+        OutputWriter.beansAndMaps().set(note, "list", new ArrayList<String>());
+        assertEquals("ArrayListNote.setList(ArrayList)", note.setter);
+    }
+
+    @Test
+    @DisplayName("a generic setter's override is written beside a bridge with no parameter")
+    void bridgeWithNoParameterBesideAGenericSetter() throws Exception {
+        assertEquals("String", set(new SuppliedHolder(), "content", "s"));
+        assertEquals("String", set(new CloneableHolder(), "content", "s"));
+        assertEquals("String", set(new SelfHolder(), "content", "s"));
+        assertEquals("String", set(new NamesakeHolder(), "content", "s"));
+    }
+
+    @Test
+    @DisplayName("plain Java calls the inherited Object setter for an Integer, beside the class's own String setter")
+    void javaCallsTheInheritedSetter() {
+        VisibleSetter output = new VisibleSetter();
+
+        output.setX(42);
+
+        assertEquals("Hidden.Object", output.setter);
+    }
+
+    @Test
+    @DisplayName("text goes to the class's own String setter, not the Object one it inherits from a class that isn't"
+            + " public")
+    void textToTheOwnSetterBesideAVisibilityBridge() throws Exception {
+        VisibleSetter output = new VisibleSetter();
+
+        OutputWriter.beansAndMaps().set(output, "x", "s");
+
+        assertEquals("Visible.String", output.setter);
+    }
+
+    @Test
+    @DisplayName("an Integer goes to the Object setter inherited from a class that isn't public, as Java calls it")
+    void integerThroughAVisibilityBridge() throws Exception {
+        VisibleSetter output = new VisibleSetter();
+
+        OutputWriter.beansAndMaps().set(output, "x", 42);
+
+        assertEquals("Hidden.Object", output.setter);
+    }
+
+    @Test
+    @DisplayName("text goes to the class's String setter, not the Object one its interface declares")
+    void stringBeforeAnInterfacesObject() throws Exception {
+        assertEquals("String", set(new LabelledLabels(), "label", "x"));
+        assertEquals("Object", set(new LabelledLabels(), "label", 1));
     }
 
     @Test

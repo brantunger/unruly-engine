@@ -40,14 +40,20 @@ public interface OutputWriter<O> {
      * with the output's public setter whose parameter accepts the value, such as {@code setInterestRate} for
      * {@code interestRate}. Values aren't converted, so a setter taking a {@code double} doesn't accept an
      * {@link Integer}. An output without such a setter fails with {@link IllegalArgumentException}. Of overloaded
-     * setters, it calls the most specific one that accepts the value and that it can reach; when no single one is the
-     * most specific, the choice is fixed for the output class and the same on every run.
+     * setters, it calls the most specific one that accepts the value, as Java would; when no single one is the most
+     * specific, the choice is fixed for the output class and the same on every run.
      *
      * <p>
      * The setter is reached the way {@link io.github.brantunger.unruly.api.language.FactProperties} reaches a getter:
      * through a public, exported type that declares it, such as an interface the output class implements, or directly
      * where the class's package is open to {@code io.github.brantunger.unruly.core}, which every package on the class
-     * path is. A setter it can't reach fails with {@link IllegalStateException}, saying what to export or open.
+     * path is. A setter it can't reach fails with {@link IllegalStateException}, saying what to export or open, rather
+     * than a less specific overload being called in its place. One limit: where a class the writer can't reach
+     * overrides a generic setter beside another public instance overload of the same name with a narrower parameter,
+     * its own or inherited, even from a class that isn't public, a value for that overload reaches the generic setter
+     * instead. It fails with an {@link java.lang.reflect.InvocationTargetException} caused by a
+     * {@link ClassCastException}, or, where the overload's parameter is narrower than the generic setter's, the less
+     * specific generic setter is called.
      * </p>
      *
      * @param <O> The type of the output objects
