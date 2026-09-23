@@ -11,6 +11,7 @@ import org.jspecify.annotations.Nullable;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -121,6 +122,7 @@ public final class LanguageTestContexts {
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
                                                @Nullable Instant deadline) {
+        Objects.requireNonNull(facts, "facts must not be null");
         return new EngineEvaluationContext(new LinkedHashMap<String, Object>(facts), deadline);
     }
 
@@ -148,6 +150,7 @@ public final class LanguageTestContexts {
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output,
                                        @Nullable Instant deadline) {
+        Objects.requireNonNull(facts, "facts must not be null");
         return new EngineActionContext(new LinkedHashMap<String, Object>(facts), output, deadline);
     }
 }

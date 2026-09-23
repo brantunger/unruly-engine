@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -61,6 +62,22 @@ class OutputFactoryTest {
             RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
             assertEquals("Output factory threw java.lang.IllegalStateException: no connection", ex.getMessage(),
                     "the rule is not to blame");
+            assertSame(boom, ex.getCause());
+        }
+    }
+
+    @Test
+    @DisplayName("a factory failure names the root cause its exception's missing message hides")
+    void throwingFactoryNamesHiddenCause() {
+        IllegalStateException boom = new IllegalStateException((String) null, new IOException("disk full"));
+        for (var constructor : ENGINES) {
+            RulesEngine<Map<String, Object>> engine = engineWith(constructor, () -> {
+                throw boom;
+            }, "true");
+
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+            assertEquals("Output factory threw java.lang.IllegalStateException"
+                    + " (caused by java.io.IOException: disk full)", ex.getMessage());
             assertSame(boom, ex.getCause());
         }
     }

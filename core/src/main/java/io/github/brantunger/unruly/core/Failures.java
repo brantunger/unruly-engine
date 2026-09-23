@@ -193,13 +193,18 @@ public final class Failures {
 
     /**
      * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
-     * calls outside any rule, such as the output factory: escaped and shortened like {@link #describe}.
+     * calls outside any rule, such as the output factory: escaped and shortened like {@link #describe}, and naming a
+     * root cause it would otherwise hide as {@link #describe} does. The note is left out when the text already has it,
+     * as the message of a {@code run()} started from that code does unless it was shortened, so it isn't there twice.
      *
      * @param e The exception to describe
-     * @return Its class name, and its message if it has one
+     * @return Its class name, its message if it has one, and a note of its root cause if the message hides it and the
+     *         text doesn't already have that note
      */
     static String describeWithClass(Throwable e) {
-        return escape(truncate(e.toString()));
+        String text = escape(truncate(e.toString()));
+        String note = causeNote(causeChain(e));
+        return text.contains(note) ? text : text + note;
     }
 
     /**

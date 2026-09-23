@@ -7,12 +7,17 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -77,6 +82,104 @@ class ListenerLogLinesTest {
         assertEquals("java.lang.IllegalStateException: bad", warn + 2 < lines.size() ? lines.get(warn + 2) : null,
                 "the DEBUG line has no stack trace: " + logs);
         assertTrue(lines.stream().anyMatch(line -> line.startsWith("\tat ")), "no stack frames: " + logs);
+    }
+
+    @Test
+    @DisplayName("the WARN line names the root cause a listener's exception hides when it has no message")
+    void listenerExceptionNamesHiddenCause() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        throw new IllegalStateException((String) null, new IOException("disk full"));
+                    }
+                }).build();
+        engine.load(List.of(rule("r", "true")));
+
+        String logs = logsOf(() -> assertEquals(Map.of("k", 1), engine.run(new FactMap<>())));
+
+        assertTrue(logs.lines().anyMatch(line -> line.endsWith("WARN " + ENGINE_LOGGER
+                + "Listener threw exception in beforeRun: java.lang.IllegalStateException"
+                + " (caused by java.io.IOException: disk full)")), logs);
+    }
+
+    /** A fact whose getter fails with an exception that has no message, so its cause is hidden. */
+    public static final class Broken {
+
+        private final Exception cause;
+
+        Broken(Exception cause) {
+            this.cause = cause;
+        }
+
+        /**
+         * Throws an exception with no message, caused by the one this fact was given.
+         *
+         * @return never
+         */
+        public boolean getX() {
+            throw new IllegalStateException((String) null, cause);
+        }
+    }
+
+    @ParameterizedTest(name = "root cause message {0}")
+    @ValueSource(strings = {"disk full", ""})
+    @DisplayName("the WARN line for a nested run() a listener started names the hidden cause once")
+    void nestedRunCauseNamedOnce(String rootMessage) {
+        RulesEngine<Map<String, Object>> inner = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).build();
+        inner.load(List.of(rule("inner", "broken.x")));
+        IOException root = rootMessage.isEmpty() ? new IOException() : new IOException(rootMessage);
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        FactStore<Object> facts = new FactMap<>();
+                        facts.setValue("broken", new Broken(root));
+                        inner.run(facts);
+                    }
+                }).build();
+        engine.load(List.of(rule("r", "true")));
+
+        String logs = logsOf(() -> assertEquals(Map.of("k", 1), engine.run(new FactMap<>())));
+
+        String warn = logs.lines().filter(line -> line.contains("Listener threw exception in beforeRun: "))
+                .findFirst().orElseThrow(() -> new AssertionError(logs));
+        assertEquals(1, warn.split("caused by java.io.IOException", -1).length - 1, warn);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"wrapped", "wrapped without a message", "shortened"})
+    @DisplayName("the WARN line names the hidden cause once when a nested run()'s failure is wrapped or shortened")
+    void wrappedOrShortenedNestedRunCauseNamedOnce(String how) {
+        String message = "shortened".equals(how) ? "m".repeat(1100) : "audit";
+        RulesEngine<Map<String, Object>> inner = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new StubExpressionLanguage().action((action, session) -> {
+                    throw new IllegalStateException(message, new IOException());
+                })).build();
+        inner.load(List.of(Rule.builder().ruleName("inner").condition("c").action("a").build()));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new ToyExpressionLanguage()).listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        try {
+                            inner.run(new FactMap<>());
+                        } catch (RuleExecutionException nested) {
+                            throw switch (how) {
+                                case "wrapped" -> new IllegalStateException("audit failed", nested);
+                                case "wrapped without a message" -> new IllegalStateException((String) null, nested);
+                                default -> nested;
+                            };
+                        }
+                    }
+                }).build();
+        engine.load(List.of(rule("r", "true")));
+
+        String logs = logsOf(() -> assertEquals(Map.of("k", 1), engine.run(new FactMap<>())));
+
+        String warn = logs.lines().filter(line -> line.contains("Listener threw exception in beforeRun: "))
+                .findFirst().orElseThrow(() -> new AssertionError(logs));
+        assertEquals(1, warn.split("caused by java.io.IOException", -1).length - 1, warn);
     }
 
     @Test

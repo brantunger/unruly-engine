@@ -12,7 +12,9 @@ import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -94,6 +96,70 @@ class LanguageTestContextsTest {
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> context.facts().put("y", 2));
         assertTrue(ex.getMessage().startsWith("The facts passed to an action are read-only; 'y'"), ex.getMessage());
+    }
+
+    private static void assertNullMessage(String expected, Executable creation) {
+        assertEquals(expected, assertThrows(NullPointerException.class, creation).getMessage());
+    }
+
+    @Test
+    @DisplayName("a null argument is rejected with a message that names it")
+    void nullArguments() {
+        ClassLoader loader = getClass().getClassLoader();
+
+        assertAll(
+                () -> assertNullMessage("facts must not be null", () -> LanguageTestContexts.evaluation(null)),
+                () -> assertNullMessage("facts must not be null",
+                        () -> LanguageTestContexts.action(null, new HashMap<>())),
+                () -> assertNullMessage("output must not be null", () -> LanguageTestContexts.action(Map.of(), null)),
+                () -> assertNullMessage("packageImports must not be null",
+                        () -> LanguageTestContexts.compile(null, Set.of(), loader)),
+                () -> assertNullMessage("classImports must not be null",
+                        () -> LanguageTestContexts.compile(Set.of(), null, loader)),
+                () -> assertNullMessage("classLoader must not be null",
+                        () -> LanguageTestContexts.compile(Set.of(), Set.of(), null)),
+                () -> assertNullMessage("outputType must not be null",
+                        () -> LanguageTestContexts.compile(Set.of(), Set.of(), loader, null, Map.of())),
+                () -> assertNullMessage("options must not be null",
+                        () -> LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, null)),
+                () -> assertNullMessage("declaredFacts must not be null", () -> LanguageTestContexts.compile(
+                        Set.of(), Set.of(), loader, Object.class, Map.of(), null, false)));
+    }
+
+    @Test
+    @DisplayName("a null import or option is rejected with a message that names where it was")
+    void nullElements() {
+        ClassLoader loader = getClass().getClassLoader();
+        Map<String, String> nullOptionName = new HashMap<>();
+        nullOptionName.put(null, "on");
+        Map<String, String> nullOptionValue = new HashMap<>();
+        nullOptionValue.put("strict", null);
+
+        assertAll(
+                () -> assertNullMessage("packageImports must not contain null", () -> LanguageTestContexts.compile(
+                        new HashSet<>(Arrays.asList("java.util", null)), Set.of(), loader)),
+                () -> assertNullMessage("classImports must not contain null", () -> LanguageTestContexts.compile(
+                        Set.of(), new HashSet<>(Arrays.asList(List.class, null)), loader)),
+                () -> assertNullMessage("options must not contain null",
+                        () -> LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, nullOptionName)),
+                () -> assertNullMessage("options must not contain null",
+                        () -> LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, nullOptionValue)));
+    }
+
+    @Test
+    @DisplayName("a null declared fact name or type keeps its existing message, the one an engine's builder gives")
+    void declaredFactsNameAndType() {
+        ClassLoader loader = getClass().getClassLoader();
+        Map<String, Class<?>> nullFactName = new HashMap<>();
+        nullFactName.put(null, Integer.class);
+        Map<String, Class<?>> nullFactType = new HashMap<>();
+        nullFactType.put("x", null);
+
+        assertAll(
+                () -> assertNullMessage("name must not be null", () -> LanguageTestContexts.compile(
+                        Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactName, false)),
+                () -> assertNullMessage("type must not be null", () -> LanguageTestContexts.compile(
+                        Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactType, false)));
     }
 
     @Test

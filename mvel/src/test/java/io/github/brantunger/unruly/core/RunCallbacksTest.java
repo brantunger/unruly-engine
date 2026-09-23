@@ -12,6 +12,7 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -215,6 +216,28 @@ class RunCallbacksTest {
         assertEquals("listener", thrown.getMessage());
         assertEquals(List.of("beforeRun", "onRunError: The run failed with java.lang.OutOfMemoryError: listener"),
                 recorder.calls, "the other listener still got the callback, and its run was closed");
+    }
+
+    @Test
+    @DisplayName("a fatal Error from a run callback that hides its root cause is reported naming the cause")
+    void fatalErrorHidingItsCause() {
+        Recorder recorder = new Recorder();
+        OutOfMemoryError oom = new OutOfMemoryError();
+        oom.initCause(new IOException("disk full"));
+        RuleListener fatal = new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                throw oom;
+            }
+        };
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .listener(fatal).listener(recorder).build();
+        engine.load(List.of(MATCHES));
+
+        assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>())));
+
+        assertEquals(List.of("beforeRun", "onRunError: The run failed with java.lang.OutOfMemoryError"
+                + " (caused by java.io.IOException: disk full)"), recorder.calls);
     }
 
     @Test

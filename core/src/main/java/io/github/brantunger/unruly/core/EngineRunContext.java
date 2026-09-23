@@ -43,11 +43,11 @@ public final class EngineRunContext implements RunContext {
                             Map<String, Object> facts, Set<String> tags, Instant startedAt) {
         this.id = runId;
         this.enclosingRun = parent;
-        this.policy = Objects.requireNonNull(matchPolicy, "matchPolicy");
-        this.checksum = Objects.requireNonNull(ruleSetChecksum, "ruleSetChecksum");
-        this.factValues = Objects.requireNonNull(facts, "facts");
-        this.runTags = Objects.requireNonNull(tags, "tags");
-        this.start = Objects.requireNonNull(startedAt, "startedAt");
+        this.policy = Objects.requireNonNull(matchPolicy, "matchPolicy must not be null");
+        this.checksum = Objects.requireNonNull(ruleSetChecksum, "ruleSetChecksum must not be null");
+        this.factValues = Objects.requireNonNull(facts, "facts must not be null");
+        this.runTags = Objects.requireNonNull(tags, "tags must not be null");
+        this.start = Objects.requireNonNull(startedAt, "startedAt must not be null");
     }
 
     @Override
