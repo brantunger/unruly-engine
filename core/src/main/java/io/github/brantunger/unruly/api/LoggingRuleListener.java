@@ -48,21 +48,33 @@ public class LoggingRuleListener implements RuleListener {
 
     @Override
     public void beforeEvaluate(Rule rule, Map<String, @Nullable Object> facts) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
         log.debug("Evaluating condition for rule: {}", nameOf(rule));
     }
 
     @Override
     public void afterEvaluate(Rule rule, Map<String, @Nullable Object> facts, boolean matchResult) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
         log.debug("Evaluated condition for rule: {} | Match: {}", nameOf(rule), matchResult);
     }
 
     @Override
     public void beforeExecute(Rule rule, Object output) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
         log.debug("Executing action for rule: {}", nameOf(rule));
     }
 
     @Override
     public void afterExecute(Rule rule, Object output) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
         log.debug("Executed action for rule: {}", nameOf(rule));
     }
 
@@ -74,6 +86,9 @@ public class LoggingRuleListener implements RuleListener {
      */
     @Override
     public void onError(Rule rule, RuleExecutionException error) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
         // The engine's own messages arrive escaped, and escaping them again changes nothing; an engine of your own
         // may not have escaped its message, and its fact values are the ones most likely to come from request data.
         String message = error.getMessage();

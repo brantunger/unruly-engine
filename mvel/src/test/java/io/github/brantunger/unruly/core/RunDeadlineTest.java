@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -316,6 +317,27 @@ class RunDeadlineTest {
         assertEquals(Map.of("ran", true), outer.run(facts));
 
         assertInstanceOf(TimeoutException.class, nested.failure.get().getCause());
+    }
+
+    @Test
+    @DisplayName("a run already past its deadline stops before its first rule, naming the deadline and the rule")
+    void aPassedDeadlineStopsBeforeTheFirstRule() {
+        // A deadline in the past, inherited as a nested run's would be, so the message's text is known in full.
+        Instant passed = Instant.parse("2001-02-03T04:05:06Z");
+        RulesEngine<Map<String, Object>> engine = engine(RulesEngineBuilder.allMatches(HashMap::new),
+                List.of(rule("first", "true", "output.put('first', true)")));
+
+        Instant outer = Cancellation.enter(passed);
+        RuleExecutionException stop;
+        try {
+            stop = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+        } finally {
+            Cancellation.leave(outer);
+        }
+
+        assertEquals("run() passed its deadline of 2001-02-03T04:05:06Z before rule 'first'", stop.getMessage());
+        assertNull(stop.getRuleName());
+        assertInstanceOf(TimeoutException.class, stop.getCause());
     }
 
     @Test

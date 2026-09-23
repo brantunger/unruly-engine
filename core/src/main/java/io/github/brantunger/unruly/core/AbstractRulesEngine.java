@@ -72,6 +72,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
     private static final String CLOSED_MESSAGE = "The engine is closed";
+    // Where a cancelled run stopped, as its message says: before a rule's condition or action, or while one ran.
+    private static final String BEFORE_RULE = "before";
+    private static final String DURING_RULE = "during";
     // How many times one run may read the engine's rules in all: its first reading, and one more for each time it
     // finds the set it read closed before it could borrow from it. Reading again settles the one race that can
     // cause that — a reload, or close(), retires the set the run had read in between its reading and its borrow —
@@ -1109,29 +1112,32 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the run must stop
      */
     private void checkNotCancelled(CompiledRule rule, Instant deadline) {
-        RuleExecutionException stop = cancellation("before rule '" + rule.displayName() + "'", deadline, null);
+        RuleExecutionException stop = cancellation(rule, BEFORE_RULE, deadline, null);
         if (stop != null) {
             throw stop;
         }
     }
 
     /**
-     * Returns the exception a cancelled run stops with, or {@code null} if the run may go on.
+     * Returns the exception a cancelled run stops with, or {@code null} if the run may go on. The message naming the
+     * rule is built only when the run stops, because this is checked several times for every rule.
      *
-     * @param when     Where the run stopped, such as {@code "before rule 'x'"}
+     * @param rule     The rule the run stopped before or during
+     * @param stage    {@link #BEFORE_RULE} or {@link #DURING_RULE}, where the run stopped
      * @param deadline When the run must stop, or {@code null} if it has none
      * @param thrown   What the expression threw, or {@code null}: when a run it started stopped for the same reason,
      *                 that run logged the stop, and it isn't logged again
      * @return The exception, or {@code null}
      */
-    private RuleExecutionException cancellation(String when, Instant deadline, Throwable thrown) {
+    private RuleExecutionException cancellation(CompiledRule rule, String stage, Instant deadline, Throwable thrown) {
         // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
         if (Thread.currentThread().isInterrupted()) {
-            return cancelled("run() was interrupted " + when, new InterruptedException(), null, thrown);
+            return cancelled("run() was interrupted " + stage + " rule '" + rule.displayName() + "'",
+                    new InterruptedException(), null, thrown);
         }
         if (Cancellation.hasPassed(deadline)) {
-            return cancelled("run() passed its deadline of " + deadline + " " + when, Cancellation.timedOut(deadline),
-                    deadline, thrown);
+            return cancelled("run() passed its deadline of " + deadline + " " + stage + " rule '" + rule.displayName()
+                    + "'", Cancellation.timedOut(deadline), deadline, thrown);
         }
         return null;
     }
@@ -1176,7 +1182,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
         RuleExecutionException stop = Failures.errorInChain(thrown) == null
-                ? cancellation("during rule '" + rule.displayName() + "'", deadline, thrown) : null;
+                ? cancellation(rule, DURING_RULE, deadline, thrown) : null;
         if (stop == null) {
             return failed.get();
         }
@@ -1198,7 +1204,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, ExpressionKind kind,
                                  Instant deadline, String wrongResult) {
-        RuleExecutionException stop = cancellation("during rule '" + rule.displayName() + "'", deadline, null);
+        RuleExecutionException stop = cancellation(rule, DURING_RULE, deadline, null);
         if (stop != null) {
             if (wrongResult != null) {
                 stop.addSuppressed(new RuleExecutionException(wrongResult, null, rule.rule().getRuleName(), kind));

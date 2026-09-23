@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.benchmarks;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.LoggingRuleListener;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -29,8 +30,9 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * What one {@code run()} costs, across the shapes an application actually builds: how many rules are loaded, which
- * hit policy the engine uses, whether facts are records or maps, whether a listener is registered, and whether the
- * rules are written in MVEL or in the cheapest possible language.
+ * hit policy the engine uses, whether facts are records or maps, which listener is registered (none, a no-op one, or
+ * {@link LoggingRuleListener}, which at the default INFO level measures its DEBUG-off path), and whether the rules
+ * are written in MVEL or in the cheapest possible language.
  *
  * <p>
  * Run the whole matrix with {@code ./gradlew :benchmarks:jmh}, or a slice of it with
@@ -70,6 +72,7 @@ public class RunBenchmark {
     private static final String MVEL = "mvel";
     private static final String FIRST_MATCH = "firstMatch";
     private static final String MAP = "map";
+    private static final String LOGGING = "logging";
 
     // The parameters, the engine, the facts and ruleList() are package-private so RunBenchmarkWorkloadTest can
     // assert what one run evaluates and fires. JMH sets a parameter by reflection, so it reaches either one.
@@ -82,7 +85,7 @@ public class RunBenchmark {
     @Param({"record", MAP})
     String facts;
 
-    @Param({"none", NoopLanguage.LANGUAGE_NAME})
+    @Param({"none", NoopLanguage.LANGUAGE_NAME, LOGGING})
     String listener;
 
     @Param({MVEL, NoopLanguage.LANGUAGE_NAME})
@@ -113,6 +116,8 @@ public class RunBenchmark {
         builder.language(new MvelExpressionLanguage()).language(new NoopLanguage()).defaultLanguage(MVEL);
         if (NoopLanguage.LANGUAGE_NAME.equals(listener)) {
             builder.listener(new NoopListener());
+        } else if (LOGGING.equals(listener)) {
+            builder.listener(new LoggingRuleListener());
         }
         return builder.build();
     }
