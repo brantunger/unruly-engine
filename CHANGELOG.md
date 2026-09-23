@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.3.0](https://github.com/brantunger/unruly-engine/compare/v2.2.2...v2.3.0) (2026-09-23)
+
+
+### Features
+
+* let the contract kit accept an assignment rejected at run time, check evaluate against evaluateWithDetail, and give ConditionResult value equality ([#532](https://github.com/brantunger/unruly-engine/issues/532)) ([87fd81c](https://github.com/brantunger/unruly-engine/commit/87fd81c0f020e09c267c1c05d132dd9377b8c248))
+
 ## [2.2.2](https://github.com/brantunger/unruly-engine/compare/v2.2.1...v2.2.2) (2026-09-23)
 
 
