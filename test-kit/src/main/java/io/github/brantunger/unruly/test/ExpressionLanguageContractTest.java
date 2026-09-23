@@ -59,8 +59,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * }
  *
  * <p>
- * Each check runs rules through an engine, so a language passes only if it works with the engine as users will run
- * it. On the module path, the package of the extending test must be open to {@code org.junit.platform.commons}.
+ * Every check but {@code evaluateAgreesWithDetail} runs rules through an engine, so a language passes only if it
+ * works with the engine as users will run it. On the module path, the package of the extending test must be open to
+ * {@code org.junit.platform.commons}.
  * </p>
  *
  * <p>
@@ -133,13 +134,15 @@ public abstract class ExpressionLanguageContractTest {
     protected abstract String factValue(String fact);
 
     /**
-     * Returns a condition that assigns a value to a fact.
+     * Returns a condition that assigns a value to a fact, which the language must reject when it loads or runs the
+     * rule, rather than evaluate to a boolean.
      *
      * @param fact  The fact's name
      * @param value The value to assign
-     * @return The condition
+     * @return The condition, or {@code null} if the language's conditions can't express an assignment, which skips
+     *         the check
      */
-    protected abstract String assignment(String fact, int value);
+    protected abstract @Nullable String assignment(String fact, int value);
 
     /**
      * Returns an action that puts a fact's value into the output map, by changing the output or by returning the
@@ -375,14 +378,26 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a condition that assigns to a fact is rejected by load")
+    @DisplayName("a condition that assigns to a fact is rejected by load or run, naming the rule and its condition")
     void conditionAssignmentRejected() {
-        RulesEngine<Map<String, Object>> engine = engine();
-        List<Rule> rules = List.of(rule("r", 1, assignment("x", 2), putFact(SEEN, "x")));
+        String assign = assignment("x", 2);
+        assumeTrue(assign != null, "the language's conditions can't assign a fact");
+        // A language may reject the assignment when compiling or when running: by refusing it, by failing to write to
+        // the read-only facts, or by evaluating to something that isn't a boolean.
+        UnrulyException ex = assertThrows(UnrulyException.class,
+                () -> engine(rule("r", 1, assign, putFact(SEEN, "x"))).run(new FactMap<>(new Fact<>("x", 1))),
+                "a condition that assigns to a fact was neither rejected by load nor failed by run");
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
-
-        assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
+        if (ex instanceof RuleCompilationException compilation) {
+            assertEquals("r", compilation.getRuleName(), ex.getMessage());
+            assertEquals(ExpressionKind.CONDITION, compilation.getExpressionKind(), ex.getMessage());
+        } else if (ex instanceof RuleExecutionException execution) {
+            assertEquals("r", execution.getRuleName(), ex.getMessage());
+            assertEquals(ExpressionKind.CONDITION, execution.getExpressionKind(), ex.getMessage());
+        } else {
+            fail("a condition that assigns to a fact failed with an UnrulyException that is neither a"
+                    + " RuleCompilationException nor a RuleExecutionException: " + ex);
+        }
     }
 
     @Test
@@ -781,6 +796,66 @@ public abstract class ExpressionLanguageContractTest {
                     closeFailures.add(e);
                     throw e;
                 }
+            }
+        }
+    }
+
+    /**
+     * Compiles a condition with the language's compiler, outside an engine, and evaluates it twice against one
+     * session: once with {@code evaluate} and once with {@code evaluateWithDetail}. The engine calls only
+     * {@code evaluateWithDetail}, so a language whose {@code evaluate} disagrees with it passes every other check,
+     * and fails whoever calls {@code evaluate} directly. A language that doesn't override {@code evaluateWithDetail}
+     * passes: the default returns what {@code evaluate} does.
+     *
+     * <p>
+     * An exception from closing the session or the compiler doesn't fail this check: the engine only logs one, and
+     * {@code sessionsClosed} is the check that fails a session whose {@code close()} throws.
+     * </p>
+     */
+    @Test
+    @DisplayName("a condition's evaluate returns the value evaluateWithDetail reports")
+    void evaluateAgreesWithDetail() throws Exception {
+        // Closed by the try, the session before its compiler, as the engine closes them.
+        try (ClosedQuietly<ExpressionCompiler> compiler =
+                     new ClosedQuietly<>(language().newCompiler(LanguageTestContexts.compile()))) {
+            CompiledCondition condition = compiler.resource()
+                    .compileCondition(new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
+            // A session of the language's own, as a run gets one, not Session.none(), which a stateful language
+            // couldn't evaluate with.
+            Session created = compiler.resource().newSession();
+            assertNotNull(created, "newSession() returned null, which fails every run that needs a session");
+            try (ClosedQuietly<Session> closing = new ClosedQuietly<>(created)) {
+                Session session = closing.resource();
+                for (int x = 1; x <= 2; x++) {
+                    EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", x));
+                    ConditionResult detailed = condition.evaluateWithDetail(evaluation, session);
+                    assertNotNull(detailed,
+                            "for x = " + x + ", evaluateWithDetail returned null, which fails the rule");
+
+                    assertEquals(detailed.value(), condition.evaluate(evaluation, session),
+                            "for x = " + x + ", evaluate returned a different value than evaluateWithDetail reported");
+                }
+            }
+        }
+    }
+
+    /**
+     * Closes a session or a compiler, ignoring an exception its {@code close()} throws, which the engine only logs. An
+     * {@link Error} is thrown on.
+     *
+     * @param resource The session or compiler
+     * @param <T>      Its type
+     */
+    private record ClosedQuietly<T extends AutoCloseable>(T resource) implements AutoCloseable {
+
+        // Anything but an Error, a checked exception thrown sneakily included: the engine logs any Exception.
+        @Override
+        @SuppressWarnings("PMD.EmptyCatchBlock")
+        public void close() {
+            try {
+                resource.close();
+            } catch (Exception e) {
+                // Logged by the engine, not thrown. Whether it throws is the session check's question, not this one's.
             }
         }
     }

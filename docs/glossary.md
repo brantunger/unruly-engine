@@ -80,9 +80,9 @@ engine closes it after a later `load()` or `close()` replaces the rule list, onc
 ### Condition
 
 The expression that decides whether a rule [matches](#match-and-fire). It must evaluate to a boolean; `null` or any
-other type fails the rule. It can't assign to a fact: a language that passes the [contract test kit](#contract-test-kit)
-rejects that at `load()`, and the engine rejects any write to the facts at run time. See
-[Writing rules](writing-rules.md#-anatomy-of-a-rule).
+other type fails the rule. It can't assign to a fact: a language that passes the
+[contract test kit](#contract-test-kit), and can express an assignment, rejects that at `load()` or when the rule
+runs, and the engine itself rejects any write to the facts. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
 ### Contract test kit
 

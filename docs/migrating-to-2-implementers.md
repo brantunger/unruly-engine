@@ -170,8 +170,8 @@ column, is in [Errors when rules load](languages/mvel.md#-errors-when-rules-load
 **What changed:** `CompiledAction.execute` returns an `ActionResult`. `ActionResult.done()` means the action changed
 the output itself, as before. `ActionResult.set(properties)` returns values for the engine to set on the output: with
 `put` on a `Map`, or with the output's public setters. This lets languages without side effects, such as CEL or
-JsonLogic, write actions. In `ExpressionLanguageContractTest`, four hooks may return `null` to skip their checks:
-`reassignOutput()`, `declareVariable()`, `unusableFactName()` and `missingFactProperty()`.
+JsonLogic, write actions. In `ExpressionLanguageContractTest`, a hook such as `reassignOutput()` may return `null` to
+skip its check; [Testing with the contract kit](languages/custom.md#-testing-with-the-contract-kit) lists them.
 
 **Who is affected:** authors of expression languages. Rule authors change nothing.
 
