@@ -164,8 +164,9 @@ class ActionResultsTest {
         assertEquals("Integer", number.valueSetter);
         assertEquals(7, number.value);
         assertEquals("String", text.valueSetter);
-        assertNull(none.value, "null goes to the first overload whose parameter isn't primitive");
-        assertEquals("Integer", none.valueSetter);
+        assertNull(none.value);
+        assertEquals("Integer", none.valueSetter, "neither parameter is more specific than the other, so which one"
+                + " null goes to is fixed for the class");
     }
 
     @Test

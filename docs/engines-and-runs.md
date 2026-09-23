@@ -278,9 +278,14 @@ An action changes the output in one of two ways, depending on its language:
 
 The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, and otherwise the output's public
 setter whose parameter accepts the value, such as `setInterestRate` for `interestRate`. It converts nothing: a `Double`
-reaches a `double` setter, but an `Integer` doesn't, and `null` doesn't reach a primitive. A property it can't set,
-including through a setter the engine can't reach, fails the rule with a `RuleExecutionException` that names the rule
-and the property. Give the engine a writer of your own with `outputWriter(...)` on the builder.
+reaches a `double` setter, but an `Integer` doesn't, and `null` doesn't reach a primitive. When several overloads
+accept the value, it calls the most specific one, as Java would: it prefers `setAmount(BigDecimal)` to
+`setAmount(Number)`, and `setP(Integer)` to `setP(int)`; if no single one is the most specific, it calls the same one
+on every run.
+
+A property it can't set, including through a setter the engine can't reach, fails the rule with a
+`RuleExecutionException` that names the rule and the property. Give the engine a writer of your own with
+`outputWriter(...)` on the builder.
 
 ## 📊 What a run reports
 
