@@ -77,8 +77,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * "https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md#-testing-with-the-contract-kit">
  * Testing with the contract kit</a>
  */
-// A test class: each check makes several assertions, and their failure messages show the values compared. The engines
-// the checks build are discarded with the check, except where a check is about closing.
+// A test class: each check makes several assertions, and their failure messages show the values compared. Each check
+// closes the engine it builds. What PMD still takes for unclosed is closed or stopped elsewhere: a language's compiler
+// by the wrapper that holds it, a session by the ClosedQuietly that holds it, and a check's workers by stop().
 @SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.UnitTestAssertionsShouldIncludeMessage",
         "PMD.CloseResource"})
 public abstract class ExpressionLanguageContractTest {
@@ -289,10 +290,46 @@ public abstract class ExpressionLanguageContractTest {
         return engine(language());
     }
 
-    private RulesEngine<Map<String, Object>> engine(Rule... rules) {
-        RulesEngine<Map<String, Object>> engine = engine();
-        engine.load(List.of(rules));
-        return engine;
+    /**
+     * What a check does with an engine, a compiler or a session that it closes afterwards.
+     *
+     * @param <T> The resource's type
+     */
+    @FunctionalInterface
+    private interface ResourceCheck<T> {
+        void accept(T resource) throws Exception;
+    }
+
+    /**
+     * Runs a check with an engine, a compiler or a session, and then closes it, however the check ends, as
+     * try-with-resources would. A check builds its engine before it loads any rules, so a failed {@code load()} still
+     * leaves the engine to be closed. What closing throws is attached to the check's own failure, unless it is that
+     * failure or already attached to it: a language that throws one cached {@link Error} from {@code close()}, or from
+     * a condition and a {@code close()}, fails the check with it and then the close with it again, and
+     * try-with-resources would report {@code "Self-suppression not permitted"} instead.
+     *
+     * @param resource The engine, with no rules loaded yet, or the compiler or session
+     * @param check    What the check does with it
+     * @param <T>      The resource's type
+     * @throws Exception What the check throws, or, when the check passes, what closing the resource throws
+     */
+    // Any Throwable, as try-with-resources closes on any, compared by identity: the same instance is what's handled.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static <T extends AutoCloseable> void closing(T resource, ResourceCheck<T> check) throws Exception {
+        try {
+            check.accept(resource);
+        } catch (Throwable failure) {
+            try {
+                resource.close();
+            } catch (Throwable closeFailure) {
+                if (closeFailure != failure
+                        && Arrays.stream(failure.getSuppressed()).noneMatch(known -> known == closeFailure)) {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+            throw failure;
+        }
+        resource.close();
     }
 
     /**
@@ -341,152 +378,171 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("a condition reads the facts, and its rule fires only when the condition is true")
-    void conditionReadsFacts() {
-        RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")));
+    void conditionReadsFacts() throws Exception {
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
 
-        assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
-        assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
+            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+            assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
+        });
     }
 
     @Test
     @DisplayName("a condition written for a whole number reads a Long, a Short and a BigDecimal fact")
-    void conditionReadsWholeNumbers() {
+    void conditionReadsWholeNumbers() throws Exception {
         assumeTrue(comparesWholeNumbersByValue(), "the language compares whole numbers by type");
-        RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")));
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
 
-        // A language whose equality is Objects.equals passes the check above, where every fact is an Integer, and
-        // then never fires on a fact that came from JSON, a database or a long id.
-        for (Object one : List.of(1L, (short) 1, BigDecimal.ONE)) {
-            assertNotNull(engine.run(new FactMap<>(new Fact<>("x", one))),
-                    "the rule didn't fire for a " + one.getClass().getSimpleName() + " fact");
-        }
-        // And it is by value: a language whose coercion falls through to true whenever the runtime types differ
-        // fires for every whole number there is.
-        assertNull(engine.run(new FactMap<>(new Fact<>("x", 2L))), "the rule fired for a 2L fact");
+            // A language whose equality is Objects.equals passes the check above, where every fact is an Integer, and
+            // then never fires on a fact that came from JSON, a database or a long id.
+            for (Object one : List.of(1L, (short) 1, BigDecimal.ONE)) {
+                assertNotNull(engine.run(new FactMap<>(new Fact<>("x", one))),
+                        "the rule didn't fire for a " + one.getClass().getSimpleName() + " fact");
+            }
+            // And it is by value: a language whose coercion falls through to true whenever the runtime types differ
+            // fires for every whole number there is.
+            assertNull(engine.run(new FactMap<>(new Fact<>("x", 2L))), "the rule fired for a 2L fact");
+        });
     }
 
     @Test
     @DisplayName("a condition must evaluate to a boolean: null, a string or a number fails the rule")
-    void conditionMustBeBoolean() {
-        RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factValue("x"), putFact(SEEN, "x")));
+    void conditionMustBeBoolean() throws Exception {
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("r", 1, factValue("x"), putFact(SEEN, "x"))));
 
-        assertEquals(Map.of(SEEN, true), engine.run(new FactMap<>(new Fact<>("x", true))));
-        for (Object notBoolean : Arrays.asList(null, "true", 1)) {
-            assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", notBoolean))),
-                    String.valueOf(notBoolean));
-        }
+            assertEquals(Map.of(SEEN, true), engine.run(new FactMap<>(new Fact<>("x", true))));
+            for (Object notBoolean : Arrays.asList(null, "true", 1)) {
+                assertThrows(RuleExecutionException.class,
+                        () -> engine.run(new FactMap<>(new Fact<>("x", notBoolean))), String.valueOf(notBoolean));
+            }
+        });
     }
 
     @Test
     @DisplayName("a condition that assigns to a fact is rejected by load or run, naming the rule and its condition")
-    void conditionAssignmentRejected() {
+    void conditionAssignmentRejected() throws Exception {
         String assign = assignment("x", 2);
         assumeTrue(assign != null, "the language's conditions can't assign a fact");
-        // A language may reject the assignment when compiling or when running: by refusing it, by failing to write to
-        // the read-only facts, or by evaluating to something that isn't a boolean.
-        UnrulyException ex = assertThrows(UnrulyException.class,
-                () -> engine(rule("r", 1, assign, putFact(SEEN, "x"))).run(new FactMap<>(new Fact<>("x", 1))),
-                "a condition that assigns to a fact was neither rejected by load nor failed by run");
+        closing(engine(), engine -> {
+            // A language may reject the assignment when compiling or when running: by refusing it, by failing to
+            // write to the read-only facts, or by evaluating to something that isn't a boolean. So loading is inside
+            // the check.
+            UnrulyException ex = assertThrows(UnrulyException.class, () -> {
+                engine.load(List.of(rule("r", 1, assign, putFact(SEEN, "x"))));
+                engine.run(new FactMap<>(new Fact<>("x", 1)));
+            }, "a condition that assigns to a fact was neither rejected by load nor failed by run");
 
-        if (ex instanceof RuleCompilationException compilation) {
-            assertEquals("r", compilation.getRuleName(), ex.getMessage());
-            assertEquals(ExpressionKind.CONDITION, compilation.getExpressionKind(), ex.getMessage());
-        } else if (ex instanceof RuleExecutionException execution) {
-            assertEquals("r", execution.getRuleName(), ex.getMessage());
-            assertEquals(ExpressionKind.CONDITION, execution.getExpressionKind(), ex.getMessage());
-        } else {
-            fail("a condition that assigns to a fact failed with an UnrulyException that is neither a"
-                    + " RuleCompilationException nor a RuleExecutionException: " + ex);
-        }
+            if (ex instanceof RuleCompilationException compilation) {
+                assertEquals("r", compilation.getRuleName(), ex.getMessage());
+                assertEquals(ExpressionKind.CONDITION, compilation.getExpressionKind(), ex.getMessage());
+            } else if (ex instanceof RuleExecutionException execution) {
+                assertEquals("r", execution.getRuleName(), ex.getMessage());
+                assertEquals(ExpressionKind.CONDITION, execution.getExpressionKind(), ex.getMessage());
+            } else {
+                fail("a condition that assigns to a fact failed with an UnrulyException that is neither a"
+                        + " RuleCompilationException nor a RuleExecutionException: " + ex);
+            }
+        });
     }
 
     @Test
     @DisplayName("an action can't replace the output object")
-    void outputNotReplaceable() {
+    void outputNotReplaceable() throws Exception {
         String reassign = reassignOutput();
         assumeTrue(reassign != null, "the language's actions can't assign the output");
-        // A language may reject the assignment when compiling or when running.
-        assertThrows(UnrulyException.class,
-                () -> engine(rule("r", 1, alwaysTrue(), reassign)).run(new FactMap<>(new Fact<>("x", 1))));
+        // A language may reject the assignment when compiling or when running, so loading is inside the check.
+        closing(engine(), engine -> assertThrows(UnrulyException.class, () -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), reassign)));
+            engine.run(new FactMap<>(new Fact<>("x", 1)));
+        }));
     }
 
     @Test
     @DisplayName("a variable an action declares doesn't change the facts later actions see")
-    void actionVariablesStayLocal() {
+    void actionVariablesStayLocal() throws Exception {
         String declare = declareVariable("x", 2);
         assumeTrue(declare != null, "the language's actions have no variables");
-        RulesEngine<Map<String, Object>> engine = engine(
-                rule("declares", 2, alwaysTrue(), declare),
-                rule("reads", 1, alwaysTrue(), putFact(SEEN, "x")));
+        closing(engine(), engine -> {
+            engine.load(List.of(
+                    rule("declares", 2, alwaysTrue(), declare),
+                    rule("reads", 1, alwaysTrue(), putFact(SEEN, "x"))));
 
-        assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
-        assertSameOutput(Map.of(SEEN, 3), engine.run(new FactMap<>(new Fact<>("x", 3))));
+            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+            assertSameOutput(Map.of(SEEN, 3), engine.run(new FactMap<>(new Fact<>("x", 3))));
+        });
     }
 
     @Test
     @DisplayName("a syntax error is reported by load, naming the rule and its condition")
-    void syntaxErrorAtLoad() {
-        RulesEngine<Map<String, Object>> engine = engine();
+    void syntaxErrorAtLoad() throws Exception {
         List<Rule> rules = List.of(rule("r", 1, syntaxError(), putFact(SEEN, "x")));
 
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+        closing(engine(), engine -> {
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
-        assertEquals("r", ex.getRuleName());
-        assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
-        assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
+            assertEquals("r", ex.getRuleName());
+            assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
+            assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
+        });
     }
 
     @Test
     @DisplayName("a syntax error in an action is reported by load, naming the rule and its action")
-    void syntaxErrorInActionAtLoad() {
+    void syntaxErrorInActionAtLoad() throws Exception {
         String action = actionSyntaxError();
         // The engine rejects a blank action before the language is asked to compile it, so a blank one would make
         // this check pass without the language's compiler running at all.
         assertFalse(action.isBlank(), "actionSyntaxError() must return an action the language itself rejects");
-        RulesEngine<Map<String, Object>> engine = engine();
         List<Rule> rules = List.of(rule("r", 1, alwaysTrue(), action));
 
-        // A language that compiles its actions on first use loads this rule without a word, and fails it in
-        // production instead, one run at a time.
-        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+        closing(engine(), engine -> {
+            // A language that compiles its actions on first use loads this rule without a word, and fails it in
+            // production instead, one run at a time.
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
 
-        assertEquals("r", ex.getRuleName());
-        assertEquals(ExpressionKind.ACTION, ex.getExpressionKind());
+            assertEquals("r", ex.getRuleName());
+            assertEquals(ExpressionKind.ACTION, ex.getExpressionKind());
+        });
     }
 
     @Test
     @DisplayName("a fact name the language can't refer to is rejected by run()")
-    void unusableFactNameRejected() {
+    void unusableFactNameRejected() throws Exception {
         String name = unusableFactName();
         assumeTrue(name != null, "the language accepts every fact name");
-        RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, alwaysTrue(), putFact(SEEN, "x")));
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
 
-        assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
+            assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
+        });
     }
 
     @Test
     @DisplayName("a condition reads a property of a record fact, a JavaBean fact and a map fact the same way")
-    void conditionReadsProperties() {
-        RulesEngine<Map<String, Object>> engine =
-                engine(rule("r", 1, factProperty(APPLICANT, CREDIT_SCORE, 750), putFact(SEEN, APPLICANT)));
+    void conditionReadsProperties() throws Exception {
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("r", 1, factProperty(APPLICANT, CREDIT_SCORE, 750), putFact(SEEN, APPLICANT))));
 
-        assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750)))),
-                "a record fact's component wasn't read");
-        assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new ApplicantBean(750)))),
-                "a JavaBean fact's getter wasn't read");
-        assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, Map.of(CREDIT_SCORE, 750)))),
-                "a map fact's key wasn't read");
-        assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(700)))),
-                "the record's component was read as 750");
-        assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new ApplicantBean(700)))),
-                "the JavaBean's getter was read as 750");
-        assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, Map.of(CREDIT_SCORE, 700)))),
-                "the map's key was read as 750");
+            assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750)))),
+                    "a record fact's component wasn't read");
+            assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new ApplicantBean(750)))),
+                    "a JavaBean fact's getter wasn't read");
+            assertNotNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, Map.of(CREDIT_SCORE, 750)))),
+                    "a map fact's key wasn't read");
+            assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(700)))),
+                    "the record's component was read as 750");
+            assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, new ApplicantBean(700)))),
+                    "the JavaBean's getter was read as 750");
+            assertNull(engine.run(new FactMap<>(new Fact<>(APPLICANT, Map.of(CREDIT_SCORE, 700)))),
+                    "the map's key was read as 750");
+        });
     }
 
     @Test
     @DisplayName("a property the fact doesn't have fails the run, rather than being false or undefined")
-    void missingPropertyFailsTheRun() {
+    void missingPropertyFailsTheRun() throws Exception {
         String condition = missingFactProperty(APPLICANT, "creditScor", 750);
         assumeTrue(condition != null, "the language reads a missing property as null or undefined");
         Rule misspelled = rule("r", 1, condition, putFact(SEEN, APPLICANT));
@@ -498,55 +554,77 @@ public abstract class ExpressionLanguageContractTest {
         // Only the record: a missing key of a map is a different question, and languages answer it differently on
         // purpose. JsonLogic, JEXL and SpEL read a missing key as null or empty, which is what their users expect,
         // and a faithful adapter for one of them shouldn't fail a contract written around a record's components.
-        assertThrows(UnrulyException.class,
-                () -> engine(misspelled).run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750)))),
-                "a misspelled property of a record fact didn't fail");
+        closing(engine(), engine -> assertThrows(UnrulyException.class, () -> {
+            engine.load(List.of(misspelled));
+            engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))));
+        }, "a misspelled property of a record fact didn't fail"));
     }
 
     @Test
     @DisplayName("copies made and warmed up when the rules load give the same results, one run or several at once")
-    // Shut down in the finally block, which also interrupts workers that a broken language leaves running.
-    @SuppressWarnings("PMD.CloseResource")
     void copiesAtLoad() throws Exception {
-        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .language(language()).copiesAtLoad(2).build();
-        engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
-        ExecutorService workers = Executors.newFixedThreadPool(2);
+        closing(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language())
+                .copiesAtLoad(2).build(), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
+            ExecutorService workers = Executors.newFixedThreadPool(2);
+            try {
+                List<Future<Map<String, Object>>> results = new ArrayList<>();
+                for (int y = 0; y < 2; y++) {
+                    FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1));
+                    facts.setValue("y", y);
+                    results.add(workers.submit(() -> engine.run(facts)));
+                }
+                for (int y = 0; y < 2; y++) {
+                    assertSameOutput(Map.of(SEEN, y), results.get(y).get(30, TimeUnit.SECONDS));
+                }
+                assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
+            } finally {
+                stop(workers);
+            }
+        });
+    }
+
+    /**
+     * Stops a check's workers before its engine is closed: interrupts them, which also stops workers that a broken
+     * language leaves running, and waits a while for them to end, so that none still holds a copy of the rules when
+     * the engine closes it. On a thread that is already interrupted, the wait is skipped and the thread stays
+     * interrupted; a copy a worker gives back later is closed then, by the closed engine.
+     *
+     * @param workers The workers
+     */
+    private static void stop(ExecutorService workers) {
+        workers.shutdownNow();
+        // Not close(), which waits for as long as a broken language keeps a worker running. A worker still running
+        // after this gives its copy back to the closed engine, which closes the copy then.
         try {
-            List<Future<Map<String, Object>>> results = new ArrayList<>();
-            for (int y = 0; y < 2; y++) {
-                FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1));
-                facts.setValue("y", y);
-                results.add(workers.submit(() -> engine.run(facts)));
-            }
-            for (int y = 0; y < 2; y++) {
-                assertSameOutput(Map.of(SEEN, y), results.get(y).get(30, TimeUnit.SECONDS));
-            }
-            assertNull(engine.run(new FactMap<>(new Fact<>("x", 2))));
-        } finally {
-            workers.shutdownNow();
+            workers.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            // Interrupted before or while it waits, as a JUnit timeout or an interrupted run leaves the thread. The
+            // check's own failure stays the one reported, and the thread stays interrupted.
+            Thread.currentThread().interrupt();
         }
     }
 
     @Test
     @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's"
             + " closed")
-    void compilerClosed() {
+    void compilerClosed() throws Exception {
         ExpressionLanguage language = language();
         List<AtomicInteger> closes = new CopyOnWriteArrayList<>();
-        RulesEngine<Map<String, Object>> engine = engine(countingCloses(language, closes));
+        // Closed after the check as well, so a failed check still closes the engine. A third close does nothing.
+        closing(engine(countingCloses(language, closes)), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+            engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
 
-        engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-        assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
-        engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
+            assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
+            assertSameOutput(Map.of(SEEN, 2), engine.run(new FactMap<>(new Fact<>("x", 2))));
 
-        assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
-        assertSameOutput(Map.of(SEEN, 2), engine.run(new FactMap<>(new Fact<>("x", 2))));
+            engine.close();
+            engine.close();
 
-        engine.close();
-        engine.close();
-
-        assertEquals(List.of(1, 1), closes.stream().map(AtomicInteger::get).toList());
+            assertEquals(List.of(1, 1), closes.stream().map(AtomicInteger::get).toList());
+        });
     }
 
     /** Wraps a language so that each compiler it creates counts how often it's closed. */
@@ -595,15 +673,17 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("each copy of the rules gets a session of its own, and closing a session doesn't throw")
-    void sessionsClosed() {
+    void sessionsClosed() throws Exception {
         SessionWatch sessions = new SessionWatch();
         // Two copies when the rules load. A language that keeps state gets newSession() called twice, once for each
         // copy, and each session warmed up; one that returns Session.none() is asked once, and its copy is shared.
-        // Closed by the try, so a failed run still closes the sessions.
-        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
-                HashMap::new).language(sessions.watching(language())).copiesAtLoad(2).build()) {
-            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+        // Closed however the check ends, so a failed run still closes the sessions.
+        try {
+            closing(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .language(sessions.watching(language())).copiesAtLoad(2).build(), engine -> {
+                engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+                assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+            });
         } catch (Throwable e) {
             // The engine is closed by now. The run's failure stays the one reported, with what closing the sessions
             // threw attached to it.
@@ -626,18 +706,18 @@ public abstract class ExpressionLanguageContractTest {
      */
     @Test
     @DisplayName("a condition's detail isn't the session it ran with, and can still be read once the session is closed")
-    void conditionDetail() {
+    void conditionDetail() throws Exception {
         SessionWatch sessions = new SessionWatch();
 
-        // Closed by the try, so the details are read once the engine has closed the sessions, and a failed run still
-        // closes them.
-        List<RuleEvaluation> evaluations;
-        try (RulesEngine<Map<String, Object>> engine = engine(sessions.watching(language()))) {
+        // Closed before the details are read, so they're read once the engine has closed the sessions, and a failed
+        // run still closes them.
+        List<RuleEvaluation> evaluations = new ArrayList<>();
+        closing(engine(sessions.watching(language())), engine -> {
             // One rule that matches and one that doesn't, so the detail of a false condition is checked too.
             engine.load(List.of(rule("matches", 2, factEquals("x", 1), putFact(SEEN, "x")),
                     rule("misses", 1, factEquals("x", 2), putFact(SEEN, "x"))));
-            evaluations = engine.runWithResult(new FactMap<>(new Fact<>("x", 1))).evaluations();
-        }
+            evaluations.addAll(engine.runWithResult(new FactMap<>(new Fact<>("x", 1))).evaluations());
+        });
 
         assertEquals(2, evaluations.size(), "the run didn't report both rules' evaluations");
         // The result outlives the run, and a caller reads it after the engine has given the session to another run
@@ -677,8 +757,8 @@ public abstract class ExpressionLanguageContractTest {
             }
         }
 
-        // By identity: the engine rethrows a fatal error from close() itself, and try-with-resources has attached
-        // what engine.close() threw to a failed run, so either may be one of these already.
+        // By identity: the engine rethrows a fatal error from close() itself, and closing() has attached what
+        // engine.close() threw to a failed run, so either may be one of these already.
         @SuppressWarnings("PMD.CompareObjectsWithEquals")
         void suppressCloseFailures(Throwable runFailure) {
             List<Throwable> attached = Arrays.asList(runFailure.getSuppressed());
@@ -815,17 +895,16 @@ public abstract class ExpressionLanguageContractTest {
     @Test
     @DisplayName("a condition's evaluate returns the value evaluateWithDetail reports")
     void evaluateAgreesWithDetail() throws Exception {
-        // Closed by the try, the session before its compiler, as the engine closes them.
-        try (ClosedQuietly<ExpressionCompiler> compiler =
-                     new ClosedQuietly<>(language().newCompiler(LanguageTestContexts.compile()))) {
+        // Closed however the check ends, the session before its compiler, as the engine closes them.
+        closing(new ClosedQuietly<>(language().newCompiler(LanguageTestContexts.compile())), compiler -> {
             CompiledCondition condition = compiler.resource()
                     .compileCondition(new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
             // A session of the language's own, as a run gets one, not Session.none(), which a stateful language
             // couldn't evaluate with.
             Session created = compiler.resource().newSession();
             assertNotNull(created, "newSession() returned null, which fails every run that needs a session");
-            try (ClosedQuietly<Session> closing = new ClosedQuietly<>(created)) {
-                Session session = closing.resource();
+            closing(new ClosedQuietly<>(created), closed -> {
+                Session session = closed.resource();
                 for (int x = 1; x <= 2; x++) {
                     EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", x));
                     ConditionResult detailed = condition.evaluateWithDetail(evaluation, session);
@@ -835,8 +914,8 @@ public abstract class ExpressionLanguageContractTest {
                     assertEquals(detailed.value(), condition.evaluate(evaluation, session),
                             "for x = " + x + ", evaluate returned a different value than evaluateWithDetail reported");
                 }
-            }
-        }
+            });
+        });
     }
 
     /**
@@ -862,40 +941,40 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("concurrent runs of one rule list each see their own facts")
-    // Shut down in the finally block, which also interrupts workers that a broken language leaves running.
-    @SuppressWarnings("PMD.CloseResource")
     void concurrentRuns() throws Exception {
-        RulesEngine<Map<String, Object>> engine = engine(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y")));
-        CountDownLatch start = new CountDownLatch(1);
-        ExecutorService workers = Executors.newFixedThreadPool(8);
-        try {
-            List<Future<List<List<Map<String, Object>>>>> results = new ArrayList<>();
-            for (int t = 0; t < 8; t++) {
-                int worker = t;
-                results.add(workers.submit(() -> {
-                    start.await();
-                    List<Map<String, Object>> expected = new ArrayList<>();
-                    List<Map<String, Object>> actual = new ArrayList<>();
-                    for (int i = 0; i < 200; i++) {
-                        int x = (worker + i) % 2;
-                        int y = worker * 1_000 + i;
-                        FactStore<Object> facts = new FactMap<>();
-                        facts.setValue("x", x);
-                        facts.setValue("y", y);
-                        expected.add(x == 1 ? Map.of(SEEN, y) : null);
-                        actual.add(engine.run(facts));
-                    }
-                    return List.of(expected, actual);
-                }));
-            }
-            start.countDown();
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService workers = Executors.newFixedThreadPool(8);
+            try {
+                List<Future<List<List<Map<String, Object>>>>> results = new ArrayList<>();
+                for (int t = 0; t < 8; t++) {
+                    int worker = t;
+                    results.add(workers.submit(() -> {
+                        start.await();
+                        List<Map<String, Object>> expected = new ArrayList<>();
+                        List<Map<String, Object>> actual = new ArrayList<>();
+                        for (int i = 0; i < 200; i++) {
+                            int x = (worker + i) % 2;
+                            int y = worker * 1_000 + i;
+                            FactStore<Object> facts = new FactMap<>();
+                            facts.setValue("x", x);
+                            facts.setValue("y", y);
+                            expected.add(x == 1 ? Map.of(SEEN, y) : null);
+                            actual.add(engine.run(facts));
+                        }
+                        return List.of(expected, actual);
+                    }));
+                }
+                start.countDown();
 
-            for (Future<List<List<Map<String, Object>>>> result : results) {
-                List<List<Map<String, Object>>> runs = result.get(30, TimeUnit.SECONDS);
-                assertSameOutput(runs.get(0), runs.get(1));
+                for (Future<List<List<Map<String, Object>>>> result : results) {
+                    List<List<Map<String, Object>>> runs = result.get(30, TimeUnit.SECONDS);
+                    assertSameOutput(runs.get(0), runs.get(1));
+                }
+            } finally {
+                stop(workers);
             }
-        } finally {
-            workers.shutdownNow();
-        }
+        });
     }
 }

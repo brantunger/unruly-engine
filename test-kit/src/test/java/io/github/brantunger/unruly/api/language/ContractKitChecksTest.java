@@ -32,7 +32,7 @@ class ContractKitChecksTest {
     }
 
     /** Runs one of the kit's checks, by name, on a contract test the caller built. */
-    private static void runCheck(ExpressionLanguageContractTest test, String check) throws Throwable {
+    static void runCheck(ExpressionLanguageContractTest test, String check) throws Throwable {
         Method method = ExpressionLanguageContractTest.class.getDeclaredMethod(check);
         method.setAccessible(true);
         try {
@@ -163,6 +163,50 @@ class ContractKitChecksTest {
     /** A language whose condition ignores the assignment and is true, so nothing ever says it was wrong. */
     private static ExpressionLanguage silentTrue(ExpressionLanguage language) {
         return assigningConditions(language, (evaluation, session) -> true);
+    }
+
+    /** Wraps a language so that a condition reading a misspelled {@code creditScor} is rejected when the rule loads. */
+    private static ExpressionLanguage missingPropertyAtLoad(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        if (expression.text().contains(".creditScor ")) {
+                            throw new IllegalArgumentException("the fact has no property creditScor");
+                        }
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void checkFactName(String name) {
+                        compiler.checkFactName(name);
+                    }
+
+                    @Override
+                    public void close() {
+                        compiler.close();
+                    }
+                };
+            }
+        };
     }
 
     /** Wraps a language so that every action it compiles fails when it runs. */
@@ -327,6 +371,14 @@ class ContractKitChecksTest {
             + " (#508)")
     void localAssignPasses() {
         assertDoesNotThrow(() -> runCheck(localAssign(new ToyExpressionLanguage()), "conditionAssignmentRejected"));
+    }
+
+    @Test
+    @DisplayName("a language that rejects a missing property when the rule loads passes the missing-property check"
+            + " (#534)")
+    void missingPropertyAtLoadPasses() {
+        assertDoesNotThrow(() -> runCheck(missingPropertyAtLoad(new ToyExpressionLanguage()),
+                "missingPropertyFailsTheRun"));
     }
 
     @Test

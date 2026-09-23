@@ -535,11 +535,11 @@ language, one method for each hook. Its seventeen checks:
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
 - `language()` is called for each check and for each engine a check builds, so return a new instance.
 
-Each check but `evaluateAgreesWithDetail` builds `allMatches(HashMap::new).language(language())`, with no imports,
-options or declared facts, so the language must work alone. `copiesAtLoad` and `sessionsClosed` add
-`copiesAtLoad(2)`, and `compilerClosed`, `sessionsClosed` and `conditionDetail` wrap your language to watch its
-compiler or sessions. `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by
-value, so `Long` or `Double` whole numbers pass.
+Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())`,
+with no imports, options or declared facts, so the language must work alone, and closes the engine when the check
+ends, whether it passes or fails. `copiesAtLoad` and `sessionsClosed` add `copiesAtLoad(2)`, and `compilerClosed`,
+`sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions. `factValue(x)` must not
+coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or `Double` whole numbers pass.
 
 The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
 decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
