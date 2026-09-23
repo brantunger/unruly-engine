@@ -167,7 +167,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 ## 🪵 LoggingRuleListener
 
 A ready-made listener that logs each rule's callbacks at **DEBUG** level: `beforeEvaluate`, `afterEvaluate`,
-`beforeExecute`, `afterExecute` and `onError`. It doesn't log the run callbacks.
+`beforeExecute`, `afterExecute` and `onError`. It doesn't log the run callbacks. With DEBUG off, it returns at once
+from every callback.
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
