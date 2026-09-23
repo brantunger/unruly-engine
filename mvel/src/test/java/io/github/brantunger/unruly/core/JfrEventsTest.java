@@ -395,6 +395,53 @@ class JfrEventsTest {
     }
 
     @Test
+    @DisplayName("a run whose wait for a copy stops, and whose listener's beforeRun then throws a fatal error, is"
+            + " STOPPED")
+    void stoppedWaitWithAFatalBeforeRun() throws Exception {
+        Thread waiterThread = Thread.currentThread();
+        RuleListener fatalBeforeRun = new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                if (Thread.currentThread() == waiterThread) {
+                    throw new OutOfMemoryError("from beforeRun, on purpose");
+                }
+            }
+        };
+        RulesEngine<Map<String, Object>> engine =
+                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).maxCopies(1)
+                        .runTimeout(Duration.ofMillis(100)).listener(fatalBeforeRun).build();
+        engine.load(List.of(rule("jfr-wait-fatal", 1, "sleeper.sleep(600)")));
+        String checksum = engine.rules().checksum();
+        CountDownLatch holding = new CountDownLatch(1);
+        FactStore<Object> holderFacts = new FactMap<>();
+        holderFacts.setValue("sleeper", new Sleeper() {
+            @Override
+            public boolean sleep(long millis) throws InterruptedException {
+                holding.countDown();
+                return super.sleep(millis);
+            }
+        });
+
+        Recording recording = recordEverything();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> holder = executor.submit(() -> assertThrows(RuleExecutionException.class,
+                    () -> engine.run(holderFacts)));
+            assertTrue(holding.await(5, TimeUnit.SECONDS), "the holder never started its condition");
+            assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>()));
+            holder.get(5, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+        List<RecordedEvent> all = stop(recording, "waiting-fatal");
+
+        List<RecordedEvent> runs = events(all, RUN_EVENT, event -> checksum.equals(event.getString("ruleSetChecksum")));
+        RecordedEvent waited = runs.stream().filter(event -> event.getInt("rulesEvaluated") == 0).findFirst()
+                .orElseThrow(() -> new AssertionError("no run event with nothing evaluated: " + runs));
+        assertEquals("STOPPED", waited.getString("outcome"));
+    }
+
+    @Test
     @DisplayName("a stop that a listener's fatal error closes is still STOPPED on the rule and on the run")
     void stopClosedByFatalError() throws IOException {
         RuleListener fatalOnError = new RuleListener() {

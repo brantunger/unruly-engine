@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.AbstractQueue;
@@ -41,6 +43,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 
@@ -59,6 +62,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code Throwable} that is neither an {@code Exception} nor an {@code Error} from compiling at load or from closing a
  * session, and a run interrupted while it waits for a copy, which keeps its thread's interrupt status.
  * </p>
+ *
+ * <p>
+ * #552: such a {@code Throwable} from a language or a listener is reported like an exception, so it's the load's or the
+ * run's failure, wrapping it, that a fatal {@code Error} from closing carries. #553: a run stopped while it waits for a
+ * copy is reported as a stop before it leaves the rules it waited on, even when leaving closes them with a fatal
+ * {@code Error}.
+ * </p>
  */
 @DisplayName("closing a rule list closes every session and then the compilers, and throws the first fatal Error")
 class CloseEverySessionTest {
@@ -75,9 +85,14 @@ class CloseEverySessionTest {
     private static final class RecordingLanguage implements ExpressionLanguage {
         final String name;
         final List<String> closed = new CopyOnWriteArrayList<>();
+        // Each compiler close: the name of the thread that closed it, and whether its interrupt status was set.
+        final List<String> compilerClosings = new CopyOnWriteArrayList<>();
         final Map<Integer, Throwable> sessionCloseFailures = new ConcurrentHashMap<>();
         final Map<Integer, Throwable> warmUpFailures = new ConcurrentHashMap<>();
         volatile Throwable compilerCloseFailure;
+        // Whether the compiler's close() clears its thread's interrupt status, as one that swallows an
+        // InterruptedException does.
+        volatile boolean compilerCloseClearsInterrupt;
         volatile Runnable duringCompile = () -> {
         };
         volatile Runnable duringNewSession = () -> {
@@ -144,6 +159,11 @@ class CloseEverySessionTest {
                 @Override
                 public void close() {
                     closed.add("compiler");
+                    compilerClosings.add(Thread.currentThread().getName() + " interrupted "
+                            + Thread.currentThread().isInterrupted());
+                    if (compilerCloseClearsInterrupt) {
+                        Thread.interrupted();
+                    }
                     throwIfSet(compilerCloseFailure);
                 }
             };
@@ -632,8 +652,28 @@ class CloseEverySessionTest {
     }
 
     @Test
-    @DisplayName("a run that ends with a Throwable that is neither an Exception nor an Error still gives back its copy")
+    @DisplayName("a run whose action ends with a Throwable that is neither an Exception nor an Error fails, and still"
+            + " gives back its copy")
     void rawThrowableFromRunStillGivesBackTheCopy() {
+        Throwable raw = new Throwable("raw");
+        RecordingLanguage language = new RecordingLanguage();
+        language.duringAction = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        RulesEngine<Map<String, Object>> engine = engine(language, 1);
+        engine.load(rules("r"));
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        engine.close();
+
+        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        assertSame(raw, runFailure.getCause());
+        assertEquals(sessionsThenCompiler(1, 1), language.closed, "the copy was given back, so close() closed it");
+    }
+
+    @Test
+    @DisplayName("a run whose listener's beforeRun throws a Throwable that is neither an Exception nor an Error goes"
+            + " on, and gives back its copy")
+    void rawThrowableFromAListenerStillGivesBackTheCopy() {
         Throwable raw = new Throwable("raw");
         RecordingLanguage language = new RecordingLanguage();
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language)
@@ -646,10 +686,12 @@ class CloseEverySessionTest {
         engine.load(rules("r"));
         AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
         engine.close();
 
-        assertSame(raw, thrown.get());
+        assertNull(thrown.get(), "the listener's throw is contained, like an exception");
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun:"
+                + " java.lang.Throwable: raw"), logs);
         assertEquals(sessionsThenCompiler(1, 1), language.closed, "the copy was given back, so close() closed it");
     }
 
@@ -705,7 +747,9 @@ class CloseEverySessionTest {
 
         logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
 
-        assertSame(raw, thrown.get());
+        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        assertEquals("The 'second' expression language failed to create a session: raw", runFailure.getMessage());
+        assertSame(raw, runFailure.getCause());
         assertEquals(List.of("session 1"), first.closed, "the session made for the copy before the other failed");
         engine.close();
         assertEquals(List.of("session 1", "compiler"), first.closed, "the run left, so close() closed the compilers");
@@ -863,14 +907,16 @@ class CloseEverySessionTest {
 
         logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
 
-        assertSame(raw, thrown.get());
+        RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        assertEquals("The 'second' expression language failed to create a session: raw", loadFailure.getMessage());
+        assertSame(raw, loadFailure.getCause());
         assertEquals(List.of("session 1", "compiler"), first.closed);
         assertEquals(List.of("compiler"), second.closed);
     }
 
     @Test
     @DisplayName("a load that fails with a Throwable that is neither an Exception nor an Error throws a fatal Error"
-            + " from closing, carrying that Throwable")
+            + " from closing, carrying the load's failure, which wraps that Throwable")
     void rawThrowableAtLoadThenFatalClose() {
         Throwable raw = new Throwable("raw");
         OutOfMemoryError fatal = new OutOfMemoryError("closing the partly made copy");
@@ -885,42 +931,43 @@ class CloseEverySessionTest {
         logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
 
         assertSame(fatal, thrown.get());
-        assertArrayEquals(new Throwable[] {raw}, fatal.getSuppressed());
+        assertEquals(1, fatal.getSuppressed().length, "the load's failure");
+        assertSame(raw, assertInstanceOf(RuleCompilationException.class, fatal.getSuppressed()[0]).getCause());
         assertEquals(List.of("session 1", "compiler"), first.closed);
         assertEquals(List.of("compiler"), second.closed);
     }
 
     @Test
-    @DisplayName("a run that ends with a Throwable that is neither an Exception nor an Error, and then gives back the"
-            + " last copy of closed rules, throws the fatal Error from closing it, carrying that Throwable")
+    @DisplayName("a run that fails with a Throwable that is neither an Exception nor an Error, and then gives back the"
+            + " last copy of closed rules, throws the fatal Error from closing it, carrying the run's failure, which"
+            + " wraps that Throwable")
     void rawThrowableFromRunThenFatalOnGiveBack() {
         Throwable raw = new Throwable("raw");
         OutOfMemoryError fatal = new OutOfMemoryError("the run's copy");
         RecordingLanguage language = new RecordingLanguage();
-        AtomicReference<RulesEngine<Map<String, Object>>> engineRef = new AtomicReference<>();
-        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language)
-                .listener(new RuleListener() {
-                    @Override
-                    public void beforeRun(RunContext run) {
-                        engineRef.get().close();
-                        CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
-                    }
-                }), 1);
-        engineRef.set(engine);
+        RulesEngine<Map<String, Object>> engine = engine(language, 1);
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, fatal);
+        language.duringAction = () -> {
+            engine.close();
+            CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        };
         AtomicReference<Throwable> thrown = new AtomicReference<>();
 
         logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
 
         assertSame(fatal, thrown.get());
-        assertArrayEquals(new Throwable[] {raw}, fatal.getSuppressed());
+        assertEquals(1, fatal.getSuppressed().length, "the run's failure");
+        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
+        assertEquals("r", runFailure.getRuleName());
+        assertSame(raw, runFailure.getCause());
         assertEquals(sessionsThenCompiler(1, 1), language.closed);
     }
 
     @Test
     @DisplayName("a run whose new copy fails with a Throwable that is neither an Exception nor an Error throws a"
-            + " fatal Error from closing the sessions already made, carrying that Throwable")
+            + " fatal Error from closing the sessions already made, carrying the run's failure, which wraps that"
+            + " Throwable")
     void rawThrowableFromNewSessionAtRunThenFatalClose() {
         Throwable raw = new Throwable("raw");
         OutOfMemoryError fatal = new OutOfMemoryError("closing the partly made copy");
@@ -935,13 +982,15 @@ class CloseEverySessionTest {
         logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
 
         assertSame(fatal, thrown.get());
-        assertArrayEquals(new Throwable[] {raw}, fatal.getSuppressed());
+        assertEquals(1, fatal.getSuppressed().length, "the run's failure");
+        assertSame(raw, assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]).getCause());
         assertEquals(List.of("session 1"), first.closed);
     }
 
     @Test
     @DisplayName("a run that fails to get a copy with a Throwable that is neither an Exception nor an Error, as the"
-            + " last user of closed rules, throws a fatal Error from closing the compiler, carrying that Throwable")
+            + " last user of closed rules, throws a fatal Error from closing the compiler, carrying the run's failure,"
+            + " which wraps that Throwable")
     void rawThrowableFromFailedBorrowThenFatalClose() {
         Throwable raw = new Throwable("raw");
         OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
@@ -958,13 +1007,15 @@ class CloseEverySessionTest {
         logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
 
         assertSame(fatal, thrown.get());
-        assertArrayEquals(new Throwable[] {raw}, fatal.getSuppressed());
+        assertEquals(1, fatal.getSuppressed().length, "the run's failure");
+        assertSame(raw, assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]).getCause());
         assertEquals(List.of("compiler"), language.closed);
     }
 
     @Test
-    @DisplayName("validate() that fails with a Throwable that is neither an Exception nor an Error throws a fatal"
-            + " Error from closing a compiler, carrying that Throwable")
+    @DisplayName("validate() whose language fails to create a compiler with a Throwable that is neither an Exception"
+            + " nor an Error reports it like an exception, and still closes the compiler created, throwing the fatal"
+            + " Error from closing it")
     void rawThrowableFromValidateThenFatalClose() {
         Throwable raw = new Throwable("raw");
         OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
@@ -978,14 +1029,15 @@ class CloseEverySessionTest {
 
         logsOf(() -> thrown.set(thrownBy(() -> engine.validate(rules))));
 
+        // A failure validate() reports rather than throws, so the fatal Error from closing carries nothing.
         assertSame(fatal, thrown.get());
-        assertArrayEquals(new Throwable[] {raw}, fatal.getSuppressed());
+        assertEquals(0, fatal.getSuppressed().length);
         assertEquals(List.of("compiler"), first.closed);
     }
 
     @Test
-    @DisplayName("a load whose compiling throws a Throwable that is neither an Exception nor an Error closes the"
-            + " compilers already created")
+    @DisplayName("a load whose language fails to create a compiler with a Throwable that is neither an Exception nor"
+            + " an Error fails like one that throws an exception, and closes the compilers already created")
     void rawThrowableFromCompilingAtLoadClosesTheCompilers() {
         Throwable raw = new Throwable("raw");
         RecordingLanguage first = new RecordingLanguage();
@@ -997,7 +1049,9 @@ class CloseEverySessionTest {
 
         logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
 
-        assertSame(raw, thrown.get());
+        RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        assertEquals("The 'second' expression language failed to create a compiler: raw", loadFailure.getMessage());
+        assertSame(raw, loadFailure.getCause());
         assertEquals(List.of("compiler"), first.closed, "the first language's compiler was created, so it's closed");
     }
 
@@ -1180,7 +1234,7 @@ class CloseEverySessionTest {
 
     @Test
     @DisplayName("a run interrupted while it waits for a copy, whose leaving closes retired rules with a fatal Error,"
-            + " keeps its thread's interrupt status")
+            + " keeps its thread's interrupt status, and leaves only once it's been handed the stop")
     void interruptedWaitThenFatalCloseKeepsTheInterruptStatus() throws InterruptedException, TimeoutException {
         OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
         CopyPermits permits = new CopyPermits(1);
@@ -1188,9 +1242,13 @@ class CloseEverySessionTest {
         RecordingCompiler compiler = new RecordingCompiler();
         RuleSet waitedFor = ruleSet(compiler, permits, new ConcurrentLinkedQueue<>());
         AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicReference<List<String>> closedBeforeLeaving = new AtomicReference<>();
+        AtomicReference<Error> left = new AtomicReference<>();
         AtomicBoolean interrupted = new AtomicBoolean();
         Thread waiter = new Thread(() -> {
             thrown.set(thrownBy(() -> waitedFor.borrow(null)));
+            closedBeforeLeaving.set(List.copyOf(compiler.closed));
+            left.set(waitedFor.leaveAfterStop());
             interrupted.set(Thread.currentThread().isInterrupted());
         });
         // The one permit, held with a copy of the other rule set, so the waiter waits for it.
@@ -1209,11 +1267,415 @@ class CloseEverySessionTest {
             held.release(copy);
         }
 
-        assertSame(fatal, thrown.get());
-        assertInstanceOf(InterruptedException.class, fatal.getSuppressed()[0]);
+        assertInstanceOf(InterruptedException.class, thrown.get(), "the stop, for the run to report");
+        assertEquals(List.of(), closedBeforeLeaving.get(), "nothing is closed before the run leaves");
+        assertSame(fatal, left.get(), "leaving returns the fatal Error from closing, for the run to throw");
         assertTrue(interrupted.get(), "the thread's interrupt status");
         assertEquals(List.of("compiler"), compiler.closed);
         assertTrue(compiler.closedInterrupted, "the interrupt status was set again before the compiler was closed");
+    }
+
+    /**
+     * Records the run callbacks a listener gets, each with the name of the thread it came on, and the class of the
+     * error {@code onRunError} got and of its cause.
+     */
+    private static RuleListener recordingRunCallbacks(List<String> events) {
+        return new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                events.add(Thread.currentThread().getName() + " beforeRun");
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                events.add(Thread.currentThread().getName() + " onRunError " + error.getClass().getSimpleName()
+                        + " cause " + (error.getCause() == null ? null : error.getCause().getClass().getSimpleName()));
+            }
+        };
+    }
+
+    /** The run callbacks {@link #recordingRunCallbacks} recorded for the waiter's run. */
+    private static List<String> waiterCallbacks(List<String> events) {
+        return events.stream().filter(event -> event.startsWith("waiter ")).toList();
+    }
+
+    /**
+     * Starts a waiter that waits for the engine's one copy, which a holder keeps with rules a reload has retired; waits
+     * with {@code untilWaiting} until the waiter has got where the test wants it; then retires the waiter's rules too
+     * with {@code close()}, while the compiler's {@code close()} throws {@code closeFailure}, so the waiter, their only
+     * user, closes them when it leaves; then lets the waiter go on with {@code stop}. The holder's rules are closed
+     * once the waiter has finished, with a compiler that no longer throws.
+     */
+    private static void waitRetireAndStop(RecordingLanguage language, RulesEngine<Map<String, Object>> engine,
+                                          Throwable closeFailure, Runnable waiterRun, Consumer<Thread> untilWaiting,
+                                          Consumer<Thread> stop) {
+        engine.load(rules("r"));
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        language.duringAction = () -> {
+            holding.countDown();
+            await(finish);
+        };
+        Thread holder = new Thread(() -> thrownBy(() -> engine.run(new FactMap<>())), "holder");
+        holder.start();
+        await(holding);
+        language.duringAction = () -> {
+        };
+        // The rules the holder uses are retired; it still holds the engine's one permit.
+        engine.load(rules("r"));
+        Thread waiter = new Thread(waiterRun, "waiter");
+        waiter.start();
+        untilWaiting.accept(waiter);
+        language.compilerCloseFailure = closeFailure;
+        thrownBy(engine::close);
+        stop.accept(waiter);
+        join(waiter);
+        language.compilerCloseFailure = null;
+        finish.countDown();
+        join(holder);
+    }
+
+    /** Waits until the waiter is waiting for a copy, which it does with a time limit, the stall window. */
+    private static void awaitWaitingForACopy(Thread waiter) {
+        long giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(4);
+        while (waiter.getState() != Thread.State.TIMED_WAITING) {
+            assertTrue(System.nanoTime() < giveUp, "the waiter never started waiting for a copy");
+            Thread.onSpinWait();
+        }
+    }
+
+    @Test
+    @DisplayName("guard: a run interrupted while it waits for a copy of rules retired meanwhile, as their last user, is"
+            + " reported as a stop")
+    void interruptedWaitOfTheLastUserIsReportedAsAStop() {
+        RecordingLanguage language = new RecordingLanguage();
+        List<String> events = new CopyOnWriteArrayList<>();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(recordingRunCallbacks(events)), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> waitRetireAndStop(language, engine, null,
+                () -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))),
+                CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        assertInstanceOf(InterruptedException.class, stop.getCause());
+        assertEquals(List.of("waiter beforeRun", "waiter onRunError ReportedFailure cause InterruptedException"),
+                waiterCallbacks(events));
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "run() was interrupted while waiting for a compiled copy of"
+                + " the rules: all 1 were in use"), logs);
+        assertEquals(List.of("compiler", "session 1", "compiler"), language.closed,
+                "the waiter's rules as it left, then the holder's copy and rules as it gave the copy back");
+    }
+
+    @Test
+    @DisplayName("a run interrupted while it waits for a copy, whose leaving closes retired rules with a fatal Error,"
+            + " is reported as a stop first, and the error carries the stop")
+    void interruptedWaitThenFatalCloseIsReportedAsAStop() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
+        RecordingLanguage language = new RecordingLanguage();
+        List<String> events = new CopyOnWriteArrayList<>();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(recordingRunCallbacks(events)), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+
+        String logs = logsOf(() -> waitRetireAndStop(language, engine, fatal, () -> {
+            thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        }, CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertSame(fatal, thrown.get());
+        assertEquals(1, fatal.getSuppressed().length, "the run's failure");
+        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
+        assertInstanceOf(InterruptedException.class, stop.getCause());
+        assertEquals(List.of("waiter beforeRun", "waiter onRunError ReportedFailure cause InterruptedException"),
+                waiterCallbacks(events), "every callback: " + events);
+        String warning = "WARN " + ENGINE_LOGGER + "run() was interrupted while waiting for a compiled copy of the"
+                + " rules: all 1 were in use";
+        String closing = "WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language failed to close its"
+                + " compiler: closing the compiler";
+        assertTrue(logs.contains(warning), logs);
+        assertTrue(logs.indexOf(warning) < logs.indexOf(closing), "the stop, then the closing: " + logs);
+        assertTrue(interrupted.get(), "the thread's interrupt status");
+    }
+
+    @Test
+    @DisplayName("a run interrupted while it waits for a copy, whose listener clears the interrupt status, closes the"
+            + " retired rules and returns with the status set again")
+    void interruptedWaitWithAListenerThatClearsTheStatusKeepsIt() {
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(new RuleListener() {
+                    @Override
+                    public void onRunError(RunContext run, RuntimeException error) {
+                        // As a listener that swallows an InterruptedException does.
+                        Thread.interrupted();
+                    }
+                }), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+
+        logsOf(() -> waitRetireAndStop(language, engine, null, () -> {
+            thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        }, CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertInstanceOf(InterruptedException.class,
+                assertInstanceOf(RuleExecutionException.class, thrown.get()).getCause());
+        assertTrue(interrupted.get(), "the thread's interrupt status after run()");
+        assertEquals("waiter interrupted true", language.compilerClosings.get(0),
+                "the waiter closed its rules with the status set: " + language.compilerClosings);
+    }
+
+    @Test
+    @DisplayName("a run interrupted while it waits for a copy, whose leaving closes retired rules with a compiler that"
+            + " clears the interrupt status, returns with the status set")
+    void interruptedWaitWithACompilerCloseThatClearsTheStatusKeepsIt() {
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+
+        logsOf(() -> waitRetireAndStop(language, engine, null, () -> {
+            language.compilerCloseClearsInterrupt = true;
+            thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        }, CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertInstanceOf(InterruptedException.class,
+                assertInstanceOf(RuleExecutionException.class, thrown.get()).getCause());
+        assertEquals("waiter interrupted true", language.compilerClosings.get(0),
+                "the waiter closed its rules with the status set: " + language.compilerClosings);
+        assertTrue(interrupted.get(), "the thread's interrupt status after run()");
+    }
+
+    @Test
+    @DisplayName("a run interrupted before a rule, whose listener clears the interrupt status, gives back its copy with"
+            + " the status set, and returns with it set")
+    void interruptedRunWithAListenerThatClearsTheStatusKeepsIt() {
+        RecordingLanguage language = new RecordingLanguage();
+        AtomicReference<RulesEngine<Map<String, Object>>> engineRef = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language)
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        // Retired while the run holds its copy, so giving it back closes the rules.
+                        engineRef.get().close();
+                    }
+
+                    @Override
+                    public void onRunError(RunContext run, RuntimeException error) {
+                        // As a listener that swallows an InterruptedException does.
+                        Thread.interrupted();
+                    }
+                }), 1);
+        engineRef.set(engine);
+        engine.load(rules("r"));
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+        Thread runner = new Thread(() -> {
+            Thread.currentThread().interrupt();
+            thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        }, "runner");
+
+        logsOf(() -> {
+            runner.start();
+            join(runner);
+        });
+
+        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        assertEquals("run() was interrupted before rule 'r'", stop.getMessage());
+        assertEquals(List.of("runner interrupted true"), language.compilerClosings,
+                "the run gave back its copy, closing the rules, with the status set");
+        assertTrue(interrupted.get(), "the thread's interrupt status after run()");
+    }
+
+    @Test
+    @DisplayName("a run interrupted while it waits for a copy, whose listener clears the interrupt status in beforeRun"
+            + " and throws a fatal Error, closes the retired rules and throws the error with the status set")
+    void interruptedWaitWithAFatalBeforeRunThatClearsTheStatusKeepsIt() {
+        OutOfMemoryError fatal = new OutOfMemoryError("from beforeRun, on purpose");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        if ("waiter".equals(Thread.currentThread().getName())) {
+                            Thread.interrupted();
+                            throw fatal;
+                        }
+                    }
+                }), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+
+        logsOf(() -> waitRetireAndStop(language, engine, null, () -> {
+            thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        }, CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertSame(fatal, thrown.get());
+        assertEquals("waiter interrupted true", language.compilerClosings.get(0),
+                "the waiter closed its rules with the status set: " + language.compilerClosings);
+        assertTrue(interrupted.get(), "the thread's interrupt status after run()");
+    }
+
+    /**
+     * Runs {@code engine} once on a thread of its own, named {@code runner}, whose interrupt status is set first if
+     * {@code interruptFirst}, and returns what the run threw, and whether the thread was interrupted after it.
+     */
+    private static Map.Entry<Throwable, Boolean> runOnRunner(RulesEngine<Map<String, Object>> engine,
+                                                             boolean interruptFirst) {
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+        Thread runner = new Thread(() -> {
+            if (interruptFirst) {
+                Thread.currentThread().interrupt();
+            }
+            thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            interrupted.set(Thread.currentThread().isInterrupted());
+        }, "runner");
+
+        logsOf(() -> {
+            runner.start();
+            join(runner);
+        });
+        return Map.entry(thrown.get(), interrupted.get());
+    }
+
+    @Test
+    @DisplayName("a run interrupted before a rule, whose listener clears the interrupt status in onRunError and throws"
+            + " a fatal Error, gives back its copy and throws the error with the status set")
+    void interruptedRunWithAFatalOnRunErrorThatClearsTheStatusKeepsIt() {
+        OutOfMemoryError fatal = new OutOfMemoryError("from onRunError, on purpose");
+        RecordingLanguage language = new RecordingLanguage();
+        AtomicReference<RulesEngine<Map<String, Object>>> engineRef = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language)
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        // Retired while the run holds its copy, so giving it back closes the rules.
+                        engineRef.get().close();
+                    }
+
+                    @Override
+                    public void onRunError(RunContext run, RuntimeException error) {
+                        Thread.interrupted();
+                        throw fatal;
+                    }
+                }), 1);
+        engineRef.set(engine);
+        engine.load(rules("r"));
+
+        Map.Entry<Throwable, Boolean> outcome = runOnRunner(engine, true);
+
+        assertSame(fatal, outcome.getKey());
+        assertEquals(List.of("runner interrupted true"), language.compilerClosings,
+                "the run gave back its copy, closing the rules, with the status set");
+        assertTrue(outcome.getValue(), "the thread's interrupt status after run()");
+    }
+
+    @Test
+    @DisplayName("a run interrupted during a rule, whose listener clears the interrupt status in onError and throws a"
+            + " fatal Error, gives back its copy and throws the error with the status set")
+    void interruptedRuleWithAFatalOnErrorThatClearsTheStatusKeepsIt() {
+        OutOfMemoryError fatal = new OutOfMemoryError("from onError, on purpose");
+        RecordingLanguage language = new RecordingLanguage();
+        AtomicReference<RulesEngine<Map<String, Object>>> engineRef = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language)
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        // Retired while the run holds its copy, so giving it back closes the rules.
+                        engineRef.get().close();
+                    }
+
+                    @Override
+                    public void onError(Rule rule, RuleExecutionException error) {
+                        Thread.interrupted();
+                        throw fatal;
+                    }
+                }), 1);
+        engineRef.set(engine);
+        engine.load(rules("r"));
+        // The action is interrupted while it runs, so the run stops during the rule, when the action returns.
+        language.duringAction = () -> Thread.currentThread().interrupt();
+
+        Map.Entry<Throwable, Boolean> outcome = runOnRunner(engine, false);
+
+        assertSame(fatal, outcome.getKey());
+        assertEquals(List.of("runner interrupted true"), language.compilerClosings,
+                "the run gave back its copy, closing the rules, with the status set");
+        assertTrue(outcome.getValue(), "the thread's interrupt status after run()");
+    }
+
+    @Test
+    @DisplayName("a run whose deadline passes while it waits for a copy, whose leaving closes retired rules with a"
+            + " fatal Error, is reported as a stop first, and the error carries the stop")
+    void timedOutWaitThenFatalCloseIsReportedAsAStop() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
+        RecordingLanguage language = new RecordingLanguage();
+        List<String> events = new CopyOnWriteArrayList<>();
+        CountDownLatch reporting = new CountDownLatch(1);
+        CountDownLatch retired = new CountDownLatch(1);
+        // Holds the waiter in onRunError, once its deadline has passed, until close() has retired its rules. The
+        // stop is reported before the run leaves the rules, so they're retired before the waiter leaves, whatever
+        // the timing.
+        RuleListener holdingTheStop = new RuleListener() {
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                if ("waiter".equals(Thread.currentThread().getName())) {
+                    reporting.countDown();
+                    await(retired);
+                }
+            }
+        };
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(recordingRunCallbacks(events)).listener(holdingTheStop), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> waitRetireAndStop(language, engine, fatal,
+                () -> thrown.set(thrownBy(() -> engine.runWithResult(new FactMap<>(),
+                        RunOptions.withTimeoutOf(Duration.ofMillis(50))))),
+                waiter -> await(reporting), waiter -> retired.countDown()));
+
+        assertSame(fatal, thrown.get());
+        assertEquals(1, fatal.getSuppressed().length, "the run's failure");
+        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
+        assertInstanceOf(TimeoutException.class, stop.getCause());
+        assertEquals(List.of("waiter beforeRun", "waiter onRunError ReportedFailure cause TimeoutException"),
+                waiterCallbacks(events), "every callback: " + events);
+        assertTrue(logs.contains("while waiting for a compiled copy of the rules: all 1 were in use"), logs);
+    }
+
+    @Test
+    @DisplayName("a run stopped while it waits for a copy, whose listener throws a fatal Error from onRunError, still"
+            + " leaves the retired rules, and throws the listener's error rather than the later one from closing")
+    void stoppedWaitWithAFatalListenerStillLeaves() {
+        InternalError listenerFatal = new InternalError("the listener");
+        OutOfMemoryError closeFatal = new OutOfMemoryError("closing the compiler");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(new RuleListener() {
+                    @Override
+                    public void onRunError(RunContext run, RuntimeException error) {
+                        if ("waiter".equals(Thread.currentThread().getName())) {
+                            throw listenerFatal;
+                        }
+                    }
+                }), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> waitRetireAndStop(language, engine, closeFatal,
+                () -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))),
+                CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertSame(listenerFatal, thrown.get());
+        assertEquals(0, listenerFatal.getSuppressed().length);
+        assertEquals(List.of("compiler", "session 1", "compiler"), language.closed,
+                "the waiter's rules as it left, then the holder's copy and rules as it gave the copy back");
     }
 
     @Test

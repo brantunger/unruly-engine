@@ -187,29 +187,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return rules != null ? rules.rules() : null;
     }
 
-    /**
-     * Calls {@code run} with the rules and a copy of them, one session for each language, that no concurrent run is
-     * using, and gives the copy back once {@code run} returns or throws. The first run after {@link #load(List)},
-     * and a run that starts while every copy is in use, makes a new copy. An engine created with a limit on copies
-     * keeps at most that many: a run that finds all of them in use waits for one, unless it is nested in another run on
-     * the same thread, which gets an extra copy that isn't kept. A language such as MVEL keeps state in its compiled
-     * expressions that isn't safe to share between threads; see {@link RuleSet}. A run that reads a
-     * rule set just as a reload or {@link #close()} closes it reads the rules again.
-     *
-     * <p>
-     * A missing call to {@link #load(List)} (e.g. a forgotten {@code @PostConstruct}) used to make every run
-     * return {@code null}, indistinguishable from "no rule matched", so it is reported instead.
-     * </p>
-     *
-     * @param run The body of a run, given the rule set, whose rules are in priority order, possibly none, and the copy
-     * @param <T> The type {@code run} returns
-     * @return What {@code run} returns
-     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
-     * @throws RuleExecutionException if a new copy is needed and a language throws or returns {@code null} from
-     *                                {@code newSession()}, or if the thread is interrupted while it waits for a copy,
-     *                                which keeps its interrupt status set. Each is logged at ERROR; a fatal
-     *                                {@link Error} from {@code newSession()} is then rethrown unchanged.
-     */
     /** The body of one run: what the engine does with the rules, its copy of them and the run's facts. */
     @FunctionalInterface
     interface RunBody<O> {
@@ -322,6 +299,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally, selection,
                         body);
             } catch (Throwable t) {
+                keepInterruptOfStop(tally);
                 Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.release(copy)));
                 throw t;
             }
@@ -335,9 +313,26 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             outcome = tally.hasStopped() ? RunEvent.STOPPED : RunEvent.FAILED;
             throw e;
         } finally {
+            // Again on the way out, as a language's close() may have cleared it too.
+            keepInterruptOfStop(tally);
             if (event != null) {
                 event.commit(engineId, runId, parentRunId, matchPolicy(), tally, rules.checksum(), outcome);
             }
+        }
+    }
+
+    /**
+     * Sets the thread's interrupt status again if an interrupt stopped the run, which a listener told of the stop, or
+     * a language's {@code close()}, may have cleared. Called before the run gives back its copy or leaves the rules,
+     * so the closing that starts sees it set, and again as {@code run()} returns, so the caller sees it. It isn't set
+     * again between one {@code close()} and the next: a language whose {@code close()} clears it hides it from the
+     * sessions and compilers closed after it.
+     *
+     * @param tally The run's tally, which records whether an interrupt stopped the run
+     */
+    private static void keepInterruptOfStop(RunTally tally) {
+        if (tally.wasInterrupted()) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -368,6 +363,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 // run() rethrows the error itself; listeners see what it failed with.
                 notifyRunError(snapshot, run, runFailure(e), tally);
                 throw e;
+            } catch (Throwable t) {
+                // A backstop: every place the run calls a rule, a listener, a language or the output reports a
+                // Throwable that is neither an Exception nor an Error as a failure of its own, so none should get
+                // here. One that does is handled the same way: it fails the run like an exception, closing every
+                // listener's run, and a fatal Error among its causes is then rethrown unchanged.
+                Failures.keepInterruptStatus(t);
+                String msg = "The run failed with " + Failures.describeWithClass(t);
+                log.error(msg);
+                RuleExecutionException failure = new ReportedFailure(msg, t);
+                notifyRunError(snapshot, run, failure, tally);
+                Failures.throwIfPresent(Failures.fatalError(t));
+                throw failure;
             }
             notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
             return result;
@@ -400,11 +407,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Closes a run that failed with {@code onRunError} on every listener. A stop is recorded on the tally first, so
      * a fatal error a listener throws in its place still leaves the run's event saying the run stopped, as the
-     * listeners were told.
+     * listeners were told, and so is an interrupt that caused it, so the thread's interrupt status is set again
+     * before the copy is given back and when {@code run()} returns (see {@link #keepInterruptOfStop}).
      */
     private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error, RunTally tally) {
         if (ReportedFailure.isStop(error)) {
             tally.markStopped();
+            if (error.getCause() instanceof InterruptedException) {
+                tally.markInterrupted();
+            }
         }
         notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error));
     }
@@ -487,6 +498,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * is set again, so the caller still sees it. A thread whose status is already set doesn't wait, and gets a free
      * copy: the run then stops at its first rule, the same way it does without a limit on copies.
      *
+     * <p>
+     * A run stopped while it waits is reported first, and only then leaves the rule set, so the stop reaches the
+     * listeners and the log even when leaving closes a retired rule set that throws a fatal {@link Error}. That error
+     * is thrown in place of the stop, which it carries as a suppressed exception.
+     * </p>
+     *
      * @param rules The rule set to borrow from
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
      * @throws RuleExecutionException if the thread is interrupted while it waits for a copy, or for a build slot to
@@ -497,19 +514,53 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                 RunContext parent, RunTally tally, RuleSelection selection) {
         try {
             return rules.borrow(deadline);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            // Without a limit, the only wait is for a build slot, on a virtual thread.
-            String waiting = rules.limit() == RuleSet.UNLIMITED
-                    ? "to make a compiled copy of the rules: every build slot was in use"
-                    : "for a compiled copy of the rules: all " + rules.limit() + " were in use";
-            throw stoppedWaiting(rules, listenerFacts, "run() was interrupted while waiting " + waiting, e, deadline,
-                    null, runId, parent, tally, selection);
-        } catch (TimeoutException e) {
-            throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline
-                    + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use", e,
-                    deadline, deadline, runId, parent, tally, selection);
+        } catch (InterruptedException | TimeoutException e) {
+            // Straight on, allocating nothing: the run is still counted on the rule set until it leaves there.
+            throw stoppedThenLeft(rules, listenerFacts, e, deadline, runId, parent, tally, selection);
         }
+    }
+
+    /**
+     * Reports a run that stopped waiting for a copy, as {@link #stoppedWaiting} does, and then leaves the rule set it
+     * waited on, which {@link RuleSet#borrow(Instant)} left the run counted on for this. The caller always throws what
+     * this returns, or what it throws. Leaving closes the rule set only if it was retired and this run was its last
+     * user; a fatal {@link Error} from that closing is thrown in place of the stop, carrying it as a suppressed
+     * exception, unless a listener threw a fatal error while the stop was reported, which came first and is thrown
+     * instead. An interrupted run sets its thread's interrupt status again before it leaves, and {@code run()} again
+     * when it returns (see {@link #keepInterruptOfStop}).
+     *
+     * @param stop What the wait stopped with: an {@link InterruptedException} or a {@link TimeoutException}
+     * @return The stop, for the caller to throw
+     */
+    // Any Throwable: the run must leave however reporting the stop ends, as a finally would, and a failure that isn't
+    // fatal is kept under a fatal Error from closing. Everything that allocates, the message too, is inside the try.
+    private RuleExecutionException stoppedThenLeft(RuleSet rules, Map<String, Object> listenerFacts, Exception stop,
+                                                   Instant deadline, long runId, RunContext parent, RunTally tally,
+                                                   RuleSelection selection) {
+        RuleExecutionException failure;
+        try {
+            boolean interrupted = stop instanceof InterruptedException;
+            String msg;
+            if (interrupted) {
+                // Without a limit, the only wait is for a build slot, on a virtual thread.
+                msg = "run() was interrupted while waiting " + (rules.limit() == RuleSet.UNLIMITED
+                        ? "to make a compiled copy of the rules: every build slot was in use"
+                        : "for a compiled copy of the rules: all " + rules.limit() + " were in use");
+            } else {
+                msg = "run() passed its deadline of " + deadline + " while waiting for a compiled copy of the rules:"
+                        + " all " + rules.limit() + " were in use";
+            }
+            // The deadline passed, or none did when an interrupt stopped the run.
+            failure = stoppedWaiting(rules, listenerFacts, msg, stop, deadline, interrupted ? null : deadline, runId,
+                    parent, tally, selection);
+        } catch (Throwable t) {
+            keepInterruptOfStop(tally);
+            Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.leaveAfterStop()));
+            throw t;
+        }
+        keepInterruptOfStop(tally);
+        Failures.throwIfPresent(Failures.fatalInsteadOf(failure, rules.leaveAfterStop()));
+        return failure;
     }
 
     /**
@@ -560,6 +611,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
                                                   Exception cause, Instant deadline, Instant passed, long runId,
                                                   RunContext parent, RunTally tally, RuleSelection selection) {
+        // Recorded before any listener is told, as a fatal error from beforeRun would keep the stop from reaching
+        // onRunError, which records it for every other stop.
+        if (cause instanceof InterruptedException) {
+            tally.markInterrupted();
+        }
         log.warn(msg);
         RuleExecutionException failure = ReportedFailure.stop(msg, cause, passed);
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
@@ -573,6 +629,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
             } catch (Error e) {
+                // The run stopped, though the error keeps the stop from reaching onRunError: its event says so.
+                tally.markStopped();
                 notifyRunError(snapshot, run, runFailure(e), tally);
                 throw e;
             }
@@ -1037,9 +1095,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Checks a fact name with the language of each rule in use. A language rejects a name with an
-     * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws is returned as an
-     * {@code IllegalArgumentException} naming the fact and the language, except a fatal {@link Error}, thrown or among
-     * the causes of what the language throws, which is logged and rethrown.
+     * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
+     * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
+     * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, which is
+     * logged and rethrown.
      *
      * @param name   The fact's name
      * @param checks The compilers to check it with, by language name
@@ -1058,7 +1117,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     log.error(Failures.describe(e));
                 }
                 return e;
-            } catch (Exception | Error e) {
+            } catch (Throwable e) {
                 Failures.keepInterruptStatus(e);
                 String msg = "The '%s' expression language failed to check fact name '%s': %s"
                         .formatted(Failures.quote(check.getKey()), Failures.quote(name), Failures.describe(e));
@@ -1226,7 +1285,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The exception to throw
      */
     private RuleExecutionException stoppedOrFailed(List<RuleListener> snapshot, CompiledRule rule, Instant deadline,
-                                                   Exception thrown, Supplier<RuleExecutionException> failed) {
+                                                   Throwable thrown, Supplier<RuleExecutionException> failed) {
         // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and an
         // Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
@@ -1329,14 +1388,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
      *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
-     *                                when it is the cause of what the factory throws; any other {@link Error} is
-     *                                wrapped like an exception.
+     *                                when it is the cause of what the factory throws; any other {@link Error}, and a
+     *                                {@link Throwable} that is neither an exception nor an error, is wrapped like an
+     *                                exception.
      */
     O createOutput(Supplier<O> outputFactory) {
         O output;
         try {
             output = outputFactory.get();
-        } catch (Exception | Error e) {
+        } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = "Output factory threw " + Failures.describeWithClass(e);
             log.error(msg);
@@ -1386,11 +1446,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             condition = rule.compiledCondition().evaluateWithDetail(facts.evaluation(),
                     copy.sessions().get(rule.language()));
-        } catch (Exception e) {
-            throw stoppedOrFailed(snapshot, rule, facts.deadline(), e, () -> expressionFailure(snapshot, rule,
-                    ExpressionKind.CONDITION, e));
-        } catch (Error e) {
-            throw expressionFailure(snapshot, rule, ExpressionKind.CONDITION, e);
+        } catch (Throwable t) {
+            throw stoppedOrFailed(snapshot, rule, facts.deadline(), t, () -> expressionFailure(snapshot, rule,
+                    ExpressionKind.CONDITION, t));
         }
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule. So would reading a null result.
@@ -1465,11 +1523,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         ActionResult result;
         try {
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
-        } catch (Exception e) {
-            throw stoppedOrFailed(snapshot, rule, facts.deadline(), e, () -> expressionFailure(snapshot, rule,
-                    ExpressionKind.ACTION, e));
-        } catch (Error e) {
-            throw expressionFailure(snapshot, rule, ExpressionKind.ACTION, e);
+        } catch (Throwable t) {
+            throw stoppedOrFailed(snapshot, rule, facts.deadline(), t, () -> expressionFailure(snapshot, rule,
+                    ExpressionKind.ACTION, t));
         }
         String wrongResult = result != null ? null : "Action for rule '" + rule.displayName()
                 + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).";
@@ -1498,7 +1554,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (InvocationTargetException e) {
             // A writer of its own may throw one with no cause.
             throw propertyFailure(snapshot, rule, property, e.getCause() != null ? e.getCause() : e);
-        } catch (Exception | Error e) {
+        } catch (Throwable e) {
             throw propertyFailure(snapshot, rule, property, e);
         }
     }
@@ -1587,7 +1643,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         for (RuleListener listener : snapshot) {
             try {
                 call.accept(listener);
-            } catch (Exception | Error e) {
+            } catch (Throwable e) {
                 Failures.keepInterruptStatus(e);
                 Error found = Failures.fatalError(e);
                 if (found != null && found == reportedFatal) {
@@ -1759,7 +1815,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         ExpressionCompiler compiler;
         try {
             compiler = language.newCompiler(context);
-        } catch (Exception | Error e) {
+        } catch (Throwable e) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to create a "
                     + "compiler: " + Failures.describe(e), e, null);
         }
@@ -1816,7 +1872,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     ? Failures.escape(Failures.truncate(e.getMessage()))
                     : "was rejected by its expression language";
             throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(), e.issues());
-        } catch (Exception | Error e) {
+        } catch (Throwable e) {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
             String reason = Failures.rootCause(e) instanceof StackOverflowError
                     ? "the expression is too long or too deeply nested to compile"

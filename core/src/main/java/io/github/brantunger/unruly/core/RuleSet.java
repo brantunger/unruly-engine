@@ -282,17 +282,21 @@ final class RuleSet {
      * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use, or for a
      *                                build slot; its interrupt status is set again before this is thrown. A thread
      *                                whose interrupt status is already set still gets a free copy, or makes one; the
-     *                                run then stops at its first rule. A thread that throws holds no copy.
+     *                                run then stops at its first rule. A thread that throws holds no copy, and its
+     *                                run no longer counts as in progress on it, but the run is still counted on the
+     *                                rule set, so the caller can report the stop before a retired rule set closes:
+     *                                the caller then calls {@link #leaveAfterStop()}.
      * @throws TimeoutException       if the deadline passes while the thread waits for a copy that is in use, which
-     *                                likewise leaves it holding none
+     *                                likewise leaves it holding none, and counted on the rule set until it leaves
      * @throws RuleExecutionException if a language fails to create a session for a new copy, which is logged at ERROR.
      *                                A fatal {@link Error} is then rethrown unchanged.
      * @throws Error                  a fatal {@link Error} from closing a retired rule set that this failed borrow was
      *                                the last to use, in place of a failure that isn't fatal, which it carries as
-     *                                suppressed, or logs at WARN if the error can't carry one
+     *                                suppressed, or logs at WARN if the error can't carry one; never in place of an
+     *                                {@link InterruptedException} or a {@link TimeoutException}, which leave later
      */
     // Any Throwable: a failed borrow must leave however it ends, as a finally would, and a failure that isn't fatal is
-    // kept under a fatal Error from closing.
+    // kept under a fatal Error from closing. A stopped wait is the exception: the run leaves once it's reported it.
     Copy borrow(Instant deadline) throws InterruptedException, TimeoutException {
         // Found or made before anything is held, so that failing to make it leaves nothing to give back.
         int[] runs = runsOnThread();
@@ -308,10 +312,32 @@ final class RuleSet {
         runs[0]++;
         try {
             return lend(deadline, nested);
+        } catch (InterruptedException e) {
+            // Uncounted first, as after any failed borrow, but not left: a fatal Error from closing the rules as the
+            // run leaves would otherwise be thrown before the run could report that it stopped. Nothing here
+            // allocates, so nothing can fail before the caller takes over, which leaves once it has reported the stop.
+            endRunOnThread();
+            Thread.currentThread().interrupt();
+            throw e;
+        } catch (TimeoutException e) {
+            endRunOnThread();
+            throw e;
         } catch (Throwable t) {
             Failures.throwIfPresent(failedBorrow(t));
             throw t;
         }
+    }
+
+    /**
+     * Leaves the rule set after a borrow that stopped waiting, with an {@link InterruptedException} or a
+     * {@link TimeoutException}, once the caller has reported the stop: closes a retired rule set that no run uses any
+     * more. Called once for each such borrow.
+     *
+     * @return The first fatal {@link Error} closing the rule set threw, for the caller to throw in place of the stop,
+     *         or {@code null} if none did
+     */
+    Error leaveAfterStop() {
+        return leave();
     }
 
     // Uncounts a run whose borrow failed, and leaves the rule set, returning the fatal Error to throw in place of
@@ -369,7 +395,7 @@ final class RuleSet {
     private static void warmUp(String language, ExpressionCompiler compiler, Session session) {
         try {
             compiler.warmUp(session);
-        } catch (Exception | Error e) {
+        } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = "The '" + Failures.quote(language) + "' expression language failed to warm up a session: "
                     + Failures.describe(e);
@@ -750,7 +776,7 @@ final class RuleSet {
         Session session;
         try {
             session = compiler.newSession();
-        } catch (Exception | Error e) {
+        } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = failed + "failed to create a session: " + Failures.describe(e);
             log.error(msg);

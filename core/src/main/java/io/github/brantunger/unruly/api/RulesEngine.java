@@ -69,7 +69,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               suppressed exception; if it can't carry one, as an {@link OutOfMemoryError} the
      *                               JVM throws itself can't, that failure is logged at WARN.
      *                               When a reload closes the rules it replaced, it is thrown after the new rules were
-     *                               swapped in: they stay loaded, and runs use them.
+     *                               swapped in: they stay loaded, and runs use them. A {@link Throwable} that is
+     *                               neither an {@link Exception} nor an {@link Error} is never fatal: it's handled
+     *                               like an exception from the same place, reported as a
+     *                               {@code RuleCompilationException} while compiling or making copies, and logged at
+     *                               WARN while closing.
      */
     void load(List<Rule> ruleList);
 
@@ -151,17 +155,20 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               of replaced rules closes their compilers too; a run whose new copy was only
      *                               partly made closes the sessions it made; and a run that fails to get a copy
      *                               closes the compilers without having held one, if it was the last to use the
-     *                               rules. A fatal error from that closing reaches the run: it's
-     *                               thrown even when the rules ran without failing, and in place of a failure of the
-     *                               run that isn't fatal, which it carries as a suppressed exception; if it can't
-     *                               carry one, as an {@link OutOfMemoryError} the JVM throws itself can't, that
-     *                               failure is logged at WARN. A fatal error of the run's own came first, and is
-     *                               thrown instead.
+     *                               rules; if its wait for a copy, or for a build slot to make one, was stopped, it
+     *                               has already reported the stop to its listeners. A fatal error from that closing
+     *                               reaches the run: it's thrown even when the rules ran without failing, and in
+     *                               place of a failure of the run that isn't fatal, which it carries as a suppressed
+     *                               exception; if it can't carry one, as an {@link OutOfMemoryError} the JVM throws
+     *                               itself can't, that failure is logged at WARN. A fatal error of the run's own came
+     *                               first, and is thrown instead.
      *                               Every other {@link Error} from a rule, the output supplier, an output writer or
      *                               a language creating a session, including a {@link LinkageError}, is reported as
      *                               a {@code RuleExecutionException}; one from a language's check of a fact name as
      *                               an {@code IllegalArgumentException}; one from a listener is logged, and the run
-     *                               goes on; one from closing a session is logged at WARN
+     *                               goes on; one from closing a session is logged at WARN. A {@link Throwable} that is
+     *                               neither an {@link Exception} nor an {@link Error} is never fatal: wherever it
+     *                               arises, it's handled like an exception from the same place.
      */
     default @Nullable O run(FactStore<?> facts) {
         return runWithResult(facts).output();

@@ -159,7 +159,8 @@ request is the simplest. See [Reusing and sharing a store](facts.md#-reusing-and
 
 A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, found anywhere in the cause chain.
 The engine logs it and rethrows the same error from `load()`, `validate()`, `run()` or `close()`; every other `Error`
-from a rule is reported as that rule's failure. See [Exceptions by method](error-handling.md#-exceptions-by-method).
+from a rule is reported as that rule's failure. A `Throwable` that is neither an `Exception` nor an `Error` is never
+fatal: the engine treats it like an exception. See [Exceptions by method](error-handling.md#-exceptions-by-method).
 
 ### First-match engine
 
