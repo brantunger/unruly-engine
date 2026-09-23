@@ -9,14 +9,18 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the run it supersedes. A run on main is never cancelled once it has started:
+# the next push to main waits for it, so a run that starts gets to its cache save and its coverage upload. It isn't
+# a queue, though. GitHub keeps only one waiting run per concurrency group, so a push to main that lands while an
+# earlier one is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Says whether a pull request changes anything besides documentation: Markdown files outside src/, or files under
-  # docs/. The build and native-image jobs skip a documentation-only pull request; docs-and-hygiene checks it. A push
-  # always runs everything, so main keeps its caches and coverage.
+  # docs/. The build and native-image jobs skip a documentation-only pull request; docs-and-hygiene checks it. A push's
+  # run always runs everything, so main keeps its caches and coverage.
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
