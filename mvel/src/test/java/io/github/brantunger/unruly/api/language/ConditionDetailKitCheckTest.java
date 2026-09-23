@@ -4,6 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
@@ -12,7 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The contract test kit must fail a language whose condition detail can't be kept after the run, because it is the
- * session or needs the session open (#410). Apart from {@link ContractKitChecksTest}, which has to compile without
+ * session or needs the session open (#410), and a language whose {@code evaluate} disagrees with its
+ * {@code evaluateWithDetail} (#509). Apart from {@link ContractKitChecksTest}, which has to compile without
  * {@link ConditionResult}.
  */
 @DisplayName("the contract test kit fails a language whose condition detail can't outlive the run")
@@ -60,6 +63,101 @@ class ConditionDetailKitCheckTest {
                     @Override
                     public Session newSession() {
                         return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /** Wraps a language so that each condition's evaluate returns the opposite of what evaluateWithDetail reports. */
+    private static ExpressionLanguage liar(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return new CompiledCondition() {
+                            @Override
+                            public Object evaluate(EvaluationContext evaluation, Session session) throws Exception {
+                                return !Boolean.TRUE.equals(evaluateWithDetail(evaluation, session).value());
+                            }
+
+                            @Override
+                            public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session)
+                                    throws Exception {
+                                return condition.evaluateWithDetail(evaluation, session);
+                            }
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that each session it creates and each compiler record in {@code closes} when they're closed,
+     * and, if {@code throwing}, then throw.
+     */
+    private static ExpressionLanguage recordingCloses(ExpressionLanguage language, List<String> closes,
+                                                      boolean throwing) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Session() {
+                            @Override
+                            public void close() {
+                                closed("session");
+                            }
+                        };
+                    }
+
+                    @Override
+                    public void close() {
+                        closed("compiler");
+                    }
+
+                    private void closed(String what) {
+                        closes.add(what);
+                        if (throwing) {
+                            throw new IllegalStateException("the " + what + "'s runtime was already shut down");
+                        }
                     }
                 };
             }
@@ -138,5 +236,40 @@ class ConditionDetailKitCheckTest {
         assertDoesNotThrow(() -> runCheck(explainedBy(withSessions(new ToyExpressionLanguage(), ClosingSession::new),
                 (value, session) -> "a copy of what it read"), "conditionDetail"));
         assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "conditionDetail"));
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate disagrees with its evaluateWithDetail fails the agreement check (#509)")
+    void liarFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(liar(new ToyExpressionLanguage()), "evaluateAgreesWithDetail"));
+
+        assertEquals("for x = 1, evaluate returned a different value than evaluateWithDetail reported ==> expected:"
+                + " <true> but was: <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate returns what evaluateWithDetail reports passes the agreement check, with"
+            + " a session or without one (#509)")
+    void agreeingLanguagePasses() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "evaluateAgreesWithDetail"));
+        assertDoesNotThrow(() -> runCheck(recordingCloses(new ToyExpressionLanguage(), closes, false),
+                "evaluateAgreesWithDetail"));
+        // Closed as the engine closes them: the session before the compiler that created it.
+        assertEquals(List.of("session", "compiler"), closes);
+    }
+
+    @Test
+    @DisplayName("a session or compiler whose close() throws doesn't fail the agreement check, which the engine only"
+            + " logs (#509)")
+    void closeFailuresIgnored() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+
+        assertDoesNotThrow(() -> runCheck(recordingCloses(new ToyExpressionLanguage(), closes, true),
+                "evaluateAgreesWithDetail"));
+        // The compiler is still closed after its session's close() threw.
+        assertEquals(List.of("session", "compiler"), closes);
     }
 }

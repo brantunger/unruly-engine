@@ -193,8 +193,15 @@ returns `ConditionResult.of(evaluate(context, session))`, a result with no detai
 `evaluate` works unchanged. For a `Boolean` it returns a shared constant, `ConditionResult.TRUE` or `FALSE`, so the
 default allocates nothing extra, and neither does `ConditionResult.of(value, null)`.
 
+Since 2.3.0, two `ConditionResult`s are equal when their values are equal and their details are equal by the
+detail's own `equals`. `toString()` prints it in the form of the call that makes it, such as `ConditionResult.TRUE`,
+`ConditionResult.FALSE` or `ConditionResult.of(true, <detail>)`, as `ActionResult` does. A test can compare two
+results with `assertEquals` when the detail has value equality, such as a `String` or a record; an array, or a class
+that doesn't override `equals`, compares by identity.
+
 The value follows `evaluate`'s rule: anything but a `Boolean` fails the rule, and so does a `null` result. Keep
-`evaluate` returning the same value, for the callers that still use it, such as your own tests.
+`evaluate` returning the same value. The engine never calls it, but a condition that wraps yours, or your own tests,
+may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
 
 The detail can be any object, or `null`. The application reads it as
 [`RuleEvaluation.detail()`](../engines-and-runs.md#-what-a-run-reports) on the run result. The engine records it for
@@ -487,14 +494,14 @@ needs the rest: a JUnit test engine to run the checks, the JUnit Platform launch
 the checks never run. With Maven and Surefire 3.5.4, the kit alone is enough: Surefire supplies the test engine.
 
 `ExpressionLanguageContractTest` checks the promises above for any language. Extend it and supply expressions in your
-language, one method for each hook. Its sixteen checks:
+language, one method for each hook. Its seventeen checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
 | `conditionReadsFacts` | `factEquals`, `putFact` | No | Fires for `x` = 1, not for 2 |
 | `conditionReadsWholeNumbers` | `factEquals`, `putFact` | `comparesWholeNumbersByValue()` returns `false` | Fires for `x` = 1 given a `Long`, a `Short` or a `BigDecimal` fact, not for `2L` |
 | `conditionMustBeBoolean` | `factValue`, `putFact` | No | `true` fires; `null`, `"true"` and `1` fail the rule |
-| `conditionAssignmentRejected` | `assignment`, `putFact` | No | `load()` throws, message starting `Condition for rule 'r' ` |
+| `conditionAssignmentRejected` | `assignment`, `putFact` | `assignment()` returns `null` | `load()` or `run()` throws an `UnrulyException` naming the rule and `CONDITION` |
 | `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or `run()` throws an `UnrulyException` |
 | `actionVariablesStayLocal` | `alwaysTrue`, `declareVariable`, `putFact` | `declareVariable()` returns `null` | A later rule still sees the fact's value |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
@@ -506,19 +513,22 @@ language, one method for each hook. Its sixteen checks:
 | `compilerClosed` | `factEquals`, `putFact` | No | Each compiler is closed exactly once, after a reload and after `close()` |
 | `sessionsClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, `newSession()` never returns one instance twice, unless it's `Session.none()`, and no session's `close()` throws anything |
 | `conditionDetail` | `factEquals`, `putFact` | No | For a rule that matches and one that doesn't, the detail isn't a session `newSession()` returned, and its `toString()` still works after `close()` |
+| `evaluateAgreesWithDetail` | `factEquals` | No | For `x` = 1 and for 2, a compiled condition's `evaluate` returns the value `evaluateWithDetail` reports |
 | `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
 
-- Only the four `@Nullable` hooks, `declareVariable`, `reassignOutput`, `unusableFactName` and
+- Only the five `@Nullable` hooks, `assignment`, `declareVariable`, `reassignOutput`, `unusableFactName` and
   `missingFactProperty`, may return `null`. `comparesWholeNumbersByValue()` is a boolean opt-out rather than one of
   them, and returning `false` skips its check.
-- `assignment()`, `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped: a
-  language with no assignment syntax must still make `load()` reject what `assignment()` returns.
+- Since 2.3.0, a language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`,
+  rather than a syntax error standing in for one.
+- `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
 - `language()` is called for each check and for each engine a check builds, so return a new instance.
 
-Each check builds `allMatches(HashMap::new).language(language())`, with no imports, options or declared facts, so the
-language must work alone. `copiesAtLoad` and `sessionsClosed` add `copiesAtLoad(2)`, and `compilerClosed`,
-`sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions. `factValue(x)` must not
-coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or `Double` whole numbers pass.
+Each check but `evaluateAgreesWithDetail` builds `allMatches(HashMap::new).language(language())`, with no imports,
+options or declared facts, so the language must work alone. `copiesAtLoad` and `sessionsClosed` add
+`copiesAtLoad(2)`, and `compilerClosed`, `sessionsClosed` and `conditionDetail` wrap your language to watch its
+compiler or sessions. `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by
+value, so `Long` or `Double` whole numbers pass.
 
 The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
 decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
@@ -528,6 +538,16 @@ engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, 
 `conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
 catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
 there. A language that gives no detail passes it with nothing to check.
+
+`conditionAssignmentRejected` accepts a rejection at either step, as `outputNotReplaceable` does: `load()` may reject
+the condition when it compiles, or the condition may fail when it runs, for example by writing to the read-only
+`facts()`, or by evaluating to the assigned value, which isn't a boolean. A condition that assigns and evaluates to
+`true` or `false` without throwing fails the check.
+
+`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and evaluates it in a session
+of its own. The engine calls only `evaluateWithDetail`, so without this check an `evaluate` that returned the wrong
+value would pass every other check, and a condition that wraps yours would still see it. A language that doesn't
+override `evaluateWithDetail` passes: the default returns what `evaluate` does.
 
 Two things no check exercises, so passing the kit says nothing about them.
 
@@ -539,8 +559,9 @@ The hole is a narrow one. The engine checks before each condition and each actio
 interrupt raised between rules always stops the run, and the deadline path is unaffected. Only an interrupt raised and
 swallowed inside one expression escapes; see [Stopping a run](#-stopping-a-run).
 
-**The `CompileContext`.** Every check builds the engine with an empty `CompileContext`, so a language that ignores
-imports, options, declared facts and the output type passes. Test what your language does with each of them yourself;
+**The `CompileContext`.** Every check compiles with an empty `CompileContext`, through an engine or, in
+`evaluateAgreesWithDetail`, through `LanguageTestContexts.compile()`, so a language that ignores imports, options,
+declared facts and the output type passes. Test what your language does with each of them yourself;
 [Implementing the interfaces](#-implementing-the-interfaces) says what the context carries.
 
 `LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or a compiled
@@ -617,5 +638,6 @@ it when a session's first use is costly, such as compiling or loading classes. S
 ### Do I have to implement `evaluateWithDetail`?
 
 No. By default it calls your `evaluate` and gives no detail, so `RuleEvaluation.detail()` is `null` for your rules.
-MVEL doesn't implement it either. See [Explaining a condition's result](#explaining-a-conditions-result).
+MVEL doesn't implement it either. If you do, `evaluate` must still return the same value, and the kit checks that. See
+[Explaining a condition's result](#explaining-a-conditions-result).
 

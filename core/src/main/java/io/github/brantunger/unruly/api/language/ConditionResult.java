@@ -2,6 +2,8 @@ package io.github.brantunger.unruly.api.language;
 
 import org.jspecify.annotations.Nullable;
 
+import java.util.Objects;
+
 /**
  * What evaluating a condition returned, and, from a language that can explain it, why: the value, which must be a
  * {@link Boolean}, and a detail. When the value is a {@link Boolean}, the engine records the detail on the rule's
@@ -80,5 +82,35 @@ public final class ConditionResult {
      */
     public @Nullable Object detail() {
         return explanation;
+    }
+
+    /**
+     * Compares the value and the detail, each with its own {@code equals}, so a detail that is an array is compared by
+     * identity, as {@link ActionResult} compares the values of its properties.
+     *
+     * @param other The object to compare with
+     * @return Whether {@code other} is a result with an equal value and an equal detail
+     */
+    @Override
+    public boolean equals(@Nullable Object other) {
+        return other instanceof ConditionResult that && Objects.equals(result, that.result)
+                && Objects.equals(explanation, that.explanation);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(result, explanation);
+    }
+
+    // A boolean without a detail is always TRUE or FALSE, as of() returns no other.
+    @Override
+    public String toString() {
+        if (explanation != null) {
+            return "ConditionResult.of(" + result + ", " + explanation + ")";
+        }
+        if (result instanceof Boolean matched) {
+            return matched ? "ConditionResult.TRUE" : "ConditionResult.FALSE";
+        }
+        return "ConditionResult.of(" + result + ")";
     }
 }

@@ -51,4 +51,37 @@ class ConditionResultTest {
         assertEquals("yes", wrong.value());
         assertEquals(Map.of("why", "a string"), wrong.detail());
     }
+
+    @Test
+    @DisplayName("results with the same value and detail are equal, with the same hash code (#511)")
+    void equality() {
+        ConditionResult matched = ConditionResult.of(true, List.of(750, 700));
+
+        assertEquals(matched, matched);
+        assertEquals(ConditionResult.of(true, List.of(750, 700)), matched);
+        assertEquals(ConditionResult.of(true, List.of(750, 700)).hashCode(), matched.hashCode());
+        assertEquals(ConditionResult.of(null), ConditionResult.of(null));
+        assertEquals(ConditionResult.of(null).hashCode(), ConditionResult.of(null).hashCode());
+        assertEquals(ConditionResult.of("yes"), ConditionResult.of("yes"));
+        assertNotEquals(ConditionResult.of(false, List.of(750, 700)), matched);
+        assertNotEquals(ConditionResult.of(true, List.of(750, 800)), matched);
+        assertNotEquals(ConditionResult.TRUE, matched);
+        assertNotEquals(ConditionResult.TRUE, ConditionResult.FALSE);
+        // The result under test first: assertNotEquals calls equals on the value it's told not to expect.
+        assertNotEquals(matched, null);
+        assertNotEquals(ConditionResult.TRUE, "ConditionResult.TRUE");
+        assertSame(ConditionResult.TRUE, ConditionResult.of(true));
+    }
+
+    @Test
+    @DisplayName("a result prints like the call that returns it, with its value and detail as they print themselves"
+            + " (#511)")
+    void printed() {
+        assertEquals("ConditionResult.TRUE", ConditionResult.TRUE.toString());
+        assertEquals("ConditionResult.FALSE", ConditionResult.of(false).toString());
+        assertEquals("ConditionResult.of(true, 750 >= 700)", ConditionResult.of(true, "750 >= 700").toString());
+        assertEquals("ConditionResult.of(false, [750, 800])", ConditionResult.of(false, List.of(750, 800)).toString());
+        assertEquals("ConditionResult.of(yes)", ConditionResult.of("yes").toString());
+        assertEquals("ConditionResult.of(null)", ConditionResult.of(null).toString());
+    }
 }

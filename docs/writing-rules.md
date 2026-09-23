@@ -79,9 +79,10 @@ the rules with the same ones. To give an engine several languages and choose one
 ### Conditions can't assign
 
 A condition can't change the facts. Every language that passes the
-[contract test kit](languages/custom.md#-testing-with-the-contract-kit) rejects a condition that assigns to a fact
-when `load()` compiles it, with a `RuleCompilationException`. The engine also rejects any write to the facts while a
-condition runs, failing the rule with `Cannot assign or declare 'x' in a condition`.
+[contract test kit](languages/custom.md#-testing-with-the-contract-kit), and can express an assignment, rejects a
+condition that assigns to a fact, either when `load()` compiles it, with a `RuleCompilationException`, or when the
+rule runs, with a `RuleExecutionException`. MVEL rejects it at `load()`. The engine also rejects any write to the
+facts while a condition runs, failing the rule with `Cannot assign or declare 'x' in a condition`.
 
 That isn't a sandbox: a condition can still call methods, loop and run several statements, so it can change state
 (`System.setProperty('k', 'v') == null`) or never finish (`while (true) {}; true`). Keep conditions to expressions

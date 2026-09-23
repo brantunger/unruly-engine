@@ -113,6 +113,91 @@ class ContractKitChecksTest {
         };
     }
 
+    /**
+     * Wraps a language so that a condition that assigns, such as {@code x = 2}, compiles to {@code assignment} instead
+     * of being rejected when the rule loads.
+     */
+    private static ExpressionLanguage assigningConditions(ExpressionLanguage language, CompiledCondition assignment) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return expression.text().contains(" = ") ? assignment : compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /** A language whose condition writes the assigned fact, which the engine's read-only facts refuse at run time. */
+    private static ExpressionLanguage runtimeReject(ExpressionLanguage language) {
+        return assigningConditions(language, (evaluation, session) -> {
+            evaluation.facts().put("x", 2);
+            return true;
+        });
+    }
+
+    /** A language whose condition assigns to a local copy of the fact, as JavaScript would, and returns the value. */
+    private static ExpressionLanguage localAssign(ExpressionLanguage language) {
+        return assigningConditions(language, (evaluation, session) -> 2);
+    }
+
+    /** A language whose condition ignores the assignment and is true, so nothing ever says it was wrong. */
+    private static ExpressionLanguage silentTrue(ExpressionLanguage language) {
+        return assigningConditions(language, (evaluation, session) -> true);
+    }
+
+    /** Wraps a language so that every action it compiles fails when it runs. */
+    private static ExpressionLanguage throwingActions(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return (actionContext, session) -> {
+                            throw new IllegalStateException("the action failed");
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
     /** Wraps a language so that its compiler's newSession() returns what {@code sessions} supplies. */
     static ExpressionLanguage withSessions(ExpressionLanguage language, Supplier<Session> sessions) {
         return new ExpressionLanguage() {
@@ -228,6 +313,43 @@ class ContractKitChecksTest {
                 () -> runCheck(withSessions(new ToyExpressionLanguage(), () -> null), "sessionsClosed"));
 
         assertTrue(failure.getMessage().endsWith("expression language returned no session"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that rejects a condition's assignment when the rule runs passes the assignment check"
+            + " (#508)")
+    void runtimeRejectPasses() {
+        assertDoesNotThrow(() -> runCheck(runtimeReject(new ToyExpressionLanguage()), "conditionAssignmentRejected"));
+    }
+
+    @Test
+    @DisplayName("a language whose assigning condition evaluates to the value assigned passes the assignment check"
+            + " (#508)")
+    void localAssignPasses() {
+        assertDoesNotThrow(() -> runCheck(localAssign(new ToyExpressionLanguage()), "conditionAssignmentRejected"));
+    }
+
+    @Test
+    @DisplayName("a language whose assigning condition is silently true fails the assignment check (#508)")
+    void silentTrueFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(silentTrue(new ToyExpressionLanguage()), "conditionAssignmentRejected"));
+
+        assertTrue(failure.getMessage().startsWith("a condition that assigns to a fact was neither rejected by load"
+                + " nor failed by run"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a silently true assigning condition fails the assignment check when its rule's action fails the run"
+            + " instead (#508)")
+    void actionFailureNotTakenForTheCondition() {
+        // The run fails, naming the rule, but for its action: the check must look at which expression failed.
+        ExpressionLanguage language = throwingActions(silentTrue(new ToyExpressionLanguage()));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionAssignmentRejected"));
+
+        assertTrue(failure.getMessage().endsWith("expected: <CONDITION> but was: <ACTION>"), failure.getMessage());
     }
 
     @Test
