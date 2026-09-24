@@ -4,6 +4,9 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 
+import java.util.Collection;
+import java.util.List;
+
 class MvelContractTest extends ExpressionLanguageContractTest {
 
     @Override
@@ -54,6 +57,12 @@ class MvelContractTest extends ExpressionLanguageContractTest {
     @Override
     protected String unusableFactName() {
         return "empty";
+    }
+
+    // Main counts a skipped check as one that didn't pass, so the check this hook skips by default runs here.
+    @Override
+    protected Collection<String> usableFactNames() {
+        return List.of("credit_score2");
     }
 
     @Override

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -60,8 +61,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *
  * <p>
  * Every check but {@code evaluateAgreesWithDetail} runs rules through an engine, so a language passes only if it
- * works with the engine as users will run it. On the module path, the package of the extending test must be open to
- * {@code org.junit.platform.commons}.
+ * works with the engine as users will run it. On the module path, a test module of its own, one that requires the kit,
+ * must open the package of the extending test to {@code org.junit.platform.commons}. Tests that Surefire patches into
+ * the language's own named module need no opens clause: Surefire gives JUnit access to them.
  * </p>
  *
  * <p>
@@ -200,11 +202,26 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Returns a fact name that rules in this language can't refer to.
+     * Returns a fact name that rules in this language can't refer to. It must not be {@code "output"}, and the check
+     * fails when it is: the engine rejects that name itself, before the language is asked, so it would pass the check
+     * without the language's {@code checkFactName} ever running.
      *
      * @return The name, or {@code null} if every name is accepted
      */
     protected abstract @Nullable String unusableFactName();
+
+    /**
+     * Returns fact names that rules in this language can refer to, such as {@code credit_score2}. Each is read by a
+     * condition and put into the output by an action, and the check fails if the language rejects the name or the
+     * rule doesn't fire. By default, none, which skips the check. List the names a language's users will write, so
+     * that a {@code checkFactName} stricter than the language itself fails here rather than in every run with that
+     * fact.
+     *
+     * @return The names, or an empty collection to skip the check
+     */
+    protected Collection<String> usableFactNames() {
+        return List.of();
+    }
 
     /**
      * Returns a condition that compares one property of a fact with a value, as {@code applicant.creditScore == 750}
@@ -460,7 +477,8 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a variable an action declares doesn't change the facts later actions see")
+    @DisplayName("a variable an action declares doesn't change the facts later actions see, and no later rule or run"
+            + " reads it")
     void actionVariablesStayLocal() throws Exception {
         String declare = declareVariable("x", 2);
         assumeTrue(declare != null, "the language's actions have no variables");
@@ -471,6 +489,37 @@ public abstract class ExpressionLanguageContractTest {
 
             assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
             assertSameOutput(Map.of(SEEN, 3), engine.run(new FactMap<>(new Fact<>("x", 3))));
+        });
+
+        // A variable that isn't a fact: a language that keeps it in the session, and reads the facts first, passes
+        // the check above, and still hands it to every later rule and run. Reading it may fail the load or the run,
+        // or read as null, as a JsonLogic-style language reads a name it doesn't know; anything but its value passes.
+        String declareOther = Objects.requireNonNull(declareVariable("y", 2),
+                "declareVariable() returned null for 'y', but not for 'x'");
+        closing(engine(), engine -> {
+            try {
+                engine.load(List.of(
+                        rule("declares", 2, factEquals("x", 1), declareOther),
+                        rule("reads", 1, alwaysTrue(), putFact(SEEN, "y"))));
+            } catch (UnrulyException e) {
+                // The language refuses a name that isn't a fact when it compiles the rule.
+                return;
+            }
+            for (int x = 1; x <= 2; x++) {
+                Map<String, Object> output;
+                try {
+                    output = engine.run(new FactMap<>(new Fact<>("x", x)));
+                } catch (UnrulyException e) {
+                    // The rule that reads it failed: the variable isn't there.
+                    continue;
+                }
+                if (output != null && sameValue(2, output.get(SEEN))) {
+                    fail(x == 1
+                            ? "a later rule read the variable 'y' an action declared: " + output
+                            : "a later run read the variable 'y' an action declared in an earlier one, although the"
+                                    + " rule that declares it didn't fire: " + output);
+                }
+            }
         });
     }
 
@@ -512,11 +561,36 @@ public abstract class ExpressionLanguageContractTest {
     void unusableFactNameRejected() throws Exception {
         String name = unusableFactName();
         assumeTrue(name != null, "the language accepts every fact name");
+        // The engine rejects "output" before the language is asked, so it would make this check pass without the
+        // language's checkFactName running at all.
+        assertNotEquals("output", name, "unusableFactName() must return a name the language itself rejects");
         closing(engine(), engine -> {
             engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
 
             assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
         });
+    }
+
+    @Test
+    @DisplayName("a fact name the language can refer to is read by a condition and an action")
+    void usableFactNamesAccepted() throws Exception {
+        Collection<String> names = usableFactNames();
+        assumeTrue(!names.isEmpty(), "the language names no fact names it must accept");
+        for (String name : names) {
+            closing(engine(), engine -> {
+                // A checkFactName stricter than the language rejects the name at run(), so every run with that fact
+                // fails.
+                Map<String, Object> output = assertDoesNotThrow(() -> {
+                    engine.load(List.of(rule("r", 1, factEquals(name, 1), putFact(SEEN, name))));
+                    return engine.run(new FactMap<>(new Fact<>(name, 1)));
+                }, "a rule couldn't use the fact name '" + name + "', which usableFactNames() says it can");
+
+                if (!sameValue(Map.of(SEEN, 1), output)) {
+                    fail("a rule on the fact name '" + name + "' didn't put its value: expected: <" + Map.of(SEEN, 1)
+                            + "> but was: <" + output + ">");
+                }
+            });
+        }
     }
 
     @Test
@@ -607,28 +681,73 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's"
-            + " closed")
+            + " closed, and closing it doesn't throw")
     void compilerClosed() throws Exception {
         ExpressionLanguage language = language();
         List<AtomicInteger> closes = new CopyOnWriteArrayList<>();
+        List<Throwable> closeFailures = new CopyOnWriteArrayList<>();
         // Closed after the check as well, so a failed check still closes the engine. A third close does nothing.
-        closing(engine(countingCloses(language, closes)), engine -> {
-            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
-            engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
+        try {
+            closing(engine(countingCloses(language, closes, closeFailures)), engine -> {
+                engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+                assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+                engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
 
-            assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
-            assertSameOutput(Map.of(SEEN, 2), engine.run(new FactMap<>(new Fact<>("x", 2))));
+                assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
+                assertSameOutput(Map.of(SEEN, 2), engine.run(new FactMap<>(new Fact<>("x", 2))));
 
-            engine.close();
-            engine.close();
+                engine.close();
+                engine.close();
 
-            assertEquals(List.of(1, 1), closes.stream().map(AtomicInteger::get).toList());
-        });
+                assertEquals(List.of(1, 1), closes.stream().map(AtomicInteger::get).toList());
+            });
+        } catch (Throwable e) {
+            // The check's own failure stays the one reported, with what closing a compiler threw attached to it.
+            suppressAll(e, closeFailures);
+            throw e;
+        }
+
+        // A close() that throws is only logged at WARN, so nothing else would show it: a compiler that fails to
+        // close has usually failed to release what it holds.
+        if (!closeFailures.isEmpty()) {
+            fail("a compiler's close() threw " + closeFailures.get(0) + ", which the engine only logs at WARN");
+        }
     }
 
-    /** Wraps a language so that each compiler it creates counts how often it's closed. */
-    private static ExpressionLanguage countingCloses(ExpressionLanguage language, List<AtomicInteger> closes) {
+    /**
+     * Attaches what closing a language's compilers or sessions threw to a check's failure, each once, unless it is
+     * that failure or already attached to it: the engine rethrows a fatal error from close() itself, and
+     * {@code closing()} has attached what {@code engine.close()} threw to the failure, so either may be one of them
+     * already. One exception a language throws from every close, cached, is attached once.
+     *
+     * @param failure       The check's failure
+     * @param closeFailures What closing threw
+     */
+    // By identity: the same instance is what's attached.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static void suppressAll(Throwable failure, List<Throwable> closeFailures) {
+        for (Throwable closeFailure : closeFailures) {
+            if (closeFailure != failure
+                    && Arrays.stream(failure.getSuppressed()).noneMatch(known -> known == closeFailure)) {
+                failure.addSuppressed(closeFailure);
+            }
+        }
+    }
+
+    /**
+     * Whether the engine rethrows what a language's {@code close()} threw, rather than logging it: a
+     * {@link VirtualMachineError} other than a {@link StackOverflowError}, as the engine decides.
+     */
+    private static boolean isFatal(Throwable thrown) {
+        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError);
+    }
+
+    /**
+     * Wraps a language so that each compiler it creates counts how often it's closed, and records in
+     * {@code closeFailures} what its close() throws that the engine only logs.
+     */
+    private static ExpressionLanguage countingCloses(ExpressionLanguage language, List<AtomicInteger> closes,
+                                                     List<Throwable> closeFailures) {
         return new ExpressionLanguage() {
             @Override
             public String name() {
@@ -661,10 +780,19 @@ public abstract class ExpressionLanguageContractTest {
                         compiler.checkFactName(name);
                     }
 
+                    // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception
+                    // or Error but a fatal one, which it rethrows, and which fails the check by itself.
                     @Override
                     public void close() {
                         closed.incrementAndGet();
-                        compiler.close();
+                        try {
+                            compiler.close();
+                        } catch (Throwable e) {
+                            if (!isFatal(e)) {
+                                closeFailures.add(e);
+                            }
+                            throw e;
+                        }
                     }
                 };
             }
@@ -699,34 +827,54 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Checks only two things about each condition's detail: that it isn't a session the language's
-     * {@code newSession()} returned, compared by identity, and that its {@code toString()} still works once the engine
-     * has closed the sessions. It doesn't look inside the detail for a session it holds, and a language that returns
+     * Checks three things about each condition's detail: that it isn't a session the language's {@code newSession()}
+     * returned, compared by identity, that its {@code toString()} still works once the engine has closed the
+     * sessions, and that what it prints is the same after another run and after the close as right after its own
+     * run. It doesn't look inside the detail for a session it holds, and a language that returns
      * {@link Session#none()} has no session to compare with.
      */
     @Test
-    @DisplayName("a condition's detail isn't the session it ran with, and can still be read once the session is closed")
+    @DisplayName("a condition's detail isn't the session it ran with, and reads the same after another run and once the"
+            + " session is closed")
     void conditionDetail() throws Exception {
         SessionWatch sessions = new SessionWatch();
 
-        // Closed before the details are read, so they're read once the engine has closed the sessions, and a failed
-        // run still closes them.
+        // Closed before the details are read the last time, so they're read once the engine has closed the sessions,
+        // and a failed run still closes them.
         List<RuleEvaluation> evaluations = new ArrayList<>();
+        List<String> printed = new ArrayList<>();
         closing(engine(sessions.watching(language())), engine -> {
             // One rule that matches and one that doesn't, so the detail of a false condition is checked too.
             engine.load(List.of(rule("matches", 2, factEquals("x", 1), putFact(SEEN, "x")),
                     rule("misses", 1, factEquals("x", 2), putFact(SEEN, "x"))));
             evaluations.addAll(engine.runWithResult(new FactMap<>(new Fact<>("x", 1))).evaluations());
+            for (RuleEvaluation evaluation : evaluations) {
+                printed.add(assertDoesNotThrow(() -> String.valueOf(evaluation.detail()),
+                        "the detail of rule '" + evaluation.rule().getRuleName() + "' can't be read after its run"));
+            }
+
+            // A detail that reads what the session holds when it's printed, such as a buffer the session reuses,
+            // prints the next run's values: every rule's result would then explain the last run.
+            engine.run(new FactMap<>(new Fact<>("x", 7)));
+            for (int i = 0; i < evaluations.size(); i++) {
+                RuleEvaluation evaluation = evaluations.get(i);
+                assertEquals(printed.get(i), String.valueOf(evaluation.detail()),
+                        "the detail of rule '" + evaluation.rule().getRuleName() + "' changed after another run");
+            }
         });
 
         assertEquals(2, evaluations.size(), "the run didn't report both rules' evaluations");
         // The result outlives the run, and a caller reads it after the engine has given the session to another run
         // or closed it, so the detail can't be the session, and printing it can't need the session open.
-        for (RuleEvaluation evaluation : evaluations) {
+        for (int i = 0; i < evaluations.size(); i++) {
+            RuleEvaluation evaluation = evaluations.get(i);
             Object detail = evaluation.detail();
             sessions.assertNotASession(detail);
-            assertDoesNotThrow(() -> String.valueOf(detail),
+            String closed = assertDoesNotThrow(() -> String.valueOf(detail),
                     "the condition's detail can't be read once the engine has closed its session");
+            assertEquals(printed.get(i), closed,
+                    "the detail of rule '" + evaluation.rule().getRuleName() + "' changed once the engine closed its"
+                            + " session");
         }
     }
 
@@ -757,16 +905,8 @@ public abstract class ExpressionLanguageContractTest {
             }
         }
 
-        // By identity: the engine rethrows a fatal error from close() itself, and closing() has attached what
-        // engine.close() threw to a failed run, so either may be one of these already.
-        @SuppressWarnings("PMD.CompareObjectsWithEquals")
         void suppressCloseFailures(Throwable runFailure) {
-            List<Throwable> attached = Arrays.asList(runFailure.getSuppressed());
-            for (Throwable failure : closeFailures) {
-                if (failure != runFailure && attached.stream().noneMatch(known -> known == failure)) {
-                    runFailure.addSuppressed(failure);
-                }
-            }
+            suppressAll(runFailure, closeFailures);
         }
 
         void assertNotASession(@Nullable Object detail) {
@@ -881,15 +1021,18 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Compiles a condition with the language's compiler, outside an engine, and evaluates it twice against one
-     * session: once with {@code evaluate} and once with {@code evaluateWithDetail}. The engine calls only
+     * Compiles a condition with the language's compiler, outside an engine, and evaluates it against one session, with
+     * {@code evaluate} and with {@code evaluateWithDetail}, for a fact that is an {@code Integer} 1 or 2, a
+     * {@code Long} 1 or 2, a {@code Short} 1 and a {@code BigDecimal} 1. The engine calls only
      * {@code evaluateWithDetail}, so a language whose {@code evaluate} disagrees with it passes every other check,
      * and fails whoever calls {@code evaluate} directly. A language that doesn't override {@code evaluateWithDetail}
-     * passes: the default returns what {@code evaluate} does.
+     * passes: the default returns what {@code evaluate} does. So does one that throws from both for a fact, as a
+     * language that compares whole numbers by type may; one that throws from only one of them fails.
      *
      * <p>
      * An exception from closing the session or the compiler doesn't fail this check: the engine only logs one, and
-     * {@code sessionsClosed} is the check that fails a session whose {@code close()} throws.
+     * {@code sessionsClosed} is the check that fails a session whose {@code close()} throws, and
+     * {@code compilerClosed} the one that fails a compiler whose {@code close()} throws.
      * </p>
      */
     @Test
@@ -905,14 +1048,28 @@ public abstract class ExpressionLanguageContractTest {
             assertNotNull(created, "newSession() returned null, which fails every run that needs a session");
             closing(new ClosedQuietly<>(created), closed -> {
                 Session session = closed.resource();
-                for (int x = 1; x <= 2; x++) {
+                // The whole numbers conditionReadsWholeNumbers runs against too: an evaluate that compares with
+                // Objects.equals, beside an evaluateWithDetail that compares by value, agrees with it on Integers only.
+                for (Object x : List.of(1, 2, 1L, 2L, (short) 1, BigDecimal.ONE)) {
+                    String forFact = "for x = " + x + " (" + x.getClass().getSimpleName() + "), ";
                     EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", x));
-                    ConditionResult detailed = condition.evaluateWithDetail(evaluation, session);
+                    ConditionResult detailed;
+                    try {
+                        detailed = condition.evaluateWithDetail(evaluation, session);
+                    } catch (Exception e) {
+                        // A language that can't compare this type fails the rule either way, as long as evaluate
+                        // does too.
+                        assertThrows(Exception.class, () -> condition.evaluate(evaluation, session),
+                                forFact + "evaluateWithDetail threw " + e + ", but evaluate didn't");
+                        continue;
+                    }
                     assertNotNull(detailed,
-                            "for x = " + x + ", evaluateWithDetail returned null, which fails the rule");
+                            forFact + "evaluateWithDetail returned null, which fails the rule");
 
-                    assertEquals(detailed.value(), condition.evaluate(evaluation, session),
-                            "for x = " + x + ", evaluate returned a different value than evaluateWithDetail reported");
+                    Object value = assertDoesNotThrow(() -> condition.evaluate(evaluation, session),
+                            forFact + "evaluate threw, but evaluateWithDetail returned " + detailed.value());
+                    assertEquals(detailed.value(), value,
+                            forFact + "evaluate returned a different value than evaluateWithDetail reported");
                 }
             });
         });

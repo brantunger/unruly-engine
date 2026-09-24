@@ -5,11 +5,18 @@ import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
+import org.opentest4j.TestAbortedException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -290,6 +297,215 @@ class ContractKitChecksTest {
         return withSessions(language, () -> shared);
     }
 
+    /** Wraps the toy so that each session it creates is new, and runs {@code close} when it's closed. */
+    private static ExpressionLanguage closingWith(Runnable close) {
+        return withSessions(new ToyExpressionLanguage(), () -> new Session() {
+            @Override
+            public void close() {
+                close.run();
+            }
+        });
+    }
+
+    /** A contract test whose actions put the fact under the wrong key, so every check that reads the output fails. */
+    private static ExpressionLanguageContractTest wrongKey(ExpressionLanguage language) {
+        return new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+
+            @Override
+            protected String putFact(String key, String fact) {
+                return "put wrong " + fact;
+            }
+        };
+    }
+
+    /** The variables a language's actions declare, kept in its session. */
+    private static final class Variables implements Session {
+
+        private final Map<String, Object> declared = new ConcurrentHashMap<>();
+    }
+
+    /**
+     * Wraps a language so that an action's {@code let NAME = VALUE} keeps the variable in the session, and
+     * {@code put KEY NAME} reads a name that isn't a fact from there. If {@code oneRunLate}, each {@code put} reads the
+     * variables as they were when it last ran, as a language that caches what it resolved would: a later rule in the
+     * same run doesn't see the variable, and a later run does.
+     */
+    private static ExpressionLanguage sessionVariables(ExpressionLanguage language, boolean oneRunLate) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length == 4 && "let".equals(tokens[0])) {
+                            return (actionContext, session) -> {
+                                ((Variables) session).declared.put(tokens[1], Integer.valueOf(tokens[3]));
+                                return ActionResult.done();
+                            };
+                        }
+                        if (tokens.length != 3 || !"put".equals(tokens[0])) {
+                            return action;
+                        }
+                        AtomicReference<Map<String, Object>> cached = new AtomicReference<>(Map.of());
+                        return (actionContext, session) -> {
+                            Map<String, Object> declared = ((Variables) session).declared;
+                            Map<String, Object> visible =
+                                    oneRunLate ? cached.getAndSet(Map.copyOf(declared)) : declared;
+                            if (actionContext.facts().containsKey(tokens[2]) || !visible.containsKey(tokens[2])) {
+                                return action.execute(actionContext, session);
+                            }
+                            return ActionResult.set(Map.of(tokens[1], visible.get(tokens[2])));
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Variables();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that a {@code put} of a name that is neither a fact nor a variable puts {@code null}, as a
+     * JsonLogic-style language reads a name it doesn't know, or, if {@code atLoad}, is refused when the rule loads.
+     */
+    private static ExpressionLanguage unknownNames(ExpressionLanguage language, boolean atLoad) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        // The checks' only name that is never a fact is the variable y.
+                        if (!expression.text().endsWith(" y")) {
+                            return compiler.compileAction(expression);
+                        }
+                        if (atLoad) {
+                            throw new IllegalArgumentException("unknown name 'y'");
+                        }
+                        String key = expression.text().split("\\s+")[1];
+                        return (actionContext, session) -> {
+                            Map<String, Object> properties = new HashMap<>();
+                            properties.put(key, null);
+                            return ActionResult.set(properties);
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /** Wraps a language so that its checkFactName() rejects any name but letters, such as {@code credit_score2}. */
+    private static ExpressionLanguage lettersOnly(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void checkFactName(String name) {
+                        if (!name.matches("[A-Za-z]+")) {
+                            throw new IllegalArgumentException("not a name: " + name);
+                        }
+                    }
+                };
+            }
+        };
+    }
+
+    /** Wraps a language so that each of its compilers throws what {@code failure} supplies when it's closed. */
+    private static ExpressionLanguage throwingCompilerClose(ExpressionLanguage language,
+                                                            Supplier<RuntimeException> failure) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void close() {
+                        compiler.close();
+                        throw failure.get();
+                    }
+                };
+            }
+        };
+    }
+
     @Test
     @DisplayName("a language whose session throws when it's closed fails the session check (#470)")
     void throwingCloseFails() {
@@ -484,5 +700,205 @@ class ContractKitChecksTest {
                 () -> runCheck(offByOne, "conditionReadsFacts"));
 
         assertEquals("expected: <{seen=1}> but was: <{seen=2}>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that keeps an action's variables in its session fails the variable check (#584)")
+    void sessionVariablesFail() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(sessionVariables(new ToyExpressionLanguage(), false), "actionVariablesStayLocal"));
+
+        assertEquals("a later rule read the variable 'y' an action declared: {seen=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose actions read the variables an earlier run declared fails the variable check (#584)")
+    void earlierRunsVariablesFail() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(sessionVariables(new ToyExpressionLanguage(), true), "actionVariablesStayLocal"));
+
+        assertEquals("a later run read the variable 'y' an action declared in an earlier one, although the rule that"
+                + " declares it didn't fire: {seen=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that reads a name it doesn't know as null, or refuses it at load, passes the variable"
+            + " check (#584)")
+    void unknownNamesPass() {
+        assertDoesNotThrow(() -> runCheck(unknownNames(new ToyExpressionLanguage(), false),
+                "actionVariablesStayLocal"));
+        assertDoesNotThrow(() -> runCheck(unknownNames(new ToyExpressionLanguage(), true),
+                "actionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("a contract test that names output as the fact name its language rejects fails the fact-name check"
+            + " (#584)")
+    void outputAsUnusableNameFails() {
+        // The engine rejects output itself, so a language that accepts every name, as the toy does, would pass.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String unusableFactName() {
+                return "output";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unusableFactNameRejected"));
+
+        assertTrue(failure.getMessage().startsWith("unusableFactName() must return a name the language itself"
+                + " rejects"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that rejects a fact name its contract test says it accepts fails the usable-name check"
+            + " (#584)")
+    void tooStrictFactNameCheckFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return lettersOnly(new ToyExpressionLanguage());
+            }
+
+            @Override
+            protected Collection<String> usableFactNames() {
+                return List.of("score", "credit_score2");
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "usableFactNamesAccepted"));
+
+        assertTrue(failure.getMessage().startsWith("a rule couldn't use the fact name 'credit_score2', which"
+                + " usableFactNames() says it can"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose rule on a listed fact name doesn't put its value fails the usable-name check, naming"
+            + " the name (#584)")
+    void usableFactNameNotReadFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String putFact(String key, String fact) {
+                return "put wrong " + fact;
+            }
+
+            @Override
+            protected Collection<String> usableFactNames() {
+                return List.of("x_1");
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "usableFactNamesAccepted"));
+
+        assertEquals("a rule on the fact name 'x_1' didn't put its value: expected: <{seen=1}> but was: <{wrong=1}>",
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that accepts the fact names its contract test lists passes the usable-name check, and"
+            + " one that lists none skips it (#584)")
+    void usableFactNamesPass() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected Collection<String> usableFactNames() {
+                return List.of("credit_score2", "x_1");
+            }
+        };
+
+        assertDoesNotThrow(() -> runCheck(test, "usableFactNamesAccepted"));
+        assertThrows(TestAbortedException.class,
+                () -> runCheck(new ToyExpressionLanguageContractTest(), "usableFactNamesAccepted"));
+    }
+
+    @Test
+    @DisplayName("a language whose compiler throws when it's closed fails the compiler check (#584)")
+    void throwingCompilerCloseFails() {
+        ExpressionLanguage language = throwingCompilerClose(new ToyExpressionLanguage(),
+                () -> new IllegalStateException("failed to release the runtime"));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "compilerClosed"));
+
+        assertEquals("a compiler's close() threw java.lang.IllegalStateException: failed to release the runtime,"
+                + " which the engine only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a compiler check that fails reports its own failure, with what closing the compiler threw attached"
+            + " (#584)")
+    void compilerCloseFailureAttached() {
+        IllegalStateException cached = new IllegalStateException("failed to release the runtime");
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                wrongKey(throwingCompilerClose(new ToyExpressionLanguage(), () -> cached)), "compilerClosed"));
+
+        assertEquals("expected: <{seen=1}> but was: <{wrong=1}>", failure.getMessage());
+        assertEquals(List.of(cached), Arrays.asList(failure.getSuppressed()));
+    }
+
+    @Test
+    @DisplayName("a contract test whose assignment() returns null skips the assignment check (#594)")
+    void noAssignmentSkipped() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String assignment(String fact, int value) {
+                return null;
+            }
+        };
+
+        TestAbortedException skipped = assertThrows(TestAbortedException.class,
+                () -> runCheck(test, "conditionAssignmentRejected"));
+
+        assertEquals("Assumption failed: the language's conditions can't assign a fact", skipped.getMessage());
+    }
+
+    @Test
+    @DisplayName("a session check that fails reports its own failure, with what each session's close() threw attached"
+            + " (#594)")
+    void sessionCloseFailuresAttached() {
+        // Two copies when the rules load, so two sessions, each throwing an exception of its own. The engine only
+        // logs them, so nothing but the check attaches them.
+        ExpressionLanguage language = closingWith(() -> {
+            throw new IllegalStateException("the session's runtime was already shut down");
+        });
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(wrongKey(language), "sessionsClosed"));
+
+        assertEquals("expected: <{seen=1}> but was: <{wrong=1}>", failure.getMessage());
+        assertEquals(2, failure.getSuppressed().length, () -> Arrays.toString(failure.getSuppressed()));
+        for (Throwable suppressed : failure.getSuppressed()) {
+            assertEquals("the session's runtime was already shut down", suppressed.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("one exception that every session's close() throws is attached to the session check's failure once"
+            + " (#594)")
+    void cachedSessionCloseFailureAttachedOnce() {
+        IllegalStateException cached = new IllegalStateException("the session's runtime was already shut down");
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(wrongKey(closingWith(() -> {
+                    throw cached;
+                })), "sessionsClosed"));
+
+        assertEquals(List.of(cached), Arrays.asList(failure.getSuppressed()));
+    }
+
+    @Test
+    @DisplayName("one fatal error that every session's close() throws is attached to the session check's failure"
+            + " once, although closing the engine rethrows it (#594)")
+    void cachedFatalSessionCloseAttachedOnce() {
+        InternalError cached = new InternalError("the session's native runtime crashed");
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(wrongKey(closingWith(() -> {
+                    throw cached;
+                })), "sessionsClosed"));
+
+        assertEquals(List.of(cached), Arrays.asList(failure.getSuppressed()));
     }
 }
