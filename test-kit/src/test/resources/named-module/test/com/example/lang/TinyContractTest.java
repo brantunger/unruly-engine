@@ -1,18 +1,13 @@
-package io.github.brantunger.unruly.mvel;
+package com.example.lang;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
-import org.junit.jupiter.api.DisplayName;
 
-import java.util.Collection;
-import java.util.List;
-
-@DisplayName("MVEL keeps the expression-language contract")
-class MvelExpressionLanguageContractTest extends ExpressionLanguageContractTest {
+public class TinyContractTest extends ExpressionLanguageContractTest {
 
     @Override
     protected ExpressionLanguage language() {
-        return new MvelExpressionLanguage();
+        return new TinyLanguage();
     }
 
     @Override
@@ -37,33 +32,27 @@ class MvelExpressionLanguageContractTest extends ExpressionLanguageContractTest 
 
     @Override
     protected String putFact(String key, String fact) {
-        return "output.put('" + key + "', " + fact + ")";
+        return "put " + key + " " + fact;
     }
 
     @Override
     protected String declareVariable(String name, int value) {
-        return name + " = " + value;
+        return "let " + name + " " + value;
     }
 
     @Override
     protected String reassignOutput() {
-        return "output = new java.util.HashMap()";
+        return "output = new";
     }
 
     @Override
     protected String syntaxError() {
-        return "x >= ";
+        return "((";
     }
 
     @Override
     protected String unusableFactName() {
-        return "empty";
-    }
-
-    // Java identifiers MVEL reads as facts: with an underscore and a digit, a leading underscore and a dollar sign.
-    @Override
-    protected Collection<String> usableFactNames() {
-        return List.of("credit_score2", "_score", "$total");
+        return "not a name";
     }
 
     @Override

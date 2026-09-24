@@ -4,8 +4,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
@@ -112,6 +114,76 @@ class ConditionDetailKitCheckTest {
         };
     }
 
+    /** How one of a condition's two paths evaluates it, given the language's own condition. */
+    @FunctionalInterface
+    private interface ConditionPath {
+        ConditionResult evaluate(CompiledCondition condition, EvaluationContext evaluation, Session session)
+                throws Exception;
+    }
+
+    /** The language's own evaluateWithDetail. */
+    private static final ConditionPath OWN = CompiledCondition::evaluateWithDetail;
+
+    /** Whether the fact {@code x} is 1, compared by value, whatever kind of number it is. */
+    private static final ConditionPath BY_VALUE = (condition, evaluation, session) -> ConditionResult.of(
+            evaluation.facts().get("x") instanceof Number number
+                    && new BigDecimal(number.toString()).compareTo(BigDecimal.ONE) == 0);
+
+    /** The language's own evaluateWithDetail for an {@code Integer} fact {@code x}, and a failure for any other. */
+    private static final ConditionPath INTEGERS_ONLY = (condition, evaluation, session) -> {
+        if (!(evaluation.facts().get("x") instanceof Integer)) {
+            throw new IllegalStateException("compares Integers only");
+        }
+        return condition.evaluateWithDetail(evaluation, session);
+    };
+
+    /**
+     * Wraps a language so that each condition's evaluate returns the value {@code evaluate} gives, and its
+     * evaluateWithDetail what {@code detailed} gives.
+     */
+    private static ExpressionLanguage twoPaths(ExpressionLanguage language, ConditionPath evaluate,
+                                               ConditionPath detailed) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return new CompiledCondition() {
+                            @Override
+                            public Object evaluate(EvaluationContext evaluation, Session session) throws Exception {
+                                return evaluate.evaluate(condition, evaluation, session).value();
+                            }
+
+                            @Override
+                            public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session)
+                                    throws Exception {
+                                return detailed.evaluate(condition, evaluation, session);
+                            }
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
     /**
      * Wraps a language so that each session it creates and each compiler record in {@code closes} when they're closed,
      * and, if {@code throwing}, then throw.
@@ -173,6 +245,39 @@ class ConditionDetailKitCheckTest {
         public void close() {
             closed = true;
         }
+    }
+
+    /** A session that counts the conditions evaluated with it. */
+    private static final class CountingSession implements Session {
+
+        private final AtomicInteger evaluations = new AtomicInteger();
+    }
+
+    /**
+     * Wraps a language so that each condition's detail prints how many conditions its session has evaluated when
+     * it's printed, not when it was made: a buffer the session reuses, which every later run overwrites.
+     */
+    private static ExpressionLanguage readsSessionWhenPrinted(ExpressionLanguage language) {
+        return explainedBy(withSessions(language, CountingSession::new), (value, session) -> {
+            AtomicInteger evaluations = ((CountingSession) session).evaluations;
+            evaluations.incrementAndGet();
+            return new Object() {
+                @Override
+                public String toString() {
+                    return "evaluation " + evaluations.get();
+                }
+            };
+        });
+    }
+
+    /** Wraps a language so that each condition's detail prints whether its session is closed yet. */
+    private static ExpressionLanguage printsWhetherClosed(ExpressionLanguage language) {
+        return explainedBy(withSessions(language, ClosingSession::new), (value, session) -> new Object() {
+            @Override
+            public String toString() {
+                return ((ClosingSession) session).closed ? "closed" : "open";
+            }
+        });
     }
 
     /** Wraps a language so that each session it creates is new, and each condition's detail is that session. */
@@ -244,8 +349,84 @@ class ConditionDetailKitCheckTest {
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> runCheck(liar(new ToyExpressionLanguage()), "evaluateAgreesWithDetail"));
 
-        assertEquals("for x = 1, evaluate returned a different value than evaluateWithDetail reported ==> expected:"
-                + " <true> but was: <false>", failure.getMessage());
+        assertEquals("for x = 1 (Integer), evaluate returned a different value than evaluateWithDetail reported ==>"
+                + " expected: <true> but was: <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate compares whole numbers by type, and its evaluateWithDetail by value, fails"
+            + " the agreement check (#584)")
+    void byTypeEvaluateFails() {
+        // The toy's own == compares by type.
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), OWN, BY_VALUE), "evaluateAgreesWithDetail"));
+
+        assertEquals("for x = 1 (Long), evaluate returned a different value than evaluateWithDetail reported ==>"
+                + " expected: <true> but was: <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluateWithDetail throws for a fact that its evaluate reads fails the agreement"
+            + " check (#584)")
+    void onlyDetailThrowsFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), OWN, INTEGERS_ONLY), "evaluateAgreesWithDetail"));
+
+        assertTrue(failure.getMessage().startsWith("for x = 1 (Long), evaluateWithDetail threw"
+                        + " java.lang.IllegalStateException: compares Integers only, but evaluate didn't"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate throws for a fact that its evaluateWithDetail reads fails the agreement"
+            + " check (#584)")
+    void onlyEvaluateThrowsFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), INTEGERS_ONLY, OWN), "evaluateAgreesWithDetail"));
+
+        assertTrue(failure.getMessage().startsWith("for x = 1 (Long), evaluate threw, but evaluateWithDetail returned"
+                + " false"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that throws from both evaluate and evaluateWithDetail for a fact passes the agreement"
+            + " check (#584)")
+    void bothPathsThrowingPasses() {
+        assertDoesNotThrow(() -> runCheck(twoPaths(new ToyExpressionLanguage(), INTEGERS_ONLY, INTEGERS_ONLY),
+                "evaluateAgreesWithDetail"));
+    }
+
+    @Test
+    @DisplayName("a language whose newSession() returns null fails the agreement check, which runs outside an engine"
+            + " (#594)")
+    void nullSessionFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(withSessions(new ToyExpressionLanguage(), () -> null), "evaluateAgreesWithDetail"));
+
+        assertEquals("newSession() returned null, which fails every run that needs a session ==> expected: not"
+                + " <null>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose condition detail reads its session when it's printed fails the detail check once"
+            + " another run has used the session (#584)")
+    void detailReadingTheSessionWhenPrintedFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(readsSessionWhenPrinted(new ToyExpressionLanguage()), "conditionDetail"));
+
+        assertTrue(failure.getMessage().startsWith("the detail of rule 'matches' changed after another run"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose condition detail prints differently once its session is closed fails the detail"
+            + " check (#584)")
+    void detailChangedByTheCloseFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(printsWhetherClosed(new ToyExpressionLanguage()), "conditionDetail"));
+
+        assertEquals("the detail of rule 'matches' changed once the engine closed its session ==> expected: <open> but"
+                + " was: <closed>", failure.getMessage());
     }
 
     @Test

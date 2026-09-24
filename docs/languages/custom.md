@@ -66,7 +66,7 @@ sequenceDiagram
 | `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it. Never for `Session.none()`, a session a run creates, or `validate()` | The `load()` thread | No |
 | `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
-| `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
+| `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns. Don't throw | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
 
 Who closes a session depends on its copy. An extra copy, or a kept copy in use when the rules are retired: its run,
 when it ends. An idle copy: the `load()` or `close()` caller that retires the rules. A copy shared by every run holds
@@ -210,8 +210,8 @@ value: any other value fails the run, and the detail with it. `afterEvaluate` on
 doesn't receive it.
 
 - **Don't return the session, or hold it.** Sessions are closed when their copy is retired, and reused by later runs.
-- **Keep it usable after `close()`.** An application may keep the run result after the engine is closed, so at least
-  the detail's `toString()` must still work then.
+- **Keep it usable after `close()`.** A run result may outlive later runs and `close()`, so the detail's
+  `toString()` must still give the same text.
 
 > [!WARNING]
 > A condition that wraps another one must override `evaluateWithDetail` and forward it. A lambda implements only
@@ -284,10 +284,10 @@ through a public supertype that declares the accessor, a superclass or an interf
 package is open to `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the
 application `opens` it; see [Packaging](#-packaging).
 
-A language is expected to compare whole numbers of different types by value on the way in, so a condition written for
-`x` = 1 matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that deliberately
-doesn't can skip the [contract kit](contract-kit.md)'s check by overriding
-`comparesWholeNumbersByValue()` in its test to return `false`.
+A language is expected to compare whole numbers of different types by value, so a condition written for `x` = 1
+matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that deliberately doesn't can
+skip the [contract kit](contract-kit.md)'s check by overriding `comparesWholeNumbersByValue()` in its test to return
+`false`.
 
 `FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
 that reads only maps. It throws `IllegalArgumentException` for a value it doesn't take apart, such as a number, a
@@ -321,15 +321,16 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 `IllegalArgumentException`; by default every name is accepted. The engine calls it:
 
 - for every fact of every run, on the run's thread, after `beforeRun`, so a rejection reaches `onRunError`. `run()`
-  throws your exception as it is, logged at ERROR. Anything else you throw becomes an `IllegalArgumentException`
-  reading `The 'my' expression language failed to check fact name 'x': ...`, except a fatal error, which is rethrown;
-- for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has been compiled or has failed,
-  by the compilers that were created; when none was, the names wait for the next `load()`. A rejection fails
-  the load with `Declared fact 'empty' can't be used: ` followed by your message.
+  throws your exception unchanged, logged at ERROR. Anything else becomes an `IllegalArgumentException` reading
+  `The 'my' expression language failed to check fact name 'x': ...`; a fatal error is rethrown;
+- for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has compiled or failed, by the
+  compilers created; with none, they wait for the next `load()`. A rejection fails the load with
+  `Declared fact 'empty' can't be used: ` and your message.
 
 Only the languages the loaded rules use are asked, in the order the rules first used them, or the default language
 for an empty rule list. The engine has already rejected `null` and `output`, and caches nothing, so keep the check
-cheap and thread-safe.
+cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways, through `unusableFactName()` and
+`usableFactNames()`.
 
 ## ⏳ Stopping a run
 
@@ -467,8 +468,8 @@ module com.example.app {
 A public class needs `exports`; a class that isn't public needs `opens`, because calling its method is deep
 reflection. A language that reflects on facts itself needs its own access: in MVEL's case an export with no `to`
 clause at all, because the accessor classes MVEL generates live in the unnamed module, as the root README's
-[Installation](../../README.md#-installation) block explains. A test that extends the contract kit opens its package
-`to org.junit.platform.commons`.
+[Installation](../../README.md#-installation) block explains. A test module that `requires` the contract kit opens its
+package `to org.junit.platform.commons`.
 
 ### Native image
 
@@ -483,8 +484,8 @@ read and write them by reflection. Only MVEL has been tested in an image; see [N
 
 ## 🧪 Testing with the contract kit
 
-[The contract test kit](contract-kit.md) covers adding `unruly-engine-test` to a language's tests, and what each of its
-checks promises.
+[The contract test kit](contract-kit.md) covers adding `unruly-engine-test` to a language's tests, what each of its
+checks promises, and [the Surefire setting](contract-kit.md#a-named-module-with-maven) a named module needs.
 
 ## 🚧 Gotchas
 
@@ -497,7 +498,7 @@ checks promises.
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause |
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
-| **A `close()` that throws** | The engine logs it at WARN and carries on, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw from `Session.close()`; the kit's `sessionsClosed` check fails it |
+| **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `sessionsClosed` and `compilerClosed` checks fail it |
 
 ## ❓ Questions you might not think to ask
 
@@ -526,6 +527,6 @@ it when a session's first use is costly, such as compiling or loading classes. S
 ### Do I have to implement `evaluateWithDetail`?
 
 No. By default it calls your `evaluate` and gives no detail, so `RuleEvaluation.detail()` is `null` for your rules.
-MVEL doesn't implement it either. If you do, `evaluate` must still return the same value, and the kit checks that. See
+MVEL doesn't implement it either. If you do, `evaluate` must still return the same value, as the kit checks. See
 [Explaining a condition's result](#explaining-a-conditions-result).
 
