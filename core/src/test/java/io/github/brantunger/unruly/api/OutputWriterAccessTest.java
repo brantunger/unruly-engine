@@ -20,6 +20,8 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -486,6 +488,20 @@ class OutputWriterAccessTest {
             }
             """;
 
+    /**
+     * Beside the bridge for MissingBase's setItems, which names a class that's missing once Missing.class is deleted,
+     * a setter for a narrower list.
+     */
+    private static final String MISSING_ITEMS_SUB = """
+            package com.example.api;
+
+            public final class MissingItemsSub extends MissingBase {
+                public void setItems(java.util.ArrayList<String> items) {
+                    setter = "MissingItemsSub.setItems(ArrayList)";
+                }
+            }
+            """;
+
     private static final String INTEGER_VALUE_BASE = """
             package com.example.impl;
 
@@ -762,6 +778,10 @@ class OutputWriterAccessTest {
 
                 public static Object missingSub() {
                     return new MissingSub();
+                }
+
+                public static Object missingItemsSub() {
+                    return new MissingItemsSub();
                 }
 
                 public static Object integerValue() {
@@ -1137,6 +1157,22 @@ class OutputWriterAccessTest {
     }
 
     @Test
+    @DisplayName("a bridge to a setter whose parameter names a class that's missing isn't taken for a generic setter's,"
+            + " so it still takes what that setter does, beside a setter for a narrower type")
+    void bridgeToASetterNamingAMissingClassBesideANarrowerOne(@TempDir Path classes) throws Exception {
+        compileOutputs(classes, "exports com.example.api;");
+        Files.delete(classes.resolve(Path.of("com", "example", "api", "Missing.class")));
+        Class<?> factory = load(classes);
+        Object output = factory.getMethod("missingItemsSub").invoke(null);
+
+        OutputWriter.beansAndMaps().set(output, "items", new LinkedList<String>());
+
+        assertEquals("MissingBase.setItems(List)", setter(factory, output));
+        OutputWriter.beansAndMaps().set(output, "items", new ArrayList<String>());
+        assertEquals("MissingItemsSub.setItems(ArrayList)", setter(factory, output));
+    }
+
+    @Test
     @DisplayName("on the module path, a Short goes to setContent(long), not through the bridge to setContent(T) with T"
             + " a Long in a class that isn't public")
     void visibilityBridgeForATypeVariableBesideAPrimitiveSetter(@TempDir Path classes) throws Exception {
@@ -1362,6 +1398,7 @@ class OutputWriterAccessTest {
                         source("com/example/impl/HiddenSettableValue", HIDDEN_SETTABLE_VALUE),
                         source("com/example/api/Missing", MISSING), source("com/example/api/MissingBase", MISSING_BASE),
                         source("com/example/api/MissingSub", MISSING_SUB),
+                        source("com/example/api/MissingItemsSub", MISSING_ITEMS_SUB),
                         source("com/example/impl/IntegerValueBase", INTEGER_VALUE_BASE),
                         source("com/example/impl/IntegerValue", INTEGER_VALUE),
                         source("com/example/impl/TextValueBase", TEXT_VALUE_BASE),

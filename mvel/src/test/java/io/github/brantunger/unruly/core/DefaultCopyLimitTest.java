@@ -48,6 +48,11 @@ class DefaultCopyLimitTest {
     private static final int LIMIT = Math.max(1, PROCESSORS / 2);
     /** More runs than the default limit, so the runs above it have to wait for a copy. */
     private static final int EXTRA_RUNS = 4;
+    /**
+     * A stall window longer than any wait in these tests, so a run waiting for a copy doesn't give up and make an
+     * extra one when the test's threads stall for the five seconds of the default window.
+     */
+    private static final long LONGER_THAN_THE_TEST = TimeUnit.MINUTES.toMillis(2);
 
     /** A fact that holds every run that reaches it, so a test can see how many are in progress at once. */
     public static final class Gate {
@@ -127,6 +132,16 @@ class DefaultCopyLimitTest {
         return engine;
     }
 
+    /** {@link #engine}, loading {@link #RULE}, whose runs wait for a copy for as long as the test takes. */
+    private static RulesEngine<Map<String, Object>> patientEngine(
+            UnaryOperator<RulesEngineBuilder<Map<String, Object>>> configuration) {
+        RulesEngine<Map<String, Object>> engine =
+                configuration.apply(RulesEngineBuilder.allMatches(HashMap::new)).build();
+        ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(LONGER_THAN_THE_TEST);
+        engine.load(List.of(RULE));
+        return engine;
+    }
+
     private static FactStore<Object> facts(Gate gate) {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("gate", gate);
@@ -170,17 +185,20 @@ class DefaultCopyLimitTest {
     @DisplayName("runs on virtual threads are limited to one copy for every two processors")
     void virtualThreadRunsAreLimited() throws InterruptedException {
         Gate gate = new Gate();
-        RulesEngine<Map<String, Object>> engine = engine(UnaryOperator.identity(), List.of(RULE));
+        try (RulesEngine<Map<String, Object>> engine = patientEngine(UnaryOperator.identity())) {
+            start(LIMIT + EXTRA_RUNS, true, engine, gate);
+            // The runs above the limit wait for a copy, and don't give up while the gate is shut.
+            await(() -> gate.inProgress.get() == LIMIT && allParked(),
+                    LIMIT + " runs are in progress and " + EXTRA_RUNS + " wait for a copy");
+            int mostBeforeOpening = gate.mostInProgress.get();
+            gate.open.countDown();
+            joinTheRuns();
 
-        start(LIMIT + EXTRA_RUNS, true, engine, gate);
-        // The runs above the limit wait for a copy; the gate opens well inside the five seconds they give the copies
-        // to come back before making an extra one.
-        await(() -> gate.inProgress.get() == LIMIT && allParked(),
-                LIMIT + " runs are in progress and " + EXTRA_RUNS + " wait for a copy");
-        gate.open.countDown();
-        joinTheRuns();
-
-        assertEquals(LIMIT, gate.mostInProgress.get(), "no more runs than the limit were ever in progress");
+            assertEquals(LIMIT, mostBeforeOpening, "no more runs than the limit were in progress before the gate"
+                    + " opened");
+            // A run holds its permit for the whole run, so a waiting run gets one only when a run that holds one ends.
+            assertEquals(LIMIT, gate.mostInProgress.get(), "no more runs than the limit were ever in progress");
+        }
     }
 
     @Test
@@ -222,31 +240,36 @@ class DefaultCopyLimitTest {
             + " each processor")
     void unlimitedCopies() throws InterruptedException {
         Gate gate = new Gate();
-        RulesEngine<Map<String, Object>> engine =
-                engine(RulesEngineBuilder::unlimitedCopies, List.of(RULE));
+        try (RulesEngine<Map<String, Object>> engine = patientEngine(RulesEngineBuilder::unlimitedCopies)) {
+            // Each run in progress is a new copy's first run, which holds a build slot (BuildSlotsTest).
+            start(PROCESSORS + EXTRA_RUNS, true, engine, gate);
+            await(() -> gate.inProgress.get() == PROCESSORS && allParked(),
+                    PROCESSORS + " runs are in progress, more than the default limit of " + LIMIT);
+            // Read before the gate opens: the slots bound only the new copies in their first run, so once it opens,
+            // the waiting runs can take the copies given back, and new ones made with the slots given back, while
+            // runs let through the gate are still counted.
+            int mostBeforeOpening = gate.mostInProgress.get();
+            gate.open.countDown();
+            joinTheRuns();
 
-        // Each run in progress is a new copy's first run, which holds a build slot (BuildSlotsTest).
-        start(PROCESSORS + EXTRA_RUNS, true, engine, gate);
-        await(() -> gate.inProgress.get() == PROCESSORS && allParked(),
-                PROCESSORS + " runs are in progress, more than the default limit of " + LIMIT);
-        gate.open.countDown();
-        joinTheRuns();
-
-        assertEquals(PROCESSORS, gate.mostInProgress.get());
+            assertEquals(PROCESSORS, mostBeforeOpening);
+        }
     }
 
     @Test
     @DisplayName("maxCopies() limits runs on every kind of thread, not only virtual ones")
     void maxCopiesLimitsPlatformThreadsToo() throws InterruptedException {
         Gate gate = new Gate();
-        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.maxCopies(2), List.of(RULE));
+        try (RulesEngine<Map<String, Object>> engine = patientEngine(builder -> builder.maxCopies(2))) {
+            start(4, false, engine, gate);
+            await(() -> gate.inProgress.get() == 2 && allParked(), "2 runs are in progress and 2 wait for a copy");
+            int mostBeforeOpening = gate.mostInProgress.get();
+            gate.open.countDown();
+            joinTheRuns();
 
-        start(4, false, engine, gate);
-        await(() -> gate.inProgress.get() == 2 && allParked(), "2 runs are in progress and 2 wait for a copy");
-        gate.open.countDown();
-        joinTheRuns();
-
-        assertEquals(2, gate.mostInProgress.get());
+            assertEquals(2, mostBeforeOpening, "no more runs than the limit were in progress before the gate opened");
+            assertEquals(2, gate.mostInProgress.get(), "no more runs than the limit were ever in progress");
+        }
     }
 
     @Test

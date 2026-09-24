@@ -87,7 +87,7 @@ final class RuleSet {
     private static final int CLOSED = -1;
     // How long a run waits without one copy being given back before it decides they aren't coming back. Long
     // enough that only a rule slower than this, or a run waiting for another thread's run, reaches it.
-    private static final long STALL_WINDOW_MILLIS = 5000;
+    static final long STALL_WINDOW_MILLIS = 5000;
     // Runs in progress on this thread, whatever engine or rule list they use, each counted from when it starts to get
     // its copy, so a nested run never waits for a copy its own thread may be holding. Removed when the outermost run
     // ends, so a pooled thread keeps nothing.
@@ -153,7 +153,8 @@ final class RuleSet {
     }
 
     /**
-     * Creates a rule set with no copies yet, whose limited runs take the permits of the engine that loaded it.
+     * Creates a rule set with no copies yet, whose limited runs take the permits of the engine that loaded it and
+     * wait the default stall window.
      *
      * @param compiledRules The compiled rules, in the order they run
      * @param compilers     The compilers of the languages the rules use, by language name, in the order they check
@@ -168,8 +169,9 @@ final class RuleSet {
 
     /**
      * Creates a rule set whose runs give up waiting for a copy after {@code stallWindowMillis}, for tests that would
-     * otherwise wait the whole stall window. It is a deliberate test seam: the engine never passes a stall window of
-     * its own, so keep it even if no test uses it today.
+     * otherwise wait the whole stall window. It is a deliberate test seam: the engine passes the default stall window
+     * unless a test set another with {@link AbstractRulesEngine#stallWindow(long)}, so keep it even if no test uses it
+     * today.
      *
      * @param compiledRules     The compiled rules, in the order they run
      * @param compilers         The compilers of the languages the rules use, by language name
@@ -183,8 +185,9 @@ final class RuleSet {
 
     /**
      * Creates a rule set whose limited runs take the given permits and give up waiting after
-     * {@code stallWindowMillis}. It is a deliberate test seam too: it lets a test share permits between rule sets
-     * <em>and</em> shorten the stall window, which nothing but a test needs.
+     * {@code stallWindowMillis}. The engine loads its rule lists with it, passing the default stall window unless a
+     * test set another with {@link AbstractRulesEngine#stallWindow(long)}. A test can also share permits between rule
+     * sets <em>and</em> change the stall window with it.
      *
      * @param compiledRules     The compiled rules, in the order they run
      * @param compilers         The compilers of the languages the rules use, by language name

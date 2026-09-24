@@ -562,6 +562,30 @@ class PlainThrowableTest {
     }
 
     @Test
+    @DisplayName("from anywhere else in a run, with an InterruptedException as its cause, it fails the run and sets"
+            + " the thread's interrupt status again")
+    void fromAnywhereElseInARunWithAnInterruptCause() {
+        Throwable raw = new Throwable("raw", new InterruptedException("interrupted in the run"));
+        List<String> calls = new CopyOnWriteArrayList<>();
+        Recorder listener = new Recorder("A", calls);
+        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        boolean interrupted;
+
+        try {
+            logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        } finally {
+            // Cleared for the tests after this one, whatever happened.
+            interrupted = Thread.interrupted();
+        }
+
+        assertTrue(interrupted, "the interrupt among the causes was swallowed");
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        assertSame(raw, failure.getCause());
+        assertEquals(List.of("A.beforeRun", "A.onRunError"), calls);
+    }
+
+    @Test
     @DisplayName("from anywhere else in a run, with a fatal Error as its cause, that error is rethrown unchanged once"
             + " onRunError has been called")
     void fromAnywhereElseInARunWithAFatalCause() {

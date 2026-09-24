@@ -99,6 +99,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final CopyLimit copyLimit;
     // The permits for copyLimit, which every rule list this engine loads shares, so a reload can't raise the limit.
     private final CopyPermits copyPermits;
+    // How long a run waits without one copy being given back before it makes an extra one. Only a test changes it,
+    // with stallWindow(long).
+    private long stallWindowMillis = RuleSet.STALL_WINDOW_MILLIS;
     // How many copies of the rules load() makes, before runs can see them.
     private final int copiesAtLoad;
     // How long a run may take, or null if runs have no deadline. A run() call can pass one of its own.
@@ -506,6 +509,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Sets how long the runs of the rule lists this engine loads from now on wait without one copy being given back
+     * before they make an extra one. It is a deliberate test seam: a test whose runs wait for copies on purpose sets a
+     * window longer than the test, so a stall of the test's own threads can't make a run give up and add a copy.
+     * Call it before {@link #load(List)}, on the thread that loads.
+     *
+     * @param millis How long a run waits, in milliseconds
+     */
+    void stallWindow(long millis) {
+        stallWindowMillis = millis;
+    }
+
+    /**
      * Borrows a copy of the rules for one run. An interrupt while waiting for one fails the run; the interrupt status
      * is set again, so the caller still sees it. A thread whose status is already set doesn't wait, and gets a free
      * copy: the run then stops at its first rule, the same way it does without a limit on copies.
@@ -744,7 +759,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             compilation.compile(ruleList);
             throwIfAnyFailed(compilation.failures);
-            loaded = new RuleSet(compilation.compiled, compilation.used, copyLimit, copyPermits);
+            loaded = new RuleSet(compilation.compiled, compilation.used, copyLimit, copyPermits, stallWindowMillis);
         } catch (Throwable t) {
             // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.
             Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));

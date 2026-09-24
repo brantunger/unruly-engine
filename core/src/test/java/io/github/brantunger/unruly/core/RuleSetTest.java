@@ -369,6 +369,66 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("a run interrupted while it waits for a copy is no longer counted on its thread, so the thread's next"
+            + " run waits for a copy under the limit rather than taking an extra one as a nested run")
+    void interruptedWaitLeavesNoRunCountedOnTheThread() throws InterruptedException {
+        AtomicInteger sessions = new AtomicInteger();
+        // A window far longer than the test, so a run that waits for the copy held stops at its deadline, or when
+        // it's interrupted, and never gives up to make an extra copy.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
+                CopyLimit.of(1), TimeUnit.MINUTES.toMillis(5));
+        Holder holder = holdOneCopy(rules);
+        try {
+            // Interrupted before it borrows, so its wait for the copy held ends at once, whatever the timing: a
+            // thread whose interrupt status is set still waits for a copy in use, and the wait throws. A copy it
+            // takes anyway, as a run nested in one still counted on this thread does, is given back, and the status
+            // is cleared whatever happens, so the holder can still be joined and the failure is this test's own.
+            RuleSet.Copy taken = null;
+            Throwable stopped = null;
+            boolean interrupted;
+            Thread.currentThread().interrupt();
+            try {
+                taken = rules.borrow(deadline());
+            } catch (InterruptedException | TimeoutException e) {
+                stopped = e;
+            } finally {
+                interrupted = Thread.interrupted();
+                if (taken != null) {
+                    rules.release(taken);
+                } else {
+                    rules.leaveAfterStop();
+                }
+            }
+            assertNull(taken, "the interrupted run took a copy without waiting, as a run nested in one still counted"
+                    + " on this thread does");
+            assertInstanceOf(InterruptedException.class, stopped, "the wait for the copy held was interrupted");
+            assertTrue(interrupted, "the interrupt status was set again");
+
+            // A deadline already passed, so a run that waits stops at once, and one taken for a nested run takes an
+            // extra copy instead. Either way the rule set is left as the run found it.
+            RuleSet.Copy extra = null;
+            Throwable thrown = null;
+            try {
+                extra = rules.borrow(Instant.now().minusSeconds(1));
+            } catch (TimeoutException e) {
+                thrown = e;
+            } finally {
+                if (extra != null) {
+                    rules.release(extra);
+                } else {
+                    rules.leaveAfterStop();
+                }
+            }
+            assertNull(extra, "the run took an extra copy without waiting, as a run nested in one still counted on"
+                    + " this thread does");
+            assertInstanceOf(TimeoutException.class, thrown, "it waited for the copy held, to its deadline");
+            assertEquals(1, sessions.get(), "sessions created: only the held copy's");
+        } finally {
+            holder.giveBack();
+        }
+    }
+
+    @Test
     @DisplayName("a copy given back is counted as returned, and its permit is released")
     void copiesGivenBackAreCountedAndReleased() {
         CopyPermits permits = new CopyPermits(1);

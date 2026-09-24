@@ -404,14 +404,18 @@ class FailureReportingTest {
                 throw new OutOfMemoryError("listener");
             }
         };
+        // The condition waits until the deadline has passed, so the run stops when it returns, however long the run
+        // took to reach the rule: a stop before the rule would open no beforeEvaluate, and onError wouldn't be called.
         RulesEngine<Map<String, Object>> engine = builder(conditions((context, session) -> {
-            Thread.sleep(200);
+            while (!context.isCancelled()) {
+                Thread.sleep(5);
+            }
             return true;
         })).listener(fatal).listener(recorder).build();
         engine.load(rule("slow"));
 
         assertThrows(OutOfMemoryError.class,
-                () -> engine.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofMillis(20))));
+                () -> engine.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofSeconds(1))));
 
         assertSame(recorder.ruleErrors.get(0), recorder.runErrors.get(0));
         assertNull(recorder.ruleErrors.get(0).getRuleName(), "a stop names no rule");

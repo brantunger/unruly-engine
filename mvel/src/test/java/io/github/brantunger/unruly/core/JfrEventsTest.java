@@ -117,6 +117,23 @@ class JfrEventsTest {
                 .action("output.put('" + name + "', true)").build();
     }
 
+    /**
+     * Returns the facts of a run that holds the only copy: its condition counts {@code holding} down, then waits for
+     * {@code release}. The run has no deadline, so however long it takes to reach the condition, it holds the copy
+     * until the test releases it.
+     */
+    private static FactStore<Object> holderFacts(CountDownLatch holding, CountDownLatch release) {
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("sleeper", new Sleeper() {
+            @Override
+            public boolean sleep(long millis) throws InterruptedException {
+                holding.countDown();
+                return release.await(30, TimeUnit.SECONDS);
+            }
+        });
+        return facts;
+    }
+
     /** Starts a recording with both events enabled and the run event's threshold removed. */
     private Recording recordEverything() {
         recording = new Recording();
@@ -353,34 +370,28 @@ class JfrEventsTest {
     @DisplayName("a run that passes its deadline while waiting for a copy records STOPPED with nothing evaluated")
     void stoppedWhileWaiting() throws Exception {
         RulesEngine<Map<String, Object>> engine =
-                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).maxCopies(1)
-                        .runTimeout(Duration.ofMillis(100)).build();
+                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).maxCopies(1).build();
         engine.load(List.of(rule("jfr-wait-holder", 1, "sleeper.sleep(600)")));
         String checksum = engine.rules().checksum();
         CountDownLatch holding = new CountDownLatch(1);
-        FactStore<Object> holderFacts = new FactMap<>();
-        holderFacts.setValue("sleeper", new Sleeper() {
-            @Override
-            public boolean sleep(long millis) throws InterruptedException {
-                holding.countDown();
-                return super.sleep(millis);
-            }
-        });
+        CountDownLatch release = new CountDownLatch(1);
+        FactStore<Object> holderFacts = holderFacts(holding, release);
         FactStore<Object> waiterFacts = new FactMap<>();
         waiterFacts.setValue("sleeper", new Sleeper());
 
         Recording recording = recordEverything();
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            // The holder's own run passes the deadline too, inside its condition: that is the STOPPED-during-rule case.
-            Future<?> holder = executor.submit(() -> assertThrows(RuleExecutionException.class,
-                    () -> engine.run(holderFacts)));
+            Future<?> holder = executor.submit(() -> engine.run(holderFacts));
             assertTrue(holding.await(5, TimeUnit.SECONDS), "the holder never started its condition");
-            RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(waiterFacts));
+            RuleExecutionException thrown = assertThrows(RuleExecutionException.class,
+                    () -> engine.runWithResult(waiterFacts, RunOptions.withTimeoutOf(Duration.ofMillis(100))));
             assertInstanceOf(TimeoutException.class, thrown.getCause());
             assertTrue(thrown.getMessage().contains("while waiting for a compiled copy"), thrown.getMessage());
+            release.countDown();
             holder.get(5, TimeUnit.SECONDS);
         } finally {
+            release.countDown();
             executor.shutdownNow();
         }
         List<RecordedEvent> all = stop(recording, "waiting");
@@ -409,28 +420,24 @@ class JfrEventsTest {
         };
         RulesEngine<Map<String, Object>> engine =
                 RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).maxCopies(1)
-                        .runTimeout(Duration.ofMillis(100)).listener(fatalBeforeRun).build();
+                        .listener(fatalBeforeRun).build();
         engine.load(List.of(rule("jfr-wait-fatal", 1, "sleeper.sleep(600)")));
         String checksum = engine.rules().checksum();
         CountDownLatch holding = new CountDownLatch(1);
-        FactStore<Object> holderFacts = new FactMap<>();
-        holderFacts.setValue("sleeper", new Sleeper() {
-            @Override
-            public boolean sleep(long millis) throws InterruptedException {
-                holding.countDown();
-                return super.sleep(millis);
-            }
-        });
+        CountDownLatch release = new CountDownLatch(1);
+        FactStore<Object> holderFacts = holderFacts(holding, release);
 
         Recording recording = recordEverything();
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<?> holder = executor.submit(() -> assertThrows(RuleExecutionException.class,
-                    () -> engine.run(holderFacts)));
+            Future<?> holder = executor.submit(() -> engine.run(holderFacts));
             assertTrue(holding.await(5, TimeUnit.SECONDS), "the holder never started its condition");
-            assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>()));
+            assertThrows(OutOfMemoryError.class,
+                    () -> engine.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofMillis(100))));
+            release.countDown();
             holder.get(5, TimeUnit.SECONDS);
         } finally {
+            release.countDown();
             executor.shutdownNow();
         }
         List<RecordedEvent> all = stop(recording, "waiting-fatal");
