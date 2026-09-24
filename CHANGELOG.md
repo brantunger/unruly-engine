@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.0](https://github.com/brantunger/unruly-engine/compare/v2.6.3...v2.7.0) (2026-09-24)
+
+
+### Features
+
+* catch five more kinds of broken language in the contract kit, and add usableFactNames() ([#602](https://github.com/brantunger/unruly-engine/issues/602)) ([1741bdb](https://github.com/brantunger/unruly-engine/commit/1741bdbb43240ae26697de818fd741515d05a46a))
+
 ## [2.6.3](https://github.com/brantunger/unruly-engine/compare/v2.6.2...v2.6.3) (2026-09-24)
 
 
