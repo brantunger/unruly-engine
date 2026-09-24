@@ -63,7 +63,7 @@ documentation lives.
 - **The TOC** lists every H2, in order, when a page has three or more.
 - **Leave out a section the page has nothing for.** A reference page such as this one has no common task or gotchas.
 - **Length:** a guide aims for at most about 1,500 words of prose and 8 H2s. Split a guide that grows past about
-  2,500 words; `scripts/docs/check_style.py` reports one that does.
+  2,500 words; `docs/scripts/check_style.py` reports one that does.
 - **One owner per rule.** When two pages need the same rule, one page states it and the other links to it.
 - **Before a major release,** a guide that describes the unreleased version says so in a NOTE under its H1, with a
   link to the same page at the last released tag. Remove the notes in a `docs:` PR merged just before the release

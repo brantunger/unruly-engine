@@ -226,7 +226,7 @@ jobs:
 
       - name: Links, anchors and table rows
         continue-on-error: true
-        run: python3 scripts/docs/check_docs.py
+        run: python3 docs/scripts/check_docs.py
 
       # Every text file is stored with LF (.gitattributes); a file committed with CRLF, or with both, shows here.
       - name: Line endings
@@ -265,7 +265,7 @@ jobs:
           pages=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- '*.md' ':!CHANGELOG.md')
           if [ -n "$pages" ]; then
             mapfile -t files <<< "$pages"
-            python3 scripts/docs/check_style.py "${files[@]}"
+            python3 docs/scripts/check_style.py "${files[@]}"
           fi
 
   # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the
