@@ -1,6 +1,6 @@
 # The mechanical checks from docs/contributing/style.md, for the pages a pull request changes.
-# Usage: python scripts/docs/check_style.py <page.md>...  (from the repository root)
-#        python scripts/docs/check_style.py --write-baseline  (rewrites scripts/docs/long-pages.txt)
+# Usage: python docs/scripts/check_style.py <page.md>...  (from the repository root)
+#        python docs/scripts/check_style.py --write-baseline  (rewrites docs/scripts/long-pages.txt)
 # Reports: more than one callout under an H2, or two in a row; a paragraph or list over 90 words; a line over 120
 # characters outside tables and callouts; a flowchart classDef that differs from style.md's palette; a page over
 # 2,500 words of prose (style.md: split past 2,500) unless long-pages.txt lists it, and a listed page that grew past
@@ -22,14 +22,14 @@ PALETTE = {
 }
 LIMIT = 2500
 ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-BASELINE = 'scripts/docs/long-pages.txt'
+BASELINE = 'docs/scripts/long-pages.txt'
 BASELINE_HEADER = '''\
 # Pages over 2,500 words of prose that were written before check_style.py enforced docs/contributing/style.md's
 # length limit ("split a guide that grows past about 2,500 words"). One "path words" pair per line, the path
 # relative to the repository root. Of the pages it's given, check_style.py reports a listed page whose count goes
 # above its number and any other page over 2,500; it also reports a listed page that no longer exists. A number may
 # only go down: when a page shrinks, lower it, and remove the line once the page is at or under 2,500. Never add a
-# page or raise a number: split the page. To lower the numbers, run python scripts/docs/check_style.py
+# page or raise a number: split the page. To lower the numbers, run python docs/scripts/check_style.py
 # --write-baseline, which rewrites the list with every git-tracked page except CHANGELOG.md that is over 2,500, at
 # its current count; then check that the diff only lowers numbers or removes lines.
 '''

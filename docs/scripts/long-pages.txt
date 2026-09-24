@@ -3,7 +3,7 @@
 # relative to the repository root. Of the pages it's given, check_style.py reports a listed page whose count goes
 # above its number and any other page over 2,500; it also reports a listed page that no longer exists. A number may
 # only go down: when a page shrinks, lower it, and remove the line once the page is at or under 2,500. Never add a
-# page or raise a number: split the page. To lower the numbers, run python scripts/docs/check_style.py
+# page or raise a number: split the page. To lower the numbers, run python docs/scripts/check_style.py
 # --write-baseline, which rewrites the list with every git-tracked page except CHANGELOG.md that is over 2,500, at
 # its current count; then check that the diff only lowers numbers or removes lines.
 CONTRIBUTING.md 2753
