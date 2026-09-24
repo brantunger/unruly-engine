@@ -10,7 +10,9 @@ dependencyResolutionManagement {
 // mvel: the unruly-engine artifact, the MVEL language. It depends on core, and holds the tests that need MVEL.
 // test-kit: the unruly-engine-test artifact, tools for testing an expression language. It depends on core, so the
 //   tests that use it are in test-kit, or in mvel when they also need MVEL, not in core.
+// bom: the unruly-engine-bom artifact, a bill of materials that sets one version for the three artifacts above. Its
+//   check fails unless it manages every artifact the build publishes.
 // benchmarks: JMH benchmarks of the engine. Not published. `check` compiles and lints them and asserts the shape
 //   of the workload they generate; only the `jmh` task measures anything.
 // native-smoke: an application CI builds into a GraalVM native image and runs (docs/native-image.md). Not published.
-include 'core', 'mvel', 'test-kit', 'benchmarks', 'native-smoke'
+include 'core', 'mvel', 'test-kit', 'bom', 'benchmarks', 'native-smoke'

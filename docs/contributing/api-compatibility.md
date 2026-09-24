@@ -26,10 +26,10 @@ of.
 ## 🔎 What the check compares
 
 The versions follow [Semantic Versioning](https://semver.org/), so a `fix:` or `feat:` release must not break code
-written or compiled against an earlier release. `./gradlew build` runs the `japicmp` task of each published project,
-which compares the project's jar with its **newest release on Maven Central that isn't higher than the version in
-`gradle.properties`**, using [japicmp](https://siom79.github.io/japicmp/). It fails when a public or protected
-member is removed or changes in a binary- or source-incompatible way.
+written or compiled against an earlier release. `./gradlew build` runs the `japicmp` task of each project that publishes
+a jar, which compares that jar with its **newest release on Maven Central that isn't higher than the version in
+`gradle.properties`**, using [japicmp](https://siom79.github.io/japicmp/). It fails when a public or protected member is
+removed or changes in a binary- or source-incompatible way.
 
 Each project writes its report to `<project>/build/reports/japicmp/report.html` (and `report.txt`). CI uploads the
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
@@ -187,9 +187,9 @@ The baseline is the artifact's newest release on Maven Central that isn't higher
 `gradle.properties`. Because the baseline is never higher than the build's own version, a branch is always checked
 against its own release line, and a release PR's version, not yet published, is compared with the release before it.
 
-Every published artifact now has a release of its own, so each is compared with its own newest release. For an
-artifact added later, the check tries three things in order, and its `apiCheck { }` block supplies the last two
-until the first release:
+Every artifact the check compares now has a release of its own, so each is compared with its own newest release. For an
+artifact added later, the check tries three things in order, and its `apiCheck { }` block supplies the last two until
+the first release:
 
 1. The artifact's own newest release, whenever it has one.
 2. `firstRelease`, the version the artifact first ships in: while the artifact has no release and the build's

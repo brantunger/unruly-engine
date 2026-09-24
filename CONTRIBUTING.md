@@ -56,11 +56,11 @@ flowchart TD
 2. **Fork** and branch as `fix/...` or `docs/...`.
 3. **Write the test** where [Where things live](#-where-things-live) says.
 4. **See it fail on `main`**: [Prove your test fails first](#-prove-your-test-fails-first).
-5. **Make the change**, and update the docs with it: [Documentation](#-documentation).
+5. **Make the change** and its docs: [Documentation](#-documentation).
 6. **Run `./gradlew clean build`**: [When the gate fails](#-when-the-gate-fails).
 7. **Open a pull request** with a [Conventional title](#-commit-and-pr-titles), and fill in the template.
-8. **Wait for CI.** Once it and the title check are green, a maintainer squash-merges the PR and the release
-   follows: [RELEASING.md](RELEASING.md).
+8. **Wait for CI** and the title check; a maintainer then squash-merges the PR, and
+   [RELEASING.md](RELEASING.md) takes over.
 
 ## 💻 Development setup
 
@@ -95,8 +95,9 @@ project a test belongs to; an unqualified `./gradlew test` runs all three, and t
 | `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need neither MVEL nor the test kit |
 | `mvel` | `unruly-engine` | The MVEL language, the tests that need MVEL, and the tests that check the whole build |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts`, and the tests that use them without MVEL |
-| `benchmarks` | — | JMH benchmarks; not published. The build checks their sources and asserts the shape of their workload, but only `jmh` measures anything |
-| `native-smoke` | — | An application CI builds into a GraalVM native image and runs; not published |
+| `bom` | `unruly-engine-bom` | Pins the three artifacts above to one version; no jar |
+| `benchmarks` | — | JMH benchmarks; not published. The build checks them, but only `jmh` measures anything |
+| `native-smoke` | — | An application CI runs as a GraalVM native image; not published |
 
 Settings shared by the projects are in the convention plugins in `buildSrc/src/main/groovy`. The `core` package is
 internal: its module exports it only to the test kit's module, and a class in it is public only where the builder
@@ -156,7 +157,7 @@ on JDK 25, and checks the PR title.
 | 🧪 **Tests** | The JUnit suite | `core/src/test`, `mvel/src/test`, `test-kit/src/test` and `benchmarks/src/test` |
 | 📏 **Checkstyle** | Main and test sources: lines of at most 120 columns, no tabs, a final newline, braces, no star or unused imports | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
-| ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
@@ -250,7 +251,7 @@ caught before it can silently skip a release.
 
 - The **README** is the landing page: features, installation, quick start and core concepts.
 - The **guides** in [`docs/`](docs/README.md) hold the details.
-- The **Javadoc** in each published project's `src/main/java` is published to
+- The **Javadoc** in each jar project's `src/main/java` is published to
   [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for all the
   modules. `./gradlew clean build` generates it too, and fails on any warning.
 

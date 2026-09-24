@@ -232,7 +232,9 @@ jobs:
       # and SBOMS, one path per line. The steps below all read this one list: the hash step checks that all twelve
       # exist and hashes them, and the two uploads to the GitHub Release attach exactly these. A glob would also
       # pick up files the build writes but Central never gets, such as core's test-fixtures jars, which have no
-      # attestation. benchmarks and native-smoke are never published, so they're never listed.
+      # attestation. benchmarks and native-smoke are never published, so they're never listed. Nor is the BOM,
+      # unruly-engine-bom: Central gets only its POM and Gradle module metadata, and, like the other artifacts' POMs,
+      # they aren't attested or attached.
       - name: List the published jars and SBOMs
         env:
           VERSION: ${{ needs.release-please.outputs.version }}
@@ -304,8 +306,8 @@ jobs:
 
       # Only this step gets the secrets, and it skips `check`, which the step above ran.
       # Signing is done in-memory by the vanniktech plugin — no gpg keyring is imported
-      # onto the runner. All the artifacts, unruly-engine-core, unruly-engine and
-      # unruly-engine-test, go up in one deployment.
+      # onto the runner. All the artifacts, unruly-engine-core, unruly-engine,
+      # unruly-engine-test and the BOM, unruly-engine-bom, go up in one deployment.
       - name: Publish to Maven Central
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USER }}

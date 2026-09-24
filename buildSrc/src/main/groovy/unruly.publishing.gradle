@@ -1,0 +1,39 @@
+// Publishing to Maven Central, shared by every published project: the libraries, through unruly.library, and the
+// BOM. Each project says what it publishes with mavenPublishing { configure(...) }: a library its jars, the BOM its
+// constraints.
+plugins {
+    id 'com.vanniktech.maven.publish'
+}
+
+// Publishes to the Maven Central Portal (central.sonatype.com). All the artifacts go up in one deployment, so a
+// release can't publish only some of them.
+// Credentials are a Portal user token supplied via the mavenCentralUsername/mavenCentralPassword
+// properties; signing uses signingInMemoryKey/signingInMemoryKeyPassword, and signingInMemoryKeyId only when the
+// exported key ring holds more than one key (see RELEASING.md).
+// Each project sets its coordinates and the POM's name and description.
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    pom {
+        url = 'https://github.com/brantunger/unruly-engine'
+        licenses {
+            license {
+                name = 'The Apache License, Version 2.0'
+                url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+            }
+        }
+        developers {
+            developer {
+                id = 'brantunger'
+                name = 'Brant Unger'
+                email = 'brant.unger@gmail.com'
+            }
+        }
+        scm {
+            connection = 'scm:git:git://github.com/brantunger/unruly-engine.git'
+            developerConnection = 'scm:git:ssh://github.com/brantunger/unruly-engine.git'
+            url = 'https://github.com/brantunger/unruly-engine'
+        }
+    }
+}

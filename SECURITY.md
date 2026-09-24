@@ -12,7 +12,7 @@ remedy.
 
 Every jar on Maven Central is signed with the project's GPG key, and from 2.0.0 each also carries a GitHub build
 provenance attestation. [RELEASING.md](RELEASING.md#-checking-a-release-by-hand) shows how to check a downloaded
-jar against it. From the release after 2.2.0, each GitHub Release also carries a CycloneDX SBOM of each module,
+jar against it. From the release after 2.2.0, each GitHub Release also carries a CycloneDX SBOM of each jar's module,
 covered by the same attestation; see [The SBOMs](RELEASING.md#the-sboms).
 
 ## Reporting a vulnerability

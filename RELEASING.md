@@ -60,10 +60,10 @@ flowchart LR
    the same workflow run. The job checks out the tag, finds the highest released version for the `Latest` mark and
    [`/latest/`](#-the-javadoc-site), and runs the full `build` (including Checkstyle, PMD, the coverage gate and the
    [API compatibility check](docs/contributing/api-compatibility.md) against the previous release), the javadoc jars
-   and an [SBOM](#the-sboms) for each published module. It [attests](#-checking-a-release-by-hand) the nine jars and
-   three SBOMs, attaches the SBOMs to the GitHub Release, publishes to the Central Portal, attaches the jars and adds
-   the Javadoc to the `gh-pages` branch. A second job, `pages`, then deploys that branch to
-   [GitHub Pages](#-the-javadoc-site).
+   and an [SBOM](#the-sboms) for each jar's module. It [attests](#-checking-a-release-by-hand) the nine jars and
+   three SBOMs, attaches the SBOMs, publishes the jars and the [BOM](docs/glossary.md#artifacts) to the Central
+   Portal, attaches the jars and adds the Javadoc to the `gh-pages` branch. A second job, `pages`, deploys that
+   branch to [GitHub Pages](#-the-javadoc-site).
 
 The Release notes are the changelog entry, with links to [Migrating to 2.0](docs/migrating-to-2.md) and
 [Migrating a language or an engine](docs/migrating-to-2-implementers.md) appended by the `release-please` job. The
@@ -163,7 +163,9 @@ VERSION=<version>
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine/$VERSION/unruly-engine-$VERSION.pom"
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine-core/$VERSION/unruly-engine-core-$VERSION.pom"
 curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine-test/$VERSION/unruly-engine-test-$VERSION.pom"
-# HTTP 200 once synced, 404 before. unruly-engine-core and unruly-engine-test start at 2.0.0.
+curl -sI "https://repo1.maven.org/maven2/io/github/brantunger/unruly-engine-bom/$VERSION/unruly-engine-bom-$VERSION.pom"
+# HTTP 200 once synced, 404 before. unruly-engine-core and unruly-engine-test start at 2.0.0, unruly-engine-bom at
+# 2.6.0.
 ```
 
 The Javadoc for the same version is live as soon as the `pages` job finishes:
@@ -201,7 +203,7 @@ one that was tagged.
 Unlike the `curl` checks above, this one calls the API, so `gh` has to be logged in (`gh auth status`). `-sf` makes
 `curl` fail on a 404 instead of saving the error page as the jar, which would then fail verification for the wrong
 reason. The same works for the `-sources.jar` and `-javadoc.jar` files and for the other two artifacts. 2.0.0 is the
-first release with attestations, so an earlier version has none and the command fails for it.
+first release with attestations; the command fails for an earlier one.
 
 The GitHub Release carries the same nine jars that are on Central, and from the release after 2.2.0 the three SBOMs
 below. The workflow names each file it attaches, so nothing else the build makes, such as `core`'s test fixtures,
@@ -209,10 +211,10 @@ gets there.
 
 ### The SBOMs
 
-From the release after 2.2.0, each release also attaches a [CycloneDX](https://cyclonedx.org/) 1.6 SBOM (software
-bill of materials) for each published module to its GitHub Release, beside the jars. Each is a JSON file named after
-its artifact, such as `unruly-engine-core-$VERSION.cdx.json`. The same provenance attestation covers them, so they
-verify the same way, and the exit code and output rules above apply:
+From the release after 2.2.0, each release also attaches a [CycloneDX](https://cyclonedx.org/) 1.6 SBOM (software bill
+of materials, unlike the version-pinning [BOM](docs/glossary.md#artifacts)) for each jar's module to its GitHub Release,
+beside the jars. Each is a JSON file named after its artifact, such as `unruly-engine-core-$VERSION.cdx.json`. The same
+provenance attestation covers them, so they verify the same way, and the exit code and output rules above apply:
 
 ```bash
 gh release download "v$VERSION" --repo brantunger/unruly-engine --pattern '*.cdx.json'
@@ -221,7 +223,7 @@ gh attestation verify "unruly-engine-core-$VERSION.cdx.json" --repo brantunger/u
 
 | Question | Answer |
 | --- | --- |
-| Which modules have one? | Each published module: `unruly-engine-core`, `unruly-engine` and `unruly-engine-test` |
+| Which modules have one? | Each with a jar: `unruly-engine-core`, `unruly-engine` and `unruly-engine-test` |
 | What does it list? | The module's runtime dependencies, transitive ones included, from its `runtimeClasspath`: no test, build or plugin dependencies. `unruly-engine-test`'s also lists the `org.junit:junit-bom` platform |
 | Is it on Maven Central? | No. It's only on the GitHub Release, and the Central deployment is unchanged |
 | Can I rebuild the same file? | No. Its serial number and timestamp differ on every run, so only the file the release run built matches the attestation |
@@ -235,7 +237,7 @@ recognise that entry; the module's own SBOM has the right one,
 `pkg:maven/io.github.brantunger/unruly-engine-core@<version>?project_path=%3Acore`.
 
 The SBOMs are attached right after the attestation and before the upload to Central, because they can't be rebuilt
-the same: a re-run of the job builds, attests and attaches new ones in their place. Releases up to 2.2.0 have none.
+the same: a re-run of the job builds, attests and attaches new ones in their place.
 
 ## ☕ The Javadoc site
 
@@ -305,10 +307,10 @@ export ORG_GRADLE_PROJECT_signingInMemoryKey="$(gpg --batch --pinentry-mode loop
 export ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=test
 
 ./gradlew publishToMavenLocal
-ls ~/.m2/repository/io/github/brantunger/unruly-engine{,-core,-test}/<version>/
+ls ~/.m2/repository/io/github/brantunger/unruly-engine{,-core,-test,-bom}/<version>/
 ```
 
-Expect `.jar`, `-sources.jar`, `-javadoc.jar`, `.module` and `.pom` files in each, each with a matching `.asc`
-signature, and nothing else. `core` builds test fixtures for this build's own tests, so check in particular that
-`unruly-engine-core` has no `-test-fixtures*` file: `core/build.gradle` keeps all three of their variants out of the
-publication, and Maven Central can't take one back.
+Expect `.jar`, `-sources.jar`, `-javadoc.jar`, `.module` and `.pom` files in each (the BOM only the last two), each with
+a matching `.asc` signature, and nothing else. `core` builds test fixtures for this build's own tests, so check in
+particular that `unruly-engine-core` has no `-test-fixtures*` file: `core/build.gradle` keeps all three of their
+variants out of the publication, and Maven Central can't take one back.

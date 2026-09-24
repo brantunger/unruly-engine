@@ -140,6 +140,9 @@ expression returns. Stopping inside an expression is up to the language; see
 | Never use MVEL | `unruly-engine-core` | The engine and its API, and no language |
 | Are in a language you're writing, in its tests | `unruly-engine-test`, with test scope | The contract test kit and the engine's contexts |
 
+With Maven, a build that uses more than one of them should also import the BOM, `unruly-engine-bom`, which keeps
+them at one version; see [Testing with the contract kit](contract-kit.md#-testing-with-the-contract-kit).
+
 The coordinates and version are in the root README's [Installation](../../README.md#-installation) section, whose
 "On the module path" block covers MVEL's module.
 
