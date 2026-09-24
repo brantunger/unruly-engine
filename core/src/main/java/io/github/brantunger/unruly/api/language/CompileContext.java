@@ -59,8 +59,10 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * type, such as {@code int}, is given as its wrapper, {@link Integer}.
      *
      * <p>
-     * A declared type is what a run's value must be an instance of. It isn't a promise that the fact is present,
-     * unless {@link #allFactsDeclared()} is {@code true}.
+     * A declared type is what the value a language is given is an instance of; for a fact declared with a primitive
+     * type, the engine first widens a narrower boxed primitive the run supplied, as
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Class)} describes. It isn't a promise that
+     * the fact is present, unless {@link #allFactsDeclared()} is {@code true}.
      * </p>
      *
      * @return The declared type of each fact, by name, empty if the engine was told none; unmodifiable

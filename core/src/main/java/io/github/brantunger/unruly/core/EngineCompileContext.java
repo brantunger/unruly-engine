@@ -7,7 +7,6 @@ import io.github.brantunger.unruly.api.language.Expression;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.invoke.MethodType;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -70,23 +69,36 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     }
 
     /**
-     * Returns the type a fact is declared with: {@code type}, or its wrapper if it's primitive, so a run's boxed value
-     * is an instance of it.
+     * Checks a fact's declaration. The builder and the engine then keep the type as it was declared, a primitive type
+     * included, so a run can widen a boxed primitive to it.
      *
      * @param name The fact's name
      * @param type The type it was declared with
-     * @return The type to check a run's value against and to tell languages
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
      * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
      */
-    public static Class<?> declaredType(String name, Class<?> type) {
+    public static void checkDeclaration(String name, Class<?> type) {
         Objects.requireNonNull(name, "name must not be null");
         Objects.requireNonNull(type, "type must not be null");
         if (ActionContext.OUTPUT_NAME.equals(name)) {
             throw new IllegalArgumentException("'" + ActionContext.OUTPUT_NAME
                     + "' is reserved for the output object and cannot be declared as a fact");
         }
-        return MethodType.methodType(type).wrap().returnType();
+    }
+
+    /**
+     * Returns the type a language is told a fact is declared with: {@code type}, or its wrapper if it's primitive,
+     * which a run's value is an instance of once the engine has widened it.
+     *
+     * @param name The fact's name
+     * @param type The type it was declared with
+     * @return The type to tell languages
+     * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
+     * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
+     */
+    public static Class<?> declaredType(String name, Class<?> type) {
+        checkDeclaration(name, type);
+        return Widening.wrap(type);
     }
 
     /**

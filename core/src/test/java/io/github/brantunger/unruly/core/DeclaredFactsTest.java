@@ -132,15 +132,14 @@ class DeclaredFactsTest {
     // ---- #361: a declaration no run could satisfy fails before the first run ----
 
     @Test
-    @DisplayName("a primitive type is declared as its wrapper, so a run's boxed value passes")
+    @DisplayName("a primitive type accepts its wrapper, so a run's boxed value passes")
     void primitiveTypeIsWrapped() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("age", int.class));
 
         assertEquals(Map.of("ok", true), engine.run(new FactMap<>(new Fact<>("age", 30))));
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(new FactMap<>(new Fact<>("age", "thirty"))));
-        assertEquals("Fact 'age' was declared as java.lang.Integer, but the run supplied a java.lang.String",
-                thrown.getMessage());
+        assertEquals("Fact 'age' was declared as int, but the run supplied a java.lang.String", thrown.getMessage());
     }
 
     @Test

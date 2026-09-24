@@ -1,9 +1,9 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.core.Accessors;
+import io.github.brantunger.unruly.core.Widening;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.invoke.MethodType;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.MalformedParameterizedTypeException;
 import java.lang.reflect.Method;
@@ -16,7 +16,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -65,26 +64,6 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
                             Collectors.collectingAndThen(Collectors.toList(), BeansAndMapsWriter::mostSpecificFirst)));
         }
     };
-
-    // The primitive types, from the narrowest to the widest of those Java widens between, then boolean. A primitive
-    // setter comes before those it widens to, and a failure lists them in this order.
-    private static final List<Class<?>> PRIMITIVES = List.of(byte.class, short.class, char.class, int.class,
-            long.class, float.class, double.class, boolean.class);
-
-    // The wrappers of the primitive types, which a failure for a boxed value lists after the primitives.
-    private static final Set<Class<?>> WRAPPERS = Set.of(Byte.class, Short.class, Character.class, Integer.class,
-            Long.class, Float.class, Double.class, Boolean.class);
-
-    // For each wrapper, the primitive types other than its own that Java widens its primitive to (JLS 5.1.2), lossy
-    // ones included. A byte or a short never becomes a char, and a char never becomes a short. A boolean becomes
-    // nothing else, so Boolean has none.
-    private static final Map<Class<?>, Set<Class<?>>> WIDENED = Map.of(
-            Byte.class, Set.of(short.class, int.class, long.class, float.class, double.class),
-            Short.class, Set.of(int.class, long.class, float.class, double.class),
-            Character.class, Set.of(int.class, long.class, float.class, double.class),
-            Integer.class, Set.of(long.class, float.class, double.class),
-            Long.class, Set.of(float.class, double.class),
-            Float.class, Set.of(double.class));
 
     /**
      * A setter the engine can call, whether it's a generic setter's bridge, and the types of value it accepts.
@@ -157,18 +136,18 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     }
 
     // For a number, a character or a boolean that no setter accepts, the setters of its name that take a primitive or
-    // a wrapper, so a failure says why they don't take it: the primitives in the order of PRIMITIVES, then the
-    // wrappers by name, each once. Otherwise, or where there are none, nothing.
+    // a wrapper, so a failure says why they don't take it: the primitives in Widening.order(), then the wrappers by
+    // name, each once. Otherwise, or where there are none, nothing.
     private static String primitiveSetters(String name, List<Setter> setters, Object value) {
-        if (!(value instanceof Number || value instanceof Character || value instanceof Boolean)) {
+        if (!Widening.isPrimitiveLike(value)) {
             return "";
         }
         List<String> existing = setters.stream()
                 .<Class<?>>map(setter -> parameter(setter.method()))
-                .filter(type -> type.isPrimitive() || WRAPPERS.contains(type))
+                .filter(type -> type.isPrimitive() || Widening.isWrapper(type))
                 .distinct()
                 .sorted(Comparator.comparing((Class<?> type) -> !type.isPrimitive())
-                        .thenComparingInt(PRIMITIVES::indexOf)
+                        .thenComparingInt(Widening::order)
                         .thenComparing(Class::getTypeName))
                 .map(type -> name + "(" + type.getTypeName() + ")")
                 .toList();
@@ -176,7 +155,7 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
             return "";
         }
         return " (" + String.join(", ", existing) + (existing.size() == 1 ? " exists" : " exist")
-                + ", but a value is only widened as Java widens a primitive, never narrowed or converted)";
+                + ", but " + Widening.ONLY_WIDENED + ")";
     }
 
     private static IllegalStateException unreachable(Object output, String property, Method setter,
@@ -192,8 +171,8 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     // them: setters taking a reference come before those taking a primitive, which a boxed value reaches only when no
     // reference setter accepts it. Each reference setter comes before those whose parameter is a supertype of its
     // own, and among those left whose parameter isn't a supertype of another's, the first by name comes next. The
-    // primitive setters are in the order of PRIMITIVES, so a wrapper's own primitive comes first, and then those it
-    // widens to, the narrowest first. The primitives a value widens to lie on one chain, byte, short, int, long,
+    // primitive setters are in Widening.order(), so a wrapper's own primitive comes first, and then those it widens
+    // to, the narrowest first. The primitives a value widens to lie on one chain, byte, short, int, long,
     // float, double or char, int, long, float, double, so the first of them that accepts it is the one Java picks.
     // Two setters can share a parameter type, such as a setter that overrides with a narrower return type, and its
     // bridge; neither is more specific. A bridge is placed by its own parameter, not the narrower types it accepts, so
@@ -211,7 +190,7 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
             ordered.add(next);
         }
         overloads.stream().filter(setter -> parameter(setter.method()).isPrimitive())
-                .sorted(Comparator.comparingInt((Setter setter) -> PRIMITIVES.indexOf(parameter(setter.method()))))
+                .sorted(Comparator.comparingInt((Setter setter) -> Widening.order(parameter(setter.method()))))
                 .forEach(ordered::add);
         return List.copyOf(ordered);
     }
@@ -306,7 +285,6 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         if (value == null) {
             return !parameter.isPrimitive();
         }
-        return MethodType.methodType(parameter).wrap().returnType().isInstance(value)
-                || parameter.isPrimitive() && WIDENED.getOrDefault(value.getClass(), Set.of()).contains(parameter);
+        return Widening.wrap(parameter).isInstance(value) || Widening.widens(value, parameter);
     }
 }

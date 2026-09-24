@@ -315,16 +315,23 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * The engine fails a run with {@link IllegalArgumentException} when the fact is present and its value isn't an
-     * instance of {@code type}. A {@code null} value passes: nothing about it contradicts the declaration. A run that
-     * doesn't supply the fact at all is unaffected, unless {@link #requireDeclaredFacts()} is also set. Declaring a
-     * fact twice replaces the first declaration.
+     * instance of {@code type}, or, for a primitive type, its wrapper or a boxed primitive Java widens to it, as
+     * described below. A {@code null} value passes: nothing about it contradicts the declaration. A run that doesn't
+     * supply the fact at all is unaffected, unless {@link #requireDeclaredFacts()} is also set. Declaring a fact twice
+     * replaces the first declaration.
      * </p>
      *
      * <p>
-     * A primitive type is declared as its wrapper, so {@code fact("age", int.class)} accepts an {@link Integer}, and
-     * languages are told {@code Integer}. {@link RulesEngine#load(List)} checks every declared name with the language
-     * of each rule, as a run checks the names it's given, so a name no language can refer to fails loading rather than
-     * every run.
+     * A primitive type accepts its wrapper, and any boxed primitive that Java widens to it (JLS 5.1.2), lossy
+     * conversions included: {@code fact("n", long.class)} accepts an {@link Integer} as well as a {@link Long}. The
+     * engine converts such a value to the declared type's wrapper before the run starts, so listeners, from
+     * {@link RuleListener#beforeRun(RunContext)} on, and every language see a {@code Long}; the fact store keeps the
+     * {@code Integer}. Nothing is narrowed, a {@link Boolean} converts to nothing else, and a
+     * {@link java.math.BigDecimal} or {@link java.math.BigInteger} is never converted. A wrapper type converts nothing:
+     * {@code fact("n", Long.class)} rejects an {@code Integer}, as Java never converts one wrapper to another.
+     * Languages are told the wrapper, such as {@code Long}. {@link RulesEngine#load(List)} checks every declared name
+     * with the language of each rule, as a run checks the names it's given, so a name no language can refer to fails
+     * loading rather than every run.
      * </p>
      *
      * <p>
@@ -333,14 +340,16 @@ public final class RulesEngineBuilder<O> {
      * </p>
      *
      * @param name The fact's name, as rules refer to it
-     * @param type The type a run's value must be an instance of. Declaring {@link Object} or a {@link java.util.Map}
-     *             says the fact's shape isn't fixed, which no language can type-check
+     * @param type The type a run's value must be an instance of, or, for a primitive type, be widened to. Declaring
+     *             {@link Object} or a {@link java.util.Map} says the fact's shape isn't fixed, which no language can
+     *             type-check
      * @return This builder
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
      * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
      */
     public RulesEngineBuilder<O> fact(String name, Class<?> type) {
-        factTypes.put(name, EngineCompileContext.declaredType(name, type));
+        EngineCompileContext.checkDeclaration(name, type);
+        factTypes.put(name, type);
         return this;
     }
 

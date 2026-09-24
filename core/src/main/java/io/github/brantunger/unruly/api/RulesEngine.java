@@ -138,7 +138,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
      *         language of a loaded rule can't refer to (a rule list without rules is checked against the engine's
      *         default language); if a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a non-null
-     *         value that isn't an instance of its type; or, with {@link RulesEngineBuilder#requireDeclaredFacts()},
+     *         value that isn't an instance of its declared type or, for a primitive type, of its wrapper or of a
+     *         wrapper whose primitive Java widens to it; or, with {@link RulesEngineBuilder#requireDeclaredFacts()},
      *         if a declared fact is missing or an undeclared one is supplied. Also if a language's check of a fact
      *         name fails with any other exception, which becomes the cause.
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
