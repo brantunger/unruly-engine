@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.6.0](https://github.com/brantunger/unruly-engine/compare/v2.5.0...v2.6.0) (2026-09-24)
+
+
+### Features
+
+* publish unruly-engine-bom, a BOM that keeps the engine, core and test kit at one version ([#574](https://github.com/brantunger/unruly-engine/issues/574)) ([2df8389](https://github.com/brantunger/unruly-engine/commit/2df8389d9d168808e88507e70960e6fe3546cf32))
+
 ## [2.5.0](https://github.com/brantunger/unruly-engine/compare/v2.4.0...v2.5.0) (2026-09-24)
 
 
