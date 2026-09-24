@@ -47,18 +47,17 @@ String checksum = result.ruleSetChecksum();     // identifies the rules this run
 engine.close();
 ```
 
-- A [run](glossary.md#run) evaluates the rules in [evaluation order](glossary.md#evaluation-order): highest priority
-  first.
-- A run uses every loaded rule except the ones it [skips](#-choosing-which-rules-a-run-uses): disabled rules, rules
-  outside their validity window, and, when the run is given tags, rules that carry none of them.
-- A **first-match** engine stops at the first rule whose condition is true, and fires only that rule. An
+- A [run](glossary.md#run) evaluates the rules in [evaluation order](glossary.md#evaluation-order), highest priority
+  first, and [skips](#-choosing-which-rules-a-run-uses) disabled rules, rules outside their validity window, and, on a
+  run given tags, rules with none of them.
+- A **first-match** engine stops at the first rule whose condition is true and fires only that one. An
   **all-matches** engine evaluates every condition, then fires every match in order. A **unique-match** engine
-  evaluates every condition, fires the one match, and fails the run when there are more.
-- The [output supplier](glossary.md#output-supplier) is called once in a run, after a rule has matched. `run()`
-  returns `null` exactly when no rule fired.
-- A condition or action that fails fails the run: it throws, and returns no result. See
+  evaluates every condition too, then fires its one match, or fails the run if more match.
+- The [output supplier](glossary.md#output-supplier) is called once per run, and only after a rule has
+  matched. `run()` returns `null` exactly when no rule fired.
+- A failing condition or action fails the run: it throws, and returns no result. See
   [What happens on each failure](error-handling.md#-what-happens-on-each-failure).
-- Calling `load()` again swaps in new rules at once, and a run finishes with the rules it started with.
+- Another `load()` swaps in new rules at once; a run finishes with the rules it started with.
 
 ## 📜 Rule order
 
@@ -114,13 +113,13 @@ engine.runWithResult(facts, RunOptions.defaults().withTags(Set.of("eu"))).evalua
 | The run starts before the rule's `validFrom`, or at or after its `validTo` | `validFrom(Instant)` and `validTo(Instant)` on the rule's builder; `null`, the default, means no start or no end |
 | The run was given tags, and the rule carries none of them | `tags(...)` on the rule's builder, and `RunOptions.defaults().withTags(...)` for the run |
 
-A skipped rule is treated the same whichever reason applies:
+Whatever the reason a rule is skipped:
 
 - Its condition isn't evaluated and its action doesn't run.
 - No listener hears about it: no `beforeEvaluate`, `afterEvaluate`, `beforeExecute`, `afterExecute` or `onError`.
   It has no Flight Recorder rule event, and the run event's `rulesEvaluated` doesn't count it.
-- `evaluations()` still lists it, as `SKIPPED`, wherever it is in the order. On a first-match engine that includes
-  below the match; a rule there that the run doesn't skip is still `NOT_EVALUATED`.
+- `evaluations()` still lists it as `SKIPPED`, even below a first match, where a rule that isn't skipped is
+  `NOT_EVALUATED`.
 - It can't be the second match that fails a unique-match run.
 - It stays loaded: `load()` and `validate()` compile it, so its errors still fail `load()`, and `rules().rules()`
   lists it. A rule whose window opens later needs no reload.
@@ -174,8 +173,8 @@ not overlap.
 | **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation | Decision tables whose rows must not overlap |
 | **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` | Fails: both rules match |
 
-The table describes the rules a run uses. On every policy, a rule the run
-[skips](#-choosing-which-rules-a-run-uses) isn't evaluated, doesn't fire and doesn't count as a match.
+On every policy, a rule the run [skips](#-choosing-which-rules-a-run-uses) isn't evaluated, doesn't fire and
+doesn't count as a match.
 
 | If you need | Use |
 | --- | --- |
@@ -269,7 +268,7 @@ supplier, the `Supplier` you give `firstMatch(...)`, `allMatches(...)` or `uniqu
 
 ### How actions change it
 
-An action changes the output in one of two ways, depending on its language:
+An action changes the output in one of two ways:
 
 - **In place.** The action changes the object itself and returns `ActionResult.done()`. MVEL actions work this way
   (`output.approved = true`), so the output type must be mutable.
@@ -277,26 +276,35 @@ An action changes the output in one of two ways, depending on its language:
   `ActionResult.set(properties)`. The engine sets each property **after the action returns**, in the map's order, with
   the engine's `OutputWriter`. If the run is stopped when that action returns, none of them are set.
 
-The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, and otherwise the output's public
-setter whose parameter accepts the value, such as `setInterestRate` for `interestRate`. It converts nothing: a `Double`
-reaches a `double` setter, but an `Integer` doesn't, and `null` doesn't reach a primitive. When several overloads
-accept the value, it calls the most specific one, as Java would: it prefers `setAmount(BigDecimal)` to
-`setAmount(Number)`, and `setP(Integer)` to `setP(int)`; if no single one is the most specific, it calls the same one
-on every run.
+The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, storing the value as it is, and
+otherwise the output's public setter for the property, such as `setInterestRate`. A setter that accepts the value as
+it is wins. Among several, the most specific wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`,
+and `setP(Integer)` over `setP(int)`. If no single one is the most specific, it calls the same one on every run.
+
+Only when none accepts the value does it widen it to the nearest primitive, as Java does
+([JLS 5.1.2](https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.2)): along `byte`, `short`, `int`,
+`long`, `float`, `double`, and from `char` to `int` or further. So an `Integer` reaches `setR(long)` before
+`setR(float)`, and `setR(float)` before `setR(double)`. As in Java, an `Integer` or `Long` can round in
+`setR(float)`, and a `Long` beyond ±2^53 in `setR(double)`. A `Character` in `setR(int)` writes its code, 97 for `'a'`.
+
+Nothing else is converted: a `Long` doesn't reach `setR(int)`, an `Integer` doesn't reach `setR(Long)`, and a
+`BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a `Long`, as CEL's integers are, needs a setter
+that takes it or a `float` or `double` one; a `BigDecimal`, as Groovy's decimal literals are, needs one that takes it;
+otherwise, write an `outputWriter(...)`.
 
 A property it can't set, including through a setter the engine can't reach, fails the rule with a
-`RuleExecutionException` that names the rule and the property. Give the engine a writer of your own with
-`outputWriter(...)` on the builder.
+`RuleExecutionException` that names the rule and the property. When the value is a number, a character or a
+boolean that no setter of that name accepts, but one takes a primitive or a boxed primitive, the message adds:
+`(setR(int) exists, but a value is only widened as Java widens a primitive, never narrowed or converted)`.
 
 ## 📊 What a run reports
 
-[What a run reports](run-results.md#-what-a-run-reports) covers what `run()` and `runWithResult()` return, why each rule
-did or didn't apply, and what `engine.rules()` reports.
+[What a run reports](run-results.md#-what-a-run-reports) covers `run()`, `runWithResult()`, `evaluations()` and
+`engine.rules()`.
 
 ## 🔏 Auditing a decision
 
-[Auditing a decision](run-results.md#-auditing-a-decision) covers what to record to tie a decision to the rules that
-made it, and how the checksum is computed.
+[Auditing a decision](run-results.md#-auditing-a-decision) covers tying a decision to its rules, and the checksum.
 
 ## 🚧 Gotchas
 
@@ -317,18 +325,18 @@ made it, and how the checksum is computed.
 
 ## 🔄 Reloading rules
 
-What a caller sees when it calls `load()` on an engine that already has rules:
+When an engine that already has rules is loaded again:
 
-- **The swap is atomic.** `load()` compiles the whole new list first, then swaps it in at once. A run uses either the
-  old rules or the new ones, never a mix.
-- **A failed load changes nothing.** If any rule fails, `load()` throws a `RuleCompilationException`, and the old
-  rules, their checksum and their `loadedAt()` stay. Runs keep using them.
+- **The swap is atomic.** `load()` compiles the whole list, then swaps it in: a run uses the old rules or the new
+  ones, never a mix.
+- **A failed load changes nothing.** If a rule fails, `load()` throws a `RuleCompilationException`; the old rules,
+  their checksum and their `loadedAt()` stay, and runs keep using them.
 - **A fatal error can follow a swap:** see [A fatal error while closing](thread-safety.md#a-fatal-error-while-closing);
   the new rules stay loaded.
 - **A run in progress finishes with the rules it started with,** so its `ruleSetChecksum()` can differ from
   `rules().checksum()` read after it returns.
-- **Only the rules change.** The match policy, output supplier, languages, imports, listeners, options and every other
-  builder setting are fixed when the engine is built. To change one, build a new engine and close the old one.
+- **Only the rules change.** The match policy, the output supplier and every other builder setting are fixed at
+  `build()`. To change one, build a new engine and close the old one.
 
 To check which rules are loaded, compare `engine.rules().checksum()` with the checksum you expect:
 
@@ -368,8 +376,7 @@ Runs in flight during a reload, two loads at once, and what `close()` releases a
 `validate(rules)` compiles a list exactly as `load()` would, with the engine's languages, imports, options and
 declared facts, and returns the problems instead of throwing: one `RuleCompilationException` for each, in the order
 `load()` would find them, or an empty list when there are none. Nothing is loaded and nothing about the rules
-is logged, not even a language's compile warnings, so a rule editor or an admin endpoint can call it as often as it
-likes.
+is logged, not even a language's compile warnings, so a rule editor can call it freely.
 
 ```java
 List<RuleCompilationException> problems = engine.validate(newRules);
@@ -393,32 +400,30 @@ that `load()`, naming the language. With the default `copiesAtLoad(0)` nothing i
 
 ### Does a lower-priority rule still run after a match?
 
-On a first-match engine, no, and its condition isn't evaluated either. On an all-matches engine, yes: every condition
-is evaluated first, then every match fires in priority order, and no condition is evaluated again after an action. A
-unique-match engine evaluates every condition too, and fails the run if a second one is true. On every policy, a rule
-the run skips never runs. See [First match or all matches](#-first-match-or-all-matches).
+On a first-match engine, no: it isn't even evaluated. On an all-matches engine, yes, in priority order, once every
+condition is evaluated. A unique-match engine fails the run on a second match. A skipped rule never runs. See
+[First match or all matches](#-first-match-or-all-matches).
 
 ### How do I switch a rule off, or schedule it?
 
-To switch it off, load it built with `enabled(false)`. A rule is immutable, so switching it on again means loading
+To switch it off, load it built with `enabled(false)`. A rule is immutable, so to switch it on again, load
 `rule.toBuilder().enabled(true).build()`. To schedule it, give it `validFrom(...)`, `validTo(...)` or both: runs skip
-it outside that window, and it needs no reload when the window opens or closes. Either way the rule is still compiled
-by `load()`. See [Choosing which rules a run uses](#-choosing-which-rules-a-run-uses).
+it outside that window, with no reload. Either way `load()` still compiles it. See
+[Choosing which rules a run uses](#-choosing-which-rules-a-run-uses).
 
 ### Does a rule with no tags run when I pass tags?
 
-No. A run given tags skips every rule without one of them, including rules with no tags at all. See
-[Tags](#tags).
+No: a run given tags skips every rule without one of them. See [Tags](#tags).
 
 ### How do I catch two rules that apply to the same facts?
 
-Build the engine with `uniqueMatch(...)`. A run in which more than one rule matches fires nothing and throws, naming
-every matched rule. See [Unique match: one rule or none](#unique-match-one-rule-or-none).
+Build the engine with `uniqueMatch(...)`: a run with a second match fires nothing and throws, naming every match.
+See [Unique match: one rule or none](#unique-match-one-rule-or-none).
 
 ### If an all-matches run fails, did some actions already run?
 
-A failing condition fails the run before any action runs or the output object exists. A failing action leaves the
-changes of the actions before it. See [First match or all matches](#-first-match-or-all-matches).
+A failing condition fails it before any action runs or the output exists. A failing action leaves the earlier
+actions' changes. See [First match or all matches](#-first-match-or-all-matches).
 
 ### Can a condition change facts?
 
@@ -429,11 +434,11 @@ See [What rules can change](writing-rules.md#-what-rules-can-change).
 
 ### When is my output supplier called, and can it return a shared object?
 
-Once in a run, and only after a rule has matched; never when nothing matches. It must return a new object, because a
-shared one collects the results of every run. See [The output object](#-the-output-object).
+Once per run, and only after a rule has matched. It must return a new object: a shared one collects every run's
+results. See [The output object](#-the-output-object).
 
 ### Should I build an engine for each request?
 
-No. Building an engine and loading its rules compiles every rule. Build one engine at startup, load its rules once, run
-it from any number of threads, and call `close()` at shutdown to release what its languages hold. See
+No: loading compiles every rule. Build one engine at startup, load its rules once, run it from any number of
+threads, and call `close()` at shutdown to release what its languages hold. See
 [Thread safety](thread-safety.md).

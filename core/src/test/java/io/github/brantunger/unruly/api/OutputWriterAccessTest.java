@@ -712,6 +712,21 @@ class OutputWriterAccessTest {
     }
 
     @Test
+    @DisplayName("on the module path, a value that a setter takes only once widened fails as that setter can't be"
+            + " reached, not as though no setter took it")
+    void widenedValueForASetterThatCantBeReached(@TempDir Path classes) throws Exception {
+        // setScore(int) takes a Short only as Java widens a short to an int (#524), so what fails is reaching it.
+        Object output = outputs(classes, "exports com.example.api;").getMethod("hidden").invoke(null);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> OutputWriter.beansAndMaps().set(output, "score", (short) 1));
+
+        assertInstanceOf(IllegalAccessException.class, thrown.getCause());
+        assertTrue(thrown.getMessage().startsWith("A com.example.api.Hidden has a setter for 'score', but"),
+                thrown.getMessage());
+    }
+
+    @Test
     @DisplayName("on the module path, a generic setter is written through the exported interface's bridge method")
     void genericInterfaceOnTheModulePath(@TempDir Path classes) throws Exception {
         Class<?> factory = outputs(classes, "exports com.example.api;");
