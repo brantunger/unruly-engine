@@ -108,9 +108,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // The output type languages are told about, and what sets the properties actions return.
     private final Class<?> outputType;
     private final OutputWriter<? super O> outputWriter;
-    // The declared type of each fact, by name, and whether a run may supply only those facts.
+    // The declared type of each fact, by name, a primitive type as it was declared, and whether a run may supply only
+    // those facts.
     private final Map<String, Class<?>> declaredFacts;
     private final boolean allFactsDeclared;
+    // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
+    // engines, which then convert nothing.
+    private final Map<String, Class<?>> primitiveFacts;
     // Each language's options, by language name.
     private final Map<String, Map<String, String>> options;
     // Numbers the engines of this JVM, so a Flight Recorder event tells one engine's runs from another's.
@@ -170,6 +174,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.outputWriter = configuration.outputWriter();
         this.declaredFacts = configuration.declaredFacts();
         this.allFactsDeclared = configuration.allFactsDeclared();
+        Map<String, Class<?>> primitives = new HashMap<>();
+        declaredFacts.forEach((name, type) -> {
+            // void is primitive, but nothing widens to it, and no value is a Void.
+            if (type.isPrimitive() && type != void.class) {
+                primitives.put(name, type);
+            }
+        });
+        this.primitiveFacts = Map.copyOf(primitives);
         this.options = configuration.options();
     }
 
@@ -974,12 +986,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Collects the fact values a run was given, without checking their names, so the run's listeners can be given the
-     * facts before the names are checked.
+     * facts before the names are checked. A fact declared with a primitive type whose value is a boxed primitive that
+     * Java widens to that type, such as an {@link Integer} for a {@code long}, is widened here, so listeners and
+     * languages see only the declared type; its value in the store isn't changed. Any other value is kept as it is,
+     * for {@link #checkDeclaredType(String, Object)} to judge.
      *
      * @param facts The key/value fact store
      * @return A map of fact names to their values, which may hold a {@code null} name a custom store allowed
      */
-    private static Map<String, Object> factValues(FactStore<?> facts) {
+    private Map<String, Object> factValues(FactStore<?> facts) {
         Map<String, Object> entryMap = new HashMap<>();
         for (Map.Entry<String, ? extends FactReference<?>> entry : facts.asMap().entrySet()) {
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
@@ -987,6 +1002,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             FactReference<?> fact = entry.getValue();
             entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
         }
+        if (primitiveFacts.isEmpty()) {
+            return entryMap;
+        }
+        primitiveFacts.forEach((name, type) -> {
+            // A null value, or a fact the run left out, stays as it is.
+            Object value = entryMap.get(name);
+            if (value != null) {
+                entryMap.put(name, Widening.widen(value, type));
+            }
+        });
         return entryMap;
     }
 
@@ -997,7 +1022,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param values The fact values by name
      * @param checks The compilers of the rule list the run uses, which check each name, by language name
      * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, has a name a language
-     *                                  can't refer to, isn't an instance of the type it was declared with, or, when
+     *                                  can't refer to, isn't an instance of the type it was declared with or of its
+     *                                  wrapper, or, when
      *                                  the engine requires declared facts, was declared and left out or supplied
      *                                  without being declared; or if a language's check of the name throws anything
      *                                  else
@@ -1026,20 +1052,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Checks one fact's value against the type it was declared with. A {@code null} value passes: nothing about it
-     * contradicts the declaration, and a language can't tell it from an absent fact either.
+     * Checks one fact's value against the type it was declared with, or the type's wrapper if it's primitive: a value
+     * that Java widens to a primitive type was widened when the facts were collected. A {@code null} value passes:
+     * nothing about it contradicts the declaration, and a language can't tell it from an absent fact either.
      *
      * @param name  The fact's name
      * @param value The fact's value, which may be {@code null}
-     * @throws IllegalArgumentException if the fact was declared and its value isn't an instance of that type
+     * @throws IllegalArgumentException if the fact was declared and its value isn't an instance of that type, or of its
+     *                                  wrapper; for a primitive type and a number, a character or a boolean, the
+     *                                  message says why the value wasn't widened
      */
     private void checkDeclaredType(String name, Object value) {
         Class<?> declared = declaredFacts.get(name);
-        if (declared == null || value == null || declared.isInstance(value)) {
+        if (declared == null || value == null || Widening.wrap(declared).isInstance(value)) {
             return;
         }
-        String msg = "Fact '%s' was declared as %s, but the run supplied a %s"
-                .formatted(Failures.quote(name), declared.getName(), value.getClass().getName());
+        String msg = "Fact '%s' was declared as %s, but the run supplied a %s%s"
+                .formatted(Failures.quote(name), declared.getName(), value.getClass().getName(),
+                        primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
+                                ? " (" + Widening.ONLY_WIDENED + ")" : "");
         log.error(msg);
         throw new IllegalArgumentException(msg);
     }

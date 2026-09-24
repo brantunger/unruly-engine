@@ -28,7 +28,8 @@ import java.util.Objects;
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
  * @param declaredFacts   The declared type of each fact, by name, empty if none were declared. A primitive type is
- *                        kept as its wrapper, and no fact may be named {@code output}
+ *                        kept as it was declared, not as its wrapper, so a run widens a boxed primitive to it, and no
+ *                        fact may be named {@code output}
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param <O>             The type of the output object
@@ -45,8 +46,8 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
 
     /**
      * Keeps unmodifiable copies of the lists, options and declarations, so later changes to the builder don't change
-     * an engine. A declared type is checked and kept as {@link EngineCompileContext#declaredType(String, Class)} keeps
-     * it.
+     * an engine. A declared type is checked as {@link EngineCompileContext#checkDeclaration(String, Class)} checks it,
+     * and kept as it was declared.
      *
      * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
      *                                  element, is {@code null}
@@ -85,9 +86,8 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();
         options.forEach((language, values) -> copied.put(language, Map.copyOf(values)));
         options = Collections.unmodifiableMap(copied);
-        // declaredType names a null fact name or type itself.
-        Map<String, Class<?>> declared = new LinkedHashMap<>();
-        declaredFacts.forEach((name, type) -> declared.put(name, EngineCompileContext.declaredType(name, type)));
-        declaredFacts = Map.copyOf(declared);
+        // checkDeclaration names a null fact name or type itself.
+        declaredFacts.forEach(EngineCompileContext::checkDeclaration);
+        declaredFacts = Map.copyOf(declaredFacts);
     }
 }

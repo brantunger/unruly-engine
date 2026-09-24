@@ -182,9 +182,9 @@ A run copies the store's entries **once, when it starts**, and never reads the s
 - **A fact added, replaced or removed during a run**, by a listener, an action or another thread, isn't seen by that
   run.
 - **A change inside a fact's value** is seen. The engine reads each fact's value once, when the run starts, and every
-  rule and listener gets that same object, so an `Applicant` changed by its setter is changed for every later rule,
-  listener and the caller. A `FactReference` that would return a different object later in the run isn't asked
-  again.
+  rule and listener gets that same object (a [widened](#primitive-types-widen) value is a new wrapper), so an
+  `Applicant` changed by its setter is changed for every later rule, listener and the caller. A `FactReference` that
+  would return a different object later in the run isn't asked again.
 
 ```mermaid
 sequenceDiagram
@@ -194,6 +194,7 @@ sequenceDiagram
     participant R as Rules
     App->>E: run(store)
     E->>App: store.asMap(), copied once
+    E->>E: widen each boxed value of a fact declared primitive
     E->>L: beforeRun(run)
     E->>E: check each name and declared type
     alt a check fails
@@ -207,7 +208,8 @@ sequenceDiagram
 ```
 
 The copy is taken before the run waits for a [compiled copy](glossary.md#compiled-copy) of the rules, and before
-`beforeRun`. The run then checks every fact against the engine's and the languages' naming rules and the declared
+`beforeRun`; a boxed primitive whose fact is declared with a primitive type is [widened](#primitive-types-widen)
+in the copy. The run then checks every fact against the engine's and the languages' naming rules and the declared
 types; a failure reaches `onRunError` and `run()` throws `IllegalArgumentException`. Otherwise conditions and actions
 read the copy, listeners get `afterRun`, and `run()` returns.
 
@@ -235,13 +237,34 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 
 - **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
-  declaration. A run that leaves the fact out is unaffected. A primitive type is declared as its wrapper, so
-  `fact("age", int.class)` accepts an `Integer`. Declaring the same name twice keeps the last type. Declaring `output`
+  declaration. A run that leaves the fact out is unaffected. A primitive type [widens](#primitive-types-widen).
+  Declaring the same name twice keeps the last type. Declaring `output`
   fails at once, and `load()` fails for a declared name the rules' languages can't refer to.
 - **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
 - **`facts(map)`** declares several at once, as `fact()` does each one.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
   or leaves a declared one out, fails with `IllegalArgumentException`.
+
+### Primitive types widen
+
+A fact declared with a primitive type, such as `fact("n", long.class)`, accepts a boxed primitive that Java widens to
+it ([JLS 5.1.2](https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.2)): along `byte`, `short`,
+`int`, `long`, `float`, `double`, and from `char` to `int` or further. The engine converts the value to the declared
+type's wrapper when it copies the store, before `beforeRun`, so an `Integer` 5 reaches listeners,
+`RunContext.facts()` and every language as a `Long` 5. Your store isn't changed. A language's
+`CompileContext.declaredFacts()` still reports `Long`.
+
+It is lossy exactly as in Java: an `Integer` or `Long` can round in a `float` fact, a `Long` beyond ±2^53 in a
+`double` one, and a `Character` in an `int` fact becomes its code, 97 for `'a'`.
+
+Nothing else is converted: a `Long` or `Double` for an `int` fact, a `BigDecimal`, a `BigInteger`, or a `Boolean`
+for a number fails. When the declared type is primitive and the value is a number, a character or a boolean, the
+message ends `(a value is only widened as Java widens a primitive, never narrowed or converted)`; any other value,
+such as a `String`, gets only `Fact 'n' was declared as int, but the run supplied a java.lang.String`.
+
+A wrapper declaration doesn't widen and never adds the clause: `fact("n", Long.class)` rejects an `Integer`, as Java
+never turns an `Integer` into a `Long`, so declare `long.class` to accept narrower numbers. The
+[default output writer](engines-and-runs.md#how-actions-change-it) uses the same widening rules.
 
 ### Catching a typo when the rules load
 

@@ -122,6 +122,19 @@ class MvelStrongTypingTest {
     }
 
     @Test
+    @DisplayName("a fact declared long is compiled as a Long, and a run's Integer is widened before MVEL sees it")
+    void aDeclaredLongIsWidenedFromAnInteger() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.fact("limit", long.class)).build();
+        // MVEL compiles limit.compareTo(4L) as Long.compareTo, which fails to cast an Integer that wasn't widened.
+        engine.load(List.of(rule("limit * 1000000000L > 4000000000L",
+                "output.score = limit.compareTo(4L) + limit.intValue()")));
+        FactStore<Object> facts = applicant();
+        facts.setValue("limit", 5);
+
+        assertEquals(6, engine.run(facts).getScore());
+    }
+
+    @Test
     @DisplayName("every compiled copy is type-checked, so a second concurrent run behaves like the first")
     void everyCopyIsTypeChecked() throws Exception {
         RulesEngine<Decision> engine = typedEngine();

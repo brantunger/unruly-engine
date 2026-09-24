@@ -66,7 +66,9 @@ public sealed interface RunContext permits io.github.brantunger.unruly.core.Engi
     /**
      * Returns the fact values the run was given, the same read-only view the rule callbacks receive. The engine checks
      * the fact <i>names</i> after {@link RuleListener#beforeRun(RunContext)}, so a name no language can refer to is
-     * still in this map when {@code beforeRun} runs, and fails the run afterwards.
+     * still in this map when {@code beforeRun} runs, and fails the run afterwards. A value the engine widened to a
+     * fact's declared primitive type, as {@link RulesEngineBuilder#fact(String, Class)} describes, is here as it was
+     * widened, such as a {@link Long} for an {@link Integer} the run supplied, already when {@code beforeRun} runs.
      *
      * @return The fact values by name. Writing to it throws {@link UnsupportedOperationException}.
      */

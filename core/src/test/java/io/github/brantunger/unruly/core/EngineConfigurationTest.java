@@ -151,12 +151,12 @@ class EngineConfigurationTest {
     }
 
     @Test
-    @DisplayName("a declared fact is kept as the builder keeps it, and can't be named output")
+    @DisplayName("a declared fact is kept as it was declared, a primitive type too, and can't be named output")
     void declaredFactsChecked() {
         EngineConfiguration<Object> configuration = configuration(LANGUAGES, List.of(), List.of(), LIMIT, CLOCK,
                 Object.class, WRITER, Map.of(), Map.of("count", int.class));
 
-        assertEquals(Map.of("count", Integer.class), configuration.declaredFacts());
+        assertEquals(Map.of("count", int.class), configuration.declaredFacts());
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> configuration(LANGUAGES,
                 List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER, Map.of(), Map.of("output", String.class)));
         assertEquals("'output' is reserved for the output object and cannot be declared as a fact", ex.getMessage());
