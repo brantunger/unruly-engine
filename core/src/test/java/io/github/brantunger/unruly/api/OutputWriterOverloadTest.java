@@ -313,6 +313,21 @@ class OutputWriterOverloadTest {
         void setContent(T content);
     }
 
+    /** A generic setter for a number on an interface. */
+    public interface NumberHolder<T extends Number> {
+        void setContent(T content);
+    }
+
+    /** Both interfaces' setters overridden for an Integer, so the class has bridges for a number and for any object. */
+    public static final class IntegerForBothHolder implements Holder<Integer>, NumberHolder<Integer> {
+        String setter;
+
+        @Override
+        public void setContent(Integer content) {
+            setter = "Integer";
+        }
+    }
+
     /** A setter for an Integer. */
     public static class IntegerSetter {
         String setter;
@@ -707,6 +722,18 @@ class OutputWriterOverloadTest {
         assertEquals(IntegerNumberBox.class.getName() + " has no public method setContent that accepts a"
                 + " java.lang.Long" + INTEGER_SETTER_EXISTS, thrown.getMessage());
         assertEquals("Integer", set(new IntegerNumberBox(), "content", 1));
+    }
+
+    @Test
+    @DisplayName("a value of another type isn't passed to an override of two interfaces' setters through either of its"
+            + " bridges")
+    void twoInterfacesBridges() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new IntegerForBothHolder(), "content", 5L));
+
+        assertEquals(IntegerForBothHolder.class.getName() + " has no public method setContent that accepts a"
+                + " java.lang.Long" + INTEGER_SETTER_EXISTS, thrown.getMessage());
+        assertEquals("Integer", set(new IntegerForBothHolder(), "content", 1));
     }
 
     @Test

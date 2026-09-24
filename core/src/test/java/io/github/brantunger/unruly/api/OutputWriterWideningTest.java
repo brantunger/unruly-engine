@@ -195,6 +195,15 @@ class OutputWriterWideningTest {
         }
     }
 
+    /** A varargs setter for ints. */
+    public static final class IntsR {
+        String setter;
+
+        public void setR(int... r) {
+            setter = "int... of " + r.length;
+        }
+    }
+
     /** Setters for any object and for a long. */
     public static final class ObjectOrLong {
         String setter;
@@ -531,5 +540,15 @@ class OutputWriterWideningTest {
 
         assertEquals(TextR.class.getName() + " has no public method setR that accepts a java.lang.Integer",
                 thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("a varargs setter takes an array, but a single value isn't wrapped in one (#592)")
+    void varargsTakesOnlyAnArray() throws Exception {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> set(new IntsR(), 5));
+
+        assertEquals(IntsR.class.getName() + " has no public method setR that accepts a java.lang.Integer",
+                thrown.getMessage());
+        assertEquals("int... of 1", set(new IntsR(), new int[] {5}));
     }
 }

@@ -316,9 +316,14 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * The engine fails a run with {@link IllegalArgumentException} when the fact is present and its value isn't an
      * instance of {@code type}, or, for a primitive type, its wrapper or a boxed primitive Java widens to it, as
-     * described below. A {@code null} value passes: nothing about it contradicts the declaration. A run that doesn't
-     * supply the fact at all is unaffected, unless {@link #requireDeclaredFacts()} is also set. Declaring a fact twice
-     * replaces the first declaration.
+     * described below. A {@code null} value passes: nothing about it contradicts the declaration. So a fact declared
+     * with a primitive type can still be {@code null}: the engine doesn't turn it into the primitive's default, and
+     * {@link OutputWriter#beansAndMaps()} never passes it to a setter taking a primitive, so it fails with
+     * {@link IllegalArgumentException} where no other setter of the property takes {@code null}. What a language makes
+     * of it is up to the language; see <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md#-declaring-facts">Declaring facts</a>. A
+     * run that doesn't supply the fact at all is unaffected, unless {@link #requireDeclaredFacts()} is also set.
+     * Declaring a fact twice replaces the first declaration.
      * </p>
      *
      * <p>

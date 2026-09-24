@@ -5,26 +5,47 @@ import io.github.brantunger.unruly.core.Widening;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.GenericDeclaration;
+import java.lang.reflect.GenericSignatureFormatError;
 import java.lang.reflect.MalformedParameterizedTypeException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The default {@link OutputWriter}: {@code put} on a {@link Map}, and otherwise the output class's public setter that
  * accepts the value. Of overloaded setters, it calls the most specific one that accepts the value, as Java would; when
  * no single one is the most specific, the choice is fixed for the output class and the same on every run. A boxed
  * primitive, only when no setter takes it as it is, goes to a primitive setter it widens to, as Java would, such as
- * an {@link Integer} to a setter taking a {@code long}; no value is otherwise converted. Each class's setters are
- * looked up once.
+ * an {@link Integer} to a setter taking a {@code long}; no value is otherwise converted. A varargs setter takes an
+ * array: a single value isn't wrapped in one. Each class's setters are looked up once.
+ *
+ * <p>
+ * A setter declared with a type variable of a class, such as {@code setContent(T)}, takes what the output class makes
+ * of the variable, as Java would, where the class has another setter of its name with a different parameter: beside
+ * {@code setContent(long)}, with {@code T} a {@link Long}, a {@link Short} goes to {@code setContent(long)}, and text
+ * to neither. Without such an overload, it takes whatever its erased parameter does. Setters are still ordered by
+ * their erased parameters, so one whose parameter is a supertype of what the variable is given, such as
+ * {@code setContent(CharSequence)} beside {@code setContent(T)} with {@code T} a {@link String}, still comes first,
+ * though Java would call {@code setContent(T)}. What the output class gives the variable is all that's known: an
+ * instance of a generic class, such as {@code new Box<Long>()}, gives it nothing, so the setter takes its bound. A
+ * type variable an inner class uses from its enclosing class, as in {@code Outer<T>.Inner}, isn't resolved: a setter
+ * declared with it, or with a variable it's passed to, takes the variable's bound.
+ * </p>
  *
  * <p>
  * A setter is called the way {@link io.github.brantunger.unruly.api.language.FactProperties} calls a getter: through a
@@ -53,15 +74,13 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     private static final ClassValue<Map<String, List<Setter>>> SETTERS = new ClassValue<>() {
         @Override
         protected Map<String, List<Setter>> computeValue(Class<?> type) {
-            Map<Class<?>, Method[]> methods = new HashMap<>();
-            methods.put(type, type.getMethods());
-            return Arrays.stream(methods.get(type))
+            Lookup lookup = new Lookup(type);
+            return Arrays.stream(lookup.methods(type))
                     .filter(method -> method.getParameterCount() == 1 && method.getName().startsWith("set")
                             && !Modifier.isStatic(method.getModifiers()))
                     .sorted(Comparator.comparing((Method method) -> parameter(method).getName()))
-                    .map(method -> setter(type, method, methods))
-                    .collect(Collectors.groupingBy(setter -> setter.method().getName(),
-                            Collectors.collectingAndThen(Collectors.toList(), BeansAndMapsWriter::mostSpecificFirst)));
+                    .collect(Collectors.groupingBy(Method::getName, Collectors.collectingAndThen(Collectors.toList(),
+                            overloads -> mostSpecificFirst(lookup.named(overloads)))));
         }
     };
 
@@ -70,9 +89,11 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      *
      * @param method  The setter, resolved to a method the engine can call
      * @param generic Whether it's a bridge method the compiler added for an override of a generic setter
-     * @param accepts The types of value it accepts: for a generic setter's bridge, those of its class's public instance
-     *                setters of its name with a narrower parameter, and otherwise its parameter's, which for a
-     *                primitive also accepts a boxed primitive that Java widens to it
+     * @param accepts The types of value it accepts: for a generic setter's bridge, those that its class's public
+     *                instance setters of its name with a narrower parameter accept; for a setter declared with a
+     *                class's type variable, beside another setter of its name, the type the output class gives the
+     *                variable; and otherwise its parameter's. One for a primitive also accepts a boxed primitive that
+     *                Java widens to it.
      */
     private record Setter(Method method, boolean generic, List<Class<?>> accepts) {
     }
@@ -137,13 +158,15 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
 
     // For a number, a character or a boolean that no setter accepts, the setters of its name that take a primitive or
     // a wrapper, so a failure says why they don't take it: the primitives in Widening.order(), then the wrappers by
-    // name, each once. Otherwise, or where there are none, nothing.
+    // name, each once. A setter is named by the type it accepts, so one declared with a type variable that the output
+    // class gives a wrapper is named with the wrapper. A generic setter's bridge accepts the types of setters listed
+    // anyway. Otherwise, or where there are none, nothing.
     private static String primitiveSetters(String name, List<Setter> setters, Object value) {
         if (!Widening.isPrimitiveLike(value)) {
             return "";
         }
         List<String> existing = setters.stream()
-                .<Class<?>>map(setter -> parameter(setter.method()))
+                .flatMap(setter -> setter.accepts().stream())
                 .filter(type -> type.isPrimitive() || Widening.isWrapper(type))
                 .distinct()
                 .sorted(Comparator.comparing((Class<?> type) -> !type.isPrimitive())
@@ -195,71 +218,234 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         return List.copyOf(ordered);
     }
 
-    // A setter, worked out before resolving it. A bridge method is a generic setter's when it overrides a generic
-    // setter and its class has setters of its name with a narrower parameter for it to call: the override, or the
-    // bridge that makes the override callable where it's inherited from a class that isn't public. A bridge that
-    // calls a method with its own parameter isn't: one that makes a public setter of a class that isn't public
-    // callable through a public subclass, even one declared with a type variable, or one for an override with a
-    // narrower return type. It accepts its own parameter, as the method it calls does.
-    private static Setter setter(Class<?> type, Method method, Map<Class<?>, Method[]> methods) {
-        List<Class<?>> bridged = method.isBridge() && overridesGeneric(method) ? accepted(method, methods) : List.of();
-        boolean generic = !bridged.isEmpty();
-        return new Setter(Accessors.callable(type, method), generic, generic ? bridged : List.of(parameter(method)));
+    // Works out one output class's setters, name by name, before resolving them. Each class's public methods, what
+    // each class gives the type variables of its supertypes, and whether each bridge method is a generic setter's are
+    // looked up once.
+    private static final class Lookup {
+
+        private final Class<?> type;
+        private final Map<Class<?>, Method[]> publicMethods = new HashMap<>();
+        private final Map<Class<?>, Optional<Map<TypeVariable<?>, Type>>> arguments = new HashMap<>();
+        private final Map<Method, List<Class<?>>> bridgedBy = new HashMap<>();
+
+        Lookup(Class<?> type) {
+            this.type = type;
+        }
+
+        Method[] methods(Class<?> declaring) {
+            return publicMethods.computeIfAbsent(declaring, Class::getMethods);
+        }
+
+        // One name's setters. A setter that isn't a generic setter's bridge accepts its parameter, but one declared
+        // with a type variable of a class, such as T or T[], accepts the type the output class gives the variable, as
+        // Java would take it, where another setter of its name that isn't a generic setter's bridge takes a different
+        // parameter. So a Short goes to setContent(long) beside setContent(T), for T a Long, as it does in Java.
+        // Without such an overload, it accepts its erased parameter, as calling it with any value it takes throws
+        // nothing. It's taken as declared by the method it calls, even through a bridge that makes it callable from a
+        // public subclass. A generic setter's bridge accepts what the setters it may call accept.
+        List<Setter> named(List<Method> overloads) {
+            long parameters = overloads.stream().filter(method -> bridged(method).isEmpty())
+                    .map(BeansAndMapsWriter::parameter).distinct().count();
+            Map<Class<?>, Class<?>> accepted = new HashMap<>();
+            overloads.stream().filter(method -> bridged(method).isEmpty()).forEach(method -> accepted.put(
+                    parameter(method), parameters > 1 ? parameterIn(method) : parameter(method)));
+            return overloads.stream().map(method -> {
+                List<Class<?>> bridges = bridged(method);
+                boolean generic = !bridges.isEmpty();
+                return new Setter(Accessors.callable(type, method), generic, generic
+                        ? bridges.stream().<Class<?>>map(parameter -> accepted.getOrDefault(parameter, parameter))
+                        .distinct().toList()
+                        : List.of(accepted.get(parameter(method))));
+            }).toList();
+        }
+
+        // The parameters of the setters a bridge method may call, where it's a generic setter's, and none otherwise.
+        // It's a generic setter's when it overrides a generic setter, as the method found for it to call is declared
+        // with a type variable, or there's none, and its class has setters of its name with a narrower parameter for
+        // it to call: the override, or the bridge that makes the override callable where it's inherited from a class
+        // that isn't public. The override takes the type the bridge's class gives the variable, so the bridge is the
+        // override's where one of those setters takes that type, or the type can't be read. Otherwise it makes the
+        // setter declared with the type variable callable through a public subclass. Neither is a bridge that calls a
+        // method with its own parameter: one that makes a public setter of a class that isn't public callable through
+        // a public subclass, or one for an override with a narrower return type. Each of those accepts what the
+        // method it calls does. Worked out once for each method, as a bridge's setters are told apart by it too.
+        List<Class<?>> bridged(Method method) {
+            List<Class<?>> known = bridgedBy.get(method);
+            if (known == null) {
+                known = generic(method);
+                bridgedBy.put(method, known);
+            }
+            return known;
+        }
+
+        private List<Class<?>> generic(Method method) {
+            if (!method.isBridge()) {
+                return List.of();
+            }
+            Method target = target(method);
+            if (target != null && !declaredWithATypeVariable(target)) {
+                return List.of();
+            }
+            List<Class<?>> narrower = accepted(method);
+            if (target == null) {
+                return narrower;
+            }
+            Class<?> overrides = resolved(method.getDeclaringClass(), target);
+            return overrides == null || narrower.contains(overrides) ? narrower : List.of();
+        }
+
+        // The parameters of the methods a generic setter's bridge may bridge to, which are the methods of its class,
+        // declared there or inherited, that have its name and one parameter narrower than its own, as the override it
+        // calls has, and that are public, not static and not a generic setter's bridge. Any other bridge counts: one
+        // that makes a method of a class that isn't public callable, as it may be how the override reaches the class,
+        // or one for an override with a narrower return type, whose parameter is the override's. getMethods() gives
+        // only public methods, so a private or protected one never widens a bridge, but it gives static ones too.
+        // Nothing says which of those methods a bridge calls, so a bridge beside such an overload, declared in its
+        // class or inherited from a superclass, even one that isn't public, also accepts the overload's type. A value
+        // of that type reaches the bridge only where the engine can't reach the overload, and the bridge then fails to
+        // cast it, or calls the override where the overload's parameter is narrower than the override's: a known
+        // limit. The parameter count is checked first, as any bridge, even one of the setter's name, may have none.
+        private List<Class<?>> accepted(Method bridge) {
+            return Arrays.stream(methods(bridge.getDeclaringClass()))
+                    .filter(other -> other.getParameterCount() == 1 && other.getName().equals(bridge.getName())
+                            && moreSpecific(other, bridge) && !Modifier.isStatic(other.getModifiers())
+                            && bridged(other).isEmpty())
+                    .<Class<?>>map(BeansAndMapsWriter::parameter)
+                    .toList();
+        }
+
+        // The type of value a setter that isn't a generic setter's bridge takes in the output class: for one whose
+        // method is declared with a type variable, such as T or T[], the erasure of the type the class gives the
+        // variable, or, where it gives none, of the variable's bound, as Java erases it. Otherwise, or where a type it
+        // names can't be read, its erased parameter.
+        private Class<?> parameterIn(Method setter) {
+            Method target = Objects.requireNonNullElse(target(setter), setter);
+            Class<?> resolved = declaredWithATypeVariable(target) ? resolved(type, target) : null;
+            return resolved != null ? resolved : parameter(setter);
+        }
+
+        // The erasure of the type a class gives a method's parameter, declared with a type variable of the method's
+        // own class, such as T or T[]. Null for another type variable, one of a class the method's class is inside or
+        // the method's own, which is left to its erasure, or where the type can't be read, as a class that the class's
+        // supertypes or the parameter names is missing, or a signature is malformed. What a class gives type variables
+        // is worked out once, and so is finding that it can't be, and only for a parameter it may give something.
+        private @Nullable Class<?> resolved(Class<?> declaring, Method method) {
+            try {
+                Type declared = method.getGenericParameterTypes()[0];
+                if (!declaredBy(declared, method.getDeclaringClass())) {
+                    return null;
+                }
+                Map<TypeVariable<?>, Type> given = arguments
+                        .computeIfAbsent(declaring, BeansAndMapsWriter::typeArguments).orElse(null);
+                return given == null ? null : erasure(declared, given);
+            } catch (TypeNotPresentException | MalformedParameterizedTypeException | GenericSignatureFormatError e) {
+                return null;
+            }
+        }
     }
 
-    // Whether a bridge overrides a generic setter: the first method with its name and parameter, of its class or a
-    // superclass, that isn't a bridge is declared with a type variable, or there's none, as where only an interface
-    // declares it. A bridge in an interface overrides a generic setter.
-    private static boolean overridesGeneric(Method bridge) {
+    // The method a bridge calls, as far as its class and superclasses say: the first method with its name and
+    // parameter, of its class or a superclass, that isn't a bridge. Null where there's none, as where only an
+    // interface declares it. A method that isn't a bridge is its own.
+    private static @Nullable Method target(Method bridge) {
         Class<?> type = bridge.getDeclaringClass();
         while (type != null) {
             Method target;
             try {
                 target = type.getMethod(bridge.getName(), bridge.getParameterTypes());
             } catch (NoSuchMethodException e) {
-                return true;
+                return null;
             }
             if (!target.isBridge()) {
-                return declaredWithATypeVariable(target);
+                return target;
             }
             type = type.getSuperclass();
         }
-        return true;
+        return null;
+    }
+
+    // The type that a class, directly or through its supertypes, gives each type variable of the classes and
+    // interfaces it extends, or nothing where a supertype can't be read.
+    private static Optional<Map<TypeVariable<?>, Type>> typeArguments(Class<?> type) {
+        Map<TypeVariable<?>, Type> arguments = new HashMap<>();
+        try {
+            typeArguments(type, arguments, new HashSet<>());
+        } catch (TypeNotPresentException | MalformedParameterizedTypeException | GenericSignatureFormatError e) {
+            return Optional.empty();
+        }
+        return Optional.of(arguments);
+    }
+
+    // Adds what a class's supertypes give type variables, each supertype once, however many ways the class extends
+    // it. A raw supertype gives nothing, not even through its own supertypes, as Java erases every supertype of a raw
+    // type. Nor does a type variable, or an array of one, that isn't the class's own: one of a class it's inside, or
+    // of a generic method a local class is in, which stands for what an instance was made with, so the variable it's
+    // given takes its bound. A parameterized type that names one, such as List<U>, is kept, as only its raw type
+    // counts.
+    private static void typeArguments(Class<?> type, Map<TypeVariable<?>, Type> arguments, Set<Class<?>> visited) {
+        if (!visited.add(type)) {
+            return;
+        }
+        List<Type> supertypes = Stream.concat(Stream.ofNullable(type.getGenericSuperclass()),
+                Arrays.stream(type.getGenericInterfaces())).toList();
+        for (Type supertype : supertypes) {
+            if (supertype instanceof ParameterizedType parameterized) {
+                Class<?> raw = (Class<?>) parameterized.getRawType();
+                TypeVariable<?>[] variables = raw.getTypeParameters();
+                for (int i = 0; i < variables.length; i++) {
+                    Type argument = parameterized.getActualTypeArguments()[i];
+                    if (declaredBy(argument, type)) {
+                        arguments.put(variables[i], argument);
+                    }
+                }
+                typeArguments(raw, arguments, visited);
+            } else if (((Class<?>) supertype).getTypeParameters().length == 0) {
+                typeArguments((Class<?>) supertype, arguments, visited);
+            }
+        }
+    }
+
+    // Whether a type that is a type variable, or an array of one, such as T or T[], is one that a class or method
+    // declares. Any other type is. The type variables of a class that a class is inside are in scope in it too, and a
+    // supertype may give the same variable something else, so those aren't told apart and are left to their erasure.
+    private static boolean declaredBy(Type type, GenericDeclaration declaration) {
+        Type component = type;
+        while (component instanceof GenericArrayType array) {
+            component = array.getGenericComponentType();
+        }
+        return !(component instanceof TypeVariable<?> variable) || variable.getGenericDeclaration().equals(declaration);
+    }
+
+    // A type's erasure, a type variable standing for what it's given, if anything, and otherwise its first bound. A
+    // type argument that a class gives its supertype can't be a wildcard, and a setter's parameter isn't one.
+    private static Class<?> erasure(Type type, Map<TypeVariable<?>, Type> arguments) {
+        if (type instanceof Class<?> erased) {
+            return erased;
+        }
+        if (type instanceof ParameterizedType parameterized) {
+            return (Class<?>) parameterized.getRawType();
+        }
+        if (type instanceof GenericArrayType array) {
+            return erasure(array.getGenericComponentType(), arguments).arrayType();
+        }
+        TypeVariable<?> variable = (TypeVariable<?>) type;
+        Type argument = arguments.get(variable);
+        return erasure(argument != null ? argument : variable.getBounds()[0], arguments);
     }
 
     // Whether a method's parameter is declared with a type variable, such as T or T[], which erases to another type
     // in an override. A parameterized type, such as List<String>, erases the same in the override, which needs no
-    // bridge. A parameter whose declared type can't be read, as it names a class that's missing, counts as not. The
-    // method has one parameter: it has a setter's name and parameter, as only setters are asked about.
+    // bridge. A parameter whose declared type can't be read, as it names a class that's missing or its signature is
+    // malformed, counts as not. The method has one parameter: it has a setter's name and parameter, as only setters
+    // are asked about.
     private static boolean declaredWithATypeVariable(Method method) {
         Type declared;
         try {
             declared = method.getGenericParameterTypes()[0];
-        } catch (TypeNotPresentException | MalformedParameterizedTypeException e) {
+        } catch (TypeNotPresentException | MalformedParameterizedTypeException | GenericSignatureFormatError e) {
             return false;
         }
         return declared instanceof TypeVariable<?> || declared instanceof GenericArrayType;
-    }
-
-    // The types of value a generic setter's bridge accepts: those of the methods it may bridge to, which are the
-    // methods of its class, declared there or inherited, that have its name and one parameter narrower than its own,
-    // as the override it calls has, and that are public, not static and not a generic setter's bridge. Any other
-    // bridge counts: one that makes a method of a class that isn't public callable, as it may be how the override
-    // reaches the class, or one for an override with a narrower return type, whose parameter is the override's.
-    // getMethods() gives only public methods, so a private or protected one never widens a bridge, but it gives
-    // static ones too. Nothing says which of those methods a bridge calls, so a bridge beside such an overload,
-    // declared in its class or inherited from a superclass, even one that isn't public, also accepts the overload's
-    // type. A value of that type reaches the bridge only where the engine can't reach the overload, and the bridge
-    // then fails to cast it, or calls the override where the overload's parameter is narrower than the override's: a
-    // known limit. None, for a bridge that makes a setter declared with a type variable callable through a public
-    // subclass. The parameter count is checked first, as any bridge, even one of the setter's name, may have none.
-    private static List<Class<?>> accepted(Method bridge, Map<Class<?>, Method[]> methods) {
-        return Arrays.stream(methods.computeIfAbsent(bridge.getDeclaringClass(), Class::getMethods))
-                .filter(other -> other.getParameterCount() == 1 && other.getName().equals(bridge.getName())
-                        && moreSpecific(other, bridge) && !Modifier.isStatic(other.getModifiers())
-                        && !(other.isBridge() && overridesGeneric(other)))
-                .<Class<?>>map(BeansAndMapsWriter::parameter)
-                .toList();
     }
 
     private static boolean moreSpecific(Method setter, Method than) {
