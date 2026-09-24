@@ -135,8 +135,8 @@ so a second build reuses task outputs, including those of another branch, and th
 - `--rerun` on a task, such as `./gradlew :mvel:test --rerun`, runs it again even though its inputs haven't changed.
 - `--no-build-cache --no-configuration-cache` rebuilds everything from scratch, when a result looks stale.
 - The release workflow builds with `--no-build-cache`, so the published artifacts are built from scratch.
-- The API check's baseline lookup is cached for 24 hours so the configuration cache stays reusable;
-  `-PapiCheck.refresh` looks it up again.
+- Locally, the API baseline lookup is cached 24 hours for configuration cache reuse; `"-PapiCheck.refresh"`, which CI
+  passes, skips the cache.
 
 ## 🤖 CI
 
@@ -144,7 +144,7 @@ so a second build reuses task outputs, including those of another branch, and th
 
 | Job | Runs | Why |
 | --- | --- | --- |
-| JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
+| JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `scripts/docs/check_docs.py`, a line-ending check, `scripts/docs/check_style.py` on the pages a pull request changes, and actionlint | Broken links and anchors, joined table rows, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |

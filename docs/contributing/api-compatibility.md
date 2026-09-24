@@ -205,9 +205,10 @@ stops applying once the build's version rises above it: from then on a baseline 
 build instead of skipping the check.
 
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
-baseline already in the Gradle cache. The lookup is kept for 24 hours, so a new release becomes the baseline within a
-day; pass `-PapiCheck.refresh` to look it up again, as the release workflow does. The build verifies the download
-like every other dependency: see [The API baseline](dependency-verification.md#-the-api-baseline).
+baseline already in the Gradle cache. A local build keeps the lookup for 24 hours, so it may compare with a release
+up to a day old; pass `"-PapiCheck.refresh"` for the newest. CI and the release workflow pass it on every build, so they
+always compare with the newest release. The build verifies the download like every other dependency: see
+[The API baseline](dependency-verification.md#-the-api-baseline).
 
 ## 📋 Reference
 
