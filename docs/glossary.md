@@ -30,10 +30,10 @@ See [match policy](#match-policy).
 
 ### Artifacts
 
-The engine is published as three jars in the `io.github.brantunger` group: `unruly-engine`
-(the MVEL language, which brings in the engine), `unruly-engine-core` (the engine without a language) and
-`unruly-engine-test` (the [contract test kit](#contract-test-kit)). The `benchmarks` project isn't published. See
-[Installation](../README.md#-installation) and [Packaging](languages/custom.md#-packaging).
+Three jars in the `io.github.brantunger` group: `unruly-engine` (MVEL and the engine), `unruly-engine-core`
+(the engine alone) and `unruly-engine-test` (the [contract test kit](#contract-test-kit)). A Maven bill of materials
+(BOM) with no jar, `unruly-engine-bom`, keeps them at one version. See [Installation](../README.md#-installation)
+and [Packaging](languages/custom.md#-packaging).
 
 ### Build slot
 

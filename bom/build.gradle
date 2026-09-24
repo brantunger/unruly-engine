@@ -1,0 +1,58 @@
+import com.vanniktech.maven.publish.JavaPlatform
+import unruly.conventions.BomCoverageCheck
+
+plugins {
+    id 'java-platform'
+    id 'unruly.publishing'
+}
+
+// A bill of materials: one version for all the artifacts, so a user's build can't pair one version of one with
+// another version of another, for example the test kit with a different core. It only manages versions: a user who
+// imports it still declares the artifacts they use, and the other artifacts don't depend on it.
+def artifact = 'unruly-engine-bom'
+
+dependencies {
+    constraints {
+        api project(':core')
+        api project(':mvel')
+        api project(':test-kit')
+    }
+}
+
+// A BOM has a POM and Gradle module metadata, and no jars.
+mavenPublishing {
+    configure(new JavaPlatform())
+
+    coordinates(project.group.toString(), artifact, project.version.toString())
+
+    pom {
+        name = artifact
+        description = 'Unruly is a pure Java rules engine with pluggable expression languages. This bill of ' +
+                'materials sets one version for unruly-engine, unruly-engine-core and unruly-engine-test'
+    }
+}
+
+// The artifacts every other published project publishes, found by the publishing plugin rather than listed, so a
+// published project the constraints above leave out fails the check below. withId runs once the project applies the
+// plugin, and the provider reads each artifact's coordinates when the check needs them, after every project has set
+// its own: this project is configured before core, mvel and test-kit.
+def published = objects.setProperty(String)
+rootProject.subprojects.findAll { it != project }.each { other ->
+    other.plugins.withId('com.vanniktech.maven.publish') {
+        other.extensions.getByType(PublishingExtension).publications.withType(MavenPublication).configureEach { pub ->
+            published.add(providers.provider { "${pub.groupId}:${pub.artifactId}:${pub.version}".toString() })
+        }
+    }
+}
+
+def bomCoverage = tasks.register('checkBomCoverage', BomCoverageCheck) {
+    group = 'verification'
+    description = 'Fails unless the BOM manages every published artifact, and nothing else, at its published version.'
+    pom.fileProvider(tasks.named('generatePomFileForMavenPublication', GenerateMavenPom).map { it.destination })
+    it.published = published
+    result = layout.buildDirectory.file('bom-coverage.txt')
+}
+
+tasks.named('check') {
+    dependsOn bomCoverage
+}

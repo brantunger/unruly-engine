@@ -73,13 +73,33 @@ implementation("io.github.brantunger:unruly-engine:2.5.0")
     <artifactId>unruly-engine</artifactId>
     <version>2.5.0</version>
 </dependency>
-<!-- Only to test a language of your own. Declare it after unruly-engine. -->
-<dependency>
-    <groupId>io.github.brantunger</groupId>
-    <artifactId>unruly-engine-test</artifactId>
-    <version>2.5.0</version>
-    <scope>test</scope>
-</dependency>
+```
+
+```xml
+<!-- With more than one module, such as the test kit: import the BOM, and give the modules no version. -->
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.brantunger</groupId>
+            <artifactId>unruly-engine-bom</artifactId>
+            <version>2.5.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.github.brantunger</groupId>
+        <artifactId>unruly-engine</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.github.brantunger</groupId>
+        <artifactId>unruly-engine-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
 ```
 <!-- x-release-please-end -->
 
@@ -87,8 +107,8 @@ implementation("io.github.brantunger:unruly-engine:2.5.0")
 
 `unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/README.md),
 depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
-`unruly-engine-test` at the same version. With Maven, declare it after the engine, or an older kit can downgrade
-`unruly-engine-core`; see [Testing with the contract kit](docs/languages/contract-kit.md).
+`unruly-engine-test` at the same version. With Maven, import `unruly-engine-bom` to keep every module at one version;
+see [Testing with the contract kit](docs/languages/contract-kit.md).
 
 <details>
 <summary><b>On the module path</b></summary>

@@ -31,20 +31,31 @@ tasks.named('test') {
 }
 ```
 
-With Maven, declare `unruly-engine-core` too, and give it and the kit one version, here a property `unruly.version`
-set to the engine's version:
+With Maven, import the [BOM](../glossary.md#artifacts), `unruly-engine-bom` (published from 2.6.0), at the
+engine's version (here a property `unruly.version`), and declare the modules without versions. Every module then
+gets the BOM's version, whatever order you declare them in:
 
 ```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.brantunger</groupId>
+            <artifactId>unruly-engine-bom</artifactId>
+            <version>${unruly.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
 <dependencies>
     <dependency>
         <groupId>io.github.brantunger</groupId>
         <artifactId>unruly-engine-core</artifactId>
-        <version>${unruly.version}</version>
     </dependency>
     <dependency>
         <groupId>io.github.brantunger</groupId>
         <artifactId>unruly-engine-test</artifactId>
-        <version>${unruly.version}</version>
         <scope>test</scope>
     </dependency>
 </dependencies>
@@ -60,13 +71,17 @@ set to the engine's version:
 ```
 
 > [!WARNING]
-> With Maven, when a POM doesn't name `unruly-engine-core` itself, the first of `unruly-engine` and
+> Without the BOM, when a POM doesn't name `unruly-engine-core` itself, the first of `unruly-engine` and
 > `unruly-engine-test` it declares sets core's version. An older kit declared first downgrades core, for the
 > application too, so a newer engine runs on the kit's older core.
 
-A POM that declares `unruly-engine-core`, as above, gets that version whatever the order. A POM that gets core only
-through `unruly-engine` needs one of these: declare `unruly-engine` before the kit, keep the two versions equal, or pin
-`unruly-engine-core` in `<dependencyManagement>`. Gradle takes the highest version of core, whatever the order.
+A `<version>` written on a dependency beats the BOM, so leave it off. The engine's own POMs don't import the BOM:
+your POM must. A build that can't import it can instead declare `unruly-engine` before the kit, keep the versions
+equal, or pin `unruly-engine-core` in `<dependencyManagement>`.
+
+Gradle takes the highest version of core, whatever the order, so the BOM is optional there. To keep the modules at
+one version, add `implementation platform('io.github.brantunger:unruly-engine-bom:<version>')` and declare them
+without versions. Unlike Maven, Gradle raises a lower version written on one of them to the BOM's.
 
 The kit is built with JUnit Jupiter 6, and brings `unruly-engine-core` and `junit-jupiter-api`. A Gradle build still
 needs the rest: a JUnit test engine to run the checks, the JUnit Platform launcher to start it, and
@@ -187,4 +202,4 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **An older kit declared first, with Maven** | Unless the POM declares `unruly-engine-core` itself, Maven takes core's version from the kit, so a newer `unruly-engine` runs on the older core | Declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`; see [Testing with the contract kit](#-testing-with-the-contract-kit) |
+| **An older kit declared first, with Maven** | Unless the POM imports the BOM or declares `unruly-engine-core` itself, Maven takes core's version from the kit, so a newer `unruly-engine` runs on the older core | Import `unruly-engine-bom` and drop the modules' versions; without a BOM, declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`. See [Testing with the contract kit](#-testing-with-the-contract-kit) |

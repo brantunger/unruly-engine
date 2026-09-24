@@ -24,9 +24,11 @@ usual fix for each.
 ## ✅ What build runs
 
 `build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build, local, CI and
-release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has five projects. Three are
+release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has six projects. Four are
 published: `core` (`unruly-engine-core`, whose tests need no MVEL), `mvel` (`unruly-engine`, which holds the tests
-that need MVEL or the test kit, and those that check the whole build), and `test-kit` (`unruly-engine-test`).
+that need MVEL or the test kit, and those that check the whole build), `test-kit` (`unruly-engine-test`), and `bom`
+(`unruly-engine-bom`, a [BOM](../glossary.md#artifacts) pinning the other three; its `checkBomCoverage` fails unless
+it lists exactly the published artifacts).
 
 The other two aren't: `benchmarks`, whose sources the build checks and whose generated workload one test asserts the
 shape of, while only the `jmh` task measures anything, and `native-smoke`, a small application CI builds into a
@@ -37,7 +39,7 @@ GraalVM native image.
 | 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their `build.gradle` files, and `core/src/testFixtures/resources/junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: UTF-8, lines of at most 120 columns, no tabs, a final newline, `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
-| ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the published projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
 | 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
@@ -120,8 +122,8 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | `javadoc` | `build/docs/javadoc/index.html` for the site; the console for the warnings that failed it |
 | `cyclonedxDirectBom`, which `assemble` runs | `<project>/build/reports/cyclonedx-direct/<artifact>-<version>.cdx.json`, the SBOM a release attaches, for `core`, `mvel` and `test-kit` |
 
-Every published project writes a japicmp report, and `core` a second one for the constructors the test kit calls;
-[API compatibility](api-compatibility.md#-baselines) explains which release each one is compared with.
+`core`, `mvel` and `test-kit` each write a japicmp report, and `core` a second one for the constructors the test
+kit calls; [API compatibility](api-compatibility.md#-baselines) explains which release each one is compared with.
 `jacocoTestCoverageVerification` fails on the console; the HTML report from `jacocoTestReport` shows the uncovered
 lines and branches.
 
@@ -182,12 +184,11 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 What the jobs leave behind:
 
 - **Artifacts:** `jacoco-report-jdk21-<os>` from every JDK 21 job, always, with that job's JUnit results beside the
-  coverage, so you can see which tests ran and which were skipped; `api-compatibility-report-jdk21-<os>`
-  only when a job fails.
-- **Codecov** gets one upload per run, from the Linux JDK 21 job, authenticated with OIDC. A pull request from a
-  fork, or a run Dependabot triggers, skips the upload, because GitHub issues no OIDC token to it.
+  coverage; `api-compatibility-report-jdk21-<os>` only when a job fails.
+- **Codecov** gets one upload per run, from the Linux JDK 21 job, authenticated with OIDC. Runs from a fork or
+  Dependabot skip it: GitHub gives them no OIDC token.
 - **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests only read them,
-  as does the release workflow's `publish` job. The configuration cache isn't saved, because that needs an
+  as does the release workflow's `publish` job. The configuration cache isn't saved: that needs an
   encryption key.
 
 No branch protection requires a check; maintainers merge when CI and the title check are green.
@@ -227,7 +228,7 @@ Excluding a rule for every project is done once, in `config/pmd/ruleset.xml`, wi
 Every Javadoc task runs with `-Xdoclint:all -Werror`, so a missing comment, `@param`, `@return` or `@throws`, a
 broken `{@link}` or bad HTML fails the build. `check` depends on the Javadoc in two places:
 
-- Each published project's `javadoc` task documents its own module. Its output is what the project's `-javadoc.jar`
+- Each jar project's `javadoc` task documents its own module. Its output is what the project's `-javadoc.jar`
   packages at publish time.
 - The root project's `javadoc` task builds one site for all the modules in `build/docs/javadoc`. It hands the
   javadoc tool the modules rather than source files, so it documents only the packages they export, and passes
