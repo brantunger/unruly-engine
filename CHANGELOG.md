@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.6.3](https://github.com/brantunger/unruly-engine/compare/v2.6.2...v2.6.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* call the setter Java would call beside an inherited setter declared with a type variable ([#600](https://github.com/brantunger/unruly-engine/issues/600)) ([2cb11f9](https://github.com/brantunger/unruly-engine/commit/2cb11f95a17412c2cf01a317716e5de5e57c0d48))
+
 ## [2.6.2](https://github.com/brantunger/unruly-engine/compare/v2.6.1...v2.6.2) (2026-09-24)
 
 
