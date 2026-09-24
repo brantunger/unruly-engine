@@ -42,16 +42,18 @@ public class ErrorMessageCauseTest {
     }
 
     @Test
-    @DisplayName("a root cause without a message is named by its class")
+    @DisplayName("an exception without a message from a method the rule called is named by its class")
     void rootCauseNamed() {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(Map::of);
         engine.load(List.of(rule("a", "true", "output.put('k', null)")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
-        assertTrue(ex.getMessage().startsWith("Failed to execute action for rule 'a': [Error: output.put('k', null)"),
+        // What put threw is the cause, without MVEL's exceptions over it, so their [Error: ...] text isn't there;
+        // FailureReportingTest names a messageless root cause under them.
+        assertEquals("Failed to execute action for rule 'a': java.lang.UnsupportedOperationException",
                 ex.getMessage());
-        assertTrue(ex.getMessage().endsWith(" (caused by java.lang.UnsupportedOperationException)"), ex.getMessage());
+        assertInstanceOf(UnsupportedOperationException.class, ex.getCause());
     }
 
     @Test

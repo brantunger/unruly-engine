@@ -377,13 +377,12 @@ it.
 
 ## 🔗 A missing class is reported like any other failure
 
-**What changed:** the engine used to rethrow every `Error` except `StackOverflowError` and `AssertionError`
-unchanged, so a `LinkageError` escaped `run()` and `load()` raw, with no rule name. Now only a
-`VirtualMachineError` other than `StackOverflowError` — `OutOfMemoryError`, `InternalError`, `UnknownError` —
-escapes.
+**What changed:** 1.x rethrew every `Error` except `StackOverflowError` and `AssertionError` unchanged, so a
+`LinkageError` escaped `run()` and `load()` raw, with no rule name. Now only a `VirtualMachineError` other than
+`StackOverflowError` — `OutOfMemoryError`, `InternalError`, `UnknownError` — escapes.
 
-Every other `Error` is reported like an exception, naming the rule and keeping the error as its cause. That covers
-every `LinkageError`: `NoClassDefFoundError`, `IllegalAccessError`, `IncompatibleClassChangeError`,
+Every other `Error` is reported like an exception, naming the rule and keeping the error in its cause chain. That
+covers every `LinkageError`: `NoClassDefFoundError`, `IllegalAccessError`, `IncompatibleClassChangeError`,
 `ExceptionInInitializerError`, `VerifyError`. A missing or unreadable class means one rule is misconfigured, not that
 the JVM is failing — for example a fact class exported only to `mvel2` on the module path.
 
@@ -394,7 +393,7 @@ by another listener. This reverses a 1.x decision, and the API compatibility che
 
 | 1.x | 2.0 |
 | --- | --- |
-| `catch (NoClassDefFoundError e)` around `load(rules)` | `catch (RuleCompilationException e)`; `e.getRuleName()` names the rule and `e.getCause()` is the error |
+| `catch (NoClassDefFoundError e)` around `load(rules)` | `catch (RuleCompilationException e)`; `e.getRuleName()` names the rule; the error is in the cause chain |
 | `catch (LinkageError e)` around `run(facts)` | `catch (RuleExecutionException e)`, with the error as its cause |
 | A listener throwing a `LinkageError` to abort a run | It's contained and logged at WARN, like any listener failure; the run continues |
 | `catch (OutOfMemoryError e)` | Unchanged: a `VirtualMachineError` still escapes unchanged |

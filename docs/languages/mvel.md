@@ -1,14 +1,14 @@
 # ⚡ MVEL
 
 MVEL is the engine's default expression language: a rule is written in MVEL when its `language` is unset or
-`"mvel"`. MVEL looks like Java, with some extra operators and looser typing.
+`"mvel"`. MVEL looks like Java, with some extra operators and looser typing; see
+[MVEL gotchas](mvel-gotchas.md).
 
 [← Documentation index](../README.md)
 
 - [MVEL cheat sheet](#-mvel-cheat-sheet)
 - [Classes and imports](#-classes-and-imports)
 - [Facts in MVEL](#-facts-in-mvel)
-- [Comparison gotchas](#-comparison-gotchas)
 - [Strong typing](#-strong-typing)
 - [Errors when rules load](#-errors-when-rules-load)
 - [Compiled copies](#-compiled-copies)
@@ -52,9 +52,13 @@ Every example below was checked against the engine. For the full language, see t
 | Define a function | `def bonus(score) { score / 100 }; output.bonus = bonus(applicant.creditScore)` (not with [strong typing](#-strong-typing)) |
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
-An action changes `output` in place, as in `output.approved = true`, `output.setInterestRate(4.5)` or
-`output.put(...)`, and the value the action evaluates to is ignored, so `output.approved = true; 42` is fine. Assigning
-to `output` itself, as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
+An action changes `output` in place, by calling a method, such as `output.setInterestRate(4.5)` or `output.put(...)`,
+or by assigning a property. An assignment such as `output.approved = true` isn't always the same as calling the
+setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
+each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
+
+The value the action evaluates to is ignored, so `output.approved = true; 42` is fine. Assigning to `output` itself,
+as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
 
 So does setting a property the output has no setter or public field for, such as a record's component, on an output
 that isn't a `Map`: `output.approved = true` fails with `could not access property (approved) in: java.lang.Boolean`,
@@ -200,22 +204,6 @@ key is usually a misspelled rule.
 | `order.containsKey('missing')` | `false` |
 | `order.note == null`, when `note` is in the map with the value `null` | `true` |
 
-## 🚧 Comparison gotchas
-
-MVEL compares and computes values more loosely than Java, which can make a condition match, or not match,
-unexpectedly.
-
-| Gotcha | Example | Do this instead |
-| --- | --- | --- |
-| 🔤 **Enums vs strings** | `order.status == 'SHIPPED'` is always `false` when `status` is an enum, with no error | `order.status.name() == 'SHIPPED'` |
-| 🔢 **Type coercion** | `'1' == 1` is `true`. A `BigDecimal` of `1.00` equals `1`. | Compare values of the same type when the difference matters |
-| ➗ **Division** | Without [strong typing](#-strong-typing), MVEL divides as doubles, so `total / count` is `Infinity` when `count` is 0, not an error. With it on, MVEL computes in the declared types, so `total / count` on two `Integer` facts is an `Integer` and loses the fraction, and dividing by zero throws `ArithmeticException` | Check the divisor first: `count != 0 && total / count > 100` |
-| 🔠 **String ordering** | A String fact `"10"` compared as `s > 9` is `true`, but `'10' > '9'` compares text and is `false` | Convert first: `Integer.parseInt(s) > 9` |
-| 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
-| ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](#null-and-missing-facts) | `isdef x && x > 1` |
-| 🔑 **A key missing from a `Map` fact** | `order.missing == null` fails the run with `could not access: missing`, rather than being `true` | `order['missing'] == null`, or `order.containsKey('missing')` |
-| 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
-
 ## 🦺 Strong typing
 
 MVEL can compile rules against the facts an engine declares, so a misspelled property or an unknown fact fails
@@ -240,9 +228,8 @@ so with the option on, `load()` fails, saying why, unless all of these hold:
 | No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
 | `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
 
-Strong typing also changes arithmetic, because MVEL then computes in the declared types rather than in doubles:
-`total / count` on two `Integer` facts is an `Integer`, and dividing by zero throws `ArithmeticException`, where the
-same condition gives `Infinity` with the option off.
+Strong typing also changes arithmetic: MVEL computes in the declared types rather than in doubles; see the
+Division row of [Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
 
 See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
 doesn't catch a condition that isn't a boolean; the engine checks that itself, whatever the language.
@@ -359,6 +346,14 @@ The same optimizer is why a class the `load()` thread's context class loader can
 50 runs in quick succession: until the optimizer steps in, MVEL reads the fact reflectively and the rule works. A
 steady trickle of runs never reaches the burst, so tests pass and production fails. See
 [Class loaders](../thread-safety.md#-class-loaders).
+
+When a rule's Java code throws, the failure's `getCause()` is what it threw, except in two cases, where MVEL's
+exception stays above it in the chain:
+
+- Code MVEL calls without reflection, such as your own `Map`'s `get()` for `order.id`, or a `toString()` converting
+  an argument: until the optimizer compiles the expression, and always with `-Dmvel2.disable.jit=true`.
+- An argument's code, such as `code.value` in `output.put('a', code.value)`, when the optimizer compiled the
+  argument but not the call around it, which can happen while it compiles and then last.
 
 ## 🧵 Virtual threads
 

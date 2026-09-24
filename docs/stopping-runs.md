@@ -84,8 +84,7 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 - **An exception with an `Error` anywhere in its cause chain is that rule's failure,** even once the run must stop:
   it names the rule, what the expression threw is its `getCause()` rather than a suppressed exception, and it's
   logged at ERROR. That is exactly what the same throw reports when the run isn't stopping. The case to expect is an
-  `Error` thrown by Java code a rule calls — a method, a getter or a lambda held in a fact — which MVEL wraps in its
-  own exception; then the `Error` sits deeper in the chain than `getCause()`. A
+  `Error` thrown by Java code a rule calls: a method, a getter or a lambda held in a fact. A
   [fatal error](glossary.md#fatal-error) still escapes `run()` unchanged, stopping or not.
 - **A thread that is already interrupted** stops before its first rule, or fails at once if it would have to wait
   for a copy; see [Limiting the copies](compiled-copies.md#-limiting-the-copies).
