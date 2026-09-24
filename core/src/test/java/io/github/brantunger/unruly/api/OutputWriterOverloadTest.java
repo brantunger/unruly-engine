@@ -598,6 +598,10 @@ class OutputWriterOverloadTest {
         }
     }
 
+    /** What a failure for a number adds where the only setter that takes a primitive or a wrapper takes an Integer. */
+    private static final String INTEGER_SETTER_EXISTS = " (setContent(java.lang.Integer) exists, but a value is only"
+            + " widened as Java widens a primitive, never narrowed or converted)";
+
     private static String set(Object output, String property, Object value) throws Exception {
         OutputWriter.beansAndMaps().set(output, property, value);
         return (String) output.getClass().getDeclaredField("setter").get(output);
@@ -658,8 +662,8 @@ class OutputWriterOverloadTest {
     }
 
     @Test
-    @DisplayName("an Integer goes to the int setter, as no primitive setter but its own accepts it")
-    void onlyTheWrappersPrimitive() throws Exception {
+    @DisplayName("an Integer goes to the int setter, not the long one it also widens to")
+    void wrappersOwnPrimitiveBeforeAWiderOne() throws Exception {
         assertEquals("int", set(new Limits(), "limit", 7));
     }
 
@@ -701,7 +705,7 @@ class OutputWriterOverloadTest {
                 () -> set(new IntegerNumberBox(), "content", 5L));
 
         assertEquals(IntegerNumberBox.class.getName() + " has no public method setContent that accepts a"
-                + " java.lang.Long", thrown.getMessage());
+                + " java.lang.Long" + INTEGER_SETTER_EXISTS, thrown.getMessage());
         assertEquals("Integer", set(new IntegerNumberBox(), "content", 1));
     }
 
@@ -719,7 +723,7 @@ class OutputWriterOverloadTest {
                 () -> set(new IntegerOrTextBox(), "content", 5L));
 
         assertEquals(IntegerOrTextBox.class.getName() + " has no public method setContent that accepts a"
-                + " java.lang.Long", thrown.getMessage());
+                + " java.lang.Long" + INTEGER_SETTER_EXISTS, thrown.getMessage());
     }
 
     @Test
@@ -730,7 +734,7 @@ class OutputWriterOverloadTest {
                 () -> set(new IntegerNumberOrTextBox(), "content", 5L));
 
         assertEquals(IntegerNumberOrTextBox.class.getName() + " has no public method setContent that accepts a"
-                + " java.lang.Long", thrown.getMessage());
+                + " java.lang.Long" + INTEGER_SETTER_EXISTS, thrown.getMessage());
         assertEquals("String", set(new IntegerNumberOrTextBox(), "content", "s"));
         assertEquals("Integer", set(new IntegerNumberOrTextBox(), "content", 1));
     }
@@ -779,8 +783,10 @@ class OutputWriterOverloadTest {
             IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
                     () -> OutputWriter.beansAndMaps().set(new InheritedBesideOthersHolder(), "content", value));
 
+            // The static setContent(Long) isn't a setter, so the note for a number names only setContent(Integer).
             assertEquals(InheritedBesideOthersHolder.class.getName() + " has no public method setContent that"
-                    + " accepts a " + value.getClass().getName(), thrown.getMessage());
+                    + " accepts a " + value.getClass().getName() + (value instanceof Number ? INTEGER_SETTER_EXISTS
+                    : ""), thrown.getMessage());
         }
         assertNull(IntegerBesideOthers.parsed);
         InheritedBesideOthersHolder holder = new InheritedBesideOthersHolder();

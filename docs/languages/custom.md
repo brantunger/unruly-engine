@@ -291,7 +291,7 @@ doesn't can skip the [contract kit](contract-kit.md)'s check by overriding
 
 `FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
 that reads only maps. It throws `IllegalArgumentException` for a value it doesn't take apart, such as a number, a
-string or a collection, so don't call it on each fact: convert the whole fact map, with one more level.
+string or a collection, so convert the whole fact map, with one more level, not each fact.
 
 ```java
 Map<String, Object> data = FactProperties.toData(evaluation.facts(), depth + 1);
@@ -300,17 +300,18 @@ Map<String, Object> data = FactProperties.toData(evaluation.facts(), depth + 1);
 
 ## 📤 Actions and results
 
-An action that changes `output` in place returns `ActionResult.done()`. A language whose expressions compute values
-without side effects, such as CEL or JsonLogic, returns `ActionResult.set(Map.of("approved", true, "interestRate",
-4.5))` instead. `set` copies the map; a `null` name throws `NullPointerException`, an empty one
-`IllegalArgumentException`, and `null` values are allowed.
+An action that changes `output` in place returns `ActionResult.done()`. A language without side effects, such as CEL
+or JsonLogic, returns `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. `set` copies the
+map; a `null` name throws `NullPointerException`, an empty one `IllegalArgumentException`, and `null` values are
+allowed.
 
 The engine sets each property in map order after the action returns, and after its cancellation check, with its
-`OutputWriter`: by default `put` on a `Map` output, or the output's public setter, such as `setInterestRate`, whose
-parameter accepts the value as it is, reached the same way `FactProperties` reaches a getter. Among overloads, it
-calls the most specific, as Java would; see [The output object](../engines-and-runs.md#-the-output-object).
+`OutputWriter`: by default `put` on a `Map` output, or the output's public setter, reached the same way
+`FactProperties` reaches a getter. It widens a boxed primitive only as Java does, and only when no setter takes it as
+it is, so a `Long` never reaches an `int` setter; see
+[The output object](../engines-and-runs.md#-the-output-object).
 
-The application can set its own writer with `.outputWriter(...)`, so don't assume how a property is stored. A property
+An application can set its writer with `.outputWriter(...)`; don't assume how a property is stored. A property
 the writer can't set, or a `null` result, fails the rule with a `RuleExecutionException`. In an all-matches run, a
 later rule's properties overwrite an earlier one's.
 

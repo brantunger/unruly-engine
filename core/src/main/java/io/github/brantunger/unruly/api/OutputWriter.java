@@ -38,10 +38,14 @@ public interface OutputWriter<O> {
     /**
      * Returns the default writer. It sets a property with {@code put} on a {@link java.util.Map} output, and otherwise
      * with the output's public setter whose parameter accepts the value, such as {@code setInterestRate} for
-     * {@code interestRate}. Values aren't converted, so a setter taking a {@code double} doesn't accept an
-     * {@link Integer}. An output without such a setter fails with {@link IllegalArgumentException}. Of overloaded
-     * setters, it calls the most specific one that accepts the value, as Java would; when no single one is the most
-     * specific, the choice is fixed for the output class and the same on every run.
+     * {@code interestRate}. A boxed primitive, only when no setter takes it as it is, goes to a setter taking a
+     * primitive that Java widens it to, so an {@link Integer} reaches a setter taking a {@code long} or a
+     * {@code double}. No value is otherwise converted: never narrowed, so a setter taking an {@code int} doesn't accept
+     * a {@link Long}, and never from one wrapper to another, so a setter taking a {@link Long} doesn't accept an
+     * {@link Integer}. An output without such a setter fails with {@link IllegalArgumentException}, which, for a
+     * number, a character or a boolean, names the setters of the property that take a primitive or a wrapper. Of
+     * overloaded setters, it calls the most specific one that accepts the value, as Java would; when no single one is
+     * the most specific, the choice is fixed for the output class and the same on every run.
      *
      * <p>
      * The setter is reached the way {@link io.github.brantunger.unruly.api.language.FactProperties} reaches a getter:
