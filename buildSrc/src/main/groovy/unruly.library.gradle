@@ -95,9 +95,10 @@ tasks.withType(JavaCompile).configureEach {
 def newestRelease = { String notation ->
     def configuration = configurations.detachedConfiguration(dependencies.create("${notation}@jar"))
     configuration.transitive = false
-    // A new release becomes the baseline within a day of Maven Central serving it, or at once with
-    // -PapiCheck.refresh, which the release workflow passes. Looking it up on every build would stop the configuration
-    // cache from being reused, because the cached lookup would always have expired.
+    // CI and the release workflow pass -PapiCheck.refresh, so they look the newest release up on every build. A local
+    // build keeps the lookup for 24 hours, so it may compare with a release up to a day old; pass -PapiCheck.refresh
+    // for the newest. Looking it up on every local build would stop the configuration cache from being reused,
+    // because the cached lookup would always have expired.
     configuration.resolutionStrategy.cacheDynamicVersionsFor(refreshBaseline ? 0 : 24, 'hours')
     def dependency = configuration.incoming.resolutionResult.rootComponent.get().dependencies.first()
     [configuration: configuration, dependency: dependency]

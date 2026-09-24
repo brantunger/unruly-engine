@@ -155,5 +155,5 @@ build checks that download too. The metadata trusts this project's release signi
 `io.github.brantunger` group, so a new release becomes the baseline without a regeneration.
 
 A new release signing key is different: the build doesn't trust it. Once the first release signed with it is the
-baseline, within a day of it reaching Central, the build fails until you regenerate. RELEASING.md's
+baseline, at once in CI and within a day in a local build, the build fails until you regenerate. RELEASING.md's
 [Rotating the key](../../RELEASING.md#rotating-the-key) includes that step.

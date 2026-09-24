@@ -116,9 +116,14 @@ jobs:
       # the Javadoc site and each project's Javadoc, so a broken doc comment fails here, and the tests, including the
       # applications ModulePathTest runs on the module path. On Windows the default shell, pwsh, resolves ./gradlew
       # to gradlew.bat.
+      #
+      # -PapiCheck.refresh looks the API baseline, the newest release, up again. Without it, the version lookup in the
+      # Gradle cache that setup-gradle restores can be up to a day old, so a leg could compare with an older release.
+      # Local builds keep the lookup for 24 hours so the configuration cache can be reused; CI doesn't save that cache,
+      # so it loses nothing. The JDK 25 step and the native-image job don't run the check, so they don't need it.
       - name: Build & Test
         if: matrix.java-version == '21'
-        run: ./gradlew build jacocoTestReport
+        run: ./gradlew build jacocoTestReport "-PapiCheck.refresh"
 
       # Compilation always uses the Java 21 toolchain, so only the tests depend on this JDK; -PtestJdk runs them on it.
       # All three test tasks: core has its own tests, mvel the ones that need MVEL, the kit's MVEL tests among them,
