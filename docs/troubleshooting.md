@@ -80,7 +80,7 @@ A first-match engine hides the overlap by firing the higher priority. A
 ### A comparison is never true
 
 In MVEL, an enum compared with a string is `false`, with no error, and other comparisons are looser than Java's. See
-[Comparison gotchas](languages/mvel.md#-comparison-gotchas).
+[Comparison gotchas](languages/mvel-gotchas.md#-comparison-gotchas).
 
 ### Output from the previous request shows up
 
@@ -171,7 +171,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, or a class that isn't imported; see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
 | `RuleExecutionException` | `could not resolve class` | In MVEL, `new X()` for a class that isn't imported, or imported from a package that doesn't exist; see [Classes and imports](languages/mvel.md#-classes-and-imports) |
 | `RuleExecutionException` | `could not access: ` | In MVEL, a misspelled property, a private field without a getter, or a `Map` without the key; see [Facts in MVEL](languages/mvel.md#-facts-in-mvel) for a property and [Reading a fact's properties](facts.md#-reading-a-facts-properties) for a `Map` |
-| `RuleExecutionException` | `could not access field` | In MVEL, the fact's class isn't public, or its package isn't exported on the module path; see [Comparison gotchas](languages/mvel.md#-comparison-gotchas) and [Installation](../README.md#-installation) |
+| `RuleExecutionException` | `could not access field` | In MVEL, the fact's class isn't public, or its package isn't exported on the module path; see [Comparison gotchas](languages/mvel-gotchas.md#-comparison-gotchas) and [Installation](../README.md#-installation) |
 | `RuleExecutionException` | `could not access property (` | In MVEL, an action sets a property the output has no setter or public field for, such as a record's component, and the output isn't a `Map`; see [Mostly in actions](languages/mvel.md#mostly-in-actions) |
 | `RuleExecutionException` | `Cannot assign 'output'` | In MVEL, an action assigned to `output` itself; see [Mostly in actions](languages/mvel.md#mostly-in-actions) |
 | `RuleExecutionException` | `A condition expression must evaluate to a boolean` | The condition returned `null` or a non-boolean; see [Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running). After `returned no result from evaluateWithDetail`, the rule's expression language returned `null` from `evaluateWithDetail`: a bug in the language, not in the rule; see [Explaining a condition's result](languages/custom.md#explaining-a-conditions-result) |

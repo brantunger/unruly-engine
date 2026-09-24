@@ -49,16 +49,25 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     @Override
-    public Object evaluate(EvaluationContext context, Session session) {
-        return MVEL.executeExpression(compiledIn(session), (Object) null, context.facts());
+    public Object evaluate(EvaluationContext context, Session session) throws Exception {
+        try {
+            return MVEL.executeExpression(compiledIn(session), (Object) null, context.facts());
+        } catch (RuntimeException e) {
+            // What the rule's Java code threw, so a failure has the same cause before and after MVEL's JIT.
+            throw CalledCodeFailures.<RuntimeException>unwrapped(e);
+        }
     }
 
     @Override
-    public ActionResult execute(ActionContext context, Session session) {
+    public ActionResult execute(ActionContext context, Session session) throws Exception {
         // Reads the facts; the output object and the action's own assignments stay in this action, which changes the
         // output in place.
-        MVEL.executeExpression(compiledIn(session), (Object) null,
-                new ActionVariables(context.facts(), context.output()));
+        try {
+            MVEL.executeExpression(compiledIn(session), (Object) null,
+                    new ActionVariables(context.facts(), context.output()));
+        } catch (RuntimeException e) {
+            throw CalledCodeFailures.<RuntimeException>unwrapped(e);
+        }
         return ActionResult.done();
     }
 

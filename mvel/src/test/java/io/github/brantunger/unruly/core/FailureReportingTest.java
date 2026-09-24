@@ -515,4 +515,14 @@ class FailureReportingTest {
 
         assertEquals("[Error: b.boom(): no room]", Failures.describe(mvel));
     }
+
+    @Test
+    @DisplayName("a root cause without a message is named by its class")
+    void rootCauseWithoutAMessage() {
+        RuntimeException mvel = new RuntimeException("[Error: output.put('k', null)]",
+                new InvocationTargetException(new UnsupportedOperationException()));
+
+        assertEquals("[Error: output.put('k', null)] (caused by java.lang.UnsupportedOperationException)",
+                Failures.describe(mvel));
+    }
 }

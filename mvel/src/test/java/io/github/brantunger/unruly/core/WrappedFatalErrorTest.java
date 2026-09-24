@@ -60,7 +60,10 @@ class WrappedFatalErrorTest {
         }
     };
 
-    /** Java code a rule calls. MVEL wraps what it throws, which is how a real OutOfMemoryError reaches a rule. */
+    /**
+     * Java code a rule calls, which is how a real OutOfMemoryError reaches a rule. The MVEL language hands on what it
+     * throws as it threw it; {@link #wrapped()} is code that wraps it in an exception of its own.
+     */
     public static class Bomb {
         private final Error error;
 
