@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.6.2](https://github.com/brantunger/unruly-engine/compare/v2.6.1...v2.6.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* make an MVEL rule's getCause() the exception its Java code threw on every run, not only after MVEL's JIT ([#598](https://github.com/brantunger/unruly-engine/issues/598)) ([7ecfcff](https://github.com/brantunger/unruly-engine/commit/7ecfcffe1debc35488e4c863c54fdcba499272af))
+
 ## [2.6.1](https://github.com/brantunger/unruly-engine/compare/v2.6.0...v2.6.1) (2026-09-24)
 
 
