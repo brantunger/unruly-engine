@@ -1583,8 +1583,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
-            // A writer of its own may throw one with no cause.
-            throw propertyFailure(snapshot, rule, property, e.getCause() != null ? e.getCause() : e);
+            // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
+            Throwable cause = Failures.causeOf(e);
+            throw propertyFailure(snapshot, rule, property, cause != null ? cause : e);
         } catch (Throwable e) {
             throw propertyFailure(snapshot, rule, property, e);
         }
@@ -1700,9 +1701,27 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private static void logListenerException(String callback, Throwable thrown) {
         // Escaped, like every message the engine logs: a listener's message can quote request data. The stack trace,
-        // which prints the message as it is, goes to DEBUG for whoever debugs the listener.
+        // which prints the message as it is, goes to DEBUG for whoever debugs the listener; it's left out if printing
+        // it throws, as a listener's own exception can.
         log.warn("Listener threw exception in {}: {}", callback, Failures.describeWithClass(thrown));
-        log.debug("Listener threw exception in {}", callback, thrown);
+        logStackTrace(() -> log.debug("Listener threw exception in {}", callback, thrown));
+    }
+
+    /**
+     * Makes a log call that hands the logging backend a throwable the engine didn't create, to print its stack trace.
+     * Printing it calls the {@code toString()} of the throwable, of each of its causes and of each suppressed
+     * exception, and one of a listener's own can throw; the stack trace is then left out, whatever was thrown, a fatal
+     * {@link Error} too, rather than let that end the failure handling the call is part of (see
+     * {@link Failures#messageOf}).
+     *
+     * @param logCall The log call
+     */
+    static void logStackTrace(Runnable logCall) {
+        try {
+            logCall.run();
+        } catch (Throwable ignored) {
+            // Only the stack trace is lost; the line before it has said what failed.
+        }
     }
 
     /**
@@ -1720,7 +1739,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // Says which one onRunError can see: the loop has already logged any later fatal error.
             log.warn("Listener threw exception in onError, kept on the failure: {}",
                     Failures.describeWithClass(fromListener));
-            log.debug("Listener threw exception in onError", fromListener);
+            logStackTrace(() -> log.debug("Listener threw exception in onError", fromListener));
         }
     }
 
@@ -1883,9 +1902,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Compiles one condition or action. An expression the language rejects is reported with the language's reason and
-     * issues; anything else the language throws, such as a syntax error it doesn't point to, becomes the cause of the
-     * failure. A fatal {@link Error}, also one the language wraps in its own exception, is logged like any failure and
-     * then rethrown.
+     * issues, or with none if its exception can't give them (see {@link Failures#issuesOf}); anything else the
+     * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A fatal
+     * {@link Error}, also one the language wraps in its own exception, is logged like any failure and then rethrown.
      *
      * @param source      The expression to compile
      * @param compilation Compiles it with the rule's language
@@ -1899,10 +1918,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             compiled = compilation.apply(source);
         } catch (InvalidExpressionException e) {
-            String reason = e.getMessage() != null
-                    ? Failures.escape(Failures.truncate(e.getMessage()))
-                    : "was rejected by its expression language";
-            throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(), e.issues());
+            // A language's own subclass may have a getMessage() or an issues() that throws.
+            String reason = Failures.escape(Failures.truncate(
+                    Failures.messageOr(e, "was rejected by its expression language")));
+            throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(),
+                    Failures.issuesOf(e));
         } catch (Throwable e) {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
             String reason = Failures.rootCause(e) instanceof StackOverflowError

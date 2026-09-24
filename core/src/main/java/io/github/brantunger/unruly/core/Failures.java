@@ -12,6 +12,8 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
@@ -27,6 +29,9 @@ public final class Failures {
 
     /** How much of a fact, rule or language name a message includes; see {@link #quote}. */
     static final int MAX_NAME_LENGTH = 200;
+
+    /** How many links of an exception's cause chain the engine reads; see {@link #causeChain}. */
+    static final int MAX_CAUSE_CHAIN_LENGTH = 100;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
@@ -168,6 +173,8 @@ public final class Failures {
      *     to the error's column, so a long expression produced messages hundreds of thousands of characters long</li>
      *     <li>the message {@link #escape escaped}, because the engine didn't write it: a language quotes the fact
      *     values a failing expression read, and those come from request data far more often than names do</li>
+     *     <li>its class name and a note that its message is unavailable when {@code getMessage()} throws (see
+     *     {@link #messageOf}), and likewise for a cause</li>
      * </ul>
      * The message is shortened before it's escaped, so the count of what was left out counts the exception's own
      * characters. The exception is never changed: its {@code getMessage()} still reads as the language wrote it.
@@ -180,15 +187,19 @@ public final class Failures {
     static String describe(Throwable e) {
         RuleExecutionException nested = nestedRunFailure(e);
         if (nested != null) {
-            return "a nested run() failed: " + nested.getMessage();
+            return "a nested run() failed: " + messageOf(nested);
         }
-        String text = escape(truncate(e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
+        String text = escape(truncate(messageOr(e, e.getClass().getName())));
         return text + causeNote(causeChain(e));
     }
 
     /**
      * Names the root cause when a description would otherwise hide it: its class when it has no message, and its class
      * and message when an exception above it has none and the first exception's message doesn't already include it.
+     * A message that can't be read (see {@link #messageOf}) hides the root cause as a missing one does, and a root
+     * cause whose message can't be read is named with the note that it's unavailable. Only a first exception whose
+     * message can be read can already include the root cause's: two notes that messages are unavailable read the same
+     * whatever the messages were.
      *
      * @param chain An exception and its causes
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
@@ -198,14 +209,15 @@ public final class Failures {
             return "";
         }
         Throwable root = chain.get(chain.size() - 1);
-        if (root.getMessage() == null) {
+        String rootMessage = messageOf(root);
+        if (rootMessage == null) {
             return " (caused by " + quote(root.getClass().getName()) + ")";
         }
-        String first = chain.get(0).getMessage();
-        boolean hidden = chain.stream().anyMatch(t -> t.getMessage() == null)
-                && (first == null || !first.contains(root.getMessage()));
+        String first = readableMessage(chain.get(0));
+        boolean hidden = !chain.stream().allMatch(t -> readableMessage(t) != null)
+                && (first == null || !first.contains(rootMessage));
         return hidden
-                ? " (caused by " + quote(root.getClass().getName()) + ": " + escape(truncate(root.getMessage())) + ")"
+                ? " (caused by " + quote(root.getClass().getName()) + ": " + escape(truncate(rootMessage)) + ")"
                 : "";
     }
 
@@ -214,15 +226,120 @@ public final class Failures {
      * calls outside any rule, such as the output factory: escaped and shortened like {@link #describe}, and naming a
      * root cause it would otherwise hide as {@link #describe} does. The note is left out when the text already has it,
      * as the message of a {@code run()} started from that code does unless it was shortened, so it isn't there twice.
+     * When {@code toString()} throws, its class name stands in with a note that its message is unavailable (see
+     * {@link #textOf}).
      *
      * @param e The exception to describe
      * @return Its class name, its message if it has one, and a note of its root cause if the message hides it and the
      *         text doesn't already have that note
      */
     static String describeWithClass(Throwable e) {
-        String text = escape(truncate(e.toString()));
+        String text = escape(truncate(textOf(e)));
         String note = causeNote(causeChain(e));
         return text.contains(note) ? text : text + note;
+    }
+
+    /**
+     * Reads an exception's message without letting a failure to read it escape. The engine reads the message of what
+     * rules, listeners and languages throw to describe it, and a {@code getMessage()} of their own can throw, such as
+     * one built from a field that is {@code null}; a failure the engine was handling would then end as that one.
+     * Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the message unavailable (see
+     * {@link #read}).
+     *
+     * @param e The exception
+     * @return Its message, or {@code null} if it has none, or {@code (message unavailable: ...)}, naming the class of
+     *         what {@code getMessage()} threw, if it can't be read
+     */
+    static String messageOf(Throwable e) {
+        return read(e::getMessage, unavailable(""));
+    }
+
+    /**
+     * Reads an exception's message as {@link #messageOf} does, telling no message and one that can't be read apart
+     * from one that says something.
+     *
+     * @param e The exception
+     * @return Its message, or {@code null} if it has none or it can't be read
+     */
+    private static String readableMessage(Throwable e) {
+        return read(e::getMessage, thrown -> null);
+    }
+
+    /**
+     * Reads an exception's message as {@link #messageOf} does, with a stand-in for a message it doesn't have.
+     *
+     * @param e      The exception
+     * @param ifNone What to return if it has no message
+     * @return Its message, or {@code ifNone} if it has none, or {@code ifNone} followed by
+     *         {@code (message unavailable: ...)} if the message can't be read
+     */
+    static String messageOr(Throwable e, String ifNone) {
+        return read(() -> {
+            String message = e.getMessage();
+            return message != null ? message : ifNone;
+        }, unavailable(ifNone + " "));
+    }
+
+    /**
+     * Reads an exception's {@link Throwable#toString()} as {@link #messageOf} reads its message. The default
+     * {@code toString()} reads the message, so an exception whose {@code getMessage()} throws fails here too.
+     *
+     * @param e The exception
+     * @return Its {@code toString()}, or its class name followed by {@code (message unavailable: ...)} if that throws
+     */
+    static String textOf(Throwable e) {
+        return read(e::toString, unavailable(e.getClass().getName() + " "));
+    }
+
+    /**
+     * Makes the note that an exception's text can't be read, naming only the class of what reading it threw: that
+     * one's own message could be what throws.
+     *
+     * @param prefix What goes before the note
+     * @return What turns what the accessor threw into {@code prefix} and the note
+     */
+    private static Function<Throwable, String> unavailable(String prefix) {
+        return thrown -> prefix + "(message unavailable: " + thrown.getClass().getName() + ")";
+    }
+
+    /**
+     * Calls one of the accessors of an exception the engine didn't create, none of which is final, without letting
+     * anything it throws escape, a fatal {@link Error} too: what an accessor throws says nothing about the failure the
+     * engine is handling, which is still handled as it would be, its own fatal errors included.
+     *
+     * @param accessor The accessor
+     * @param ifThrown What to return instead, from what the accessor threw
+     * @param <T>      What the accessor returns
+     * @return What the accessor returned, or what {@code ifThrown} makes of what it threw
+     */
+    private static <T> T read(Supplier<T> accessor, Function<Throwable, T> ifThrown) {
+        try {
+            return accessor.get();
+        } catch (Throwable thrown) {
+            return ifThrown.apply(thrown);
+        }
+    }
+
+    /**
+     * Reads an exception's cause as {@link #messageOf} reads its message: {@code getCause()} isn't final either.
+     *
+     * @param e The exception
+     * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
+     */
+    static Throwable causeOf(Throwable e) {
+        return read(e::getCause, thrown -> null);
+    }
+
+    /**
+     * Reads the issues a language reported with an expression it rejected, as {@link #messageOf} reads a message:
+     * {@code issues()} isn't final either, and a language's own subclass may throw from it, or return {@code null} or
+     * a list with a {@code null} in it, which the {@code RuleCompilationException} that reports them can't take.
+     *
+     * @param e The exception
+     * @return A copy of its issues, or no issues if they can't be read
+     */
+    static List<InvalidExpressionException.Issue> issuesOf(InvalidExpressionException e) {
+        return read(() -> List.copyOf(e.issues()), thrown -> List.of());
     }
 
     /**
@@ -349,11 +466,15 @@ public final class Failures {
         return chain.get(chain.size() - 1);
     }
 
-    /** Lists {@code e} and its causes, stopping if the chain loops back on itself. */
+    /**
+     * Lists {@code e} and its causes, stopping if the chain loops back on itself, at a link whose {@code getCause()}
+     * throws (see {@link #causeOf}), or after {@value #MAX_CAUSE_CHAIN_LENGTH} links: a {@code getCause()} of its own
+     * that returns a new exception every time would otherwise make a chain that never ends.
+     */
     private static List<Throwable> causeChain(Throwable e) {
         List<Throwable> chain = new ArrayList<>();
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Throwable t = e; t != null && seen.add(t); t = t.getCause()) {
+        for (Throwable t = e; t != null && chain.size() < MAX_CAUSE_CHAIN_LENGTH && seen.add(t); t = causeOf(t)) {
             chain.add(t);
         }
         return chain;

@@ -36,7 +36,7 @@ final class ImportResolver {
             // system, isn't this class. Any other linkage error means the class exists, and rules couldn't use it.
             if (!isWrongName(e)) {
                 throw new IllegalArgumentException("Can't import '" + name + "': the class exists but can't be loaded: "
-                        + e, e);
+                        + Failures.textOf(e), e);
             }
             return packageImport(name, e);
         }
@@ -55,9 +55,10 @@ final class ImportResolver {
         return null;
     }
 
-    // The JVM's "wrong name" NoClassDefFoundError, as in mvel.ExactNameClassLoader.
+    // The JVM's "wrong name" NoClassDefFoundError, as in mvel.ExactNameClassLoader. The error may come from a context
+    // class loader of the application's own, so its message is read as any exception's the engine didn't create is.
     private static boolean isWrongName(LinkageError error) {
-        String message = error.getMessage();
+        String message = Failures.messageOf(error);
         return error instanceof NoClassDefFoundError && message != null && message.contains("(wrong name: ");
     }
 

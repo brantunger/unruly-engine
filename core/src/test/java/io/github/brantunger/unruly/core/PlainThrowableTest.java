@@ -59,12 +59,12 @@ class PlainThrowableTest {
     private static final String LANGUAGE = StubExpressionLanguage.LANGUAGE_NAME;
 
     /** Every callback on a run whose one rule matches and fires, and that nothing fails. */
-    private static final List<String> EVERY_CALLBACK = List.of("A.beforeRun", "B.beforeRun", "A.beforeEvaluate",
+    static final List<String> EVERY_CALLBACK = List.of("A.beforeRun", "B.beforeRun", "A.beforeEvaluate",
             "B.beforeEvaluate", "A.afterEvaluate", "B.afterEvaluate", "A.beforeExecute", "B.beforeExecute",
             "A.afterExecute", "B.afterExecute", "A.afterRun", "B.afterRun");
 
     /** Every callback on a run whose one rule's action fails. */
-    private static final List<String> FAILED_ACTION = List.of("A.beforeRun", "B.beforeRun", "A.beforeEvaluate",
+    static final List<String> FAILED_ACTION = List.of("A.beforeRun", "B.beforeRun", "A.beforeEvaluate",
             "B.beforeEvaluate", "A.afterEvaluate", "B.afterEvaluate", "A.beforeExecute", "B.beforeExecute",
             "A.onError", "B.onError", "A.onRunError", "B.onRunError");
 
@@ -72,7 +72,7 @@ class PlainThrowableTest {
      * Records each callback it gets, prefixed with its name, and throws {@code failure} from the callback named
      * {@code failIn}, after recording it.
      */
-    private static class Recorder implements RuleListener {
+    static class Recorder implements RuleListener {
         final String name;
         final List<String> calls;
         volatile String failIn;
@@ -144,7 +144,7 @@ class PlainThrowableTest {
      * from compiling a condition, and whose sessions, which keep state of their own, throw {@code warmUpFailure} from
      * being warmed up; each only when set.
      */
-    private static final class ThrowingLanguage implements ExpressionLanguage {
+    static final class ThrowingLanguage implements ExpressionLanguage {
         volatile Throwable conditionFailure;
         volatile Throwable compileFailure;
         volatile Throwable warmUpFailure;
@@ -196,22 +196,22 @@ class PlainThrowableTest {
      * code the compiler thinks throws nothing, as a language or a listener compiled apart can.
      */
     @SuppressWarnings("unchecked")
-    private static <T extends Throwable> void sneakyThrow(Throwable throwable) throws T {
+    static <T extends Throwable> void sneakyThrow(Throwable throwable) throws T {
         throw (T) throwable;
     }
 
-    private static RulesEngineBuilder<Map<String, Object>> builder(ExpressionLanguage language) {
+    static RulesEngineBuilder<Map<String, Object>> builder(ExpressionLanguage language) {
         return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language)
                 .defaultLanguage(LANGUAGE);
     }
 
-    private static RulesEngine<Map<String, Object>> loaded(RulesEngineBuilder<Map<String, Object>> builder) {
+    static RulesEngine<Map<String, Object>> loaded(RulesEngineBuilder<Map<String, Object>> builder) {
         RulesEngine<Map<String, Object>> engine = builder.build();
         engine.load(rules());
         return engine;
     }
 
-    private static List<Rule> rules() {
+    static List<Rule> rules() {
         return List.of(Rule.builder().ruleName("r").condition("c").action("a").build());
     }
 
@@ -610,7 +610,7 @@ class PlainThrowableTest {
      * Returns what {@code action} throws, or {@code null} if it throws nothing. Not {@code assertThrows()}, which
      * rethrows an {@link OutOfMemoryError} it didn't expect, and so would stop the test JVM rather than fail the test.
      */
-    private static Throwable thrownBy(Executable action) {
+    static Throwable thrownBy(Executable action) {
         try {
             action.execute();
         } catch (Throwable t) {
