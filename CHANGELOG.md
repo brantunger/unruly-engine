@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.5.0](https://github.com/brantunger/unruly-engine/compare/v2.4.0...v2.5.0) (2026-09-24)
+
+
+### Features
+
+* widen a boxed primitive to a fact declared with a primitive type, as Java does ([#572](https://github.com/brantunger/unruly-engine/issues/572)) ([26cc576](https://github.com/brantunger/unruly-engine/commit/26cc5769ecd0329bfd5e4e2ecf0dcebbc67e08bf))
+
 ## [2.4.0](https://github.com/brantunger/unruly-engine/compare/v2.3.8...v2.4.0) (2026-09-24)
 
 
