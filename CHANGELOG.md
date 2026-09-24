@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.6.1](https://github.com/brantunger/unruly-engine/compare/v2.6.0...v2.6.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* handle an exception whose getMessage, toString or getCause throws, instead of failing with a raw NullPointerException ([#596](https://github.com/brantunger/unruly-engine/issues/596)) ([f52fb8a](https://github.com/brantunger/unruly-engine/commit/f52fb8ab2c6f4da4079f3ab6950c8dfd2f49ee91))
+
 ## [2.6.0](https://github.com/brantunger/unruly-engine/compare/v2.5.0...v2.6.0) (2026-09-24)
 
 
