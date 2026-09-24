@@ -46,7 +46,7 @@ Requires **Java 21** or later. Moving from 1.x? See the [migration guide](docs/m
 
 <!-- x-release-please-start-version -->
 ```groovy
-implementation 'io.github.brantunger:unruly-engine:2.3.8'
+implementation 'io.github.brantunger:unruly-engine:2.4.0'
 ```
 <!-- x-release-please-end -->
 
@@ -57,7 +57,7 @@ implementation 'io.github.brantunger:unruly-engine:2.3.8'
 
 <!-- x-release-please-start-version -->
 ```kotlin
-implementation("io.github.brantunger:unruly-engine:2.3.8")
+implementation("io.github.brantunger:unruly-engine:2.4.0")
 ```
 <!-- x-release-please-end -->
 
@@ -71,13 +71,13 @@ implementation("io.github.brantunger:unruly-engine:2.3.8")
 <dependency>
     <groupId>io.github.brantunger</groupId>
     <artifactId>unruly-engine</artifactId>
-    <version>2.3.8</version>
+    <version>2.4.0</version>
 </dependency>
 <!-- Only to test a language of your own. Declare it after unruly-engine. -->
 <dependency>
     <groupId>io.github.brantunger</groupId>
     <artifactId>unruly-engine-test</artifactId>
-    <version>2.3.8</version>
+    <version>2.4.0</version>
     <scope>test</scope>
 </dependency>
 ```

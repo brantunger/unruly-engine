@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.4.0](https://github.com/brantunger/unruly-engine/compare/v2.3.8...v2.4.0) (2026-09-24)
+
+
+### Features
+
+* widen a boxed primitive to a primitive setter as Java does, when no setter takes it as it is ([#569](https://github.com/brantunger/unruly-engine/issues/569)) ([703eece](https://github.com/brantunger/unruly-engine/commit/703eece26657b81d271449a2c7a9c049952f0bde))
+
 ## [2.3.8](https://github.com/brantunger/unruly-engine/compare/v2.3.7...v2.3.8) (2026-09-23)
 
 
