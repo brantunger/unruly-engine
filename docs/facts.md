@@ -237,9 +237,9 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 
 - **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
-  declaration. A run that leaves the fact out is unaffected. A primitive type [widens](#primitive-types-widen).
-  Declaring the same name twice keeps the last type. Declaring `output`
-  fails at once, and `load()` fails for a declared name the rules' languages can't refer to.
+  declaration. A run that leaves the fact out is unaffected. A primitive type [widens](#primitive-types-widen), and a
+  `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring `output` fails at once,
+  and `load()` fails for a declared name the rules' languages can't refer to.
 - **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
 - **`facts(map)`** declares several at once, as `fact()` does each one.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
@@ -265,6 +265,12 @@ such as a `String`, gets only `Fact 'n' was declared as int, but the run supplie
 A wrapper declaration doesn't widen and never adds the clause: `fact("n", Long.class)` rejects an `Integer`, as Java
 never turns an `Integer` into a `Long`, so declare `long.class` to accept narrower numbers. The
 [default output writer](engines-and-runs.md#how-actions-change-it) uses the same widening rules.
+
+A `null` passes a primitive declaration too, and stays `null`, where Java would throw `NullPointerException` as it
+unboxed it. What happens next depends on where it goes. The default output writer never passes it to a primitive
+setter, so it fails the rule unless another setter of that name takes `null`. In MVEL, `output.x = n` stores `0` in
+an `int` property, while `output.setX(n)` fails the rule; see
+[Assignment gotchas](languages/mvel-gotchas.md#-assignment-gotchas).
 
 ### Catching a typo when the rules load
 

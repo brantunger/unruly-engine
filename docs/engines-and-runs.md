@@ -55,7 +55,7 @@ engine.close();
   evaluates every condition too, then fires its one match, or fails the run if more match.
 - The [output supplier](glossary.md#output-supplier) is called once per run, and only after a rule has
   matched. `run()` returns `null` exactly when no rule fired.
-- A failing condition or action fails the run: it throws, and returns no result. See
+- A failing condition or action fails the run: it throws. See
   [What happens on each failure](error-handling.md#-what-happens-on-each-failure).
 - Another `load()` swaps in new rules at once; a run finishes with the rules it started with.
 
@@ -234,7 +234,7 @@ engine.load(rules);                       // the Quick start's prime-rate and st
 engine.run(facts);                        // score 780 matches both: throws RuleExecutionException
 ```
 
-The check counts conditions that were true, whatever language the rules are written in. It finds an overlap only for
+The check counts conditions that were true, whatever the rules' language. It finds an overlap only for
 the facts of that run: to check a table for every input, run it against the inputs you care about in a test.
 
 What each failure throws, logs and tells listeners is in
@@ -263,8 +263,8 @@ supplier, the `Supplier` you give `firstMatch(...)`, `allMatches(...)` or `uniqu
   it.
 
 > [!WARNING]
-> `firstMatch(() -> decision)`, with one `decision` object, compiles and passes a test that runs once. In production
-> every run adds to the same object. Write `firstMatch(LoanDecision::new)`.
+> `firstMatch(() -> decision)` passes a test that runs once, but in production every run adds to the one `decision`.
+> Write `firstMatch(LoanDecision::new)`.
 
 ### How actions change it
 
@@ -277,24 +277,34 @@ An action changes the output in one of two ways:
   the engine's `OutputWriter`. If the run is stopped when that action returns, none of them are set.
 
 The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, storing the value as it is, and
-otherwise the output's public setter for the property, such as `setInterestRate`. A setter that accepts the value as
-it is wins. Among several, the most specific wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`,
-and `setP(Integer)` over `setP(int)`. If no single one is the most specific, it calls the same one on every run.
+otherwise the output's public setter, such as `setInterestRate`. A setter that accepts the value as it is wins. Among
+several, the most specific wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`, and `setP(Integer)` over
+`setP(int)`. If no single one is the most specific, it calls the same one on every run.
 
-Only when none accepts the value does it widen it to the nearest primitive, as Java does
-([JLS 5.1.2](https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html#jls-5.1.2)): along `byte`, `short`, `int`,
-`long`, `float`, `double`, and from `char` to `int` or further. So an `Integer` reaches `setR(long)` before
-`setR(float)`, and `setR(float)` before `setR(double)`. As in Java, an `Integer` or `Long` can round in
-`setR(float)`, and a `Long` beyond ±2^53 in `setR(double)`. A `Character` in `setR(int)` writes its code, 97 for `'a'`.
+Only when none accepts the value does it widen it to the nearest primitive, as a
+[primitive fact declaration](facts.md#primitive-types-widen) does: an `Integer` reaches `setR(long)` before
+`setR(float)`.
 
 Nothing else is converted: a `Long` doesn't reach `setR(int)`, an `Integer` doesn't reach `setR(Long)`, and a
-`BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a `Long`, as CEL's integers are, needs a setter
-that takes it or a `float` or `double` one; a `BigDecimal`, as Groovy's decimal literals are, needs one that takes it;
-otherwise, write an `outputWriter(...)`.
+`BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a CEL integer, a `Long`, needs a setter that
+takes it or a `float` or `double` one, and a Groovy decimal literal, a `BigDecimal`, one that takes it; otherwise,
+write an `outputWriter(...)`.
+
+Beside a same-named setter with a different parameter, one declared with its class's own type variable,
+`setContent(T)` in `Box<T>`, takes only what Java gives `T` in the output class, as in `LongBox extends Box<Long>` or
+`new Box<Long>() {}`. In `LongBox`, a `Short` widens to `setContent(long)` and a `String` fails, as in Java.
+Unlike Java:
+
+- Without such an overload, it takes `T`'s erasure.
+- `new Box<Long>()` gives `T` nothing: it takes `T`'s bound.
+- With `T` a `String`, `setContent(CharSequence)` takes a `String`; Java calls `setContent(T)`.
+- A type variable an inner class uses from its enclosing class, as in `Outer<T>.Inner`, isn't resolved: a setter
+  declared with it, or with a variable it's passed to, takes the variable's bound.
+- A varargs `setR(int...)` takes only an array.
 
 A property it can't set, including through a setter the engine can't reach, fails the rule with a
-`RuleExecutionException` that names the rule and the property. When the value is a number, a character or a
-boolean that no setter of that name accepts, but one takes a primitive or a boxed primitive, the message adds:
+`RuleExecutionException` that names the rule and the property. When no setter of that name accepts a number, a
+character or a boolean, but one takes a primitive or a boxed primitive, the message adds:
 `(setR(int) exists, but a value is only widened as Java widens a primitive, never narrowed or converted)`.
 
 ## 📊 What a run reports
@@ -411,10 +421,6 @@ To switch it off, load it built with `enabled(false)`. A rule is immutable, so t
 it outside that window, with no reload. Either way `load()` still compiles it. See
 [Choosing which rules a run uses](#-choosing-which-rules-a-run-uses).
 
-### Does a rule with no tags run when I pass tags?
-
-No: a run given tags skips every rule without one of them. See [Tags](#tags).
-
 ### How do I catch two rules that apply to the same facts?
 
 Build the engine with `uniqueMatch(...)`: a run with a second match fires nothing and throws, naming every match.
@@ -431,11 +437,6 @@ It can't assign to one: a language that passes the contract test kit rejects tha
 any write to the facts at run time.
 But a method call that changes a fact object isn't caught, and the rest of the run and your own code see the change.
 See [What rules can change](writing-rules.md#-what-rules-can-change).
-
-### When is my output supplier called, and can it return a shared object?
-
-Once per run, and only after a rule has matched. It must return a new object: a shared one collects every run's
-results. See [The output object](#-the-output-object).
 
 ### Should I build an engine for each request?
 

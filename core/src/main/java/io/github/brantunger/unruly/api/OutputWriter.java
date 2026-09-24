@@ -42,10 +42,29 @@ public interface OutputWriter<O> {
      * primitive that Java widens it to, so an {@link Integer} reaches a setter taking a {@code long} or a
      * {@code double}. No value is otherwise converted: never narrowed, so a setter taking an {@code int} doesn't accept
      * a {@link Long}, and never from one wrapper to another, so a setter taking a {@link Long} doesn't accept an
-     * {@link Integer}. An output without such a setter fails with {@link IllegalArgumentException}, which, for a
+     * {@link Integer}. A varargs setter, such as {@code setTags(String...)}, takes an array: a single value isn't
+     * wrapped in one. An output without such a setter fails with {@link IllegalArgumentException}, which, for a
      * number, a character or a boolean, names the setters of the property that take a primitive or a wrapper. Of
      * overloaded setters, it calls the most specific one that accepts the value, as Java would; when no single one is
      * the most specific, the choice is fixed for the output class and the same on every run.
+     *
+     * <p>
+     * A setter declared with a type variable of a class, such as {@code setContent(T)}, takes what the output class
+     * makes of the variable where the class has another setter of the property with a different parameter: with
+     * {@code T} a {@link Long}, beside {@code setContent(long)}, a {@link Short} goes to {@code setContent(long)}, as
+     * in Java, and text fails.
+     * </p>
+     *
+     * <p>
+     * Where it differs from Java: a setter declared with a type variable, with no other setter of the property, takes
+     * whatever its erased parameter does; a setter whose parameter is a supertype of what the variable is given, such
+     * as {@code setContent(CharSequence)} beside {@code setContent(T)} with {@code T} a {@link String}, is still tried
+     * first, though Java would call {@code setContent(T)}; an instance of a generic class, such as
+     * {@code new Box<Long>()}, gives the variable nothing, as its type argument isn't kept at run time, so the setter
+     * takes the variable's bound; a type variable an inner class uses from its enclosing class, as in
+     * {@code Outer<T>.Inner}, isn't resolved, so a setter declared with it, or with a variable it's passed to, takes
+     * the variable's bound; and a varargs setter takes only an array.
+     * </p>
      *
      * <p>
      * The setter is reached the way {@link io.github.brantunger.unruly.api.language.FactProperties} reaches a getter:

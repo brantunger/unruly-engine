@@ -14,8 +14,10 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
 import java.lang.module.Configuration;
 import java.lang.module.ModuleFinder;
+import java.lang.reflect.GenericSignatureFormatError;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -581,6 +583,108 @@ class OutputWriterAccessTest {
             }
             """;
 
+    private static final String HIDDEN_BOX = """
+            package com.example.api;
+
+            class HiddenBox<T> {
+                public String setter;
+
+                public void setContent(T content) {
+                    setter = "HiddenBox.setContent(T)";
+                }
+            }
+            """;
+
+    /** Inherits a setter declared with a type variable, for a Long, through a bridge, beside one for a long. */
+    private static final String VISIBLE_LONG_BOX = """
+            package com.example.api;
+
+            public final class VisibleLongBox extends HiddenBox<Long> {
+                public void setContent(long content) {
+                    setter = "VisibleLongBox.setContent(long)";
+                }
+            }
+            """;
+
+    /** Inherits a setter declared with a type variable, for a Long, through a bridge, beside one for an Integer. */
+    private static final String VISIBLE_INTEGER_BOX = """
+            package com.example.api;
+
+            public final class VisibleIntegerBox extends HiddenBox<Long> {
+                public void setContent(Integer content) {
+                    setter = "VisibleIntegerBox.setContent(Integer)";
+                }
+            }
+            """;
+
+    private static final String PAIRED_BOX = """
+            package com.example.api;
+
+            public class PairedBox<T> {
+                public String setter;
+
+                public void setContent(T content) {
+                    setter = "PairedBox.setContent(T)";
+                }
+
+                public void setContent(long content) {
+                    setter = "PairedBox.setContent(long)";
+                }
+            }
+            """;
+
+    /** Gives the type variable of a setter beside another one a class that's missing once Missing.class is deleted. */
+    private static final String MISSING_PAIRED_BOX = """
+            package com.example.api;
+
+            public final class MissingPairedBox extends PairedBox<Missing> {
+            }
+            """;
+
+    private static final String TAGGED = """
+            package com.example.api;
+
+            public interface Tagged<T> {
+            }
+            """;
+
+    /** Overrides a generic setter, and gives another interface a class that's missing once Missing.class is deleted. */
+    private static final String MISSING_TAGGED_BOX = """
+            package com.example.api;
+
+            public final class MissingTaggedBox extends PairedBox<Integer> implements Tagged<Missing> {
+                @Override
+                public void setContent(Integer content) {
+                    setter = "MissingTaggedBox.setContent(Integer)";
+                }
+            }
+            """;
+
+    /** A setter declared with a type variable bounded by a class that goes missing once Missing.class is deleted. */
+    private static final String BOUNDED_BOX = """
+            package com.example.api;
+
+            public class BoundedBox<T extends Comparable<Missing>> {
+                public String setter;
+
+                public void setContent(T content) {
+                    setter = "BoundedBox.setContent(T)";
+                }
+
+                public void setContent(long content) {
+                    setter = "BoundedBox.setContent(long)";
+                }
+            }
+            """;
+
+    /** Gives the type variable of a setter beside another one a Long, in a signature that a test then breaks. */
+    private static final String BAD_SIGNATURE_BOX = """
+            package com.example.api;
+
+            public final class BadSignatureBox extends PairedBox<Long> {
+            }
+            """;
+
     private static final String FACTORY = """
             package com.example.api;
 
@@ -678,6 +782,30 @@ class OutputWriterAccessTest {
 
                 public static Object sequenceOverText() {
                     return new com.example.impl.SequenceOverText();
+                }
+
+                public static Object visibleLongBox() {
+                    return new VisibleLongBox();
+                }
+
+                public static Object visibleIntegerBox() {
+                    return new VisibleIntegerBox();
+                }
+
+                public static Object missingPairedBox() {
+                    return new MissingPairedBox();
+                }
+
+                public static Object missingTaggedBox() {
+                    return new MissingTaggedBox();
+                }
+
+                public static Object boundedBox() {
+                    return new BoundedBox<>();
+                }
+
+                public static Object badSignatureBox() {
+                    return new BadSignatureBox();
                 }
 
                 public static Object setterOf(Object output) throws ReflectiveOperationException {
@@ -1009,6 +1137,103 @@ class OutputWriterAccessTest {
     }
 
     @Test
+    @DisplayName("on the module path, a Short goes to setContent(long), not through the bridge to setContent(T) with T"
+            + " a Long in a class that isn't public")
+    void visibilityBridgeForATypeVariableBesideAPrimitiveSetter(@TempDir Path classes) throws Exception {
+        Class<?> factory = outputs(classes, "exports com.example.api;");
+        Object output = factory.getMethod("visibleLongBox").invoke(null);
+
+        OutputWriter.beansAndMaps().set(output, "content", (short) 7);
+
+        assertEquals("VisibleLongBox.setContent(long)", setter(factory, output));
+        OutputWriter.beansAndMaps().set(output, "content", 7L);
+        assertEquals("HiddenBox.setContent(T)", setter(factory, output));
+    }
+
+    @Test
+    @DisplayName("on the module path, a Long goes through the bridge to setContent(T) with T a Long in a class that"
+            + " isn't public, beside setContent(Integer)")
+    void visibilityBridgeForATypeVariableBesideANarrowerReference(@TempDir Path classes) throws Exception {
+        Class<?> factory = outputs(classes, "exports com.example.api;");
+        Object output = factory.getMethod("visibleIntegerBox").invoke(null);
+
+        OutputWriter.beansAndMaps().set(output, "content", 7L);
+
+        assertEquals("HiddenBox.setContent(T)", setter(factory, output));
+        OutputWriter.beansAndMaps().set(output, "content", 7);
+        assertEquals("VisibleIntegerBox.setContent(Integer)", setter(factory, output));
+    }
+
+    @Test
+    @DisplayName("a setter declared with a type variable that a class gives a class that's missing takes its erased"
+            + " parameter, as before")
+    void variableGivenAMissingClass(@TempDir Path classes) throws Exception {
+        compileOutputs(classes, "exports com.example.api;");
+        Files.delete(classes.resolve(Path.of("com", "example", "api", "Missing.class")));
+        Class<?> factory = load(classes);
+        Object output = factory.getMethod("missingPairedBox").invoke(null);
+
+        OutputWriter.beansAndMaps().set(output, "content", (short) 7);
+
+        assertEquals("PairedBox.setContent(T)", setter(factory, output));
+    }
+
+    @Test
+    @DisplayName("a generic setter's bridge in a class whose supertypes name a class that's missing takes only what the"
+            + " override does, as before")
+    void bridgeInAClassNamingAMissingClass(@TempDir Path classes) throws Exception {
+        compileOutputs(classes, "exports com.example.api;");
+        Files.delete(classes.resolve(Path.of("com", "example", "api", "Missing.class")));
+        Class<?> factory = load(classes);
+        Object output = factory.getMethod("missingTaggedBox").invoke(null);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> OutputWriter.beansAndMaps().set(output, "content", "text"));
+
+        assertEquals("com.example.api.MissingTaggedBox has no public method setContent that accepts a"
+                + " java.lang.String", thrown.getMessage());
+        OutputWriter.beansAndMaps().set(output, "content", 7);
+        assertEquals("MissingTaggedBox.setContent(Integer)", setter(factory, output));
+    }
+
+    @Test
+    @DisplayName("a setter declared with a type variable whose bound names a class that's missing takes its erased"
+            + " parameter, as before")
+    void variableBoundedByAMissingClass(@TempDir Path classes) throws Exception {
+        compileOutputs(classes, "exports com.example.api;");
+        Files.delete(classes.resolve(Path.of("com", "example", "api", "Missing.class")));
+        Class<?> factory = load(classes);
+        Object output = factory.getMethod("boundedBox").invoke(null);
+
+        OutputWriter.beansAndMaps().set(output, "content", (short) 7);
+
+        assertEquals("BoundedBox.setContent(T)", setter(factory, output));
+    }
+
+    @Test
+    @DisplayName("a setter declared with a type variable, in a class whose generic signature is malformed, takes its"
+            + " erased parameter, as before")
+    void variableInAMalformedSignature(@TempDir Path classes) throws Exception {
+        // The class's Signature attribute ends in '>' where ';' belongs, so reading its generic superclass throws
+        // GenericSignatureFormatError. The replacement keeps the constant's length, so the class file stays valid.
+        compileOutputs(classes, "exports com.example.api;");
+        Path file = classes.resolve(Path.of("com", "example", "api", "BadSignatureBox.class"));
+        String signature = "Lcom/example/api/PairedBox<Ljava/lang/Long;>;";
+        byte[] bytes = Files.readAllBytes(file);
+        String text = new String(bytes, StandardCharsets.ISO_8859_1);
+        assertEquals(text.indexOf(signature), text.lastIndexOf(signature));
+        Files.write(file, text.replace(signature, signature.substring(0, signature.length() - 1) + ">")
+                .getBytes(StandardCharsets.ISO_8859_1));
+        Class<?> factory = load(classes);
+        Object output = factory.getMethod("badSignatureBox").invoke(null);
+        assertThrows(GenericSignatureFormatError.class, () -> output.getClass().getGenericSuperclass());
+
+        OutputWriter.beansAndMaps().set(output, "content", (short) 7);
+
+        assertEquals("PairedBox.setContent(T)", setter(factory, output));
+    }
+
+    @Test
     @DisplayName("on the module path, a generic setter's implementation inherited from a class that isn't public is"
             + " written through the bridge")
     void inheritedFromAClassThatIsNotPublicThroughTheGenericBridge(@TempDir Path classes) throws Exception {
@@ -1146,6 +1371,15 @@ class OutputWriterAccessTest {
                         source("com/example/impl/TextOverInteger", TEXT_OVER_INTEGER),
                         source("com/example/impl/TextBelowBase", TEXT_BASE_BELOW),
                         source("com/example/impl/SequenceOverText", SEQUENCE_OVER_TEXT),
+                        source("com/example/api/HiddenBox", HIDDEN_BOX),
+                        source("com/example/api/VisibleLongBox", VISIBLE_LONG_BOX),
+                        source("com/example/api/VisibleIntegerBox", VISIBLE_INTEGER_BOX),
+                        source("com/example/api/PairedBox", PAIRED_BOX),
+                        source("com/example/api/MissingPairedBox", MISSING_PAIRED_BOX),
+                        source("com/example/api/Tagged", TAGGED),
+                        source("com/example/api/MissingTaggedBox", MISSING_TAGGED_BOX),
+                        source("com/example/api/BadSignatureBox", BAD_SIGNATURE_BOX),
+                        source("com/example/api/BoundedBox", BOUNDED_BOX),
                         source("com/example/api/Outputs", FACTORY)));
     }
 
