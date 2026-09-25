@@ -6,14 +6,6 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunOptions;
-import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
-import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.Session;
-import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,7 +15,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -38,59 +29,6 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a reload doesn't raise an engine's limit on compiled copies")
 class ReloadCopyLimitTest {
 
-    /** A fact whose method holds the run that calls it until the test lets it go. */
-    public static final class Gate {
-
-        private final CountDownLatch holding = new CountDownLatch(1);
-        private final CountDownLatch release = new CountDownLatch(1);
-
-        /**
-         * Waits until the test releases the gate. It is a getter, so a rule reads it as the property
-         * {@code gate.hold}.
-         *
-         * @return {@code true}, so a condition that reads it matches
-         * @throws InterruptedException if the thread is interrupted while it waits
-         */
-        public boolean getHold() throws InterruptedException {
-            holding.countDown();
-            return release.await(30, TimeUnit.SECONDS);
-        }
-    }
-
-    /**
-     * The toy language, with a session of its own: a language whose sessions are {@link Session#none()} needs no copy
-     * of the rules per run, so only a language with state has a copy limit to keep.
-     */
-    private static final ExpressionLanguage STATEFUL_TOY = new ExpressionLanguage() {
-
-        @Override
-        public String name() {
-            return ToyExpressionLanguage.LANGUAGE_NAME;
-        }
-
-        @Override
-        public ExpressionCompiler newCompiler(CompileContext context) {
-            ExpressionCompiler toy = new ToyExpressionLanguage().newCompiler(context);
-            return new ExpressionCompiler() {
-                @Override
-                public CompiledCondition compileCondition(Expression expression) {
-                    return toy.compileCondition(expression);
-                }
-
-                @Override
-                public CompiledAction compileAction(Expression expression) {
-                    return toy.compileAction(expression);
-                }
-
-                @Override
-                public Session newSession() {
-                    return new Session() {
-                    };
-                }
-            };
-        }
-    };
-
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
     }
@@ -99,12 +37,12 @@ class ReloadCopyLimitTest {
     @DisplayName("a run on the new rules waits while a run on the replaced rules holds the only copy")
     void reloadKeepsTheLimit() throws InterruptedException {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .language(STATEFUL_TOY).maxCopies(1).build();
+                .language(GatedRuns.STATEFUL_TOY).maxCopies(1).build();
         engine.load(List.of(rule("old", "gate.hold", "put rules 'old'")));
-        Gate gate = new Gate();
+        GatedRuns.Gate gate = new GatedRuns.Gate();
         Thread holder = new Thread(() -> engine.run(new FactMap<>(new Fact<Object>("gate", gate))), "holder");
         holder.start();
-        assertTrue(gate.holding.await(30, TimeUnit.SECONDS), "the run on the old rules never started");
+        assertTrue(gate.awaitHolding(30, TimeUnit.SECONDS), "the run on the old rules never started");
 
         engine.load(List.of(rule("new", "true", "put rules 'new'")));
 
@@ -124,7 +62,7 @@ class ReloadCopyLimitTest {
         assertInstanceOf(TimeoutException.class, waited.getCause(),
                 "the run on the new rules waited for the copy the old rules' run holds");
 
-        gate.release.countDown();
+        gate.release();
         holder.join(TimeUnit.SECONDS.toMillis(30));
         assertEquals(Map.of("rules", "new"), engine.run(new FactMap<>()), "once it's given back, the new rules run");
     }

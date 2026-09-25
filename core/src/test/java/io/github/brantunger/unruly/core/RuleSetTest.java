@@ -631,6 +631,14 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("a run waits five seconds without a copy given back before it makes an extra one")
+    void stallWindowIsFiveSeconds() {
+        // Pinned as a number, as a test that waited out the window would take five seconds of its own. A shorter
+        // window would make extra copies whenever a run waits a little while for another run's copy.
+        assertEquals(5000, RuleSet.STALL_WINDOW_MILLIS);
+    }
+
+    @Test
     @DisplayName("more copies than the limit are warned about once for each rule list")
     void overflowWarnedOnce() throws Exception {
         AtomicInteger sessions = new AtomicInteger();

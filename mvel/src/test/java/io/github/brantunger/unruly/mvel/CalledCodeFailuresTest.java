@@ -8,10 +8,12 @@ import java.lang.reflect.InvocationTargetException;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The exception chains {@link CalledCodeFailures} leaves as MVEL threw them that no rule makes MVEL throw: those it
- * can't read, and an {@link InvocationTargetException} under MVEL's exceptions that reflection didn't make.
+ * Exception chains no rule makes MVEL throw, built by hand. {@link CalledCodeFailures} leaves as MVEL threw them those
+ * it can't read, an {@link InvocationTargetException} under MVEL's exceptions that reflection didn't make, one under a
+ * {@link RuntimeException} of another class created in MVEL's code, and one under more of MVEL's exceptions than it
+ * walks through. It unwraps one under as many as it walks through.
  */
-@DisplayName("an exception chain that can't be read is left as MVEL threw it")
+@DisplayName("an exception chain is unwrapped only where MVEL made every wrapper, and left as MVEL threw it otherwise")
 class CalledCodeFailuresTest {
 
     private static StackTraceElement[] frameIn(String className) {
@@ -28,6 +30,15 @@ class CalledCodeFailuresTest {
         return mvel;
     }
 
+    /** {@code cause} wrapped in {@code count} of MVEL's exceptions. The walk goes through 32, its MAX_DEPTH. */
+    private static RuntimeException wrappedInMvel(int count, Throwable cause) {
+        RuntimeException outer = fromMvel(cause);
+        for (int i = 1; i < count; i++) {
+            outer = fromMvel(outer);
+        }
+        return outer;
+    }
+
     private static InvocationTargetException fromReflection(Throwable target) {
         InvocationTargetException call = new InvocationTargetException(target);
         call.setStackTrace(frameIn("jdk.internal.reflect.DirectMethodHandleAccessor"));
@@ -40,6 +51,32 @@ class CalledCodeFailuresTest {
         IllegalStateException target = new IllegalStateException("target");
 
         assertSame(target, CalledCodeFailures.thrownByCalledCode(fromMvel(fromReflection(target))));
+    }
+
+    @Test
+    @DisplayName("a RuntimeException of another class created in MVEL's code isn't looked through")
+    void subclassFromMvelCode() {
+        IllegalStateException subclass = new IllegalStateException("not MVEL's",
+                fromReflection(new IllegalStateException("target")));
+        subclass.setStackTrace(frameIn("org.mvel2.optimizers.impl.refl.nodes.MethodAccessor"));
+
+        assertSame(subclass, CalledCodeFailures.thrownByCalledCode(subclass));
+    }
+
+    @Test
+    @DisplayName("a chain of as many MVEL exceptions as the walk goes through, 32, is still unwrapped")
+    void chainAsLongAsTheWalk() {
+        IllegalStateException target = new IllegalStateException("target");
+
+        assertSame(target, CalledCodeFailures.thrownByCalledCode(wrappedInMvel(32, fromReflection(target))));
+    }
+
+    @Test
+    @DisplayName("a chain of one more MVEL exception than the walk goes through, 33")
+    void chainOneLongerThanTheWalk() {
+        RuntimeException outer = wrappedInMvel(33, fromReflection(new IllegalStateException("target")));
+
+        assertSame(outer, CalledCodeFailures.thrownByCalledCode(outer));
     }
 
     @Test

@@ -468,9 +468,18 @@ class ContractKitChecksTest {
         };
     }
 
-    /** Wraps a language so that each of its compilers throws what {@code failure} supplies when it's closed. */
+    /** Throws {@code thrown} whatever its type, as a language's code can, though close() declares nothing. */
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable thrown) throws T {
+        throw (T) thrown;
+    }
+
+    /**
+     * Wraps a language so that each of its compilers throws what {@code failure} supplies when it's closed, whatever
+     * its type.
+     */
     private static ExpressionLanguage throwingCompilerClose(ExpressionLanguage language,
-                                                            Supplier<RuntimeException> failure) {
+                                                            Supplier<? extends Throwable> failure) {
         return new ExpressionLanguage() {
             @Override
             public String name() {
@@ -499,7 +508,7 @@ class ContractKitChecksTest {
                     @Override
                     public void close() {
                         compiler.close();
-                        throw failure.get();
+                        ContractKitChecksTest.<RuntimeException>sneakyThrow(failure.get());
                     }
                 };
             }
@@ -823,6 +832,28 @@ class ContractKitChecksTest {
 
         assertEquals("a compiler's close() threw java.lang.IllegalStateException: failed to release the runtime,"
                 + " which the engine only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose compiler throws an Error the engine only logs when it's closed fails the compiler"
+            + " check (#621)")
+    void compilerCloseThrowingANonFatalErrorFails() {
+        // An AssertionError or a StackOverflowError, which the engine logs at WARN, as it does an exception: only
+        // another VirtualMachineError is rethrown.
+        ExpressionLanguage asserting = throwingCompilerClose(new ToyExpressionLanguage(),
+                () -> new AssertionError("runtime still in use"));
+        ExpressionLanguage overflowing = throwingCompilerClose(new ToyExpressionLanguage(),
+                () -> new StackOverflowError("released recursively"));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(asserting, "compilerClosed"));
+        AssertionFailedError overflow = assertThrows(AssertionFailedError.class,
+                () -> runCheck(overflowing, "compilerClosed"));
+
+        assertEquals("a compiler's close() threw java.lang.AssertionError: runtime still in use, which the engine only"
+                + " logs at WARN", failure.getMessage());
+        assertEquals("a compiler's close() threw java.lang.StackOverflowError: released recursively, which the engine"
+                + " only logs at WARN", overflow.getMessage());
     }
 
     @Test

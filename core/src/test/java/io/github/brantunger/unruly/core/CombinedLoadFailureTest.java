@@ -14,6 +14,8 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -116,20 +118,22 @@ class CombinedLoadFailureTest {
         assertEquals(3, ex.failures().size());
     }
 
-    @Test
-    @DisplayName("a failure that brings the list to exactly the limit is listed")
-    void failureReachingTheLimitExactlyListed() {
+    @ParameterizedTest(name = "{0} characters past the limit")
+    @ValueSource(ints = {0, 1, 2})
+    @DisplayName("a failure that brings the list, with its separator, to exactly the limit is listed, and one that"
+            + " would bring it just past the limit is counted")
+    void failureAtTheLimit(int past) {
         String prefix = "Condition for rule 'rule-0' failed to compile: ";
-        String second = "y".repeat(1_000 - 2 - 2 * prefix.length() - 400);
+        String second = "y".repeat(1_000 - 2 - 2 * prefix.length() - 400 + past);
 
         RuleCompilationException ex = loadFailing(List.of("x".repeat(400), second, "short"));
 
         String first = ex.failures().get(0).getMessage();
         String next = ex.failures().get(1).getMessage();
         assertEquals(prefix + "x".repeat(400), first);
-        assertEquals(1_000, first.length() + 2 + next.length(), next);
-        assertEquals("3 rules failed to compile: " + first + "; " + next + "; and 1 more (see failures())",
-                ex.getMessage());
+        assertEquals(1_000 + past, first.length() + 2 + next.length(), next);
+        String listed = past == 0 ? first + "; " + next + "; and 1 more" : first + "; and 2 more";
+        assertEquals("3 rules failed to compile: " + listed + " (see failures())", ex.getMessage());
     }
 
     @Test

@@ -1270,6 +1270,31 @@ class OutputWriterAccessTest {
     }
 
     @Test
+    @DisplayName("a setter declared with a type variable, whose own generic signature is malformed, takes its erased"
+            + " parameter, as before")
+    void setterWithAMalformedSignature(@TempDir Path classes) throws Exception {
+        // The Signature attribute of PairedBox's setContent(T) ends its parameter in '>' where ';' belongs, so reading
+        // the method's generic parameter types throws GenericSignatureFormatError. The class's own Signature, and
+        // BadSignatureBox's, which gives T a Long, stay readable. The replacement keeps the constant's length.
+        compileOutputs(classes, "exports com.example.api;");
+        Path file = classes.resolve(Path.of("com", "example", "api", "PairedBox.class"));
+        String signature = "(TT;)V";
+        byte[] bytes = Files.readAllBytes(file);
+        String text = new String(bytes, StandardCharsets.ISO_8859_1);
+        assertNotEquals(-1, text.indexOf(signature));
+        assertEquals(text.indexOf(signature), text.lastIndexOf(signature));
+        Files.write(file, text.replace(signature, "(TT>)V").getBytes(StandardCharsets.ISO_8859_1));
+        Class<?> factory = load(classes);
+        Object output = factory.getMethod("badSignatureBox").invoke(null);
+        assertThrows(GenericSignatureFormatError.class,
+                () -> output.getClass().getMethod("setContent", Object.class).getGenericParameterTypes());
+
+        OutputWriter.beansAndMaps().set(output, "content", (short) 7);
+
+        assertEquals("PairedBox.setContent(T)", setter(factory, output));
+    }
+
+    @Test
     @DisplayName("on the module path, a generic setter's implementation inherited from a class that isn't public is"
             + " written through the bridge")
     void inheritedFromAClassThatIsNotPublicThroughTheGenericBridge(@TempDir Path classes) throws Exception {
