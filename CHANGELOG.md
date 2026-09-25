@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.4](https://github.com/brantunger/unruly-engine/compare/v2.7.3...v2.7.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* stop load() hanging on a cyclic cause chain in MVEL rules, and name the root cause when MVEL's description is null ([#622](https://github.com/brantunger/unruly-engine/issues/622)) ([06a86a9](https://github.com/brantunger/unruly-engine/commit/06a86a93b405bd82c682fec71b6ecdc6f71c98e4))
+
 ## [2.7.3](https://github.com/brantunger/unruly-engine/compare/v2.7.2...v2.7.3) (2026-09-25)
 
 
