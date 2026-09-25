@@ -246,13 +246,13 @@ How many copies an engine keeps, how to limit them and what a run waits for when
 ## 🌳 Class loaders
 
 The classes of your facts and of your output object must be reachable from the **context class loader of the thread
-that calls `load()`**. The engine captures that loader while `load()` compiles the rules and gives it to every
-expression language as the loader to find classes with. `RulesEngineBuilder` has no class-loader option, so that
-context class loader is the only control there is.
+that calls `load()`**. `load()` captures that loader and gives it to every expression language to find classes with.
+Unless rules name MVEL's classes, it needn't see MVEL, or may hold a copy: generated code uses the engine's.
+`RulesEngineBuilder` has no class-loader option; this loader is the only control.
 
-Most applications never think about it: one class loader holds the application, the engine and the fact classes. It
-matters when those classes live somewhere else, such as a plugin or tenant jar, a container's application class loader
-or a test harness that isolates each case. Load the rules with that loader in place, and put the old one back:
+Most applications never think about it: one class loader holds the application and the fact classes. It matters when
+those classes live elsewhere: a plugin or tenant jar, a container's application class loader or a test harness that
+isolates each case. Load the rules with that loader in place, and put the old one back:
 
 ```java
 ClassLoader original = Thread.currentThread().getContextClassLoader();
