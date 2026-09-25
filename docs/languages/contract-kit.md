@@ -184,6 +184,11 @@ an action's properties are set, so an interrupt raised between rules always stop
 unaffected. Only an interrupt raised and swallowed inside one expression escapes; see
 [Stopping a run](custom.md#-stopping-a-run).
 
+Putting the interrupt back has its own trap, which the kit doesn't catch either: an adapter that restores it after
+cancelling its runtime for the deadline turns each timeout into an interrupt. And JEXL clears the status whatever
+cancelled it, so an interrupt that lands as the adapter cancels for the deadline is lost, and the run reports the
+timeout.
+
 **The `CompileContext`.** Every check compiles with an empty `CompileContext`, through an engine or, in
 `evaluateAgreesWithDetail`, through `LanguageTestContexts.compile()`, so a language that ignores imports, options,
 declared facts and the output type passes. Test what your language does with each of them yourself;

@@ -202,11 +202,13 @@ expression and returns still works, and the engine stops the run as soon as the 
 | It can't stop inside an expression, as MVEL can't | Nothing |
 | It loops or calls out, and can check | Return when `context.isCancelled()` is `true`, or use `context.deadline()` to bound a call of your own |
 | It throws once the run is cancelled | Nothing: that stops the run, unless an `Error` is anywhere in the cause chain of what it threw, even wrapped in your own exception; then it is still that rule's failure |
-| Its runtime clears the thread's interrupt when it cancels, as JEXL's `cancellable(true)` does | Either call `Thread.currentThread().interrupt()` before you throw or return, or throw with an `InterruptedException` in the cause chain |
+| Its runtime clears the thread's interrupt when it cancels, as JEXL's `cancellable(true)` does | When an interrupt caused the cancel, either call `Thread.currentThread().interrupt()` before you throw or return, or throw with an `InterruptedException` in the cause chain. When your adapter cancelled it because `context.deadline()` passed, restore nothing |
 
 Do neither and, unless the deadline has passed too, the engine sees no interrupt: a throw is reported as that rule's
-failure and a return lets the run go on. [Stopping a run](languages/custom.md#-stopping-a-run) owns these rules and
-shows the code; [Stopping a run](stopping-runs.md) describes what a caller sees.
+failure and a return lets the run go on. Restore the interrupt after a cancel for the deadline and the timeout is
+reported as an interrupt, and the caller's thread stays interrupted.
+[Stopping a run](languages/custom.md#-stopping-a-run) owns these rules and shows the code;
+[Stopping a run](stopping-runs.md) describes what a caller sees.
 
 ## 📦 Packaging and discovery
 
