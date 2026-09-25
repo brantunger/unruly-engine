@@ -24,7 +24,9 @@ final class ImportResolver {
      * @return The class, or {@code null} if {@code name} is a package name
      * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name, or names a
      *                                  class that exists but can't be loaded, for example because a class it depends
-     *                                  on is missing
+     *                                  on is missing. The linkage error's text is cut to at most 1,000 characters,
+     *                                  with a note of how many were left out, then escaped, as the application's own
+     *                                  class loader may have written it, and a root cause it hides is named
      */
     static Class<?> resolve(String name) {
         try {
@@ -37,7 +39,7 @@ final class ImportResolver {
             if (!isWrongName(e)) {
                 throw new IllegalArgumentException("Can't import '" + Failures.quote(name)
                         + "': the class exists but can't be loaded: "
-                        + Failures.textOf(e), e);
+                        + Failures.describeWithClass(e), e);
             }
             return packageImport(name, e);
         }
