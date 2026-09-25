@@ -15,9 +15,14 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>
  * The engine calls it on the thread running the rule, once for each property, in the order the action returned them.
- * Anything it throws fails the rule with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}
- * naming the rule and the property, which listeners receive in {@code onError}. It must be thread-safe, because runs
- * on many threads share it.
+ * What it throws is treated as what an action throws. It fails the rule with a
+ * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} naming the rule and the property, which
+ * listeners receive in {@code onError}; a fatal {@link Error}, such as an {@link OutOfMemoryError}, is rethrown
+ * unchanged once they have. But when the thread was interrupted, or the run passed its deadline, by the time it threw,
+ * the run stops, as a cancelled run does, with an exception whose {@code getRuleName()} is {@code null}, which
+ * keeps what it threw as a suppressed exception; unless that is or wraps an {@link Error}, which fails the rule all
+ * the same. A run that was interrupted, or passed its deadline, while the writer set the properties without throwing
+ * stops once every one is set, and they stay set. It must be thread-safe, because runs on many threads share it.
  * </p>
  *
  * @param <O> The type of the output objects it writes to

@@ -498,9 +498,10 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, and waiting for a compiled copy
-     * of the rules counts towards it. The engine checks it before each condition and each action, and again when
-     * each one returns, so a run whose last condition or action returns past its deadline fails even though that
-     * rule finished. It doesn't stop an expression that is already running; only a language that checks
+     * of the rules counts towards it. The engine checks it before each condition and each action, again when each
+     * one returns, and once the {@link OutputWriter} has set the properties an action returned, so a run whose last
+     * condition or action returns past its deadline fails even though that rule finished. It doesn't stop an
+     * expression that is already running; only a language that checks
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()} can stop inside one. A run
      * past its deadline throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} caused by
      * a {@link java.util.concurrent.TimeoutException}.

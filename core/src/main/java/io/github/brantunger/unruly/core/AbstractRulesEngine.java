@@ -23,7 +23,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
@@ -699,8 +698,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Every rule is compiled before a failure is thrown, so one {@link RuleCompilationException} reports everything
      * that failed: each broken rule, in priority order; a language that can't create its compiler, once, in place of
      * the first rule that needed it (the rules written in it aren't compiled, and get no failure of their own); and
-     * each declared fact name the languages reject, last. Its {@code failures()} has each, and its message lists
-     * them. A {@code null} rule or a duplicate name is thrown at once, before anything is compiled.
+     * each declared fact name the languages reject, last. Its {@code failures()} has each. Its message counts them,
+     * lists the first whole, and each next one while the list stays within
+     * {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts the rest. A {@code null} rule or a duplicate
+     * name is thrown at once, before anything is compiled.
      * </p>
      *
      * <p>
@@ -766,15 +767,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw t;
         }
         prepareCopies(loaded);
-        RuleSet replaced;
+        RuleSet replaced = null;
+        boolean closedMeanwhile;
         synchronized (lifecycle) {
-            if (closed) {
-                IllegalStateException failure = new IllegalStateException(CLOSED_MESSAGE);
-                retireBefore(loaded, failure);
-                throw failure;
+            closedMeanwhile = closed;
+            if (!closedMeanwhile) {
+                replaced = ruleSet;
+                ruleSet = loaded;
             }
-            replaced = ruleSet;
-            ruleSet = loaded;
+        }
+        // Retired after the lock, as close() retires its rules: a language slow to close its compilers mustn't hold
+        // up every close() and load(). No run can reach rules that weren't swapped in.
+        if (closedMeanwhile) {
+            IllegalStateException failure = new IllegalStateException(CLOSED_MESSAGE);
+            retireBefore(loaded, failure);
+            throw failure;
         }
         if (replaced != null) {
             Failures.throwIfPresent(replaced.retire());
@@ -1313,7 +1320,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Decides what a condition or action that threw means. When the run has been cancelled by then, the throw is
+     * Decides what a condition or action that threw means, or the output writer setting a property an action
+     * returned. When the run has been cancelled by then, the throw is
      * taken as the expression giving up, as a run started from inside it does when it stops at the deadline it
      * inherited, so the run stops the way a cancelled run always does: no rule name, logged at WARN, with an
      * {@link InterruptedException} or a {@link TimeoutException} as the cause and what the expression threw kept as a
@@ -1581,8 +1589,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw failure(snapshot, rule, ExpressionKind.ACTION, wrongResult, null);
         }
         for (Map.Entry<String, Object> property : result.properties().entrySet()) {
-            setProperty(snapshot, rule, outputResult, property.getKey(), property.getValue());
+            setProperty(snapshot, rule, outputResult, property.getKey(), property.getValue(), facts.deadline());
         }
+        // After them too: a writer that took the run past its deadline stops it, though what it set stays set.
+        stopIfCancelled(snapshot, rule, ExpressionKind.ACTION, facts.deadline(), null);
 
         notifyAfter(snapshot, rule, "afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
 
@@ -1590,19 +1600,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Sets one property an action returned on the output object. A failure fails the rule like a failing action.
+     * Sets one property an action returned on the output object. A failure fails the rule, or stops a cancelled run,
+     * as a failing action does (see {@link #stoppedOrFailed}).
      *
-     * @throws RuleExecutionException if the property can't be set
+     * @throws RuleExecutionException if the property can't be set, or the run was cancelled while it was being set
      */
-    private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value) {
+    private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value,
+                             Instant deadline) {
         try {
             outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
             // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
             Throwable cause = Failures.causeOf(e);
-            throw propertyFailure(snapshot, rule, property, cause != null ? cause : e);
+            Throwable thrown = cause != null ? cause : e;
+            throw stoppedOrFailed(snapshot, rule, deadline, thrown, () -> propertyFailure(snapshot, rule, property,
+                    thrown));
         } catch (Throwable e) {
-            throw propertyFailure(snapshot, rule, property, e);
+            throw stoppedOrFailed(snapshot, rule, deadline, e, () -> propertyFailure(snapshot, rule, property, e));
         }
     }
 
@@ -1840,9 +1854,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Throws the one failure there is, or one exception for several, whose message lists each. The message counts
-     * rules when every failure is a rule's, and failures otherwise: a language that couldn't create its compiler and a
-     * rejected declared fact name have no rule. Every failure was logged when it happened.
+     * Throws the one failure there is, or one exception for several, whose message lists as many as fit. The
+     * message counts rules when every failure is a rule's, and failures otherwise: a language that couldn't create its
+     * compiler and a rejected declared fact name have no rule. It lists the first failure whole, and each next one
+     * while the list stays within {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts the rest, which
+     * the exception's {@code failures()} still has. Every failure was logged when it happened.
      *
      * @param failures The failures, in the order they were found
      * @throws RuleCompilationException if there are any
@@ -1858,8 +1874,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String what = failures.stream().allMatch(failure -> failure.getRuleName() != null)
                 ? " rules failed to compile: "
                 : " failures while loading the rules: ";
-        return new RuleCompilationException(failures.size() + what
-                + failures.stream().map(Throwable::getMessage).collect(Collectors.joining("; ")), failures);
+        // Bounded, as a rule table loaded after a breaking change can fail thousands of rules at once.
+        StringBuilder listed = new StringBuilder(failures.get(0).getMessage());
+        int count = 1;
+        while (count < failures.size()
+                && listed.length() + 2 + failures.get(count).getMessage().length() <= Failures.MAX_DESCRIPTION_LENGTH) {
+            listed.append("; ").append(failures.get(count).getMessage());
+            count++;
+        }
+        if (count < failures.size()) {
+            listed.append("; and ").append(failures.size() - count).append(" more (see failures())");
+        }
+        return new RuleCompilationException(failures.size() + what + listed, failures);
     }
 
     private String languageOf(Rule rule) {

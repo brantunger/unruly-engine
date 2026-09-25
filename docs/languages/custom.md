@@ -305,15 +305,15 @@ or JsonLogic, returns `ActionResult.set(Map.of("approved", true, "interestRate",
 map; a `null` name throws `NullPointerException`, an empty one `IllegalArgumentException`, and `null` values are
 allowed.
 
-The engine sets each property in map order after the action returns, and after its cancellation check, with its
+The engine sets each property in map order after the action returns and passes its cancellation check, with its
 `OutputWriter`: by default `put` on a `Map` output, or the output's public setter, reached the same way
 `FactProperties` reaches a getter. It widens a boxed primitive only as Java does, and only when no setter takes it as
-it is, so a `Long` never reaches an `int` setter; see
+is, so a `Long` never reaches an `int` setter; see
 [The output object](../engines-and-runs.md#-the-output-object).
 
-An application can set its writer with `.outputWriter(...)`; don't assume how a property is stored. A property
-the writer can't set, or a `null` result, fails the rule with a `RuleExecutionException`. In an all-matches run, a
-later rule's properties overwrite an earlier one's.
+An application can set its writer with `.outputWriter(...)`; don't assume how a property is stored. A `null` result,
+or a property the writer can't set, fails the rule unless the run must [stop](../stopping-runs.md#-what-stops-a-run).
+In an all-matches run, a later rule's properties overwrite earlier ones.
 
 ## 🔤 Fact names
 

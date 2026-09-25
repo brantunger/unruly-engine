@@ -86,9 +86,10 @@ surface when a rule is evaluated. Another language decides what it catches when 
 
 ## ⏳ Stopping a run
 
-A run stops once its thread is interrupted or it passes its timeout: before each condition and action, when one
-returns, while it waits for a compiled copy, or while it reads the engine's rules again after a reload or `close()`
-closed the list it had read; an interrupt also stops it while it waits for a build slot.
+A run stops once its thread is interrupted or it passes its timeout: before each condition and action, when one returns,
+once the output writer has set an action's properties, while it waits for a compiled copy, or while it reads the
+engine's rules again after a reload or `close()` closed the list it had read; an interrupt also stops it while it waits
+for a build slot.
 [Stopping a run](stopping-runs.md) covers timeouts, what they can't stop, nested runs and what listeners see.
 
 ## 🧾 What happens on each failure
@@ -108,7 +109,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fact name the engine or a language rejects, or a fact that doesn't match its [declaration](facts.md#-declaring-facts) | `IllegalArgumentException` | `onRunError` with that `IllegalArgumentException` | ERROR |
 | A language fails to create a session for the run | `RuleExecutionException`, no rule | Nothing, not even `beforeRun`: the run fails before it starts | ERROR |
 | The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
-| The run is stopped when a condition or action returns, or throws anything with no `Error` in its cause chain | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
+| The run is stopped when a condition or action returns, the output writer has set an action's properties, or any of them throws anything with no `Error` in its cause chain | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
 | The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | The run is interrupted while it waits for a build slot; a deadline never stops this wait | `RuleExecutionException`, no rule, with an `InterruptedException` cause | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | The run is stopped while it reads the engine's rules again, after a reload or `close()` closed the list it had read | The same as between rules | `beforeRun`, then `onRunError` | WARN |
@@ -178,6 +179,6 @@ try {
   same exception before `run()` throws it. A failing output supplier and a rejected fact name don't reach `onError`,
   because no rule is involved, but they do reach `onRunError`. An expression language that fails to create a session
   fails the run before `beforeRun`, so no listener hears about it.
-- **An interrupt isn't lost.** When a rule, listener, output supplier or expression language throws an exception
-  caused by an `InterruptedException`, the engine sets the interrupt status again; see
+- **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or expression language throws an
+  exception caused by an `InterruptedException`, the engine sets the interrupt status again; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).
