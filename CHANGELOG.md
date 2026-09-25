@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.5](https://github.com/brantunger/unruly-engine/compare/v2.7.4...v2.7.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* link MVEL's JIT accessors against the engine's MVEL when load()'s context class loader can't see MVEL ([#626](https://github.com/brantunger/unruly-engine/issues/626)) ([425b89b](https://github.com/brantunger/unruly-engine/commit/425b89ba217df60be99429ccce1b6d6661b813e1))
+
 ## [2.7.4](https://github.com/brantunger/unruly-engine/compare/v2.7.3...v2.7.4) (2026-09-25)
 
 
