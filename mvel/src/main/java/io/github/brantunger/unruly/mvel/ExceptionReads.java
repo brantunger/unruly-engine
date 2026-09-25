@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.mvel2.MVEL;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -9,12 +11,16 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Reads the message and causes of an exception the module didn't create, such as one a class's static initializer or
- * the application's class loader threw, without letting what those accessors throw escape. None of them is final, and
- * a failure to read one says nothing about the failure being reported, which is still reported as it would be.
+ * Reads the message, causes and stack trace of an exception the module didn't create, such as one a class's static
+ * initializer or the application's class loader threw, without letting what those accessors throw escape. None of
+ * them is final, and a failure to read one says nothing about the failure being reported, which is still reported as
+ * it would be.
  * {@code core.Failures} keeps the engine's copy of these readers: the mvel package may not use that one.
  */
 final class ExceptionReads {
+
+    /** The package of MVEL's classes, taken from MVEL itself so that a relocated copy is matched too. */
+    static final String MVEL_PACKAGE = MVEL.class.getPackageName() + ".";
 
     // As core.Failures.MAX_CAUSE_CHAIN_LENGTH. CalledCodeFailures.MAX_DEPTH bounds a different walk.
     private static final int MAX_CAUSE_CHAIN_LENGTH = 100;
@@ -70,6 +76,29 @@ final class ExceptionReads {
      */
     private static Throwable causeOf(Throwable e) {
         return read(e::getCause, thrown -> null);
+    }
+
+    /**
+     * Reads an exception's stack trace as {@link #messageOf} reads its message.
+     *
+     * @param e The exception
+     * @return Its stack trace, which is empty if {@code getStackTrace()} throws or returns {@code null}
+     */
+    static StackTraceElement[] stackTraceOf(Throwable e) {
+        StackTraceElement[] frames = read(e::getStackTrace, thrown -> null);
+        return frames == null ? new StackTraceElement[0] : frames;
+    }
+
+    /**
+     * Tells whether an exception was created in a class of a package, going by the top frame of its stack trace.
+     *
+     * @param e             The exception
+     * @param packagePrefix The package's name, ending in a dot
+     * @return {@code false} if the top frame is in another package, or the stack trace is empty or can't be read
+     */
+    static boolean thrownFrom(Throwable e, String packagePrefix) {
+        StackTraceElement[] frames = stackTraceOf(e);
+        return frames.length > 0 && frames[0].getClassName().startsWith(packagePrefix);
     }
 
     /**

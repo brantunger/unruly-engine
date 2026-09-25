@@ -17,9 +17,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
 import java.util.Arrays;
@@ -28,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -348,29 +344,8 @@ public class CalledCodeCauseTest {
     @Test
     @DisplayName("with MVEL's JIT turned off, at every run")
     void withTheJitOff(@TempDir Path dir) throws IOException, InterruptedException {
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
-        // Output to a file, so waiting is bounded by waitFor and not by the child closing a pipe.
-        Path log = dir.resolve("scenario.log");
-        // The class path in an argument file, not on the command line or in the environment, which Windows limits to
-        // 32,767 characters. In the file, a quoted argument keeps its spaces and a backslash escapes what follows.
-        Path arguments = dir.resolve("classpath.args");
-        Files.writeString(arguments, "-cp \"" + System.getProperty("java.class.path").replace("\\", "\\\\") + "\"",
-                Charset.forName(System.getProperty("native.encoding")));
-        Process process = new ProcessBuilder(java.toString(), "@" + arguments, "-Dmvel2.disable.jit=true",
-                "-Dorg.slf4j.simpleLogger.defaultLogLevel=off", NoJitScenario.class.getName())
-                .redirectErrorStream(true)
-                .redirectOutput(log.toFile())
-                .start();
-        boolean finished;
-        try {
-            finished = process.waitFor(60, TimeUnit.SECONDS);
-        } finally {
-            process.destroyForcibly();
-        }
-        String output = Files.readString(log, StandardCharsets.UTF_8);
+        String output = ChildJvm.run(dir, NoJitScenario.class, "-Dmvel2.disable.jit=true");
 
-        assertTrue(finished, "the scenario didn't finish:\n" + output);
-        assertEquals(0, process.exitValue(), "scenario output:\n" + output);
         assertTrue(output.contains(NoJitScenario.DONE), output);
     }
 

@@ -25,17 +25,19 @@ import java.lang.reflect.InvocationTargetException;
  * </p>
  *
  * <p>
- * Two failures stay under MVEL's exceptions. What a {@link java.util.Map}'s own {@code get} or an object's
- * {@code toString()} threw, the first times MVEL runs the expression: MVEL calls those directly, so no
- * {@code InvocationTargetException} marks what the code threw. And what an argument threw once MVEL's JIT compiled the
- * argument but not the call it's passed to, as happens when a run fails while the JIT compiles that call: MVEL's
- * reflective accessor then wraps what the argument threw directly, as it wraps its own errors in an argument, such as
- * a null in a property path.
+ * Three failures stay under MVEL's exceptions. The first two are calls MVEL makes directly, so no
+ * {@code InvocationTargetException} marks what the code threw. What a {@link java.util.Map}'s own {@code get} threw,
+ * until one evaluation of the expression succeeds, JIT on or off, and once more on the run where the JIT compiles it.
+ * What a {@code toString()} converting a method argument threw, such as {@code b}'s in {@code 'abc'.concat(b)}, until
+ * the JIT compiles the expression, and always with {@code -Dmvel2.disable.jit=true}; other {@code toString()} calls,
+ * such as string concatenation, {@code String.valueOf(b)} or {@code b.toString()} itself, aren't wrapped. And what an
+ * argument threw once MVEL's JIT compiled the argument but not the call it's passed to, as happens when a run fails
+ * while the JIT compiles that call: MVEL's reflective accessor then wraps what the argument threw directly, as it
+ * wraps its own errors in an argument, such as a null in a property path.
  * </p>
  */
 final class CalledCodeFailures {
 
-    private static final String MVEL_PACKAGE = "org.mvel2.";
     private static final String REFLECTION_PACKAGE = "jdk.internal.reflect.";
     // MVEL wraps what the code threw in a few of its exceptions; a chain that loops back on itself never ends.
     private static final int MAX_DEPTH = 32;
@@ -78,7 +80,7 @@ final class CalledCodeFailures {
             // A chain that loops back on itself ends the walk on an exception MVEL made, which isn't an
             // InvocationTargetException, and neither is thrown: that's a RuntimeException.
             if (below instanceof InvocationTargetException call && call.getCause() != null
-                    && thrownFrom(call, REFLECTION_PACKAGE)) {
+                    && ExceptionReads.thrownFrom(call, REFLECTION_PACKAGE)) {
                 return call.getCause();
             }
             return thrown;
@@ -89,13 +91,7 @@ final class CalledCodeFailures {
     }
 
     private static boolean madeByMvel(Throwable t) {
-        return t.getClass().getName().startsWith(MVEL_PACKAGE)
-                || t.getClass() == RuntimeException.class && thrownFrom(t, MVEL_PACKAGE);
-    }
-
-    /** Whether {@code t} was created in a class of the package, going by the top frame of its stack trace. */
-    private static boolean thrownFrom(Throwable t, String packagePrefix) {
-        StackTraceElement[] trace = t.getStackTrace();
-        return trace.length > 0 && trace[0].getClassName().startsWith(packagePrefix);
+        return t.getClass().getName().startsWith(ExceptionReads.MVEL_PACKAGE)
+                || t.getClass() == RuntimeException.class && ExceptionReads.thrownFrom(t, ExceptionReads.MVEL_PACKAGE);
     }
 }

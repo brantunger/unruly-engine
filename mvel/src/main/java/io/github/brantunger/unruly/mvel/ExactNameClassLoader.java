@@ -36,9 +36,6 @@ import org.mvel2.MVEL;
  */
 final class ExactNameClassLoader extends ClassLoader {
 
-    /** The package of MVEL's classes, taken from MVEL itself so that a relocated copy is matched too. */
-    private static final String MVEL_PACKAGE = MVEL.class.getPackageName() + ".";
-
     // The class loader of the MVEL running the rules. PMD asks for the context class loader instead, which is the one
     // that may not see MVEL.
     @SuppressWarnings("PMD.UseProperClassLoader")
@@ -72,7 +69,7 @@ final class ExactNameClassLoader extends ClassLoader {
 
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-        if (name.startsWith(MVEL_PACKAGE)) {
+        if (name.startsWith(ExceptionReads.MVEL_PACKAGE)) {
             try {
                 return Class.forName(name, false, MVEL_CLASS_LOADER);
             } catch (ClassNotFoundException e) {
