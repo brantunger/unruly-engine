@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.10](https://github.com/brantunger/unruly-engine/compare/v2.7.9...v2.7.10) (2026-09-25)
+
+
+### Bug Fixes
+
+* report an MVEL declaration of an unknown type without MVEL's parser context, and MVEL's raw declaration, NPE and nested errors as syntax errors ([#645](https://github.com/brantunger/unruly-engine/issues/645)) ([a491fb4](https://github.com/brantunger/unruly-engine/commit/a491fb453ab203bdeb7b18749cf6eb281749767b))
+
 ## [2.7.9](https://github.com/brantunger/unruly-engine/compare/v2.7.8...v2.7.9) (2026-09-25)
 
 
