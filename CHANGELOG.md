@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.1](https://github.com/brantunger/unruly-engine/compare/v2.7.0...v2.7.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* stop the run for an output writer's interrupt or passed deadline, bound load()'s combined message, and retire a losing load outside the lock ([#605](https://github.com/brantunger/unruly-engine/issues/605)) ([2d28765](https://github.com/brantunger/unruly-engine/commit/2d28765850917d4e4a459f8a5a15c8f212f0224b))
+
 ## [2.7.0](https://github.com/brantunger/unruly-engine/compare/v2.6.3...v2.7.0) (2026-09-24)
 
 
