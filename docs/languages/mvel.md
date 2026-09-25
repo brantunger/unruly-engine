@@ -82,9 +82,7 @@ Without an import, MVEL resolves these class names on their own, as well as the 
 | --- |
 | `Boolean` `Byte` `Character` `CharSequence` `Class` `ClassLoader` `Double` `Exception` `Float` `Integer` `Long` `Math` `Number` `Object` `Runtime` `Short` `String` `StringBuilder` `System` `Thread` `Void` `Array` (`java.lang.reflect.Array`) |
 
-Everything else needs an import or a fully qualified name, including most of `java.lang`. The error depends on how
-the rule uses the class: `new IllegalStateException()` fails with `could not resolve class`, and a bare
-`IllegalStateException` with `unresolvable property or identifier`.
+Everything else needs an import or a fully qualified name, including most of `java.lang`.
 
 > [!CAUTION]
 > Imports are a convenience, not access control. A rule can reach any class by its fully qualified name, such as
@@ -103,19 +101,19 @@ engine.load(rules);
 
 An engine's imports are set when it's built; every `load()` compiles with them. A rule missing an import passes
 `load()` and fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
-`Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
+`Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`. An action declaring a
+variable of the class, as in `BigDecimal total = 0`, fails `load()` instead, with
+`unknown class or illegal statement`, usually a missing import.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException` from `build()`, and no engine is built.
 - A class that exists but can't be loaded, for example because a class it extends is missing from the class path,
-  is rejected the same way, with the `LinkageError` as the cause. Before 1.6.1 it was imported as a package, and rules
-  using it failed later with `unresolvable property or identifier`.
+  is rejected the same way, with the `LinkageError` as the cause.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can no longer be a fact name: with `imports("java.util")`, a fact named `Date` is rejected;
+- An imported class name can't be a fact name: with `imports("java.util")`, a fact named `Date` is rejected;
   see [Fact names MVEL rejects](#fact-names-mvel-rejects).
 - A single-class import such as `"java.time.LocalDate"` is resolved by `build()`, with the building thread's
-  context class loader; a string it can't load as a class, but that is a valid package name, is imported as a
-  package.
+  context class loader; a valid package name it can't load as a class is imported as a package.
 - Classes in imported packages are looked up with the context class loader of the thread that calls `load()`.
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
 - A thread without a context class loader uses this library's class loader.
@@ -259,8 +257,9 @@ Action for rule 'prime-rate' failed to compile at line 1, column 11: unbalanced 
 ```
 
 for the condition `applicant.creditScore >= ` and the action `output.put('rate', `. Each failure carries one `ERROR`
-`Issue` with that line and column (from 1) and the description. `b.` or `( )` get the engine's
-own lowercase `failed to compile: malformed expression`, not MVEL's, with no position: both are 0.
+`Issue` with that line and column (from 1) and the description. `b.` or `( )` get the engine's own lowercase
+`failed to compile: malformed expression`, not MVEL's. MVEL's own errors without a position keep its description, such
+as `illegal use of reserved word: in` or `ambiguous class name: List`. Both kinds have line and column 0.
 
 **A description of `null` ends with the root cause**, in the message and issue; see
 [Exceptions by method](../exceptions-by-method.md). MVEL gives `null` when a rule is the first to use, by full name, a
@@ -280,14 +279,15 @@ or declare variables; use == to compare.`
 
 **`import_static` in a condition** gets its own message, at the keyword: `uses import_static (at line
 1, column 1), which declares the method as a variable, and conditions can't declare variables. Call the method through
-its class instead, such as Math.max(a, b).` What's caught before compiling is in
+its class instead, such as Math.max(a, b).` See
 [What rules can change](../writing-rules.md#-what-rules-can-change).
 
 **A condition that doesn't compile hides its action's errors** until the next `load()`; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
 
 **What `load()` doesn't catch:** a missing import or an unknown identifier fails only at `run()`, unless
-[strong typing](#-strong-typing) is on; see [Classes and imports](#-classes-and-imports). With it, `new Nosuch()` reads
+it's a declared variable's type or [strong typing](#-strong-typing) is on; see
+[Classes and imports](#-classes-and-imports). With strong typing, `new Nosuch()` reads
 `could not resolve class: Nosuch`; several errors read `(1,5) ...; (1,19) ...` at the first's position.
 
 ## 📑 Compiled copies

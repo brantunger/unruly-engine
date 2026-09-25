@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
+import org.mvel2.ParserContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,8 +23,17 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     // The first line of MVEL's message for a compile error, such as [Error: unbalanced braces ( ... )]. MVEL ends its
     // lines with \n alone, so a line or paragraph separator from the expression's text doesn't end one.
     private static final Pattern ERROR = Pattern.compile("^\\[Error: (.*)]$", Pattern.MULTILINE | Pattern.UNIX_LINES);
-    // Where MVEL found the error, such as [Line: 1, Column: 11].
-    private static final Pattern POSITION = Pattern.compile("\\[Line: (\\d+), Column: (\\d+)]");
+    // Where MVEL found the error, such as [Line: 1, Column: 11], on a line of its own. MVEL's message quotes the
+    // expression, and a nested error's message, before it, so the last such line is MVEL's.
+    private static final Pattern POSITION = Pattern.compile("^\\[Line: (\\d+), Column: (\\d+)]$",
+            Pattern.MULTILINE | Pattern.UNIX_LINES);
+    // What MVEL says of a declaration whose first token isn't a class it knows, such as BigDecimal total = 0 without
+    // the import, or x y.
+    private static final String UNKNOWN_CLASS = "unknown class or illegal statement";
+    // MVEL's description of such a declaration, which names MVEL's own parser context, whose hash differs every time,
+    // in place of the token, such as unknown class or illegal statement: org.mvel2.ParserContext@54a056e4.
+    private static final Pattern UNKNOWN_CLASS_IN_CONTEXT = Pattern.compile(
+            Pattern.quote(UNKNOWN_CLASS + ": " + ParserContext.class.getName() + "@") + "\\p{XDigit}+");
     private static final char NEW_LINE = '\n';
     // MVEL's description of an error whose message is missing, such as a class's failed static initializer.
     private static final String MISSING_DESCRIPTION = "null";
@@ -114,23 +124,49 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             if (!thrownInMvel(e)) {
                 throw e;
             }
-            throw malformed(e);
+            throw positionless(MALFORMED_EXPRESSION, e);
+        } catch (RuntimeException e) {
+            // MVEL throws a plain RuntimeException, with no cause and no position, for some expressions it rejects,
+            // such as int in = 1 or an ambiguous class name. Any other is reported as is.
+            if (!rejectedPlainly(e)) {
+                throw e;
+            }
+            throw positionless(FactNames.escape(String.valueOf(e.getMessage())), e);
         }
     }
 
     /**
-     * Reports an expression MVEL's parser read out of bounds for, as it does for a {@code .} or {@code ?} it can't
-     * read past, such as in {@code b.}, {@code b. == 1} or {@code foo(?)}, or for blank parentheses, such as in
-     * {@code ( ) + 1}, with one issue that has no line or column: {@code failed to compile: malformed expression}.
-     * What MVEL threw is the cause.
+     * Tells whether a {@link RuntimeException} from compiling is one MVEL threw to reject the expression: whether its
+     * class is {@code RuntimeException} itself, the top frame of its stack trace is in MVEL's code and it has no
+     * cause. MVEL throws one for a reserved word or a digit as a typed variable's name, such as in {@code int in = 1}
+     * or {@code int 1x = 2}, for a typed variable declared twice, and for a class name two imported packages have,
+     * such as {@code List} with {@code java.util} and {@code java.awt} imported. One MVEL throws around a failure of
+     * other code, such as the application's class loader, has that failure as its cause.
      *
-     * @param e What MVEL threw
+     * @param e The exception
+     * @return {@code true} if MVEL threw it to reject the expression
+     */
+    static boolean rejectedPlainly(RuntimeException e) {
+        return RuntimeException.class.equals(e.getClass()) && ExceptionReads.thrownFrom(e, ExceptionReads.MVEL_PACKAGE)
+                && e.getCause() == null;
+    }
+
+    /**
+     * Reports an error MVEL gave no line or column for, with one issue that has none either. For an expression MVEL
+     * rejected with a plain {@link RuntimeException} (see {@link #rejectedPlainly}), MVEL's message, escaped as the
+     * engine escapes its messages, is the description, such as {@code failed to compile: illegal use of reserved word:
+     * in}. An expression MVEL's parser read out of bounds for, as it does for a {@code .} or {@code ?} it can't read
+     * past, such as in {@code b.}, {@code b. == 1} or {@code foo(?)}, or for blank parentheses, such as in
+     * {@code ( ) + 1}, is {@code failed to compile: malformed expression}. What MVEL threw is the cause.
+     *
+     * @param description The description, escaped
+     * @param e           What MVEL threw
      * @return The exception to throw
      */
-    private static InvalidExpressionException malformed(IndexOutOfBoundsException e) {
-        return new InvalidExpressionException("failed to compile: " + MALFORMED_EXPRESSION, List.of(
+    private static InvalidExpressionException positionless(String description, RuntimeException e) {
+        return new InvalidExpressionException("failed to compile: " + description, List.of(
                 new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 0, 0,
-                        MALFORMED_EXPRESSION)), e);
+                        description)), e);
     }
 
     /**
@@ -149,6 +185,22 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * </p>
      *
      * <p>
+     * The position is the last line of MVEL's message that holds only one, as MVEL's message quotes the expression
+     * before it. When MVEL nests one error's message in another's, as for {@code x = 1 &&}, the description is the
+     * innermost error's, and the position still the outer one's.
+     * </p>
+     *
+     * <p>
+     * MVEL's description of a declaration whose first token isn't a class it knows, such as
+     * {@code BigDecimal total = 0} without the import, or {@code x y}, names MVEL's parser context, which differs every
+     * time. The description is MVEL's words alone, {@code unknown class or illegal statement}, at MVEL's line and
+     * column.
+     * </p>
+     *
+     * <p>
+     * When the root cause is a {@link NullPointerException} thrown in MVEL's own code, as one is for an operator with
+     * nothing after it, such as {@code x = y &&}, the description is
+     * {@code not a statement, or badly formed structure}: MVEL's own for such a failure elsewhere in its parser.
      * When MVEL's description is missing and the root cause is an {@link AssertionError} thrown in MVEL's own code, as
      * one is for {@code b = = 1} with assertions on, the description is
      * {@code not a statement, or badly formed structure}: MVEL's own for {@code b = = 1} with assertions off.
@@ -167,24 +219,60 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
         String message = String.valueOf(ExceptionReads.messageOf(e));
         List<ErrorDetail> errors = e.getErrors();
         String description;
+        List<Throwable> chain = ExceptionReads.causeChain(e);
+        Throwable root = chain.get(chain.size() - 1);
         if (errors.isEmpty()) {
-            Matcher error = ERROR.matcher(message);
-            description = FactNames.escape(error.find() ? error.group(1) : message);
+            description = nullPointerInMvel(root) ? BADLY_FORMED
+                    : FactNames.escape(described(innermost(chain)));
         } else {
             description = oneLine(errors);
         }
         if (MISSING_DESCRIPTION.equals(description)) {
-            description = failedAssert(ExceptionReads.rootCause(e)) ? BADLY_FORMED
-                    : description + causeNote(ExceptionReads.causeChain(e));
+            description = failedAssert(root) ? BADLY_FORMED : description + causeNote(chain);
         }
+        int line = 0;
+        int column = 0;
         Matcher position = POSITION.matcher(message);
-        InvalidExpressionException.Issue issue = position.find()
-                ? new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR,
-                Integer.parseInt(position.group(1)), Integer.parseInt(position.group(2)), description)
-                : new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 0, 0,
-                description);
+        while (position.find()) {
+            line = Integer.parseInt(position.group(1));
+            column = Integer.parseInt(position.group(2));
+        }
+        InvalidExpressionException.Issue issue = new InvalidExpressionException.Issue(
+                InvalidExpressionException.Issue.Severity.ERROR, line, column, description);
         String where = issue.line() == 0 ? "" : " at line " + issue.line() + ", column " + issue.column();
         return new InvalidExpressionException("failed to compile" + where + ": " + description, List.of(issue), e);
+    }
+
+    /**
+     * Finds the innermost MVEL error in a compile error's cause chain, whose message MVEL nests in the others'.
+     *
+     * @param chain What MVEL threw, a {@link CompileException}, and its causes
+     * @return The last {@link CompileException} in the chain, which is the first link if there is no other
+     */
+    private static CompileException innermost(List<Throwable> chain) {
+        CompileException innermost = (CompileException) chain.get(0);
+        for (Throwable link : chain) {
+            if (link instanceof CompileException compileError) {
+                innermost = compileError;
+            }
+        }
+        return innermost;
+    }
+
+    /**
+     * Reads MVEL's description of an error from the first line of its message, such as {@code unbalanced braces
+     * ( ... )} from {@code [Error: unbalanced braces ( ... )]}, or the whole message if it has no such line. MVEL's
+     * words alone, {@code unknown class or illegal statement}, take the place of its description of a declaration
+     * whose first token isn't a class it knows, which names MVEL's parser context.
+     *
+     * @param e What MVEL threw
+     * @return The description, not escaped
+     */
+    private static String described(CompileException e) {
+        String message = String.valueOf(ExceptionReads.messageOf(e));
+        Matcher error = ERROR.matcher(message);
+        String description = error.find() ? error.group(1) : message;
+        return UNKNOWN_CLASS_IN_CONTEXT.matcher(description).matches() ? UNKNOWN_CLASS : description;
     }
 
     /**
@@ -219,16 +307,28 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     }
 
     /**
-     * Tells whether an {@link IndexOutOfBoundsException} from compiling came from MVEL's own code rather than from
-     * code MVEL called, such as the application's class loader: whether the first frame of its stack trace outside
-     * the JDK is in MVEL's package, as it is when the JDK's own bounds check threw for MVEL. One whose stack trace is
-     * empty or can't be read came out of the call to MVEL all the same, as HotSpot throws a frequent one without a
-     * stack trace, so it's MVEL's too.
+     * Tells whether the root cause of a compile error is a {@link NullPointerException} MVEL's own code threw, as it
+     * does for an operator with nothing after it, such as in {@code x = y &&}.
+     *
+     * @param root The root cause
+     * @return {@code true} if it's a {@link NullPointerException} MVEL threw, as {@link #thrownInMvel} tells, which
+     *         one HotSpot throws without a stack trace, once MVEL has thrown it often, is too
+     */
+    private static boolean nullPointerInMvel(Throwable root) {
+        return root instanceof NullPointerException && thrownInMvel(root);
+    }
+
+    /**
+     * Tells whether an exception from compiling, such as an {@link IndexOutOfBoundsException} or a
+     * {@link NullPointerException}, came from MVEL's own code rather than from code MVEL called, such as the
+     * application's class loader: whether the first frame of its stack trace outside the JDK is in MVEL's package, as
+     * it is when the JDK's own bounds check threw for MVEL. One whose stack trace is empty or can't be read came out
+     * of the call to MVEL all the same, as HotSpot throws a frequent one without a stack trace, so it's MVEL's too.
      *
      * @param e The exception
      * @return {@code true} if MVEL threw it
      */
-    static boolean thrownInMvel(IndexOutOfBoundsException e) {
+    static boolean thrownInMvel(Throwable e) {
         for (StackTraceElement frame : ExceptionReads.stackTraceOf(e)) {
             String className = frame.getClassName();
             if (!isJdk(className)) {

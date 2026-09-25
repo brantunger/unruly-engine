@@ -139,7 +139,7 @@ language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 | `Duplicate rule name '` | Two rules share a name. Thrown before anything compiles; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `has a blank condition expression`, `has a blank action expression` | Fill in the expression; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `is written in '...', which isn't one of the engine's expression languages` | The rule's `language` names one the engine doesn't have; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
-| `failed to compile` | A syntax error. In MVEL the message and `issues()` carry the line and column when MVEL reports them; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load) |
+| `failed to compile` | A syntax error. In MVEL, `unknown class or illegal statement` is usually a missing import; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load) |
 | `contains an assignment ('`, `uses import_static` | In MVEL, a condition that assigns or declares, reported `at line L, column C`; see [Conditions can't assign](writing-rules.md#conditions-cant-assign) |
 | `expression language failed to create a compiler` | In MVEL, an option that doesn't exist, or `strongTyping` when it can't apply; see [Strong typing](languages/mvel.md#-strong-typing) |
 | `Declared fact '...' can't be used` | A declared fact has a name the rules' languages reject; see [Declaring facts](facts.md#-declaring-facts) and [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
