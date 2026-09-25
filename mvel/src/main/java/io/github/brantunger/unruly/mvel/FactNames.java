@@ -85,14 +85,30 @@ final class FactNames {
         if (shown < name.length() && Character.isHighSurrogate(name.charAt(shown - 1))) {
             shown--;
         }
-        StringBuilder quoted = new StringBuilder(shown);
+        String quoted = escape(name.substring(0, shown));
+        if (shown < name.length()) {
+            return quoted + "... (" + (name.length() - shown) + " more characters)";
+        }
+        return quoted;
+    }
+
+    /**
+     * Escapes text for a message, as the engine's {@code core.Failures.escape} does, without shortening it: line
+     * breaks, tabs and other control characters, format characters and lone surrogates. A backslash isn't escaped, so
+     * escaping text again, as the engine does the whole message it reports, changes nothing.
+     *
+     * @param text The text
+     * @return The text, escaped
+     */
+    static String escape(String text) {
+        StringBuilder escaped = new StringBuilder(text.length());
         int c;
-        for (int i = 0; i < shown; i += Character.charCount(c)) {
-            c = name.codePointAt(i);
+        for (int i = 0; i < text.length(); i += Character.charCount(c)) {
+            c = text.codePointAt(i);
             switch (c) {
-                case '\n' -> quoted.append("\\n");
-                case '\r' -> quoted.append("\\r");
-                case '\t' -> quoted.append("\\t");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
                 default -> {
                     int type = Character.getType(c);
                     // The loop reads code points, so only a lone surrogate has the type SURROGATE.
@@ -100,18 +116,15 @@ final class FactNames {
                             || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
                             || type == Character.SURROGATE) {
                         for (char unit : Character.toChars(c)) {
-                            appendEscape(quoted, unit);
+                            appendEscape(escaped, unit);
                         }
                     } else {
-                        quoted.appendCodePoint(c);
+                        escaped.appendCodePoint(c);
                     }
                 }
             }
         }
-        if (shown < name.length()) {
-            quoted.append("... (").append(name.length() - shown).append(" more characters)");
-        }
-        return quoted.toString();
+        return escaped.toString();
     }
 
     /**

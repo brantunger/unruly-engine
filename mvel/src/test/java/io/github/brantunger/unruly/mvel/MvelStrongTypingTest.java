@@ -5,6 +5,8 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
+import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -98,6 +100,88 @@ class MvelStrongTypingTest {
                 () -> engine.load(List.of(rule("loan.amount > 5", "output.score = 1"))));
 
         assertTrue(thrown.getMessage().contains("loan"), thrown.getMessage());
+    }
+
+    /** Loads a rule that doesn't compile, and checks validate() reports it with the same message and issues. */
+    private static RuleCompilationException loadAndValidate(Rule rule) {
+        RulesEngine<Decision> engine = typedEngine();
+
+        RuleCompilationException loaded = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule)));
+        List<RuleCompilationException> validated = engine.validate(List.of(rule));
+
+        assertEquals(1, validated.size());
+        assertEquals(loaded.getMessage(), validated.get(0).getMessage());
+        assertEquals(loaded.issues(), validated.get(0).issues());
+        return loaded;
+    }
+
+    // #637: the message kept MVEL's whole [Error: Failed to compileShared: ...] block, over several lines.
+    @Test
+    @DisplayName("an unknown class fails load() with one line that names it")
+    void unknownClassIsOneLine() {
+        RuleCompilationException thrown = loadAndValidate(rule("true", "new Nosuch()"));
+
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 5: could not resolve class: Nosuch",
+                thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, "could not resolve class: Nosuch")), thrown.issues());
+        assertEquals("failed to compile at line 1, column 5: could not resolve class: Nosuch",
+                thrown.getCause().getMessage());
+    }
+
+    private static void assertUnknownClassOverTwoLines(String action, String description) {
+        RuleCompilationException thrown = loadAndValidate(rule("true", action));
+
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 5: " + description, thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, description)), thrown.issues());
+        assertEquals("failed to compile at line 1, column 5: " + description, thrown.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("an unknown class whose name runs over two lines is named on one line, the line break escaped")
+    void unknownNestedClassOverTwoLines() {
+        assertUnknownClassOverTwoLines("new Nosuch\n.Inner()", "could not resolve class: Nosuch\\n.Inner");
+    }
+
+    @Test
+    @DisplayName("an unknown generic class whose name runs over two lines is named on one line too")
+    void unknownGenericClassOverTwoLines() {
+        assertUnknownClassOverTwoLines("new Nosuch<\nX>()", "could not resolve class: Nosuch<\\nX>");
+    }
+
+    @Test
+    @DisplayName("a tab and a format character in an unknown class's name are escaped, once")
+    void unknownClassWithTabAndFormatCharacter() {
+        char rightToLeftOverride = (char) 0x202e;
+        RuleCompilationException thrown = loadAndValidate(
+                rule("true", "new Nosuch<\tX" + rightToLeftOverride + ">()"));
+
+        // The engine escapes the message again, which leaves an escaped description as it is.
+        String description = "could not resolve class: Nosuch<\\tX\\u202e>";
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 5: " + description, thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, description)), thrown.issues());
+        assertEquals("failed to compile at line 1, column 5: " + description, thrown.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("two unknown classes are listed on one line, each with its line and column")
+    void twoUnknownClassesAreOneLine() {
+        RuleCompilationException thrown = loadAndValidate(rule("true", "new Nosuch(); new Other()"));
+
+        String errors = "(1,5) could not resolve class: Nosuch; (1,19) could not resolve class: Other";
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 5: " + errors, thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, errors)), thrown.issues());
+        assertEquals("failed to compile at line 1, column 5: " + errors, thrown.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("an unknown class in a condition fails load() with one line that names it")
+    void unknownClassInConditionIsOneLine() {
+        RuleCompilationException thrown = loadAndValidate(rule("new Nosuch() != null", "output.score = 1"));
+
+        assertEquals("Condition for rule 'r' failed to compile at line 1, column 5: could not resolve class: Nosuch",
+                thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, "could not resolve class: Nosuch")), thrown.issues());
     }
 
     @Test

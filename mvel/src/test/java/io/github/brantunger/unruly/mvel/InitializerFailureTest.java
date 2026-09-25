@@ -50,6 +50,16 @@ class InitializerFailureTest {
         }
     }
 
+    public static class LineBreakInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw new RuntimeException("disk" + (char) 0x0a + "full" + (char) 0x202e);
+            }
+        }
+    }
+
     public static class NoMessageInit {
         public static int x = 1;
 
@@ -195,6 +205,17 @@ class InitializerFailureTest {
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 1,
                 "null (caused by java.lang.RuntimeException: plain init failure)")), thrown.issues());
         assertInstanceOf(InvalidExpressionException.class, thrown.getCause());
+    }
+
+    @Test
+    @DisplayName("the root cause's message is escaped in the issue as in the message, and escaped only once")
+    void rootCauseMessageEscaped() throws InterruptedException {
+        RuleCompilationException thrown = loadFailure(LineBreakInit.class);
+
+        String description = "null (caused by java.lang.RuntimeException: disk\\nfull\\u202e)";
+        assertEquals(PREFIX + description, thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), thrown.issues());
+        assertEquals("failed to compile at line 1, column 1: " + description, thrown.getCause().getMessage());
     }
 
     @Test

@@ -249,45 +249,46 @@ doesn't catch a condition that isn't a boolean; the engine checks that itself, w
 ## 🚨 Errors when rules load
 
 MVEL rejects an expression it can't compile with an `InvalidExpressionException`, which `load()` reports as a
-`RuleCompilationException` naming the expression and the rule;
-[Errors when rules load](custom.md#-errors-when-rules-load) covers how the engine collects and orders them. The
-message has MVEL's description and, when given, the line and column:
+`RuleCompilationException` naming the expression and rule;
+[Errors when rules load](custom.md#-errors-when-rules-load) covers collecting and ordering them. The message has
+the description and any position:
 
 ```text
 Condition for rule 'prime-rate' failed to compile at line 1, column 26: Malformed expression
 Action for rule 'prime-rate' failed to compile at line 1, column 11: unbalanced braces ( ... )
 ```
 
-for the condition `applicant.creditScore >= ` and the action `output.put('rate', `. Each failure carries one `Issue`
-with severity `ERROR`, that line and column counting from 1, and the description. When MVEL gives no position, both
-are 0 and the message has no `at line`.
+for the condition `applicant.creditScore >= ` and the action `output.put('rate', `. Each failure carries one `ERROR`
+`Issue` with that line and column (from 1) and the description. `b.` or `( )` get the engine's
+own lowercase `failed to compile: malformed expression`, not MVEL's, with no position: both are 0.
 
 **A description of `null` ends with the root cause**, in the message and issue; see
-[Exceptions by method](../exceptions-by-method.md). MVEL gives `null` when a rule is the first to use a class, by its
-full name, whose static initializer throws an exception:
+[Exceptions by method](../exceptions-by-method.md). MVEL gives `null` when a rule is the first to use, by full name, a
+class whose static initializer throws:
 
 ```text
 Condition for rule 'r' failed to compile at line 1, column 1: null (caused by java.lang.RuntimeException: plain init failure)
 ```
 
-**The line is reliable; the column is where MVEL gave up**, which isn't always the mistake. For `Malformed expression`
-it's the token after the one MVEL choked on, or one past the end of the line: `applicant.creditScore == == 750` reports
-column 29, the `750`. `unbalanced braces` points at the brace.
+**The line is reliable; the column is where MVEL gave up**, which isn't always the mistake. For MVEL's
+`Malformed expression` it's the token after the one MVEL choked on, or one past the end of the line:
+`applicant.creditScore == == 750` reports column 29, the `750`. `unbalanced braces` points at the brace.
 
-**An assignment in a condition** is found by MVEL's scan of the text before compiling, and reported with one
-issue at the operator or keyword: `Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column
-23). Conditions can't change facts or declare variables; use == to compare.`
+**An assignment in a condition** is caught before compiling, with one issue at the operator or keyword:
+`Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 23). Conditions can't change facts
+or declare variables; use == to compare.`
 
-**`import_static` in a condition** gets its own message from the same scan, at the keyword: `uses import_static (at line
+**`import_static` in a condition** gets its own message, at the keyword: `uses import_static (at line
 1, column 1), which declares the method as a variable, and conditions can't declare variables. Call the method through
-its class instead, such as Math.max(a, b).` What the scan catches is in
+its class instead, such as Math.max(a, b).` What's caught before compiling is in
 [What rules can change](../writing-rules.md#-what-rules-can-change).
 
-**A condition that doesn't compile hides its action's errors** until the next `load()`, whatever the language; see
+**A condition that doesn't compile hides its action's errors** until the next `load()`; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
 
 **What `load()` doesn't catch:** a missing import or an unknown identifier fails only at `run()`, unless
-[strong typing](#-strong-typing) is on; see [Classes and imports](#-classes-and-imports).
+[strong typing](#-strong-typing) is on; see [Classes and imports](#-classes-and-imports). With it, `new Nosuch()` reads
+`could not resolve class: Nosuch`; several errors read `(1,5) ...; (1,19) ...` at the first's position.
 
 ## 📑 Compiled copies
 
