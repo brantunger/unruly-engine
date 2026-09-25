@@ -1,0 +1,9 @@
+# A fenced block inside a list item
+
+1. Link to a page by its path:
+
+   ```markdown
+   [the guide](no-such-guide.md)
+   ```
+
+[broken after the fence](no-such-page-6.md)

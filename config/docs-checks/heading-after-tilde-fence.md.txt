@@ -1,0 +1,7 @@
+# A heading after a tilde fence
+
+~~~markdown
+```
+~~~
+
+## Real heading

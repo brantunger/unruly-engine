@@ -1,0 +1,19 @@
+# Two H2s with the same text
+
+## Notes
+
+> [!NOTE]
+> one
+
+text
+
+> [!TIP]
+> two
+
+## Other
+
+text
+
+## Notes
+
+text

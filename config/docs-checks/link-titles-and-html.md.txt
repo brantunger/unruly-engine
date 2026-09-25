@@ -1,0 +1,9 @@
+# Link titles and HTML links
+
+[x](no-such-page.md 'title')
+
+[y](no-such-page-2.md (title))
+
+<a href="no-such-page-3.md">z</a>
+
+[fine](tilde-fence-backtick-pair.md 'title') and <a href="tilde-fence-backtick-pair.md">fine</a>

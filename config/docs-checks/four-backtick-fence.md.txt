@@ -1,0 +1,7 @@
+# A four-backtick fence holding a three-backtick line
+
+````markdown
+```
+````
+
+[broken after the fence](no-such-page-4.md)

@@ -1,0 +1,9 @@
+# A tilde fence holding one backtick line
+
+~~~markdown
+```java
+~~~
+
+[broken after the fence](no-such-page.md)
+
+This prose line comes after a tilde fence that shows a backtick line, and it runs well past the limit of one hundred twenty characters.

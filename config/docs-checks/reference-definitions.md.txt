@@ -1,0 +1,10 @@
+# Reference definitions
+
+See [w], [v], [u], [ok] and [angle], and a footnote.[^1]
+
+[w]: no-such-page.md
+[v]: tilde-fence-backtick-pair.md#no-such-anchor
+[u]: https://example.com/
+[ok]: tilde-fence-backtick-pair.md
+[angle]: <tilde-fence-backtick-pair.md> "Title"
+[^1]: A footnote, not a link.

@@ -1,0 +1,3 @@
+# A plain inline link
+
+[plain broken](no-such-plain.md)

@@ -29,6 +29,9 @@ gradle-app.setting
 *.tar.gz
 *.rar
 
+# Python: docs/scripts/check_docs.py and check_style.py import fences.py, which writes docs/scripts/__pycache__/
+__pycache__/
+
 # Eclipse
 .apt_generated
 .classpath
