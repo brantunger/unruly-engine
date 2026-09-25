@@ -141,7 +141,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  for a language the engine doesn't have, as
      *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
      * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
-     *                                  class that exists but can't be loaded
+     *                                  class that exists but can't be loaded, with the linkage error's text cut to
+     *                                  at most 1,000 characters, with a note of how many were left out, then
+     *                                  escaped, and a root cause it hides named
      */
     AbstractRulesEngine(EngineConfiguration<O> configuration) {
         this.languages = LanguageRegistry.resolve(configuration.languages(), configuration.defaultLanguage(),

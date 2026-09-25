@@ -292,6 +292,7 @@ Most applications use `FactMap`. If you write your own `FactStore`, this is what
 - **A `null` entry** (a null `FactReference`) binds its key to `null`, like a fact whose value is `null`.
 - **A `null` key** fails the run with `IllegalArgumentException` (`fact name must not be null`), after `beforeRun`, so
   it reaches `onRunError`.
-- **`asMap()` must not return `null` or throw.** If it does, `run()` throws that exception, or a
-  `NullPointerException`, before any listener callback: no `beforeRun`, no `onRunError`.
+- **`asMap()` must not return `null` or throw, and a `FactReference`'s `getValue()` must not throw.** If one does,
+  `run()` or `runWithResult()` throws that exception unchanged, or a `NullPointerException`, before any listener
+  callback: no `beforeRun`, no `onRunError`, no `afterRun`. The engine doesn't log it either.
 - **Iterating must be safe** while other threads use the store. The run copies the entries on its own thread.

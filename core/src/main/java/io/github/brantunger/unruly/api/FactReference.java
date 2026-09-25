@@ -25,7 +25,14 @@ public interface FactReference<T extends @Nullable Object> {
     String getName();
 
     /**
-     * Gets the value of the fact.
+     * Gets the value of the fact. A run calls it once, when it starts.
+     *
+     * <p>
+     * If it throws, {@code run()} or {@code runWithResult()} throws that exception unchanged before any listener
+     * callback, so no listener hears of the run, and the engine doesn't log it; see
+     * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/facts.md#-implementing-factstore">
+     * Implementing FactStore</a>.
+     * </p>
      *
      * @return The value, which can be {@code null}
      */

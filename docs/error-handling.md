@@ -178,7 +178,9 @@ try {
 - **Listeners hear about it first.** When a condition or action fails, `onError` and then `onRunError` receive the
   same exception before `run()` throws it. A failing output supplier and a rejected fact name don't reach `onError`,
   because no rule is involved, but they do reach `onRunError`. An expression language that fails to create a session
-  fails the run before `beforeRun`, so no listener hears about it.
+  fails the run before `beforeRun`, so no listener hears about it. The same goes for a fact store's `asMap()` or a
+  fact's `getValue()` that throws, which isn't logged either; see
+  [Implementing FactStore](facts.md#-implementing-factstore).
 - **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or expression language throws an
   exception caused by an `InterruptedException`, the engine sets the interrupt status again; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).
