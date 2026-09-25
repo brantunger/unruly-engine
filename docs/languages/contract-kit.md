@@ -103,7 +103,7 @@ language. Extend it and supply expressions in your language, one method for each
 | `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact` | `declareVariable()` returns `null` | A later rule still sees the fact's value, and neither a later rule nor a later run sees the declared variable |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
 | `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
-| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be `output`, which the engine rejects before your language sees it |
+| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be `output`, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or `run()` |

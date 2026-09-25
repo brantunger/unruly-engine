@@ -204,7 +204,8 @@ public abstract class ExpressionLanguageContractTest {
     /**
      * Returns a fact name that rules in this language can't refer to. It must not be {@code "output"}, and the check
      * fails when it is: the engine rejects that name itself, before the language is asked, so it would pass the check
-     * without the language's {@code checkFactName} ever running.
+     * without the language's {@code checkFactName} ever running. Nor may it be {@code "x"}, the fact the check's rule
+     * reads, and the check fails when it is too.
      *
      * @return The name, or {@code null} if every name is accepted
      */
@@ -564,10 +565,16 @@ public abstract class ExpressionLanguageContractTest {
         // The engine rejects "output" before the language is asked, so it would make this check pass without the
         // language's checkFactName running at all.
         assertNotEquals("output", name, "unusableFactName() must return a name the language itself rejects");
+        // The check's rule reads x, which the run supplies alongside the name, so x can't be the name as well.
+        assertNotEquals("x", name, "unusableFactName() must not be x, which the check's rule reads");
         closing(engine(), engine -> {
             engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
+            // The rule reads x, so x is supplied too: then only checkFactName can make the run throw.
+            FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1), new Fact<>(name, 1));
 
-            assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
+            assertThrows(IllegalArgumentException.class, () -> engine.run(facts),
+                    "unusableFactName() returned '" + name + "', but run() didn't throw an IllegalArgumentException"
+                            + " for a fact with that name: check the language's checkFactName");
         });
     }
 
