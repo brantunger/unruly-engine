@@ -31,6 +31,9 @@ class QuoteCopiesTest {
     /** A name, and what both copies must make of it. */
     private static List<String[]> cases() {
         String limit = "x".repeat(MAX_NAME_LENGTH);
+        String beforeLast = "x".repeat(MAX_NAME_LENGTH - 1);
+        String emoji = Character.toString(0x1F600);
+        String tag = Character.toString(0xE0041);
         return List.of(
                 new String[]{"", ""},
                 new String[]{"plain_name é", "plain_name é"},
@@ -45,7 +48,17 @@ class QuoteCopiesTest {
                 new String[]{limit, limit},
                 new String[]{limit + "y", limit + "... (1 more characters)"},
                 new String[]{"\n".repeat(MAX_NAME_LENGTH + 3),
-                        "\\n".repeat(MAX_NAME_LENGTH) + "... (3 more characters)"});
+                        "\\n".repeat(MAX_NAME_LENGTH) + "... (3 more characters)"},
+                new String[]{"a" + (char) 0x202e + "b", "a\\u202eb"},
+                new String[]{"a" + (char) 0x2066 + "b" + (char) 0x2069, "a\\u2066b\\u2069"},
+                new String[]{"a" + (char) 0x200b + "b", "a\\u200bb"},
+                new String[]{"a" + (char) 0x200d + "b", "a\\u200db"},
+                new String[]{"a" + (char) 0xfeff + "b", "a\\ufeffb"},
+                new String[]{"a" + tag + "b", "a\\udb40\\udc41b"},
+                new String[]{"a" + emoji + "b", "a" + emoji + "b"},
+                new String[]{"x".repeat(MAX_NAME_LENGTH - 2) + emoji, "x".repeat(MAX_NAME_LENGTH - 2) + emoji},
+                new String[]{beforeLast + emoji + "tail", beforeLast + "... (6 more characters)"},
+                new String[]{beforeLast + tag, beforeLast + "... (2 more characters)"});
     }
 
     @ParameterizedTest(name = "{0}")

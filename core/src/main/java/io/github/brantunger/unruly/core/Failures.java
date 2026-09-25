@@ -343,7 +343,8 @@ public final class Failures {
     }
 
     /**
-     * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, saying how many were left out.
+     * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, saying how many were left out. A
+     * surrogate pair the limit falls inside is left out whole, so the message never ends in half a character.
      *
      * @param text The message
      * @return The message, shortened if it was longer
@@ -352,8 +353,16 @@ public final class Failures {
         if (text.length() <= MAX_DESCRIPTION_LENGTH) {
             return text;
         }
-        return text.substring(0, MAX_DESCRIPTION_LENGTH) + "... (" + (text.length() - MAX_DESCRIPTION_LENGTH)
-                + " more characters)";
+        int kept = keptLength(text, MAX_DESCRIPTION_LENGTH);
+        return text.substring(0, kept) + "... (" + (text.length() - kept) + " more characters)";
+    }
+
+    /**
+     * How many characters of text longer than {@code limit} to keep: {@code limit}, or one fewer when the last of them
+     * is a high surrogate. {@code mvel.FactNames.quote} keeps a copy of this.
+     */
+    private static int keptLength(String text, int limit) {
+        return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;
     }
 
     /**
@@ -393,8 +402,9 @@ public final class Failures {
 
     /**
      * Makes a fact, rule or language name safe to put in a message the engine logs: {@link #escape escaped}, and
-     * shortened to {@value #MAX_NAME_LENGTH} characters. {@code mvel.FactNames} keeps a copy of this, because the
-     * {@code mvel} package may not use this one.
+     * shortened to {@value #MAX_NAME_LENGTH} characters, or one fewer where the limit falls inside a surrogate pair,
+     * which is left out whole. {@code mvel.FactNames} keeps a copy of this, because the {@code mvel} package may not
+     * use this one.
      *
      * @param name The name
      * @return The name, escaped and shortened if it was longer
@@ -403,28 +413,32 @@ public final class Failures {
         if (name.length() <= MAX_NAME_LENGTH) {
             return escape(name);
         }
-        return escape(name.substring(0, MAX_NAME_LENGTH)) + "... (" + (name.length() - MAX_NAME_LENGTH)
-                + " more characters)";
+        int kept = keptLength(name, MAX_NAME_LENGTH);
+        return escape(name.substring(0, kept)) + "... (" + (name.length() - kept) + " more characters)";
     }
 
     /**
      * Makes text the engine didn't write safe to put in a message it logs, without shortening it. Line breaks, tabs
      * and other control characters, including the Unicode line and paragraph separators, are escaped ({@code \n},
      * {@code \r}, {@code \t}, or a backslash, {@code u} and four hex digits), so neither a name nor a fact value that
-     * reached the message from request data can start a log line of its own.
+     * reached the message from request data can start a log line of its own. So are the Unicode format characters
+     * (category Cf), such as bidi controls and zero-width and tag characters, which could reorder the rest of a line in
+     * a viewer or make two different names look the same. A format character outside the Basic Multilingual Plane is
+     * escaped as its two UTF-16 units, each a backslash, {@code u} and four hex digits.
      *
      * <p>
-     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control character, so
-     * a caller that can't tell whether a message has been through here may escape it again.
+     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control or format
+     * character, so a caller that can't tell whether a message has been through here may escape it again.
      * </p>
      *
      * @param text The text
-     * @return The text, with every character that could start a line escaped
+     * @return The text, with every character that could start a line, and every format character, escaped
      */
     public static String escape(String text) {
         StringBuilder escaped = new StringBuilder(text.length());
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
+        int c;
+        for (int i = 0; i < text.length(); i += Character.charCount(c)) {
+            c = text.codePointAt(i);
             switch (c) {
                 case '\n' -> escaped.append("\\n");
                 case '\r' -> escaped.append("\\r");
@@ -432,10 +446,12 @@ public final class Failures {
                 default -> {
                     int type = Character.getType(c);
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR) {
-                        escaped.append(String.format("\\u%04x", (int) c));
+                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT) {
+                        for (char unit : Character.toChars(c)) {
+                            escaped.append(String.format("\\u%04x", (int) unit));
+                        }
                     } else {
-                        escaped.append(c);
+                        escaped.appendCodePoint(c);
                     }
                 }
             }

@@ -76,7 +76,8 @@ implementation("io.github.brantunger:unruly-engine:2.7.2")
 ```
 
 ```xml
-<!-- With more than one module, such as the test kit: import the BOM, and give the modules no version. -->
+<!-- When anything else brings in unruly-engine-core, such as the test kit or a third-party language:
+     import the BOM, and give the modules no version. -->
 <dependencyManagement>
     <dependencies>
         <dependency>
@@ -107,8 +108,9 @@ implementation("io.github.brantunger:unruly-engine:2.7.2")
 
 `unruly-engine` is the engine with MVEL. If all your rules are written in [other languages](docs/languages/README.md),
 depend on `unruly-engine-core` instead: the same engine and API, without MVEL. To test a language of your own, add
-`unruly-engine-test` at the same version. With Maven, import `unruly-engine-bom` to keep every module at one version;
-see [Testing with the contract kit](docs/languages/contract-kit.md).
+`unruly-engine-test` at the same version. With Maven, import `unruly-engine-bom` whenever anything in the build brings
+in `unruly-engine-core`, a third-party language included, so core stays at the engine's version; see
+[Testing with the contract kit](docs/languages/contract-kit.md).
 
 <details>
 <summary><b>On the module path</b></summary>
