@@ -18,6 +18,24 @@ class FactNamesQuoteTest {
     }
 
     @Test
+    @DisplayName("format characters, such as bidi controls and zero-width and tag characters, are escaped")
+    void formatCharactersEscaped() {
+        String name = "a" + (char) 0x202e + "b" + (char) 0x200b + "c" + (char) 0x200d + "d" + (char) 0xfeff + "e"
+                + Character.toString(0xE0041);
+
+        assertEquals("a\\u202eb\\u200bc\\u200dd\\ufeffe\\udb40\\udc41", FactNames.quote(name));
+    }
+
+    @Test
+    @DisplayName("a name is never shortened inside a surrogate pair")
+    void longNameNotCutInsideSurrogatePair() {
+        String kept = "x".repeat(199);
+
+        assertEquals(kept + "... (6 more characters)", FactNames.quote(kept + Character.toString(0x1F600) + "tail"));
+        assertEquals(kept + "... (2 more characters)", FactNames.quote(kept + Character.toString(0xE0041)));
+    }
+
+    @Test
     @DisplayName("a name over 200 characters is shortened, saying how many characters were left out")
     void longNameShortened() {
         String limit = "x".repeat(200);

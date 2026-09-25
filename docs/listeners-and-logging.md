@@ -192,10 +192,11 @@ condition or action fails, the listener logs a line such as
 When the run stops during a rule, because its thread was interrupted or it passed its deadline, the line reads
 `Stopped rule: prime-rate | run() passed its deadline of ...` instead.
 
-Rule names appear as the engine's error messages show them: line breaks and other control characters are escaped
-(`\n`), and a name longer than 200 characters is shortened, so a name can't start a log line of its own. The failure
-message on that line is escaped the same way and isn't shortened, because it carries text the engine didn't write,
-such as the fact values a language quotes in its own message.
+Rule names appear as the engine's error messages show them: line breaks, control and
+[format characters](exceptions-by-method.md) are escaped (`\n`), and a name longer than 200 characters is shortened,
+so a name can't start a log line of its own. The failure message on that line is escaped the same way and isn't
+shortened, because it carries text the engine didn't write, such as the fact values a language quotes in its own
+message.
 
 ## 📡 Flight Recorder events
 
@@ -294,12 +295,12 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`.
 | `io.github.brantunger.unruly.engine` | `ERROR` | A fact `run()` rejects, or a fact name a language failed to check |
 | `io.github.brantunger.unruly.engine` | `ERROR` | An output supplier that fails, or a language that fails to create a session for a run, or to create or warm up one for a copy `load()` makes with `copiesAtLoad(n)` |
 | `io.github.brantunger.unruly.engine` | `ERROR` | A listener that throws a fatal `Error` from a callback other than `onError`, such as `A listener threw java.lang.OutOfMemoryError in afterRun` |
-| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception: `Listener threw exception in <callback>: <class>: <message>`, escaped and shortened to 1,000 characters (no `: <message>` when it has none), then a root-cause note such as ` (caused by java.io.IOException: disk full)` when the message would otherwise hide the root cause; see [Exception messages](exceptions-by-method.md) |
+| `io.github.brantunger.unruly.engine` | `WARN` | A listener threw an exception: `Listener threw exception in <callback>: <class>: <message>`, escaped and shortened to 1,000 characters (no `: <message>` when it has none), then a root-cause note such as ` (caused by java.io.IOException: disk full)` when an exception or cause has no readable message; see [Exception messages](exceptions-by-method.md) |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run stopped because its thread was interrupted or it passed its deadline, once when a nested run's stop reaches the run around it for the same interrupt or deadline |
 | `io.github.brantunger.unruly.engine` | `WARN` | A warning a language reports through `CompileContext.warn` while `load()` compiles |
 | `io.github.brantunger.unruly.engine` | `WARN` | A language failed to close a session or a compiler |
-| `io.github.brantunger.unruly.engine` | `WARN` | A copy of the rules a run gave back couldn't be kept for a later run, so its sessions were closed: `A copy of the rules couldn't be kept for a later run, so its sessions were closed: <message>`, escaped and shortened to 1,000 characters (the class name when it has no message), then a root-cause note when the message would otherwise hide the root cause |
-| `io.github.brantunger.unruly.engine` | `WARN` | A fatal error from closing replaced a failure but can't keep it in `getSuppressed()`, as with an `OutOfMemoryError` the JVM throws itself: `A failure was replaced by the fatal error <class>: <message>, which can't carry it as a suppressed exception: <class>: <message>`. Each `<class>: <message>` is escaped and shortened to 1,000 characters (no `: <message>` when it has none), then a root-cause note when the message would otherwise hide the root cause; see [A fatal error while closing](thread-safety.md#a-fatal-error-while-closing) |
+| `io.github.brantunger.unruly.engine` | `WARN` | A copy of the rules a run gave back couldn't be kept for a later run, so its sessions were closed: `A copy of the rules couldn't be kept for a later run, so its sessions were closed: <message>`, escaped and shortened to 1,000 characters (the class name when it has no message), then a root-cause note when an exception or cause has no readable message |
+| `io.github.brantunger.unruly.engine` | `WARN` | A fatal error from closing replaced a failure but can't keep it in `getSuppressed()`, as with an `OutOfMemoryError` the JVM throws itself: `A failure was replaced by the fatal error <class>: <message>, which can't carry it as a suppressed exception: <class>: <message>`. Each `<class>: <message>` is escaped and shortened to 1,000 characters (no `: <message>` when it has none), then a root-cause note when an exception or cause has no readable message; see [A fatal error while closing](thread-safety.md#a-fatal-error-while-closing) |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run waited five seconds for a compiled copy and made an extra one, once for each rule list |
 | `io.github.brantunger.unruly.engine` | `DEBUG` | The stack trace of an exception a listener threw, which prints its message unescaped |
 | `io.github.brantunger.unruly.engine` | `DEBUG` | `The engine records no Flight Recorder events here, because they can't be loaded: <error>`, once, where the event classes can't be loaded, such as a native image without Flight Recorder |

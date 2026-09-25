@@ -71,13 +71,14 @@ gets the BOM's version, whatever order you declare them in:
 ```
 
 > [!WARNING]
-> Without the BOM, when a POM doesn't name `unruly-engine-core` itself, the first of `unruly-engine` and
-> `unruly-engine-test` it declares sets core's version. An older kit declared first downgrades core, for the
-> application too, so a newer engine runs on the kit's older core.
+> Without the BOM, when a POM doesn't name `unruly-engine-core` itself, the first dependency it declares that
+> brings in core sets core's version: `unruly-engine`, `unruly-engine-test` or a third-party language. An older one
+> declared first downgrades core, for the application too, so a newer engine runs on an older core. Import the BOM
+> whenever anything in the build brings in `unruly-engine-core`, a third-party language included.
 
 A `<version>` written on a dependency beats the BOM, so leave it off. The engine's own POMs don't import the BOM:
-your POM must. A build that can't import it can instead declare `unruly-engine` before the kit, keep the versions
-equal, or pin `unruly-engine-core` in `<dependencyManagement>`.
+your POM must. A build that can't import it can instead declare `unruly-engine` before the kit and any third-party
+language, keep the versions equal, or pin `unruly-engine-core` in `<dependencyManagement>`.
 
 Gradle takes the highest version of core, whatever the order, so the BOM is optional there. To keep the modules at
 one version, add `implementation platform('io.github.brantunger:unruly-engine-bom:<version>')` and declare them
@@ -195,7 +196,8 @@ expression without an engine. They're the engine's own contexts: writing to thei
 A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
 `facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
 such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
-`type must not be null`. A fact's value may be `null`, and these contexts don't check fact names.
+`type must not be null`. A fact's value may be `null`. The evaluation and action contexts don't check fact names;
+`compile()` rejects a fact declared as `output`, as an engine does.
 
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
@@ -264,4 +266,4 @@ this layout needs no `opens` clause; a test module of its own, one that `require
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
 | **A named main module, with Maven** | `LanguageTestContexts` and `evaluateAgreesWithDetail` throw `IllegalAccessError`, because the kit is on the class path | Add `--add-exports` to Surefire's `argLine`; see [A named module with Maven](#a-named-module-with-maven) |
-| **An older kit declared first, with Maven** | Unless the POM imports the BOM or declares `unruly-engine-core` itself, Maven takes core's version from the kit, so a newer `unruly-engine` runs on the older core | Import `unruly-engine-bom` and drop the modules' versions; without a BOM, declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`. See [Testing with the contract kit](#-testing-with-the-contract-kit) |
+| **An older kit or third-party language declared first, with Maven** | Unless the POM imports the BOM or declares `unruly-engine-core` itself, Maven takes core's version from the first of them, so a newer `unruly-engine` runs on the older core | Import `unruly-engine-bom` whenever anything brings in `unruly-engine-core`, and drop the modules' versions; without a BOM, declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`. See [Testing with the contract kit](#-testing-with-the-contract-kit) |

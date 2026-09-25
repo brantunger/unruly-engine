@@ -75,13 +75,19 @@ final class FactNames {
      * {@code mvel} package may not use. {@code FactNamesQuoteTest} and {@code QuoteCopiesTest} run the same cases on
      * both, so the two can't drift apart. Fact names can
      * come from request data, and the engine logs these messages, so a line break in a name mustn't start a log line.
-     * Only a name that isn't an identifier can contain one.
+     * Only a name that isn't an identifier can contain one. Format characters, such as bidi controls and zero-width
+     * characters, which an identifier can contain too, are escaped as well, and a name is never shortened inside a
+     * surrogate pair.
      */
     static String quote(String name) {
         int shown = Math.min(name.length(), MAX_NAME_LENGTH);
+        if (shown < name.length() && Character.isHighSurrogate(name.charAt(shown - 1))) {
+            shown--;
+        }
         StringBuilder quoted = new StringBuilder(shown);
-        for (int i = 0; i < shown; i++) {
-            char c = name.charAt(i);
+        int c;
+        for (int i = 0; i < shown; i += Character.charCount(c)) {
+            c = name.codePointAt(i);
             switch (c) {
                 case '\n' -> quoted.append("\\n");
                 case '\r' -> quoted.append("\\r");
@@ -89,16 +95,18 @@ final class FactNames {
                 default -> {
                     int type = Character.getType(c);
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR) {
-                        quoted.append(String.format("\\u%04x", (int) c));
+                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT) {
+                        for (char unit : Character.toChars(c)) {
+                            quoted.append(String.format("\\u%04x", (int) unit));
+                        }
                     } else {
-                        quoted.append(c);
+                        quoted.appendCodePoint(c);
                     }
                 }
             }
         }
-        if (name.length() > MAX_NAME_LENGTH) {
-            quoted.append("... (").append(name.length() - MAX_NAME_LENGTH).append(" more characters)");
+        if (shown < name.length()) {
+            quoted.append("... (").append(name.length() - shown).append(" more characters)");
         }
         return quoted.toString();
     }
