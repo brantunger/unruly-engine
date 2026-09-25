@@ -22,6 +22,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.AbstractMap;
@@ -240,12 +243,14 @@ class CloseEverySessionTest {
     /**
      * A compiler for a rule set made by hand, which records, in order, each session it made and itself as they're
      * closed, as {@link RecordingLanguage} does, and throws {@code closeFailure} from its own {@code close()}, which
-     * records whether its thread's interrupt status was set. Its sessions are numbered from 1.
+     * records whether its thread's interrupt status was set, and {@code sessionCloseFailure} from each session's.
+     * Its sessions are numbered from 1.
      */
     private static final class RecordingCompiler implements ExpressionCompiler {
         final List<String> closed = new CopyOnWriteArrayList<>();
         final AtomicInteger sessionsMade = new AtomicInteger();
         volatile Throwable closeFailure;
+        volatile Throwable sessionCloseFailure;
         volatile boolean closedInterrupted;
 
         @Override
@@ -265,6 +270,7 @@ class CloseEverySessionTest {
                 @Override
                 public void close() {
                     closed.add("session " + number);
+                    throwIfSet(sessionCloseFailure);
                 }
             };
         }
@@ -587,6 +593,31 @@ class CloseEverySessionTest {
     }
 
     @Test
+    @DisplayName("close() with a session that fails because it was interrupted closes the rest and the compiler, and"
+            + " leaves the interrupt for the caller to see")
+    void interruptedSessionCloseKeepsTheInterruptStatus() {
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(language, 2);
+        engine.load(rules("r"));
+        language.sessionCloseFailures.put(1, new IllegalStateException("stuck",
+                new InterruptedException("interrupted while closing")));
+        String logs;
+        boolean interrupted;
+
+        try {
+            logs = logsOf(engine::close);
+        } finally {
+            // Read, and cleared, whatever close() did: a thread left interrupted would fail the tests after this one.
+            interrupted = Thread.interrupted();
+        }
+
+        assertTrue(interrupted, "the interrupt inside the close failure was swallowed");
+        assertEquals(sessionsThenCompiler(1, 2), language.closed, "every session, then the compiler");
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language failed to close"
+                + " a session: stuck"), logs);
+    }
+
+    @Test
     @DisplayName("guard: a run that succeeds and then gives back the last copy of closed rules throws the fatal Error"
             + " from closing it")
     void runSucceedsThenFatalOnGiveBack() {
@@ -648,6 +679,26 @@ class CloseEverySessionTest {
 
         assertSame(runFatal, thrown.get());
         assertEquals(0, runFatal.getSuppressed().length);
+        assertEquals(sessionsThenCompiler(1, 1), language.closed);
+    }
+
+    @Test
+    @DisplayName("a run that succeeds and then gives back the last copy of closed rules throws the fatal Error from"
+            + " closing their compiler")
+    void runSucceedsThenFatalCompilerOnGiveBack() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(language, 1);
+        engine.load(rules("r"));
+        language.compilerCloseFailure = fatal;
+        // close() leaves the compiler open, as the run holds a copy: the run closes it when it gives the copy back.
+        language.duringAction = engine::close;
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+
+        assertSame(fatal, thrown.get());
+        assertEquals(0, fatal.getSuppressed().length);
         assertEquals(sessionsThenCompiler(1, 1), language.closed);
     }
 
@@ -871,6 +922,32 @@ class CloseEverySessionTest {
     }
 
     @Test
+    @DisplayName("validate() that fails with something that isn't fatal, from logging a fatal Error from compiling,"
+            + " throws a fatal Error from closing the compiler, carrying the failure")
+    void validateFailureThenFatalClose() {
+        OutOfMemoryError compiling = new OutOfMemoryError("compiling");
+        OutOfMemoryError closing = new OutOfMemoryError("closing the compiler");
+        IllegalStateException logging = new IllegalStateException("the log failed");
+        RecordingLanguage language = new RecordingLanguage();
+        language.duringCompile = () -> {
+            throw compiling;
+        };
+        language.compilerCloseFailure = closing;
+        RulesEngine<Map<String, Object>> engine = engine(language, 0);
+        List<Rule> rules = rules("r");
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        // validate() logs nothing of its own, but a fatal Error from compiling is logged before it's rethrown, and a
+        // logger that fails then throws something that isn't fatal in its place.
+        String logs = logsFailingAt("failed to compile", logging,
+                () -> thrown.set(thrownBy(() -> engine.validate(rules))));
+
+        assertSame(closing, thrown.get(), logs);
+        assertArrayEquals(new Throwable[] {logging}, closing.getSuppressed());
+        assertEquals(List.of("compiler"), language.closed);
+    }
+
+    @Test
     @DisplayName("a nested run given an extra copy throws a fatal Error from closing it when it gives it back")
     void fatalFromClosingAnExtraCopy() {
         OutOfMemoryError fatal = new OutOfMemoryError("closing the extra copy");
@@ -1077,6 +1154,31 @@ class CloseEverySessionTest {
                 + " its sessions were closed: keeping the copy"), logs);
         rules.release(rules.borrow(Instant.now().plusSeconds(10)));
         assertEquals(2, compiler.sessionsMade.get(), "the next run made a copy of its own under the limit");
+    }
+
+    @Test
+    @DisplayName("a copy given back that the idle queue can't take with a fatal Error, and whose session then throws"
+            + " another as it's closed, returns the queue's, which came first")
+    void fatalFromKeepingACopyBeatsFatalFromClosingIt() throws InterruptedException, TimeoutException {
+        OutOfMemoryError keeping = new OutOfMemoryError("keeping the copy");
+        OutOfMemoryError closing = new OutOfMemoryError("closing the copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        FailingQueue idle = new FailingQueue();
+        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
+        RuleSet.Copy copy = rules.borrow(null);
+        idle.addFailure.set(keeping);
+        compiler.sessionCloseFailure = closing;
+        AtomicReference<Error> returned = new AtomicReference<>();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> thrown.set(thrownBy(() -> returned.set(rules.release(copy)))));
+
+        assertNull(thrown.get(), "returned, for the run to weigh against its own failure");
+        assertSame(keeping, returned.get());
+        assertEquals(0, keeping.getSuppressed().length);
+        assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language failed to close"
+                + " a session: closing the copy"), "the session's is only logged: " + logs);
     }
 
     @Test
@@ -1679,6 +1781,71 @@ class CloseEverySessionTest {
     }
 
     @Test
+    @DisplayName("a run stopped while it waits for a copy, whose stop fails to be reported with something that isn't"
+            + " fatal, still leaves the retired rules, and throws the fatal Error from closing them, carrying the"
+            + " failure")
+    void stoppedWaitWhoseReportFailsStillLeaves() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
+        IllegalStateException logging = new IllegalStateException("the log failed");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        // Only a logger that fails can make reporting the stop throw something that isn't fatal: a listener's
+        // exception is logged and passed over.
+        String logs = logsFailingAt("run() was interrupted while waiting", logging, () -> waitRetireAndStop(language,
+                engine, fatal, () -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))),
+                CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertSame(fatal, thrown.get(), logs);
+        assertArrayEquals(new Throwable[] {logging}, fatal.getSuppressed());
+        assertEquals(List.of("compiler", "session 1", "compiler"), language.closed,
+                "the waiter's rules as it left, then the holder's copy and rules as it gave the copy back");
+    }
+
+    @Test
+    @DisplayName("a run with a deadline that is interrupted while it waits for a copy is a stop for the interrupt, not"
+            + " for the deadline, which it never passed")
+    void interruptedWaitWithADeadlineIsAStopForTheInterrupt() {
+        RecordingLanguage language = new RecordingLanguage();
+        // A deadline no test reaches, so only the interrupt can stop the run.
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .runTimeout(Duration.ofMinutes(5)), 0);
+        engine.load(rules("r"));
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        language.duringAction = () -> {
+            holding.countDown();
+            await(finish);
+        };
+        Thread holder = new Thread(() -> thrownBy(() -> engine.run(new FactMap<>())), "holder");
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+
+        logsOf(() -> {
+            holder.start();
+            await(holding);
+            try {
+                // Interrupted before it asks for the copy the holder has, so its wait ends at once, whatever the
+                // timing: a thread whose interrupt status is set still waits for a copy in use, and the wait throws.
+                Thread.currentThread().interrupt();
+                thrown.set(thrownBy(() -> engine.run(new FactMap<>())));
+            } finally {
+                interrupted.set(Thread.interrupted());
+                finish.countDown();
+                join(holder);
+            }
+        });
+
+        assertTrue(interrupted.get(), "the thread's interrupt status");
+        ReportedFailure stop = assertInstanceOf(ReportedFailure.class, thrown.get());
+        assertInstanceOf(InterruptedException.class, stop.getCause());
+        // What tells a stop that a run inside a rule already logged from one it didn't: an interrupt, or which
+        // deadline was passed.
+        assertTrue(stop.isStopFor(null), "not taken for a stop for an interrupt: " + stop.getMessage());
+    }
+
+    @Test
     @DisplayName("a fatal Error that can't carry the failure it replaces, as the JVM's own OutOfMemoryError can't,"
             + " logs that failure at WARN")
     void fatalThatCantCarryTheFailureLogsIt() {
@@ -1719,6 +1886,37 @@ class CloseEverySessionTest {
             assertTrue(System.nanoTime() < giveUp, "the run never started waiting for a copy");
             Thread.onSpinWait();
         }
+    }
+
+    /**
+     * Runs {@code action} with {@link System#err} replaced, as {@link io.github.brantunger.unruly.TestLogs#logsOf}
+     * does, but by a stream that throws {@code failure} in place of writing the first line containing {@code text}, as
+     * a logging backend that fails would; every other line is kept. slf4j-simple writes each line with
+     * {@code println}, on the thread that logs it.
+     *
+     * @return Everything written to {@code System.err} while {@code action} ran, but the line that failed
+     */
+    private static String logsFailingAt(String text, RuntimeException failure, Runnable action) {
+        PrintStream original = System.err;
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        AtomicBoolean failed = new AtomicBoolean();
+        System.setErr(new PrintStream(buffer, true, StandardCharsets.UTF_8) {
+            @Override
+            public void println(String line) {
+                if (line != null && line.contains(text) && failed.compareAndSet(false, true)) {
+                    throw failure;
+                }
+                super.println(line);
+            }
+        });
+        try {
+            action.run();
+        } finally {
+            System.setErr(original);
+        }
+        String logs = buffer.toString(StandardCharsets.UTF_8);
+        assertTrue(failed.get(), "nothing logged a line containing " + text + ": " + logs);
+        return logs;
     }
 
     /**

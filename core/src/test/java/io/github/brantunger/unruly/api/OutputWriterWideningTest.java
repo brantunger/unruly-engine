@@ -252,6 +252,15 @@ class OutputWriterWideningTest {
         }
     }
 
+    /** A setter for a Boolean. */
+    public static final class BoxedBooleanR {
+        String setter;
+
+        public void setR(Boolean r) {
+            setter = "Boolean " + r;
+        }
+    }
+
     /** A setter for text. */
     public static final class TextR {
         String setter;
@@ -522,6 +531,16 @@ class OutputWriterWideningTest {
 
         assertEquals(BoxedLongR.class.getName() + " has no public method setR that accepts a java.lang.Boolean"
                 + " (setR(java.lang.Long) exists" + NOTE, thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("a number into a setter for a Boolean fails, naming it")
+    void numberNamesABooleanSetter() {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new BoxedBooleanR(), 5));
+
+        assertEquals(BoxedBooleanR.class.getName() + " has no public method setR that accepts a java.lang.Integer"
+                + " (setR(java.lang.Boolean) exists" + NOTE, thrown.getMessage());
     }
 
     @Test

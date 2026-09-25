@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ActionResult;
@@ -368,26 +369,22 @@ class LanguageSessionsTest {
             await(release);
         };
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .language(confined).maxCopies(1).runTimeout(Duration.ofMillis(200)).build();
+                .language(confined).maxCopies(1).build();
         engine.load(List.of(rule("a", "confined")));
         ExecutorService threads = Executors.newFixedThreadPool(2);
         try {
             Future<?> holder = threads.submit(() -> engine.run(new FactMap<>()));
             assertTrue(holding.await(30, TimeUnit.SECONDS), "the holder never took the only copy");
 
-            Future<?> waiter = threads.submit(() -> engine.run(new FactMap<>()));
-            // The waiting run reaches its deadline before a copy comes back, so it never holds one.
+            // Only the waiting run has a deadline, which it reaches before a copy comes back, so it never holds one.
+            Future<?> waiter = threads.submit(() -> engine.runWithResult(new FactMap<>(),
+                    RunOptions.withTimeoutOf(Duration.ofMillis(200))));
             ExecutionException stopped = assertThrows(ExecutionException.class,
                     () -> waiter.get(30, TimeUnit.SECONDS));
             assertTrue(String.valueOf(stopped.getCause()).contains("while waiting for a compiled copy of the rules"),
                     String.valueOf(stopped.getCause()));
             release.countDown();
-            try {
-                holder.get(30, TimeUnit.SECONDS);
-            } catch (ExecutionException e) {
-                // The holder's action ran past its own deadline too, which is the only way it may have failed.
-                assertTrue(String.valueOf(e.getCause()).contains("passed its deadline"), String.valueOf(e.getCause()));
-            }
+            holder.get(30, TimeUnit.SECONDS);
         } finally {
             release.countDown();
             threads.shutdownNow();
