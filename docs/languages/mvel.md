@@ -319,15 +319,9 @@ regenerates accessors over and over, costing CPU and metaspace churn.
 
 Because a session's expressions belong to one run at a time, they're safe with any MVEL optimizer, and the engine
 leaves MVEL's global optimizer setting alone. MVEL's default JIT optimizer stays in effect (unless you pass
-`-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use MVEL aren't affected.
-
-In a GraalVM native image, the JIT must be off: an image can't load the classes it generates, so with the JIT on the
-first condition fails. Start the executable with `-Dmvel2.disable.jit=true`; see [Native image](../native-image.md).
-
-> [!NOTE]
-> Earlier versions switched MVEL to its slower reflective optimizer for the whole JVM when the engine class loaded,
-> unless the JVM was started with `-Dunruly.mvel.jit=true`. Later 1.x releases ignored that property, and 2.0 removes
-> the `AbstractRulesEngine.JIT_PROPERTY` constant that named it.
+`-Dmvel2.disable.jit=true`), and other libraries in the same JVM that use MVEL aren't affected. Earlier versions
+switched the whole JVM to MVEL's slower reflective optimizer as the engine class loaded, unless started with
+`-Dunruly.mvel.jit=true` (`AbstractRulesEngine.JIT_PROPERTY`, removed in 2.0).
 
 ### The dynamic optimizer and class loaders
 
@@ -348,20 +342,27 @@ per cycle, with its classes and their metaspace.
 `-Dmvel2.disable.jit=true` switches the dynamic optimizer off, and the loaders are then collected. MVEL reads the
 property once, as its optimizer factory initializes, so it's a decision for the JVM's command line, and it costs
 MVEL's reflective accessors instead of its JIT ones everywhere in that JVM, including other libraries that use MVEL.
-See [MVEL's JIT must be off](../native-image.md#-mvels-jit-must-be-off).
+A GraalVM native image needs it too, or its first condition fails; see
+[MVEL's JIT must be off](../native-image.md#-mvels-jit-must-be-off).
 
 The same optimizer is why a class the `load()` thread's context class loader can't reach fails a rule only after about
 50 runs in quick succession: until the optimizer steps in, MVEL reads the fact reflectively and the rule works. A
 steady trickle of runs never reaches the burst, so tests pass and production fails. See
 [Class loaders](../thread-safety.md#-class-loaders).
 
-When a rule's Java code throws, the failure's `getCause()` is what it threw, except in two cases, where MVEL's
-exception stays above it in the chain:
+When a rule's Java code throws, the failure's `getCause()` is what it threw, except where MVEL's exception
+stays above it:
 
-- Code MVEL calls without reflection, such as your own `Map`'s `get()` for `order.id`, or a `toString()` converting
-  an argument: until the optimizer compiles the expression, and always with `-Dmvel2.disable.jit=true`.
+- Your own `Map`'s `get()` for `order.id`: until one evaluation of the expression succeeds, JIT on or off, and
+  once more as the optimizer compiles it.
+- A `toString()` converting an argument: until the optimizer compiles the expression, and always with
+  `-Dmvel2.disable.jit=true`.
 - An argument's code, such as `code.value` in `output.put('a', code.value)`, when the optimizer compiled the
   argument but not the call around it, which can happen while it compiles and then last.
+
+An exception whose `getMessage()` throws is lost until one evaluation of the expression succeeds: MVEL reads the
+message as it wraps the exception, so what `getMessage()` threw becomes the cause. Later failures read
+`(message unavailable: …)`.
 
 ## 🧵 Virtual threads
 

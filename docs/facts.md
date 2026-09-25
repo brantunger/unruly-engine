@@ -268,8 +268,9 @@ never turns an `Integer` into a `Long`, so declare `long.class` to accept narrow
 
 A `null` passes a primitive declaration too, and stays `null`, where Java would throw `NullPointerException` as it
 unboxed it. What happens next depends on where it goes. The default output writer never passes it to a primitive
-setter, so it fails the rule unless another setter of that name takes `null`. In MVEL, `output.x = n` stores `0` in
-an `int` property, while `output.setX(n)` fails the rule; see
+setter, so it fails the rule unless another setter of that name takes `null`. In MVEL, `output.x = n` stores `0`
+through an `int` setter, but into a public `int` field only on some runs, failing the rule on the others, while
+`output.setX(n)` fails the rule; see
 [Assignment gotchas](languages/mvel-gotchas.md#-assignment-gotchas).
 
 ### Catching a typo when the rules load

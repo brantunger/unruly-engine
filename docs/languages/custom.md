@@ -341,7 +341,7 @@ language can do decides whether a rule that is already running can be stopped:
 | Language | Can it stop inside an expression? |
 | --- | --- |
 | MVEL | No. It has no hook inside a loop, so `while (true) {}` runs for ever. |
-| JEXL 3 | Yes, with [`JexlBuilder.cancellable(true)`](https://commons.apache.org/proper/commons-jexl/apidocs/org/apache/commons/jexl3/JexlOptions.html), whose interpreter checks for interruption and cancellation. |
+| JEXL 3 | Yes, with [`JexlBuilder.cancellable(true)`](https://commons.apache.org/proper/commons-jexl/apidocs/org/apache/commons/jexl3/JexlOptions.html), whose interpreter stops for an interrupt. For a timeout, also set the flag its context's `JexlContext.CancellationHandle` returns once `context.deadline()` passes. |
 | CEL | Bounded by construction: the language isn't Turing-complete, and cel-java supports cost limits. |
 
 Both contexts tell an expression where it stands:
@@ -360,23 +360,59 @@ public CompiledAction compileAction(Expression expression) {
 }
 ```
 
-`isCancelled()` is `true` while the calling thread is interrupted, or once the deadline has passed. It reads the thread
-it's called on, so call it on the run's thread, not from a worker your language hands work to.
+`isCancelled()` is `true` while the calling thread is interrupted, or once the deadline has passed.
 
 Returning when it's `true` is enough: the engine checks again as soon as the expression returns, and stops the run
 whatever it returned. Throwing an exception once the run is cancelled stops the run the same way, unless an `Error`
-is anywhere in its cause chain, even wrapped in your own exception: the throw is then still that rule's failure,
-logged at ERROR; see [What stops a run](../stopping-runs.md#-what-stops-a-run).
+is in its cause chain; see [What stops a run](../stopping-runs.md#-what-stops-a-run).
 
 `deadline()` is an `Instant`, or `null` when the run has no timeout. Use it to give a call of your own a timeout.
-
-Neither is required. A language that evaluates an expression and returns needn't check anything.
+Neither is required.
 
 A runtime that clears the thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does before it
 throws `JexlException.Cancel`, hides the caller's interrupt from the engine, which sees an interrupt only in that
 status or as an `InterruptedException` in the cause chain of what an expression throws. Unless the deadline has passed
-too, a throw is then reported as that rule's failure, logged at ERROR, and a return lets the run go on. Call
-`Thread.currentThread().interrupt()` before you throw or return, or throw with an `InterruptedException` as the cause.
+too, a throw is then reported as that rule's failure, logged at ERROR, and a return lets the run go on.
+
+So record what cancelled the runtime. When an interrupt cancelled it, call `Thread.currentThread().interrupt()`
+before you throw or return, or throw with an `InterruptedException` as the cause. When your adapter cancelled it
+because `context.deadline()` passed, restore nothing, and the engine reports the timeout. The engine checks the
+interrupt first, so restoring it reports the timeout as an interrupt and leaves the caller's thread interrupted,
+failing its next run:
+
+```java
+class CancellableContext extends MapContext implements JexlContext.CancellationHandle {
+    private final AtomicBoolean cancel = new AtomicBoolean();
+
+    @Override
+    public AtomicBoolean getCancellation() {
+        return cancel;
+    }
+}
+
+// scheduler: a ScheduledExecutorService your compiler owns; the JexlEngine is built with cancellable(true).
+// deadline: context.deadline(). Pass a new CancellableContext each time: JEXL leaves its flag set after any cancel.
+Object execute(JexlScript script, CancellableContext jexlContext, Instant deadline) {
+    AtomicBoolean forDeadline = new AtomicBoolean();
+    ScheduledFuture<?> timer = deadline == null ? null : scheduler.schedule(() -> {
+        forDeadline.set(true);                           // record why, before cancelling
+        jexlContext.getCancellation().set(true);
+    }, Duration.between(Instant.now(), deadline).plusMillis(1).toNanos(),   // 1 ms late, so the engine's clock
+            TimeUnit.NANOSECONDS);                                          // has almost surely passed it
+    try {
+        return script.execute(jexlContext);
+    } catch (JexlException.Cancel e) {
+        if (!forDeadline.get()) {
+            Thread.currentThread().interrupt();          // an interrupt cancelled it: give it back
+        }
+        throw e;
+    } finally {
+        if (timer != null) {
+            timer.cancel(false);
+        }
+    }
+}
+```
 
 ## 🧵 Thread safety
 
@@ -389,7 +425,6 @@ too, a throw is then reported as that rule's failure, logged at ERROR, and a ret
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return a session it returned before, unless it's `Session.none()`: the engine doesn't check, and the kit's `sessionsClosed` check fails it |
 | `Session.close()` | May run while other sessions of the same compiler are in use, so don't tear down what they share. The kit's `sessionsClosed` check fails a `close()` that throws |
-| `isCancelled()` | Reads the calling thread's interrupt status and the deadline, so call it on the run's thread |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
 Keep whatever changes while an expression runs in a `Session`: `newSession()` creates one for each
@@ -495,7 +530,7 @@ checks promises, and [the Surefire setting](contract-kit.md#a-named-module-with-
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
 | **A condition that doesn't compile** | Its action isn't compiled, so the action's errors appear only after the next `load()` | Expect a second failure after fixing a condition |
-| **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause |
+| **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
 | **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `sessionsClosed` and `compilerClosed` checks fail it |
