@@ -72,9 +72,30 @@ class FailuresTest {
     }
 
     @Test
+    @DisplayName("a lone surrogate is escaped, whether high or low, while a surrogate pair is kept whole")
+    void loneSurrogatesEscaped() {
+        String text = "a" + (char) 0xd800 + "b" + (char) 0xdc00 + "c" + (char) 0xdc00 + (char) 0xd800 + EMOJI;
+
+        assertEquals("a\\ud800b\\udc00c\\udc00\\ud800" + EMOJI, Failures.escape(text));
+        assertEquals("a\\udbff", Failures.quote("a" + (char) 0xdbff));
+    }
+
+    @Test
+    @DisplayName("an escape is written as String.format writes it, for every UTF-16 unit")
+    void escapeWrittenAsFormatWrites() {
+        for (int unit = 0; unit <= Character.MAX_VALUE; unit++) {
+            StringBuilder written = new StringBuilder();
+
+            Failures.appendEscape(written, (char) unit);
+
+            assertEquals(String.format("\\u%04x", unit), written.toString());
+        }
+    }
+
+    @Test
     @DisplayName("escaping text that has already been escaped changes nothing")
     void escapingTwiceChangesNothing() {
-        String escaped = Failures.escape("a\n" + (char) 0x202e + TAG + EMOJI);
+        String escaped = Failures.escape("a\n" + (char) 0x202e + TAG + EMOJI + (char) 0xd800);
 
         assertEquals(escaped, Failures.escape(escaped));
     }

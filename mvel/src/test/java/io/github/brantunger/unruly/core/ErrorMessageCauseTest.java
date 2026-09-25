@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -76,6 +77,42 @@ public class ErrorMessageCauseTest {
                 + "Failed to execute action for rule 'rec': [Error: could not access: missing"), message);
         assertEquals(2, count(message, "Failed to execute action for rule 'rec'"), message);
         assertEquals(1, count(logs, "ERROR io.github.brantunger.unruly.engine"), logs);
+    }
+
+    @Test
+    @DisplayName("a failure 150 runs deep is described once too, although each run adds a link to the cause chain")
+    void deeplyNestedRunFailure() throws InterruptedException {
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        engine.load(List.of(rule("rec", "true",
+                "if (depth < 150) { store.setValue('depth', depth + 1); eng.run(store) } else { x.missing }")));
+        FactMap<Object> facts = new FactMap<>();
+        facts.setValue("eng", engine);
+        facts.setValue("store", facts);
+        facts.setValue("depth", 1);
+        facts.setValue("x", 1);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        // Each nested run takes more stack than a test thread has to spare for 150 of them.
+        Thread deep = new Thread(null, () -> {
+            try {
+                engine.run(facts);
+            } catch (RuntimeException e) {
+                thrown.set(e);
+            }
+        }, "large-stack", 1L << 29);
+        // A daemon joined with a bound, and interrupted on the way out, so a hang fails the test instead.
+        deep.setDaemon(true);
+        deep.start();
+        try {
+            deep.join(TimeUnit.SECONDS.toMillis(30));
+            assertFalse(deep.isAlive(), "the nested runs didn't finish");
+        } finally {
+            deep.interrupt();
+        }
+
+        String message = assertInstanceOf(RuleExecutionException.class, thrown.get()).getMessage();
+        assertTrue(message.startsWith("Failed to execute action for rule 'rec': a nested run() failed: "
+                + "Failed to execute action for rule 'rec': [Error: could not access: missing"), message);
+        assertEquals(2, count(message, "Failed to execute action for rule 'rec'"), message);
     }
 
     @Test

@@ -87,14 +87,15 @@ public final class EngineRunContext implements RunContext {
 
     /**
      * Describes the run without its facts, such as {@code RunContext(runId=3, parent=2, matchPolicy=allMatches,
-     * ruleSetChecksum=9f2c..., tags=[eu, retail], startedAt=2027-06-01T00:00:00Z)}.
+     * ruleSetChecksum=9f2c..., tags=[eu, retail], startedAt=2027-06-01T00:00:00Z)}. The tags are escaped and
+     * shortened as the engine's error messages show names.
      *
      * @return The description
      */
     @Override
     public String toString() {
         return "RunContext(runId=" + id + ", parent=" + (enclosingRun == null ? "none" : enclosingRun.runId())
-                + ", matchPolicy=" + policy + ", ruleSetChecksum=" + checksum + ", tags=" + runTags + ", startedAt="
-                + start + ")";
+                + ", matchPolicy=" + policy + ", ruleSetChecksum=" + checksum + ", tags="
+                + runTags.stream().map(Failures::quote).toList() + ", startedAt=" + start + ")";
     }
 }

@@ -55,9 +55,9 @@ without parsing the message.
 
 Messages about a specific rule name it, for example `Failed to evaluate condition for rule 'prime-rate': ...`. Line
 breaks, tabs, control characters, the Unicode line and paragraph separators and Unicode format characters (bidi
-controls, zero-width characters, the soft hyphen, the byte order mark, tag characters) are escaped as `\n`, `\r`,
-`\t` or `\u` and four lowercase hex digits, such as `\u202e`. That's one escape per UTF-16 unit, so an escaped
-character outside the BMP, such as a tag character, becomes two.
+controls, zero-width characters, the soft hyphen, the byte order mark, tag characters) and lone surrogates are
+escaped as `\n`, `\r`, `\t` or `\u` and four lowercase hex digits, such as `\u202e`. That's one escape per UTF-16
+unit, so an escaped character outside the BMP, such as a tag character, becomes two.
 
 Neither a name nor a fact value that a language quoted can then start a log line of its own or change how the line
 reads, and escaping twice changes nothing. A zero-width joiner or a bidi mark in ordinary text shows as an escape too.
@@ -68,7 +68,7 @@ count is the `char`s left out after the cut:
 | --- | --- |
 | A rule, fact or language name | Escaped, and shortened to 200 characters |
 | Text copied from an exception, such as a language's compile error or warning, or what the output supplier or a listener threw | Shortened to 1,000 characters, then escaped |
-| The list of matched rules in a unique-match engine's failure | Each name escaped and shortened to 200 characters, and the list shortened to 1,000 |
+| A list of names: the rules a unique-match engine matched, a rule's or a run's tags, or the engine's languages | Each name shortened to 200 characters, the list to 1,000, then escaped |
 | What the output supplier threw, a listener's exception logged at WARN, or the fatal error in `The run failed with` | Its class, then `: <message>` if it has one, or, since 2.6.1, ` (message unavailable: <class>)` naming what reading the message threw if its `getMessage()` or `toString()` throws, such as `Output factory threw java.lang.IllegalStateException: boom` or `The run failed with java.lang.OutOfMemoryError: Java heap space` |
 | An exception in the chain with no message, or an unreadable one | A note on the root cause at the end of a message the engine throws, or logs at WARN or ERROR, that copies an exception's text, except an `InvalidExpressionException`, a language's warning or a nested run's failure. MVEL's own compile error names the root cause whenever MVEL's description is missing or `null` and there is a cause, whatever the rest of this row says; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load). A root cause with no message gives `... (caused by java.io.IOException)`; one with a message gives `... (caused by java.io.IOException: disk full)`, unless the first exception's message already contains it; one whose `getMessage()` throws gives `... (caused by com.example.UnreadableException: (message unavailable: java.lang.IllegalStateException))`. There's no note when the exception has no cause, or when every exception in the chain has a readable message. The chain is read up to where it loops back on itself, and a `getCause()` that throws ends it |
 | A `run()` a condition or action started, which failed | `a nested run() failed: ...`, and it isn't logged a second time |

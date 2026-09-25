@@ -87,7 +87,7 @@ public class FactMap<T extends @Nullable Object> implements FactStore<T>, Map<St
             checkEntry(fact.getName(), fact);
             // Only the last of two same-named facts would survive, silently dropping the first.
             if (this.facts.containsKey(fact.getName())) {
-                throw new IllegalArgumentException("duplicate fact name '" + fact.getName() + "'");
+                throw new IllegalArgumentException("duplicate fact name '" + Names.quote(fact.getName()) + "'");
             }
             this.facts.put(fact.getName(), fact);
         }
@@ -102,8 +102,8 @@ public class FactMap<T extends @Nullable Object> implements FactStore<T>, Map<St
             throw new IllegalArgumentException("fact name must not be null");
         }
         if (fact != null && !key.equals(fact.getName())) {
-            throw new IllegalArgumentException("key '" + key + "' does not match the fact's name '"
-                    + fact.getName() + "'");
+            throw new IllegalArgumentException("key '" + Names.quote(key) + "' does not match the fact's name '"
+                    + Names.quote(fact.getName()) + "'");
         }
     }
 

@@ -71,7 +71,7 @@ class RuleBuilderValidationTest {
     void tagsMustBeNames() {
         assertEquals("tags must not contain null, but were [eu, null]",
                 rejection(complete().tags(Arrays.asList("eu", null))));
-        assertEquals("tags must not contain a blank tag, but were [eu, \t]",
+        assertEquals("tags must not contain a blank tag, but were [eu, \\t]",
                 rejection(complete().tags(List.of("eu", "\t"))));
     }
 

@@ -35,6 +35,20 @@ class ReadOnlyFactsTest {
     }
 
     @Test
+    @DisplayName("put escapes and shortens the name it rejects, as the engine's messages show names")
+    void putEscapesTheName() {
+        UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
+                () -> facts.put("a\n" + "x".repeat(300), 1));
+
+        assertEquals("Cannot assign or declare 'a\\n" + "x".repeat(198) + "... (102 more characters)' in a condition: "
+                + "conditions can't change facts or create variables. Move assignments and declarations into the "
+                + "action.", ex.getMessage());
+        assertEquals("The facts passed to a RuleListener are read-only; 'null' can't be changed.",
+                assertThrows(UnsupportedOperationException.class,
+                        () -> ReadOnlyFacts.forListeners(backing).put(null, 1)).getMessage());
+    }
+
+    @Test
     @DisplayName("the view for listeners reads the same facts and rejects a write with a message about listeners")
     void listenerView() {
         Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(backing);

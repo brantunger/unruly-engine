@@ -124,12 +124,13 @@ public final class RuleEvaluation {
     }
 
     /**
-     * Names the rule and its outcome, such as {@code prime-rate=MATCHED}.
+     * Names the rule and its outcome, such as {@code prime-rate=MATCHED}. The name is escaped and shortened as the
+     * engine's error messages show it, so a name with a line break can't start a log line of its own.
      *
      * @return The description
      */
     @Override
     public String toString() {
-        return evaluated.getRuleName() + "=" + result;
+        return Names.quote(evaluated.getRuleName()) + "=" + result;
     }
 }

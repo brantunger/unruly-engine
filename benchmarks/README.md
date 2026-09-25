@@ -11,7 +11,7 @@ match and how deep the first match sits. Those are counts, not timings, so they 
 ## 🏃 Running them
 
 ```bash
-# The whole matrix: 72 run configurations and 6 load configurations, each in its own JVM.
+# Everything: 72 run configurations, 6 load configurations and 4 escaping inputs, each in its own JVM.
 ./gradlew :benchmarks:jmh
 
 # One slice, quickly, with allocation figures
@@ -54,6 +54,9 @@ of the applicant's properties, so the `record` and `map` values differ where it 
 level, so it measures the listener with DEBUG off, the usual setting.
 
 `RunBenchmark.Load` measures `load()`, which compiles the whole rule list — the cost every reload pays.
+
+`EscapeBenchmark` measures the escaping every failure's message goes through, on 999 characters: plain text, a
+zero-width space or a control character throughout, and Hebrew with a right-to-left mark every twentieth character.
 
 ## 🧭 Why a second language
 

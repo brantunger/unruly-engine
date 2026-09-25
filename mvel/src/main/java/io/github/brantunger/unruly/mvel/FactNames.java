@@ -76,8 +76,9 @@ final class FactNames {
      * both, so the two can't drift apart. Fact names can
      * come from request data, and the engine logs these messages, so a line break in a name mustn't start a log line.
      * Only a name that isn't an identifier can contain one. Format characters, such as bidi controls and zero-width
-     * characters, which an identifier can contain too, are escaped as well, and a name is never shortened inside a
-     * surrogate pair.
+     * characters, which an identifier can contain too, are escaped as well, and so is a lone surrogate, which a
+     * logger's encoder would write as {@code ?}. A name is never shortened inside a surrogate pair. MVEL's messages
+     * about its options show the option's name and value this way too.
      */
     static String quote(String name) {
         int shown = Math.min(name.length(), MAX_NAME_LENGTH);
@@ -94,10 +95,12 @@ final class FactNames {
                 case '\t' -> quoted.append("\\t");
                 default -> {
                     int type = Character.getType(c);
+                    // The loop reads code points, so only a lone surrogate has the type SURROGATE.
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT) {
+                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
+                            || type == Character.SURROGATE) {
                         for (char unit : Character.toChars(c)) {
-                            quoted.append(String.format("\\u%04x", (int) unit));
+                            appendEscape(quoted, unit);
                         }
                     } else {
                         quoted.appendCodePoint(c);
@@ -109,6 +112,20 @@ final class FactNames {
             quoted.append("... (").append(name.length() - shown).append(" more characters)");
         }
         return quoted.toString();
+    }
+
+    /**
+     * Appends one UTF-16 unit as a backslash, {@code u} and four lowercase hex digits, as the engine's
+     * {@code core.Failures.appendEscape} does, without parsing a format for every character.
+     *
+     * @param quoted What to append to
+     * @param unit   The unit
+     */
+    static void appendEscape(StringBuilder quoted, char unit) {
+        quoted.append("\\u");
+        for (int shift = 12; shift >= 0; shift -= 4) {
+            quoted.append(Character.forDigit((unit >> shift) & 0xF, 16));
+        }
     }
 
     private boolean isPackageClass(String name) {

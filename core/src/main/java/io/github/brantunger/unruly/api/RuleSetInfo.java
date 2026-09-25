@@ -91,9 +91,15 @@ public final class RuleSetInfo {
         return loadTime;
     }
 
+    /**
+     * Describes the rule set, such as {@code RuleSetInfo(rules=[prime-rate], checksum=9f2c...,
+     * loadedAt=2027-06-01T00:00:00Z)}. Rule names are escaped and shortened as the engine's error messages show them.
+     *
+     * @return The description
+     */
     @Override
     public String toString() {
-        return "RuleSetInfo(rules=" + loaded.stream().map(Rule::getRuleName).toList() + ", checksum=" + ruleChecksum
-                + ", loadedAt=" + loadTime + ")";
+        return "RuleSetInfo(rules=" + Names.quoteEach(loaded.stream().map(Rule::getRuleName).toList())
+                + ", checksum=" + ruleChecksum + ", loadedAt=" + loadTime + ")";
     }
 }

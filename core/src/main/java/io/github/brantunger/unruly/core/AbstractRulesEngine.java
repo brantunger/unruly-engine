@@ -151,7 +151,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             if (!languages.languages().containsKey(language)) {
                 throw new IllegalStateException("Options are given for the expression language '"
                         + Failures.quote(language) + "', which isn't one of the engine's expression languages: "
-                        + new TreeSet<>(languages.languages().keySet()));
+                        + Failures.quoteAll(new TreeSet<>(languages.languages().keySet())));
             }
         }
         Set<String> packages = new LinkedHashSet<>();
@@ -1931,8 +1931,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String language = languageOf(rule);
         if (compiler == null) {
             throw compilationFailure("Rule '" + displayName + "' is written in '" + Failures.quote(language)
-                    + "', which isn't one of the engine's expression languages: " + compilers.languageNames(), null,
-                    ruleName);
+                    + "', which isn't one of the engine's expression languages: "
+                    + Failures.quoteAll(compilers.languageNames()), null, ruleName);
         }
         CompiledCondition compiledCondition = compile(
                 new Expression(ruleName, ExpressionKind.CONDITION, rule.getCondition()), compiler::compileCondition);

@@ -64,7 +64,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
         if (defaultName != null) {
             if (!languages.containsKey(defaultName)) {
                 throw new IllegalStateException("The default language '" + Failures.quote(defaultName)
-                        + "' isn't one of the engine's expression languages: " + names);
+                        + "' isn't one of the engine's expression languages: " + Failures.quoteAll(names));
             }
             return new LanguageRegistry(Map.copyOf(languages), defaultName);
         }
@@ -75,7 +75,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
         Iterator<String> name = names.iterator();
         String only = name.next();
         if (name.hasNext()) {
-            throw new IllegalStateException("The engine has several expression languages, " + names
+            throw new IllegalStateException("The engine has several expression languages, " + Failures.quoteAll(names)
                     + ", so name the language of rules without one with defaultLanguage()");
         }
         return new LanguageRegistry(Map.copyOf(languages), only);

@@ -65,10 +65,12 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
             }
             if (matched.size() > ALLOWED_MATCHES) {
                 // The list of names is cut like text copied from an exception: a table whose rows all match would
-                // otherwise put every name in one log line.
+                // otherwise put every name in one log line. It's escaped after the cut, so the cut can't split an
+                // escape.
                 throw failedRun(matched.size() + " rules matched, but a unique-match engine allows one: "
-                        + Failures.truncate(matched.stream().map(rule -> "'" + rule.displayName() + "'")
-                                .collect(Collectors.joining(", "))));
+                        + Failures.escape(Failures.truncate(matched.stream()
+                                .map(rule -> "'" + Failures.shorten(rule.rule().getRuleName()) + "'")
+                                .collect(Collectors.joining(", ")))));
             }
 
             CompiledRule resolvedRule = matched.get(0);

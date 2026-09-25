@@ -34,6 +34,8 @@ class QuoteCopiesTest {
         String beforeLast = "x".repeat(MAX_NAME_LENGTH - 1);
         String emoji = Character.toString(0x1F600);
         String tag = Character.toString(0xE0041);
+        char high = (char) 0xd800;
+        char low = (char) 0xdc00;
         return List.of(
                 new String[]{"", ""},
                 new String[]{"plain_name é", "plain_name é"},
@@ -58,7 +60,12 @@ class QuoteCopiesTest {
                 new String[]{"a" + emoji + "b", "a" + emoji + "b"},
                 new String[]{"x".repeat(MAX_NAME_LENGTH - 2) + emoji, "x".repeat(MAX_NAME_LENGTH - 2) + emoji},
                 new String[]{beforeLast + emoji + "tail", beforeLast + "... (6 more characters)"},
-                new String[]{beforeLast + tag, beforeLast + "... (2 more characters)"});
+                new String[]{beforeLast + tag, beforeLast + "... (2 more characters)"},
+                new String[]{"a" + high, "a\\ud800"},
+                new String[]{"a" + low + "b", "a\\udc00b"},
+                new String[]{"" + low + high, "\\udc00\\ud800"},
+                new String[]{beforeLast + high, beforeLast + "\\ud800"},
+                new String[]{beforeLast + high + "y", beforeLast + "... (2 more characters)"});
     }
 
     @ParameterizedTest(name = "{0}")
@@ -67,6 +74,27 @@ class QuoteCopiesTest {
     void bothCopiesAgree(String name, UnaryOperator<String> quote) {
         for (String[] expected : cases()) {
             assertEquals(expected[1], quote.apply(expected[0]), name + " quoted " + expected[0] + " differently");
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("copies")
+    @DisplayName("every UTF-16 unit on its own is kept, or escaped as String.format writes it")
+    void everyUnitAlone(String name, UnaryOperator<String> quote) {
+        for (int unit = 0; unit <= Character.MAX_VALUE; unit++) {
+            int type = Character.getType(unit);
+            boolean escaped = Character.isISOControl(unit) || type == Character.LINE_SEPARATOR
+                    || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
+                    || type == Character.SURROGATE;
+            String expected = switch (unit) {
+                case '\n' -> "\\n";
+                case '\r' -> "\\r";
+                case '\t' -> "\\t";
+                default -> escaped ? String.format("\\u%04x", unit) : String.valueOf((char) unit);
+            };
+
+            assertEquals(expected, quote.apply(String.valueOf((char) unit)),
+                    String.format("%s quoted U+%04X", name, unit));
         }
     }
 }
