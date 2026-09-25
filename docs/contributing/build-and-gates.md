@@ -147,7 +147,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
-| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, `docs/scripts/check_style.py` on the pages a pull request changes, and actionlint | Broken links and anchors, joined table rows, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
+| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Fails when `build`, `native-image` or `docs-and-hygiene` failed or was cancelled; a skipped job counts as passed, and `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
@@ -157,25 +157,28 @@ pull requests only. When it fails, the build and `native-image` run anyway, and 
 
 A new push to a pull request cancels the run it supersedes. A run on `main` is never cancelled once it has started:
 the next push to `main` waits for it, so a run that starts isn't cut off before its cache save and its coverage
-upload. It isn't a queue, though. GitHub keeps only one waiting run per branch, so a push to `main` that lands while
-an earlier one is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
+upload. It isn't a queue, though: GitHub keeps one waiting run per branch, so a later push to `main` replaces a
+waiting one, whose commit gets a cancelled run and no build.
 
-`docs-and-hygiene` only warns for now: a failed step shows as an annotation, and the job stays green. Later, its
-checks will block. A page written before the style guide may have findings in lines you didn't touch.
-`check_style.py` also reports a page over 2,500 words of prose that `docs/scripts/long-pages.txt` doesn't list, and a
-listed page that grew past its number: split the page, and lower its number when it shrinks. Run the checks before
-you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
+`docs-and-hygiene` only warns for now, except its last step, which fails the job and `ci-result`: another failed step
+shows as an annotation, and the job stays green. A page written before the style guide may have findings in lines you
+didn't touch.
+`check_style.py` also enforces the 2,500-word cap, with the exceptions `docs/scripts/long-pages.txt` lists. Run the
+checks before you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
 
 ```bash
 python docs/scripts/check_docs.py
 python docs/scripts/check_style.py docs/facts.md   # the pages you changed
+python docs/scripts/check_fixtures.py             # when you change a script in docs/scripts
 git ls-files --eol | grep -E '^i/(crlf|mixed)'   # lists files stored with CRLF; prints nothing when all is well
 actionlint                                        # needs shellcheck on the PATH, or it silently skips the shell checks
 ```
 
-CI downloads a pinned actionlint release, not an action, so Dependabot doesn't update it. To bump it, change
-`ACTIONLINT_VERSION` in `ci.yml`, and set `ACTIONLINT_SHA256` to the hash on the `linux_amd64` line of that release's
-`actionlint_<version>_checksums.txt`.
+`check_fixtures.py` checks both docs scripts' output and exit codes on the cases in `config/docs-checks/`. When you
+fix a script, add its case there as `<name>.md.txt` and the expected output to `VERDICTS` in `check_fixtures.py`.
+
+CI downloads a pinned actionlint release, which Dependabot doesn't update: to bump it, change `ACTIONLINT_VERSION` in
+`ci.yml`, and take `ACTIONLINT_SHA256` from the `linux_amd64` line of the release's checksums file.
 
 A second workflow, `pr-title.yml`, checks a pull request's title against Conventional Commits, because the title
 becomes the release commit. It runs on pull requests only. On one labelled `dependencies`, which Dependabot opens

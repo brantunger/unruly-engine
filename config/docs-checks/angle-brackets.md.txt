@@ -1,0 +1,5 @@
+# Angle-bracket destinations
+
+[angle](<tilde-fence-backtick-pair.md>)
+
+[broken angle](<no such page.md>)

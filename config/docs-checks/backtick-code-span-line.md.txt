@@ -1,0 +1,5 @@
+# A prose line that starts with a code span of backticks
+
+```` ``` ```` opens a code block, so this line starts with backticks but opens none.
+
+[broken after the line](no-such-page-5.md)

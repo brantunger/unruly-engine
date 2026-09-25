@@ -1,0 +1,8 @@
+# A classDef ending in a semicolon
+
+```mermaid
+flowchart LR
+    a --> b
+    classDef ok fill:#d1fae5,stroke:#059669,color:#064e3b;
+    classDef fail fill:#000000;
+```

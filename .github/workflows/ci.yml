@@ -224,8 +224,9 @@ jobs:
         run: native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
 
   # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint, without
-  # Gradle. Each step only warns until the checks have run on a week of pull requests (continue-on-error); then they
-  # block. See docs/contributing/build-and-gates.md for running them locally.
+  # Gradle. The four checks only warn until they have run on a week of pull requests (continue-on-error); then they
+  # block. The last step, which runs the docs checks on their fixtures, already fails the job. See
+  # docs/contributing/build-and-gates.md for running them locally.
   docs-and-hygiene:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -278,6 +279,12 @@ jobs:
             mapfile -t files <<< "$pages"
             python3 docs/scripts/check_style.py "${files[@]}"
           fi
+
+      # The pages in config/docs-checks/ hold the cases the two docs checks above once got wrong; check_fixtures.py
+      # runs both scripts on them and compares every line they print with the verdict it records for each page. The
+      # only step here that fails the job, so it comes last: a step after a failed one doesn't run.
+      - name: The docs checks on their fixtures
+        run: python3 docs/scripts/check_fixtures.py
 
   # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the
   # build matrix, and a skipped matrix job doesn't report its per-OS checks. A skipped job counts as passed. The

@@ -12,6 +12,8 @@ import re
 import subprocess
 import sys
 
+from fences import fence_flags
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 PALETTE = {
     'step': 'fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b',
@@ -46,7 +48,8 @@ def report(path, line, message):
 
 
 def prose_words(text):
-    return len(re.sub(r'```.*?```', '', text, flags=re.S).split())
+    lines = text.splitlines()
+    return len(' '.join(line for line, fenced in zip(lines, fence_flags(lines)) if not fenced).split())
 
 
 def repo_path(page):
@@ -79,20 +82,19 @@ for i, line in enumerate(open(os.path.join(ROOT, BASELINE), encoding='utf-8').re
 
 for page in sys.argv[1:]:
     text = open(page, encoding='utf-8').read()
-    inside = False
     h2 = None
     callouts = {}
     prev_callout = False
     block_start, block_words = None, 0
-    for i, line in enumerate(text.splitlines() + [''], 1):
-        if re.match(r'^\s*(```|~~~)', line):
-            inside = not inside
+    lines = text.splitlines() + ['']
+    for i, (line, inside) in enumerate(zip(lines, fence_flags(lines)), 1):
+        if inside and re.match(r'^\s*(`{3,}|~{3,})', line):
             prev_callout = False
             block_start, block_words = None, 0
             continue
         if inside:
             m = re.match(r'\s*classDef\s+(\w+)\s+(.*\S)', line)
-            if m and m.group(1) in PALETTE and m.group(2) != PALETTE[m.group(1)]:
+            if m and m.group(1) in PALETTE and m.group(2).rstrip(';').strip() != PALETTE[m.group(1)]:
                 report(page, i, f'classDef {m.group(1)} differs from the palette in docs/contributing/style.md')
             continue
         if line.strip() == '' or line.startswith(('|', '#')):
@@ -103,8 +105,8 @@ for page in sys.argv[1:]:
             block_start = block_start or i
             block_words += len(line.split())
         if line.startswith('## '):
-            h2 = line.strip()
-            callouts[h2] = [0, i]
+            h2 = i
+            callouts[h2] = [0, line.strip()]
         m = re.match(r'> \[!(\w+)\]', line)
         if m:
             if h2:
@@ -116,7 +118,7 @@ for page in sys.argv[1:]:
             prev_callout = False
         if len(line) > 120 and not line.startswith(('|', '>')):
             report(page, i, f'{len(line)} characters (the limit is 120 outside tables and callouts)')
-    for h, (n, line) in callouts.items():
+    for line, (n, h) in callouts.items():
         if n > 1:
             report(page, line, f'{n} callouts under {h} (style.md: one at most)')
     words = prose_words(text)

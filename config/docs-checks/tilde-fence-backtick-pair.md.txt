@@ -1,0 +1,9 @@
+# A tilde fence holding a backtick pair
+
+~~~markdown
+```
+[example](example-page.md)
+```
+~~~
+
+Text.

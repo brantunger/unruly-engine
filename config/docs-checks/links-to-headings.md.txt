@@ -1,0 +1,7 @@
+# Links to headings
+
+[after the fence](heading-after-tilde-fence.md#real-heading)
+
+[the second Notes](repeated-h2.md#notes-1)
+
+[no third Notes](repeated-h2.md#notes-2)
