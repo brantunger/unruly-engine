@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
+import org.mvel2.ParserContext;
 
 import java.util.List;
 
@@ -330,5 +331,142 @@ class MvelCompileErrorTest {
         };
 
         assertTrue(MvelExpressionCompiler.thrownInMvel(unreadable));
+    }
+
+    @Test
+    @DisplayName("a declaration's unknown first token is MVEL's words alone, in place of MVEL's parser context")
+    void unknownClassWithoutTheParserContext() {
+        CompileException mvel = withMessage("[Error: unknown class or illegal statement: "
+                + ParserContext.class.getName() + "@1a2b3c]\n[Near : {... ....}]\n[Line: 1, Column: 6]");
+
+        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+
+        assertEquals("failed to compile at line 1, column 6: unknown class or illegal statement", ex.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 6, "unknown class or illegal statement")), ex.issues());
+    }
+
+    @Test
+    @DisplayName("a description naming something else MVEL's parser context is left as it is")
+    void parserContextWithoutItsHash() {
+        String description = "unknown class or illegal statement: " + ParserContext.class.getName() + "@";
+        CompileException mvel = withMessage("[Error: " + description + "]");
+
+        assertEquals("failed to compile: " + description, MvelExpressionCompiler.compileError(mvel).getMessage());
+    }
+
+    @Test
+    @DisplayName("the position is MVEL's last line, not one quoted from the expression")
+    void positionIsTheLastLine() {
+        CompileException mvel = withMessage("[Error: not a statement]\n"
+                + "[Near : {... x = '[Line: 9, Column: 9]' + ....}]\n[Line: 8, Column: 8]\n     ^\n"
+                + "[Line: 1, Column: 28]");
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 28, "not a statement")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @Test
+    @DisplayName("a nested error's description is the innermost one's, at the outer position")
+    void nestedErrorHasInnermostDescription() {
+        CompileException inner = withMessage("[Error: was expecting type: java.lang.Boolean]\n[Line: 1, Column: 0]");
+        CompileException outer = withMessage("[Error: [Error: was expecting type: java.lang.Boolean]\n"
+                + "[Line: 1, Column: 0]]\n[Near : {... && ....}]\n[Line: 2, Column: 1]");
+        outer.initCause(new IllegalStateException(inner));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "was expecting type: java.lang.Boolean")),
+                MvelExpressionCompiler.compileError(outer).issues());
+    }
+
+    private static NullPointerException nullPointer(String... frameClasses) {
+        NullPointerException npe = new NullPointerException();
+        StackTraceElement[] frames = new StackTraceElement[frameClasses.length];
+        for (int i = 0; i < frames.length; i++) {
+            frames[i] = new StackTraceElement(frameClasses[i], "m", null, -1);
+        }
+        npe.setStackTrace(frames);
+        return npe;
+    }
+
+    @ParameterizedTest(name = "a NullPointerException MVEL threw (description {0}) is a badly formed structure")
+    @ValueSource(strings = {"Cannot invoke \"org.mvel2.ast.ASTNode.getEgressType()\" because \"node\" is null", "null"})
+    void nullPointerInMvel(String description) {
+        CompileException mvel = withMessage("[Error: " + description + "]\n[Line: 2, Column: 1]");
+        mvel.initCause(nullPointer("org.mvel2.util.CompilerTools"));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "not a statement, or badly formed structure")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @Test
+    @DisplayName("a NullPointerException from other code MVEL called keeps its description")
+    void nullPointerOutsideMvel() {
+        CompileException mvel = withMessage("[Error: from the application]");
+        mvel.initCause(nullPointer("com.example.Loader"));
+
+        assertEquals("failed to compile: from the application", MvelExpressionCompiler.compileError(mvel).getMessage());
+    }
+
+    @Test
+    @DisplayName("a NullPointerException from other code, thrown through the JDK, keeps the generic report")
+    void nullPointerFromOtherCodeThroughTheJdk() {
+        CompileException mvel = withMessage("[Error: null]");
+        mvel.initCause(nullPointer("java.util.Objects", "com.example.Loader", "org.mvel2.util.ParseTools"));
+
+        assertEquals("failed to compile: null (caused by java.lang.NullPointerException)",
+                MvelExpressionCompiler.compileError(mvel).getMessage());
+    }
+
+    @Test
+    @DisplayName("one the JDK threw for MVEL is a badly formed structure: the JDK's frames are skipped")
+    void nullPointerFromTheJdkForMvel() {
+        CompileException mvel = withMessage("[Error: null]\n[Line: 2, Column: 1]");
+        mvel.initCause(nullPointer("java.util.Objects", "org.mvel2.util.CompilerTools"));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "not a statement, or badly formed structure")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @ParameterizedTest(name = "one without MVEL''s frames (only the JDK''s: {0}), as HotSpot throws a frequent one, "
+            + "is a badly formed structure")
+    @ValueSource(booleans = {false, true})
+    void nullPointerWithoutMvelsFrames(boolean jdkFrames) {
+        CompileException mvel = withMessage("[Error: null]\n[Line: 2, Column: 1]");
+        mvel.initCause(jdkFrames ? nullPointer("java.util.Objects") : nullPointer());
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "not a statement, or badly formed structure")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    private static RuntimeException thrownFrom(RuntimeException e, String frameClass) {
+        e.setStackTrace(new StackTraceElement[] {new StackTraceElement(frameClass, "m", null, -1)});
+        return e;
+    }
+
+    @Test
+    @DisplayName("a plain RuntimeException MVEL threw with no cause rejects a declaration")
+    void plainRuntimeExceptionFromMvel() {
+        assertTrue(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("not an identifier: 1x"),
+                "org.mvel2.util.ParseTools")));
+    }
+
+    @Test
+    @DisplayName("one MVEL threw around another failure doesn't: that failure is reported as is")
+    void plainRuntimeExceptionWithACause() {
+        assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("class not found: Widget",
+                new IllegalStateException("from the application's class loader")), "org.mvel2.util.ParseTools")));
+    }
+
+    @Test
+    @DisplayName("one from other code MVEL called doesn't")
+    void plainRuntimeExceptionFromOtherCode() {
+        assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("from the loader"),
+                "com.example.Loader")));
+    }
+
+    @Test
+    @DisplayName("a subclass of RuntimeException MVEL threw doesn't")
+    void runtimeExceptionSubclassFromMvel() {
+        assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new IllegalStateException("bad state"),
+                "org.mvel2.util.ParseTools")));
     }
 }

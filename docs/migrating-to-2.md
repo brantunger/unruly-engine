@@ -195,13 +195,13 @@ java.lang.module.FindException: Module mvel2 not found, required by io.github.br
 **What changed:** the engine no longer creates MVEL itself. An engine built without `language(...)` finds expression
 languages with `java.util.ServiceLoader` when it's built, from
 `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` files, and MVEL is one of them. A rule
-without a `language` is written in the engine's default language, which is MVEL when MVEL is the only language found.
+without a `language` is written in the default language, which is MVEL when MVEL is the only language found.
 
 **Who is affected:**
 
 - **Class paths with another language listed in such a file.** That language can now be used by rules without being
   given to the engine. With MVEL and another language found, `build()` fails until `defaultLanguage(...)` names the
-  language of rules without one. Two found languages with the same name fail `build()`.
+  language of rules without one.
 - **Applications repackaged into one jar** (a shaded or "uber" jar) that keep only one of several `META-INF/services`
   files with the same name.
 - **Class paths without `mvel2`.** Building an engine now succeeds, and loading MVEL rules fails instead.
@@ -233,10 +233,10 @@ A third match policy, `uniqueMatch(...)`, is new: it evaluates every condition, 
 run when more than one rule matches. See
 [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none).
 
-Because `build()` now does the work `addImport()` and `setRuleList()` used to, it is where those failures appear: a
-bad import fails it with `IllegalArgumentException`; two found languages with the same name, a found language without
-a name, or several languages with no default fail it with `IllegalStateException`; and a language that can't be
-created fails it with `ServiceConfigurationError`.
+Bad imports and language problems now fail `build()`: a bad import with `IllegalArgumentException` (before 1.6.1, a
+class that exists but can't be loaded was imported as a package, and its rules failed at `run()`); two found languages
+with the same name, a found language without a name, or several languages with no default with `IllegalStateException`;
+and a language that can't be created with `ServiceConfigurationError`.
 
 Once `language(...)` is called, the engine has exactly the languages given, and MVEL isn't added for you. A rule
 without a `language` is written in the default language: the one named with `defaultLanguage(...)`, or else the only
