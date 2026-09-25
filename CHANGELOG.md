@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.2](https://github.com/brantunger/unruly-engine/compare/v2.7.1...v2.7.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* publish working SCM URLs in the POMs, and upload the JDK 25 leg's test results ([#607](https://github.com/brantunger/unruly-engine/issues/607)) ([99e54bb](https://github.com/brantunger/unruly-engine/commit/99e54bb64c3333f3f0895c93ea6c8602cb8530d4))
+
 ## [2.7.1](https://github.com/brantunger/unruly-engine/compare/v2.7.0...v2.7.1) (2026-09-25)
 
 
