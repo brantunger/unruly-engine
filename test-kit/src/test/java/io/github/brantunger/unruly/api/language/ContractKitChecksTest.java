@@ -760,6 +760,47 @@ class ContractKitChecksTest {
     }
 
     @Test
+    @DisplayName("a language whose checkFactName accepts the name its contract test says it rejects fails the"
+            + " fact-name check, naming checkFactName (#618)")
+    void unusableFactNameAcceptedFails() {
+        // The toy fails on a name that isn't a fact, so the check's rule must be given every fact it reads.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String unusableFactName() {
+                return "bad";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unusableFactNameRejected"));
+
+        // Nothing was thrown, so the run reached checkFactName and didn't fail on x, which the rule reads.
+        assertTrue(failure.getMessage().startsWith("unusableFactName() returned 'bad', but run() didn't throw an"
+                + " IllegalArgumentException for a fact with that name: check the language's checkFactName"),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("nothing was thrown"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a contract test that names x as the fact name its language rejects fails the fact-name check (#618)")
+    void xAsUnusableNameFails() {
+        // The check's rule reads x and the run supplies it, so without the guard the check would build facts with x
+        // twice and fail on the duplicate name, not on the name the contract test chose.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String unusableFactName() {
+                return "x";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unusableFactNameRejected"));
+
+        assertTrue(failure.getMessage().startsWith("unusableFactName() must not be x, which the check's rule reads"),
+                failure.getMessage());
+    }
+
+    @Test
     @DisplayName("a language that rejects a fact name its contract test says it accepts fails the usable-name check"
             + " (#584)")
     void tooStrictFactNameCheckFails() {
