@@ -365,6 +365,58 @@ class OutputWriterGenericSetterTest {
         }
     }
 
+    /** A generic setter method, beside one for text. */
+    public static final class TextMethodBox {
+        String setter;
+
+        public <U> void setContent(U content) {
+            setter = "TextMethodBox.setContent(U)";
+        }
+
+        public void setContent(String content) {
+            setter = "TextMethodBox.setContent(String)";
+        }
+    }
+
+    /** A setter declared with a type variable that returns its object. */
+    public static class ReturningBox<T> {
+        String setter;
+
+        public ReturningBox<T> setContent(T content) {
+            setter = "ReturningBox.setContent(T)";
+            return this;
+        }
+    }
+
+    /** Overrides that setter with a narrower return type, so javac adds a bridge with the same parameter. */
+    public static class NarrowerReturnBox<T> extends ReturningBox<T> {
+        @Override
+        public NarrowerReturnBox<T> setContent(T content) {
+            setter = "NarrowerReturnBox.setContent(T)";
+            return this;
+        }
+    }
+
+    /** That override for a Long, with no other setter of its name. */
+    public static final class LongNarrowerReturnBox extends NarrowerReturnBox<Long> {
+    }
+
+    /** A class whose inner class extends it for text, with a setter declared with the outer class's T. */
+    public static class Surrounding<T> {
+        String setter;
+
+        /** The inner class, with a setter for a long beside the one declared with the outer class's T. */
+        public class Extending extends Surrounding<String> {
+            public void setContent(T content) {
+                setter = "Extending.setContent(T)";
+            }
+
+            public void setContent(long content) {
+                setter = "Extending.setContent(long)";
+            }
+        }
+    }
+
     @Test
     @DisplayName("a Short or an Integer goes to setContent(long), not setContent(T) with T a Long, as Java calls it")
     void widenedBesideASetterForATypeVariable() throws Exception {
@@ -630,6 +682,62 @@ class OutputWriterGenericSetterTest {
         assertEquals("DefaultBox.setContent(T)", set(new LongDiamondBox(), 7L));
     }
 
+    @Test
+    @DisplayName("an Integer goes to a generic setter method, which takes any object, beside setContent(String), and"
+            + " text to setContent(String)")
+    void methodsOwnVariableBesideAReference() throws Exception {
+        assertEquals("TextMethodBox.setContent(U)", set(new TextMethodBox(), 7));
+        assertEquals("TextMethodBox.setContent(String)", set(new TextMethodBox(), "s"));
+    }
+
+    @Test
+    @DisplayName("text goes to an override of setContent(T), with T a Long, with a narrower return type and no other"
+            + " setter of its name, which takes any object, as before (#550)")
+    void overrideWithANarrowerReturnType() throws Exception {
+        // The bridge for the narrower return type takes the override's own parameter, so it isn't an overload Java
+        // sees, and the override takes its erased parameter.
+        assertEquals("NarrowerReturnBox.setContent(T)", set(new LongNarrowerReturnBox(), "text"));
+        assertEquals("NarrowerReturnBox.setContent(T)", set(new LongNarrowerReturnBox(), 7L));
+    }
+
+    @Test
+    @DisplayName("an Integer goes to setContent(T) of an inner class that gives its outer class text, declared with"
+            + " the enclosing instance's T, an Object, beside setContent(long), as Java calls it")
+    void variableOfTheOuterClassNotTheSupertypes() throws Exception {
+        // Java calls setContent(T) on a Surrounding<Object>'s inner class, as T, an Object, takes an Integer
+        // without unboxing it. The T the setter is declared with is the enclosing instance's, not the one the inner
+        // class gives its supertype, text, so it takes its erasure, Object.
+        Surrounding<Object>.Extending output = new Surrounding<Object>().new Extending();
+
+        assertEquals("Extending.setContent(T)", set(output, 7));
+    }
+
+    @Test
+    @DisplayName("text and a Short go to setContent(T), beside setContent(long), for a local class that gives T an"
+            + " array of arrays of its generic method's variable, which takes its bound")
+    void arrayOfArraysOfAMethodsVariable() throws Exception {
+        // The U an instance was made with isn't kept at run time, so T takes its bound, Object, however many
+        // dimensions of U it's given, as for an instance of the generic class itself.
+        assertEquals("PairedBox.setContent(T)", set(twoDimensions(), "text"));
+        assertEquals("PairedBox.setContent(T)", set(twoDimensions(), (short) 7));
+        assertEquals("PairedBox.setContent(T)", set(oneDimension(), "text"));
+        assertEquals("PairedBox.setContent(T)", set(oneDimension(), (short) 7));
+    }
+
+    /** An instance of a local class, in a generic method, that gives PairedBox's T an array of arrays of U. */
+    private static <U> PairedBox<U[][]> twoDimensions() {
+        class Grid extends PairedBox<U[][]> {
+        }
+        return new Grid();
+    }
+
+    /** An instance of a local class, in a generic method, that gives PairedBox's T an array of U. */
+    private static <U> PairedBox<U[]> oneDimension() {
+        class Row extends PairedBox<U[]> {
+        }
+        return new Row();
+    }
+
     /** Writes the content, and returns the setter that ran. */
     private static String set(Object output, Object value) throws Exception {
         return set(output, "content", value);
@@ -656,6 +764,9 @@ class OutputWriterGenericSetterTest {
             case TextPassing box -> box.setter;
             case HiddenNumberSetter<?> box -> box.setter;
             case LongDiamondBox box -> box.setter;
+            case TextMethodBox box -> box.setter;
+            case ReturningBox<?> box -> box.setter;
+            case Surrounding<?> box -> box.setter;
             default -> throw new AssertionError(output.getClass());
         };
     }

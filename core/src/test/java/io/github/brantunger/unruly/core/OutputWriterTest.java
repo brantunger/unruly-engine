@@ -74,6 +74,34 @@ class OutputWriterTest {
         }
     };
 
+    /** An output bean whose setter interrupts its own thread and then gives up. */
+    public static final class InterruptingBean {
+        public void setRate(String rate) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("gave up: " + rate);
+        }
+    }
+
+    /**
+     * An output bean whose setter gives up once the run's deadline, kept in {@code deadline}, has passed, and sets
+     * {@code reached} when it's called.
+     */
+    public static final class LateBean {
+        private final AtomicReference<Instant> deadline;
+        private final AtomicBoolean reached;
+
+        LateBean(AtomicReference<Instant> deadline, AtomicBoolean reached) {
+            this.deadline = deadline;
+            this.reached = reached;
+        }
+
+        public void setRate(String rate) throws InterruptedException {
+            reached.set(true);
+            waitPast(deadline);
+            throw new IllegalStateException("gave up: " + rate);
+        }
+    }
+
     private static Rule rule(String name, int priority, String action) {
         return Rule.builder().ruleName(name).priority(priority).language("patch").condition("true").action(action)
                 .build();
@@ -84,15 +112,11 @@ class OutputWriterTest {
     }
 
     /**
-     * An engine with one rule, whose action returns {@code rate=4.5} and keeps the run's deadline in
-     * {@code deadline}, so its writer can wait until the deadline has passed. A run has a second, far more than it
-     * needs to reach the writer, which sets {@code reached} when it does. Runs write to {@code output}.
+     * A language whose conditions are always true, and whose every action returns {@code rate=4.5} and keeps the
+     * run's deadline in {@code deadline}, so the output can be written once the deadline has passed.
      */
-    private static RulesEngine<Map<String, Object>> timedEngine(Map<String, Object> output,
-                                                                AtomicReference<Instant> deadline,
-                                                                AtomicBoolean reached,
-                                                                OutputWriter<Map<String, Object>> writer) {
-        ExpressionLanguage keeping = new ExpressionLanguage() {
+    private static ExpressionLanguage keeping(AtomicReference<Instant> deadline) {
+        return new ExpressionLanguage() {
             @Override
             public String name() {
                 return "keeping";
@@ -121,13 +145,28 @@ class OutputWriterTest {
                 };
             }
         };
+    }
+
+    /** The one rule of the engines whose runs keep their deadline: see {@link #keeping}. */
+    private static Rule keepingRule() {
+        return Rule.builder().ruleName("r").priority(1).language("keeping").condition("true").action("rate").build();
+    }
+
+    /**
+     * An engine with one rule, whose action returns {@code rate=4.5} and keeps the run's deadline in
+     * {@code deadline}, so its writer can wait until the deadline has passed. A run has a second, far more than it
+     * needs to reach the writer, which sets {@code reached} when it does. Runs write to {@code output}.
+     */
+    private static RulesEngine<Map<String, Object>> timedEngine(Map<String, Object> output,
+                                                                AtomicReference<Instant> deadline,
+                                                                AtomicBoolean reached,
+                                                                OutputWriter<Map<String, Object>> writer) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(() -> output)
-                .language(keeping).runTimeout(Duration.ofSeconds(1)).outputWriter((out, property, value) -> {
+                .language(keeping(deadline)).runTimeout(Duration.ofSeconds(1)).outputWriter((out, property, value) -> {
                     reached.set(true);
                     writer.set(out, property, value);
                 }).build();
-        engine.load(List.of(Rule.builder().ruleName("r").priority(1).language("keeping").condition("true")
-                .action("rate").build()));
+        engine.load(List.of(keepingRule()));
         return engine;
     }
 
@@ -284,6 +323,67 @@ class OutputWriterTest {
         assertEquals("r", ex.getRuleName());
         assertEquals("Failed to set 'rate' on the output for rule 'r': broke", ex.getMessage());
         assertSame(broke, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("a bean setter that interrupts its thread and throws stops the run under the default writer, which"
+            + " reports it wrapped in an InvocationTargetException")
+    void interruptedBeanSetterStopsTheRun() {
+        List<RuleExecutionException> errors = new ArrayList<>();
+        RuleListener listener = new RuleListener() {
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                errors.add(error);
+            }
+        };
+        RulesEngine<InterruptingBean> engine = RulesEngineBuilder.<InterruptingBean>allMatches(InterruptingBean::new)
+                .language(PATCH).listener(listener).build();
+        engine.load(List.of(rule("r", 1, "rate=4.5")));
+
+        RuleExecutionException ex;
+        boolean statusSet;
+        try {
+            ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+        } finally {
+            // Cleared whatever happened, so no later test on this thread starts interrupted.
+            statusSet = Thread.interrupted();
+        }
+
+        assertNull(ex.getRuleName(), ex.getMessage());
+        assertInstanceOf(InterruptedException.class, ex.getCause());
+        assertEquals(1, ex.getSuppressed().length, () -> List.of(ex.getSuppressed()).toString());
+        assertInstanceOf(IllegalStateException.class, ex.getSuppressed()[0]);
+        assertEquals("gave up: 4.5", ex.getSuppressed()[0].getMessage());
+        assertTrue(statusSet, "the engine cleared the interrupt status");
+        assertEquals(List.of(ex), errors);
+    }
+
+    @Test
+    @DisplayName("a bean setter that throws past the deadline stops the run under the default writer, keeping what"
+            + " it threw")
+    void beanSetterThrowingPastTheDeadlineIsAStop() {
+        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicBoolean reached = new AtomicBoolean();
+        List<RuleExecutionException> errors = new ArrayList<>();
+        RuleListener listener = new RuleListener() {
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                errors.add(error);
+            }
+        };
+        RulesEngine<LateBean> engine = RulesEngineBuilder.<LateBean>allMatches(() -> new LateBean(deadline, reached))
+                .language(keeping(deadline)).runTimeout(Duration.ofSeconds(1)).listener(listener).build();
+        engine.load(List.of(keepingRule()));
+
+        RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+        assertTrue(reached.get(), "the run passed its deadline before it reached the setter");
+        assertNull(ex.getRuleName(), ex.getMessage());
+        assertInstanceOf(TimeoutException.class, ex.getCause());
+        assertEquals(1, ex.getSuppressed().length, () -> List.of(ex.getSuppressed()).toString());
+        assertInstanceOf(IllegalStateException.class, ex.getSuppressed()[0]);
+        assertEquals("gave up: 4.5", ex.getSuppressed()[0].getMessage());
+        assertEquals(List.of(ex), errors);
     }
 
     @Test

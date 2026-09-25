@@ -129,8 +129,14 @@ class BuildSlotsTest {
     }
 
     private static RulesEngine<Map<String, Object>> unlimited(StepLanguage language) {
+        return unlimited(language, RuleSet.STALL_WINDOW_MILLIS);
+    }
+
+    /** {@link #unlimited(StepLanguage)}, whose runs wait {@code stallWindow} milliseconds for a slot to come back. */
+    private static RulesEngine<Map<String, Object>> unlimited(StepLanguage language, long stallWindow) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .language(language).unlimitedCopies().build();
+        ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(stallWindow);
         engine.load(List.of(RULE));
         return engine;
     }
@@ -260,6 +266,35 @@ class BuildSlotsTest {
         assertEquals(List.of("stepped"), outcome.get(), "the run kept the other half of its time for its rules");
         assertTrue(took[0] >= 900, "the run waited " + took[0] + " ms for a slot, not about a second");
         assertEquals(PROCESSORS + 1, language.sessions().get());
+    }
+
+    @Test
+    @DisplayName("a run that finds every slot held makes its copy without one after the stall window set before"
+            + " load(), not after the five seconds a real one waits")
+    void loadedRulesWaitTheWindowSetForASlot() throws InterruptedException {
+        StepLanguage language = new StepLanguage();
+        try (RulesEngine<Map<String, Object>> engine = unlimited(language, 1)) {
+            fillTheSlots(engine);
+            AtomicReference<Object> outcome = new AtomicReference<>();
+
+            // No copy is idle and no slot comes back, so only the window ends the wait. The run is waited for well
+            // inside the five seconds a real window lasts. A run timeout can't tell the windows apart: a run waits for
+            // a slot for at most half the time it has left, and then makes its copy anyway.
+            Thread run = start(true, () -> {
+                try {
+                    outcome.set(engine.runWithResult(facts(() -> true)).firedRules().stream().map(Rule::getRuleName)
+                            .toList());
+                } catch (RuntimeException e) {
+                    outcome.set(e);
+                }
+            });
+            run.join(TimeUnit.SECONDS.toMillis(4));
+
+            assertFalse(run.isAlive(), "the run waited for a slot for longer than the window set");
+            assertEquals(List.of("stepped"), outcome.get());
+            assertEquals(PROCESSORS, gate.inProgress.get(), "every slot was still held while the run ran");
+            assertEquals(PROCESSORS + 1, language.sessions().get(), "the run made a copy of its own");
+        }
     }
 
     @Test
