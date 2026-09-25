@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.8](https://github.com/brantunger/unruly-engine/compare/v2.7.7...v2.7.8) (2026-09-25)
+
+
+### Bug Fixes
+
+* escape and shorten a linkage error's text in build()'s import message, and document a fact read that throws ([#638](https://github.com/brantunger/unruly-engine/issues/638)) ([90a597c](https://github.com/brantunger/unruly-engine/commit/90a597c028c53cbdb8cc8e2e9d911172820cf239))
+
 ## [2.7.7](https://github.com/brantunger/unruly-engine/compare/v2.7.6...v2.7.7) (2026-09-25)
 
 
