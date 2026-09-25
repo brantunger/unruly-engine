@@ -18,11 +18,16 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -78,6 +83,61 @@ class OutputWriterTest {
         return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(PATCH);
     }
 
+    /**
+     * An engine with one rule, whose action returns {@code rate=4.5} and keeps the run's deadline in
+     * {@code deadline}, so its writer can wait until the deadline has passed. A run has a second, far more than it
+     * needs to reach the writer, which sets {@code reached} when it does. Runs write to {@code output}.
+     */
+    private static RulesEngine<Map<String, Object>> timedEngine(Map<String, Object> output,
+                                                                AtomicReference<Instant> deadline,
+                                                                AtomicBoolean reached,
+                                                                OutputWriter<Map<String, Object>> writer) {
+        ExpressionLanguage keeping = new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return "keeping";
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression source) {
+                        return (evaluation, session) -> true;
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression source) {
+                        return (action, session) -> {
+                            deadline.set(action.deadline());
+                            return ActionResult.set(Map.of("rate", "4.5"));
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return Session.none();
+                    }
+                };
+            }
+        };
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(() -> output)
+                .language(keeping).runTimeout(Duration.ofSeconds(1)).outputWriter((out, property, value) -> {
+                    reached.set(true);
+                    writer.set(out, property, value);
+                }).build();
+        engine.load(List.of(Rule.builder().ruleName("r").priority(1).language("keeping").condition("true")
+                .action("rate").build()));
+        return engine;
+    }
+
+    /** Returns once the run's deadline has passed, however long that takes, rather than after a fixed time. */
+    private static void waitPast(AtomicReference<Instant> deadline) throws InterruptedException {
+        while (!Instant.now().isAfter(deadline.get())) {
+            Thread.sleep(5);
+        }
+    }
+
     @Test
     @DisplayName("a writer is given the output object and each property, in the order the actions returned them")
     void writerSetsEachProperty() {
@@ -131,6 +191,99 @@ class OutputWriterTest {
 
         assertEquals("Failed to set 'rate' on the output for rule 'r': no room for rate", ex.getMessage());
         assertEquals(List.of("r: " + ex.getMessage()), errors);
+    }
+
+    @Test
+    @DisplayName("a writer that throws InterruptedException stops the run, as an interrupted action does")
+    void interruptedWriterStopsTheRun() {
+        List<RuleExecutionException> errors = new ArrayList<>();
+        RuleListener listener = new RuleListener() {
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                errors.add(error);
+            }
+        };
+        InterruptedException interrupted = new InterruptedException("stop writing");
+        RulesEngine<Map<String, Object>> engine = builder().listener(listener)
+                .outputWriter((out, property, value) -> {
+                    throw interrupted;
+                })
+                .build();
+        engine.load(List.of(rule("r", 1, "rate=4.5")));
+
+        RuleExecutionException ex;
+        boolean statusSet;
+        try {
+            ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+        } finally {
+            // Cleared whatever happened, so no later test on this thread starts interrupted.
+            statusSet = Thread.interrupted();
+        }
+
+        assertNull(ex.getRuleName(), ex.getMessage());
+        assertInstanceOf(InterruptedException.class, ex.getCause());
+        assertEquals(List.of(interrupted), List.of(ex.getSuppressed()));
+        assertTrue(statusSet, "the interrupt status wasn't set again");
+        assertEquals(List.of(ex), errors);
+    }
+
+    @Test
+    @DisplayName("a writer on the last rule that returns past the deadline stops the run, and what it set stays set")
+    void slowWriterOnTheLastRuleStopsAtTheDeadline() {
+        Map<String, Object> output = new HashMap<>();
+        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicBoolean reached = new AtomicBoolean();
+        RulesEngine<Map<String, Object>> engine = timedEngine(output, deadline, reached, (out, property, value) -> {
+            waitPast(deadline);
+            out.put(property, value);
+        });
+
+        RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+        assertTrue(reached.get(), "the run passed its deadline before it reached the writer");
+        assertNull(ex.getRuleName(), ex.getMessage());
+        assertInstanceOf(TimeoutException.class, ex.getCause());
+        assertEquals(Map.of("rate", "4.5"), output);
+    }
+
+    @Test
+    @DisplayName("a writer that throws past the deadline stops the run, keeping what it threw")
+    void writerThrowingPastTheDeadlineIsAStop() {
+        IllegalStateException gaveUp = new IllegalStateException("gave up");
+        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicBoolean reached = new AtomicBoolean();
+        RulesEngine<Map<String, Object>> engine = timedEngine(new HashMap<>(), deadline, reached,
+                (out, property, value) -> {
+                    waitPast(deadline);
+                    throw gaveUp;
+                });
+
+        RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+        assertTrue(reached.get(), "the run passed its deadline before it reached the writer");
+        assertNull(ex.getRuleName(), ex.getMessage());
+        assertInstanceOf(TimeoutException.class, ex.getCause());
+        assertEquals(List.of(gaveUp), List.of(ex.getSuppressed()));
+    }
+
+    @Test
+    @DisplayName("a writer that throws an Error past the deadline still fails the rule, as an action does")
+    void writerErrorPastTheDeadlineIsStillAFailure() {
+        AssertionError broke = new AssertionError("broke");
+        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicBoolean reached = new AtomicBoolean();
+        RulesEngine<Map<String, Object>> engine = timedEngine(new HashMap<>(), deadline, reached,
+                (out, property, value) -> {
+                    waitPast(deadline);
+                    throw broke;
+                });
+
+        RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+        assertTrue(reached.get(), "the run passed its deadline before it reached the writer");
+        assertEquals("r", ex.getRuleName());
+        assertEquals("Failed to set 'rate' on the output for rule 'r': broke", ex.getMessage());
+        assertSame(broke, ex.getCause());
     }
 
     @Test

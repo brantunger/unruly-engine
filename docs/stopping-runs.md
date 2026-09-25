@@ -66,7 +66,7 @@ first one that finds either:
 | Where the engine checks | The message ends with |
 | --- | --- |
 | Before each condition and each action | `before rule 'x'` |
-| When a condition or action returns, or throws anything with no `Error` in its cause chain | `during rule 'x'` |
+| When a condition or action returns, the output writer has set an action's properties, or any of them throws anything with no `Error` in its cause chain | `during rule 'x'` |
 | While the run waits for a compiled copy | `while waiting for a compiled copy of the rules: all N were in use` |
 | While the run waits for a build slot, interrupts only | `while waiting to make a compiled copy of the rules: every build slot was in use` |
 | While the run reads the engine's rules again, after a reload or `close()` closed the list it had read | `while reading the engine's rules again: the rules this run read had been closed by a reload or by close()` |
@@ -75,17 +75,19 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 
 - **A check when an expression returns stops the run, whatever it returned.** So a run whose last condition or action
   returns past its deadline throws, although that rule finished. An action stopped there doesn't have the properties
-  it returned set on the output. When what it returned would have failed the rule, such as a condition that evaluated
-  to a string or an action that returned `null`, that failure is kept in `getSuppressed()` as a
-  `RuleExecutionException` naming the rule.
-- **An exception thrown once the run must stop is a stop too,** not that rule's failure, unless an `Error` is
-  anywhere in its cause chain. What the expression threw is kept in `getSuppressed()`. This is how a language gives
-  up part-way, and how a [nested run](#-nested-runs) that stopped stops the run around it.
+  it returned set on the output. When what it returned would have failed the rule, such as a condition that
+  evaluated to a string or an action that returned `null`, that failure is kept in `getSuppressed()` as a
+  `RuleExecutionException` naming the rule. If not stopped there, the output writer sets the properties, with no
+  check between them, then the engine checks again; a stop then, or from the writer, leaves what it set.
+- **An exception that an expression or the output writer throws once the run must stop is a stop too,** not that
+  rule's failure, unless an `Error` is anywhere in its cause chain. What it threw is kept in `getSuppressed()`. This
+  is how a language gives up part-way, and how a [nested run](#-nested-runs) that stopped stops the run around it.
 - **An exception with an `Error` anywhere in its cause chain is that rule's failure,** even once the run must stop:
   it names the rule, what the expression threw is its `getCause()` rather than a suppressed exception, and it's
   logged at ERROR. That is exactly what the same throw reports when the run isn't stopping. The case to expect is an
   `Error` thrown by Java code a rule calls: a method, a getter or a lambda held in a fact. A
-  [fatal error](glossary.md#fatal-error) still escapes `run()` unchanged, stopping or not.
+  [fatal error](glossary.md#fatal-error) still escapes `run()` unchanged, stopping or not. The output writer's
+  throws follow the same rule.
 - **A thread that is already interrupted** stops before its first rule, or fails at once if it would have to wait
   for a copy; see [Limiting the copies](compiled-copies.md#-limiting-the-copies).
 - **A wait for a copy** happens only when the engine limits copies and all of them are in use. The run stops waiting
@@ -101,16 +103,15 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   with the new ones, or throws `IllegalStateException("The engine is closed")` after a `close()`; see
   [Reloading rules while running](thread-safety.md#-reloading-rules-while-running) and
   [Closing](thread-safety.md#closing).
-- **An interrupt that a rule, listener, output supplier or language throws is put back.** When an
+- **An interrupt that a rule, output writer, listener, output supplier or language throws is put back.** When an
   `InterruptedException` is anywhere in the cause chain of what they throw, the engine sets the interrupt status again.
-  A condition or action that throws it stops the run. A listener's exception is logged, and the next check stops the
-  run if a condition or action is still to come; after the last one has returned, `run()` returns with the status set,
-  unless a later listener clears it. An output supplier or a session that fails that way fails the run as usual, not
-  as a stop: the status is set when it fails, but a listener or a language's `close()` can clear it after. Code that
-  catches `InterruptedException` and neither rethrows it nor restores the status hides the interrupt from the engine.
-  Only a run that stopped for an interrupt always throws with the status set, even if a listener or a language's
-  `close()` cleared it.
-  An `InterruptedIOException` isn't treated as an interrupt.
+  A condition, action or output writer that throws it stops the run. A listener's exception is logged, and the next
+  check stops the run if a condition or action is still to come; after the last one has returned, `run()` returns with
+  the status set, unless a later listener clears it. An output supplier or a session that fails that way fails the run
+  as usual, not as a stop: the status is set when it fails, but a listener or a language's `close()` can clear it after.
+  Code that catches `InterruptedException` and neither rethrows it nor restores the status hides the interrupt from the
+  engine. Only a run that stopped for an interrupt always throws with the status set, even if a listener or a language's
+  `close()` cleared it. An `InterruptedIOException` isn't treated as an interrupt.
 
 ## 🐢 What a timeout doesn't do
 
@@ -124,10 +125,10 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   `EvaluationContext.isCancelled()` and give up; see [Writing a language](languages/custom.md#-stopping-a-run).
   In MVEL there is no such hook, so `while (true) {}` blocks the thread for ever. Run rules you don't trust in a
   process of their own.
-- **Nothing is checked after the last condition or action returns.** Time spent in a listener callback, the output
-  supplier or reading facts counts towards the deadline, and the next check stops the run. After the last check,
-  though, the last rule's `afterEvaluate` or `afterExecute` and `afterRun` can run past the deadline, and the run
-  returns normally.
+- **Nothing is checked after the last condition returns or the last action's properties are set.** Time spent in a
+  listener callback, the output supplier or reading facts counts towards the deadline, and the next check stops the run.
+  After the last check, though, the last rule's `afterEvaluate` or `afterExecute` and `afterRun` can run past the
+  deadline, and the run returns normally.
 - **An empty rule list evaluates nothing,** so a passed deadline or an interrupt can stop its run only while it waits
   for a copy, or while it reads the engine's rules again after a reload or a `close()`; an interrupt can also stop
   it while it waits for a build slot. Otherwise the run returns normally, and the interrupt status stays set. The
@@ -141,10 +142,10 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 A [stop](glossary.md#stop) reaches `onRunError` like a failure that belongs to no rule. What else a listener gets
 depends on where the run stopped:
 
-- **Before a rule:** nothing for that rule, because it never started.
-- **When a condition or action returns, or throws anything with no `Error` in its cause chain:** that rule's
-  `beforeEvaluate` or `beforeExecute` is closed with `onError`, and its exception is the stop, with no rule name.
-  Don't count it as a rule failure.
+- **Before a rule:** nothing, because the rule never started.
+- **When a condition or action returns, an action's properties are set, or any of them throws anything with no
+  `Error` in its cause chain:** that rule's `beforeEvaluate` or `beforeExecute` is closed with `onError`, and its
+  exception is the stop, with no rule name. Don't count it as a rule failure.
 - **While waiting for a copy, or reading the rules again:** `beforeRun` is sent only when that ends, then
   `onRunError`. A timer started in `beforeRun` doesn't measure the wait.
 
@@ -197,8 +198,8 @@ thread, it takes a free copy or fails at once.
   interrupt, because the interrupt status belongs to the thread.
 - **A stop that leaves the expression stops the outer run too.** When the outer run is past its deadline or
   interrupted, its rule gets `onError` with a stop, and the nested stop is in the cause chain of `getSuppressed()`'s
-  exception, which is what the expression threw. When both stopped for the same reason, the same interrupt or the same
-  deadline, the stop is logged once, by the nested run; otherwise each run logs its own.
+  exception, which is what the expression threw. When both stopped for the same interrupt or deadline, the stop is
+  logged once, by the nested run; otherwise each run logs its own.
 - **A nested run that stops at an earlier deadline of its own fails the outer rule.** The outer run isn't past its
   deadline, so its rule fails with `a nested run() failed: run() passed its deadline ...`, naming the outer rule, and
   the stop is in its cause chain.

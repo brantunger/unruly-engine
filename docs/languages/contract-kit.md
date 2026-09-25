@@ -178,9 +178,10 @@ Two things no check exercises, so passing the kit says nothing about them.
 thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does, passes the kit and still hides the
 caller's interrupt from the engine.
 
-The hole is a narrow one. The engine checks before each condition and each action, and again when each returns, so an
-interrupt raised between rules always stops the run, and the deadline path is unaffected. Only an interrupt raised and
-swallowed inside one expression escapes; see [Stopping a run](custom.md#-stopping-a-run).
+The hole is a narrow one. The engine checks before each condition and each action, again when each returns, and once
+an action's properties are set, so an interrupt raised between rules always stops the run, and the deadline path is
+unaffected. Only an interrupt raised and swallowed inside one expression escapes; see
+[Stopping a run](custom.md#-stopping-a-run).
 
 **The `CompileContext`.** Every check compiles with an empty `CompileContext`, through an engine or, in
 `evaluateAgreesWithDetail`, through `LanguageTestContexts.compile()`, so a language that ignores imports, options,

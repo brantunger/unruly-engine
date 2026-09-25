@@ -41,21 +41,42 @@ class ClosedEngineLoadTest {
     /**
      * A language that counts the compilers it creates and closes. A condition is always true, except one whose text
      * is {@code bad}, which fails to compile. Given latches, each compiler it creates says so on {@code compiling}
-     * and then waits for {@code release}, so a test can close the engine while a load is compiling.
+     * and then waits for {@code release}, so a test can close the engine while a load is compiling; and closing each
+     * says so on {@code closing} and then waits for {@code closeRelease}, so a test can act while one is closing.
      */
     private static final class CountingLanguage implements ExpressionLanguage {
         final AtomicInteger compilersCreated = new AtomicInteger();
         final AtomicInteger compilersClosed = new AtomicInteger();
         private final CountDownLatch compiling;
         private final CountDownLatch release;
+        private final CountDownLatch closing;
+        private final CountDownLatch closeRelease;
 
         CountingLanguage() {
             this(new CountDownLatch(0), new CountDownLatch(0));
         }
 
         CountingLanguage(CountDownLatch compiling, CountDownLatch release) {
+            this(compiling, release, new CountDownLatch(0), new CountDownLatch(0));
+        }
+
+        CountingLanguage(CountDownLatch compiling, CountDownLatch release, CountDownLatch closing,
+                         CountDownLatch closeRelease) {
             this.compiling = compiling;
             this.release = release;
+            this.closing = closing;
+            this.closeRelease = closeRelease;
+        }
+
+        private static void await(CountDownLatch latch, String never) {
+            try {
+                if (!latch.await(30, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException(never);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
         }
 
         @Override
@@ -67,14 +88,7 @@ class ClosedEngineLoadTest {
         public ExpressionCompiler newCompiler(CompileContext context) {
             compilersCreated.incrementAndGet();
             compiling.countDown();
-            try {
-                if (!release.await(30, TimeUnit.SECONDS)) {
-                    throw new IllegalStateException("the test never released the compiler");
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(e);
-            }
+            await(release, "the test never released the compiler");
             return new ExpressionCompiler() {
                 @Override
                 public CompiledCondition compileCondition(Expression expression) {
@@ -97,6 +111,8 @@ class ClosedEngineLoadTest {
                 @Override
                 public void close() {
                     compilersClosed.incrementAndGet();
+                    closing.countDown();
+                    await(closeRelease, "the test never let the compiler close");
                 }
             };
         }
@@ -216,6 +232,37 @@ class ClosedEngineLoadTest {
         assertEquals(1, language.compilersClosed.get(), "the compiler of the rule list that failed stayed open");
     }
 
+    @Test
+    @DisplayName("a load that finds the engine closed closes what it compiled without holding up close()")
+    void loadFindingTheEngineClosedDoesNotHoldUpClose() throws InterruptedException {
+        CountingLanguage language = new CountingLanguage(new CountDownLatch(1), new CountDownLatch(1),
+                new CountDownLatch(1), new CountDownLatch(1));
+        RulesEngine<Map<String, Object>> engine = engine(language);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        Thread loader = loader(engine, List.of(rule("a", "true")), thrown);
+        Thread closer = new Thread(engine::close, "closer");
+        try {
+            assertTrue(language.compiling.await(30, TimeUnit.SECONDS), "the load never began compiling");
+            engine.close();
+            language.release.countDown();
+            assertTrue(language.closing.await(30, TimeUnit.SECONDS), "the load never closed its compiler");
+            // The load's compiler is closing, and stays so until this test lets it: closing the engine again does
+            // nothing, and mustn't wait for it.
+            closer.start();
+            closer.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(closer.isAlive(), "close() waited for a load to close its compiler");
+        } finally {
+            language.release.countDown();
+            language.closeRelease.countDown();
+            loader.join(TimeUnit.SECONDS.toMillis(30));
+            closer.join(TimeUnit.SECONDS.toMillis(30));
+        }
+        assertFalse(loader.isAlive(), "the load never returned");
+        assertInstanceOf(IllegalStateException.class, thrown.get());
+        assertEquals(CLOSED, thrown.get().getMessage());
+        assertEquals(1, language.compilersClosed.get());
+    }
+
     /**
      * Loads {@code rules} on another thread and closes the engine while that load is creating its compiler, after it
      * has checked whether the engine is closed and before it compiles anything.
@@ -228,14 +275,7 @@ class ClosedEngineLoadTest {
             throws InterruptedException {
         RulesEngine<Map<String, Object>> engine = engine(language);
         AtomicReference<Throwable> thrown = new AtomicReference<>();
-        Thread loader = new Thread(() -> {
-            try {
-                engine.load(rules);
-            } catch (RuntimeException e) {
-                thrown.set(e);
-            }
-        }, "loader");
-        loader.start();
+        Thread loader = loader(engine, rules, thrown);
         try {
             assertTrue(language.compiling.await(30, TimeUnit.SECONDS), "the load never began compiling");
             engine.close();
@@ -245,5 +285,26 @@ class ClosedEngineLoadTest {
         }
         assertFalse(loader.isAlive(), "the load never returned");
         return thrown.get();
+    }
+
+    /**
+     * Starts a thread that loads {@code rules}.
+     *
+     * @param engine The engine to load them into
+     * @param rules  The rule list to load
+     * @param thrown Where the thread puts what the load threw
+     * @return The thread, started
+     */
+    private static Thread loader(RulesEngine<Map<String, Object>> engine, List<Rule> rules,
+                                 AtomicReference<Throwable> thrown) {
+        Thread loader = new Thread(() -> {
+            try {
+                engine.load(rules);
+            } catch (RuntimeException e) {
+                thrown.set(e);
+            }
+        }, "loader");
+        loader.start();
+        return loader;
     }
 }

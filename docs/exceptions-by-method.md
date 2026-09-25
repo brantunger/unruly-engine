@@ -72,15 +72,17 @@ from `getCause()` and reads exactly as it was written, line breaks and all. An e
 as a condition with an assignment or an MVEL syntax error, has an `InvalidExpressionException` as its cause.
 
 `load()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
-failed. `failures()` has each rule's own exception, and the message lists them:
+failed. `failures()` has each rule's own exception. The message counts them all, then lists them while they fit in
+about 1,000 characters, always the first one whole:
 
 ```text
 2 rules failed to compile: Condition for rule 'r1' failed to compile at line 1, column 6: Malformed expression; Action for rule 'r2' ...
 ```
 
-A language that can't create its compiler, and a declared fact name the languages reject, are listed with them, with
-no rule name; the message then counts `failures while loading the rules` instead of rules. A `null` rule or a
-duplicate name is thrown at once, before anything is compiled.
+When more failed than fit, the message ends with `; and N more (see failures())`, N being how many it left out;
+`failures()` still has them all. A language that can't create its compiler, and a declared fact name the languages
+reject, are listed with them, with no rule name; the message then counts `failures while loading the rules` instead of
+rules. A `null` rule or a duplicate name is thrown at once, before anything is compiled.
 
 `getExpressionKind()` on either exception says whether the rule's condition or its action failed. `issues()` on a
 `RuleCompilationException` says where the language found each problem, with a line and column when it knows them.

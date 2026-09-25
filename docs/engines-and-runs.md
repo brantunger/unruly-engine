@@ -274,10 +274,11 @@ An action changes the output in one of two ways:
   (`output.approved = true`), so the output type must be mutable.
 - **By returning properties.** A language whose expressions have no side effects returns
   `ActionResult.set(properties)`. The engine sets each property **after the action returns**, in the map's order, with
-  the engine's `OutputWriter`. If the run is stopped when that action returns, none of them are set.
+  the engine's `OutputWriter`. If the run stops when that action returns, none are set; a later
+  [stop](stopping-runs.md#-what-stops-a-run) leaves those written.
 
-The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, storing the value as it is, and
-otherwise the output's public setter, such as `setInterestRate`. A setter that accepts the value as it is wins. Among
+The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, storing the value as is, and
+otherwise the output's public setter, such as `setInterestRate`. A setter that accepts the value as is wins. Among
 several, the most specific wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`, and `setP(Integer)` over
 `setP(int)`. If no single one is the most specific, it calls the same one on every run.
 
@@ -286,8 +287,8 @@ Only when none accepts the value does it widen it to the nearest primitive, as a
 `setR(float)`.
 
 Nothing else is converted: a `Long` doesn't reach `setR(int)`, an `Integer` doesn't reach `setR(Long)`, and a
-`BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a CEL integer, a `Long`, needs a setter that
-takes it or a `float` or `double` one, and a Groovy decimal literal, a `BigDecimal`, one that takes it; otherwise,
+`BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a CEL integer, a `Long`, needs a setter
+taking it or a `float` or `double` one, and a Groovy decimal literal, a `BigDecimal`, one that takes it; otherwise,
 write an `outputWriter(...)`.
 
 Beside a same-named setter with a different parameter, one declared with its class's own type variable,
@@ -302,9 +303,9 @@ Unlike Java:
   declared with it, or with a variable it's passed to, takes the variable's bound.
 - A varargs `setR(int...)` takes only an array.
 
-A property it can't set, including through a setter the engine can't reach, fails the rule with a
-`RuleExecutionException` that names the rule and the property. When no setter of that name accepts a number, a
-character or a boolean, but one takes a primitive or a boxed primitive, the message adds:
+A property it can't set, including through a setter the engine can't reach, fails the rule, naming it and the
+property, unless the run must [stop](stopping-runs.md#-what-stops-a-run). When no setter of that name accepts a
+number, a character or a boolean, but one takes a primitive or a boxed primitive, the message adds:
 `(setR(int) exists, but a value is only widened as Java widens a primitive, never narrowed or converted)`.
 
 ## 📊 What a run reports

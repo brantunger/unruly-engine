@@ -38,10 +38,10 @@ type, output writer, declared facts and language options are all fixed when it's
 anything afterwards.
 
 Interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression
-returns** — before each condition and each action, and when each one returns, so a run whose last condition or action
-returns past its deadline fails. Whether an expression that is already running can be stopped depends on the
-language: MVEL can't stop one, so in MVEL a rule that loops for ever still blocks its thread; run rules you don't
-trust in a process of their own. See [Stopping a run](stopping-runs.md).
+returns** — before each condition and each action, when each returns, and once an action's properties are set, so a
+run whose last condition or action returns past its deadline fails. Whether a running expression can be stopped
+depends on the language: MVEL can't stop one, so in MVEL a rule that loops for ever still blocks its thread; run
+rules you don't trust in a process of their own. See [Stopping a run](stopping-runs.md).
 
 ### What you must keep thread-safe
 
