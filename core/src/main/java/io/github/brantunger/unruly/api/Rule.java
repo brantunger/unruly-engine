@@ -503,10 +503,11 @@ public final class Rule {
             Set<String> sorted = new TreeSet<>();
             for (String tag : tags) {
                 if (tag == null) {
-                    throw new IllegalStateException("tags must not contain null, but were " + tags);
+                    throw new IllegalStateException("tags must not contain null, but were " + Names.quoteAll(tags));
                 }
                 if (tag.isBlank()) {
-                    throw new IllegalStateException("tags must not contain a blank tag, but were " + tags);
+                    throw new IllegalStateException("tags must not contain a blank tag, but were "
+                            + Names.quoteAll(tags));
                 }
                 sorted.add(tag);
             }

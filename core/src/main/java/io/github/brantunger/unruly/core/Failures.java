@@ -3,24 +3,27 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
  * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf} logs, and under the
  * engine's logger name, {@code io.github.brantunger.unruly.engine}, as every failure is logged.
- * <b>Internal:</b> this class may change in any release. It's public only so that {@code api.LoggingRuleListener}
- * can escape text the way the engine does, rather than keeping a copy of the escaping that could drift.
+ * <b>Internal:</b> this class may change in any release. It's public only so that the {@code api} package can escape
+ * text the way the engine does, rather than keeping a copy of the escaping that could drift.
  */
 public final class Failures {
 
@@ -98,16 +101,17 @@ public final class Failures {
      * not.
      * </p>
      *
+     * <p>
+     * A failure of a {@code run()} started from a condition or action answers for the chain below it: it recorded the
+     * error in its own cause chain when it was built, so an error many nested runs down is still found, although each
+     * run adds a link and only {@value #MAX_CAUSE_CHAIN_LENGTH} links are read (see {@link #below}).
+     * </p>
+     *
      * @param thrown What was caught, or {@code null}
      * @return The first error in {@code thrown}'s cause chain, or {@code null} if there is none
      */
     static Error errorInChain(Throwable thrown) {
-        for (Throwable t : causeChain(thrown)) {
-            if (t instanceof Error error) {
-                return error;
-            }
-        }
-        return null;
+        return below(thrown).error();
     }
 
     static void throwIfPresent(Error fatal) {
@@ -390,14 +394,52 @@ public final class Failures {
         return innermost != null && innermost.isStopFor(deadline);
     }
 
-    private static ReportedFailure innermostReported(Throwable e) {
+    /**
+     * Finds the innermost {@link ReportedFailure} in an exception's cause chain, however many nested runs deep (see
+     * {@link #below}).
+     *
+     * @param e What was caught, or {@code null}
+     * @return The innermost {@link ReportedFailure} in {@code e}'s cause chain, or {@code null} if there is none
+     */
+    static ReportedFailure innermostReported(Throwable e) {
+        return below(e).innermost();
+    }
+
+    /**
+     * What an exception's cause chain holds of the engine's own failures: the innermost {@link ReportedFailure}, and
+     * the first {@link Error}.
+     *
+     * @param innermost The innermost failure of a nested {@code run()}, or {@code null} if there is none
+     * @param error     The first error, or {@code null} if there is none
+     */
+    record Below(ReportedFailure innermost, Error error) {
+    }
+
+    /**
+     * Reads an exception's cause chain for the innermost {@link ReportedFailure} and the first {@link Error}, in one
+     * walk. Every nested run adds a link to the chain and only {@value #MAX_CAUSE_CHAIN_LENGTH} links are read, so a
+     * failure or an error more than that many runs down would be out of reach; but each {@link ReportedFailure}
+     * recorded both for its own chain when it was built, so the walk stops at the first one that did. One serialized
+     * before they were recorded answers for nothing: the walk goes on past it, and if it finds no failure that recorded
+     * them, the last of those in the chain is the innermost, as before.
+     *
+     * @param e What was caught, or {@code null}
+     * @return The innermost failure and the first error, each {@code null} if the chain has none
+     */
+    static Below below(Throwable e) {
         ReportedFailure innermost = null;
+        Error error = null;
         for (Throwable t : causeChain(e)) {
             if (t instanceof ReportedFailure failure) {
+                if (failure.recorded()) {
+                    return new Below(failure.innermost(), error != null ? error : failure.error());
+                }
                 innermost = failure;
+            } else if (error == null && t instanceof Error found) {
+                error = found;
             }
         }
-        return innermost;
+        return new Below(innermost, error);
     }
 
     /**
@@ -410,11 +452,36 @@ public final class Failures {
      * @return The name, escaped and shortened if it was longer
      */
     public static String quote(String name) {
+        return escape(shorten(name));
+    }
+
+    /**
+     * Shortens a name as {@link #quote} does, without escaping it, for a list of names that is escaped as a whole.
+     *
+     * @param name The name
+     * @return The name, shortened if it was longer
+     */
+    static String shorten(String name) {
         if (name.length() <= MAX_NAME_LENGTH) {
-            return escape(name);
+            return name;
         }
         int kept = keptLength(name, MAX_NAME_LENGTH);
-        return escape(name.substring(0, kept)) + "... (" + (name.length() - kept) + " more characters)";
+        return name.substring(0, kept) + "... (" + (name.length() - kept) + " more characters)";
+    }
+
+    /**
+     * Makes a list of names safe to put in a message, shown as a {@link java.util.List}'s {@code toString()} shows it,
+     * such as {@code [eu, retail]}: each name shortened as {@link #quote} does, the list shortened as
+     * {@link #truncate} does, and the whole escaped last, so a cut never falls inside an escape. The count of what was
+     * left out of the list counts the characters of the list as it was before it was escaped: the shortened names, the
+     * notes of what was left out of each, and the separators.
+     *
+     * @param names The names; a {@code null} one is shown as {@code null}
+     * @return The list, escaped and shortened
+     */
+    public static String quoteAll(Collection<? extends @Nullable String> names) {
+        return escape(truncate(names.stream().map(name -> name == null ? "null" : shorten(name))
+                .collect(Collectors.joining(", ", "[", "]"))));
     }
 
     /**
@@ -431,8 +498,15 @@ public final class Failures {
      * character, so a caller that can't tell whether a message has been through here may escape it again.
      * </p>
      *
+     * <p>
+     * A lone surrogate, half of a pair without the other half, is escaped too: a logger's encoder would otherwise
+     * write it as {@code ?}, so the log would differ from the message and two different names would log the same. A
+     * valid surrogate pair, such as an emoji, is kept whole.
+     * </p>
+     *
      * @param text The text
-     * @return The text, with every character that could start a line, and every format character, escaped
+     * @return The text, with every character that could start a line, every format character and every lone
+     *         surrogate escaped
      */
     public static String escape(String text) {
         StringBuilder escaped = new StringBuilder(text.length());
@@ -445,10 +519,12 @@ public final class Failures {
                 case '\t' -> escaped.append("\\t");
                 default -> {
                     int type = Character.getType(c);
+                    // The loop reads code points, so only a lone surrogate has the type SURROGATE.
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT) {
+                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
+                            || type == Character.SURROGATE) {
                         for (char unit : Character.toChars(c)) {
-                            escaped.append(String.format("\\u%04x", (int) unit));
+                            appendEscape(escaped, unit);
                         }
                     } else {
                         escaped.appendCodePoint(c);
@@ -457,6 +533,21 @@ public final class Failures {
             }
         }
         return escaped.toString();
+    }
+
+    /**
+     * Appends one UTF-16 unit as a backslash, {@code u} and four lowercase hex digits, as
+     * {@code String.format("\\u%04x", unit)} would, without parsing a format for every character.
+     * {@code mvel.FactNames} keeps a copy of this.
+     *
+     * @param escaped What to append to
+     * @param unit    The unit
+     */
+    static void appendEscape(StringBuilder escaped, char unit) {
+        escaped.append("\\u");
+        for (int shift = 12; shift >= 0; shift -= 4) {
+            escaped.append(Character.forDigit((unit >> shift) & 0xF, 16));
+        }
     }
 
     /**

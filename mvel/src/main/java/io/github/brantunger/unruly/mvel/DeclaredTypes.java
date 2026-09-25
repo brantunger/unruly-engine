@@ -59,8 +59,8 @@ final class DeclaredTypes {
         }
         for (Map.Entry<String, Class<?>> fact : declared.entrySet()) {
             if (isDynamic(fact.getValue())) {
-                throw cantApply("fact '" + fact.getKey() + "' is declared as " + fact.getValue().getName()
-                        + ", whose members MVEL can't check");
+                throw cantApply("fact '" + FactNames.quote(fact.getKey()) + "' is declared as "
+                        + fact.getValue().getName() + ", whose members MVEL can't check");
             }
         }
         if (isDynamic(context.outputType())) {
@@ -85,8 +85,8 @@ final class DeclaredTypes {
     private static boolean strongTyping(Map<String, String> options) {
         for (String key : options.keySet()) {
             if (!STRONG_TYPING.equals(key)) {
-                throw new IllegalArgumentException("MVEL has no option '" + key + "'; its only option is "
-                        + STRONG_TYPING);
+                throw new IllegalArgumentException("MVEL has no option '" + FactNames.quote(key)
+                        + "'; its only option is " + STRONG_TYPING);
             }
         }
         String value = options.getOrDefault(STRONG_TYPING, "false");
@@ -94,7 +94,7 @@ final class DeclaredTypes {
             case "true" -> true;
             case "false" -> false;
             default -> throw new IllegalArgumentException("MVEL's " + STRONG_TYPING + " option must be true or false, "
-                    + "but was '" + value + "'");
+                    + "but was '" + FactNames.quote(value) + "'");
         };
     }
 

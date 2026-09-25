@@ -27,6 +27,29 @@ class FactNamesQuoteTest {
     }
 
     @Test
+    @DisplayName("a lone surrogate is escaped, also at the end of a short name, and a name of 200 is kept whole")
+    void loneSurrogateEscaped() {
+        String beforeLast = "x".repeat(199);
+
+        assertEquals("a\\ud800", FactNames.quote("a" + (char) 0xd800));
+        assertEquals("a\\udc00b", FactNames.quote("a" + (char) 0xdc00 + "b"));
+        assertEquals(beforeLast + "\\ud800", FactNames.quote(beforeLast + (char) 0xd800));
+        assertEquals(beforeLast + "... (2 more characters)", FactNames.quote(beforeLast + (char) 0xd800 + "y"));
+    }
+
+    @Test
+    @DisplayName("an escape is written as String.format writes it, for every UTF-16 unit")
+    void escapeWrittenAsFormatWrites() {
+        for (int unit = 0; unit <= Character.MAX_VALUE; unit++) {
+            StringBuilder written = new StringBuilder();
+
+            FactNames.appendEscape(written, (char) unit);
+
+            assertEquals(String.format("\\u%04x", unit), written.toString());
+        }
+    }
+
+    @Test
     @DisplayName("a name is never shortened inside a surrogate pair")
     void longNameNotCutInsideSurrogatePair() {
         String kept = "x".repeat(199);

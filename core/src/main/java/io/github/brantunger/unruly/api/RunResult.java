@@ -167,10 +167,18 @@ public final class RunResult<O> {
         return start;
     }
 
+    /**
+     * Describes the result, such as {@code RunResult(output={rate=4.5}, firedRules=[prime-rate],
+     * evaluations=[prime-rate=MATCHED], ruleSetChecksum=9f2c..., tags=[], startedAt=2027-06-01T00:00:00Z)}. Rule
+     * names and tags are escaped and shortened as the engine's error messages show names.
+     *
+     * @return The description
+     */
     @Override
     public String toString() {
-        return "RunResult(output=" + outputValue + ", firedRules=" + fired.stream().map(Rule::getRuleName).toList()
-                + ", evaluations=" + evaluated + ", ruleSetChecksum=" + checksum + ", tags=" + runTags
-                + ", startedAt=" + start + ")";
+        return "RunResult(output=" + outputValue + ", firedRules="
+                + Names.quoteEach(fired.stream().map(Rule::getRuleName).toList()) + ", evaluations=" + evaluated
+                + ", ruleSetChecksum=" + checksum + ", tags=" + Names.quoteEach(runTags) + ", startedAt=" + start
+                + ")";
     }
 }

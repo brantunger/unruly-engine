@@ -70,6 +70,33 @@ class RunOptionsTest {
     }
 
     @Test
+    @DisplayName("the tags in a rejection are escaped, and the list is cut at 1,000 characters before it's escaped")
+    void tagsEscapedInRejections() {
+        RunOptions options = RunOptions.defaults();
+        assertEquals("tags must not contain null, but were [eu\\n[main] INFO forged, null]",
+                assertThrows(IllegalArgumentException.class,
+                        () -> options.withTags(Arrays.asList("eu\n[main] INFO forged", null))).getMessage());
+        String rlo = "\u202e".repeat(200);
+        String escaped = "\\u202e".repeat(200);
+        String cut = "... (1 more characters)";
+
+        String message = assertThrows(IllegalArgumentException.class,
+                () -> options.withTags(List.of(rlo, rlo + "a", rlo + "b", rlo + "c", rlo + "d", " "))).getMessage();
+
+        // Each tag is cut to 200 characters, which makes the list 1,105; its first 1,000 end inside the fifth tag.
+        assertEquals("tags must not contain a blank tag, but were [" + escaped + ", " + escaped + cut + ", "
+                + escaped + cut + ", " + escaped + cut + ", " + "\\u202e".repeat(122) + "... (105 more characters)",
+                message);
+    }
+
+    @Test
+    @DisplayName("toString() escapes the tags")
+    void toStringEscapesTags() {
+        assertEquals("RunOptions(timeout=the engine's, tags=[eu\\n[main] INFO forged])",
+                RunOptions.defaults().withTags(List.of("eu\n[main] INFO forged")).toString());
+    }
+
+    @Test
     @DisplayName("a timeout must be a positive duration")
     void timeoutMustBePositive() {
         assertEquals("timeout must not be null",

@@ -161,4 +161,19 @@ class ValueEscapingTest {
 
         assertEquals("\\n".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (5 more characters)", described);
     }
+
+    @Test
+    @DisplayName("a lone surrogate in a fact value a language quotes is escaped, so the log can't show it as ?")
+    void loneSurrogateInValue() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true")
+                .action("output.put('a', Integer.parseInt(v))").build()));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("v", "x" + (char) 0xd800);
+
+        RuntimeException thrown = assertThrows(RuntimeException.class, () -> engine.run(facts));
+
+        assertTrue(thrown.getMessage().contains("For input string: \"x\\ud800\""), thrown.getMessage());
+    }
 }

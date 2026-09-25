@@ -173,7 +173,7 @@ public final class RulesEngineBuilder<O> {
         }
         for (ExpressionLanguage added : languageList) {
             if (name.equals(added.name())) {
-                throw new IllegalArgumentException("Two expression languages are named '" + name + "': "
+                throw new IllegalArgumentException("Two expression languages are named '" + Names.quote(name) + "': "
                         + added.getClass().getName() + " and " + language.getClass().getName());
             }
         }

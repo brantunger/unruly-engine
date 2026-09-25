@@ -35,7 +35,8 @@ final class ImportResolver {
             // A class file found for a name that differs in case, in a class directory on a case-insensitive file
             // system, isn't this class. Any other linkage error means the class exists, and rules couldn't use it.
             if (!isWrongName(e)) {
-                throw new IllegalArgumentException("Can't import '" + name + "': the class exists but can't be loaded: "
+                throw new IllegalArgumentException("Can't import '" + Failures.quote(name)
+                        + "': the class exists but can't be loaded: "
                         + Failures.textOf(e), e);
             }
             return packageImport(name, e);
@@ -50,7 +51,8 @@ final class ImportResolver {
      */
     private static Class<?> packageImport(String name, Throwable notAClass) {
         if (!isPackageName(name)) {
-            throw new IllegalArgumentException("'" + name + "' is neither a class nor a valid package name", notAClass);
+            throw new IllegalArgumentException("'" + Failures.quote(name)
+                    + "' is neither a class nor a valid package name", notAClass);
         }
         return null;
     }

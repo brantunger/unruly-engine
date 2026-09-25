@@ -102,10 +102,11 @@ public final class RunOptions {
         Set<String> sorted = new TreeSet<>();
         for (String tag : tags) {
             if (tag == null) {
-                throw new IllegalArgumentException("tags must not contain null, but were " + tags);
+                throw new IllegalArgumentException("tags must not contain null, but were " + Names.quoteAll(tags));
             }
             if (tag.isBlank()) {
-                throw new IllegalArgumentException("tags must not contain a blank tag, but were " + tags);
+                throw new IllegalArgumentException("tags must not contain a blank tag, but were "
+                        + Names.quoteAll(tags));
             }
             sorted.add(tag);
         }
@@ -130,9 +131,15 @@ public final class RunOptions {
         return runTags;
     }
 
+    /**
+     * Describes the options, such as {@code RunOptions(timeout=PT2S, tags=[eu, retail])}. Tags are escaped and
+     * shortened as the engine's error messages show names.
+     *
+     * @return The description
+     */
     @Override
     public String toString() {
         return "RunOptions(timeout=" + (runTimeout == null ? "the engine's" : runTimeout) + ", tags="
-                + (runTags.isEmpty() ? "any" : runTags) + ")";
+                + (runTags.isEmpty() ? "any" : Names.quoteEach(runTags)) + ")";
     }
 }

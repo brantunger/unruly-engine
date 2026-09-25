@@ -58,6 +58,39 @@ class FactMapNameValidationTest {
     }
 
     @Test
+    @DisplayName("a fact name in a rejection is escaped, so a name from request data can't start a log line")
+    void namesEscapedInRejections() {
+        IllegalArgumentException duplicate = assertThrows(IllegalArgumentException.class,
+                () -> new FactMap<>(new Fact<>("a\u2028b", 1), new Fact<>("a\u2028b", 2)));
+        assertEquals("duplicate fact name 'a\\u2028b'", duplicate.getMessage());
+
+        IllegalArgumentException mismatch = assertThrows(IllegalArgumentException.class,
+                () -> new FactMap<>().put("claim\n[main] INFO forged", new Fact<>("other\u202e", 1)));
+        assertEquals("key 'claim\\n[main] INFO forged' does not match the fact's name 'other\\u202e'",
+                mismatch.getMessage());
+    }
+
+    @Test
+    @DisplayName("a fact whose name is null is shown as null when put under another key")
+    void nullFactNameInRejection() {
+        FactReference<Object> unnamed = new FactReference<>() {
+            @Override
+            public String getName() {
+                return null;
+            }
+
+            @Override
+            public Object getValue() {
+                return 1;
+            }
+        };
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> new FactMap<>().put("claim", unnamed));
+        assertEquals("key 'claim' does not match the fact's name 'null'", ex.getMessage());
+    }
+
+    @Test
     @DisplayName("the map constructor rejects a null key and a key/name mismatch")
     void mapConstructorValidates() {
         Map<String, FactReference<Object>> nullKey = new HashMap<>();
