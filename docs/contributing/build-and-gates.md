@@ -183,8 +183,8 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 
 What the jobs leave behind:
 
-- **Artifacts:** `jacoco-report-jdk21-<os>` from every JDK 21 job, always, with that job's JUnit results beside the
-  coverage; `api-compatibility-report-jdk21-<os>` only when a job fails.
+- **Artifacts:** each build job's JUnit XML, always, in `jacoco-report-jdk21-<os>` with the coverage or in
+  `test-results-jdk25-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` only when a job fails.
 - **Codecov** gets one upload per run, from the Linux JDK 21 job, authenticated with OIDC. Runs from a fork or
   Dependabot skip it: GitHub gives them no OIDC token.
 - **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests only read them,
