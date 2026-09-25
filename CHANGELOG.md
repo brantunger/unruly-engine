@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.3](https://github.com/brantunger/unruly-engine/compare/v2.7.2...v2.7.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* escape every Unicode format character in log lines and messages, never cut a surrogate pair, and correct five doc claims ([#609](https://github.com/brantunger/unruly-engine/issues/609)) ([a7375c5](https://github.com/brantunger/unruly-engine/commit/a7375c5b17915c5d95f8ec1f468d70bbe18d9995))
+
 ## [2.7.2](https://github.com/brantunger/unruly-engine/compare/v2.7.1...v2.7.2) (2026-09-25)
 
 
