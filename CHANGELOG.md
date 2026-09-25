@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.7](https://github.com/brantunger/unruly-engine/compare/v2.7.6...v2.7.7) (2026-09-25)
+
+
+### Bug Fixes
+
+* make the contract kit's unusable-fact-name check supply x and name checkFactName when it fails ([#631](https://github.com/brantunger/unruly-engine/issues/631)) ([3aa43ff](https://github.com/brantunger/unruly-engine/commit/3aa43fff094791eb01e0b36c866c249a08e5089e))
+
 ## [2.7.6](https://github.com/brantunger/unruly-engine/compare/v2.7.5...v2.7.6) (2026-09-25)
 
 
