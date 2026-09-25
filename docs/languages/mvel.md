@@ -101,24 +101,24 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 engine.load(rules);
 ```
 
-An engine's imports are set when it's built, and every `load()` compiles with them. A rule that needs a missing
-import is still accepted, and only fails at `run()`: with `unresolvable property or identifier` for a class it
-calls, such as `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
+An engine's imports are set when it's built; every `load()` compiles with them. A rule missing an import passes
+`load()` and fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
+`Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException` from `build()`, and no engine is built.
 - A class that exists but can't be loaded, for example because a class it extends is missing from the class path,
   is rejected the same way, with the `LinkageError` as the cause. Before 1.6.1 it was imported as a package, and rules
-  that used it failed later with `unresolvable property or identifier`.
+  using it failed later with `unresolvable property or identifier`.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can no longer be used as a fact name. On an engine built with `imports("java.util")`, a fact
-  named `Date` is rejected. See [Fact names MVEL rejects](#fact-names-mvel-rejects).
+- An imported class name can no longer be a fact name: with `imports("java.util")`, a fact named `Date` is rejected;
+  see [Fact names MVEL rejects](#fact-names-mvel-rejects).
 - A single-class import such as `"java.time.LocalDate"` is resolved by `build()`, with the building thread's
-  context class loader. A string that loader can't load as a class, but that is a valid package name, is imported as
-  a package.
+  context class loader; a string it can't load as a class, but that is a valid package name, is imported as a
+  package.
 - Classes in imported packages are looked up with the context class loader of the thread that calls `load()`.
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
-- A thread without a context class loader uses this library's own class loader instead.
+- A thread without a context class loader uses this library's class loader.
 
 The classes of your facts and of the output object must be reachable from that same class loader, whatever the
 rules import; see [Class loaders](../thread-safety.md#-class-loaders).
@@ -249,9 +249,9 @@ doesn't catch a condition that isn't a boolean; the engine checks that itself, w
 ## 🚨 Errors when rules load
 
 MVEL rejects an expression it can't compile with an `InvalidExpressionException`, which `load()` reports as a
-`RuleCompilationException` naming the expression and the rule. How the engine collects and orders those failures is
-in [Errors when rules load](custom.md#-errors-when-rules-load); this is what MVEL puts in them. The message has
-MVEL's description and, when MVEL gives one, the line and column:
+`RuleCompilationException` naming the expression and the rule;
+[Errors when rules load](custom.md#-errors-when-rules-load) covers how the engine collects and orders them. The
+message has MVEL's description and, when given, the line and column:
 
 ```text
 Condition for rule 'prime-rate' failed to compile at line 1, column 26: Malformed expression
@@ -262,13 +262,21 @@ for the condition `applicant.creditScore >= ` and the action `output.put('rate',
 with severity `ERROR`, that line and column counting from 1, and the description. When MVEL gives no position, both
 are 0 and the message has no `at line`.
 
+**A description of `null` ends with the root cause**, in the message and issue; see
+[Exceptions by method](../exceptions-by-method.md). MVEL gives `null` when a rule is the first to use a class, by its
+full name, whose static initializer throws an exception:
+
+```text
+Condition for rule 'r' failed to compile at line 1, column 1: null (caused by java.lang.RuntimeException: plain init failure)
+```
+
 **The line is reliable; the column is where MVEL gave up**, which isn't always the mistake. For `Malformed expression`
 it's the token after the one MVEL choked on, or one past the end of the line: `applicant.creditScore == == 750` reports
-column 29, the `750`, and `applicant.creditScore >= ` column 26. `unbalanced braces` points at the brace.
+column 29, the `750`. `unbalanced braces` points at the brace.
 
-**An assignment in a condition** is found by MVEL's own scan of the text, before anything is compiled, and reported at
-the operator or keyword, with one issue at that position: `Condition for rule 'prime-rate' contains an assignment ('='
-at line 1, column 23). Conditions can't change facts or declare variables; use == to compare.`
+**An assignment in a condition** is found by MVEL's scan of the text before compiling, and reported with one
+issue at the operator or keyword: `Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column
+23). Conditions can't change facts or declare variables; use == to compare.`
 
 **`import_static` in a condition** gets its own message from the same scan, at the keyword: `uses import_static (at line
 1, column 1), which declares the method as a variable, and conditions can't declare variables. Call the method through
@@ -278,8 +286,8 @@ its class instead, such as Math.max(a, b).` What the scan catches is in
 **A condition that doesn't compile hides its action's errors** until the next `load()`, whatever the language; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
 
-**What `load()` doesn't catch:** a missing import or an unknown identifier passes `load()` and fails at `run()`, as
-[Classes and imports](#-classes-and-imports) explains, unless [strong typing](#-strong-typing) is on.
+**What `load()` doesn't catch:** a missing import or an unknown identifier fails only at `run()`, unless
+[strong typing](#-strong-typing) is on; see [Classes and imports](#-classes-and-imports).
 
 ## 📑 Compiled copies
 

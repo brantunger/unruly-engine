@@ -23,6 +23,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     // Where MVEL found the error, such as [Line: 1, Column: 11].
     private static final Pattern POSITION = Pattern.compile("\\[Line: (\\d+), Column: (\\d+)]");
     private static final char NEW_LINE = '\n';
+    // MVEL's description of an error whose message is missing, such as a class's failed static initializer.
+    private static final String MISSING_DESCRIPTION = "null";
 
     private final Imports imports;
     private final FactNames factNames;
@@ -93,32 +95,36 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             return expression;
         } catch (CompileException e) {
             // The engine reports an expression too long for MVEL's recursive parser as such.
-            if (rootCause(e) instanceof StackOverflowError) {
+            if (ExceptionReads.rootCause(e) instanceof StackOverflowError) {
                 throw e;
             }
             throw compileError(e);
         }
     }
 
-    private static Throwable rootCause(Throwable e) {
-        Throwable root = e;
-        while (root.getCause() != null) {
-            root = root.getCause();
-        }
-        return root;
-    }
-
     /**
      * Reports an error MVEL found while compiling as an {@link InvalidExpressionException}, with one issue that has
      * MVEL's description and, when MVEL gives one, its line and column. MVEL's own exception is the cause.
+     *
+     * <p>
+     * When MVEL's description is missing, as it is for a class whose static initializer threw (MVEL copies the
+     * {@link ExceptionInInitializerError}'s missing message into its own as {@code [Error: null]}), the description
+     * names the root cause in the engine's note, in the exception's message and the issue alike, such as
+     * {@code failed to compile at line 1, column 1: null (caused by java.lang.RuntimeException: disk full)}, or its
+     * class alone if it has no message. A message that can't be read, MVEL's or the root cause's, reads
+     * {@code (message unavailable: ...)}, naming the class of what reading it threw.
+     * </p>
      *
      * @param e What MVEL threw
      * @return The exception to throw
      */
     static InvalidExpressionException compileError(CompileException e) {
-        String message = String.valueOf(e.getMessage());
+        String message = String.valueOf(ExceptionReads.messageOf(e));
         Matcher error = ERROR.matcher(message);
         String description = error.find() ? error.group(1) : message;
+        if (MISSING_DESCRIPTION.equals(description)) {
+            description += causeNote(ExceptionReads.causeChain(e));
+        }
         Matcher position = POSITION.matcher(message);
         InvalidExpressionException.Issue issue = position.find()
                 ? new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR,
@@ -127,6 +133,23 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
                 description);
         String where = issue.line() == 0 ? "" : " at line " + issue.line() + ", column " + issue.column();
         return new InvalidExpressionException("failed to compile" + where + ": " + description, List.of(issue), e);
+    }
+
+    /**
+     * Names the root cause of a compile error whose description MVEL left missing, in the engine's note: its class,
+     * and its message if it has one, as {@code core.Failures} names one. The engine escapes and shortens the whole
+     * message it reports.
+     *
+     * @param chain What MVEL threw and its causes
+     * @return {@code " (caused by ...)"}, or an empty string if there is no cause
+     */
+    private static String causeNote(List<Throwable> chain) {
+        if (chain.subList(1, chain.size()).isEmpty()) {
+            return "";
+        }
+        Throwable root = chain.get(chain.size() - 1);
+        String rootMessage = ExceptionReads.messageOf(root);
+        return " (caused by " + root.getClass().getName() + (rootMessage == null ? "" : ": " + rootMessage) + ")";
     }
 
     /**

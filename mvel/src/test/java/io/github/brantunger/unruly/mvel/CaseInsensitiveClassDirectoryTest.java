@@ -99,4 +99,42 @@ class CaseInsensitiveClassDirectoryTest {
         assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError()));
         assertFalse(ExactNameClassLoader.isWrongName(new LinkageError("applicant (wrong name: Applicant)")));
     }
+
+    /** A {@code NoClassDefFoundError} whose {@code getMessage()} throws, as an application's class loader might. */
+    private static final class UnreadableNoClassDefFoundError extends NoClassDefFoundError {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("message accessor broke");
+        }
+    }
+
+    @Test
+    @DisplayName("a NoClassDefFoundError whose message can't be read isn't a wrong-name error")
+    void unreadableMessageIsNotWrongName() {
+        assertFalse(ExactNameClassLoader.isWrongName(new UnreadableNoClassDefFoundError()));
+    }
+
+    @Test
+    @DisplayName("a NoClassDefFoundError whose message can't be read fails the rule list, as core's import check does")
+    void unreadableLinkageErrorFailsTheLoad() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
+        ClassLoader unreadable = loaderThrowing(new UnreadableNoClassDefFoundError());
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> withContextClassLoader(unreadable, () -> {
+                    engine.load(List.of(PRIME_RATE));
+                    return null;
+                }));
+
+        // MVEL wraps the error in a CompileException made from its message, so what the message's accessor throws is
+        // the failure the engine reports. Taken for a wrong-name error, it would have become a ClassNotFoundException.
+        assertEquals("prime-rate", thrown.getRuleName());
+        assertEquals("Condition for rule 'prime-rate' failed to compile: message accessor broke", thrown.getMessage());
+        assertInstanceOf(IllegalStateException.class, thrown.getCause());
+        assertTrue(Stream.iterate((Throwable) thrown, t -> t != null, Throwable::getCause)
+                .noneMatch(ClassNotFoundException.class::isInstance), thrown.getMessage());
+    }
 }
