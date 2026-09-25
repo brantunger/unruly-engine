@@ -31,8 +31,8 @@ mavenPublishing {
             }
         }
         scm {
-            connection = 'scm:git:git://github.com/brantunger/unruly-engine.git'
-            developerConnection = 'scm:git:ssh://github.com/brantunger/unruly-engine.git'
+            connection = 'scm:git:https://github.com/brantunger/unruly-engine.git'
+            developerConnection = 'scm:git:ssh://git@github.com/brantunger/unruly-engine.git'
             url = 'https://github.com/brantunger/unruly-engine'
         }
     }

@@ -158,6 +158,17 @@ jobs:
             mvel/build/test-results/test/
             test-kit/build/test-results/test/
 
+      # The JDK 25 leg runs only the tests, so it has no coverage, but its test results show what ran and failed.
+      - name: Upload Test Results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && matrix.java-version != '21'
+        with:
+          name: test-results-jdk${{ matrix.java-version }}-${{ matrix.os }}
+          path: |
+            core/build/test-results/test/
+            mvel/build/test-results/test/
+            test-kit/build/test-results/test/
+
       # Codecov gets one report per run, from Linux, and a failed upload fails the job. The upload authenticates
       # with the job's OIDC token, which GitHub doesn't issue to a pull request from a fork or to any run Dependabot
       # triggers (a pull request, or a push when it merges one), so those runs skip the upload rather than fail.
