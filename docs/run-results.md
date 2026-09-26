@@ -154,10 +154,14 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 The checksum is the lowercase hex SHA-256 over each rule, in evaluation order: its name, its priority as decimal text,
 its [resolved language](glossary.md#resolved-language), its condition, its action, `true` or `false` for whether it's
 enabled, its `validFrom` and `validTo` as ISO-8601 text as `Instant.toString()` writes it (`2027-06-01T00:00:00Z`),
-and its tags. Each value is written as its length in UTF-8 bytes, in four bytes with the most significant first, then
-those bytes. A `null` priority, `validFrom` or `validTo` is written as the length `-1`.
+and its tags.
 
-The tags are written as their count, in four bytes, then each tag as a value, sorted by their UTF-8 bytes compared as
+Each value is encoded as UTF-8 and written as its length in bytes, in four bytes with the most significant first, then
+those bytes. A lone surrogate, which UTF-8 can't encode, is written as its three-byte form, as WTF-8 does. U+D800, for
+example, is `ED A0 80`, and a high surrogate followed by a low one is one character, in four bytes. A `null` priority,
+`validFrom` or `validTo` is written as the length `-1`.
+
+The tags are written as their count, in four bytes, then each tag as a value, sorted by their bytes compared as
 unsigned numbers, which can differ from Java's `String` order. So another system can compute the same checksum from
 the same rules.
 
