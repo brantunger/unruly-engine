@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.13](https://github.com/brantunger/unruly-engine/compare/v2.7.12...v2.7.13) (2026-09-26)
+
+
+### Bug Fixes
+
+* keep the MVEL fact-name miss cache bounded in memory, not only in count ([#666](https://github.com/brantunger/unruly-engine/issues/666)) ([78b7ffa](https://github.com/brantunger/unruly-engine/commit/78b7ffaaf7160d3bb49be1faf5a555c425660de1))
+
 ## [2.7.12](https://github.com/brantunger/unruly-engine/compare/v2.7.11...v2.7.12) (2026-09-26)
 
 
