@@ -23,8 +23,8 @@ without parsing the message.
 | `runTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
 | `clock()` | `NullPointerException` | The clock is `null` |
 | `outputType()` / `outputWriter()` / `option()` | `NullPointerException` | An argument is `null` |
-| `fact()` / `facts()` | `IllegalArgumentException` | A fact is declared with the name `output` |
-| | `NullPointerException` | A name, a type or the map is `null` |
+| `fact()` / `facts()` | `IllegalArgumentException` | A name is `output`. Nothing is added. |
+| | `NullPointerException` | A name, type or map is `null`. Nothing is added. |
 | `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language, or a language given an option, isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or two found languages have the same name |
 | | `IllegalArgumentException` | An import is neither a loadable class nor a valid package name, or names a class that exists but can't be loaded, for example because a class it extends is missing from the class path; or `copiesAtLoad(n)` is more than `maxCopies(...)`: `copiesAtLoad(3) is more than maxCopies(2): no more copies than that are used at once` |
 | | `Error` (rethrown) | `ServiceLoader` fails to create a language it found, for example with a `ServiceConfigurationError`. It's thrown unchanged. |

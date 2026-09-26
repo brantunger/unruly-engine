@@ -247,7 +247,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring `output` fails at once,
   and `load()` fails for a declared name the rules' languages can't refer to.
 - **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
-- **`facts(map)`** declares several at once, as `fact()` does each one.
+- **`facts(map)`** declares several at once, as `fact()` does each one. If it rejects an entry, it declares none.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,
   or leaves a declared one out, fails with `IllegalArgumentException`.
 
