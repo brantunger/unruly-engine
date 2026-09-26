@@ -207,10 +207,10 @@ once.
   run is past its deadline or interrupted; see [What stops a run](#-what-stops-a-run). The outer rule fails with
   `a nested run() failed: ...`, with the nested failure in its cause chain; `run()` rethrows a fatal `Error` instead.
   Each rule it passes through gets one `onError`, each run one `onRunError`.
-- **A failure is logged once, by the run it came from,** not by the runs around it, except a rejected fact or a failed
-  `load()` ([#675](https://github.com/brantunger/unruly-engine/issues/675)); through the output supplier, `run()`
-  throws `Output factory threw: a nested run() failed: <innermost failure>`. A fatal `Error` is logged once until the
-  thread's outermost run, `load()` or `validate()` ends; a later run logs it again.
+- **What a nested `run()` or `load()` logged isn't logged again,** rejected facts included: the rule, output
+  supplier, listener or `load()` around it says `a nested run() failed: <innermost failure>` or
+  `a nested load() failed: ...`. The thread remembers 32, and a fatal `Error`, until its outermost run, `load()` or
+  `validate()` ends; then, or past 32, one thrown on may be logged again.
 - **`parent()` names the outer run only on the same engine.** A run on another engine has no parent, although it
   still inherits the deadline; see [Callbacks](listeners-and-logging.md#-callbacks).
 - **A nested run never waits for a copy** while a run on its thread holds or is getting one; see

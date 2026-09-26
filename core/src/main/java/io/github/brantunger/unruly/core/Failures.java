@@ -193,20 +193,40 @@ public final class Failures {
      * </ul>
      * The message is shortened before it's escaped, so the count of what was left out counts the exception's own
      * characters. The exception is never changed: its {@code getMessage()} still reads as the language wrote it.
-     * A failure of a {@code run()} started from a condition, an action, the output supplier, a listener callback or a
-     * language is described by that run's innermost failure only, so a failure nested many runs deep isn't repeated
-     * once per level.
+     * A failure of a {@code run()} or a {@code load()} started from a condition, an action, the output supplier, a
+     * listener callback or a language is described by the innermost failure it logged only, as
+     * {@code a nested run() failed: } or {@code a nested load() failed: } and that failure, so a failure nested many
+     * runs deep isn't repeated once per level (see {@link #nestedRunFailure}).
      *
      * @param e The exception to describe
      * @return A description of the exception for an error message
      */
     static String describe(Throwable e) {
-        RuleExecutionException nested = nestedRunFailure(e);
-        if (nested != null) {
-            return "a nested run() failed: " + messageOf(nested);
+        Below below = below(e);
+        if (below.logged() != null) {
+            return "a nested " + (below.loggedByLoad() ? "load()" : "run()") + " failed: " + loggedText(below.logged());
         }
         String text = escape(truncate(messageOr(e, e.getClass().getName())));
         return text + causeNote(causeChain(e), readableMessage(e));
+    }
+
+    /**
+     * Returns the text a nested run or load logged a failure with, as the run around it names it: the message of a
+     * {@link ReportedFailure}, which the engine wrote, or else the exception described as {@link #describe} describes
+     * one whose cause chain holds no nested failure, which escapes a message a language wrote. The note of a root
+     * cause it would otherwise hide is left out when the message already has it, as a message the engine wrote from
+     * a language's exception does, so it isn't there twice, as {@link #describeWithClass} leaves it out.
+     *
+     * @param logged The failure
+     * @return Its text
+     */
+    private static String loggedText(Throwable logged) {
+        if (logged instanceof ReportedFailure) {
+            return messageOf(logged);
+        }
+        String text = escape(truncate(messageOr(logged, logged.getClass().getName())));
+        String note = causeNote(causeChain(logged), readableMessage(logged));
+        return text.contains(note) ? text : text + note;
     }
 
     /**
@@ -395,15 +415,18 @@ public final class Failures {
     }
 
     /**
-     * Finds the innermost failure of a {@code run()} started by the code that threw {@code e}. That run already
-     * logged it and told its listeners. Only an exception an engine threw counts ({@link ReportedFailure}, of any
-     * engine): a {@link RuleExecutionException} a language or a rule throws itself was never logged.
+     * Finds the failure a {@code run()} or a {@code load()} started by the code that threw {@code e} logged. That run
+     * or load already logged it, and a run told its listeners. Only a failure an engine threw counts: a
+     * {@link ReportedFailure}, of any engine, or a failure a nested run or load on this thread logged and threw as is,
+     * such as a fact it rejected or a rule that failed to compile (see {@link LoggedFailures}). A
+     * {@link RuleExecutionException} a language or a rule throws itself was never logged.
      *
      * @param e What was caught, or {@code null}
-     * @return The innermost {@link ReportedFailure} in {@code e}'s cause chain, or {@code null}
+     * @return That failure, the innermost if there are several (see {@link #below}), or {@code null} if {@code e}'s
+     *         cause chain holds none
      */
-    static RuleExecutionException nestedRunFailure(Throwable e) {
-        return innermostReported(e);
+    static Throwable nestedRunFailure(Throwable e) {
+        return below(e).logged();
     }
 
     /**
@@ -431,40 +454,63 @@ public final class Failures {
     }
 
     /**
-     * What an exception's cause chain holds of the engine's own failures: the innermost {@link ReportedFailure}, and
-     * the first {@link Error}.
+     * What an exception's cause chain holds of the engine's own failures: the innermost {@link ReportedFailure}, the
+     * first {@link Error}, and the failure a nested run or load logged that names the chain.
      *
-     * @param innermost The innermost failure of a nested {@code run()}, or {@code null} if there is none
-     * @param error     The first error, or {@code null} if there is none
+     * @param innermost    The innermost failure of a nested {@code run()}, or {@code null} if there is none
+     * @param error        The first error, or {@code null} if there is none
+     * @param logged       The failure a nested run or load logged that names the chain, or {@code null} if there is
+     *                     none (see {@link #below})
+     * @param loggedByLoad {@code true} if a {@code load()} logged {@code logged}, {@code false} if a {@code run()} did
      */
-    record Below(ReportedFailure innermost, Error error) {
+    record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad) {
     }
 
     /**
-     * Reads an exception's cause chain for the innermost {@link ReportedFailure} and the first {@link Error}, in one
-     * walk. Every nested run adds a link to the chain and only {@value #MAX_CAUSE_CHAIN_LENGTH} links are read, so a
-     * failure or an error more than that many runs down would be out of reach; but each {@link ReportedFailure}
-     * recorded both for its own chain when it was built, so the walk stops at the first one that did. One serialized
-     * before they were recorded answers for nothing: the walk goes on past it, and if it finds no failure that recorded
-     * them, the last of those in the chain is the innermost, as before.
+     * Reads an exception's cause chain for the innermost {@link ReportedFailure}, the first {@link Error} and the
+     * failure a nested run or load logged, in one walk. Every nested run adds a link to the chain and only
+     * {@value #MAX_CAUSE_CHAIN_LENGTH} links are read, so a failure or an error more than that many runs down would be
+     * out of reach; but each {@link ReportedFailure} recorded all three for its own chain when it was built, so the
+     * walk stops at the first one that did. One serialized before they were recorded answers for nothing: the walk
+     * goes on past it, and if it finds no failure that recorded them, the last of those in the chain is the
+     * innermost, as before.
+     *
+     * <p>
+     * The failure logged is the first link above that one that a nested run or load on this thread recorded as
+     * logged (see {@link LoggedFailures#find}), which names the chain whole: a {@code load()} that failed for several
+     * rules is named by the failure that lists them all, not by the first rule's, which it logged too. Failing that,
+     * it's the one the {@link ReportedFailure} recorded, so a failure many runs down is named, not each run's failure
+     * around it; and failing that, the innermost {@link ReportedFailure}.
+     * </p>
      *
      * @param e What was caught, or {@code null}
-     * @return The innermost failure and the first error, each {@code null} if the chain has none
+     * @return The innermost failure, the first error and the failure logged, each {@code null} if the chain has none
      */
     static Below below(Throwable e) {
         ReportedFailure innermost = null;
         Error error = null;
+        LoggedFailures.Logged logged = null;
         for (Throwable t : causeChain(e)) {
             if (t instanceof ReportedFailure failure) {
                 if (failure.recorded()) {
-                    return new Below(failure.innermost(), error != null ? error : failure.error());
+                    Error first = error != null ? error : failure.error();
+                    return logged != null
+                            ? new Below(failure.innermost(), first, logged.failure(), logged.byLoad())
+                            : new Below(failure.innermost(), first, failure.logged(), failure.loggedByLoad());
                 }
                 innermost = failure;
-            } else if (error == null && t instanceof Error found) {
+                continue;
+            }
+            if (error == null && t instanceof Error found) {
                 error = found;
             }
+            if (logged == null) {
+                logged = LoggedFailures.find(t);
+            }
         }
-        return new Below(innermost, error);
+        return logged != null
+                ? new Below(innermost, error, logged.failure(), logged.byLoad())
+                : new Below(innermost, error, innermost, false);
     }
 
     /**

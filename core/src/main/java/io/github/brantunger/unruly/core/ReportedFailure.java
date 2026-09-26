@@ -21,6 +21,14 @@ import java.util.Objects;
  * serialized before these were recorded reads {@link #recorded()} as {@code false}, and its chain is read as it was
  * then.
  * </p>
+ *
+ * <p>
+ * It records too the failure a nested run or load logged that names its chain, and whether a {@code load()} logged
+ * it, which may be an exception thrown as is, such as a fact a nested run rejected, rather than one of these (see
+ * {@link LoggedFailures}): the thread's record of those is forgotten when its outermost run ends, and this failure
+ * may be thrown on, or read, after that. A form serialized before that was recorded names its chain by the innermost
+ * failure, as it did then.
+ * </p>
  */
 final class ReportedFailure extends RuleExecutionException {
     private static final long serialVersionUID = 1L;
@@ -35,6 +43,13 @@ final class ReportedFailure extends RuleExecutionException {
     private final Error firstError;
     /** Whether the two above were recorded; {@code false} only in a form serialized before they were. */
     private final boolean belowRecorded;
+    /**
+     * The failure a nested run or load logged that names the cause chain (see {@link Failures#below}), or
+     * {@code null} if there is none, or in a form serialized before it was recorded.
+     */
+    private final Throwable loggedBelow;
+    /** Whether a {@code load()} logged {@link #loggedBelow}, rather than a {@code run()}. */
+    private final boolean loggedBelowByLoad;
 
     /**
      * Creates the exception for a failure that belongs to no rule.
@@ -54,6 +69,8 @@ final class ReportedFailure extends RuleExecutionException {
         this.innermostBelow = below.innermost();
         this.firstError = below.error();
         this.belowRecorded = true;
+        this.loggedBelow = below.logged();
+        this.loggedBelowByLoad = below.loggedByLoad();
     }
 
     /**
@@ -105,6 +122,8 @@ final class ReportedFailure extends RuleExecutionException {
         this.innermostBelow = below.innermost();
         this.firstError = below.error();
         this.belowRecorded = true;
+        this.loggedBelow = below.logged();
+        this.loggedBelowByLoad = below.loggedByLoad();
     }
 
     /**
@@ -125,6 +144,27 @@ final class ReportedFailure extends RuleExecutionException {
      */
     Error error() {
         return firstError;
+    }
+
+    /**
+     * Returns the failure a nested run or load logged that names this failure's cause chain, however many runs deep,
+     * as {@link Failures#below} found it when this was built. Only {@link Failures#below} asks, and only a failure
+     * that {@link #recorded()} it.
+     *
+     * @return That failure, or {@link #innermost()} if it was serialized before it recorded one or its chain holds
+     *         none
+     */
+    Throwable logged() {
+        return loggedBelow != null ? loggedBelow : innermost();
+    }
+
+    /**
+     * Tells whether a {@code load()} logged the failure {@link #logged()} returns, rather than a {@code run()}.
+     *
+     * @return {@code true} for a failure a nested {@code load()} logged
+     */
+    boolean loggedByLoad() {
+        return loggedBelowByLoad;
     }
 
     /**
