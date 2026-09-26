@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RuleListener;
+import io.github.brantunger.unruly.api.RuleSetInfo;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
@@ -17,6 +18,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,6 +165,33 @@ class RunResultTest {
 
         assertThrows(NullPointerException.class, () -> RunResult.of("out", withNull, "c"));
         assertThrows(NullPointerException.class, () -> RunResult.of("out", withNull, List.of(), "c"));
+    }
+
+    @Test
+    @DisplayName("the factories name a null list, or a null in one, in the message")
+    void factoriesNameTheNull() {
+        List<Rule> nullRule = Arrays.asList(HIGH, null);
+        List<RuleEvaluation> nullEvaluation = Arrays.asList((RuleEvaluation) null);
+
+        assertAll(
+                () -> assertEquals("firedRules must not be null", assertThrows(NullPointerException.class,
+                        () -> RunResult.of("out", null, "c")).getMessage()),
+                () -> assertEquals("firedRules must not contain null", assertThrows(NullPointerException.class,
+                        () -> RunResult.of("out", nullRule, "c")).getMessage()),
+                () -> assertEquals("firedRules must not be null", assertThrows(NullPointerException.class,
+                        () -> RunResult.of("out", null, List.of(), "c")).getMessage()),
+                () -> assertEquals("evaluations must not be null", assertThrows(NullPointerException.class,
+                        () -> RunResult.of("out", List.of(), null, "c")).getMessage()),
+                () -> assertEquals("evaluations must not contain null", assertThrows(NullPointerException.class,
+                        () -> RunResult.of("out", List.of(), nullEvaluation, "c")).getMessage()),
+                () -> assertEquals("ruleSetChecksum must not be null", assertThrows(NullPointerException.class,
+                        () -> RunResult.of("out", List.of(), List.of(), null)).getMessage()),
+                () -> assertEquals("rules must not be null", assertThrows(NullPointerException.class,
+                        () -> RuleSetInfo.of(null, "c", null)).getMessage()),
+                () -> assertEquals("rules must not contain null", assertThrows(NullPointerException.class,
+                        () -> RuleSetInfo.of(nullRule, "c", null)).getMessage()),
+                () -> assertEquals("checksum must not be null", assertThrows(NullPointerException.class,
+                        () -> RuleSetInfo.of(List.of(), null, null)).getMessage()));
     }
 
     @Test

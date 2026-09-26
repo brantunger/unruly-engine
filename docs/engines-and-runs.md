@@ -277,10 +277,11 @@ An action changes the output in one of two ways:
   the engine's `OutputWriter`. If the run stops when that action returns, none are set; a later
   [stop](stopping-runs.md#-what-stops-a-run) leaves those written.
 
-The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, storing the value as is, and
-otherwise the output's public setter, such as `setInterestRate`. A setter that accepts the value as is wins. Among
-several, the most specific wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`, and `setP(Integer)` over
-`setP(int)`. If no single one is the most specific, it calls the same one on every run.
+The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, with the value as is, and
+otherwise the output's public setter, such as `setInterestRate`. Of setters taking the value as is, the most specific
+wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`, `setP(Integer)` over `setP(int)`. If several
+tie, it calls the same one every run. A `null` property name throws `NullPointerException`, an empty one
+`IllegalArgumentException`, even for a `Map`; the engine passes neither.
 
 Only when none accepts the value does it widen it to the nearest primitive, as a
 [primitive fact declaration](facts.md#primitive-types-widen) does: an `Integer` reaches `setR(long)` before
@@ -288,8 +289,8 @@ Only when none accepts the value does it widen it to the nearest primitive, as a
 
 Nothing else is converted: a `Long` doesn't reach `setR(int)`, an `Integer` doesn't reach `setR(Long)`, and a
 `BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a CEL integer, a `Long`, needs a setter
-taking it or a `float` or `double` one, and a Groovy decimal literal, a `BigDecimal`, one that takes it; otherwise,
-write an `outputWriter(...)`.
+taking it, a `float` or `double`, and a Groovy decimal, a `BigDecimal`, one taking it; otherwise, write an
+`outputWriter(...)`.
 
 Beside a same-named setter with a different parameter, one declared with its class's own type variable,
 `setContent(T)` in `Box<T>`, takes only what Java gives `T` in the output class, as in `LongBox extends Box<Long>` or
@@ -305,7 +306,7 @@ Unlike Java:
 
 A property it can't set, including through a setter the engine can't reach, fails the rule, naming it and the
 property, unless the run must [stop](stopping-runs.md#-what-stops-a-run). When no setter of that name accepts a
-number, a character or a boolean, but one takes a primitive or a boxed primitive, the message adds:
+number, character or boolean, but one takes a primitive or boxed primitive, the message adds:
 `(setR(int) exists, but a value is only widened as Java widens a primitive, never narrowed or converted)`.
 
 ## 📊 What a run reports

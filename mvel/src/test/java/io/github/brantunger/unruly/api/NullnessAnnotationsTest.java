@@ -12,12 +12,22 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.module.ModuleDescriptor;
+import java.lang.module.ModuleFinder;
+import java.lang.module.ModuleReader;
+import java.lang.module.ModuleReference;
 import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.AnnotatedWildcardType;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -103,6 +113,51 @@ class NullnessAnnotationsTest {
 
         assertNullable(parameters[0]);
         assertNullable(parameters[1]);
+    }
+
+    @Test
+    @DisplayName("every public equals in the @NullMarked packages takes a @Nullable Object, as equals(null) is legal")
+    void equalsNullness() throws Exception {
+        assertNullable(RuleEvaluation.class.getMethod("equals", Object.class).getAnnotatedParameterTypes()[0]);
+        List<String> checked = new ArrayList<>();
+        for (Class<?> anchor : List.of(Rule.class, MvelExpressionLanguage.class, LanguageTestContexts.class)) {
+            for (Class<?> type : exportedClasses(anchor)) {
+                // A record's own equals, which the compiler generates, can't be annotated.
+                if (!Modifier.isPublic(type.getModifiers()) || type.isRecord()) {
+                    continue;
+                }
+                for (Method method : type.getDeclaredMethods()) {
+                    if (method.getName().equals("equals") && method.getParameterCount() == 1
+                            && method.getParameterTypes()[0] == Object.class && !method.isBridge()) {
+                        assertTrue(isNullable(method.getAnnotatedParameterTypes()[0]),
+                                type.getName() + ".equals(Object) doesn't take a @Nullable Object");
+                        checked.add(type.getSimpleName());
+                    }
+                }
+            }
+        }
+        assertTrue(checked.containsAll(List.of("Rule", "Fact", "FactMap", "RuleEvaluation", "ActionResult",
+                "ConditionResult")), "only found " + checked);
+    }
+
+    /** Returns the classes in the packages that the module of {@code anchor} exports to every module. */
+    private static List<Class<?>> exportedClasses(Class<?> anchor) throws Exception {
+        Path location = Path.of(anchor.getProtectionDomain().getCodeSource().getLocation().toURI());
+        ModuleReference module = ModuleFinder.of(location).findAll().stream().findFirst()
+                .orElseThrow(() -> new AssertionError("no module found at " + location));
+        Set<String> exported = module.descriptor().exports().stream().filter(e -> !e.isQualified())
+                .map(ModuleDescriptor.Exports::source).collect(Collectors.toSet());
+        List<Class<?>> classes = new ArrayList<>();
+        try (ModuleReader reader = module.open(); Stream<String> entries = reader.list()) {
+            for (String entry : entries.filter(e -> e.endsWith(".class")).toList()) {
+                String name = entry.substring(0, entry.length() - ".class".length()).replace('/', '.');
+                int lastDot = name.lastIndexOf('.');
+                if (lastDot > 0 && exported.contains(name.substring(0, lastDot))) {
+                    classes.add(Class.forName(name, false, anchor.getClassLoader()));
+                }
+            }
+        }
+        return classes;
     }
 
     private static AnnotatedType typeArgument(AnnotatedType type, int index) {

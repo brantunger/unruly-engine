@@ -165,14 +165,20 @@ Everything that sees a run's facts gets the values the engine copied when the ru
 | `beforeExecute`, `afterExecute` | ❌ | Only the rule and the output object |
 | `onError` | ❌ | Only the rule and the exception |
 
-- A write to a view throws `UnsupportedOperationException`. Putting a fact names it, for example
-  `The facts passed to an action are read-only; 'applicant' can't be changed. Put the result in the output object
-  instead.`
+- Every write to a view throws `UnsupportedOperationException`, through the map, its `keySet()`, `values()` or
+  `entrySet()`, an iterator or an entry, even one that changes nothing, such as removing a fact that isn't there.
 - A view doesn't stop a method call that changes a fact's value, such as `applicant.setCreditScore(0)`. Every rule
   after it in the run, the listeners and your own code see the change. See
   [What rules can change](writing-rules.md#-what-rules-can-change).
 - A listener that needs the facts in `beforeExecute` or `afterExecute` can keep `run.facts()` from `beforeRun`: rule
   callbacks come on the run's own thread, between its `beforeRun` and its `afterRun` or `onRunError`.
+
+A write to one fact, such as `put`, the map's `remove` or an entry's `setValue`, names it:
+`The facts passed to an action are read-only; 'applicant' can't be changed. Put the result in the output object
+instead.` One that names no fact, such as `clear()` or `putAll(...)`, reads
+`The facts passed to an action are read-only. Put the result in the output object instead.` A listener's messages
+start `The facts passed to a RuleListener are read-only`; a condition's are in
+[Conditions can't assign](writing-rules.md#conditions-cant-assign).
 
 ## 🔁 Reusing and sharing a store
 

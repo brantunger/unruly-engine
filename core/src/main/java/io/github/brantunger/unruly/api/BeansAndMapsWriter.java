@@ -107,8 +107,9 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      * @param output   The output object
      * @param property The property's name, not empty
      * @param value    The value, possibly {@code null}
-     * @throws IllegalArgumentException     if the output isn't a map and has no public setter for the property that
-     *                                      accepts the value
+     * @throws NullPointerException         if {@code property} is {@code null}
+     * @throws IllegalArgumentException     if {@code property} is empty, or the output isn't a map and has no public
+     *                                      setter for the property that accepts the value
      * @throws IllegalStateException        if the setter can't be reached from the engine's module, saying how to
      *                                      make it reachable
      * @throws ReflectiveOperationException if the setter throws, which it reports as the cause of an
@@ -117,6 +118,10 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     @SuppressWarnings("unchecked")
     @Override
     public void set(Object output, String property, @Nullable Object value) throws ReflectiveOperationException {
+        Objects.requireNonNull(property, "property must not be null");
+        if (property.isEmpty()) {
+            throw new IllegalArgumentException("property must not be empty");
+        }
         if (output instanceof Map<?, ?> map) {
             ((Map<String, @Nullable Object>) map).put(property, value);
             return;

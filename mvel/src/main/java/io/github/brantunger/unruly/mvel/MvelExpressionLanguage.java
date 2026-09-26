@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import org.mvel2.util.ErrorUtil;
 
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -46,6 +47,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
 
     @Override
     public ExpressionCompiler newCompiler(CompileContext context) {
+        Objects.requireNonNull(context, "context must not be null");
         ErrorReporting.initialize();
         return new MvelExpressionCompiler(new Imports(Set.copyOf(context.packageImports()),
                 Set.copyOf(context.classImports()), context.classLoader(), DeclaredTypes.inputsFor(context)));
