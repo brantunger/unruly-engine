@@ -12,9 +12,13 @@ import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.AbstractMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -120,13 +124,98 @@ class DeclaredFactsTest {
     }
 
     @Test
-    @DisplayName("a null name or type is rejected when the engine is built")
+    @DisplayName("a null name, type or map is rejected when it is declared")
     void nullArguments() {
         RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
 
         assertThrows(NullPointerException.class, () -> builder.fact(null, Applicant.class));
         assertThrows(NullPointerException.class, () -> builder.fact("a", null));
         assertThrows(NullPointerException.class, () -> builder.facts(null));
+    }
+
+    // ---- #654: facts(map) declares all of the map or none of it ----
+
+    private static RulesEngineBuilder<Map<String, Object>> requiring() {
+        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new ToyExpressionLanguage()).requireDeclaredFacts();
+    }
+
+    /** A map whose valid first entry is read before its second, which facts(map) may reject. */
+    private static Map<String, Class<?>> validThen(String name, Class<?> type) {
+        Map<String, Class<?>> types = new LinkedHashMap<>();
+        types.put("a", String.class);
+        types.put(name, type);
+        return types;
+    }
+
+    /** Runs with no facts, which an engine requiring declared facts allows only if none was declared. */
+    private static void assertNothingDeclared(RulesEngineBuilder<Map<String, Object>> builder) {
+        try (RulesEngine<Map<String, Object>> engine = builder.build()) {
+            engine.load(List.of(RULE));
+            assertEquals(Map.of("ok", true), engine.run(new FactMap<>()));
+        }
+    }
+
+    @Test
+    @DisplayName("a map with a fact named output declares none of its entries")
+    void rejectedOutputDeclaresNothing() {
+        RulesEngineBuilder<Map<String, Object>> builder = requiring();
+
+        assertThrows(IllegalArgumentException.class, () -> builder.facts(validThen("output", String.class)));
+
+        assertNothingDeclared(builder);
+    }
+
+    @Test
+    @DisplayName("a map with a null type declares none of its entries")
+    void rejectedNullTypeDeclaresNothing() {
+        RulesEngineBuilder<Map<String, Object>> builder = requiring();
+
+        assertThrows(NullPointerException.class, () -> builder.facts(validThen("b", null)));
+
+        assertNothingDeclared(builder);
+    }
+
+    @Test
+    @DisplayName("a map with a null name declares none of its entries")
+    void rejectedNullNameDeclaresNothing() {
+        RulesEngineBuilder<Map<String, Object>> builder = requiring();
+
+        assertThrows(NullPointerException.class, () -> builder.facts(validThen(null, String.class)));
+
+        assertNothingDeclared(builder);
+    }
+
+    @Test
+    @DisplayName("a rejected map doesn't replace a fact declared before it")
+    void rejectedMapKeepsEarlierDeclaration() {
+        RulesEngineBuilder<Map<String, Object>> builder = requiring().fact("a", Integer.class);
+
+        assertThrows(IllegalArgumentException.class, () -> builder.facts(validThen("output", String.class)));
+
+        try (RulesEngine<Map<String, Object>> engine = builder.build()) {
+            engine.load(List.of(RULE));
+            assertEquals(Map.of("ok", true), engine.run(new FactMap<>(new Fact<>("a", 1))));
+        }
+    }
+
+    @Test
+    @DisplayName("each of the map's own entries is checked, even one a copy of the map would merge with another")
+    void everyEntryOfTheMapIsChecked() {
+        RulesEngineBuilder<Map<String, Object>> builder = requiring();
+        // Two entries with equal names, as an IdentityHashMap or a TreeMap with its own comparator can hold.
+        Map<String, Class<?>> types = new AbstractMap<>() {
+            @Override
+            public Set<Entry<String, Class<?>>> entrySet() {
+                return new LinkedHashSet<>(List.of(new SimpleEntry<>("a", null),
+                        new SimpleEntry<>("a", String.class)));
+            }
+        };
+
+        NullPointerException thrown = assertThrows(NullPointerException.class, () -> builder.facts(types));
+
+        assertEquals("type must not be null", thrown.getMessage());
+        assertNothingDeclared(builder);
     }
 
     // ---- #361: a declaration no run could satisfy fails before the first run ----

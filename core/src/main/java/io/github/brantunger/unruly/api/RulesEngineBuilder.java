@@ -363,12 +363,19 @@ public final class RulesEngineBuilder<O> {
      *
      * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
      * @return This builder
-     * @throws NullPointerException     if {@code types}, a name or a type is {@code null}
-     * @throws IllegalArgumentException if a name is {@code output}
+     * @throws NullPointerException     if {@code types}, a name or a type is {@code null}; nothing is declared
+     * @throws IllegalArgumentException if a name is {@code output}; nothing is declared
      */
     public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
         Objects.requireNonNull(types, "types must not be null");
-        types.forEach(this::fact);
+        // Each of the map's own entries is checked, before a copy could merge two equal names, and before any is
+        // declared, so a rejected map leaves the builder as it was.
+        Map<String, Class<?>> copy = new LinkedHashMap<>();
+        types.forEach((name, type) -> {
+            EngineCompileContext.checkDeclaration(name, type);
+            copy.put(name, type);
+        });
+        factTypes.putAll(copy);
         return this;
     }
 
