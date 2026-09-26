@@ -50,7 +50,9 @@ public final class LanguageTestContexts {
      * @param classImports   The classes imported one by one; copied
      * @param classLoader    The class loader to look up classes in the imported packages with
      * @return The context
-     * @throws NullPointerException if an argument, or an element of a set, is {@code null}
+     * @throws NullPointerException     if an argument, or an element of a set, is {@code null}
+     * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
+     *                                  dot-separated parts, which an engine rejects too
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader) {
@@ -67,7 +69,9 @@ public final class LanguageTestContexts {
      *                       it wasn't
      * @param options        The language's options, as the engine's builder was given them; copied
      * @return The context
-     * @throws NullPointerException if an argument, or an element of a set or of the options, is {@code null}
+     * @throws NullPointerException     if an argument, or an element of a set or of the options, is {@code null}
+     * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
+     *                                  dot-separated parts, which an engine rejects too
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options) {
@@ -90,7 +94,9 @@ public final class LanguageTestContexts {
      * @return The context. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
-     * @throws IllegalArgumentException if a fact is declared with the name {@code output}, which an engine rejects too
+     * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
+     *                                  dot-separated parts, or a fact is declared with the name {@code output}, which
+     *                                  an engine rejects too
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,

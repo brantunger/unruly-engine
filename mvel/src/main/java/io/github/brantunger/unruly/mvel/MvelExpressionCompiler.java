@@ -46,6 +46,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     // What an expression that calls an imported class like a method, such as ArrayList(y), is reported as.
     private static final String CLASS_CALLED_LIKE_METHOD = "a class can't be called like a method: use new";
     private static final char NEW_LINE = '\n';
+    // The keyword of an import, then what MVEL skips as whitespace before the name: every character up to a space.
+    private static final String IMPORT_KEYWORD = "import[\\x00-\\x20]*";
     // MVEL's description of an error whose message is missing, such as a class's failed static initializer.
     private static final String MISSING_DESCRIPTION = "null";
     // What MVEL says of a malformed statement such as b = = 1 when an assert inside MVEL doesn't stop it first.
@@ -129,6 +131,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
                 throw e;
             }
             throw compileError(e, analysis.rejectedType());
+        } catch (Imports.ImportTooLarge e) {
+            throw importTooLarge(source.text(), e);
         } catch (IndexOutOfBoundsException e) {
             // MVEL's parser reads out of bounds for some malformed expressions, such as a . or ? it can't read past or
             // blank parentheses, instead of reporting them. One from other code, such as the application's class
@@ -149,6 +153,36 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             }
             throw positionless(FactNames.escape(FactNames.truncate(String.valueOf(e.getMessage()))), e);
         }
+    }
+
+    /**
+     * Reports an {@code import} in the expression's own text of a package too long, or with too many parts, to look
+     * up, with one issue at the package's name, such as {@code Can't import 'a.a.a...': it has 65 dot-separated
+     * parts, and an import may have at most 64}: the engine's own words for such an import. The line and column count
+     * from 1, as MVEL's own compile errors do, and the exception's message reads as {@link #compileError}'s, such as
+     * {@code failed to compile at line 1, column 8: Can't import ...}.
+     *
+     * <p>
+     * The position is that of the first {@code import} of the name in the text: the name where it first follows
+     * {@code import} and any whitespace. The name's text alone earlier in a string or a comment isn't taken for it,
+     * but an earlier string or comment that holds {@code import} and the name is. MVEL passes the name as a slice of
+     * the text, from just after the keyword and the characters it skips as whitespace, so it is always found.
+     * </p>
+     *
+     * @param text The expression's source text, which holds the name as MVEL read it
+     * @param e    What the configuration threw
+     * @return The exception to throw
+     */
+    private static InvalidExpressionException importTooLarge(String text, Imports.ImportTooLarge e) {
+        int at = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")").matcher(text)
+                .results().findFirst().orElseThrow().start(1);
+        String before = text.substring(0, at);
+        int line = 1 + (int) before.chars().filter(ch -> ch == NEW_LINE).count();
+        int column = before.length() - (before.lastIndexOf(NEW_LINE) + 1) + 1;
+        String description = e.getMessage();
+        return new InvalidExpressionException("failed to compile at line " + line + ", column " + column + ": "
+                + description, List.of(new InvalidExpressionException.Issue(
+                InvalidExpressionException.Issue.Severity.ERROR, line, column, description)), e);
     }
 
     /**

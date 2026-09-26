@@ -224,19 +224,21 @@ cancelled it, so an interrupt that lands as the adapter cancels for the deadline
 timeout.
 
 **The `CompileContext`.** Every check compiles with the context `configure` or `compileContext()` gives, empty by
-default, so a language that ignores imports, options, declared facts and the output type passes. Test what your
-language does with each of them yourself;
+default, so a language that ignores imports, options, declared facts and the output type passes. Test how your
+language handles each;
 [Implementing the interfaces](custom.md#-implementing-the-interfaces) says what the context carries.
 
-`LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or a compiled
+`LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or compiled
 expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
 `evaluation(facts, deadline)` gives a real `isCancelled()`.
 
 A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
 `facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
 such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
-`type must not be null`. A fact's value may be `null`. The evaluation and action contexts don't check fact names;
-`compile()` rejects a fact declared as `output`, as an engine does.
+`type must not be null`. A fact's value may be `null`.
+
+The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared as
+`output` and a package import over the [size limits](mvel.md#-classes-and-imports).
 
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;

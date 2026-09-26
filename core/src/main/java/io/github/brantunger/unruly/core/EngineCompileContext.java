@@ -36,11 +36,13 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     /**
      * Keeps unmodifiable copies of the imports, options and declarations, so the context can't change after it's
      * created. A declared primitive type is kept as its wrapper, as {@link #declaredType(String, Class)} says, so a
-     * language sees the same declarations from the test kit as from an engine.
+     * language sees the same declarations from the test kit as from an engine. A package import is checked for size as
+     * the engine's {@code build()} checks it, so a language's tests can't hand it one no engine would.
      *
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
-     * @throws IllegalArgumentException if a fact is declared with the name {@code output}
+     * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
+     *                                  dot-separated parts, or a fact is declared with the name {@code output}
      */
     public EngineCompileContext {
         Objects.requireNonNull(packageImports, "packageImports must not be null");
@@ -51,6 +53,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
         for (String packageName : packageImports) {
             Objects.requireNonNull(packageName, "packageImports must not contain null");
+            ImportResolver.checkSize(packageName);
         }
         for (Class<?> importedClass : classImports) {
             Objects.requireNonNull(importedClass, "classImports must not contain null");
@@ -107,7 +110,9 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @param packageImports Package names, imported with all their classes
      * @param classImports   Classes imported one by one
      * @param classLoader    The class loader that finds the classes in {@code packageImports}
-     * @throws NullPointerException if an argument, or an element of a set, is {@code null}
+     * @throws NullPointerException     if an argument, or an element of a set, is {@code null}
+     * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
+     *                                  dot-separated parts
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader) {
         this(packageImports, classImports, classLoader, Object.class, Map.of(), Map.of(), false);
@@ -125,7 +130,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @param allFactsDeclared Whether a run may supply only the declared facts
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
-     * @throws IllegalArgumentException if a fact is declared with the name {@code output}
+     * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
+     *                                  dot-separated parts, or a fact is declared with the name {@code output}
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                 Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,

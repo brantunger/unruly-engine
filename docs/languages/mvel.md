@@ -99,31 +99,35 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 engine.load(rules);
 ```
 
-An engine's imports are set when it's built; every `load()` uses them. A rule missing an import passes `load()`
-and fails at `run()`: `unresolvable property or identifier` for a class it calls, such as `Objects.isNull(x)`, or
-`could not resolve class` for one it creates, such as `new ArrayList()`. An action declaring a variable of the class,
-as in `BigDecimal total = 0`, fails `load()` instead: `unknown class or illegal statement`, often naming `BigDecimal`.
+A rule missing an import passes `load()` and fails at `run()`: `unresolvable property or identifier` for a
+class it calls, such as `Objects.isNull(x)`, or `could not resolve class` for one it creates, such as
+`new ArrayList()`. An action declaring a variable of the class, as in `BigDecimal total = 0`, fails `load()`
+instead: `unknown class or illegal statement`, often naming `BigDecimal`.
 
-- A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
+- A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with
   `IllegalArgumentException` from `build()`.
-- A string over 1,000 characters or 64 dot-separated parts is rejected too, before any lookup.
-- A class that exists but can't be loaded, such as one missing its superclass, is rejected too, with the
-  `LinkageError` as the cause.
-- A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
-- An imported class name can't be a fact name: with `imports("java.util")`, a fact named `Date` is rejected;
-  see [Fact names MVEL rejects](#fact-names-mvel-rejects).
-- `build()` resolves a single-class import such as `"java.time.LocalDate"` with the building thread's context
-  class loader; a valid package name it can't load as a class is imported as a package.
-- Classes in imported packages are looked up with the context class loader of the thread that calls `load()`.
-  Fact names are checked against that class loader too, on whichever thread calls `run()`.
+- So is a string over 1,000 characters or 64 dot-separated parts, before any lookup.
+- So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
+- A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted.
+- An imported class's name can't be a [fact name](#fact-names-mvel-rejects), such as `Date` with
+  `imports("java.util")`.
+- `build()` loads a single-class import such as `"java.time.LocalDate"` with its thread's context class loader;
+  a valid name it can't load as a class is imported as a package.
+- `load()` looks up classes in imported packages with its thread's context class loader, and `run()` checks fact
+  names against it, on any thread.
 - A thread without a context class loader uses this library's class loader.
 
-The classes of your facts and of the output object must be reachable from that same class loader, whatever the
-rules import; see [Class loaders](../thread-safety.md#-class-loaders).
+Your facts' and output object's classes must be reachable from that class loader too; see
+[Class loaders](../thread-safety.md#-class-loaders).
 
-While compiling `applicant.creditScore`, MVEL checks whether `applicant` is a class. In a class directory on a
-case-insensitive file system, the lookup for `applicant.class` finds `Applicant.class`, and the JVM reports
-`NoClassDefFoundError: applicant (wrong name: Applicant)`. That counts as no class, so `applicant` is read as the fact.
+An `import pkg.*;` anywhere in a rule's text has the 1,000-character and 64-part limits, checked before any
+lookup even if unused. It fails at the name: `failed to compile at line 1, column 8: Can't import '...': it has 65
+dot-separated parts, and an import may have at most 64`. Inline class imports and `import_static` aren't
+size-checked.
+
+MVEL checks whether `applicant` in `applicant.creditScore` is a class. In a class directory on a case-insensitive
+file system, the lookup for `applicant.class` finds `Applicant.class`, and the JVM reports
+`NoClassDefFoundError: applicant (wrong name: Applicant)`, which counts as no class: `applicant` stays the fact.
 Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the rule.
 
 ## 📁 Facts in MVEL
@@ -161,11 +165,10 @@ These identifiers are rejected too, because MVEL reads them as something else be
 
 - The check is case-sensitive: `date` is accepted with `imports("java.util")`, and `Date` is accepted when nothing
   imports it.
-- Names such as `$x`, `_` and `café` are identifiers, so they're accepted, and rules can refer to them.
-- A class in an imported package is looked up with the class loader `load()` captured, as the
-  [imports](#-classes-and-imports) are.
-- One that can't be loaded isn't read as a class name, so the fact keeps it, as in MVEL's own lookup; a
-  [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
+- `$x`, `_` and `café` are accepted; `𝒜` (U+1D49C, beyond U+FFFF) isn't, though `imports(...)` accepts it in a
+  package name.
+- A class in an imported package that can't be loaded isn't read as a class name, so the fact keeps it, as in
+  MVEL's own lookup; a [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
 
 ### Null and missing facts
 
@@ -277,10 +280,12 @@ Condition for rule 'r' failed to compile at line 1, column 1: null (caused by ja
 `Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 23). Conditions can't change facts
 or declare variables; use == to compare.`
 
-**`import_static` in a condition** gets its own message, at the keyword: `uses import_static (at line
+**`import_static` in a condition** is reported at the keyword: `uses import_static (at line
 1, column 1), which declares the method as a variable, and conditions can't declare variables. Call the method through
 its class instead, such as Math.max(a, b).` See
 [What rules can change](../writing-rules.md#-what-rules-can-change).
+
+**An over-long `import pkg.*;`** fails at its name; see [Classes and imports](#-classes-and-imports).
 
 **A condition that doesn't compile hides its action's errors** until the next `load()`; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
