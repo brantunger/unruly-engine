@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.5](https://github.com/brantunger/unruly-engine/compare/v2.8.4...v2.8.5) (2026-09-26)
+
+
+### Bug Fixes
+
+* log a nested run's rejected fact and a nested load() failure once, and name them as nested ([#688](https://github.com/brantunger/unruly-engine/issues/688)) ([2eb9161](https://github.com/brantunger/unruly-engine/commit/2eb9161aafda2752a1f25edce91a80d6966aa88a))
+
 ## [2.8.4](https://github.com/brantunger/unruly-engine/compare/v2.8.3...v2.8.4) (2026-09-26)
 
 
