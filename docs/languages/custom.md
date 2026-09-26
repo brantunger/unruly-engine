@@ -236,12 +236,12 @@ reaches that one:
 | `IllegalArgumentException` from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
-expression language`, and every failure is logged at ERROR. The engine copies your message the way
-[Exceptions by method](../exceptions-by-method.md) describes: shortened and escaped, with the root
-cause's class named when a message is missing. An exception with no message and no cause is described by its class
-name alone.
+expression language`, and every failure is logged at ERROR. Your message is shortened and escaped as
+[Exceptions by method](../exceptions-by-method.md) describes. Any other exception with no message shows its class
+name, and any root cause's in `(caused by ...)`.
 
-An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
+An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a
+message, which the engine doesn't shorten: keep it to 1,000 characters.
 The `RuleCompilationException` carries the same issues; for several rules its message is `2 rules failed to compile:
 <first>; <second>`, its name, kind and issues are the first failure's, and `failures()` has each rule's.
 

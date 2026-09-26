@@ -1,8 +1,12 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RulesEngine;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,7 +15,9 @@ import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 import org.mvel2.ParserContext;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -308,6 +314,13 @@ class MvelCompileErrorTest {
                 "org.mvel2.util.ParseTools")));
     }
 
+    // #661: without the dot after MVEL's package, a package whose name starts the same counted as MVEL's.
+    @Test
+    @DisplayName("one from a package whose name only starts as MVEL's does isn't MVEL's")
+    void outOfBoundsFromALookAlikePackage() {
+        assertFalse(MvelExpressionCompiler.thrownInMvel(outOfBounds("org.mvel2extra.Parser")));
+    }
+
     @Test
     @DisplayName("one without a stack trace, as HotSpot throws a frequent one, came out of MVEL all the same")
     void outOfBoundsWithoutStackTrace() {
@@ -345,13 +358,178 @@ class MvelCompileErrorTest {
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 6, "unknown class or illegal statement")), ex.issues());
     }
 
-    @Test
-    @DisplayName("a description naming something else MVEL's parser context is left as it is")
-    void parserContextWithoutItsHash() {
-        String description = "unknown class or illegal statement: " + ParserContext.class.getName() + "@";
-        CompileException mvel = withMessage("[Error: " + description + "]");
+    // #651: a description naming something else MVEL's parser context was left as it is, and a literal MVEL named,
+    // such as 5, was named as the unknown class.
+    @ParameterizedTest(name = "what MVEL names after an unknown class, {0}, isn''t kept unless it''s an array type")
+    @ValueSource(strings = {"org.mvel2.ParserContext@", "5", "true", "null", "1.5", "Foo []", "Zzz[", "[]", "Zzz[]x"})
+    void parserContextWithoutItsHash(String named) {
+        CompileException mvel = withMessage("[Error: unknown class or illegal statement: " + named + "]");
 
-        assertEquals("failed to compile: " + description, MvelExpressionCompiler.compileError(mvel).getMessage());
+        assertEquals("failed to compile: unknown class or illegal statement",
+                MvelExpressionCompiler.compileError(mvel).getMessage());
+    }
+
+    @ParameterizedTest(name = "an array type MVEL names after an unknown class, {0}, is kept")
+    @ValueSource(strings = {"Zzz[]", "Zzz[][]", "java.util.Zzz[]", "Outer$Zzz[]", "_1[]"})
+    void unknownArrayTypeKept(String named) {
+        CompileException mvel = withMessage("[Error: unknown class or illegal statement: " + named + "]");
+
+        assertEquals("failed to compile: unknown class or illegal statement: " + named,
+                MvelExpressionCompiler.compileError(mvel).getMessage());
+    }
+
+    @Test
+    @DisplayName("the description ends at the last ] MVEL's excerpt follows, so a line break in it is kept")
+    void descriptionEndsAtTheLastExcerpt() {
+        String description = "class not found: import a.B;\n[Error: x]\n]\n[Near : {... y ....}]';\nz = 1";
+        CompileException mvel = withMessage("[Error: " + description + "]\n[Near : {... import a.B; ....}]\n"
+                + "     ^\n[Line: 1, Column: 8]");
+
+        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+
+        String escaped = "class not found: import a.B;\\n[Error: x]\\n]\\n[Near : {... y ....}]';\\nz = 1";
+        assertEquals("failed to compile at line 1, column 8: " + escaped, ex.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 8, escaped)), ex.issues());
+    }
+
+    @Test
+    @DisplayName("an empty description before MVEL's excerpt is empty")
+    void emptyDescriptionBeforeTheExcerpt() {
+        CompileException mvel = withMessage("[Error: ]\n[Near : {... x ....}]\n[Line: 1, Column: 2]");
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 2, "")), MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @Test
+    @DisplayName("a message whose excerpt has no [Error: before it is read line by line")
+    void excerptWithoutTheStart() {
+        CompileException mvel = withMessage("x]\n[Near : {... x ....}]\n[Error: y]\n[Line: 1, Column: 2]");
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 2, "y")), MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    // #661: an unanchored pattern read the description out of the middle of a line.
+    @Test
+    @DisplayName("a message without MVEL's excerpt or a line of its own that starts [Error: is used whole")
+    void errorMarkerInsideALine() {
+        assertEquals("failed to compile: x [Error: a] y",
+                MvelExpressionCompiler.compileError(withMessage("x [Error: a] y")).getMessage());
+    }
+
+    // #651: the description was "null (caused by java.lang.ArrayIndexOutOfBoundsException)".
+    @Test
+    @DisplayName("an out-of-bounds read MVEL wraps, without a stack trace or message, is a malformed expression")
+    void wrappedOutOfBoundsWithoutStackTrace() {
+        CompileException mvel = withMessage("[Error: null]\n[Near : {... in ....}]\n[Line: 1, Column: 11]");
+        ArrayIndexOutOfBoundsException fastThrown = new ArrayIndexOutOfBoundsException();
+        fastThrown.setStackTrace(new StackTraceElement[0]);
+        mvel.initCause(fastThrown);
+
+        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+
+        assertEquals("failed to compile at line 1, column 11: malformed expression", ex.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 11, "malformed expression")), ex.issues());
+        assertSame(mvel, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("an out-of-bounds read from other code MVEL called, wrapped, keeps MVEL's description")
+    void wrappedOutOfBoundsFromOtherCode() {
+        CompileException mvel = withMessage("[Error: Index 2 out of bounds for length 2]\n[Near : {... x ....}]\n"
+                + "[Line: 1, Column: 3]");
+        mvel.initCause(outOfBounds("com.example.Loader", "org.mvel2.util.ParseTools"));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 3, "Index 2 out of bounds for length 2")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @Test
+    @DisplayName("an out-of-bounds read MVEL wraps with a description of its own keeps MVEL's description")
+    void wrappedOutOfBoundsWithMvelsDescription() {
+        CompileException mvel = withMessage("[Error: unexpected end of statement]\n[Near : {... y = 1 ....}]\n"
+                + "[Line: 1, Column: 13]");
+        mvel.initCause(outOfBounds("org.mvel2.compiler.AbstractParser"));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 13, "unexpected end of statement")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    // #652: MVEL's description was as long as the expression it quotes.
+    @Test
+    @DisplayName("MVEL's description is shortened to 1,000 characters before it's escaped")
+    void longDescriptionShortened() {
+        CompileException mvel = withMessage("[Error: " + "\n".repeat(1_500) + "]\n[Near : {... x ....}]\n"
+                + "[Line: 1, Column: 1]");
+
+        String description = "\\n".repeat(1_000) + "... (500 more characters)";
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @Test
+    @DisplayName("one error MVEL lists is shortened before it's escaped")
+    void longListedErrorShortened() {
+        InvalidExpressionException ex = MvelExpressionCompiler.compileError(
+                listing(error(1, 5, "could not resolve class: " + "\n".repeat(1_000))));
+
+        String description = "could not resolve class: " + "\\n".repeat(975) + "... (25 more characters)";
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, description)), ex.issues());
+    }
+
+    @Test
+    @DisplayName("several errors MVEL lists are shortened together, on one line")
+    void longListOfErrorsShortened() {
+        ErrorDetail[] errors = new ErrorDetail[100];
+        for (int i = 0; i < errors.length; i++) {
+            errors[i] = error(1, i, "could not resolve class: N" + i);
+        }
+
+        String description = MvelExpressionCompiler.compileError(listing(errors)).issues().get(0).message();
+
+        assertTrue(description.startsWith("(1,0) could not resolve class: N0; (1,1) could not resolve class: N1; "),
+                description);
+        assertTrue(description.endsWith("... (2678 more characters)"), description);
+        assertEquals(1_026, description.length());
+    }
+
+    @Test
+    @DisplayName("the root cause's message in the engine's note is shortened, and the note isn't cut off")
+    void longRootCauseMessageShortened() {
+        CompileException mvel = withMessage("[Error: null]\n[Line: 1, Column: 1]");
+        mvel.initCause(new ExceptionInInitializerError(new IllegalStateException("L".repeat(5_000))));
+
+        String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(1_000)
+                + "... (4000 more characters))";
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    // #661: without the escape, the issue carried a raw U+2028.
+    @Test
+    @DisplayName("MVEL's message for a declaration it rejects plainly is escaped")
+    void plainRejectionEscaped() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+        Rule rule = Rule.builder().ruleName("r").condition("true").action("int 1x" + (char) 0x2028 + "y = 2;").build();
+
+        RuleCompilationException ex = engine.validate(List.of(rule)).get(0);
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "not an identifier: 1x\\u2028y = 2")), ex.issues());
+    }
+
+    // #652: MVEL's message for a declaration it rejects plainly was as long as the declaration.
+    @Test
+    @DisplayName("MVEL's message for a declaration it rejects plainly is shortened")
+    void plainRejectionShortened() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+        Rule rule = Rule.builder().ruleName("r").condition("true").action("int 1" + "x".repeat(1_200) + " = 2")
+                .build();
+
+        RuleCompilationException ex = engine.validate(List.of(rule)).get(0);
+
+        String description = "not an identifier: 1" + "x".repeat(980) + "... (220 more characters)";
+        assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, description)), ex.issues());
     }
 
     @Test

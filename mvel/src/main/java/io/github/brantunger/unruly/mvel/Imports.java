@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import org.mvel2.ParserConfiguration;
+import org.mvel2.util.MethodStub;
 
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -114,9 +115,41 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
             return found;
         }
 
+        /**
+         * Returns the static method imported as {@code name}, as MVEL does, unless the name is an imported class. MVEL
+         * asks for one when an expression calls a name it imports like a method, such as {@code ArrayList(y)} with
+         * {@code java.util} imported, and casts whatever is imported as that name to a method, which fails for a
+         * class with a {@link ClassCastException} that says nothing of the expression.
+         *
+         * @param name The name called like a method
+         * @return The method imported as {@code name}, or {@code null} if none is
+         * @throws ClassCalledLikeMethod if {@code name} is an imported class
+         */
+        @Override
+        public MethodStub getStaticImport(String name) {
+            if (imports.get(name) instanceof Class) {
+                throw new ClassCalledLikeMethod(name);
+            }
+            return super.getStaticImport(name);
+        }
+
         private int packageCount() {
             Set<String> packageImports = getPackageImports();
             return packageImports != null ? packageImports.size() : 0;
+        }
+    }
+
+    /**
+     * What the engine throws in place of MVEL's own {@link ClassCastException} when an expression calls an imported
+     * class like a method, such as {@code ArrayList(y)}, which the compiler reports as a compile error. It is still a
+     * {@link ClassCastException}, so MVEL handles it as it did its own.
+     */
+    static final class ClassCalledLikeMethod extends ClassCastException {
+
+        private static final long serialVersionUID = 1L;
+
+        ClassCalledLikeMethod(String name) {
+            super(name + " is an imported class, not a method");
         }
     }
 }
