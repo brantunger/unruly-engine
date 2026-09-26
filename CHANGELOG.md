@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.6](https://github.com/brantunger/unruly-engine/compare/v2.8.5...v2.8.6) (2026-09-26)
+
+
+### Bug Fixes
+
+* bound an import in MVEL rule text and in a compile context as build() does, and read package names by code point ([#690](https://github.com/brantunger/unruly-engine/issues/690)) ([c521dfe](https://github.com/brantunger/unruly-engine/commit/c521dfe52acc4ed0ca69aceefc49929322235dfb))
+
 ## [2.8.5](https://github.com/brantunger/unruly-engine/compare/v2.8.4...v2.8.5) (2026-09-26)
 
 
