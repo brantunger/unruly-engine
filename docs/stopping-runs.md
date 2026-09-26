@@ -186,13 +186,13 @@ failure, stops included.
 > [!NOTE]
 > This section is for runs started from inside other runs. You can skip it if you don't start any.
 
-A nested run is a run started on the same thread while another run is in progress: from a condition, an action, or a
-listener callback up to and including `afterRun` and `onRunError`. That includes the `beforeRun` and `onRunError` of a
-run that stopped while waiting for a compiled copy, or while reading the engine's rules again: it never ran a rule,
-but a run started from its callbacks still inherits its deadline, if it had one, and names it as its `parent()` on the
-same engine. Such a run holds no copy, so a run started from its callbacks isn't covered by the rule that a nested run
-never waits — but it doesn't wait either: with that run's deadline already passed, or the same interrupt on the
-thread, it takes a free copy or fails at once.
+A nested run is a run started on the same thread while another run is in progress: from a condition, an action, the
+output supplier, or a listener callback up to and including `afterRun` and `onRunError`. That includes the
+`beforeRun` and `onRunError` of a run that stopped while waiting for a compiled copy, or while reading the engine's
+rules again: it never ran a rule, but a run started from its callbacks inherits its deadline, if it had one, and
+names it as its `parent()` on the same engine. Such a run holds no copy, but a run started from its callbacks doesn't
+wait either: with that run's deadline passed, or the same interrupt on the thread, it takes a free copy or fails at
+once.
 
 - **It stops at whichever deadline comes first,** its own or the outer run's, on any engine. It sees the same
   interrupt, because the interrupt status belongs to the thread.
@@ -204,14 +204,16 @@ thread, it takes a free copy or fails at once.
   deadline, so its rule fails with `a nested run() failed: run() passed its deadline ...`, naming the outer rule, and
   the stop is in its cause chain.
 - **A nested run that failed with an `Error` in its cause chain fails the outer rule as well,** even when the outer
-  run is past its deadline or interrupted; see [What stops a run](#-what-stops-a-run). The nested run reports its own
-  rule's failure, and the outer rule then fails with `a nested run() failed: ...`, naming the outer rule, with the
-  nested failure in its cause chain. Only the nested run logs, at ERROR, naming its own rule; the outer run logs
-  nothing of its own, and its rule gets one `onError`, the run one `onRunError`.
+  run is past its deadline or interrupted; see [What stops a run](#-what-stops-a-run). The outer rule fails with
+  `a nested run() failed: ...`, with the nested failure in its cause chain; `run()` rethrows a fatal `Error` instead.
+  Each rule it passes through gets one `onError`, each run one `onRunError`.
+- **A failure is logged once, by the run it came from,** not by the runs around it, except a rejected fact or a failed
+  `load()` ([#675](https://github.com/brantunger/unruly-engine/issues/675)); through the output supplier, `run()`
+  throws `Output factory threw: a nested run() failed: <innermost failure>`. A fatal `Error` is logged once until the
+  thread's outermost run, `load()` or `validate()` ends; a later run logs it again.
 - **`parent()` names the outer run only on the same engine.** A run on another engine has no parent, although it
   still inherits the deadline; see [Callbacks](listeners-and-logging.md#-callbacks).
-- **A nested run never waits for a copy** while a run on its thread holds or is getting one; a run started from the
-  callbacks of a run that stopped while waiting holds none, and fails at once instead. See
+- **A nested run never waits for a copy** while a run on its thread holds or is getting one; see
   [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ## ❓ Questions you might not think to ask

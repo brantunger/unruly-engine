@@ -8,9 +8,10 @@ import java.util.Objects;
 
 /**
  * A {@link RuleExecutionException} an engine throws from {@code run()} once it has logged it and told its listeners.
- * When a {@code run()} started from a condition or action fails with one, the run around it doesn't log that failure
- * again: see {@link Failures#nestedRunFailure}. A {@code RuleExecutionException} a language or a rule throws itself
- * is never one, so it is logged and escaped like any other exception.
+ * When a {@code run()} started from a condition, an action, the output supplier, a listener callback or a language
+ * fails with one, the run, {@code load()} or {@code validate()} around it doesn't log that failure again: see
+ * {@link Failures#nestedRunFailure}. A {@code RuleExecutionException} a language or a rule throws itself is never one,
+ * so it is logged and escaped like any other exception.
  *
  * <p>
  * Each one records, when it's built, the innermost failure and the first {@link Error} in its cause chain, so the run

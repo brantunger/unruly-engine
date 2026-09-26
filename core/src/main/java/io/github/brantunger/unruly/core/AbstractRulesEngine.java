@@ -281,6 +281,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         RunEvent event = FlightRecorderEvents.startRun();
         RunTally tally = new RunTally();
         String outcome = RunEvent.FAILED;
+        LoggedFailures.enter();
         try {
             Instant deadline = Cancellation.deadlineFrom(timeout);
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
@@ -329,6 +330,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             outcome = tally.hasStopped() ? RunEvent.STOPPED : RunEvent.FAILED;
             throw e;
         } finally {
+            LoggedFailures.leave();
             // Again on the way out, as a language's close() may have cleared it too.
             keepInterruptOfStop(tally);
             if (event != null) {
@@ -433,7 +435,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 tally.markInterrupted();
             }
         }
-        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error));
+        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error), error);
     }
 
     /** Creates the context one run is reported to listeners with. */
@@ -445,12 +447,26 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Calls one run callback on every listener, logging what a listener throws, like the rule callbacks. A fatal
-     * {@link Error} a listener throws is rethrown once every listener has had the callback.
+     * {@link Error} a listener throws is rethrown once every listener has had the callback, and logged first unless a
+     * run it started logged it already (see {@link LoggedFailures}).
      */
     private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        Error fatal = notifyListeners(snapshot, callback, call);
+        notifyRun(snapshot, callback, call, null);
+    }
+
+    /**
+     * Calls one run callback on every listener, as {@link #notifyRun(List, String, Consumer)} does, for a callback
+     * that tells listeners of the run's failure.
+     *
+     * @param told The exception the callback tells listeners of, or {@code null}; see {@link #logListenerException}
+     */
+    private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
+                           Throwable told) {
+        Error fatal = notifyListeners(snapshot, callback, call, null, told);
         if (fatal != null) {
-            log.error("A listener threw {} in {}", fatal.getClass().getName(), callback);
+            if (LoggedFailures.unloggedFatal(fatal)) {
+                log.error("A listener threw {} in {}", fatal.getClass().getName(), callback);
+            }
             throw fatal;
         }
     }
@@ -740,9 +756,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws IllegalStateException if the engine is closed; this is checked before anything in the list, so a closed
      *                               engine throws it even for a list that would fail to load
      */
-    // The rule set closes the compilers, or this method does if the rule list fails to load.
     @Override
     public void load(List<Rule> ruleList) {
+        // A run a language starts while this compiles or makes copies is nested in the load, so a fatal Error it
+        // logged isn't logged again here (see LoggedFailures).
+        LoggedFailures.enter();
+        try {
+            loadRules(ruleList);
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    /**
+     * Loads the rules, as {@link #load(List)} describes.
+     *
+     * @param ruleList The rules
+     */
+    // The rule set closes the compilers, or this method does if the rule list fails to load.
+    private void loadRules(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
         // Checked here so a closed engine rejects any list, and again under the lock, for a close() that runs while
         // this compiles.
@@ -877,10 +909,26 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code copiesAtLoad(0)} nothing is outside what it can see.
      * </p>
      */
-    // Any Throwable: the compilers must be closed however this ends, as a finally would, and a failure that isn't
-    // fatal is kept under a fatal Error from closing.
     @Override
     public List<RuleCompilationException> validate(List<Rule> ruleList) {
+        // As in load(): a fatal Error a run a language starts here logged isn't logged again.
+        LoggedFailures.enter();
+        try {
+            return validateRules(ruleList);
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    /**
+     * Checks the rules, as {@link #validate(List)} describes.
+     *
+     * @param ruleList The rules
+     * @return Every problem found
+     */
+    // Any Throwable: the compilers must be closed however this ends, as a finally would, and a failure that isn't
+    // fatal is kept under a fatal Error from closing.
+    private List<RuleCompilationException> validateRules(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
         if (closed) {
             throw new IllegalStateException(CLOSED_MESSAGE);
@@ -940,7 +988,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
          * Prepares a compilation with a compiler registry for the engine's languages.
          *
          * @param logged Whether each failure, and each warning a language reports, is logged: {@code load()} logs,
-         *               {@code validate()} doesn't
+         *               {@code validate()} doesn't. A failure a {@code run()} the language started reported isn't
+         *               logged either way: that run logged it.
          */
         Compilation(boolean logged) {
             this.logged = logged;
@@ -991,8 +1040,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             declaredNameFailures(used).forEach(this::failed);
         }
 
+        // A failed run() a language started while compiling or checking a name has already logged its failure.
         private void failed(RuleCompilationException failure) {
-            if (logged) {
+            if (logged && Failures.nestedRunFailure(failure) == null) {
                 log.error(failure.getMessage());
             }
             failures.add(failure);
@@ -1153,7 +1203,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
      * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
      * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, which is
-     * logged and rethrown.
+     * logged and rethrown. A failure of a {@code run()} the check started, and a fatal error that run logged, isn't
+     * logged a second time (see {@link LoggedFailures}).
      *
      * @param name   The fact's name
      * @param checks The compilers to check it with, by language name
@@ -1167,8 +1218,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 check.getValue().checkFactName(name);
             } catch (IllegalArgumentException e) {
                 // The language wrote this message and it names the fact, so it's escaped before it's logged. The
-                // exception is returned as it came, so a caller still reads exactly what the language said.
-                if (logged) {
+                // exception is returned as it came, so a caller still reads exactly what the language said. A failed
+                // run() the check started has already logged its failure.
+                if (logged && Failures.nestedRunFailure(e) == null) {
                     log.error(Failures.describe(e));
                 }
                 return e;
@@ -1177,7 +1229,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 String msg = "The '%s' expression language failed to check fact name '%s': %s"
                         .formatted(Failures.quote(check.getKey()), Failures.quote(name), Failures.describe(e));
                 Error fatal = Failures.fatalError(e);
-                if (logged || fatal != null) {
+                if ((logged || fatal != null) && LoggedFailures.unlogged(e)) {
                     log.error(msg);
                 }
                 Failures.throwIfPresent(fatal);
@@ -1387,7 +1439,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException closedWithStop(List<RuleListener> snapshot, CompiledRule rule,
                                                   RuleExecutionException stop) {
-        Error fatal = notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop));
+        Error fatal = notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop), null,
+                stop);
         if (fatal != null) {
             stop.addSuppressed(fatal);
             fatalFailure.set(stop);
@@ -1446,7 +1499,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
      *                                when it is the cause of what the factory throws; any other {@link Error}, and a
      *                                {@link Throwable} that is neither an exception nor an error, is wrapped like an
-     *                                exception.
+     *                                exception. A failure of a {@code run()} the factory started reads
+     *                                {@code Output factory threw: a nested run() failed: } and that run's innermost
+     *                                failure, and isn't logged again, as that run logged it; nor is a fatal error that
+     *                                run logged (see {@link LoggedFailures}).
      */
     O createOutput(Supplier<O> outputFactory) {
         O output;
@@ -1454,8 +1510,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             output = outputFactory.get();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            String msg = "Output factory threw " + Failures.describeWithClass(e);
-            log.error(msg);
+            String msg = Failures.nestedRunFailure(e) != null
+                    ? "Output factory threw: " + Failures.describe(e)
+                    : "Output factory threw " + Failures.describeWithClass(e);
+            if (LoggedFailures.unlogged(e)) {
+                log.error(msg);
+            }
             Failures.throwIfPresent(Failures.fatalError(e));
             throw new ReportedFailure(msg, e);
         }
@@ -1641,7 +1701,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Calls a {@code before*} callback on every listener. If one throws a fatal {@link Error}, the condition or action
      * doesn't run: every listener gets {@link RuleListener#onError} to close the callback it received, and the error
-     * is rethrown.
+     * is rethrown. It's logged first, unless a run the listener started logged it already (see
+     * {@link LoggedFailures}).
      */
     private void notifyBefore(List<RuleListener> snapshot, CompiledRule rule, String callback,
                               Consumer<RuleListener> call) {
@@ -1650,22 +1711,24 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RuleExecutionException failure = new RuleExecutionException(listenerFatalMessage(fatal, callback, rule),
                     fatal, rule.rule().getRuleName());
             // Already on its way out of run(), so a second fatal error from onError can't replace it, but it's kept.
-            keepSecondFatal(failure, reportFailure(snapshot, rule, failure, true));
+            keepSecondFatal(failure, reportFailure(snapshot, rule, failure, LoggedFailures.unloggedFatal(fatal)));
             fatalFailure.set(failure);
             throw fatal;
         }
     }
 
     /**
-     * Calls an {@code after*} callback on every listener, then logs the first fatal {@link Error} one threw at ERROR
-     * and rethrows it. Every listener already closed its callback, so none gets {@code onError}.
+     * Calls an {@code after*} callback on every listener, then logs the first fatal {@link Error} one threw at ERROR,
+     * unless a run the listener started logged it already (see {@link LoggedFailures}), and rethrows it. Every
+     * listener already closed its callback, so none gets {@code onError}.
      */
     private void notifyAfter(List<RuleListener> snapshot, CompiledRule rule, String callback,
                              Consumer<RuleListener> call) {
         Error fatal = notifyListeners(snapshot, callback, call);
         if (fatal != null) {
-            String msg = listenerFatalMessage(fatal, callback, rule);
-            log.error(msg);
+            if (LoggedFailures.unloggedFatal(fatal)) {
+                log.error(listenerFatalMessage(fatal, callback, rule));
+            }
             throw fatal;
         }
     }
@@ -1685,7 +1748,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The first fatal {@link Error} a listener threw, or {@code null}
      */
     private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        return notifyListeners(snapshot, callback, call, null);
+        return notifyListeners(snapshot, callback, call, null, null);
     }
 
     /**
@@ -1697,10 +1760,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 reporting, or {@code null}
      * @return The first fatal {@link Error} a listener threw that the run isn't reporting, or {@code null}
      */
+    private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
+                                  RuleExecutionException reported) {
+        return notifyListeners(snapshot, callback, call, reported, reported);
+    }
+
+    /**
+     * Calls every listener, as {@link #notifyListeners(List, String, Consumer, RuleExecutionException)} does, knowing
+     * what the callback tells listeners of.
+     *
+     * @param reported The exception listeners were told about, whose fatal {@link Error} the run is already
+     *                 reporting, or {@code null}
+     * @param told     The exception the callback tells listeners of, or {@code null}; see
+     *                 {@link #logListenerException}
+     * @return The first fatal {@link Error} a listener threw that the run isn't reporting, or {@code null}
+     */
     // Rethrowing the very same instance is what makes it nothing new; an equal one would still be news.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
     private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
-                                  RuleExecutionException reported) {
+                                  RuleExecutionException reported, Throwable told) {
         Error reportedFatal = reported == null ? null : Failures.fatalError(reported);
         Error fatal = null;
         for (RuleListener listener : snapshot) {
@@ -1711,13 +1789,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 Error found = Failures.fatalError(e);
                 if (found != null && found == reportedFatal) {
                     if (e != reported && e != reportedFatal) {
-                        logListenerException(callback, e);
+                        logListenerException(callback, e, told);
                     }
                 } else if (found != null && fatal == null) {
                     fatal = found;
                 } else {
                     // A non-fatal exception, or a second fatal error in this callback, which the caller can't rethrow.
-                    logListenerException(callback, e);
+                    logListenerException(callback, e, told);
                 }
             }
         }
@@ -1725,16 +1803,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Logs what a listener threw, where it isn't the error {@code run()} goes on to throw.
+     * Logs what a listener threw, where it isn't the error {@code run()} goes on to throw. A failure of a
+     * {@code run()} the listener started is described by that run's innermost failure only, as
+     * {@code a nested run() failed: ...}: that run logged it, naming it in full. The failure the callback
+     * told the listener of, rethrown or wrapped, isn't one: it's described with its class, as anything else is.
      *
      * @param callback The callback the listener threw from
      * @param thrown   What it threw
+     * @param told     The exception the callback told the listener of, or {@code null}
      */
-    private static void logListenerException(String callback, Throwable thrown) {
+    // The innermost failure of the very run whose failure the listener was told of is no nested run's.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static void logListenerException(String callback, Throwable thrown, Throwable told) {
         // Escaped, like every message the engine logs: a listener's message can quote request data. The stack trace,
         // which prints the message as it is, goes to DEBUG for whoever debugs the listener; it's left out if printing
         // it throws, as a listener's own exception can.
-        log.warn("Listener threw exception in {}: {}", callback, Failures.describeWithClass(thrown));
+        RuleExecutionException nested = Failures.nestedRunFailure(thrown);
+        log.warn("Listener threw exception in {}: {}", callback,
+                nested != null && nested != Failures.nestedRunFailure(told)
+                        ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
         logStackTrace(() -> log.debug("Listener threw exception in {}", callback, thrown));
     }
 
@@ -1776,8 +1863,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
-     * {@code before*} callback still gets a closing call. An interrupt in {@code cause} sets the thread's interrupt
-     * status again. Returns the exception for the caller to throw, unless
+     * {@code before*} callback still gets a closing call. A failure of a {@code run()} the rule started isn't logged
+     * again, as that run logged it, nor is a fatal {@link Error} a run logged already (see {@link LoggedFailures}).
+     * An interrupt in {@code cause} sets the thread's interrupt status again. Returns the exception for the caller to
+     * throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
@@ -1785,8 +1874,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                            String msg, Throwable cause) {
         RuleExecutionException error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
         Failures.keepInterruptStatus(cause);
-        // A failed run() started by this rule has already logged its failure.
-        Error listenerFatal = reportFailure(snapshot, rule, error, Failures.nestedRunFailure(cause) == null);
+        // A failed run() started by this rule has already logged its failure, or the fatal error it rethrew.
+        Error listenerFatal = reportFailure(snapshot, rule, error, LoggedFailures.unlogged(cause));
         // A fatal error in what the rule threw comes first; one from a listener's onError is rethrown otherwise.
         Error fatal = Failures.fatalError(cause);
         if (fatal == null && listenerFatal != null) {
@@ -1842,14 +1931,17 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The exception to throw, caused by {@code cause}
      */
     // Not logged here: load() logs each failure as it collects it, and validate() logs nothing. A fatal error is
-    // the exception: it's logged, then rethrown, whichever is compiling.
+    // the exception: it's logged, then rethrown, whichever is compiling, unless a run the language started logged it
+    // (see LoggedFailures).
     private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName,
                                                                ExpressionKind kind,
                                                                List<InvalidExpressionException.Issue> issues) {
         Failures.keepInterruptStatus(cause);
         Error fatal = Failures.fatalError(cause);
         if (fatal != null) {
-            log.error(msg);
+            if (LoggedFailures.unloggedFatal(fatal)) {
+                log.error(msg);
+            }
             throw fatal;
         }
         return new RuleCompilationException(msg, cause, ruleName, kind, issues);
