@@ -361,9 +361,11 @@ final class RuleSet {
      *
      * @param count How many copies to make; zero makes none
      * @throws RuleExecutionException if a language throws or returns {@code null} from {@code newSession()}, or
-     *                                throws from {@code warmUp()}. It's logged at ERROR, and the copies already made,
-     *                                the one that failed too, even if only some of its sessions were made, stay idle
-     *                                for {@link #retire()} to close. A fatal {@link Error} is rethrown unchanged.
+     *                                throws from {@code warmUp()}. It's logged at ERROR, unless a {@code run()} the
+     *                                language started logged it (see {@link LoggedFailures}), and the copies already
+     *                                made, the one that failed too, even if only some of its sessions were made, stay
+     *                                idle for {@link #retire()} to close. A fatal {@link Error} is rethrown
+     *                                unchanged.
      */
     void prepareCopies(int count) {
         for (int made = 0; made < count; made++) {
@@ -402,7 +404,9 @@ final class RuleSet {
             Failures.keepInterruptStatus(e);
             String msg = "The '" + Failures.quote(language) + "' expression language failed to warm up a session: "
                     + Failures.describe(e);
-            log.error(msg);
+            if (LoggedFailures.unlogged(e)) {
+                log.error(msg);
+            }
             Failures.throwIfPresent(Failures.fatalError(e));
             throw new ReportedFailure(msg, e);
         }
@@ -771,8 +775,10 @@ final class RuleSet {
 
     /**
      * Creates one language's session for a new copy. A failure fails the run that needed the copy, and is logged at
-     * ERROR first. A fatal {@link Error}, thrown or found among the causes of what the language throws, is then
-     * rethrown unchanged. No listener is told: no callback has been sent for the run yet.
+     * ERROR first, unless it's the failure of a {@code run()} the language started, which that run logged, or a fatal
+     * error that run logged (see {@link LoggedFailures}). A fatal {@link Error}, thrown or found among the causes of
+     * what the language throws, is then rethrown unchanged. No listener is told: no callback has been sent for the run
+     * yet.
      */
     private static Session newSession(String language, ExpressionCompiler compiler) {
         String failed = "The '" + Failures.quote(language) + "' expression language ";
@@ -782,7 +788,9 @@ final class RuleSet {
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = failed + "failed to create a session: " + Failures.describe(e);
-            log.error(msg);
+            if (LoggedFailures.unlogged(e)) {
+                log.error(msg);
+            }
             Failures.throwIfPresent(Failures.fatalError(e));
             throw new ReportedFailure(msg, e);
         }

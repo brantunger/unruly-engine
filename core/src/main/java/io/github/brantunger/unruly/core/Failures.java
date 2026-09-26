@@ -193,8 +193,9 @@ public final class Failures {
      * </ul>
      * The message is shortened before it's escaped, so the count of what was left out counts the exception's own
      * characters. The exception is never changed: its {@code getMessage()} still reads as the language wrote it.
-     * A failure of a {@code run()} started from a condition or action is described by that run's innermost failure
-     * only, so a failure nested many runs deep isn't repeated once per level.
+     * A failure of a {@code run()} started from a condition, an action, the output supplier, a listener callback or a
+     * language is described by that run's innermost failure only, so a failure nested many runs deep isn't repeated
+     * once per level.
      *
      * @param e The exception to describe
      * @return A description of the exception for an error message

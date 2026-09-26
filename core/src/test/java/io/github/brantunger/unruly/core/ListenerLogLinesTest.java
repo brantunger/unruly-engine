@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
@@ -130,13 +131,19 @@ class ListenerLogLinesTest {
                 .language(new ToyExpressionLanguage()).build();
         inner.load(List.of(rule("inner", "broken.x")));
         IOException root = rootMessage.isEmpty() ? new IOException() : new IOException(rootMessage);
+        AtomicReference<String> nestedMessage = new AtomicReference<>();
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void beforeRun(RunContext run) {
                         FactStore<Object> facts = new FactMap<>();
                         facts.setValue("broken", new Broken(root));
-                        inner.run(facts);
+                        try {
+                            inner.run(facts);
+                        } catch (RuleExecutionException nested) {
+                            nestedMessage.set(nested.getMessage());
+                            throw nested;
+                        }
                     }
                 }).build();
         engine.load(List.of(rule("r", "true")));
@@ -146,6 +153,8 @@ class ListenerLogLinesTest {
         String warn = logs.lines().filter(line -> line.contains("Listener threw exception in beforeRun: "))
                 .findFirst().orElseThrow(() -> new AssertionError(logs));
         assertEquals(1, warn.split("caused by java.io.IOException", -1).length - 1, warn);
+        assertTrue(warn.endsWith("Listener threw exception in beforeRun: a nested run() failed: "
+                + nestedMessage.get()), warn);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -158,6 +167,7 @@ class ListenerLogLinesTest {
                     throw new IllegalStateException(message, new IOException());
                 })).build();
         inner.load(List.of(Rule.builder().ruleName("inner").condition("c").action("a").build()));
+        AtomicReference<String> nestedMessage = new AtomicReference<>();
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
@@ -165,6 +175,7 @@ class ListenerLogLinesTest {
                         try {
                             inner.run(new FactMap<>());
                         } catch (RuleExecutionException nested) {
+                            nestedMessage.set(nested.getMessage());
                             throw switch (how) {
                                 case "wrapped" -> new IllegalStateException("audit failed", nested);
                                 case "wrapped without a message" -> new IllegalStateException((String) null, nested);
@@ -180,6 +191,8 @@ class ListenerLogLinesTest {
         String warn = logs.lines().filter(line -> line.contains("Listener threw exception in beforeRun: "))
                 .findFirst().orElseThrow(() -> new AssertionError(logs));
         assertEquals(1, warn.split("caused by java.io.IOException", -1).length - 1, warn);
+        assertTrue(warn.endsWith("Listener threw exception in beforeRun: a nested run() failed: "
+                + nestedMessage.get()), warn);
     }
 
     @Test
