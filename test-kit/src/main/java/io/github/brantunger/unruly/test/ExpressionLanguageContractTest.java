@@ -23,6 +23,7 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.opentest4j.AssertionFailedError;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -255,6 +256,75 @@ public abstract class ExpressionLanguageContractTest {
      */
     protected abstract @Nullable String missingFactProperty(String fact, String property, int value);
 
+    /**
+     * Configures each engine the checks build, for a language that needs what the builder carries to compile its
+     * expressions: declared facts, imports or options of its own. By default, nothing. It's called once for each
+     * engine, after the kit has started an {@code allMatches} engine whose output is a {@link HashMap}, and added the
+     * language.
+     *
+     * <p>
+     * The facts the checks' expressions refer to are {@code x}, {@code y} and {@code applicant}, and the names
+     * {@link #usableFactNames()} returns. The checks supply {@code x} as a {@code Boolean}, a {@code String},
+     * {@code null}, an {@code Integer}, a {@code Long}, a {@code Short} and a {@code BigDecimal}, {@code y} as an
+     * {@code Integer}, {@code applicant} as an {@link Applicant}, an {@link ApplicantBean} and a {@link Map}, and each
+     * of the names {@link #usableFactNames()} and {@link #unusableFactName()} return as the {@code Integer} 1. So a
+     * language that declares them declares {@code x} and {@code applicant} as {@link Object}: the engine fails a run
+     * whose fact isn't an instance of its declared type with an {@link IllegalArgumentException}, before the language
+     * evaluates anything, and the check with it.
+     * </p>
+     *
+     * <p>
+     * It must not change what the checks depend on, or they fail for reasons that have nothing to do with the
+     * language:
+     * </p>
+     * <ul>
+     *     <li>{@code requireDeclaredFacts()}: each run supplies only the facts its check reads, so the engine fails
+     *     it with an {@link IllegalArgumentException} before the language evaluates anything.</li>
+     *     <li>A declaration of the name {@link #unusableFactName()} returns: {@code load()} checks every declared
+     *     name with the language, which rejects that one. Most checks then fail to load their rules, with a
+     *     {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and the checks that expect a
+     *     load to fail then pass or fail for reasons unrelated to the language.</li>
+     *     <li>{@code runTimeout(...)}: a run that outlasts it fails, and its check with it.</li>
+     *     <li>{@code maxCopies(...)} below 2: two checks make two copies of the rules when they load, which
+     *     {@code build()} refuses with more copies than the limit.</li>
+     *     <li>Another language, or a {@code defaultLanguage(...)} other than the language's own name: {@code build()}
+     *     throws an {@link IllegalStateException} for an engine with two languages and no default, or with a default
+     *     that isn't one of its languages. {@code defaultLanguage(language().name())} changes nothing.</li>
+     *     <li>{@code outputWriter(...)}: the checks read what an action returned from the output map, where
+     *     {@code OutputWriter.beansAndMaps()} puts it.</li>
+     * </ul>
+     *
+     * <p>
+     * The two checks that need copies made when the rules load set {@code copiesAtLoad(2)} after this, so a
+     * {@code copiesAtLoad} set here doesn't change them. Listeners that don't change the output may be added: the
+     * engine only logs what a listener throws, unless it's a fatal {@link Error}, but {@code beforeExecute} and
+     * {@code afterExecute} are given the output the checks compare. {@code evaluateAgreesWithDetail} builds no engine,
+     * and compiles with {@link #compileContext()} instead: a language that overrides both keeps them consistent.
+     * </p>
+     *
+     * @param builder The builder of an engine a check is about to build
+     */
+    protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+    }
+
+    /**
+     * Returns the context {@code evaluateAgreesWithDetail} compiles its condition with, since that check compiles it
+     * with the language's compiler, outside an engine. By default, {@link LanguageTestContexts#compile()}, which has
+     * no imports, options or declared facts.
+     *
+     * <p>
+     * A language that needs {@link #configure} to compile needs this too, with the same imports, options and declared
+     * facts, which the {@link LanguageTestContexts} {@code compile} methods take. The condition is
+     * {@link #factEquals factEquals("x", 1)}, evaluated for an {@code x} that is an {@code Integer}, a {@code Long}, a
+     * {@code Short} and a {@code BigDecimal}.
+     * </p>
+     *
+     * @return The context
+     */
+    protected CompileContext compileContext() {
+        return LanguageTestContexts.compile();
+    }
+
     /** The fact name and property the property checks use. */
     private static final String APPLICANT = "applicant";
     private static final String CREDIT_SCORE = "creditScore";
@@ -300,8 +370,20 @@ public abstract class ExpressionLanguageContractTest {
                 .language(language().name()).build();
     }
 
-    private static RulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
-        return RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language).build();
+    /**
+     * Starts building the engine a check runs its rules with: an {@code allMatches} engine whose output is a
+     * {@link HashMap}, with the language added and {@link #configure} applied. A check that needs a setting of its own
+     * sets it on what this returns, after {@code configure}, so that {@code configure} can't change it.
+     */
+    private RulesEngineBuilder<Map<String, Object>> builder(ExpressionLanguage language) {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(language);
+        configure(builder);
+        return builder;
+    }
+
+    private RulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
+        return builder(language).build();
     }
 
     private RulesEngine<Map<String, Object>> engine() {
@@ -644,8 +726,7 @@ public abstract class ExpressionLanguageContractTest {
     @Test
     @DisplayName("copies made and warmed up when the rules load give the same results, one run or several at once")
     void copiesAtLoad() throws Exception {
-        closing(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language())
-                .copiesAtLoad(2).build(), engine -> {
+        closing(builder(language()).copiesAtLoad(2).build(), engine -> {
             engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
             ExecutorService workers = Executors.newFixedThreadPool(2);
             try {
@@ -717,7 +798,8 @@ public abstract class ExpressionLanguageContractTest {
         // A close() that throws is only logged at WARN, so nothing else would show it: a compiler that fails to
         // close has usually failed to release what it holds.
         if (!closeFailures.isEmpty()) {
-            fail("a compiler's close() threw " + closeFailures.get(0) + ", which the engine only logs at WARN");
+            fail("a compiler's close() threw " + describe(closeFailures.get(0))
+                    + ", which the engine only logs at WARN");
         }
     }
 
@@ -747,6 +829,39 @@ public abstract class ExpressionLanguageContractTest {
      */
     private static boolean isFatal(Throwable thrown) {
         return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError);
+    }
+
+    /**
+     * Throws what a language threw on, unchanged, when it's an error the engine rethrows too (see {@link #isFatal}),
+     * so that no check counts it as the language's answer.
+     *
+     * @param thrown What the language threw
+     */
+    private static void rethrowIfFatal(Throwable thrown) {
+        if (isFatal(thrown)) {
+            throw (VirtualMachineError) thrown;
+        }
+    }
+
+    /**
+     * Describes an object of the language's, such as what it threw, for a check's failure message: its
+     * {@code toString()}, or, when that throws, its class name and a note that its text is unavailable, as the engine
+     * describes an exception whose {@code getMessage()} throws. Whatever {@code toString()} throws, a fatal
+     * {@link Error} too, only makes the text unavailable, so the check fails with its own message rather than with
+     * that.
+     *
+     * @param object The object
+     * @return Its {@code toString()}, or its class name followed by {@code (message unavailable: ...)}, naming the
+     *         class of what {@code toString()} threw
+     */
+    private static String describe(@Nullable Object object) {
+        try {
+            return String.valueOf(object);
+        } catch (Throwable thrown) {
+            // Only the class of what was thrown: its own message could be what throws.
+            return Objects.requireNonNull(object).getClass().getName() + " (message unavailable: "
+                    + thrown.getClass().getName() + ")";
+        }
     }
 
     /**
@@ -814,8 +929,7 @@ public abstract class ExpressionLanguageContractTest {
         // copy, and each session warmed up; one that returns Session.none() is asked once, and its copy is shared.
         // Closed however the check ends, so a failed run still closes the sessions.
         try {
-            closing(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                    .language(sessions.watching(language())).copiesAtLoad(2).build(), engine -> {
+            closing(builder(sessions.watching(language())).copiesAtLoad(2).build(), engine -> {
                 engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
                 assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
             });
@@ -901,13 +1015,13 @@ public abstract class ExpressionLanguageContractTest {
         void assertNoneShared() {
             if (!shared.isEmpty()) {
                 fail("newSession() returned the same session for two copies of the rules, so two runs use it at once"
-                        + " and the engine closes it twice: " + shared.get(0));
+                        + " and the engine closes it twice: " + describe(shared.get(0)));
             }
         }
 
         void assertNoneThrewOnClose() {
             if (!closeFailures.isEmpty()) {
-                fail("a session's close() threw " + closeFailures.get(0)
+                fail("a session's close() threw " + describe(closeFailures.get(0))
                         + ", which the engine only logs at WARN");
             }
         }
@@ -919,7 +1033,7 @@ public abstract class ExpressionLanguageContractTest {
         void assertNotASession(@Nullable Object detail) {
             if (returned.contains(detail)) {
                 fail("the condition's detail is the session it ran with, which the engine gives to another run or"
-                        + " closes: " + detail);
+                        + " closes: " + describe(detail));
             }
         }
 
@@ -1034,19 +1148,22 @@ public abstract class ExpressionLanguageContractTest {
      * {@code evaluateWithDetail}, so a language whose {@code evaluate} disagrees with it passes every other check,
      * and fails whoever calls {@code evaluate} directly. A language that doesn't override {@code evaluateWithDetail}
      * passes: the default returns what {@code evaluate} does. So does one that throws from both for a fact, as a
-     * language that compares whole numbers by type may; one that throws from only one of them fails.
+     * language that compares whole numbers by type may; one that throws from only one of them fails. What either
+     * throws counts as the engine counts it: an exception or an {@link Error} fails the rule, such as a
+     * {@link StackOverflowError} or an {@link AssertionError}, but a fatal one, another {@link VirtualMachineError},
+     * is thrown on, and fails the check by itself.
      *
      * <p>
-     * An exception from closing the session or the compiler doesn't fail this check: the engine only logs one, and
-     * {@code sessionsClosed} is the check that fails a session whose {@code close()} throws, and
-     * {@code compilerClosed} the one that fails a compiler whose {@code close()} throws.
+     * An exception or an {@link Error} from closing the session or the compiler doesn't fail this check, unless it's
+     * a fatal one: the engine only logs the rest, and {@code sessionsClosed} is the check that fails a session whose
+     * {@code close()} throws, and {@code compilerClosed} the one that fails a compiler whose {@code close()} throws.
      * </p>
      */
     @Test
     @DisplayName("a condition's evaluate returns the value evaluateWithDetail reports")
     void evaluateAgreesWithDetail() throws Exception {
         // Closed however the check ends, the session before its compiler, as the engine closes them.
-        closing(new ClosedQuietly<>(language().newCompiler(LanguageTestContexts.compile())), compiler -> {
+        closing(new ClosedQuietly<>(language().newCompiler(compileContext())), compiler -> {
             CompiledCondition condition = compiler.resource()
                     .compileCondition(new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
             // A session of the language's own, as a run gets one, not Session.none(), which a stateful language
@@ -1063,18 +1180,27 @@ public abstract class ExpressionLanguageContractTest {
                     ConditionResult detailed;
                     try {
                         detailed = condition.evaluateWithDetail(evaluation, session);
-                    } catch (Exception e) {
+                    } catch (Throwable e) {
+                        rethrowIfFatal(e);
                         // A language that can't compare this type fails the rule either way, as long as evaluate
-                        // does too.
-                        assertThrows(Exception.class, () -> condition.evaluate(evaluation, session),
-                                forFact + "evaluateWithDetail threw " + e + ", but evaluate didn't");
+                        // does too. The message is built only if it doesn't, since reading e can throw.
+                        rethrowIfFatal(assertThrows(Throwable.class, () -> condition.evaluate(evaluation, session),
+                                () -> forFact + "evaluateWithDetail threw " + describe(e) + ", but evaluate didn't"));
                         continue;
                     }
                     assertNotNull(detailed,
                             forFact + "evaluateWithDetail returned null, which fails the rule");
 
-                    Object value = assertDoesNotThrow(() -> condition.evaluate(evaluation, session),
-                            forFact + "evaluate threw, but evaluateWithDetail returned " + detailed.value());
+                    // Not assertDoesNotThrow, which would turn a fatal error into a failure of the check, and reads
+                    // the message of what evaluate threw, which can throw.
+                    Object value;
+                    try {
+                        value = condition.evaluate(evaluation, session);
+                    } catch (Throwable e) {
+                        rethrowIfFatal(e);
+                        throw new AssertionFailedError(forFact + "evaluate threw, but evaluateWithDetail returned "
+                                + describe(detailed.value()) + " ==> Unexpected exception thrown: " + describe(e), e);
+                    }
                     assertEquals(detailed.value(), value,
                             forFact + "evaluate returned a different value than evaluateWithDetail reported");
                 }
@@ -1083,22 +1209,24 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Closes a session or a compiler, ignoring an exception its {@code close()} throws, which the engine only logs. An
-     * {@link Error} is thrown on.
+     * Closes a session or a compiler, ignoring what its {@code close()} throws that the engine only logs. A fatal
+     * {@link Error} (see {@link #isFatal}) is thrown on.
      *
      * @param resource The session or compiler
      * @param <T>      Its type
      */
     private record ClosedQuietly<T extends AutoCloseable>(T resource) implements AutoCloseable {
 
-        // Anything but an Error, a checked exception thrown sneakily included: the engine logs any Exception.
+        // Anything but a fatal Error, a checked exception thrown sneakily and a StackOverflowError included: the
+        // engine logs any Exception or Error but a fatal one.
         @Override
-        @SuppressWarnings("PMD.EmptyCatchBlock")
         public void close() {
             try {
                 resource.close();
-            } catch (Exception e) {
-                // Logged by the engine, not thrown. Whether it throws is the session check's question, not this one's.
+            } catch (Throwable e) {
+                // Logged by the engine, not thrown. Whether it throws is the session and compiler checks' question,
+                // not this one's.
+                rethrowIfFatal(e);
             }
         }
     }

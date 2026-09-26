@@ -28,6 +28,28 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("the contract test kit fails a language that breaks the contract")
 class ContractKitChecksTest {
 
+    /** What the kit writes for an object of the language's whose {@code toString()} throws, after its class name. */
+    static final String UNAVAILABLE = " (message unavailable: java.lang.IllegalStateException)";
+
+    /** An exception whose {@code getMessage()} throws, and so its {@code toString()}: a message that can't be read. */
+    static final class Unreadable extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("the message's field is not set");
+        }
+    }
+
+    /** A session whose {@code toString()} throws. */
+    private static final class UnprintableSession implements Session {
+
+        @Override
+        public String toString() {
+            throw new IllegalStateException("the session's runtime can't print it");
+        }
+    }
+
     /** Runs one of the kit's checks, by name, on a contract test for {@code language}. */
     static void runCheck(ExpressionLanguage language, String check) throws Throwable {
         runCheck(new ToyExpressionLanguageContractTest() {
@@ -972,5 +994,45 @@ class ContractKitChecksTest {
                 })), "sessionsClosed"));
 
         assertEquals(List.of(cached), Arrays.asList(failure.getSuppressed()));
+    }
+
+    @Test
+    @DisplayName("a compiler check that fails for a close() whose exception can't be read reports the kit's own"
+            + " message (#657)")
+    void unreadableCompilerCloseReported() {
+        ExpressionLanguage language = throwingCompilerClose(new ToyExpressionLanguage(), Unreadable::new);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "compilerClosed"));
+
+        assertEquals("a compiler's close() threw " + Unreadable.class.getName() + UNAVAILABLE + ", which the engine"
+                + " only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a session check that fails for a close() whose exception can't be read reports the kit's own"
+            + " message (#657)")
+    void unreadableSessionCloseReported() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(closingWith(() -> {
+                    throw new Unreadable();
+                }), "sessionsClosed"));
+
+        assertEquals("a session's close() threw " + Unreadable.class.getName() + UNAVAILABLE + ", which the engine"
+                + " only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a session check that fails for a shared session that can't be printed reports the kit's own message"
+            + " (#657)")
+    void unprintableSharedSessionReported() {
+        Session shared = new UnprintableSession();
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(withSessions(new ToyExpressionLanguage(), () -> shared), "sessionsClosed"));
+
+        assertEquals("newSession() returned the same session for two copies of the rules, so two runs use it at once"
+                + " and the engine closes it twice: " + UnprintableSession.class.getName() + UNAVAILABLE,
+                failure.getMessage());
     }
 }

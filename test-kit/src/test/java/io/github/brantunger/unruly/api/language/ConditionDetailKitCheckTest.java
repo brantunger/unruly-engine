@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
+import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.UNAVAILABLE;
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.withSessions;
 import static org.junit.jupiter.api.Assertions.*;
@@ -138,6 +141,25 @@ class ConditionDetailKitCheckTest {
     };
 
     /**
+     * The language's own evaluateWithDetail for an {@code Integer} fact {@code x}, and what {@code failure} supplies,
+     * thrown whatever its type, for any other.
+     */
+    private static ConditionPath integersOnly(Supplier<? extends Throwable> failure) {
+        return (condition, evaluation, session) -> {
+            if (!(evaluation.facts().get("x") instanceof Integer)) {
+                ConditionDetailKitCheckTest.<RuntimeException>sneakyThrow(failure.get());
+            }
+            return condition.evaluateWithDetail(evaluation, session);
+        };
+    }
+
+    /** Throws {@code thrown} whatever its type, as a language's code can. */
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable thrown) throws T {
+        throw (T) thrown;
+    }
+
+    /**
      * Wraps a language so that each condition's evaluate returns the value {@code evaluate} gives, and its
      * evaluateWithDetail what {@code detailed} gives.
      */
@@ -190,6 +212,17 @@ class ConditionDetailKitCheckTest {
      */
     private static ExpressionLanguage recordingCloses(ExpressionLanguage language, List<String> closes,
                                                       boolean throwing) {
+        return recordingCloses(language, closes, what -> throwing
+                ? new IllegalStateException("the " + what + "'s runtime was already shut down") : null);
+    }
+
+    /**
+     * Wraps a language so that each session it creates and each compiler record in {@code closes} when they're closed,
+     * and then throw what {@code failure} makes of {@code "session"} or {@code "compiler"}, whatever its type, unless
+     * that's {@code null}.
+     */
+    private static ExpressionLanguage recordingCloses(ExpressionLanguage language, List<String> closes,
+                                                      Function<String, ? extends Throwable> failure) {
         return new ExpressionLanguage() {
             @Override
             public String name() {
@@ -227,8 +260,9 @@ class ConditionDetailKitCheckTest {
 
                     private void closed(String what) {
                         closes.add(what);
-                        if (throwing) {
-                            throw new IllegalStateException("the " + what + "'s runtime was already shut down");
+                        Throwable thrown = failure.apply(what);
+                        if (thrown != null) {
+                            ConditionDetailKitCheckTest.<RuntimeException>sneakyThrow(thrown);
                         }
                     }
                 };
@@ -244,6 +278,25 @@ class ConditionDetailKitCheckTest {
         @Override
         public void close() {
             closed = true;
+        }
+    }
+
+    /** A session whose {@code toString()} works until it's closed, and throws after. */
+    private static final class UnprintableOnceClosed implements Session {
+
+        private volatile boolean closed;
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        @Override
+        public String toString() {
+            if (closed) {
+                throw new IllegalStateException("the session's runtime is shut down");
+            }
+            return "an open session";
         }
     }
 
@@ -452,5 +505,141 @@ class ConditionDetailKitCheckTest {
                 "evaluateAgreesWithDetail"));
         // The compiler is still closed after its session's close() threw.
         assertEquals(List.of("session", "compiler"), closes);
+    }
+
+    @Test
+    @DisplayName("a session or compiler whose close() throws an Error the engine only logs doesn't fail the agreement"
+            + " check (#657)")
+    void closeErrorsIgnored() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+
+        assertDoesNotThrow(() -> runCheck(recordingCloses(new ToyExpressionLanguage(), closes,
+                what -> "session".equals(what) ? new StackOverflowError("released recursively") : null),
+                "evaluateAgreesWithDetail"));
+        assertDoesNotThrow(() -> runCheck(recordingCloses(new ToyExpressionLanguage(), closes,
+                what -> "compiler".equals(what) ? new StackOverflowError("released recursively") : null),
+                "evaluateAgreesWithDetail"));
+        assertDoesNotThrow(() -> runCheck(recordingCloses(new ToyExpressionLanguage(), closes,
+                what -> new NoClassDefFoundError("io/example/NativeRuntime")), "evaluateAgreesWithDetail"));
+        // The compiler is still closed after its session's close() threw.
+        assertEquals(List.of("session", "compiler", "session", "compiler", "session", "compiler"), closes);
+    }
+
+    @Test
+    @DisplayName("a fatal error from a session's close() fails the agreement check with that error, and the compiler"
+            + " is still closed (#657)")
+    void fatalSessionCloseThrownOn() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+        InternalError crash = new InternalError("the session's native runtime crashed");
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(recordingCloses(
+                new ToyExpressionLanguage(), closes, what -> "session".equals(what) ? crash : null),
+                "evaluateAgreesWithDetail"));
+
+        assertSame(crash, failure);
+        assertEquals(List.of("session", "compiler"), closes);
+    }
+
+    @Test
+    @DisplayName("a language that throws the same Error the engine only logs, or an exception whose message can't be"
+            + " read, from both evaluate and evaluateWithDetail passes the agreement check (#657)")
+    void bothPathsThrowingErrorsPass() {
+        List<Supplier<? extends Throwable>> failures = List.of(
+                () -> new StackOverflowError("compares recursively"),
+                () -> new AssertionError("compares Integers only"),
+                () -> new NoClassDefFoundError("io/example/BigNumbers"),
+                ContractKitChecksTest.Unreadable::new);
+
+        for (Supplier<? extends Throwable> failure : failures) {
+            assertDoesNotThrow(() -> runCheck(twoPaths(new ToyExpressionLanguage(), integersOnly(failure),
+                    integersOnly(failure)), "evaluateAgreesWithDetail"), () -> failure.get().getClass().getName());
+        }
+    }
+
+    @Test
+    @DisplayName("a language whose evaluateWithDetail alone throws an Error the engine only logs fails the agreement"
+            + " check with the kit's message (#657)")
+    void onlyDetailThrowingAnErrorFails() {
+        ConditionPath overflowing = integersOnly(() -> new StackOverflowError("compares recursively"));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), OWN, overflowing), "evaluateAgreesWithDetail"));
+
+        assertTrue(failure.getMessage().startsWith("for x = 1 (Long), evaluateWithDetail threw"
+                        + " java.lang.StackOverflowError: compares recursively, but evaluate didn't"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluateWithDetail alone throws an exception whose message can't be read fails the"
+            + " agreement check with the kit's message (#657)")
+    void onlyDetailThrowingUnreadableFails() {
+        ConditionPath unreadable = integersOnly(ContractKitChecksTest.Unreadable::new);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), OWN, unreadable), "evaluateAgreesWithDetail"));
+
+        assertTrue(failure.getMessage().startsWith("for x = 1 (Long), evaluateWithDetail threw "
+                        + ContractKitChecksTest.Unreadable.class.getName() + UNAVAILABLE + ", but evaluate didn't"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a fatal error from evaluateWithDetail, from evaluate alone, or from evaluate where evaluateWithDetail"
+            + " threw an exception, fails the agreement check with that error (#657)")
+    void fatalConditionErrorThrownOn() {
+        InternalError crash = new InternalError("the condition's native runtime crashed");
+        ConditionPath crashing = integersOnly(() -> crash);
+
+        InternalError fromDetail = assertThrows(InternalError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), OWN, crashing), "evaluateAgreesWithDetail"));
+        InternalError fromEvaluate = assertThrows(InternalError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), crashing, OWN), "evaluateAgreesWithDetail"));
+        InternalError afterDetailThrew = assertThrows(InternalError.class, () -> runCheck(
+                twoPaths(new ToyExpressionLanguage(), crashing, INTEGERS_ONLY), "evaluateAgreesWithDetail"));
+
+        assertSame(crash, fromDetail);
+        assertSame(crash, fromEvaluate);
+        assertSame(crash, afterDetailThrew);
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate alone throws an exception whose message can't be read fails the agreement"
+            + " check with the kit's message (#657)")
+    void onlyEvaluateThrowingUnreadableFails() {
+        ConditionPath unreadable = integersOnly(ContractKitChecksTest.Unreadable::new);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), unreadable, OWN), "evaluateAgreesWithDetail"));
+
+        assertEquals("for x = 1 (Long), evaluate threw, but evaluateWithDetail returned false ==> Unexpected exception"
+                + " thrown: " + ContractKitChecksTest.Unreadable.class.getName() + UNAVAILABLE, failure.getMessage());
+        assertInstanceOf(ContractKitChecksTest.Unreadable.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate alone throws fails the agreement check with the message and the cause it"
+            + " always had (#657)")
+    void onlyEvaluateThrowingReportedAsBefore() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), INTEGERS_ONLY, OWN), "evaluateAgreesWithDetail"));
+
+        assertEquals("for x = 1 (Long), evaluate threw, but evaluateWithDetail returned false ==> Unexpected exception"
+                + " thrown: java.lang.IllegalStateException: compares Integers only", failure.getMessage());
+        assertEquals("compares Integers only", failure.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose condition detail is its session, which can't be printed once closed, fails the"
+            + " detail check with the kit's message (#657)")
+    void unprintableSessionAsDetailFails() {
+        ExpressionLanguage language = explainedBy(withSessions(new ToyExpressionLanguage(), UnprintableOnceClosed::new),
+                (value, session) -> session);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionDetail"));
+
+        assertEquals("the condition's detail is the session it ran with, which the engine gives to another run or"
+                + " closes: " + UnprintableOnceClosed.class.getName() + UNAVAILABLE, failure.getMessage());
     }
 }
