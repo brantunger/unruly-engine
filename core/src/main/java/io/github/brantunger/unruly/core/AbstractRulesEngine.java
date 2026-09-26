@@ -788,7 +788,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (!listProblems.isEmpty()) {
             RuleCompilationException first = listProblems.get(0);
             log.error(first.getMessage());
-            throw first;
+            throw LoggedFailures.loggedByLoad(first);
         }
         Compilation compilation = new Compilation(true);
         RuleSet loaded;
@@ -830,10 +830,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param loaded The rule set, which no run can see yet
      * @throws RuleCompilationException if a language can't create or warm up a session: already logged, as
-     *                                  {@code load()} logs every failure
+     *                                  {@code load()} logs every failure, and recorded as logged, so a run around a
+     *                                  nested {@code load()} doesn't log it again, unless what it holds is a nested
+     *                                  run's or load's failure, which the code around names instead (see
+     *                                  {@link LoggedFailures})
      */
     // The cause is what the language threw, as when a language can't create its compiler: the ReportedFailure around
-    // it is the engine's own wrapper for a run, and was logged when it was made.
+    // it is the engine's own wrapper for a run, and was logged when it was made, or holds a failure that was.
     // Any Throwable: the rules must be closed however this ends, as a finally would, and a failure that isn't fatal is
     // kept under a fatal Error from closing.
     @SuppressWarnings("PMD.PreserveStackTrace")
@@ -842,6 +845,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             loaded.prepareCopies(copiesAtLoad);
         } catch (ReportedFailure e) {
             RuleCompilationException failure = new RuleCompilationException(e.getMessage(), e.getCause());
+            // Logged as the language's failure unless it held a nested run's or load's, which that one logged.
+            if (Failures.nestedRunFailure(e.getCause()) == null) {
+                LoggedFailures.loggedByLoad(failure);
+            }
             retireBefore(loaded, failure);
             throw failure;
         } catch (Throwable t) {
@@ -989,8 +996,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
          * Prepares a compilation with a compiler registry for the engine's languages.
          *
          * @param logged Whether each failure, and each warning a language reports, is logged: {@code load()} logs,
-         *               {@code validate()} doesn't. A failure a {@code run()} the language started reported isn't
-         *               logged either way: that run logged it.
+         *               {@code validate()} doesn't. A failure a {@code run()} or a {@code load()} the language
+         *               started reported isn't logged either way: that run or load logged it.
          */
         Compilation(boolean logged) {
             this.logged = logged;
@@ -1041,10 +1048,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             declaredNameFailures(used).forEach(this::failed);
         }
 
-        // A failed run() a language started while compiling or checking a name has already logged its failure.
+        // A failed run() or load() a language started while compiling or checking a name has already logged its
+        // failure. One logged here is recorded, so a run or load around this one's doesn't log it again.
         private void failed(RuleCompilationException failure) {
             if (logged && Failures.nestedRunFailure(failure) == null) {
                 log.error(failure.getMessage());
+                LoggedFailures.loggedByLoad(failure);
             }
             failures.add(failure);
         }
@@ -1106,16 +1115,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
         for (String name : values.keySet()) {
             if (name == null) {
-                String msg = "fact name must not be null";
-                log.error(msg);
-                throw new IllegalArgumentException(msg);
+                throw rejectedFact("fact name must not be null");
             }
             // Actions bind the output object to this name, silently hiding a fact of the same name.
             if (OUTPUT_KEYWORD.equals(name)) {
-                String msg = "'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as a "
-                        + "fact name";
-                log.error(msg);
-                throw new IllegalArgumentException(msg);
+                throw rejectedFact("'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as "
+                        + "a fact name");
             }
             IllegalArgumentException rejected = factNameRejection(name, checks, true);
             if (rejected != null) {
@@ -1124,6 +1129,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             checkDeclaredType(name, values.get(name));
         }
         checkNothingWasLeftOut(values);
+    }
+
+    /**
+     * Logs the failure of a run whose facts the engine rejects, and records it as logged, so the code around a nested
+     * run that rejects its facts doesn't log it again (see {@link LoggedFailures}).
+     *
+     * @param msg Why the facts were rejected
+     * @return The exception to throw
+     */
+    private static IllegalArgumentException rejectedFact(String msg) {
+        log.error(msg);
+        return LoggedFailures.loggedByRun(new IllegalArgumentException(msg));
     }
 
     /**
@@ -1146,8 +1163,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 .formatted(Failures.quote(name), declared.getName(), value.getClass().getName(),
                         primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
                                 ? " (" + Widening.ONLY_WIDENED + ")" : "");
-        log.error(msg);
-        throw new IllegalArgumentException(msg);
+        throw rejectedFact(msg);
     }
 
     /**
@@ -1164,18 +1180,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         for (String name : values.keySet()) {
             if (!declaredFacts.containsKey(name)) {
-                String msg = "Fact '%s' wasn't declared, and this engine was built with requireDeclaredFacts()"
-                        .formatted(Failures.quote(name));
-                log.error(msg);
-                throw new IllegalArgumentException(msg);
+                throw rejectedFact("Fact '%s' wasn't declared, and this engine was built with requireDeclaredFacts()"
+                        .formatted(Failures.quote(name)));
             }
         }
         for (String name : declaredFacts.keySet()) {
             if (!values.containsKey(name)) {
-                String msg = ("Fact '%s' was declared, but the run didn't supply it, and this engine was built with "
-                        + "requireDeclaredFacts()").formatted(Failures.quote(name));
-                log.error(msg);
-                throw new IllegalArgumentException(msg);
+                throw rejectedFact(("Fact '%s' was declared, but the run didn't supply it, and this engine was built "
+                        + "with requireDeclaredFacts()").formatted(Failures.quote(name)));
             }
         }
     }
@@ -1204,8 +1216,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
      * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
      * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, which is
-     * logged and rethrown. A failure of a {@code run()} the check started, and a fatal error that run logged, isn't
-     * logged a second time (see {@link LoggedFailures}).
+     * logged and rethrown. A failure of a {@code run()} or a {@code load()} the check started, and a fatal error that
+     * run logged, isn't logged a second time, and a rejection this logs is recorded as logged, so the code around a
+     * nested run doesn't log it again (see {@link LoggedFailures}).
      *
      * @param name   The fact's name
      * @param checks The compilers to check it with, by language name
@@ -1220,9 +1233,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             } catch (IllegalArgumentException e) {
                 // The language wrote this message and it names the fact, so it's escaped before it's logged. The
                 // exception is returned as it came, so a caller still reads exactly what the language said. A failed
-                // run() the check started has already logged its failure.
+                // run() or load() the check started has already logged its failure; the language's own instance is
+                // what's recorded as logged here.
                 if (logged && Failures.nestedRunFailure(e) == null) {
                     log.error(Failures.describe(e));
+                    LoggedFailures.loggedByRun(e);
                 }
                 return e;
             } catch (Throwable e) {
@@ -1230,11 +1245,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 String msg = "The '%s' expression language failed to check fact name '%s': %s"
                         .formatted(Failures.quote(check.getKey()), Failures.quote(name), Failures.describe(e));
                 Error fatal = Failures.fatalError(e);
-                if ((logged || fatal != null) && LoggedFailures.unlogged(e)) {
+                boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(e);
+                if (logs) {
                     log.error(msg);
                 }
                 Failures.throwIfPresent(fatal);
-                return new IllegalArgumentException(msg, e);
+                IllegalArgumentException rejected = new IllegalArgumentException(msg, e);
+                return logs ? LoggedFailures.loggedByRun(rejected) : rejected;
             }
         }
         return null;
@@ -1501,8 +1518,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                when it is the cause of what the factory throws; any other {@link Error}, and a
      *                                {@link Throwable} that is neither an exception nor an error, is wrapped like an
      *                                exception. A failure of a {@code run()} the factory started reads
-     *                                {@code Output factory threw: a nested run() failed: } and that run's innermost
-     *                                failure, and isn't logged again, as that run logged it; nor is a fatal error that
+     *                                {@code Output factory threw: a nested run() failed: } and the innermost failure
+     *                                that run logged, and one of a {@code load()} it started
+     *                                {@code Output factory threw: a nested load() failed: } and that load's failure;
+     *                                neither is logged again, as that run or load logged it; nor is a fatal error that
      *                                run logged (see {@link LoggedFailures}).
      */
     O createOutput(Supplier<O> outputFactory) {
@@ -1805,9 +1824,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Logs what a listener threw, where it isn't the error {@code run()} goes on to throw. A failure of a
-     * {@code run()} the listener started is described by that run's innermost failure only, as
-     * {@code a nested run() failed: ...}: that run logged it, naming it in full. The failure the callback
-     * told the listener of, rethrown or wrapped, isn't one: it's described with its class, as anything else is.
+     * {@code run()} or a {@code load()} the listener started is described by the innermost failure it logged only, as
+     * {@code a nested run() failed: ...} or {@code a nested load() failed: ...}: that run or load logged it, naming it
+     * in full. The failure the callback told the listener of, rethrown or wrapped, isn't one: it's described with its
+     * class, as anything else is.
      *
      * @param callback The callback the listener threw from
      * @param thrown   What it threw
@@ -1819,7 +1839,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // Escaped, like every message the engine logs: a listener's message can quote request data. The stack trace,
         // which prints the message as it is, goes to DEBUG for whoever debugs the listener; it's left out if printing
         // it throws, as a listener's own exception can.
-        RuleExecutionException nested = Failures.nestedRunFailure(thrown);
+        Throwable nested = Failures.nestedRunFailure(thrown);
         log.warn("Listener threw exception in {}: {}", callback,
                 nested != null && nested != Failures.nestedRunFailure(told)
                         ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
@@ -1864,8 +1884,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
-     * {@code before*} callback still gets a closing call. A failure of a {@code run()} the rule started isn't logged
-     * again, as that run logged it, nor is a fatal {@link Error} a run logged already (see {@link LoggedFailures}).
+     * {@code before*} callback still gets a closing call. A failure of a {@code run()} or a {@code load()} the rule
+     * started isn't logged again, as that run or load logged it, nor is a fatal {@link Error} a run logged already
+     * (see {@link LoggedFailures}).
      * An interrupt in {@code cause} sets the thread's interrupt status again. Returns the exception for the caller to
      * throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
@@ -1953,7 +1974,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * message counts rules when every failure is a rule's, and failures otherwise: a language that couldn't create its
      * compiler and a rejected declared fact name have no rule. It lists the first failure whole, and each next one
      * while the list stays within {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts the rest, which
-     * the exception's {@code failures()} still has. Every failure was logged when it happened.
+     * the exception's {@code failures()} still has. Every failure was logged when it happened, so the one exception
+     * for several is recorded as logged, and a run or load around a nested {@code load()} doesn't log it again (see
+     * {@link LoggedFailures}).
      *
      * @param failures The failures, in the order they were found
      * @throws RuleCompilationException if there are any
@@ -1962,7 +1985,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (failures.isEmpty()) {
             return;
         }
-        throw failures.size() == 1 ? failures.get(0) : combined(failures);
+        throw failures.size() == 1 ? failures.get(0) : LoggedFailures.loggedByLoad(combined(failures));
     }
 
     private static RuleCompilationException combined(List<RuleCompilationException> failures) {

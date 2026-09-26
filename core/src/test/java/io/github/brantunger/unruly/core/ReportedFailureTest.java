@@ -11,6 +11,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -105,6 +106,65 @@ class ReportedFailureTest {
         ReportedFailure outer = asOldForm(failure("outer", stop));
 
         assertTrue(Failures.nestedRunStopped(roundTrip(outer), null));
+    }
+
+    /**
+     * Builds a failure around one a nested {@code load()} logged and threw as is, while the thread's record of it
+     * lasts, as a rule whose action loads rules does.
+     *
+     * @param nested What the nested load threw
+     * @return The failure, built once the nested load has ended but not the run around it
+     */
+    private static ReportedFailure aroundNestedLoad(RuntimeException nested) {
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.loggedByLoad(nested);
+            } finally {
+                LoggedFailures.leave();
+            }
+            return failure("outer", failure("middle", nested));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("the failure a nested load() logged is named by what was recorded, after the run and serialization")
+    void loggedBelowSurvivesTheRunAndSerialization() throws Exception {
+        ReportedFailure top = aroundNestedLoad(new IllegalStateException("Duplicate rule name 'dup'"));
+
+        ReportedFailure copy = roundTrip(top);
+
+        assertEquals("a nested load() failed: Duplicate rule name 'dup'", Failures.describe(top));
+        assertEquals("a nested load() failed: Duplicate rule name 'dup'", Failures.describe(copy));
+        assertEquals("Duplicate rule name 'dup'", Failures.nestedRunFailure(copy).getMessage());
+    }
+
+    @Test
+    @DisplayName("failures serialized before they recorded what a nested load() logged are named by the innermost")
+    void oldFormsNameTheirInnermost() throws Exception {
+        ReportedFailure top = aroundNestedLoad(new IllegalStateException("Duplicate rule name 'dup'"));
+        asOldForm((ReportedFailure) top.getCause());
+
+        assertEquals("a nested run() failed: middle", Failures.describe(roundTrip(asOldForm(top))));
+    }
+
+    @Test
+    @DisplayName("failures serialized after they recorded the innermost but before what a load() logged name the "
+            + "innermost")
+    void formsFromBeforeLoggedBelowNameTheInnermost() throws Exception {
+        ReportedFailure top = aroundNestedLoad(new IllegalStateException("Duplicate rule name 'dup'"));
+        for (ReportedFailure failure : List.of(top, (ReportedFailure) top.getCause())) {
+            for (String name : List.of("loggedBelow", "loggedBelowByLoad")) {
+                Field field = ReportedFailure.class.getDeclaredField(name);
+                field.setAccessible(true);
+                field.set(failure, field.getType() == boolean.class ? Boolean.FALSE : null);
+            }
+        }
+
+        assertEquals("a nested run() failed: middle", Failures.describe(roundTrip(top)));
     }
 
     @Test
