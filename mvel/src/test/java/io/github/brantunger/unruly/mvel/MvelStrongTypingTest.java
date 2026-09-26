@@ -368,6 +368,22 @@ class MvelStrongTypingTest {
     }
 
     @Test
+    @DisplayName("a long declared fact's name and a long option's name are cut to 200 characters in their messages")
+    void longNamesShortened() {
+        assertCantApply(strongTyping(builder -> builder.fact("f".repeat(300), HashMap.class)), "output.score = 1",
+                "fact '" + "f".repeat(200) + "... (100 more characters)' is declared as java.util.HashMap, whose "
+                        + "members MVEL can't check");
+        RulesEngine<Decision> badKey = strongTyping(builder -> builder.option("mvel", "k".repeat(300), "true"))
+                .build();
+
+        String key = assertThrows(RuleCompilationException.class,
+                () -> badKey.load(List.of(rule("true", "output.score = 1")))).getMessage();
+
+        assertTrue(key.contains("MVEL has no option '" + "k".repeat(200) + "... (100 more characters)'; its only "
+                + "option is strongTyping"), key);
+    }
+
+    @Test
     @DisplayName("an option MVEL doesn't have fails load(), so a misspelled key isn't silently ignored")
     void anUnknownOptionFailsLoading() {
         RulesEngine<Decision> engine = strongTyping(builder -> builder.option("mvel", "strongTypng", "true")).build();

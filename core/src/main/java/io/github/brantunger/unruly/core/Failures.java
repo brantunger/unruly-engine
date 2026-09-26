@@ -36,6 +36,17 @@ public final class Failures {
     /** How many links of an exception's cause chain the engine reads; see {@link #causeChain}. */
     static final int MAX_CAUSE_CHAIN_LENGTH = 100;
 
+    /**
+     * The {@code Default_Ignorable_Code_Point} characters of Unicode's {@code DerivedCoreProperties.txt} (the same in
+     * Unicode 15.0 to 17.0) that aren't format characters, as the first and last code point of each range, in order:
+     * fillers, marks such as the variation selectors, and the unassigned code points kept for more of them. U+180E and
+     * the tag characters in U+E0000..U+E0FFF are format characters, which are escaped anyway; see {@link #escape}.
+     */
+    private static final int[] OTHER_DEFAULT_IGNORABLE = {
+        0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
+        0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
+    };
+
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
     private Failures() {
@@ -194,21 +205,27 @@ public final class Failures {
             return "a nested run() failed: " + messageOf(nested);
         }
         String text = escape(truncate(messageOr(e, e.getClass().getName())));
-        return text + causeNote(causeChain(e));
+        return text + causeNote(causeChain(e), readableMessage(e));
     }
 
     /**
      * Names the root cause when a description would otherwise hide it: its class when it has no message, and its class
-     * and message when an exception above it has none and the first exception's message doesn't already include it.
-     * A message that can't be read (see {@link #messageOf}) hides the root cause as a missing one does, and a root
-     * cause whose message can't be read is named with the note that it's unavailable. Only a first exception whose
-     * message can be read can already include the root cause's: two notes that messages are unavailable read the same
-     * whatever the messages were.
+     * and message when an exception above it has none, unless the part of the first exception's text that the
+     * description shows already has it: the first message for {@link #describe}, its {@code toString()} for
+     * {@link #describeWithClass}. That part is the text's first {@value #MAX_DESCRIPTION_LENGTH} characters as
+     * {@link #truncate} keeps them, searched raw, without {@link #truncate}'s note of what was left out: a root cause's
+     * message found only past the cut isn't shown, and searching all of a long text took time that grew with the
+     * square of its length. A message that can't be read (see {@link #messageOf})
+     * hides the root cause as a missing one does, and a root cause whose message can't be read is named with the note
+     * that it's unavailable. Only a text that can be read can already show the root cause's message: two notes that
+     * messages are unavailable read the same whatever the messages were.
      *
      * @param chain An exception and its causes
+     * @param text  The text the description shows of the first exception, whole, or {@code null} if it shows none
+     *              that can be read: {@link #describe}'s message, or {@link #describeWithClass}'s {@code toString()}
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
      */
-    private static String causeNote(List<Throwable> chain) {
+    private static String causeNote(List<Throwable> chain, @Nullable String text) {
         if (chain.subList(1, chain.size()).isEmpty()) {
             return "";
         }
@@ -217,9 +234,11 @@ public final class Failures {
         if (rootMessage == null) {
             return " (caused by " + quote(root.getClass().getName()) + ")";
         }
-        String first = readableMessage(chain.get(0));
+        // The kept characters themselves, not truncate()'s text, whose note of what was left out could match.
+        String shown = text == null || text.length() <= MAX_DESCRIPTION_LENGTH
+                ? text : text.substring(0, keptLength(text, MAX_DESCRIPTION_LENGTH));
         boolean hidden = !chain.stream().allMatch(t -> readableMessage(t) != null)
-                && (first == null || !first.contains(rootMessage));
+                && (shown == null || !shown.contains(rootMessage));
         return hidden
                 ? " (caused by " + quote(root.getClass().getName()) + ": " + escape(truncate(rootMessage)) + ")"
                 : "";
@@ -227,19 +246,23 @@ public final class Failures {
 
     /**
      * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
-     * calls outside any rule, such as the output factory: escaped and shortened like {@link #describe}, and naming a
-     * root cause it would otherwise hide as {@link #describe} does. The note is left out when the text already has it,
-     * as the message of a {@code run()} started from that code does unless it was shortened, so it isn't there twice.
-     * When {@code toString()} throws, its class name stands in with a note that its message is unavailable (see
-     * {@link #textOf}).
+     * calls outside any rule, such as the output factory: shortened to {@value #MAX_DESCRIPTION_LENGTH} characters,
+     * then escaped, like {@link #describe}, and naming a root cause it would otherwise hide as {@link #describe} does.
+     * The root cause counts as shown only when the part of the {@code toString()} this shows, its first
+     * {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #truncate} keeps them, has its message, so neither a class
+     * name that pushes the message past the cut nor a {@code toString()} that leaves the message out hides it. The
+     * note is left out when the text already has it, as the message of a {@code run()} started from that code does
+     * unless it was shortened, so it isn't there twice. When {@code toString()} throws, its class name stands in with a
+     * note that its message is unavailable (see {@link #textOf}), which shows no root cause.
      *
      * @param e The exception to describe
-     * @return Its class name, its message if it has one, and a note of its root cause if the message hides it and the
-     *         text doesn't already have that note
+     * @return Its class name, its message if it has one, and a note of its root cause if the text hides it and doesn't
+     *         already have that note
      */
     static String describeWithClass(Throwable e) {
-        String text = escape(truncate(textOf(e)));
-        String note = causeNote(causeChain(e));
+        String readable = read(e::toString, thrown -> null);
+        String text = escape(truncate(readable != null ? readable : textOf(e)));
+        String note = causeNote(causeChain(e), readable);
         return text.contains(note) ? text : text + note;
     }
 
@@ -443,13 +466,13 @@ public final class Failures {
     }
 
     /**
-     * Makes a fact, rule or language name safe to put in a message the engine logs: {@link #escape escaped}, and
-     * shortened to {@value #MAX_NAME_LENGTH} characters, or one fewer where the limit falls inside a surrogate pair,
-     * which is left out whole. {@code mvel.FactNames} keeps a copy of this, because the {@code mvel} package may not
-     * use this one.
+     * Makes a fact, rule or language name safe to put in a message the engine logs: shortened to
+     * {@value #MAX_NAME_LENGTH} characters (UTF-16 units), then {@link #escape escaped}; each escaped unit shows as 2
+     * or 6 characters. The name keeps one fewer where the limit falls inside a surrogate pair, which is left out whole.
+     * {@code mvel.FactNames} keeps a copy of this, because the {@code mvel} package may not use this one.
      *
      * @param name The name
-     * @return The name, escaped and shortened if it was longer
+     * @return The name, shortened if it was longer, then escaped
      */
     public static String quote(String name) {
         return escape(shorten(name));
@@ -477,7 +500,8 @@ public final class Failures {
      * notes of what was left out of each, and the separators.
      *
      * @param names The names; a {@code null} one is shown as {@code null}
-     * @return The list, escaped and shortened
+     * @return The list, its names shortened to {@value #MAX_NAME_LENGTH} characters and it to
+     *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
      */
     public static String quoteAll(Collection<? extends @Nullable String> names) {
         return escape(truncate(names.stream().map(name -> name == null ? "null" : shorten(name))
@@ -486,16 +510,20 @@ public final class Failures {
 
     /**
      * Makes text the engine didn't write safe to put in a message it logs, without shortening it. Line breaks, tabs
-     * and other control characters, including the Unicode line and paragraph separators, are escaped ({@code \n},
+     * and other control characters, and the Unicode line and paragraph separators, are escaped ({@code \n},
      * {@code \r}, {@code \t}, or a backslash, {@code u} and four hex digits), so neither a name nor a fact value that
      * reached the message from request data can start a log line of its own. So are the Unicode format characters
      * (category Cf), such as bidi controls and zero-width and tag characters, which could reorder the rest of a line in
-     * a viewer or make two different names look the same. A format character outside the Basic Multilingual Plane is
-     * escaped as its two UTF-16 units, each a backslash, {@code u} and four hex digits.
+     * a viewer or make two different names look the same, and the other characters Unicode marks
+     * {@code Default_Ignorable_Code_Point}, which a viewer shows as nothing, such as the Hangul fillers, the combining
+     * grapheme joiner, variation selectors and the code points kept unassigned for more of them. An escaped character
+     * outside the Basic Multilingual Plane, such as a tag character or a variation selector from U+E0100, is escaped as
+     * its two UTF-16 units, each a backslash, {@code u} and four hex digits.
      *
      * <p>
-     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control or format
-     * character, so a caller that can't tell whether a message has been through here may escape it again.
+     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control, format or
+     * default-ignorable character, so a caller that can't tell whether a message has been through here may escape it
+     * again.
      * </p>
      *
      * <p>
@@ -505,8 +533,8 @@ public final class Failures {
      * </p>
      *
      * @param text The text
-     * @return The text, with every character that could start a line, every format character and every lone
-     *         surrogate escaped
+     * @return The text, with every character that could start a line, every format or other default-ignorable
+     *         character and every lone surrogate escaped
      */
     public static String escape(String text) {
         StringBuilder escaped = new StringBuilder(text.length());
@@ -522,7 +550,7 @@ public final class Failures {
                     // The loop reads code points, so only a lone surrogate has the type SURROGATE.
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
                             || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                            || type == Character.SURROGATE) {
+                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)) {
                         for (char unit : Character.toChars(c)) {
                             appendEscape(escaped, unit);
                         }
@@ -533,6 +561,27 @@ public final class Failures {
             }
         }
         return escaped.toString();
+    }
+
+    /**
+     * Tells whether a code point is one of Unicode's {@code Default_Ignorable_Code_Point} characters that isn't a
+     * format character, which {@code Character} has no test for: the ranges of {@link #OTHER_DEFAULT_IGNORABLE}.
+     * {@code mvel.FactNames} keeps a copy of this.
+     *
+     * @param c The code point
+     * @return {@code true} if a viewer shows it as nothing
+     */
+    private static boolean isOtherDefaultIgnorable(int c) {
+        // The ranges are in order, so a code point below the next one, as ASCII is below the first, is none of them.
+        for (int i = 0; i < OTHER_DEFAULT_IGNORABLE.length; i += 2) {
+            if (c < OTHER_DEFAULT_IGNORABLE[i]) {
+                return false;
+            }
+            if (c <= OTHER_DEFAULT_IGNORABLE[i + 1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

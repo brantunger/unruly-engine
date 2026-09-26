@@ -87,8 +87,8 @@ public final class EngineRunContext implements RunContext {
 
     /**
      * Describes the run without its facts, such as {@code RunContext(runId=3, parent=2, matchPolicy=allMatches,
-     * ruleSetChecksum=9f2c..., tags=[eu, retail], startedAt=2027-06-01T00:00:00Z)}. The tags are escaped and
-     * shortened as the engine's error messages show names.
+     * ruleSetChecksum=9f2c..., tags=[eu, retail], startedAt=2027-06-01T00:00:00Z)}. The tags are shortened
+     * to 200 characters, then escaped, as the engine's error messages show names.
      *
      * @return The description
      */

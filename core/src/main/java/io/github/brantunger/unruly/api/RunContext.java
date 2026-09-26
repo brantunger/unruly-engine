@@ -23,7 +23,7 @@ import java.util.Set;
  * <b>Identity:</b> a context equals only itself, so it can key a map from {@code beforeRun} to {@code afterRun} or
  * {@code onRunError}, however the facts change during the run and whatever another engine's runs look like. Its
  * {@code toString()} names the run, its parent, the match policy, the checksum, the tags and when the run started,
- * never the facts; the tags are escaped and shortened as the engine's error messages show names.
+ * never the facts; the tags are shortened to 200 characters, then escaped, as the engine's error messages show names.
  * </p>
  *
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md">Listeners &amp;
