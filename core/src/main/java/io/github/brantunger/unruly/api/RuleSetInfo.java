@@ -70,10 +70,12 @@ public final class RuleSetInfo {
      * {@link Rule#getValidTo() validTo} as ISO-8601 text in UTC, as {@link Instant#toString()} writes them, such as
      * {@code 2027-06-01T00:00:00Z}; and its tags. Each value is written as its length in bytes, as four bytes most
      * significant first, followed by its UTF-8 bytes; a {@code null} priority, validFrom or validTo is written as the
-     * length {@code -1}. The tags are written as how many there are, as four bytes, followed by each tag as a value, in
-     * the order of their UTF-8 bytes compared as unsigned numbers. A rule's description isn't included, because it
-     * doesn't affect what the rules do, so editing it doesn't change the checksum. Another system can compute the same
-     * value from the same rules.
+     * length {@code -1}. A lone surrogate, which UTF-8 can't encode, is written as its three-byte form, as WTF-8 does.
+     * U+D800, for example, is ED A0 80, and a high surrogate followed by a low one is one character, in four bytes.
+     * The tags are written as how many there are, as four bytes, followed by each tag as a value, in the order of
+     * their bytes compared as unsigned numbers. A rule's description isn't included, because it doesn't affect what
+     * the rules do, so editing it doesn't change the checksum. Another system can compute the same value from the same
+     * rules.
      * </p>
      *
      * @return The checksum; for an empty rule list, the SHA-256 of no bytes
