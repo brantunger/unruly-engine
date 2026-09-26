@@ -125,11 +125,15 @@ language. Extend it and supply expressions in your language, one method for each
 `usableFactNamesAccepted` runs each name `usableFactNames()` returns through `factEquals` and `putFact`. Return the
 names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
-Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())`,
-with no imports, options or declared facts, so the language must work alone, and closes the engine when the check
-ends, whether it passes or fails. `copiesAtLoad` and `sessionsClosed` add `copiesAtLoad(2)`, and `compilerClosed`,
-`sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions. `factValue(x)` must not
-coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or `Double` whole numbers pass.
+Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
+[`configure(builder)`](#a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
+closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, and
+`compilerClosed`, `sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions.
+`factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
+`Double` whole numbers pass.
+
+`compilerClosed`, `sessionsClosed` and `evaluateAgreesWithDetail` show a session or exception whose `toString()` or
+`getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
 
 The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
 decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
@@ -146,14 +150,44 @@ the condition when it compiles, or the condition may fail when it runs, for exam
 `facts()`, or by evaluating to the assigned value, which isn't a boolean. A condition that assigns and evaluates to
 `true` or `false` without throwing fails the check.
 
-`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and evaluates it in a session
-of its own. The engine calls only `evaluateWithDetail`, so without this check an `evaluate` that returned the wrong
-value would pass every other check, and a condition that wraps yours would still see it. A language that doesn't
-override `evaluateWithDetail` passes: the default returns what `evaluate` does.
+`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
+evaluates it in a session of its own. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
+that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
+language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
+
+In the table, "both throw" means an exception or a non-fatal `Error`, such as `StackOverflowError`, from each. A
+fatal one, a `VirtualMachineError` other than `StackOverflowError`, is thrown on unchanged. Anything else a
+`close()` throws passes: `sessionsClosed` and `compilerClosed` own that.
 
 `evaluateAgreesWithDetail` tries whole numbers of four types, because an `evaluate` that compares by type and an
 `evaluateWithDetail` that compares by value agree for an `Integer` fact and disagree for a `Long`, `Short` or
 `BigDecimal` one.
+
+### A language that needs declared facts, imports or options
+
+Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
+the same. The checks' expressions read `x`, `y`, `applicant` and the names `usableFactNames()` returns. `x` is also a
+`Boolean`, a `String` and `null`, and `applicant` a record, a bean and a map, so declare both as `Object`: a fact
+that isn't its declared type fails the run before your language evaluates anything.
+
+```java
+@Override
+protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+    builder.fact("x", Object.class).fact("y", Object.class).fact("applicant", Object.class);
+}
+
+@Override
+protected CompileContext compileContext() {
+    return LanguageTestContexts.compile(Set.of(), Set.of(), getClass().getClassLoader(), Object.class, Map.of(),
+            Map.of("x", Object.class, "y", Object.class, "applicant", Object.class), false);
+}
+```
+
+`configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
+`runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
+checks could fail for reasons unrelated to your language. Nor may it declare the `unusableFactName()` name: `load()`
+checks declared names with your language, which rejects it. A `copiesAtLoad` it sets doesn't change the two checks
+that set their own.
 
 ### Upgrading from 2.6
 
@@ -189,9 +223,9 @@ cancelling its runtime for the deadline turns each timeout into an interrupt. An
 cancelled it, so an interrupt that lands as the adapter cancels for the deadline is lost, and the run reports the
 timeout.
 
-**The `CompileContext`.** Every check compiles with an empty `CompileContext`, through an engine or, in
-`evaluateAgreesWithDetail`, through `LanguageTestContexts.compile()`, so a language that ignores imports, options,
-declared facts and the output type passes. Test what your language does with each of them yourself;
+**The `CompileContext`.** Every check compiles with the context `configure` or `compileContext()` gives, empty by
+default, so a language that ignores imports, options, declared facts and the output type passes. Test what your
+language does with each of them yourself;
 [Implementing the interfaces](custom.md#-implementing-the-interfaces) says what the context carries.
 
 `LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or a compiled
