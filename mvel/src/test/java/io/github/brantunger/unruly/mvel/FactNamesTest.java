@@ -22,6 +22,12 @@ class FactNamesTest {
     /** What GraalVM sets to tell code it is running in an image, which the check reads instead of the GraalVM SDK. */
     private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
 
+    /**
+     * {@code FactNames.MAX_CACHED_MISS_LENGTH}, written out so these tests also run on a check that has no such limit;
+     * {@code FactNamesMissCacheTest} asserts the two agree.
+     */
+    static final int LONGEST_CACHED_MISS = 255;
+
     private static FactNames javaUtil(ClassLoader loader) {
         return new FactNames(new Imports(Set.of("java.util"), Set.of(), loader));
     }
@@ -105,6 +111,32 @@ class FactNamesTest {
 
         assertEquals(2, Collections.frequency(loader.resources, "java/util/name0.class"),
                 "the full cache was cleared, so name0 is looked up again");
+    }
+
+    @Test
+    @DisplayName("a name longer than the longest cached one is looked up every time, so it isn't kept")
+    void longMissNotCached() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtil(loader);
+        String name = "x".repeat(LONGEST_CACHED_MISS + 1);
+
+        names.check(name);
+        names.check(name);
+
+        assertEquals(2, Collections.frequency(loader.resources, "java/util/" + name + ".class"));
+    }
+
+    @Test
+    @DisplayName("a name as long as the longest cached one is still cached")
+    void missAtLengthLimitCached() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtil(loader);
+        String name = "x".repeat(LONGEST_CACHED_MISS);
+
+        names.check(name);
+        names.check(name);
+
+        assertEquals(1, Collections.frequency(loader.resources, "java/util/" + name + ".class"));
     }
 
     @Test

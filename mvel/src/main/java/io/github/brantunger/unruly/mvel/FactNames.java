@@ -24,9 +24,14 @@ final class FactNames {
 
     /**
      * How many names that aren't classes are remembered. The cache is cleared when it is full, because fact names
-     * can be unbounded (IDs, JSON keys) and must not grow it forever.
+     * can be unbounded (IDs, JSON keys) and must not grow it forever. It only saves looking a name up in the imported
+     * packages, so with none imported nothing is remembered, and a name longer than {@value #MAX_CACHED_MISS_LENGTH}
+     * characters isn't either, so the memory it holds is bounded as well as its count.
      */
     static final int MAX_CACHED_MISSES = 4096;
+
+    /** The longest name, in characters (UTF-16 units), that is remembered as not being a class. */
+    static final int MAX_CACHED_MISS_LENGTH = 255;
 
     // The longest part of a fact name a message shows, as in the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
@@ -172,6 +177,9 @@ final class FactNames {
     }
 
     private boolean isPackageClass(String name) {
+        if (packages.isEmpty()) {
+            return false;
+        }
         if (packageClassNames.contains(name)) {
             return true;
         }
@@ -184,11 +192,23 @@ final class FactNames {
                 return true;
             }
         }
+        if (name.length() > MAX_CACHED_MISS_LENGTH) {
+            return false;
+        }
         if (misses.size() >= MAX_CACHED_MISSES) {
             misses.clear();
         }
         misses.add(name);
         return false;
+    }
+
+    /**
+     * Tells how many names that aren't classes are remembered, for tests.
+     *
+     * @return The number of names in the cache
+     */
+    int cachedMisses() {
+        return misses.size();
     }
 
     /**
