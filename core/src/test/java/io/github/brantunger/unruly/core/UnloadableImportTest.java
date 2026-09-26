@@ -28,7 +28,8 @@ class UnloadableImportTest {
      * {@code p.a} finds {@code A}'s class file, as a class directory on a case-insensitive file system does. And
      * {@code p.D}, whose error text has a line break and a bidi control; {@code p.E}, whose error text is long;
      * {@code p.F}, whose error text has line breaks where it is cut; and {@code p.G}, whose error has no message and
-     * a cause that has one.
+     * a cause that has one. And {@code p.X\nforged}, whose name has a line break, and {@code p.q},
+     * whose linkage error isn't a {@link NoClassDefFoundError} but has a "wrong name" text.
      */
     private static final ClassLoader LOADER = new ClassLoader(UnloadableImportTest.class.getClassLoader()) {
         @Override
@@ -43,6 +44,8 @@ class UnloadableImportTest {
                 case "p.F" -> throw new NoClassDefFoundError(BREAKS_AT_LIMIT);
                 case "p.G" -> throw (NoClassDefFoundError) new NoClassDefFoundError()
                         .initCause(new ClassNotFoundException("p.Base"));
+                case "p.X\nforged" -> throw new NoClassDefFoundError("dependency/Missing");
+                case "p.q" -> throw new IncompatibleClassChangeError("p/q (wrong name: p/Q)");
                 default -> {
                     return super.loadClass(name, resolve);
                 }
@@ -88,6 +91,30 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.a");
 
         assertDoesNotThrow(() -> withContextClassLoader(builder::build));
+    }
+
+    @Test
+    @DisplayName("only a NoClassDefFoundError with a \"wrong name\" text is taken for a package import")
+    void wrongNameOfAnotherLinkageErrorRejected() {
+        RulesEngineBuilder<Map<String, Object>> builder = importing("p.q");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> withContextClassLoader(builder::build));
+
+        assertEquals("Can't import 'p.q': the class exists but can't be loaded: "
+                + "java.lang.IncompatibleClassChangeError: p/q (wrong name: p/Q)", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("the import's name is escaped in the message, so it can't start a log line of its own")
+    void importNameEscaped() {
+        RulesEngineBuilder<Map<String, Object>> builder = importing("p.X\nforged");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> withContextClassLoader(builder::build));
+
+        assertEquals("Can't import 'p.X\\nforged': the class exists but can't be loaded: "
+                + "java.lang.NoClassDefFoundError: dependency/Missing", ex.getMessage());
     }
 
     @Test

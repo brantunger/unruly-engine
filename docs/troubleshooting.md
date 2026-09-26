@@ -103,7 +103,7 @@ the rule's `isEnabled()`, `getValidFrom()`, `getValidTo()` and `getTags()` with 
 ## 🔧 An exception from build()
 
 Most of these are `IllegalStateException` from `build()`. The two that start with `Two expression languages` and
-`An expression language's name` are `IllegalArgumentException` from `language(...)`, and the two about imports are
+`An expression language's name` are `IllegalArgumentException` from `language(...)`, and those about imports are
 `IllegalArgumentException` from `build()`.
 
 | Message starts with | Cause | Fix |
@@ -117,7 +117,7 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 | `The expression language ... found with ServiceLoader has a null or blank name` | A language jar on the class path has no name | [Exceptions by method](exceptions-by-method.md) |
 | `The expression languages ... found with ServiceLoader are both named '` | Two language jars on the class path use the same name | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `'...' is neither a class nor a valid package name` | An import such as `"java.util."` | [Classes and imports](languages/mvel.md#-classes-and-imports) |
-| `Can't import '...': the class exists but can't be loaded` | An imported class depends on a class missing from the class path | [Classes and imports](languages/mvel.md#-classes-and-imports) |
+| `Can't import '...'` | The import is over 1,000 characters or 64 dot-separated parts, or names a class missing a dependency | [Classes and imports](languages/mvel.md#-classes-and-imports) |
 
 A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted by `build()` and `load()`. In MVEL,
 a rule that uses a class from it fails at `run()` as if the import were missing: `could not resolve class` for a class

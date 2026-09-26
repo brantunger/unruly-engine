@@ -11,6 +11,20 @@ final class ImportResolver {
     @SuppressWarnings("PMD.UseProperClassLoader")
     static final ClassLoader LIBRARY_CLASS_LOADER = ImportResolver.class.getClassLoader();
 
+    /**
+     * The most characters an import string may have. A longer one is rejected before it is looked up as a class, as
+     * a parallel-capable class loader, such as the JDK's application class loader, keeps an object for each name it is
+     * asked for, for as long as it lives.
+     */
+    static final int MAX_IMPORT_LENGTH = 1_000;
+
+    /**
+     * The most dot-separated parts an import string may have. A name that isn't a class is looked up again with each
+     * dot from the right replaced by {@code $}, and a language such as MVEL looks up each name a rule uses in each
+     * imported package the same way, so the work grows with the number of parts.
+     */
+    static final int MAX_IMPORT_PARTS = 64;
+
     private ImportResolver() {
     }
 
@@ -22,13 +36,16 @@ final class ImportResolver {
      *
      * @param name An import string given to the builder
      * @return The class, or {@code null} if {@code name} is a package name
-     * @throws IllegalArgumentException if {@code name} is neither a loadable class nor a valid package name, or names a
-     *                                  class that exists but can't be loaded, for example because a class it depends
+     * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more
+     *                                  than {@value #MAX_IMPORT_PARTS} dot-separated parts, checked before it is
+     *                                  looked up; if it is neither a loadable class nor a valid package name, or names
+     *                                  a class that exists but can't be loaded, for example because a class it depends
      *                                  on is missing. The linkage error's text is cut to at most 1,000 characters,
      *                                  with a note of how many were left out, then escaped, as the application's own
      *                                  class loader may have written it, and a root cause it hides is named
      */
     static Class<?> resolve(String name) {
+        checkSize(name);
         try {
             return loadImport(name, contextClassLoader());
         } catch (ClassNotFoundException e) {
@@ -42,6 +59,24 @@ final class ImportResolver {
                         + Failures.describeWithClass(e), e);
             }
             return packageImport(name, e);
+        }
+    }
+
+    /**
+     * Rejects an import string too long, or with too many parts, to look up, before any class loader sees it.
+     *
+     * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more
+     *                                  than {@value #MAX_IMPORT_PARTS} dot-separated parts
+     */
+    private static void checkSize(String name) {
+        if (name.length() > MAX_IMPORT_LENGTH) {
+            throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + name.length()
+                    + " characters, and an import may have at most " + MAX_IMPORT_LENGTH);
+        }
+        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        if (parts > MAX_IMPORT_PARTS) {
+            throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + parts
+                    + " dot-separated parts, and an import may have at most " + MAX_IMPORT_PARTS);
         }
     }
 
