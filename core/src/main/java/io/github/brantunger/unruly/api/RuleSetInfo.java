@@ -93,7 +93,8 @@ public final class RuleSetInfo {
 
     /**
      * Describes the rule set, such as {@code RuleSetInfo(rules=[prime-rate], checksum=9f2c...,
-     * loadedAt=2027-06-01T00:00:00Z)}. Rule names are escaped and shortened as the engine's error messages show them.
+     * loadedAt=2027-06-01T00:00:00Z)}. Rule names are shortened to 200 characters, then escaped, as the engine's error
+     * messages show them.
      *
      * @return The description
      */

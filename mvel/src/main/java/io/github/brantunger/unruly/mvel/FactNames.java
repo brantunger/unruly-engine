@@ -31,6 +31,13 @@ final class FactNames {
     // The longest part of a fact name a message shows, as in the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
 
+    // The default-ignorable code points that aren't format characters, as in the engine's escaping: the first and
+    // last code point of each range, in order.
+    private static final int[] OTHER_DEFAULT_IGNORABLE = {
+        0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
+        0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
+    };
+
     private static final Set<String> RESERVED = reservedWords();
 
     private final Set<String> importedClassNames;
@@ -71,14 +78,15 @@ final class FactNames {
     }
 
     /**
-     * Escapes and shortens a fact name for a message, as the engine's {@code core.Failures.quote} does, which the
-     * {@code mvel} package may not use. {@code FactNamesQuoteTest} and {@code QuoteCopiesTest} run the same cases on
-     * both, so the two can't drift apart. Fact names can
-     * come from request data, and the engine logs these messages, so a line break in a name mustn't start a log line.
-     * Only a name that isn't an identifier can contain one. Format characters, such as bidi controls and zero-width
-     * characters, which an identifier can contain too, are escaped as well, and so is a lone surrogate, which a
-     * logger's encoder would write as {@code ?}. A name is never shortened inside a surrogate pair. MVEL's messages
-     * about its options show the option's name and value this way too.
+     * Shortens a fact name to {@value #MAX_NAME_LENGTH} characters (UTF-16 units), then escapes it, for a message, as
+     * the engine's {@code core.Failures.quote} does, which the {@code mvel} package may not use; each escaped unit
+     * shows as 2 or 6 characters. {@code FactNamesQuoteTest} and {@code QuoteCopiesTest} run the same cases on both, so
+     * the two can't drift apart. Fact names can come from request data, and the engine logs these messages, so a line
+     * break in a name mustn't start a log line. Only a name that isn't an identifier can contain one. Format
+     * characters, such as bidi controls and zero-width characters, and the other characters a viewer shows as nothing,
+     * such as the Hangul fillers and variation selectors, which an identifier can contain too, are escaped as well, and
+     * so is a lone surrogate, which a logger's encoder would write as {@code ?}. A name is never shortened inside a
+     * surrogate pair. MVEL's messages about its options show the option's name and value this way too.
      */
     static String quote(String name) {
         int shown = Math.min(name.length(), MAX_NAME_LENGTH);
@@ -94,8 +102,10 @@ final class FactNames {
 
     /**
      * Escapes text for a message, as the engine's {@code core.Failures.escape} does, without shortening it: line
-     * breaks, tabs and other control characters, format characters and lone surrogates. A backslash isn't escaped, so
-     * escaping text again, as the engine does the whole message it reports, changes nothing.
+     * breaks, tabs and other control characters, the Unicode line and paragraph separators, format and other
+     * default-ignorable characters, and lone surrogates; one outside the Basic Multilingual Plane as its two UTF-16
+     * units. A backslash isn't escaped, so escaping text again, as the engine does the whole message it reports,
+     * changes nothing.
      *
      * @param text The text
      * @return The text, escaped
@@ -114,7 +124,7 @@ final class FactNames {
                     // The loop reads code points, so only a lone surrogate has the type SURROGATE.
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
                             || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                            || type == Character.SURROGATE) {
+                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)) {
                         for (char unit : Character.toChars(c)) {
                             appendEscape(escaped, unit);
                         }
@@ -125,6 +135,26 @@ final class FactNames {
             }
         }
         return escaped.toString();
+    }
+
+    /**
+     * Tells whether a code point is a default-ignorable one that isn't a format character, as the engine's
+     * {@code core.Failures.isOtherDefaultIgnorable} does.
+     *
+     * @param c The code point
+     * @return {@code true} if a viewer shows it as nothing
+     */
+    private static boolean isOtherDefaultIgnorable(int c) {
+        // The ranges are in order, so a code point below the next one, as ASCII is below the first, is none of them.
+        for (int i = 0; i < OTHER_DEFAULT_IGNORABLE.length; i += 2) {
+            if (c < OTHER_DEFAULT_IGNORABLE[i]) {
+                return false;
+            }
+            if (c <= OTHER_DEFAULT_IGNORABLE[i + 1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

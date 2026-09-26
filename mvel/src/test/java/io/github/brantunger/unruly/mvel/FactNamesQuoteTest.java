@@ -18,12 +18,16 @@ class FactNamesQuoteTest {
     }
 
     @Test
-    @DisplayName("format characters, such as bidi controls and zero-width and tag characters, are escaped")
+    @DisplayName("format characters, such as bidi controls and zero-width and tag characters, and the other characters "
+            + "a viewer shows as nothing, such as fillers and variation selectors, are escaped")
     void formatCharactersEscaped() {
         String name = "a" + (char) 0x202e + "b" + (char) 0x200b + "c" + (char) 0x200d + "d" + (char) 0xfeff + "e"
                 + Character.toString(0xE0041);
+        String invisible = "a" + (char) 0x3164 + "b" + (char) 0x034f + "c" + (char) 0xfe0f + "d" + (char) 0x2065 + "e"
+                + (char) 0xfff0 + "f" + Character.toString(0xE0100);
 
         assertEquals("a\\u202eb\\u200bc\\u200dd\\ufeffe\\udb40\\udc41", FactNames.quote(name));
+        assertEquals("a\\u3164b\\u034fc\\ufe0fd\\u2065e\\ufff0f\\udb40\\udd00", FactNames.quote(invisible));
     }
 
     @Test
@@ -77,5 +81,18 @@ class FactNamesQuoteTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> names.check(reserved));
 
         assertTrue(ex.getMessage().startsWith("'empty' cannot be used as a fact name"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a Hangul filler at the end of a fact name is escaped, so the name can't read as one without it")
+    void hangulFillerInFactNameEscaped() {
+        FactNames names = new FactNames(new Imports(java.util.Set.of(), java.util.Set.of(),
+                FactNamesQuoteTest.class.getClassLoader()));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> names.check("a-" + (char) 0x3164));
+
+        assertEquals("'a-\\u3164' is not a valid fact name: rules can only refer to a fact named with a Java "
+                + "identifier", ex.getMessage());
     }
 }

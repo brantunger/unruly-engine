@@ -132,8 +132,8 @@ public final class RunOptions {
     }
 
     /**
-     * Describes the options, such as {@code RunOptions(timeout=PT2S, tags=[eu, retail])}. Tags are escaped and
-     * shortened as the engine's error messages show names.
+     * Describes the options, such as {@code RunOptions(timeout=PT2S, tags=[eu, retail])}. Tags are shortened to
+     * 200 characters, then escaped, as the engine's error messages show names.
      *
      * @return The description
      */

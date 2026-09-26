@@ -82,7 +82,10 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
         return Collections.unmodifiableMap(facts).entrySet();
     }
 
-    /** Rejects a write, naming the variable, escaped and shortened as the engine's messages show names. */
+    /**
+     * Rejects a write, naming the variable, shortened to 200 characters, then escaped, as the engine's messages show
+     * names.
+     */
     @Override
     public Object put(String key, Object value) {
         throw new UnsupportedOperationException(writeError.formatted(Failures.quote(String.valueOf(key))));

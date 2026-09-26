@@ -6,6 +6,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.BitSet;
 import java.util.List;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -21,6 +22,40 @@ import static org.junit.jupiter.api.Assertions.*;
 class QuoteCopiesTest {
 
     private static final int MAX_NAME_LENGTH = 200;
+
+    /**
+     * The code points with Unicode's {@code Default_Ignorable_Code_Point} property, which a viewer shows as nothing,
+     * as {@code DerivedCoreProperties.txt} lists them (the same in Unicode 15.0 to 17.0), one line or range a line.
+     */
+    private static final String DEFAULT_IGNORABLE = """
+            00AD
+            034F
+            061C
+            115F..1160
+            17B4..17B5
+            180B..180D
+            180E
+            180F
+            200B..200F
+            202A..202E
+            2060..2064
+            2065
+            2066..206F
+            3164
+            FE00..FE0F
+            FEFF
+            FFA0
+            FFF0..FFF8
+            1BCA0..1BCA3
+            1D173..1D17A
+            E0000
+            E0001
+            E0002..E001F
+            E0020..E007F
+            E0080..E00FF
+            E0100..E01EF
+            E01F0..E0FFF
+            """;
 
     private static Stream<Arguments> copies() {
         return Stream.of(
@@ -57,6 +92,9 @@ class QuoteCopiesTest {
                 new String[]{"a" + (char) 0x200d + "b", "a\\u200db"},
                 new String[]{"a" + (char) 0xfeff + "b", "a\\ufeffb"},
                 new String[]{"a" + tag + "b", "a\\udb40\\udc41b"},
+                new String[]{"a" + (char) 0x3164, "a\\u3164"},
+                new String[]{"" + (char) 0x2764 + (char) 0xfe0f, (char) 0x2764 + "\\ufe0f"},
+                new String[]{"a" + Character.toString(0xE0100) + "b", "a\\udb40\\udd00b"},
                 new String[]{"a" + emoji + "b", "a" + emoji + "b"},
                 new String[]{"x".repeat(MAX_NAME_LENGTH - 2) + emoji, "x".repeat(MAX_NAME_LENGTH - 2) + emoji},
                 new String[]{beforeLast + emoji + "tail", beforeLast + "... (6 more characters)"},
@@ -79,22 +117,45 @@ class QuoteCopiesTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("copies")
-    @DisplayName("every UTF-16 unit on its own is kept, or escaped as String.format writes it")
-    void everyUnitAlone(String name, UnaryOperator<String> quote) {
-        for (int unit = 0; unit <= Character.MAX_VALUE; unit++) {
-            int type = Character.getType(unit);
-            boolean escaped = Character.isISOControl(unit) || type == Character.LINE_SEPARATOR
+    @DisplayName("every code point on its own is kept, or, if it is a control, separator, format, surrogate or "
+            + "default-ignorable one, escaped as String.format writes each of its UTF-16 units")
+    void everyCodePointAlone(String name, UnaryOperator<String> quote) {
+        BitSet ignorable = defaultIgnorable();
+        for (int point = 0; point <= Character.MAX_CODE_POINT; point++) {
+            int type = Character.getType(point);
+            boolean escaped = Character.isISOControl(point) || type == Character.LINE_SEPARATOR
                     || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                    || type == Character.SURROGATE;
-            String expected = switch (unit) {
+                    || type == Character.SURROGATE || ignorable.get(point);
+            String expected = switch (point) {
                 case '\n' -> "\\n";
                 case '\r' -> "\\r";
                 case '\t' -> "\\t";
-                default -> escaped ? String.format("\\u%04x", unit) : String.valueOf((char) unit);
+                default -> escaped ? escapes(point) : Character.toString(point);
             };
 
-            assertEquals(expected, quote.apply(String.valueOf((char) unit)),
-                    String.format("%s quoted U+%04X", name, unit));
+            String quoted = quote.apply(Character.toString(point));
+            if (!expected.equals(quoted)) {
+                fail(String.format("%s quoted U+%04X as %s, not %s", name, point, quoted, expected));
+            }
         }
+    }
+
+    /** Each UTF-16 unit of a code point, as {@code String.format} writes its escape. */
+    private static String escapes(int point) {
+        StringBuilder written = new StringBuilder();
+        for (char unit : Character.toChars(point)) {
+            written.append(String.format("\\u%04x", (int) unit));
+        }
+        return written.toString();
+    }
+
+    /** The code points of {@link #DEFAULT_IGNORABLE}. */
+    private static BitSet defaultIgnorable() {
+        BitSet points = new BitSet(Character.MAX_CODE_POINT + 1);
+        for (String line : DEFAULT_IGNORABLE.strip().split("\n")) {
+            String[] range = line.split("\\.\\.");
+            points.set(Integer.parseInt(range[0], 16), Integer.parseInt(range[range.length - 1], 16) + 1);
+        }
+        return points;
     }
 }
