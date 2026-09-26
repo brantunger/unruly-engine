@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -94,5 +95,36 @@ class ExceptionDetailsTest {
                 assertThrows(NullPointerException.class, () -> new Expression("r", null, "a")).getMessage());
         assertEquals("text must not be null", assertThrows(NullPointerException.class,
                 () -> new Expression("r", ExpressionKind.ACTION, null)).getMessage());
+    }
+
+    @Test
+    @DisplayName("a null list of issues or failures, or a null in one, is named in the message")
+    void nullListsNamed() {
+        List<Issue> nullIssue = Arrays.asList(ISSUE, null);
+        List<RuleCompilationException> nullFailure = Arrays.asList((RuleCompilationException) null);
+        List<RuleCompilationException> none = List.of();
+
+        assertAll(
+                () -> assertEquals("issues must not be null", assertThrows(NullPointerException.class,
+                        () -> new InvalidExpressionException("m", null)).getMessage()),
+                () -> assertEquals("issues must not contain null", assertThrows(NullPointerException.class,
+                        () -> new InvalidExpressionException("m", nullIssue)).getMessage()),
+                () -> assertEquals("issues must not be null", assertThrows(NullPointerException.class,
+                        () -> new InvalidExpressionException("m", null, new IllegalStateException())).getMessage()),
+                () -> assertEquals("issues must not contain null", assertThrows(NullPointerException.class,
+                        () -> new InvalidExpressionException("m", nullIssue, null)).getMessage()),
+                () -> assertEquals("issues must not be null", assertThrows(NullPointerException.class,
+                        () -> new RuleCompilationException("m", null, "r", ExpressionKind.CONDITION, null))
+                        .getMessage()),
+                () -> assertEquals("issues must not contain null", assertThrows(NullPointerException.class,
+                        () -> new RuleCompilationException("m", null, "r", ExpressionKind.CONDITION, nullIssue))
+                        .getMessage()),
+                () -> assertEquals("failures must not be null", assertThrows(NullPointerException.class,
+                        () -> new RuleCompilationException("m", (List<RuleCompilationException>) null))
+                        .getMessage()),
+                () -> assertEquals("failures must not contain null", assertThrows(NullPointerException.class,
+                        () -> new RuleCompilationException("m", nullFailure)).getMessage()),
+                () -> assertEquals("failures must not be empty", assertThrows(IllegalArgumentException.class,
+                        () -> new RuleCompilationException("m", none)).getMessage()));
     }
 }

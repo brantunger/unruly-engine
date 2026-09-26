@@ -404,4 +404,22 @@ class OutputWriterTest {
         assertEquals("writer must not be null", assertThrows(NullPointerException.class,
                 () -> builder().outputWriter(null)).getMessage());
     }
+
+    @Test
+    @DisplayName("the default writer rejects a null or empty property for a Map output as for a bean")
+    void defaultWriterRejectsNullAndEmptyProperties() {
+        OutputWriter<Object> writer = OutputWriter.beansAndMaps();
+        Map<String, Object> map = new HashMap<>();
+
+        assertAll(
+                () -> assertEquals("property must not be null", assertThrows(NullPointerException.class,
+                        () -> writer.set(map, null, 1)).getMessage()),
+                () -> assertEquals("property must not be empty", assertThrows(IllegalArgumentException.class,
+                        () -> writer.set(map, "", 1)).getMessage()),
+                () -> assertEquals("property must not be null", assertThrows(NullPointerException.class,
+                        () -> writer.set(new StringBuilder(), null, 1)).getMessage()),
+                () -> assertEquals("property must not be empty", assertThrows(IllegalArgumentException.class,
+                        () -> writer.set(new StringBuilder(), "", 1)).getMessage()));
+        assertEquals(Map.of(), map);
+    }
 }

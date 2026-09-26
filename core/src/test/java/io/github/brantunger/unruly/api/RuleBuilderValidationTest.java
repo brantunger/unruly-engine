@@ -76,6 +76,13 @@ class RuleBuilderValidationTest {
     }
 
     @Test
+    @DisplayName("the other tags in a rejection of a null tag are escaped")
+    void tagsEscapedInANullRejection() {
+        assertEquals("tags must not contain null, but were [eu\\n[main] INFO forged, null]",
+                rejection(complete().tags(Arrays.asList("eu\n[main] INFO forged", null))));
+    }
+
+    @Test
     @DisplayName("null means the default for enabled and tags, as for the other optional fields")
     void nullMeansTheDefault() {
         Rule rule = complete().enabled(false).tags(List.of("eu")).enabled(null).tags(null).build();

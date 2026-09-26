@@ -48,7 +48,7 @@ public class InvalidExpressionException extends UnrulyException {
     public InvalidExpressionException(@Nullable String message, List<Issue> issues) {
         // No cause, so one can still be set with initCause.
         super(message);
-        this.reportedIssues = List.copyOf(issues);
+        this.reportedIssues = checked(issues);
     }
 
     /**
@@ -61,7 +61,15 @@ public class InvalidExpressionException extends UnrulyException {
      */
     public InvalidExpressionException(@Nullable String message, List<Issue> issues, @Nullable Throwable cause) {
         super(message, cause);
-        this.reportedIssues = List.copyOf(issues);
+        this.reportedIssues = checked(issues);
+    }
+
+    private static List<Issue> checked(List<Issue> issues) {
+        Objects.requireNonNull(issues, "issues must not be null");
+        for (Issue issue : issues) {
+            Objects.requireNonNull(issue, "issues must not contain null");
+        }
+        return List.copyOf(issues);
     }
 
     /**

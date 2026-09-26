@@ -114,7 +114,7 @@ public final class RuleEvaluation {
     }
 
     @Override
-    public boolean equals(Object other) {
+    public boolean equals(@Nullable Object other) {
         return other instanceof RuleEvaluation that && evaluated.equals(that.evaluated) && result == that.result;
     }
 

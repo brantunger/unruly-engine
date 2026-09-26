@@ -30,6 +30,10 @@ public final class RuleSetInfo {
     private final @Nullable Instant loadTime;
 
     private RuleSetInfo(List<Rule> rules, String checksum, @Nullable Instant loadedAt) {
+        Objects.requireNonNull(rules, "rules must not be null");
+        for (Rule rule : rules) {
+            Objects.requireNonNull(rule, "rules must not contain null");
+        }
         this.loaded = List.copyOf(rules);
         this.ruleChecksum = Objects.requireNonNull(checksum, "checksum must not be null");
         this.loadTime = loadedAt;

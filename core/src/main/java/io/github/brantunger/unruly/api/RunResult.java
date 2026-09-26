@@ -36,6 +36,14 @@ public final class RunResult<O> {
 
     private RunResult(@Nullable O output, List<Rule> firedRules, List<RuleEvaluation> evaluations,
                       String ruleSetChecksum, Set<String> tags, @Nullable Instant startedAt) {
+        Objects.requireNonNull(firedRules, "firedRules must not be null");
+        for (Rule rule : firedRules) {
+            Objects.requireNonNull(rule, "firedRules must not contain null");
+        }
+        Objects.requireNonNull(evaluations, "evaluations must not be null");
+        for (RuleEvaluation evaluation : evaluations) {
+            Objects.requireNonNull(evaluation, "evaluations must not contain null");
+        }
         this.outputValue = output;
         this.fired = List.copyOf(firedRules);
         this.evaluated = List.copyOf(evaluations);

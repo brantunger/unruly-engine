@@ -51,7 +51,9 @@ public interface OutputWriter<O> {
      * wrapped in one. An output without such a setter fails with {@link IllegalArgumentException}, which, for a
      * number, a character or a boolean, names the setters of the property that take a primitive or a wrapper. Of
      * overloaded setters, it calls the most specific one that accepts the value, as Java would; when no single one is
-     * the most specific, the choice is fixed for the output class and the same on every run.
+     * the most specific, the choice is fixed for the output class and the same on every run. A {@code null} property
+     * name fails with {@link NullPointerException}, and an empty one with {@link IllegalArgumentException}, for a map
+     * output as for any other.
      *
      * <p>
      * A setter declared with a type variable of a class, such as {@code setContent(T)}, takes what the output class

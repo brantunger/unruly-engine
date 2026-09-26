@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.api.exception;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Exception thrown when a rule fails to compile, or when several do.
@@ -83,7 +84,7 @@ public class RuleCompilationException extends UnrulyException {
         super(message, cause);
         this.ruleName = ruleName;
         this.expressionKind = expressionKind;
-        this.reportedIssues = List.copyOf(issues);
+        this.reportedIssues = checked(issues, "issues");
         this.ruleFailures = List.of();
     }
 
@@ -97,7 +98,7 @@ public class RuleCompilationException extends UnrulyException {
      * @throws NullPointerException     if {@code failures} or one of its elements is {@code null}
      */
     public RuleCompilationException(@Nullable String message, List<RuleCompilationException> failures) {
-        this(message, List.copyOf(failures), first(failures));
+        this(message, checked(failures, "failures"), first(failures));
     }
 
     private RuleCompilationException(@Nullable String message, List<RuleCompilationException> failures,
@@ -107,6 +108,18 @@ public class RuleCompilationException extends UnrulyException {
         this.expressionKind = first.expressionKind;
         this.reportedIssues = first.reportedIssues;
         this.ruleFailures = failures;
+    }
+
+    /**
+     * Copies a list after checking that neither it nor any element is {@code null}; a method, because a constructor
+     * that delegates with {@code this(...)} can't check its arguments before the call.
+     */
+    private static <T> List<T> checked(List<T> list, String name) {
+        Objects.requireNonNull(list, () -> name + " must not be null");
+        for (T element : list) {
+            Objects.requireNonNull(element, () -> name + " must not contain null");
+        }
+        return List.copyOf(list);
     }
 
     private static RuleCompilationException first(List<RuleCompilationException> failures) {

@@ -60,6 +60,9 @@ name clash: run(FactStore<Object>) in MyEngine and run(FactStore<?>) in RulesEng
 neither overrides the other
 ```
 
+A `null` list or list element given to `RunResult.of(...)` or `RuleSetInfo.of(...)` throws `NullPointerException`
+naming the parameter, such as `firedRules must not contain null` or `rules must not be null`.
+
 A result from `RunResult.of(...)` has empty `tags()` and a `null` `startedAt()`. `RunContext` is sealed and its one
 implementation is internal to the engine, so you can't create one: call `withRun(run)` with a context an engine gave
 you, such as one your listener received, to return a copy that carries that run's tags and start instant.
