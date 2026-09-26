@@ -594,12 +594,17 @@ final class RuleSet {
         while (true) {
             Duration left = Cancellation.timeLeft(deadline);
             if (left != null && left.compareTo(windowLength) < 0) {
-                // The deadline comes before the window ends, so this is the last wait: a whole window never passes,
-                // and a run past its deadline makes no extra copy either.
+                // The deadline comes before the window ends, so the run waits only until then: a whole window never
+                // passes, and a run past its deadline makes no extra copy either.
                 if (permits.tryAcquire(Math.max(0, left.toNanos()), TimeUnit.NANOSECONDS)) {
                     return true;
                 }
-                throw Cancellation.timedOut(deadline);
+                if (!left.isPositive()) {
+                    throw Cancellation.timedOut(deadline);
+                }
+                // The wait is timed on System.nanoTime(), but the deadline is on the wall clock, which on Windows can
+                // still be a moment short of it when the wait ends: look at the wall clock again before giving up.
+                continue;
             }
             if (permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
                 return true;
