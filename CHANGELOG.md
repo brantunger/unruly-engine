@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.4](https://github.com/brantunger/unruly-engine/compare/v2.8.3...v2.8.4) (2026-09-26)
+
+
+### Bug Fixes
+
+* reject an engine import over 1,000 characters or 64 dot-separated parts before looking it up ([#685](https://github.com/brantunger/unruly-engine/issues/685)) ([d5ef066](https://github.com/brantunger/unruly-engine/commit/d5ef06637a619e21fa248522fdc377ce6cea65a9))
+
 ## [2.8.3](https://github.com/brantunger/unruly-engine/compare/v2.8.2...v2.8.3) (2026-09-26)
 
 
