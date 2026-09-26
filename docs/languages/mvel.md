@@ -105,14 +105,15 @@ and fails at `run()`: `unresolvable property or identifier` for a class it calls
 as in `BigDecimal total = 0`, fails `load()` instead: `unknown class or illegal statement`, often naming `BigDecimal`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
-  `IllegalArgumentException` from `build()`, and no engine is built.
-- A class that exists but can't be loaded, for example because a class it extends is missing from the class path,
-  is rejected the same way, with the `LinkageError` as the cause.
+  `IllegalArgumentException` from `build()`.
+- A string over 1,000 characters or 64 dot-separated parts is rejected too, before any lookup.
+- A class that exists but can't be loaded, such as one missing its superclass, is rejected too, with the
+  `LinkageError` as the cause.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, can't be detected and is accepted.
 - An imported class name can't be a fact name: with `imports("java.util")`, a fact named `Date` is rejected;
   see [Fact names MVEL rejects](#fact-names-mvel-rejects).
-- A single-class import such as `"java.time.LocalDate"` is resolved by `build()`, with the building thread's
-  context class loader; a valid package name it can't load as a class is imported as a package.
+- `build()` resolves a single-class import such as `"java.time.LocalDate"` with the building thread's context
+  class loader; a valid package name it can't load as a class is imported as a package.
 - Classes in imported packages are looked up with the context class loader of the thread that calls `load()`.
   Fact names are checked against that class loader too, on whichever thread calls `run()`.
 - A thread without a context class loader uses this library's class loader.

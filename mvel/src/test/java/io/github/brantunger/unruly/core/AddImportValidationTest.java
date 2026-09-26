@@ -128,6 +128,33 @@ class AddImportValidationTest {
     }
 
     @Test
+    @DisplayName("a package import with more than 64 parts fails build(), so MVEL never looks names up in it (#650)")
+    void packageWithTooManyPartsFailsBuild() {
+        String name = "a.".repeat(64) + "Z";
+        RulesEngineBuilder<Map<String, Object>> builder =
+                RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                        .imports(name);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, builder::build);
+        assertEquals("Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64",
+                ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a package import with exactly 64 parts is accepted, and a rule naming facts loads and runs with it")
+    void packageWithSixtyFourPartsAccepted() {
+        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+                builder -> builder.imports("a.".repeat(63) + "Z"));
+        engine.load(List.of(rule("v0 == 1 && v1 == 1 && v2 == 1", "output.put('k', 1)")));
+
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("v0", 1);
+        facts.setValue("v1", 1);
+        facts.setValue("v2", 1);
+        assertEquals(Map.of("k", 1), engine.run(facts));
+    }
+
+    @Test
     @DisplayName("a language gets unmodifiable imports that later calls on the builder don't change")
     void compileContextImportsAreAnUnmodifiableSnapshot() {
         AtomicReference<CompileContext> captured = new AtomicReference<>();

@@ -207,6 +207,11 @@ public final class RulesEngineBuilder<O> {
      * loaded, with the loading thread's context class loader.
      * </p>
      *
+     * <p>
+     * An import may have at most 1,000 characters and at most 64 dot-separated parts. {@link #build()} checks both
+     * before it looks the import up, and rejects one over either limit.
+     * </p>
+     *
      * @param names Package or class names
      * @return This builder
      * @throws NullPointerException if {@code names} or any element is {@code null}; nothing is added
@@ -570,10 +575,11 @@ public final class RulesEngineBuilder<O> {
      *                                  languages have the same name. Anything {@code ServiceLoader} or a language
      *                                  throws while it's found, such as a {@link java.util.ServiceConfigurationError},
      *                                  is thrown unchanged.
-     * @throws IllegalArgumentException if an import is neither a loadable class nor a valid package name, or names a
-     *                                  class that exists but can't be loaded, for example because a class it depends on
-     *                                  is missing; or if {@link #copiesAtLoad(int)} is more than
-     *                                  {@link #maxCopies(int)}
+     * @throws IllegalArgumentException if an import has more than 1,000 characters or more than 64 dot-separated
+     *                                  parts, checked before it is looked up; if it is neither a loadable class nor a
+     *                                  valid package name; if it names a class that exists but can't be loaded, for
+     *                                  example because a class it depends on is missing; or if
+     *                                  {@link #copiesAtLoad(int)} is more than {@link #maxCopies(int)}
      */
     public RulesEngine<O> build() {
         CopyLimit limit = copies != null ? copies : CopyLimit.forVirtualThreads();
