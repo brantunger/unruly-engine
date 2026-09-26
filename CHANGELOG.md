@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.7.12](https://github.com/brantunger/unruly-engine/compare/v2.7.11...v2.7.12) (2026-09-26)
+
+
+### Bug Fixes
+
+* hash a lone surrogate in a rule set's checksum as its three WTF-8 bytes, not as '?' ([#664](https://github.com/brantunger/unruly-engine/issues/664)) ([d158b8d](https://github.com/brantunger/unruly-engine/commit/d158b8ddeedbba2cc0b13082a79e857b69151447))
+
 ## [2.7.11](https://github.com/brantunger/unruly-engine/compare/v2.7.10...v2.7.11) (2026-09-26)
 
 
