@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.0](https://github.com/brantunger/unruly-engine/compare/v2.7.14...v2.8.0) (2026-09-26)
+
+
+### Features
+
+* let a language's contract-kit test configure the kit's engines, and judge Errors and unreadable exceptions as the engine does ([#671](https://github.com/brantunger/unruly-engine/issues/671)) ([8a6166e](https://github.com/brantunger/unruly-engine/commit/8a6166e481d1505104a99b6039c9b3f94bb3e821))
+
 ## [2.7.14](https://github.com/brantunger/unruly-engine/compare/v2.7.13...v2.7.14) (2026-09-26)
 
 
