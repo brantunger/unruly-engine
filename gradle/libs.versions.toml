@@ -11,9 +11,9 @@ pmd = "7.27.0"
 apiguardian-api = "org.apiguardian:apiguardian-api:1.1.2"
 checkstyle = { module = "com.puppycrawl.tools:checkstyle", version.ref = "checkstyle" }
 # Only the tests of the documented Jackson mix-ins use Jackson; no artifact depends on it.
-jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.2"
-jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2"
-jackson3-databind = "tools.jackson.core:jackson-databind:3.2.2"
+jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.3"
+jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.3"
+jackson3-databind = "tools.jackson.core:jackson-databind:3.2.3"
 jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
 # Only the unpublished benchmarks project uses JMH; no artifact depends on it.
 jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
@@ -23,5 +23,5 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 mvel2 = "org.mvel:mvel2:2.5.4.Final"
 pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
-slf4j-api = "org.slf4j:slf4j-api:2.0.19"
-slf4j-simple = "org.slf4j:slf4j-simple:2.0.19"
+slf4j-api = "org.slf4j:slf4j-api:2.0.20"
+slf4j-simple = "org.slf4j:slf4j-simple:2.0.20"
