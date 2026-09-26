@@ -36,6 +36,9 @@ final class FactNames {
     // The longest part of a fact name a message shows, as in the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
 
+    // The longest part of a description a message shows, as in the engine's messages.
+    private static final int MAX_DESCRIPTION_LENGTH = 1_000;
+
     // The default-ignorable code points that aren't format characters, as in the engine's escaping: the first and
     // last code point of each range, in order.
     private static final int[] OTHER_DEFAULT_IGNORABLE = {
@@ -103,6 +106,25 @@ final class FactNames {
             return quoted + "... (" + (name.length() - shown) + " more characters)";
         }
         return quoted;
+    }
+
+    /**
+     * Shortens text to at most {@value #MAX_DESCRIPTION_LENGTH} characters (UTF-16 units), saying how many were left
+     * out, as the engine's {@code core.Failures.truncate} does, which the {@code mvel} package may not use;
+     * {@code TruncateCopiesTest} runs the same cases on both. A surrogate pair the limit falls inside is left out
+     * whole, so the text never ends in half a character. The text isn't escaped: it's shortened before it's escaped,
+     * as the engine does, so the count of what was left out counts the text's own characters.
+     *
+     * @param text The text
+     * @return The text, shortened if it was longer
+     */
+    static String truncate(String text) {
+        if (text.length() <= MAX_DESCRIPTION_LENGTH) {
+            return text;
+        }
+        int kept = Character.isHighSurrogate(text.charAt(MAX_DESCRIPTION_LENGTH - 1))
+                ? MAX_DESCRIPTION_LENGTH - 1 : MAX_DESCRIPTION_LENGTH;
+        return text.substring(0, kept) + "... (" + (text.length() - kept) + " more characters)";
     }
 
     /**

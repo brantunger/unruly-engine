@@ -297,46 +297,115 @@ class SyntaxValidationTest {
 
     static Stream<Arguments> declarationsOfUnknownTypes() {
         return Stream.of(
-                arguments("BigDecimal total = 0", 1, 19),
-                arguments("Zzz z = null", 1, 8),
-                arguments("Zzz z", 1, 6),
-                arguments("com.acme.Missing m = null", 1, 21),
-                arguments("x y", 1, 4),
-                arguments("x = 1;\nZzz z = 1", 2, 8));
+                arguments("BigDecimal total = 0", 1, 19, "BigDecimal"),
+                arguments("Zzz z = null", 1, 8, "Zzz"),
+                arguments("Zzz z", 1, 6, "Zzz"),
+                arguments("com.acme.Missing m = null", 1, 21, "com.acme.Missing"),
+                arguments("x y", 1, 4, "x"),
+                arguments("x = 1;\nZzz z = 1", 2, 8, "Zzz"));
     }
 
     // #642: the description was "unknown class or illegal statement: org.mvel2.ParserContext@" and a hash that
-    // differed between load() and validate().
-    @ParameterizedTest(name = "the declaration {0} is an unknown class, with no parser context")
+    // differed between load() and validate(). #644: it named no type.
+    @ParameterizedTest(name = "the declaration {0} is an unknown class, named {3}, with no parser context")
     @MethodSource("declarationsOfUnknownTypes")
-    void declarationOfAnUnknownTypeHasNoParserContext(String action, int line, int column) {
-        assertReported(rule("true", action), "Action", line, column, "unknown class or illegal statement");
+    void declarationOfAnUnknownTypeHasNoParserContext(String action, int line, int column, String type) {
+        assertReported(rule("true", action), "Action", line, column, "unknown class or illegal statement: " + type);
     }
 
     @Test
     @DisplayName("a condition that declares a variable of an unknown type is an unknown class, with no parser context")
     void conditionDeclaringAnUnknownTypeHasNoParserContext() {
         assertReported(rule("Zzz z == 1", "output.put('k', 1)"), "Condition", 1, 6,
-                "unknown class or illegal statement");
+                "unknown class or illegal statement: Zzz");
     }
 
     static Stream<Arguments> declarationsOfOtherShapes() {
         char noBreakSpace = (char) 0xa0;
+        String scriptX = new String(Character.toChars(0x1d4b3));
         return Stream.of(
-                arguments("Zzz" + noBreakSpace + "z = 1"),
-                arguments("x = 1;" + noBreakSpace + "String s = 1"),
-                arguments("x = 1;" + (char) 0x2028 + "\nString s = 1"),
-                arguments(new String(Character.toChars(0x1d4b3)) + "String s = 'a'"),
-                arguments("x = 1;,String s = 1"));
+                arguments("Zzz" + noBreakSpace + "z = 1", ": Zzz"),
+                arguments("x = 1;" + noBreakSpace + "String s = 1", ""),
+                arguments("x = 1;" + (char) 0x2028 + "\nString s = 1", ""),
+                arguments(scriptX + "String s = 'a'", ": " + scriptX + "String"),
+                arguments("x = 1;,String s = 1", ""));
     }
 
     @ParameterizedTest(name = "the declaration {0} is an unknown class, with no parser context")
     @MethodSource("declarationsOfOtherShapes")
-    void declarationWithOtherCharactersHasNoParserContext(String action) {
+    void declarationWithOtherCharactersHasNoParserContext(String action, String named) {
         RuleCompilationException ex = loadAndValidate(rule("true", action));
 
-        assertEquals("unknown class or illegal statement", ex.issues().get(0).message());
+        assertEquals("unknown class or illegal statement" + named, ex.issues().get(0).message());
         assertFalse(ex.getMessage().contains("ParserContext@"), ex.getMessage());
+    }
+
+    static Stream<Arguments> declarationsNamingAnotherToken() {
+        return Stream.of(
+                // #644: the text before MVEL's cursor, read again, named a token MVEL never read.
+                arguments((char) 0xa0 + "String s = 1", 1, 12),
+                arguments("foo().Zzz s = 1", 1, 14),
+                arguments("com.acme .Missing m = null", 1, 22),
+                arguments("x = 1, Missing m = 2", 1, 19),
+                arguments("Foo [] a = null", 1, 11),
+                // MVEL's last node is older than the declaration inside parentheses, brackets or a block.
+                arguments("foo(Zzz s = 1)", 1, 12),
+                arguments("foo(x Zzz s = 1)", 1, 10),
+                arguments("[Zzz s = 1]", 1, 9),
+                arguments("x = (Zzz s = 1)", 1, 13),
+                arguments("if (true) { Zzz s = 1 }", 1, 20),
+                arguments("y = 1; if (true) { Zzz s = 1 }", 1, 27),
+                // MVEL's last node is the literal that ends the statement before.
+                arguments("y = 1\nZzz s = 1", 2, 4),
+                // What MVEL read after the node isn't a variable's name.
+                arguments("foo()Zzz s = 1", 1, 9),
+                arguments("a[0]Zzz s = 1", 1, 8),
+                // MVEL's node is a word Java or MVEL reserves.
+                arguments("this Zzz s = 1", 1, 9),
+                arguments("public Zzz s = 1", 1, 11),
+                arguments("a.class s = 1", 1, 12));
+    }
+
+    // #644: the type is named only from the node MVEL rejected, and only when that node is the declaration's type.
+    @ParameterizedTest(name = "the declaration {0} is an unknown class, naming no other token")
+    @MethodSource("declarationsNamingAnotherToken")
+    void declarationNamesNoOtherToken(String action, int line, int column) {
+        assertReported(rule("true", action), "Action", line, column, "unknown class or illegal statement");
+    }
+
+    // #644: a package may be named with a word a type can't have, such as function or record.
+    @ParameterizedTest(name = "the declaration {0} is an unknown class, named ''{2}''")
+    @CsvSource(delimiter = '|', value = {
+            "java.util.function.Functon f = 1 | 31 | java.util.function.Functon",
+            "com.acme.record.Msg m = 1        | 24 | com.acme.record.Msg",
+    })
+    void typeInAPackageNamedWithAReservedWordIsNamed(String action, int column, String type) {
+        assertReported(rule("true", action), "Action", 1, column, "unknown class or illegal statement: " + type);
+    }
+
+    // #644: the chained expressions before a declaration: MVEL's token is named only when it's a type's name.
+    @ParameterizedTest(name = "the declaration {0} is an unknown class, named ''{1}''")
+    @CsvSource(delimiter = '|', value = {
+            "fooZzz s = 1     | : fooZzz",
+            "foo Zzz s = 1    | : foo",
+            "foo.Zzz s = 1    | : foo.Zzz",
+            "foo .Zzz s = 1   | ''",
+            "foo. Zzz s = 1   | ''",
+            "foo() Zzz s = 1  | ''",
+            "foo().Zzz s = 1  | ''",
+            "foo() .Zzz s = 1 | ''",
+            "foo(). Zzz s = 1 | ''",
+            "a[0] Zzz s = 1   | ''",
+            "a[0].Zzz s = 1   | ''",
+            "a[0] .Zzz s = 1  | ''",
+            "a[0]. Zzz s = 1  | ''",
+            "x.Zzz s = 1      | : x.Zzz",
+            "x .Zzz s = 1     | ''",
+    })
+    void chainedDeclarationNamesOnlyATypesName(String action, String named) {
+        RuleCompilationException ex = loadAndValidate(rule("true", action));
+
+        assertEquals("unknown class or illegal statement" + named, ex.issues().get(0).message());
     }
 
     // #643: MVEL's plain RuntimeException reached the engine's catch-all, with no InvalidExpressionException and no
@@ -427,5 +496,131 @@ class SyntaxValidationTest {
     void nestedErrorHasInnerDescriptionAtOuterPosition(String action, int line, int column) {
         assertReported(rule("true", action), "Action", line, column,
                 "was expecting type: java.lang.Boolean; but found type: java.lang.Integer");
+    }
+
+    static Stream<Arguments> descriptionsWithLineBreaks() {
+        return Stream.of(
+                arguments("import java.util.Lisst;\nx = 1", "class not found: import java.util.Lisst;\\nx = 1"),
+                arguments("import java.util.Lisst;\nnote = '\n[Error: all good]';",
+                        "class not found: import java.util.Lisst;\\nnote = '\\n[Error: all good]';"),
+                arguments("import java.util.Lisst; y = a[0]\nx = 1",
+                        "class not found: import java.util.Lisst; y = a[0]\\nx = 1"),
+                arguments("import java.util.Lisst; y = a[0] + 1\nx = 1",
+                        "class not found: import java.util.Lisst; y = a[0] + 1\\nx = 1"),
+                arguments("import java.util.Lisst; note = ']\n[Near : {... x ....}]';\nx = 1",
+                        "class not found: import java.util.Lisst; note = ']\\n[Near : {... x ....}]';\\nx = 1"));
+    }
+
+    // #651: a description with a line break was MVEL's whole message, a later line of the expression, or cut at a ].
+    @ParameterizedTest(name = "MVEL''s description over a line break in {0} is read whole, and escaped")
+    @MethodSource("descriptionsWithLineBreaks")
+    void descriptionWithLineBreakReadWhole(String action, String description) {
+        assertReported(rule("true", action), "Action", 1, 8, description);
+    }
+
+    // MVEL catches an out-of-bounds read in its parser and describes it itself, which is kept.
+    @ParameterizedTest(name = "an out-of-bounds read MVEL describes itself, in {0}, keeps MVEL''s description")
+    @CsvSource(delimiter = '|', value = {
+            "if (x) y = 1     | 13",
+            "if (x) y         | 9",
+            "x = y.           | 7",
+            "x = y.z.         | 9",
+            "x = 1; while     | 13",
+            "foreach          | 8",
+            "import Zzz s = 1 | 17",
+    })
+    void unexpectedEndOfStatementKept(String action, int column) {
+        assertReported(rule("true", action), "Action", 1, column, "unexpected end of statement");
+    }
+
+    // #651: MVEL wraps its out-of-bounds read in its own error, and the description was the JDK's
+    // "Index 35 out of bounds for length 34", then, once HotSpot threw it without a message, "null (caused by ...)".
+    @ParameterizedTest(name = "an out-of-bounds read MVEL wraps (condition {1}, action {2}) is a malformed expression")
+    @CsvSource(delimiter = '|', value = {
+            "Condition | x == 1 && in | output.put('k', 1) | 1 | 11",
+            "Condition | in==         | output.put('k', 1) | 1 | 3",
+            "Action    | true         | (int) -- in        | 1 | 10",
+    })
+    void wrappedOutOfBoundsIsMalformed(String part, String condition, String action, int line, int column) {
+        RuleCompilationException ex = assertReported(rule(condition, action), part, line, column,
+                "malformed expression");
+
+        assertInstanceOf(CompileException.class, ex.getCause().getCause());
+    }
+
+    static Stream<Arguments> literalsBeforeDeclarations() {
+        return Stream.of(
+                arguments("output.n = 5\nBigDecimal total = 0", 11),
+                arguments("x = true\nZzz z = 1", 4),
+                arguments("x = null\nZzz z = 1", 4),
+                arguments("x = 1.5\nZzz z = 1", 4));
+    }
+
+    // #651: MVEL named the literal that ends the statement before as the unknown class.
+    @ParameterizedTest(name = "a literal before the declaration {0} isn''t named as the unknown class")
+    @MethodSource("literalsBeforeDeclarations")
+    void literalBeforeDeclarationIsNotNamed(String action, int column) {
+        assertReported(rule("true", action), "Action", 2, column, "unknown class or illegal statement");
+    }
+
+    @ParameterizedTest(name = "the array type {0} MVEL names is named once")
+    @CsvSource(delimiter = '|', value = {
+            "Zzz[] z = null           | 10 | Zzz[]",
+            "Foo[] a = null           | 10 | Foo[]",
+            "Zzz[][] z = null         | 12 | Zzz[][]",
+            "java.util.Zzz[] z = null | 20 | java.util.Zzz[]",
+    })
+    void arrayTypeNamedOnce(String action, int column, String type) {
+        assertReported(rule("true", action), "Action", 1, column, "unknown class or illegal statement: " + type);
+    }
+
+    // #651: MVEL cast the imported class to a static method, and the ClassCastException reached the engine's catch-all,
+    // with no issue.
+    @ParameterizedTest(name = "with {0} imported, the rule (condition {2}, action {3}) calls a class like a method")
+    @CsvSource(delimiter = '|', value = {
+            "java.util           | Action    | true                 | x = ArrayList(y)",
+            "java.util           | Action    | true                 | x = ArrayList()",
+            "java.util           | Action    | true                 | foo(ArrayList(y))",
+            "java.util           | Condition | ArrayList(y) != null | output.put('k', 1)",
+            "java.util.ArrayList | Action    | true                 | x = ArrayList(y)",
+            "java.util.ArrayList | Condition | ArrayList(y) != null | output.put('k', 1)",
+    })
+    void classCalledLikeMethod(String imported, String part, String condition, String action) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports(imported).build();
+        Rule rule = rule(condition, action);
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(List.of(rule)));
+
+        String description = "a class can't be called like a method: use new";
+        assertEquals(part + " for rule 'syntax' failed to compile: " + description, ex.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, description)), ex.issues());
+        InvalidExpressionException cause = assertInstanceOf(InvalidExpressionException.class, ex.getCause());
+        assertInstanceOf(ClassCastException.class, cause.getCause());
+        assertEquals(ex.issues(), engine.validate(List.of(rule)).get(0).issues());
+    }
+
+    @ParameterizedTest(name = "with {0} imported, the action {1} still compiles")
+    @CsvSource(delimiter = '|', value = {
+            "java.util           | x = ArrayList",
+            "java.util           | x = new ArrayList(y)",
+            "java.lang.Math      | x = PI(1)",
+            "java.time.DayOfWeek | x = MONDAY(1)",
+            "java.lang.Math      | x = max(1, 2)",
+    })
+    void nameCalledLikeMethodStillCompiles(String imported, String action) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .imports(imported).build();
+
+        assertEquals(List.of(), engine.validate(List.of(rule("true", action))));
+    }
+
+    @Test
+    @DisplayName("a class called like a method without its import still compiles, as MVEL doesn't know the name")
+    void classCalledLikeMethodWithoutItsImportStillCompiles() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        assertEquals(List.of(), engine.validate(List.of(rule("true", "x = ArrayList(y)"))));
     }
 }

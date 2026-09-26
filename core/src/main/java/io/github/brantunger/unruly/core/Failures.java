@@ -372,6 +372,7 @@ public final class Failures {
     /**
      * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, saying how many were left out. A
      * surrogate pair the limit falls inside is left out whole, so the message never ends in half a character.
+     * {@code mvel.FactNames} keeps a copy of this, for MVEL's issues.
      *
      * @param text The message
      * @return The message, shortened if it was longer
@@ -386,7 +387,7 @@ public final class Failures {
 
     /**
      * How many characters of text longer than {@code limit} to keep: {@code limit}, or one fewer when the last of them
-     * is a high surrogate. {@code mvel.FactNames.quote} keeps a copy of this.
+     * is a high surrogate. {@code mvel.FactNames.quote} and {@code mvel.FactNames.truncate} keep copies of this.
      */
     private static int keptLength(String text, int limit) {
         return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;

@@ -39,8 +39,8 @@ Every example below was checked against the engine. For the full language, see t
 | Use a class without importing it | `java.time.LocalDate.now().getYear() >= 2026` |
 
 > [!IMPORTANT]
-> MVEL has no `in` membership test: `780 in [700, 780]` doesn't compile. To check whether a collection holds a
-> value, write `[700, 780] contains 780`.
+> `in` isn't a membership test: `780 in [700, 780]` fails `load()`; `score in [700, 780]` is just `score`. Write
+> `[700, 780] contains score`.
 
 ### Mostly in actions
 
@@ -99,11 +99,10 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 engine.load(rules);
 ```
 
-An engine's imports are set when it's built; every `load()` compiles with them. A rule missing an import passes
-`load()` and fails at `run()`: with `unresolvable property or identifier` for a class it calls, such as
-`Objects.isNull(x)`, or `could not resolve class` for one it creates, such as `new ArrayList()`. An action declaring a
-variable of the class, as in `BigDecimal total = 0`, fails `load()` instead, with
-`unknown class or illegal statement`, usually a missing import.
+An engine's imports are set when it's built; every `load()` uses them. A rule missing an import passes `load()`
+and fails at `run()`: `unresolvable property or identifier` for a class it calls, such as `Objects.isNull(x)`, or
+`could not resolve class` for one it creates, such as `new ArrayList()`. An action declaring a variable of the class,
+as in `BigDecimal total = 0`, fails `load()` instead: `unknown class or illegal statement`, often naming `BigDecimal`.
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with an
   `IllegalArgumentException` from `build()`, and no engine is built.
@@ -257,13 +256,13 @@ Action for rule 'prime-rate' failed to compile at line 1, column 11: unbalanced 
 ```
 
 for the condition `applicant.creditScore >= ` and the action `output.put('rate', `. Each failure carries one `ERROR`
-`Issue` with that line and column (from 1) and the description. `b.` or `( )` get the engine's own lowercase
-`failed to compile: malformed expression`, not MVEL's. MVEL's own errors without a position keep its description, such
-as `illegal use of reserved word: in` or `ambiguous class name: List`. Both kinds have line and column 0.
+`Issue` with that line and column (from 1) and the description, shortened to 1,000 characters. `b.` or `( )` get
+the engine's `malformed expression`, and `ArrayList(y)` with `java.util` imported `a class can't be called like a
+method: use new`, both at line and column 0; `x == 1 && in` gets `malformed expression` at MVEL's position. MVEL's
+errors without a position keep its description, such as `illegal use of reserved word: in`.
 
-**A description of `null` ends with the root cause**, in the message and issue; see
-[Exceptions by method](../exceptions-by-method.md). MVEL gives `null` when a rule is the first to use, by full name, a
-class whose static initializer throws:
+**A description of `null` ends with the root cause**, unless MVEL's own parser failed. The first rule to use, by
+full name, a class whose static initializer throws gets `null`:
 
 ```text
 Condition for rule 'r' failed to compile at line 1, column 1: null (caused by java.lang.RuntimeException: plain init failure)

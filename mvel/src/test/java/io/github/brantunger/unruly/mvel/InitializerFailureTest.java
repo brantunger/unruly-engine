@@ -168,6 +168,66 @@ class InitializerFailureTest {
         }
     }
 
+    /** An exception whose {@code getMessage()} throws an {@link Error}. */
+    public static class ErrorMessage extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public String getMessage() {
+            throw new AssertionError("accessor asserted");
+        }
+    }
+
+    public static class ErrorMessageInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw new RuntimeException(null, new ErrorMessage());
+            }
+        }
+    }
+
+    public static class LongCycleInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                RuntimeException a = new RuntimeException("a");
+                RuntimeException b = new RuntimeException("b");
+                RuntimeException c = new RuntimeException("c");
+                a.initCause(b);
+                b.initCause(c);
+                c.initCause(a);
+                throw a;
+            }
+        }
+    }
+
+    public static class LongChainInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                RuntimeException e = new RuntimeException("m150");
+                for (int i = 149; i >= 1; i--) {
+                    e = new RuntimeException("m" + i, e);
+                }
+                throw e;
+            }
+        }
+    }
+
+    public static class LongMessageInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw new IllegalStateException("L".repeat(5_000));
+            }
+        }
+    }
+
     /**
      * Loads a rule whose condition reads {@code x} of the class, on a thread of its own: an unbounded walk of a cause
      * chain that never ends can't be interrupted, so a daemon thread that is left running fails the test instead of
@@ -282,5 +342,46 @@ class InitializerFailureTest {
     void endlessCauseChain() throws InterruptedException {
         assertEquals(PREFIX + "null (caused by " + EndlessCause.class.getName() + ")",
                 loadFailure(EndlessCauseInit.class).getMessage());
+    }
+
+    // #661: an Error from getMessage() escaped the compile path, and the rule failed with "accessor asserted" and no
+    // issue.
+    @Test
+    @DisplayName("a root cause whose getMessage() throws an Error is named with the note that it's unavailable")
+    void rootCauseMessageThrowsAnError() throws InterruptedException {
+        RuleCompilationException thrown = loadFailure(ErrorMessageInit.class);
+
+        String description = "null (caused by " + ErrorMessage.class.getName()
+                + ": (message unavailable: java.lang.AssertionError))";
+        assertEquals(PREFIX + description, thrown.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), thrown.issues());
+    }
+
+    // #661: a cycle of two links ends on the same exception whether the loop or the cap stops the walk.
+    @Test
+    @DisplayName("a cause chain that loops back on itself after three links names the last exception before the loop")
+    void threeLinkCauseCycle() throws InterruptedException {
+        assertEquals(PREFIX + "null (caused by java.lang.RuntimeException: c)",
+                loadFailure(LongCycleInit.class).getMessage());
+    }
+
+    // #661: a chain of one repeated exception can't tell which link the cap stopped on.
+    @Test
+    @DisplayName("a cause chain of more than 100 links is read for 100: MVEL's error, the initializer's and 98 more")
+    void longCauseChainReadFor100Links() throws InterruptedException {
+        assertEquals(PREFIX + "null (caused by java.lang.RuntimeException: m98)",
+                loadFailure(LongChainInit.class).getMessage());
+    }
+
+    // #652: the root cause's message was copied into the issue whole.
+    @Test
+    @DisplayName("a root cause's long message is shortened in the issue, whose note isn't cut off")
+    void longRootCauseMessageShortened() throws InterruptedException {
+        RuleCompilationException thrown = loadFailure(LongMessageInit.class);
+
+        String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(1_000)
+                + "... (4000 more characters))";
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), thrown.issues());
+        assertEquals("failed to compile at line 1, column 1: " + description, thrown.getCause().getMessage());
     }
 }
