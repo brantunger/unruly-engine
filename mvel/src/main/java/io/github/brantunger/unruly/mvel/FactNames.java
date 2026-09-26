@@ -286,7 +286,9 @@ final class FactNames {
         return "runtime".equals(System.getProperty("org.graalvm.nativeimage.imagecode"));
     }
 
-    // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together.
+    // Read by char on purpose, unlike core.ImportResolver's check of a package name, which reads code points: MVEL
+    // can't read a letter outside the Basic Multilingual Plane, a surrogate pair, in a rule's text, so no rule
+    // could refer to a fact named with one, and such a name is rejected like any other a rule can't refer to.
     static boolean isIdentifier(String name) {
         if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
             return false;

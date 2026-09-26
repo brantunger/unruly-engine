@@ -24,6 +24,11 @@ import java.util.concurrent.ConcurrentHashMap;
 record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
                Map<String, Class<?>> inputs) {
 
+    // The most characters and dot-separated parts an import in an expression's own text may have, as the engine's
+    // core.ImportResolver allows an engine's imports, which the mvel package may not use.
+    private static final int MAX_IMPORT_LENGTH = 1_000;
+    private static final int MAX_IMPORT_PARTS = 64;
+
     /**
      * Creates the imports for one rule list, with nothing known yet about which names aren't classes. The class loader
      * is wrapped once here, for every expression of the rule list, in an {@link ExactNameClassLoader}.
@@ -78,6 +83,26 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
     }
 
     /**
+     * Rejects an import too long, or with too many parts, to look up, with the same message as the engine's
+     * {@code core.ImportResolver.checkSize}, which the {@code mvel} package may not use.
+     * {@code ImportLimitCopiesTest} runs the same names through both, so the two can't drift apart.
+     *
+     * @param name The package's name
+     * @throws ImportTooLarge if {@code name} has more than 1,000 characters or more than 64 dot-separated parts
+     */
+    static void checkSize(String name) {
+        if (name.length() > MAX_IMPORT_LENGTH) {
+            throw new ImportTooLarge(name, "Can't import '" + FactNames.quote(name) + "': it has " + name.length()
+                    + " characters, and an import may have at most " + MAX_IMPORT_LENGTH);
+        }
+        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        if (parts > MAX_IMPORT_PARTS) {
+            throw new ImportTooLarge(name, "Can't import '" + FactNames.quote(name) + "': it has " + parts
+                    + " dot-separated parts, and an import may have at most " + MAX_IMPORT_PARTS);
+        }
+    }
+
+    /**
      * A configuration that shares the answer "this name isn't a class" with every other configuration created from
      * the same imports. MVEL keeps that answer only on the configuration that looked the name up, by trying to load it
      * from every imported package, and each condition and action is compiled with a configuration of its own, so one
@@ -116,6 +141,23 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         }
 
         /**
+         * Imports a package an {@code import pkg.*;} in the expression's own text names, as MVEL does, once its name
+         * is checked as the engine checks its own imports: MVEL looks each name the expression uses up in it, once for
+         * each dot, as a nested class. The rule list's own packages are set, not added, so they aren't checked again.
+         * An inline import of a class, or an {@code import_static}, isn't checked: MVEL looks its name up once or
+         * twice, then rejects the expression if it isn't a class.
+         *
+         * @param packageName The package's name, as the expression writes it
+         * @throws ImportTooLarge if the name has more than 1,000 characters or more than 64 dot-separated parts,
+         *                        before it is looked up
+         */
+        @Override
+        public void addPackageImport(String packageName) {
+            checkSize(packageName);
+            super.addPackageImport(packageName);
+        }
+
+        /**
          * Returns the static method imported as {@code name}, as MVEL does, unless the name is an imported class. MVEL
          * asks for one when an expression calls a name it imports like a method, such as {@code ArrayList(y)} with
          * {@code java.util} imported, and casts whatever is imported as that name to a method, which fails for a
@@ -150,6 +192,32 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
 
         ClassCalledLikeMethod(String name) {
             super(name + " is an imported class, not a method");
+        }
+    }
+
+    /**
+     * What the engine throws when an {@code import} in an expression's own text names a package too long, or with too
+     * many parts, to look up, which the compiler reports as a compile error at the name. MVEL lets it through as it
+     * is, as it does any {@link RuntimeException} that isn't its own.
+     */
+    static final class ImportTooLarge extends IllegalArgumentException {
+
+        private static final long serialVersionUID = 1L;
+
+        private final String name;
+
+        ImportTooLarge(String name, String message) {
+            super(message);
+            this.name = name;
+        }
+
+        /**
+         * Returns the rejected name, as the expression writes it.
+         *
+         * @return The name
+         */
+        String rejectedName() {
+            return name;
         }
     }
 }

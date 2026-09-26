@@ -64,11 +64,15 @@ final class ImportResolver {
 
     /**
      * Rejects an import string too long, or with too many parts, to look up, before any class loader sees it.
+     * {@link EngineCompileContext} checks each package it is given with it too, so a context made outside an engine
+     * rejects what {@code build()} does, and {@code mvel.Imports} keeps a copy for an import in a rule's own text,
+     * which {@code ImportLimitCopiesTest} checks against this one.
      *
+     * @param name An import string
      * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more
      *                                  than {@value #MAX_IMPORT_PARTS} dot-separated parts
      */
-    private static void checkSize(String name) {
+    static void checkSize(String name) {
         if (name.length() > MAX_IMPORT_LENGTH) {
             throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + name.length()
                     + " characters, and an import may have at most " + MAX_IMPORT_LENGTH);
@@ -153,13 +157,20 @@ final class ImportResolver {
         return true;
     }
 
-    // mvel.FactNames keeps a copy of this: the mvel package may not use this one. Fix both together.
+    // Read by code point, as Java reads a name, so a letter outside the Basic Multilingual Plane, a surrogate pair,
+    // is a letter and a lone surrogate isn't. mvel.FactNames reads a fact's name by char on purpose: MVEL can't read
+    // such a letter in a rule's text, so no rule could refer to a fact named with one.
     private static boolean isIdentifier(String name) {
-        if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
+        if (name.isEmpty()) {
             return false;
         }
-        for (int i = 1; i < name.length(); i++) {
-            if (!Character.isJavaIdentifierPart(name.charAt(i))) {
+        int c = name.codePointAt(0);
+        if (!Character.isJavaIdentifierStart(c)) {
+            return false;
+        }
+        for (int i = Character.charCount(c); i < name.length(); i += Character.charCount(c)) {
+            c = name.codePointAt(i);
+            if (!Character.isJavaIdentifierPart(c)) {
                 return false;
             }
         }

@@ -43,6 +43,20 @@ class FactNameValidationTest {
                 + "identifier", ex.getMessage());
     }
 
+    @Test
+    @DisplayName("a name with a letter outside the BMP is rejected, as MVEL can't read such a letter in a rule")
+    void supplementaryLetterRejected() {
+        // U+1D49C MATHEMATICAL SCRIPT CAPITAL A: a Java identifier, but MVEL can't read it in a rule's text.
+        String name = "\uD835\uDC9C";
+        RulesEngine<Map<String, Object>> engine = engine("true");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
+
+        assertEquals("'" + name + "' is not a valid fact name: rules can only refer to a fact named with a Java "
+                + "identifier", ex.getMessage());
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"empty", "nil", "null", "true", "this", "isdef", "in", "with", "var", "def", "Math",
             "String"})
