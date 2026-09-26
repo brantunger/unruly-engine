@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.7](https://github.com/brantunger/unruly-engine/compare/v2.8.6...v2.8.7) (2026-09-26)
+
+
+### Bug Fixes
+
+* wait out a run's deadline on the wall clock before giving up on a compiled copy ([#692](https://github.com/brantunger/unruly-engine/issues/692)) ([355c637](https://github.com/brantunger/unruly-engine/commit/355c6375f9176066f12db5171c8f8c3470049964))
+
 ## [2.8.6](https://github.com/brantunger/unruly-engine/compare/v2.8.5...v2.8.6) (2026-09-26)
 
 
