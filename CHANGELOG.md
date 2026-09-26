@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.3](https://github.com/brantunger/unruly-engine/compare/v2.8.2...v2.8.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* declare none of a facts(Map) call's entries when it rejects one ([#683](https://github.com/brantunger/unruly-engine/issues/683)) ([16bdec8](https://github.com/brantunger/unruly-engine/commit/16bdec811904c145077123aeddd20e48496194bd))
+
 ## [2.8.2](https://github.com/brantunger/unruly-engine/compare/v2.8.1...v2.8.2) (2026-09-26)
 
 
