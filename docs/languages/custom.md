@@ -68,10 +68,12 @@ sequenceDiagram
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
 | `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns. Don't throw | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
 
-Who closes a session depends on its copy. An extra copy, or a kept copy in use when the rules are retired: its run,
-when it ends. An idle copy: the `load()` or `close()` caller that retires the rules. A copy shared by every run holds
-only `Session.none()`, the session of a language that keeps no state (see [Thread safety](#-thread-safety)), whose
-`close()` does nothing.
+Who closes a session depends on its copy. An extra copy: its run, when it ends. A kept copy in use when the rules are
+retired: its run, or, while runs wait on those rules, a later run. An idle copy: the `load()` or `close()` caller that
+retires the rules.
+
+A copy shared by every run holds only `Session.none()`, the session of a language that keeps no state (see
+[Thread safety](#-thread-safety)), whose `close()` does nothing.
 
 Two failures close things early. A session made for a copy that another language then fails to make is closed on the
 run's thread, at once, before it's used. A `load()` that fails closes the compilers it created at once, on the
@@ -206,7 +208,7 @@ may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two meth
 The detail can be any object, or `null`. The application reads it as
 [`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for
 every rule it evaluates, whether or not anyone reads it, so keep it cheap to build. It's kept only with a `Boolean`
-value: any other value fails the run, and the detail with it. `afterEvaluate` on a listener
+value, since any other value fails the run. `afterEvaluate` on a listener
 doesn't receive it.
 
 - **Don't return the session, or hold it.** Sessions are closed when their copy is retired, and reused by later runs.
@@ -221,8 +223,7 @@ doesn't receive it.
 
 What your compiler throws or returns decides what the user sees from `load()`, or gets back from `validate()`, which
 compiles the same way but returns the failures and logs only a fatal error, not your warnings and not the failures
-themselves. Every row but the session one applies to both; `validate()` makes no copies, so only `load()` ever
-reaches that one:
+themselves. Every row but the session one, which only `load()` reaches, applies to both:
 
 | You throw or return | The user sees | Reported |
 | --- | --- | --- |
@@ -442,11 +443,11 @@ A `newSession()` that throws, even a `Throwable` that is neither an `Exception` 
 the run that needed the session with a `RuleExecutionException`, logged at ERROR, and closes the sessions other
 languages already made for that copy; it happens before `beforeRun`, so no listener is told. A fatal error from closing
 them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one; see
-[A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing).
+[A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
 A `close()` that throws is logged at WARN and the rest are still closed. Only a fatal error is rethrown, once every
 idle session of the rule list is closed, and its compilers too if no run still uses it; if there are several, the
-first. See [A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing).
+first. See [A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
 ### Warming up a session
 
@@ -464,7 +465,7 @@ the copies are still made. MVEL compiles every condition and action into the ses
 A fatal error from closing a failed load's sessions and compilers wins over the load's own failure (a
 `RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), which it keeps in
 `getSuppressed()` unless it can't keep one; see
-[A fatal error while closing](../thread-safety.md#a-fatal-error-while-closing). If the load itself failed with a
+[A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing). If the load itself failed with a
 fatal error, that one came first and is thrown instead, and the one from closing is only logged at WARN.
 
 ## 📦 Packaging

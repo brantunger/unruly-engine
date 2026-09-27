@@ -152,10 +152,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               rethrown unchanged, also when it arrives as the cause of another exception. A
      *                               run that gives back an extra copy, made because every kept copy was in use, a
      *                               copy that couldn't be kept for a later run, or a copy of rules a reload or
-     *                               {@link #close()} replaced, closes that copy, and the last one to give back a copy
-     *                               of replaced rules closes their compilers too; a run whose new copy was only
-     *                               partly made closes the sessions it made; and a run that fails to get a copy
-     *                               closes the compilers without having held one, if it was the last to use the
+     *                               {@link #close()} replaced that no run of them is waiting for, closes that copy,
+     *                               and the last run to leave replaced rules closes the copies kept for runs that
+     *                               were waiting, if none took them, and then their compilers; a run whose new copy
+     *                               was only partly made closes the sessions it made; and a run that fails to get a
+     *                               copy does that closing without having held one, if it was the last to use the
      *                               rules; if its wait for a copy, or for a build slot to make one, was stopped, it
      *                               has already reported the stop to its listeners. A fatal error from that closing
      *                               reaches the run: it's thrown even when the rules ran without failing, and in
@@ -237,7 +238,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      * Closes the engine, and releases what its expression languages hold for the rules, such as interpreter contexts.
      * A run holding a copy of the rules finishes normally, and so does one waiting for a copy, because a rule list
      * can't close under a run that has begun borrowing from it: the languages' sessions are closed as each run
-     * returns, and their compilers after the last one. Afterwards, {@link #run(FactStore)} and {@link #load(List)}
+     * returns, unless another run is still waiting for a copy of the same rules and takes them, and their compilers
+     * after the last run. Afterwards, {@link #run(FactStore)} and {@link #load(List)}
      * throw {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a
      * copy when this method closed them, because it reads them again and finds a closed engine. A {@code load()}
      * that found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on
@@ -250,8 +252,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
      * is rethrown unchanged once every idle session, and the compilers if no run holds a copy, has been closed: the
      * first, if there are several. The engine is closed all the same, so closing it again does nothing. A copy a run
-     * still holds is closed when the run gives it back, and a fatal error from that reaches the run. By default, this
-     * method does nothing.
+     * still holds is closed when the run gives it back, or, when it's kept for a run still waiting for a copy, by the
+     * last run to leave, and a fatal error from that reaches the run that closes it. By default, this method does
+     * nothing.
      * </p>
      */
     @Override

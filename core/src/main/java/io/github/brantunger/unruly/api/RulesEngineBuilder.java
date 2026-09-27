@@ -416,6 +416,15 @@ public final class RulesEngineBuilder<O> {
      * {@link io.github.brantunger.unruly.api.language.Session#none()} needs no copies, and no limit applies to it.
      * </p>
      *
+     * <p>
+     * The limit bounds the copies of each rule list, and the runs holding a copy across reloads: a run still using
+     * rules that {@link RulesEngine#load(List)} replaced holds its copy under the same limit as runs on the
+     * new rules. The replaced rules also keep copies given back idle for their runs still waiting for one, at most
+     * {@code maxCopies}, which hold no place under the limit. So for a short time after a reload the engine can have up
+     * to {@code maxCopies} more copies for each replaced rule list that still has runs waiting, until the last run on
+     * those rules has finished.
+     * </p>
+     *
      * @param maxCopies The most compiled copies of the rules to keep, and so the most runs making progress at once;
      *                  at least 1
      * @return This builder

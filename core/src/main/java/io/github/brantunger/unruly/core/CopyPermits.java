@@ -10,7 +10,8 @@ import java.util.function.LongSupplier;
 /**
  * An engine's permits for compiled copies of its rules: one for each copy a limited run holds. Every rule list the
  * engine loads shares them, so runs that still use a list a reload replaced count against the same limit as runs on
- * the new one, and the limit holds across reloads.
+ * the new one, and the limit on runs holding copies holds across reloads. The idle copies a replaced list keeps for its
+ * runs still waiting hold none.
  *
  * <p>
  * The engine's build slots are here too: a run on a virtual thread, which no limit covers, waits for one before it
