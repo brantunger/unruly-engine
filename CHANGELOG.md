@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.10](https://github.com/brantunger/unruly-engine/compare/v2.8.9...v2.8.10) (2026-09-27)
+
+
+### Bug Fixes
+
+* add contract-kit checks that close a session while another runs, and on another thread ([#742](https://github.com/brantunger/unruly-engine/issues/742)) ([3c278d5](https://github.com/brantunger/unruly-engine/commit/3c278d5e0446311548f5adbfe035d9a9819765e4))
+
 ## [2.8.9](https://github.com/brantunger/unruly-engine/compare/v2.8.8...v2.8.9) (2026-09-27)
 
 
