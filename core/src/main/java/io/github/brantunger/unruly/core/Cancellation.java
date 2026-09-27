@@ -12,13 +12,19 @@ import java.util.concurrent.TimeoutException;
  * context with {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()} while an expression
  * runs. So a run stops for the same reasons wherever it is.
  * </p>
+ *
+ * <p>
+ * Whether a deadline has passed is decided by the {@link Deadline} alone, on {@link System#nanoTime()}; its
+ * {@link Instant} is only shown, in {@link io.github.brantunger.unruly.api.language.EvaluationContext#deadline()} and
+ * in messages.
+ * </p>
  */
 final class Cancellation {
 
     // The deadline of the run this thread is in, whichever engine runs it, so a run started from inside it (an action
     // that runs another engine, say) stops no later than the run that started it. A plain ThreadLocal, like
     // RuleSet's count of runs on a thread.
-    private static final ThreadLocal<Instant> RUN_DEADLINE = new ThreadLocal<>();
+    private static final ThreadLocal<Deadline> RUN_DEADLINE = new ThreadLocal<>();
 
     private Cancellation() {
     }
@@ -28,10 +34,19 @@ final class Cancellation {
      * {@code timeout}, or at the deadline of the run it was started from, whichever comes first.
      *
      * @param timeout How long the run may take, or {@code null} if it has no timeout of its own
-     * @return The deadline, or {@code null} if the run has none
+     * @return The deadline, which is {@link Deadline#NONE} if the run has none, and the very one of the run it was
+     *         started from when that comes first
      */
-    static Instant deadlineFrom(Duration timeout) {
-        return earliest(timeout == null ? null : after(Instant.now(), timeout), RUN_DEADLINE.get());
+    static Deadline deadlineFrom(Duration timeout) {
+        Deadline outer = RUN_DEADLINE.get();
+        if (outer == null) {
+            return timeout == null ? Deadline.NONE : Deadline.from(timeout);
+        }
+        // A run whose own timeout ends no sooner than its outer run's deadline builds no deadline of its own.
+        if (timeout == null || outer.nanosLeft() <= Deadline.nanosOf(timeout)) {
+            return outer;
+        }
+        return Deadline.earliest(Deadline.from(timeout), outer);
     }
 
     /**
@@ -47,27 +62,13 @@ final class Cancellation {
     }
 
     /**
-     * Returns the earlier of two deadlines.
+     * Makes {@code deadline} the one runs started on this thread from now on inherit, until {@link #leave(Deadline)}.
      *
-     * @param first  A deadline, or {@code null} for none
-     * @param second Another deadline, or {@code null} for none
-     * @return The earlier one, or {@code null} if neither is set
-     */
-    static Instant earliest(Instant first, Instant second) {
-        if (first == null) {
-            return second;
-        }
-        return second == null || first.isBefore(second) ? first : second;
-    }
-
-    /**
-     * Makes {@code deadline} the one runs started on this thread from now on inherit, until {@link #leave(Instant)}.
-     *
-     * @param deadline The deadline of the run that is starting, or {@code null} if it has none
+     * @param deadline The deadline of the run that is starting, {@link Deadline#NONE} if it has none
      * @return The deadline to put back when the run ends
      */
-    static Instant enter(Instant deadline) {
-        Instant outer = RUN_DEADLINE.get();
+    static Deadline enter(Deadline deadline) {
+        Deadline outer = RUN_DEADLINE.get();
         restore(deadline);
         return outer;
     }
@@ -76,29 +77,18 @@ final class Cancellation {
      * Puts back the deadline that applied before a run started, leaving no entry behind on a thread that is no longer
      * running anything with a deadline.
      *
-     * @param outer What {@link #enter(Instant)} returned
+     * @param outer What {@link #enter(Deadline)} returned
      */
-    static void leave(Instant outer) {
+    static void leave(Deadline outer) {
         restore(outer);
     }
 
-    private static void restore(Instant deadline) {
-        if (deadline == null) {
+    private static void restore(Deadline deadline) {
+        if (deadline == null || !deadline.isSet()) {
             RUN_DEADLINE.remove();
         } else {
             RUN_DEADLINE.set(deadline);
         }
-    }
-
-    /**
-     * Returns how long is left before a deadline.
-     *
-     * @param deadline When the run must stop, or {@code null} if it has none
-     * @return The time left, which is zero or negative once the deadline has passed, or {@code null} if there is no
-     *         deadline
-     */
-    static Duration timeLeft(Instant deadline) {
-        return deadline == null ? null : Duration.between(Instant.now(), deadline);
     }
 
     /**
@@ -107,28 +97,18 @@ final class Cancellation {
      * @param deadline The deadline that passed
      * @return The exception
      */
-    static TimeoutException timedOut(Instant deadline) {
-        return new TimeoutException("The run's deadline of " + deadline + " has passed");
+    static TimeoutException timedOut(Deadline deadline) {
+        return new TimeoutException("The run's deadline of " + deadline.instant() + " has passed");
     }
 
     /**
      * Returns whether a run with this deadline must stop.
      *
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop
      * @return {@code true} if the current thread is interrupted, or the deadline has passed
      */
-    static boolean isCancelled(Instant deadline) {
+    static boolean isCancelled(Deadline deadline) {
         // isInterrupted(), never interrupted(): the status stays set, so the caller still sees it.
-        return Thread.currentThread().isInterrupted() || hasPassed(deadline);
-    }
-
-    /**
-     * Returns whether a run's deadline has passed.
-     *
-     * @param deadline When the run must stop, or {@code null} if it has none
-     * @return {@code true} if there is a deadline and it is not in the future
-     */
-    static boolean hasPassed(Instant deadline) {
-        return deadline != null && !Instant.now().isBefore(deadline);
+        return Thread.currentThread().isInterrupted() || deadline.hasPassed();
     }
 }

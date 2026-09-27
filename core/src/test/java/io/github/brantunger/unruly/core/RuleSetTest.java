@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.AbstractQueue;
 import java.util.ArrayList;
@@ -213,8 +214,8 @@ class RuleSetTest {
      * A deadline for a borrow that shouldn't have to wait at all, so that one which does fails the test instead of
      * holding it: JUnit reports the test's own deadline only once the test has returned.
      */
-    private static Instant deadline() {
-        return Instant.now().plusSeconds(10);
+    private static Deadline deadline() {
+        return Deadline.from(Duration.ofSeconds(10));
     }
 
     /** A thread holding one copy of a rule set until the test asks for it back. */
@@ -425,9 +426,9 @@ class RuleSetTest {
         RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
                 CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
 
-        RuleSet.Copy first = rules.borrow(null);
+        RuleSet.Copy first = rules.borrow(Deadline.NONE);
         try {
-            RuleSet.Copy second = rules.borrow(null);
+            RuleSet.Copy second = rules.borrow(Deadline.NONE);
             try {
                 assertEquals(Map.of("a", new NumberedSession("a", 1)), first.sessions());
                 assertEquals(Map.of("a", new NumberedSession("a", 2)), second.sessions(),
@@ -439,7 +440,7 @@ class RuleSetTest {
                 rules.release(second);
             }
 
-            RuleSet.Copy reused = rules.borrow(null);
+            RuleSet.Copy reused = rules.borrow(Deadline.NONE);
             rules.release(reused);
             assertSame(second.sessions(), reused.sessions());
             assertEquals(2, sessions.get(), "sessions created");
@@ -513,7 +514,7 @@ class RuleSetTest {
             RuleSet.Copy extra = null;
             Throwable thrown = null;
             try {
-                extra = rules.borrow(Instant.now().minusSeconds(1));
+                extra = rules.borrow(Deadline.at(Instant.now().minusSeconds(1)));
             } catch (TimeoutException e) {
                 thrown = e;
             } finally {
@@ -556,7 +557,7 @@ class RuleSetTest {
         compilers.put("a", compiler("a", sessions, created));
         RuleSet rules = new RuleSet(List.of(RULE), compilers, CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
 
-        RuleSet.Copy copy = rules.borrow(null);
+        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         try {
             assertEquals(List.of("b", "a"), created, "sessions created, by language");
             assertEquals(List.of("b", "a"), List.copyOf(copy.sessions().keySet()));
@@ -625,7 +626,7 @@ class RuleSetTest {
     void givingUpWhenNothingComesBack() throws InterruptedException, TimeoutException {
         Semaphore permits = new Semaphore(0);
 
-        assertFalse(RuleSet.awaitPermit(permits, () -> 7L, 10, null),
+        assertFalse(RuleSet.awaitPermit(permits, () -> 7L, 10, Deadline.NONE),
                 "nothing came back, so the run makes an extra copy");
     }
 
@@ -634,7 +635,7 @@ class RuleSetTest {
     void takingAFreeCopy() throws InterruptedException, TimeoutException {
         Semaphore permits = new Semaphore(1);
 
-        assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10, null));
+        assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
         assertEquals(0, permits.availablePermits());
     }
 
@@ -642,13 +643,14 @@ class RuleSetTest {
     @DisplayName("a run stops waiting at its deadline when that comes before the window ends")
     void waitingStopsAtTheDeadline() {
         Semaphore permits = new Semaphore(0);
-        Instant deadline = Instant.now().plusMillis(50);
+        Deadline deadline = Deadline.from(Duration.ofMillis(50));
 
         TimeoutException thrown = assertThrows(TimeoutException.class,
                 () -> RuleSet.awaitPermit(permits, () -> 0L, 60_000, deadline));
 
-        assertFalse(Instant.now().isBefore(deadline), "it gave up before the deadline");
-        assertTrue(thrown.getMessage().contains(deadline.toString()), thrown.getMessage());
+        // Asked of the deadline, which decides when a run stops: the system clock can be a moment either side of it.
+        assertTrue(deadline.hasPassed(), "it gave up before the deadline");
+        assertTrue(thrown.getMessage().contains(deadline.instant().toString()), thrown.getMessage());
     }
 
     @Test
@@ -657,7 +659,7 @@ class RuleSetTest {
         Semaphore permits = new Semaphore(0);
 
         assertThrows(TimeoutException.class,
-                () -> RuleSet.awaitPermit(permits, () -> 0L, 60_000, Instant.now().minusSeconds(1)));
+                () -> RuleSet.awaitPermit(permits, () -> 0L, 60_000, Deadline.at(Instant.now().minusSeconds(1))));
     }
 
     @Test
@@ -794,7 +796,7 @@ class RuleSetTest {
 
         VirtualRun holder = startVirtualRun(rules);
         assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
-        assertFalse(permits.awaitSlot(0, null), "the slot is held while the first run's new copy runs");
+        assertFalse(permits.awaitSlot(0, Deadline.NONE), "the slot is held while the first run's new copy runs");
         VirtualRun waiter = startVirtualRun(rules);
         awaitParked(waiter.thread());
 
@@ -806,7 +808,7 @@ class RuleSetTest {
         assertEquals(1, sessions.get(), "so it made no copy of its own");
         assertEquals(RuleSet.Held.NOTHING, taken.held(), "and holds nothing to give back with it");
         waiter.giveBack();
-        assertTrue(permits.awaitSlot(0, null), "the slot the run took while waiting was never given back");
+        assertTrue(permits.awaitSlot(0, Deadline.NONE), "the slot the run took while waiting was never given back");
     }
 
     @Test
@@ -1130,6 +1132,32 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("guard: the build slot a run took before its look for an idle copy failed is free again")
+    void theSlotTakenBeforeLookingFailedIsFreeAgain() throws InterruptedException {
+        // The scenario SlotGivenBackTest proves, which compiles on releases whose deadlines differ, ending with the
+        // check it can't make there: the slot itself is free, and nothing holds it.
+        StackOverflowError failure = new StackOverflowError("looking for an idle copy");
+        HookedQueue idle = new HookedQueue(() -> {
+        });
+        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        RuleSet rules = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.none(),
+                permits, TimeUnit.MINUTES.toMillis(5), idle);
+        VirtualRun holder = startVirtualRun(rules);
+        assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
+        VirtualRun failing = startVirtualRun(rules);
+        awaitWaiters(rules, 1);
+        idle.pollFailure.set(failure);
+
+        holder.giveBack();
+        assertTrue(failing.borrowed().await(30, TimeUnit.SECONDS), "the run never finished borrowing");
+        failing.thread().join(TimeUnit.SECONDS.toMillis(30));
+
+        assertSame(failure, failing.failure().get(), "the run failed with what looking threw");
+        assertTrue(permits.awaitSlot(0, Deadline.NONE), "the slot was given back");
+    }
+
+    @Test
     @DisplayName("a run waiting for a build slot when the rule set is retired takes the copy given back, rather than"
             + " making one of its own")
     void aRunWaitingForASlotTakesTheCopyOfARetiredRuleSet() throws InterruptedException {
@@ -1155,7 +1183,7 @@ class RuleSetTest {
         assertEquals(1, made.get(), "so it made no copy of its own");
         assertEachCopyClosedOnceThenTheCompiler(1, closed);
         assertEquals(0, rules.waiters(), "no run is still counted as waiting");
-        assertTrue(permits.awaitSlot(0, null), "the slot was given back");
+        assertTrue(permits.awaitSlot(0, Deadline.NONE), "the slot was given back");
     }
 
     @Test

@@ -327,7 +327,7 @@ class RunDeadlineTest {
         RulesEngine<Map<String, Object>> engine = engine(RulesEngineBuilder.allMatches(HashMap::new),
                 List.of(rule("first", "true", "output.put('first', true)")));
 
-        Instant outer = Cancellation.enter(passed);
+        Deadline outer = Cancellation.enter(Deadline.at(passed));
         RuleExecutionException stop;
         try {
             stop = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));

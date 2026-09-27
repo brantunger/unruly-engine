@@ -119,11 +119,18 @@ public final class LanguageTestContexts {
     /**
      * Creates the context a condition is evaluated against, for a run with a deadline.
      *
+     * <p>
+     * The context reads the system clock once, when it's created, to learn how far away the deadline is, and from
+     * then on times it with a monotonic clock, as a run does: a step of the system clock afterwards doesn't move when
+     * the context is cancelled. Its {@link EvaluationContext#timeLeft()} is measured the same way.
+     * </p>
+     *
      * @param facts    The facts by name, whose values can be {@code null}; copied
      * @param deadline When the run must stop, or {@code null} if it has none, as an engine built without
      *                 {@code runTimeout} gives it
      * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run: {@code true} once
-     *         the deadline has passed, or while the calling thread's interrupt status is set.
+     *         the deadline has passed, measured with a monotonic clock from when the context was created, or while
+     *         the calling thread's interrupt status is set.
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
@@ -146,6 +153,12 @@ public final class LanguageTestContexts {
 
     /**
      * Creates the context an action runs against, for a run with a deadline.
+     *
+     * <p>
+     * The context reads the system clock once, when it's created, to learn how far away the deadline is, and from
+     * then on times it with a monotonic clock, as a run does: a step of the system clock afterwards doesn't move when
+     * the context is cancelled. Its {@link EvaluationContext#timeLeft()} is measured the same way.
+     * </p>
      *
      * @param facts    The facts by name, whose values can be {@code null}; copied
      * @param output   The output object, which the action changes in place

@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -88,37 +86,35 @@ final class CopyPermits {
      * its first rule.
      *
      * @param window   How long to wait for progress, in milliseconds
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @return {@code true} if a slot was taken, to give back with {@link #giveBackSlot()}; {@code false} if the run is
      *         to make its copy without one
      * @throws InterruptedException if the thread is interrupted while it waits
      */
-    boolean awaitSlot(long window, Instant deadline) throws InterruptedException {
+    boolean awaitSlot(long window, Deadline deadline) throws InterruptedException {
         return awaitSlot(slots, slotsGivenBack::get, window, deadline);
     }
 
     /**
-     * Waits for one of {@code slots} while they're still being given back, as {@link #awaitSlot(long, Instant)}
+     * Waits for one of {@code slots} while they're still being given back, as {@link #awaitSlot(long, Deadline)}
      * describes. It takes the slots and their count rather than reading this engine's, so a test can drive the wait
      * with slots of its own: it is a deliberate test seam, like {@link RuleSet#awaitPermit}.
      *
      * @param slots    The build slots to wait for
      * @param returned How many slots have been given back so far
      * @param window   How long to wait for progress, in milliseconds
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @return {@code true} if a slot was taken, {@code false} if the run is to make its copy without one
      * @throws InterruptedException if the thread is interrupted while it waits
      */
-    static boolean awaitSlot(Semaphore slots, LongSupplier returned, long window, Instant deadline)
+    static boolean awaitSlot(Semaphore slots, LongSupplier returned, long window, Deadline deadline)
             throws InterruptedException {
         if (Thread.currentThread().isInterrupted()) {
             return false;
         }
         long start = System.nanoTime();
-        Duration left = Cancellation.timeLeft(deadline);
-        // Converted without overflowing: half of a deadline too far away to count in nanoseconds, such as the
-        // Instant.MAX a huge timeout gives, is Long.MAX_VALUE, as patient as a run without one.
-        long patience = left == null ? Long.MAX_VALUE : Math.max(0, TimeUnit.NANOSECONDS.convert(left.dividedBy(2)));
+        // On the deadline's own clock, nanoTime(), as the wait below is timed.
+        long patience = deadline.isSet() ? Math.max(0, deadline.nanosLeft() / 2) : Long.MAX_VALUE;
         long windowNanos = TimeUnit.MILLISECONDS.toNanos(window);
         long seen = returned.getAsLong();
         while (true) {

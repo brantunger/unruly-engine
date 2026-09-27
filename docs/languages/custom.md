@@ -342,7 +342,7 @@ language can do decides whether a rule that is already running can be stopped:
 | Language | Can it stop inside an expression? |
 | --- | --- |
 | MVEL | No. It has no hook inside a loop, so `while (true) {}` runs for ever. |
-| JEXL 3 | Yes, with [`JexlBuilder.cancellable(true)`](https://commons.apache.org/proper/commons-jexl/apidocs/org/apache/commons/jexl3/JexlOptions.html), whose interpreter stops for an interrupt. For a timeout, also set the flag its context's `JexlContext.CancellationHandle` returns once `context.deadline()` passes. |
+| JEXL 3 | Yes, with [`JexlBuilder.cancellable(true)`](https://commons.apache.org/proper/commons-jexl/apidocs/org/apache/commons/jexl3/JexlOptions.html), whose interpreter stops for an interrupt. For a timeout, also set the flag its context's `JexlContext.CancellationHandle` returns after `context.timeLeft()`. |
 | CEL | Bounded by construction: the language isn't Turing-complete, and cel-java supports cost limits. |
 
 Both contexts tell an expression where it stands:
@@ -354,7 +354,7 @@ public CompiledAction compileAction(Expression expression) {
             if (context.isCancelled()) {         // interrupted, or past the deadline
                 return ActionResult.done();
             }
-            step(context.deadline());            // null when the run has no deadline
+            step(context.timeLeft());            // about 292 years when the run has no deadline
         }
         return ActionResult.done();
     };
@@ -363,23 +363,23 @@ public CompiledAction compileAction(Expression expression) {
 
 `isCancelled()` is `true` while the calling thread is interrupted, or once the deadline has passed.
 
-Returning when it's `true` is enough: the engine checks again as soon as the expression returns, and stops the run
-whatever it returned. Throwing an exception once the run is cancelled stops the run the same way, unless an `Error`
-is in its cause chain; see [What stops a run](../stopping-runs.md#-what-stops-a-run).
+Returning then is enough: the engine checks again when the expression returns, and stops the run whatever it
+returned. Throwing once the run is cancelled stops it the same way, unless an `Error` is in its cause chain; see
+[What stops a run](../stopping-runs.md#-what-stops-a-run).
 
-`deadline()` is an `Instant`, or `null` when the run has no timeout. Use it to give a call of your own a timeout.
-Neither is required.
+Since 2.9.0, `timeLeft()` is the time left before the run's deadline, as the engine measures it, and
+`Duration.ZERO` once past: time your own calls with it. `deadline()` is a wall-clock `Instant` for showing, `null`
+without a timeout. None is required.
 
-A runtime that clears the thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does before it
-throws `JexlException.Cancel`, hides the caller's interrupt from the engine, which sees an interrupt only in that
-status or as an `InterruptedException` in the cause chain of what an expression throws. Unless the deadline has passed
-too, a throw is then reported as that rule's failure, logged at ERROR, and a return lets the run go on.
+A runtime that clears the interrupt status when it cancels, as JEXL's `cancellable(true)` does, hides the caller's
+interrupt from the engine, which sees an interrupt only in that status or as an `InterruptedException` in the cause
+chain of what an expression throws. Unless the deadline has passed too, a throw is then reported as that rule's
+failure, at ERROR, and a return lets the run go on.
 
 So record what cancelled the runtime. When an interrupt cancelled it, call `Thread.currentThread().interrupt()`
 before you throw or return, or throw with an `InterruptedException` as the cause. When your adapter cancelled it
-because `context.deadline()` passed, restore nothing, and the engine reports the timeout. The engine checks the
-interrupt first, so restoring it reports the timeout as an interrupt and leaves the caller's thread interrupted,
-failing its next run:
+for the deadline, restore nothing: the engine reports the timeout. The engine checks the interrupt first, so restoring
+it reports the timeout as an interrupt and leaves the caller's thread interrupted, failing its next run:
 
 ```java
 class CancellableContext extends MapContext implements JexlContext.CancellationHandle {
@@ -392,14 +392,19 @@ class CancellableContext extends MapContext implements JexlContext.CancellationH
 }
 
 // scheduler: a ScheduledExecutorService your compiler owns; the JexlEngine is built with cancellable(true).
-// deadline: context.deadline(). Pass a new CancellableContext each time: JEXL leaves its flag set after any cancel.
-Object execute(JexlScript script, CancellableContext jexlContext, Instant deadline) {
+// context: the EvaluationContext or ActionContext the engine passed. Pass a new CancellableContext each time: JEXL
+// leaves its flag set after any cancel.
+Object execute(JexlScript script, CancellableContext jexlContext, EvaluationContext context) {
     AtomicBoolean forDeadline = new AtomicBoolean();
-    ScheduledFuture<?> timer = deadline == null ? null : scheduler.schedule(() -> {
+    ScheduledFuture<?> timer = context.deadline() == null ? null : scheduler.schedule(() -> {
         forDeadline.set(true);                           // record why, before cancelling
         jexlContext.getCancellation().set(true);
-    }, Duration.between(Instant.now(), deadline).plusMillis(1).toNanos(),   // 1 ms late, so the engine's clock
-            TimeUnit.NANOSECONDS);                                          // has almost surely passed it
+    }, context.timeLeft().toNanos(), TimeUnit.NANOSECONDS);
+    // timeLeft() is timed as the engine times the run, so the timer fires once the run has passed its deadline,
+    // whatever the system clock does. Not Duration.between(Instant.now(), context.deadline()): that is off by any
+    // step of the system clock since the run started. Without a deadline, timeLeft() is
+    // Duration.ofNanos(Long.MAX_VALUE), about 292 years; the timer is skipped then, since a cancelled task can stay
+    // in a ScheduledThreadPoolExecutor's queue until its delay.
     try {
         return script.execute(jexlContext);
     } catch (JexlException.Cancel e) {

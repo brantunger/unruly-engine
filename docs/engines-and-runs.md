@@ -133,11 +133,12 @@ takes. A [nested run](glossary.md#nested-run) reads the clock again. The window 
 
 The clock is `Clock.systemUTC()` unless the builder's `clock(Clock)` sets another. A test can run the rules as they
 will be on a date with `.clock(Clock.fixed(Instant.parse("2027-07-01T00:00:00Z"), ZoneOffset.UTC))`. Only windows
-use this clock: a [run timeout](stopping-runs.md) is measured by the system clock, whatever `clock(...)` is set to.
+use it: a [run timeout](stopping-runs.md) is measured on a monotonic clock, so setting the system clock doesn't move a
+running deadline.
 
-`RunContext.startedAt()` and `RunResult.startedAt()` return the instant the run judged the windows at. It comes from
-the engine's clock, so a fixed clock gives every run the same instant. Don't compare it with `rules().loadedAt()` or
-with the run's deadline: those use the system clock.
+`RunContext.startedAt()` and `RunResult.startedAt()` return the instant the run judged the windows at, from the
+engine's clock, so a fixed clock gives every run the same instant. Don't compare it with `rules().loadedAt()` or
+the deadline: both use the system clock.
 
 ### Tags
 

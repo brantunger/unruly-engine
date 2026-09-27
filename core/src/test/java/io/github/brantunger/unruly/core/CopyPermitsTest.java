@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +32,7 @@ class CopyPermitsTest {
         }
     }
 
-    private static Waiter waitFor(CopyPermits permits, long window, Instant deadline) {
+    private static Waiter waitFor(CopyPermits permits, long window, Deadline deadline) {
         AtomicReference<Object> outcome = new AtomicReference<>();
         Thread thread = Thread.ofPlatform().daemon().start(() -> {
             try {
@@ -54,17 +55,17 @@ class CopyPermitsTest {
     @Test
     @DisplayName("a free slot is taken at once")
     void freeSlot() throws InterruptedException {
-        assertTrue(new CopyPermits(0, 1).awaitSlot(10_000, null));
+        assertTrue(new CopyPermits(0, 1).awaitSlot(10_000, Deadline.NONE));
     }
 
     @Test
     @DisplayName("a run gives up when a whole window passes with no slot given back")
     void givesUpAfterAWindowWithoutProgress() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
         long start = System.nanoTime();
 
-        assertFalse(permits.awaitSlot(100, null));
+        assertFalse(permits.awaitSlot(100, Deadline.NONE));
         assertTrue(System.nanoTime() - start >= TimeUnit.MILLISECONDS.toNanos(100));
     }
 
@@ -72,11 +73,11 @@ class CopyPermitsTest {
     @DisplayName("a run keeps waiting while slots come back to runs ahead of it, and takes the next one")
     void keepsWaitingWhileSlotsComeBack() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
-        Waiter first = waitFor(permits, 10_000, null);
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
+        Waiter first = waitFor(permits, 10_000, Deadline.NONE);
         awaitParked(first.thread());
         long secondStarted = System.nanoTime();
-        Waiter second = waitFor(permits, 1_000, null);
+        Waiter second = waitFor(permits, 1_000, Deadline.NONE);
         awaitParked(second.thread());
 
         // The slot goes to the run that waited first. The second's window ends with no slot for it, but it saw one
@@ -94,13 +95,13 @@ class CopyPermitsTest {
     @DisplayName("a run that waits first gets the slot first, however many runs arrive after it")
     void waitingRunsAreNotOvertaken() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
-        Waiter first = waitFor(permits, 10_000, null);
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
+        Waiter first = waitFor(permits, 10_000, Deadline.NONE);
         awaitParked(first.thread());
 
         permits.giveBackSlot();
         // A run arriving now finds the slot promised to the one waiting, so it doesn't get it.
-        assertFalse(permits.awaitSlot(0, null), "a run arriving later took the slot");
+        assertFalse(permits.awaitSlot(0, Deadline.NONE), "a run arriving later took the slot");
 
         assertEquals(true, first.result());
     }
@@ -109,10 +110,10 @@ class CopyPermitsTest {
     @DisplayName("with a deadline, a run waits at most half the time it has left")
     void waitsHalfTheTimeLeft() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
         long start = System.nanoTime();
 
-        assertFalse(permits.awaitSlot(10_000, Instant.now().plusMillis(600)));
+        assertFalse(permits.awaitSlot(10_000, Deadline.from(Duration.ofMillis(600))));
         long waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
         assertTrue(waited >= 250 && waited < 600, "waited " + waited + " ms, not about 300");
     }
@@ -127,7 +128,7 @@ class CopyPermitsTest {
         AtomicLong reads = new AtomicLong();
         LongSupplier returned = () -> Math.min(3, reads.incrementAndGet());
 
-        assertFalse(CopyPermits.awaitSlot(new Semaphore(0), returned, 10_000, Instant.now().plusMillis(400)));
+        assertFalse(CopyPermits.awaitSlot(new Semaphore(0), returned, 10_000, Deadline.from(Duration.ofMillis(400))));
 
         assertEquals(1, reads.get(), "the run read the count again instead of giving up when its patience ran out");
     }
@@ -136,8 +137,8 @@ class CopyPermitsTest {
     @DisplayName("a slot given back inside the half of the time left is taken")
     void slotInsideTheDeadline() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
-        Waiter waiter = waitFor(permits, 10_000, Instant.now().plusSeconds(10));
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
+        Waiter waiter = waitFor(permits, 10_000, Deadline.from(Duration.ofSeconds(10)));
         awaitParked(waiter.thread());
 
         permits.giveBackSlot();
@@ -148,10 +149,11 @@ class CopyPermitsTest {
     @Test
     @DisplayName("a deadline too far away to count in nanoseconds waits as a run without one does")
     void farDeadline() throws InterruptedException {
-        // Instant.MAX is the deadline a timeout long enough to mean "no real limit" gives.
+        // The deadline a timeout long enough to mean "no real limit" gives.
+        Deadline far = Deadline.from(Duration.ofSeconds(Long.MAX_VALUE));
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(10_000, Instant.MAX), "the free slot wasn't taken");
-        Waiter waiter = waitFor(permits, 10_000, Instant.MAX);
+        assertTrue(permits.awaitSlot(10_000, far), "the free slot wasn't taken");
+        Waiter waiter = waitFor(permits, 10_000, far);
         awaitParked(waiter.thread());
 
         permits.giveBackSlot();
@@ -163,9 +165,9 @@ class CopyPermitsTest {
     @DisplayName("a run whose deadline has passed doesn't wait")
     void deadlinePassed() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
 
-        assertFalse(permits.awaitSlot(10_000, Instant.now().minusSeconds(1)));
+        assertFalse(permits.awaitSlot(10_000, Deadline.at(Instant.now().minusSeconds(1))));
     }
 
     @Test
@@ -174,7 +176,7 @@ class CopyPermitsTest {
         CopyPermits permits = new CopyPermits(0, 1);
         Thread.currentThread().interrupt();
         try {
-            assertFalse(permits.awaitSlot(10_000, null), "took a slot, though the run is about to stop");
+            assertFalse(permits.awaitSlot(10_000, Deadline.NONE), "took a slot, though the run is about to stop");
             assertTrue(Thread.currentThread().isInterrupted());
         } finally {
             Thread.interrupted();
@@ -185,8 +187,8 @@ class CopyPermitsTest {
     @DisplayName("a run interrupted while it waits throws")
     void interruptedWhileWaiting() throws InterruptedException {
         CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, null));
-        Waiter waiter = waitFor(permits, 10_000, null);
+        assertTrue(permits.awaitSlot(0, Deadline.NONE));
+        Waiter waiter = waitFor(permits, 10_000, Deadline.NONE);
         awaitParked(waiter.thread());
 
         waiter.thread().interrupt();
@@ -199,9 +201,9 @@ class CopyPermitsTest {
     void oneSlotForEachProcessor() throws InterruptedException {
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED);
         for (int slot = 0; slot < Runtime.getRuntime().availableProcessors(); slot++) {
-            assertTrue(permits.awaitSlot(0, null), "slot " + slot);
+            assertTrue(permits.awaitSlot(0, Deadline.NONE), "slot " + slot);
         }
 
-        assertFalse(permits.awaitSlot(0, null), "more slots than processors");
+        assertFalse(permits.awaitSlot(0, Deadline.NONE), "more slots than processors");
     }
 }

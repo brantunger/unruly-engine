@@ -3,8 +3,6 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 
-import java.time.Instant;
-import java.util.Objects;
 
 /**
  * A {@link RuleExecutionException} an engine throws from {@code run()} once it has logged it and told its listeners.
@@ -35,8 +33,16 @@ final class ReportedFailure extends RuleExecutionException {
 
     /** Whether the run stopped, because it was interrupted or passed its deadline, rather than failed. */
     private final boolean stopped;
-    /** The deadline the run passed, or {@code null} if it failed or was interrupted. */
-    private final Instant deadline;
+    /**
+     * Whether the run stopped because it was interrupted. {@code false} in a form serialized before this was recorded,
+     * so a stop read from one is never taken for another run's.
+     */
+    private final boolean interrupted;
+    /**
+     * The deadline the run passed, which tells whether another run stopped for the same one, or {@code null} if it
+     * failed or was interrupted, or once this has been deserialized: a deadline is the same only as itself.
+     */
+    private final transient Deadline passed;
     /** The innermost engine failure in the cause chain, or {@code null} if this is the innermost one. */
     private final ReportedFailure innermostBelow;
     /** The first {@link Error} in the cause chain, or {@code null} if there is none. */
@@ -61,10 +67,11 @@ final class ReportedFailure extends RuleExecutionException {
         this(message, cause, false, null);
     }
 
-    private ReportedFailure(String message, Throwable cause, boolean stopped, Instant deadline) {
+    private ReportedFailure(String message, Throwable cause, boolean stopped, Deadline passed) {
         super(message, cause);
         this.stopped = stopped;
-        this.deadline = deadline;
+        this.interrupted = stopped && passed == null;
+        this.passed = passed;
         Failures.Below below = Failures.below(cause);
         this.innermostBelow = below.innermost();
         this.firstError = below.error();
@@ -81,7 +88,7 @@ final class ReportedFailure extends RuleExecutionException {
      * @param deadline The deadline the run passed, or {@code null} if it was interrupted
      * @return The exception, which belongs to no rule
      */
-    static ReportedFailure stop(String message, Exception cause, Instant deadline) {
+    static ReportedFailure stop(String message, Exception cause, Deadline deadline) {
         return new ReportedFailure(message, cause, true, deadline);
     }
 
@@ -99,11 +106,14 @@ final class ReportedFailure extends RuleExecutionException {
     /**
      * Tells whether this is a run that stopped for the same reason: interrupted, or past the same deadline.
      *
-     * @param passed The deadline another run passed, or {@code null} for an interrupt
-     * @return {@code true} if this run stopped, and for that reason
+     * @param other The deadline another run passed, or {@code null} for an interrupt
+     * @return {@code true} if this run stopped, and for that reason. A stop read from a serialized form never matches
+     *         another run's deadline, nor, in a form from before interrupts were recorded, an interrupt.
      */
-    boolean isStopFor(Instant passed) {
-        return stopped && Objects.equals(deadline, passed);
+    // The very same deadline: a run started from inside another inherits it, and one of its own is another object.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    boolean isStopFor(Deadline other) {
+        return stopped && (other == null ? interrupted : other == passed);
     }
 
     /**
@@ -117,7 +127,8 @@ final class ReportedFailure extends RuleExecutionException {
     ReportedFailure(String message, Throwable cause, String ruleName, ExpressionKind kind) {
         super(message, cause, ruleName, kind);
         this.stopped = false;
-        this.deadline = null;
+        this.interrupted = false;
+        this.passed = null;
         Failures.Below below = Failures.below(cause);
         this.innermostBelow = below.innermost();
         this.firstError = below.error();

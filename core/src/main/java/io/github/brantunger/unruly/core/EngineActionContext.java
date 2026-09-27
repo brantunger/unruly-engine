@@ -9,26 +9,45 @@ import java.util.Objects;
 /**
  * What one action runs against. <b>Internal:</b> public only because {@link ActionContext} is sealed to it.
  *
- * @param facts    The run's facts, read-only
- * @param output   The output object the action changes
- * @param deadline When the run must stop, or {@code null} if it has none
+ * @param facts       The run's facts, read-only
+ * @param output      The output object the action changes
+ * @param runDeadline When the run must stop, which decides whether it has to
  */
-public record EngineActionContext(Map<String, Object> facts, Object output, Instant deadline)
+public record EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline)
         implements ActionContext {
 
     /**
      * Wraps the facts in a read-only view, whose writes fail with a message about actions.
      *
-     * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
+     * @throws NullPointerException if {@code facts}, {@code output} or {@code runDeadline} is {@code null}
      */
     public EngineActionContext {
         facts = ReadOnlyFacts.forActions(Objects.requireNonNull(facts, "facts must not be null"));
         Objects.requireNonNull(output, "output must not be null");
+        Objects.requireNonNull(runDeadline, "runDeadline must not be null");
+    }
+
+    /**
+     * Creates the context for a run that must stop at {@code deadline} on the system clock, as it is now: a step of
+     * the system clock after that doesn't move when the context is cancelled. The test kit creates contexts with it.
+     *
+     * @param facts    The run's facts
+     * @param output   The output object the action changes
+     * @param deadline When the run must stop, or {@code null} if it has none
+     * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
+     */
+    public EngineActionContext(Map<String, Object> facts, Object output, Instant deadline) {
+        this(facts, output, Deadline.at(deadline));
     }
 
     @Override
     public boolean isCancelled() {
-        return Cancellation.isCancelled(deadline);
+        return Cancellation.isCancelled(runDeadline);
+    }
+
+    @Override
+    public Instant deadline() {
+        return runDeadline.instant();
     }
 
     /**
@@ -39,6 +58,6 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Inst
     @Override
     public String toString() {
         return "ActionContext(output=" + output.getClass().getName() + ", deadline="
-                + (deadline == null ? "none" : deadline) + ")";
+                + (runDeadline.isSet() ? runDeadline.instant() : "none") + ")";
     }
 }

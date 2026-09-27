@@ -177,7 +177,7 @@ failure, stops included.
 | --- | --- | --- |
 | **A bug near the deadline** | A condition or action that returns a wrong result, or throws anything with no `Error` in its cause chain, once the run must stop is reported as a stop: no rule name, WARN, and the bug only in `getSuppressed()` | Check `getSuppressed()` before you dismiss a stop |
 | **An interrupted pooled thread** | The engine leaves the interrupt status set, so an executor shutting down or `Future.cancel(true)` still sees it, and every later run on that thread stops before its first rule | Call `Thread.interrupted()` after catching whatever the run threw, a stop or a rule failure, before the thread serves more work |
-| **A sleeping rule** | A timeout doesn't wake it: `Thread.sleep` or a blocking call runs to its end | Give the call its own timeout. A language can read `EvaluationContext.deadline()` |
+| **A sleeping rule** | A timeout doesn't wake it: `Thread.sleep` or a blocking call runs to its end | Give the call its own timeout. A language can read `EvaluationContext.timeLeft()` |
 | **A slow listener after the last rule** | The run returns normally although it passed its deadline | Time the listener's work yourself |
 | **A run started from `afterRun`** | It inherits the finished run's deadline: it stops before its first rule if that has passed, and otherwise no later than it | Start it after `run()` returns |
 

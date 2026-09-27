@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ReportedFailureTest {
 
     /** The fields a {@code ReportedFailure} had before it recorded anything, which an old form has values for. */
-    private static final Set<String> FIELDS_BEFORE_RECORDING = Set.of("stopped", "deadline");
+    private static final Set<String> FIELDS_BEFORE_RECORDING = Set.of("stopped");
 
     private static ReportedFailure failure(String message, Throwable cause) {
         return new ReportedFailure(message, cause, "r", ExpressionKind.ACTION);

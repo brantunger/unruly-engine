@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.InvocationTargetException;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -74,11 +73,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Where a cancelled run stopped, as its message says: before a rule's condition or action, or while one ran.
     private static final String BEFORE_RULE = "before";
     private static final String DURING_RULE = "during";
-    // How many times one run may read the engine's rules in all: its first reading, and one more for each time it
-    // finds the set it read closed before it could borrow from it. Reading again settles the one race that can
-    // cause that — a reload, or close(), retires the set the run had read in between its reading and its borrow —
-    // and each concurrent reload can stale a run once, so the bound is far above one. Past it, the invariant a run
-    // relies on has broken, and a run that spun instead would leave no evidence.
+    // How many times in a row one run may find the same rule set closed: its first reading of it, and one more for
+    // each time it reads the engine's rules again and gets back the very set it found closed. Reading again settles
+    // the one race that can close a set a run has read — a reload, or close(), retires it in between the run's reading
+    // and its borrow — and a reading that finds a different set shows a reload got through, so the count starts again:
+    // a loader reloading fast can overtake one run any number of times. The same closed set read again means the
+    // engine's current set is closed, so the bound is far above one. Past it, the invariant a run relies on has
+    // broken, and a run that spun instead would leave no evidence.
     private static final int RULE_READS_PER_RUN = 64;
     // The engine's languages and its default language, fixed when it's built.
     private final LanguageRegistry languages;
@@ -254,7 +255,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * names are checked inside the scope, so a name no language can refer to reaches {@code onRunError}. A run that
      * waits for a copy opens its scope when the wait ends; an interrupt while waiting opens and closes a scope of its
      * own. Failing because no rules are loaded, or because the engine is closed, is misuse and reaches no listener.
-     * Failing because the engine's rule list was closed over and over while the run was borrowing a copy reaches
+     * Failing because the run found the same rule list closed time after time while it was borrowing a copy reaches
      * none either: that means an engine invariant has broken rather than that the call was wrong.
      * </p>
      *
@@ -265,12 +266,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @param body    What the engine does once it holds a copy of the rules
      * @return What the run did
-     * @throws IllegalStateException if {@link #load(List)} has not been called, the engine is closed, or the run read
-     *                               a closed rule list {@value #RULE_READS_PER_RUN} times in a row, which means the
-     *                               engine's own invariant has broken
+     * @throws IllegalStateException if {@link #load(List)} has not been called, the engine is closed, or the run found
+     *                               the same rule list closed {@value #RULE_READS_PER_RUN} times in a row, reading
+     *                               the engine's rules again each time, which means the engine's own invariant has
+     *                               broken
      */
     // Any Throwable: the copy must be given back however the run ends, as a finally would, and a failure that isn't
-    // fatal is kept under a fatal Error from closing.
+    // fatal is kept under a fatal Error from closing. Whether a reading found the very set that was closed, rather
+    // than one a reload put in its place, is a question of identity.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     RunResult<O> runInScope(FactStore<?> facts, Duration timeout, Set<String> tags, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
         // Misuse, before the run is numbered or recorded: it reaches no listener and no recording either.
@@ -285,7 +289,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String outcome = RunEvent.FAILED;
         LoggedFailures.enter();
         try {
-            Instant deadline = Cancellation.deadlineFrom(timeout);
+            Deadline deadline = Cancellation.deadlineFrom(timeout);
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
             // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
             RuleSelection selection = new RuleSelection(
@@ -293,21 +297,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Map<String, Object> values = factValues(facts);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
             RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
-            for (int read = 1; copy == null; read++) {
+            int read = 1;
+            while (copy == null) {
                 // The rule set the run read was closed before it could borrow from it, which a reload does to the
                 // set it replaced, and close() to the set it detaches: reading again finds the set that replaced it,
                 // or reports the closed engine. A run the caller has stopped meanwhile stops here rather than
-                // reading again, and one that keeps finding closed sets fails rather than spinning for ever.
+                // reading again, and one that keeps finding the same set closed fails rather than spinning for ever.
+                // A different set starts the count again: a reload got through, however many overtake the run.
                 stopIfCancelled(rules, listenerFacts, deadline, runId, parent, tally, selection);
                 if (read == RULE_READS_PER_RUN) {
-                    throw new IllegalStateException("The engine's rule list was closed " + RULE_READS_PER_RUN
+                    throw new IllegalStateException("The engine's rule list was found closed " + RULE_READS_PER_RUN
                             + " times in a row while this run was borrowing a copy of it. A rule list is closed only"
                             + " after it has been retired, and only a rule list that is no longer the engine's"
                             + " current one is retired, so the list a run reads can never already be closed: that"
                             + " invariant has broken. Please report this stack trace at"
                             + " https://github.com/brantunger/unruly-engine/issues");
                 }
-                rules = currentRules();
+                RuleSet again = currentRules();
+                read = again == rules ? read + 1 : 1;
+                rules = again;
                 copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
@@ -358,13 +366,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /** Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. */
     private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, Map<String, Object> values,
-                                     Map<String, Object> listenerFacts, Instant deadline, long runId,
+                                     Map<String, Object> listenerFacts, Deadline deadline, long runId,
                                      RunContext parent, RunTally tally, RuleSelection selection,
                                      RunBody<O> body) {
         List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
-        Instant outerDeadline = Cancellation.enter(deadline);
+        Deadline outerDeadline = Cancellation.enter(deadline);
         fatalFailure.remove();
         try {
             RunResult<O> result;
@@ -556,7 +564,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                make one, or if the run's deadline passes while it waits for a copy under a
      *                                limit
      */
-    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline, long runId,
+    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Deadline deadline, long runId,
                                 RunContext parent, RunTally tally, RuleSelection selection) {
         try {
             return rules.borrow(deadline);
@@ -568,7 +576,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Reports a run that stopped waiting for a copy, as {@link #stoppedWaiting} does, and then leaves the rule set it
-     * waited on, which {@link RuleSet#borrow(Instant)} left the run counted on for this. The caller always throws what
+     * waited on, which {@link RuleSet#borrow(Deadline)} left the run counted on for this. The caller always throws what
      * this returns, or what it throws. Leaving closes the rule set only if it was retired and this run was its last
      * user; a fatal {@link Error} from that closing is thrown in place of the stop, carrying it as a suppressed
      * exception, unless a listener threw a fatal error while the stop was reported, which came first and is thrown
@@ -581,7 +589,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // Any Throwable: the run must leave however reporting the stop ends, as a finally would, and a failure that isn't
     // fatal is kept under a fatal Error from closing. Everything that allocates, the message too, is inside the try.
     private RuleExecutionException stoppedThenLeft(RuleSet rules, Map<String, Object> listenerFacts, Exception stop,
-                                                   Instant deadline, long runId, RunContext parent, RunTally tally,
+                                                   Deadline deadline, long runId, RunContext parent, RunTally tally,
                                                    RuleSelection selection) {
         RuleExecutionException failure;
         try {
@@ -593,7 +601,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         ? "to make a compiled copy of the rules: every build slot was in use"
                         : "for a compiled copy of the rules: all " + rules.limit() + " were in use");
             } else {
-                msg = "run() passed its deadline of " + deadline + " while waiting for a compiled copy of the rules:"
+                msg = "run() passed its deadline of " + deadline.instant() + " while waiting for a compiled copy of the"
+                        + " rules:"
                         + " all " + rules.limit() + " were in use";
             }
             // The deadline passed, or none did when an interrupt stopped the run.
@@ -616,14 +625,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param rules         The rule set the run found closed
      * @param listenerFacts The run's facts, as listeners see them
-     * @param deadline      When the run must stop, or {@code null} if it has none
+     * @param deadline      When the run must stop, {@link Deadline#NONE} if it has none
      * @param runId         The run's number
      * @param parent        The run this one was started from, or {@code null}
      * @param tally         The run's tally, which records the stop for the run's event
      * @param selection     The run's tags and start, which its context carries
      * @throws RuleExecutionException if the thread is interrupted, or the run's deadline has passed
      */
-    private void stopIfCancelled(RuleSet rules, Map<String, Object> listenerFacts, Instant deadline, long runId,
+    private void stopIfCancelled(RuleSet rules, Map<String, Object> listenerFacts, Deadline deadline, long runId,
                                  RunContext parent, RunTally tally, RuleSelection selection) {
         String reading = " while reading the engine's rules again: the rules this run read had been closed by a"
                 + " reload or by close()";
@@ -631,8 +640,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw stoppedWaiting(rules, listenerFacts, "run() was interrupted" + reading, new InterruptedException(),
                     deadline, null, runId, parent, tally, selection);
         }
-        if (Cancellation.hasPassed(deadline)) {
-            throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline + reading,
+        if (deadline.hasPassed()) {
+            throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline.instant() + reading,
                     Cancellation.timedOut(deadline), deadline, deadline, runId, parent, tally, selection);
         }
     }
@@ -646,7 +655,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param listenerFacts The run's facts, as listeners see them
      * @param msg           What to log and what the exception says
      * @param cause         An {@link InterruptedException} or a {@link TimeoutException}
-     * @param deadline      When the run had to stop, or {@code null} if it had no deadline
+     * @param deadline      When the run had to stop, {@link Deadline#NONE} if it had none
      * @param passed        The deadline the run passed, or {@code null} if it was interrupted instead
      * @param runId         The run's number
      * @param parent        The run this one was started from, or {@code null}
@@ -655,7 +664,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The exception to throw
      */
     private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
-                                                  Exception cause, Instant deadline, Instant passed, long runId,
+                                                  Exception cause, Deadline deadline, Deadline passed, long runId,
                                                   RunContext parent, RunTally tally, RuleSelection selection) {
         // Recorded before any listener is told, as a fatal error from beforeRun would keep the stop from reaching
         // onRunError, which records it for every other stop.
@@ -670,7 +679,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
-        Instant outerDeadline = Cancellation.enter(deadline);
+        Deadline outerDeadline = Cancellation.enter(deadline);
         try {
             try {
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
@@ -873,7 +882,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Closes the engine. The rule list is closed once no run is using it: a run holding a copy finishes, and so does
-     * one waiting for a copy, because {@link RuleSet#borrow(Instant)} counts the run before it waits, and a rule list
+     * one waiting for a copy, because {@link RuleSet#borrow(Deadline)} counts the run before it waits, and a rule list
      * with a run counted on it can't close. Their sessions are closed as each one returns, unless a run still waiting
      * for a copy of the same rules is there to take them: then the last run to leave closes the copies it kept, and
      * the languages' compilers after them. Afterwards, {@code run()} and {@link #load(List)} throw
@@ -1344,10 +1353,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * @param rule     The rule the run would go on to
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @throws RuleExecutionException if the run must stop
      */
-    private void checkNotCancelled(CompiledRule rule, Instant deadline) {
+    private void checkNotCancelled(CompiledRule rule, Deadline deadline) {
         RuleExecutionException stop = cancellation(rule, BEFORE_RULE, deadline, null);
         if (stop != null) {
             throw stop;
@@ -1360,20 +1369,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param rule     The rule the run stopped before or during
      * @param stage    {@link #BEFORE_RULE} or {@link #DURING_RULE}, where the run stopped
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @param thrown   What the expression threw, or {@code null}: when a run it started stopped for the same reason,
      *                 that run logged the stop, and it isn't logged again
      * @return The exception, or {@code null}
      */
-    private RuleExecutionException cancellation(CompiledRule rule, String stage, Instant deadline, Throwable thrown) {
+    private RuleExecutionException cancellation(CompiledRule rule, String stage, Deadline deadline,
+                                                Throwable thrown) {
         // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
         if (Thread.currentThread().isInterrupted()) {
             return cancelled("run() was interrupted " + stage + " rule '" + rule.displayName() + "'",
                     new InterruptedException(), null, thrown);
         }
-        if (Cancellation.hasPassed(deadline)) {
-            return cancelled("run() passed its deadline of " + deadline + " " + stage + " rule '" + rule.displayName()
-                    + "'", Cancellation.timedOut(deadline), deadline, thrown);
+        if (deadline.hasPassed()) {
+            return cancelled("run() passed its deadline of " + deadline.instant() + " " + stage + " rule '"
+                    + rule.displayName() + "'", Cancellation.timedOut(deadline), deadline, thrown);
         }
         return null;
     }
@@ -1407,13 +1417,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param snapshot The listeners the rule's callbacks went to
      * @param rule     The rule whose expression threw
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @param thrown   What the expression threw
      * @param failed   Reports the rule's failure, when the run wasn't cancelled or {@code thrown} has an
      *                 {@link Error} anywhere in its cause chain
      * @return The exception to throw
      */
-    private RuleExecutionException stoppedOrFailed(List<RuleListener> snapshot, CompiledRule rule, Instant deadline,
+    private RuleExecutionException stoppedOrFailed(List<RuleListener> snapshot, CompiledRule rule, Deadline deadline,
                                                    Throwable thrown, Supplier<RuleExecutionException> failed) {
         // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and an
         // Error inside what it threw is the rule's failure as it always is, cancelled or not.
@@ -1434,13 +1444,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param snapshot    The listeners the rule's callbacks went to
      * @param rule        The rule whose expression returned
      * @param kind        Whether the condition or the action returned
-     * @param deadline    When the run must stop, or {@code null} if it has none
+     * @param deadline    When the run must stop, {@link Deadline#NONE} if it has none
      * @param wrongResult Why what the expression returned would have failed the rule, or {@code null} if it wouldn't.
      *                    A stopped run keeps it as a suppressed exception, as it keeps what an expression threw.
      * @throws RuleExecutionException if the run was cancelled
      */
     private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, ExpressionKind kind,
-                                 Instant deadline, String wrongResult) {
+                                 Deadline deadline, String wrongResult) {
         RuleExecutionException stop = cancellation(rule, DURING_RULE, deadline, null);
         if (stop != null) {
             if (wrongResult != null) {
@@ -1482,7 +1492,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 has logged the stop already, so it isn't logged a second time.
      * @return The exception to throw, which belongs to no rule
      */
-    private RuleExecutionException cancelled(String msg, Exception cause, Instant deadline, Throwable thrown) {
+    private RuleExecutionException cancelled(String msg, Exception cause, Deadline deadline, Throwable thrown) {
         if (!Failures.nestedRunStopped(thrown, deadline)) {
             log.warn(msg);
         }
@@ -1691,7 +1701,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the property can't be set, or the run was cancelled while it was being set
      */
     private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value,
-                             Instant deadline) {
+                             Deadline deadline) {
         try {
             outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
