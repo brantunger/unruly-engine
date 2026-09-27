@@ -127,6 +127,17 @@ class ConditionAssignmentRejectionTest {
         assertEquals(Map.of("k", 1), engine.run(claim(new HashMap<>(Map.of("with", 2)))));
     }
 
+    // #721: the condition was rejected as an assignment ('with' at line 1, column 8), though MVEL reads a property.
+    @Test
+    @DisplayName("a property named with, after a control character MVEL skips as whitespace, is read, not rejected")
+    void keywordMemberAfterControlCharacter() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
+        engine.load(List.of(rule("fluent", "claim.\u0001with == 2", "output.put('k', 1)")));
+
+        assertEquals(Map.of("k", 1), engine.run(claim(new HashMap<>(Map.of("with", 2)))));
+    }
+
     @Test
     @DisplayName("a rejected rule list leaves the previous rules in place")
     void previousRulesKept() {

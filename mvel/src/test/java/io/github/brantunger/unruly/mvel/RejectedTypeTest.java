@@ -148,7 +148,7 @@ class RejectedTypeTest {
 
         String description = MvelExpressionCompiler.compileError(mvel, "Z".repeat(1_200)).issues().get(0).message();
 
-        assertEquals("unknown class or illegal statement: " + "Z".repeat(964) + "... (236 more characters)",
+        assertEquals("unknown class or illegal statement: " + "Z".repeat(920) + "... (280 more characters)",
                 description);
     }
 

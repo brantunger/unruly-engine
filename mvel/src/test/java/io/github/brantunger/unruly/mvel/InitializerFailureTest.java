@@ -379,8 +379,8 @@ class InitializerFailureTest {
     void longRootCauseMessageShortened() throws InterruptedException {
         RuleCompilationException thrown = loadFailure(LongMessageInit.class);
 
-        String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(1_000)
-                + "... (4000 more characters))";
+        String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(885)
+                + "... (4115 more characters))";
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), thrown.issues());
         assertEquals("failed to compile at line 1, column 1: " + description, thrown.getCause().getMessage());
     }

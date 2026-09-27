@@ -119,7 +119,14 @@ final class ConditionAssignments {
         return text.substring(start, index + 1);
     }
 
-    private static int endOfLiteral(String text, int start) {
+    /**
+     * Skips a string literal, whose quote starts it, and any escaped character in it.
+     *
+     * @param text  The text
+     * @param start Where the literal's quote is
+     * @return Where the literal ends, just after its closing quote, or past the end of the text if it has none
+     */
+    static int endOfLiteral(String text, int start) {
         char quote = text.charAt(start);
         int index = start + 1;
         while (index < text.length() && text.charAt(index) != quote) {
@@ -128,8 +135,14 @@ final class ConditionAssignments {
         return index + 1;
     }
 
-    /** Skips a {@code //} or {@code /*} comment; a lone {@code /} is just division. */
-    private static int endOfSlash(String text, int index) {
+    /**
+     * Skips a {@code //} or {@code /*} comment; a lone {@code /} is just division.
+     *
+     * @param text  The text
+     * @param index Where the {@code /} is
+     * @return Where the comment ends, or just after a lone {@code /}
+     */
+    static int endOfSlash(String text, int index) {
         return switch (charAt(text, index + 1)) {
             case '/' -> endOf(text, "\n", index + 2);
             case '*' -> endOf(text, "*/", index + 2);
@@ -152,12 +165,14 @@ final class ConditionAssignments {
 
     /**
      * A keyword used as a member name, as in {@code claim.with} or {@code claim.?with}, is just a property. MVEL
-     * allows whitespace, including a line break, between the dot and the name.
+     * allows whitespace, including a line break, between the dot and the name, and counts every character up to a space
+     * as whitespace, a control character such as U+0001 too; what Java counts as whitespace is skipped as well.
      */
     private static @Nullable String writeKeyword(String text, int start, int end) {
         String word = text.substring(start, end);
         int before = start - 1;
-        while (Character.isWhitespace(charAt(text, before))) {
+        // Bounded by the start of the text, where charAt reads U+0000, which is up to a space too.
+        while (before >= 0 && (text.charAt(before) <= ' ' || Character.isWhitespace(text.charAt(before)))) {
             before--;
         }
         boolean member = charAt(text, before) == '.'

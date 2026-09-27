@@ -151,7 +151,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             if (!rejectedPlainly(e)) {
                 throw e;
             }
-            throw positionless(FactNames.escape(FactNames.truncate(String.valueOf(e.getMessage()))), e);
+            throw positionless(FactNames.escapeWithin(String.valueOf(e.getMessage()), roomAfter(messageStart(0, 0))),
+                    e);
         }
     }
 
@@ -163,10 +164,17 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * {@code failed to compile at line 1, column 8: Can't import ...}.
      *
      * <p>
-     * The position is that of the first {@code import} of the name in the text: the name where it first follows
-     * {@code import} and any whitespace. The name's text alone earlier in a string or a comment isn't taken for it,
-     * but an earlier string or comment that holds {@code import} and the name is. MVEL passes the name as a slice of
-     * the text, from just after the keyword and the characters it skips as whitespace, so it is always found.
+     * The position is that of the first {@code import} of the name in the text outside string literals and comments:
+     * the name where it first follows {@code import} and any whitespace. The name's text in a string or a comment
+     * before it isn't taken for it, even after {@code import}, unless the scan reads a comment where MVEL reads none,
+     * as it does {@code /*}{@code /} (#747), and so finds no such {@code import}: then the first one in the text is
+     * taken, in a string or a comment or not. MVEL passes the name as a slice of the text, from just after the keyword
+     * and the characters it skips as whitespace, so that one is always found.
+     * </p>
+     *
+     * <p>
+     * A name that escapes to more than the message has room for is shortened, as MVEL's descriptions are (see
+     * {@link FactNames#quoteWithin}), so the message is at most 1,000 characters.
      * </p>
      *
      * @param text The expression's source text, which holds the name as MVEL read it
@@ -174,14 +182,31 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * @return The exception to throw
      */
     private static InvalidExpressionException importTooLarge(String text, Imports.ImportTooLarge e) {
-        int at = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")").matcher(text)
-                .results().findFirst().orElseThrow().start(1);
+        Matcher match = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")").matcher(text);
+        int at = -1;
+        int index = 0;
+        // A literal or a comment is skipped whole, as the check for assignments in a condition skips it. A comment
+        // that doesn't end takes the index to the end of the text, and a literal that doesn't end, past it.
+        while (at < 0 && index < text.length()) {
+            if (match.region(index, text.length()).lookingAt()) {
+                at = match.start(1);
+            } else {
+                index = switch (text.charAt(index)) {
+                    case '\'', '"' -> ConditionAssignments.endOfLiteral(text, index);
+                    case '/' -> ConditionAssignments.endOfSlash(text, index);
+                    default -> index + 1;
+                };
+            }
+        }
+        if (at < 0) {
+            at = match.reset().results().findFirst().orElseThrow().start(1);
+        }
         String before = text.substring(0, at);
         int line = 1 + (int) before.chars().filter(ch -> ch == NEW_LINE).count();
         int column = before.length() - (before.lastIndexOf(NEW_LINE) + 1) + 1;
-        String description = e.getMessage();
-        return new InvalidExpressionException("failed to compile at line " + line + ", column " + column + ": "
-                + description, List.of(new InvalidExpressionException.Issue(
+        String start = messageStart(line, column);
+        String description = e.describedWithin(roomAfter(start));
+        return new InvalidExpressionException(start + description, List.of(new InvalidExpressionException.Issue(
                 InvalidExpressionException.Issue.Severity.ERROR, line, column, description)), e);
     }
 
@@ -201,25 +226,61 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     /**
      * Tells whether a {@link RuntimeException} from compiling is one MVEL threw to reject the expression: whether its
-     * class is {@code RuntimeException} itself, the top frame of its stack trace is in MVEL's code and it has no
-     * cause. MVEL throws one for a reserved word or a digit as a typed variable's name, such as in {@code int in = 1}
-     * or {@code int 1x = 2}, for a typed variable declared twice, and for a class name two imported packages have,
-     * such as {@code List} with {@code java.util} and {@code java.awt} imported. One MVEL throws around a failure of
-     * other code, such as the application's class loader, has that failure as its cause.
+     * class is {@code RuntimeException} itself, MVEL's code threw it, going by the top frame of its stack trace, and it
+     * has no cause. MVEL throws one for a reserved word or a digit as a typed variable's name, such as in
+     * {@code int in = 1} or {@code int 1x = 2}, for a typed variable declared twice, and for a class name two imported
+     * packages have, such as {@code List} with {@code java.util} and {@code java.awt} imported. One MVEL throws around
+     * a failure of other code, such as the application's class loader, has that failure as its cause.
+     *
+     * <p>
+     * Unlike {@link #thrownInMvel}, the check doesn't look past the JDK's frames, so an exception from code MVEL
+     * called, such as a {@link RuntimeException} from the application's class loader or an {@link AssertionError} from
+     * the JDK (see {@link #compileError}), isn't MVEL's. One with an empty stack trace came out of the call to MVEL
+     * all the same, as every exception does on a JVM run with {@code -XX:-StackTraceInThrowable}, so it's MVEL's, as
+     * {@link #thrownInMvel} decides too. One whose stack trace can't be read, which {@link #thrownInMvel} counts as
+     * MVEL's, isn't: only a subclass can fail to give its stack trace, and MVEL throws a plain
+     * {@link AssertionError} or {@link RuntimeException}. A failure while a rule runs is read the other way, as
+     * {@code CalledCodeFailures} tells: there one with no stack trace can be the rule's own code's, and is left as MVEL
+     * threw it.
+     * </p>
      *
      * @param e The exception
      * @return {@code true} if MVEL threw it to reject the expression
      */
     static boolean rejectedPlainly(RuntimeException e) {
-        return RuntimeException.class.equals(e.getClass()) && ExceptionReads.thrownFrom(e, ExceptionReads.MVEL_PACKAGE)
-                && e.getCause() == null;
+        return RuntimeException.class.equals(e.getClass())
+                && ExceptionReads.topFrameIn(e, ExceptionReads.MVEL_PACKAGE, true) && e.getCause() == null;
+    }
+
+    /**
+     * Starts the message of an error MVEL found: {@code failed to compile: }, or with a line other than 0,
+     * {@code failed to compile at line 1, column 8: }, before its description.
+     *
+     * @param line   The line, counting from 1, or 0 if there is none
+     * @param column The column, counting from 1
+     * @return The message's start
+     */
+    private static String messageStart(int line, int column) {
+        return "failed to compile" + (line == 0 ? "" : " at line " + line + ", column " + column) + ": ";
+    }
+
+    /**
+     * Tells how many characters a message's start leaves for its description in the engine's limit, so the engine
+     * reports the message without shortening it again (see {@link FactNames#escapeWithin}).
+     *
+     * @param start The message's start, from {@link #messageStart}
+     * @return The room for the description
+     */
+    private static int roomAfter(String start) {
+        return FactNames.MAX_DESCRIPTION_LENGTH - start.length();
     }
 
     /**
      * Reports an error MVEL gave no line or column for, with one issue that has none either. For an expression MVEL
-     * rejected with a plain {@link RuntimeException} (see {@link #rejectedPlainly}), MVEL's message, shortened and
-     * escaped as the engine shortens and escapes its messages, is the description, such as {@code failed to compile:
-     * illegal use of reserved word: in}. An expression MVEL's parser read out of bounds for, as it does for a
+     * rejected with a plain {@link RuntimeException} (see {@link #rejectedPlainly}), MVEL's message, escaped as the
+     * engine escapes its messages and shortened so the whole message fits in the engine's limit (see
+     * {@link FactNames#escapeWithin}), is the description, such as {@code failed to compile: illegal use of reserved
+     * word: in}. An expression MVEL's parser read out of bounds for, as it does for a
      * {@code .} or {@code ?} it can't read past, such as in {@code b.}, {@code b. == 1} or {@code foo(?)}, or for blank
      * parentheses, such as in {@code ( ) + 1}, is {@code failed to compile: malformed expression}. An expression that
      * calls an imported class like a method, such as {@code ArrayList(y)} with {@code java.util} imported, is
@@ -230,7 +291,7 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * @return The exception to throw
      */
     private static InvalidExpressionException positionless(String description, RuntimeException e) {
-        return new InvalidExpressionException("failed to compile: " + description, List.of(
+        return new InvalidExpressionException(messageStart(0, 0) + description, List.of(
                 new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 0, 0,
                         description)), e);
     }
@@ -246,9 +307,12 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * </p>
      *
      * <p>
-     * MVEL's description, from its message or its list, can hold the expression's own text, so it's shortened and
-     * escaped as the engine shortens and escapes its messages: cut to 1,000 characters, saying how many were left out,
-     * and a line break shown as {@code \n}, so it's one line in the issue too.
+     * MVEL's description, from its message or its list, can hold the expression's own text, so it's escaped as the
+     * engine escapes its messages, a line break shown as {@code \n}, so it's one line in the issue too, and shortened,
+     * saying how many of its characters were left out, so the whole message, {@code failed to compile at line 1,
+     * column 8: } and the engine's note on the root cause included, is at most 1,000 characters (see
+     * {@link FactNames#escapeWithin}). The engine then reports the message without shortening it again, and the issue
+     * has the same description.
      * </p>
      *
      * <p>
@@ -278,7 +342,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * throws them without one or without a message.
      * When MVEL's description is missing and the root cause is an {@link AssertionError} thrown in MVEL's own code, as
      * one is for {@code b = = 1} with assertions on, the description is
-     * {@code not a statement, or badly formed structure}: MVEL's own for {@code b = = 1} with assertions off.
+     * {@code not a statement, or badly formed structure}: MVEL's own for {@code b = = 1} with assertions off. One
+     * without a stack trace counts as MVEL's too (see {@link #rejectedPlainly}).
      * Otherwise, when MVEL's description is missing, as it is for a class whose static initializer threw (MVEL copies
      * the {@link ExceptionInInitializerError}'s missing message into its own as {@code [Error: null]}), the
      * description names the root cause in the engine's note, in the exception's message and the issue alike, such as
@@ -305,22 +370,6 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      */
     static InvalidExpressionException compileError(CompileException e, String rejectedType) {
         String message = String.valueOf(ExceptionReads.messageOf(e));
-        List<ErrorDetail> errors = e.getErrors();
-        String description;
-        List<Throwable> chain = ExceptionReads.causeChain(e);
-        Throwable root = chain.get(chain.size() - 1);
-        if (!errors.isEmpty()) {
-            description = oneLine(errors);
-        } else if (nullPointerInMvel(root)) {
-            description = BADLY_FORMED;
-        } else {
-            String described = described(innermost(chain));
-            description = outOfBoundsInMvel(root, described) ? MALFORMED_EXPRESSION
-                    : FactNames.escape(FactNames.truncate(named(described, rejectedType)));
-        }
-        if (MISSING_DESCRIPTION.equals(description)) {
-            description = failedAssert(root) ? BADLY_FORMED : description + causeNote(chain);
-        }
         int line = 0;
         int column = 0;
         Matcher position = POSITION.matcher(message);
@@ -328,10 +377,28 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             line = Integer.parseInt(position.group(1));
             column = Integer.parseInt(position.group(2));
         }
+        String start = messageStart(line, column);
+        int room = roomAfter(start);
+        List<ErrorDetail> errors = e.getErrors();
+        String description;
+        List<Throwable> chain = ExceptionReads.causeChain(e);
+        Throwable root = chain.get(chain.size() - 1);
+        if (!errors.isEmpty()) {
+            description = oneLine(errors, room);
+        } else if (nullPointerInMvel(root)) {
+            description = BADLY_FORMED;
+        } else {
+            String described = described(innermost(chain));
+            description = outOfBoundsInMvel(root, described) ? MALFORMED_EXPRESSION
+                    : FactNames.escapeWithin(named(described, rejectedType), room);
+        }
+        if (MISSING_DESCRIPTION.equals(description)) {
+            description = failedAssert(root) ? BADLY_FORMED
+                    : description + causeNote(chain, room - description.length());
+        }
         InvalidExpressionException.Issue issue = new InvalidExpressionException.Issue(
                 InvalidExpressionException.Issue.Severity.ERROR, line, column, description);
-        String where = issue.line() == 0 ? "" : " at line " + issue.line() + ", column " + issue.column();
-        return new InvalidExpressionException("failed to compile" + where + ": " + description, List.of(issue), e);
+        return new InvalidExpressionException(start + description, List.of(issue), e);
     }
 
     /**
@@ -398,32 +465,35 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     /**
      * Puts the errors MVEL listed with its exception on one line: one error's description alone, as the issue has
      * its line and column, or several as {@code (line,column) description}, joined with {@code ; }. The line is
-     * shortened and escaped as the engine shortens and escapes its messages, as each description can hold the
-     * expression's own text; the positions and separators hold nothing escaping changes.
+     * escaped as the engine escapes its messages and shortened to the room given (see {@link FactNames#escapeWithin}),
+     * as each description can hold the expression's own text; the positions and separators hold nothing escaping
+     * changes.
      *
      * @param errors The errors, at least one
+     * @param room   The most characters the line may take
      * @return The errors on one line
      */
-    private static String oneLine(List<ErrorDetail> errors) {
+    private static String oneLine(List<ErrorDetail> errors, int room) {
         if (errors.subList(1, errors.size()).isEmpty()) {
-            return FactNames.escape(FactNames.truncate(String.valueOf(errors.get(0).getMessage())));
+            return FactNames.escapeWithin(String.valueOf(errors.get(0).getMessage()), room);
         }
         List<String> described = new ArrayList<>();
         for (ErrorDetail error : errors) {
             described.add("(" + error.getLineNumber() + "," + error.getColumn() + ") " + error.getMessage());
         }
-        return FactNames.escape(FactNames.truncate(String.join("; ", described)));
+        return FactNames.escapeWithin(String.join("; ", described), room);
     }
 
     /**
      * Tells whether the root cause of a compile error is an {@code assert} inside MVEL that failed.
      *
      * @param root The root cause
-     * @return {@code true} if it's an {@link AssertionError} whose top stack frame is in MVEL's code, and not in code
-     *         MVEL called, such as the JDK's
+     * @return {@code true} if it's an {@link AssertionError} MVEL's code threw, and not code MVEL called, such as the
+     *         JDK's, going by the top frame of its stack trace, as for {@link #rejectedPlainly}, which one without
+     *         a stack trace is too
      */
     private static boolean failedAssert(Throwable root) {
-        return root instanceof AssertionError && ExceptionReads.thrownFrom(root, ExceptionReads.MVEL_PACKAGE);
+        return root instanceof AssertionError && ExceptionReads.topFrameIn(root, ExceptionReads.MVEL_PACKAGE, true);
     }
 
     /**
@@ -487,21 +557,32 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     /**
      * Names the root cause of a compile error whose description MVEL left missing, in the engine's note: its class,
-     * and its message if it has one, as {@code core.Failures} names one. Each is shortened and escaped as the engine
-     * shortens and escapes its messages, the class name as a name, so the issue's description is one line too, and
-     * the note is never cut off: it's added after the description is shortened.
+     * and its message if it has one, as {@code core.Failures} names one. Each is escaped as the engine escapes its
+     * messages, so the issue's description is one line too, and shortened so the note fits in the room (see
+     * {@link FactNames#escapeWithin}), so the note is never cut off: the class name as a name, within what the rest of
+     * the note leaves with the message's count alone, and the message within what the class name leaves.
      *
      * @param chain What MVEL threw and its causes
+     * @param room  The most characters the note may take
      * @return {@code " (caused by ...)"}, or an empty string if there is no cause
      */
-    private static String causeNote(List<Throwable> chain) {
+    private static String causeNote(List<Throwable> chain, int room) {
         if (chain.subList(1, chain.size()).isEmpty()) {
             return "";
         }
         Throwable root = chain.get(chain.size() - 1);
         String rootMessage = ExceptionReads.messageOf(root);
-        return " (caused by " + FactNames.quote(root.getClass().getName())
-                + (rootMessage == null ? "" : ": " + FactNames.escape(FactNames.truncate(rootMessage))) + ")";
+        String className = root.getClass().getName();
+        if (rootMessage == null) {
+            return " (caused by " + FactNames.quoteWithin(className, room - " (caused by )".length()) + ")";
+        }
+        // The class name leaves room for the message, or for its count alone if that's shorter. Escaped, a message is
+        // never shorter than it is raw, so only one shorter raw than its count is escaped to measure it.
+        int count = FactNames.leftOut(rootMessage.length()).length();
+        int least = ": ".length() + (rootMessage.length() < count
+                ? Math.min(FactNames.escape(rootMessage).length(), count) : count);
+        String named = " (caused by " + FactNames.quoteWithin(className, room - " (caused by )".length() - least);
+        return named + ": " + FactNames.escapeWithin(rootMessage, room - named.length() - ": )".length()) + ")";
     }
 
     /**

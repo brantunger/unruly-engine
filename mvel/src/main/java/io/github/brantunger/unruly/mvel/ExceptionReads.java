@@ -97,8 +97,29 @@ final class ExceptionReads {
      * @return {@code false} if the top frame is in another package, or the stack trace is empty or can't be read
      */
     static boolean thrownFrom(Throwable e, String packagePrefix) {
-        StackTraceElement[] frames = stackTraceOf(e);
-        return frames.length > 0 && frames[0].getClassName().startsWith(packagePrefix);
+        return topFrameIn(e, packagePrefix, false);
+    }
+
+    /**
+     * Tells whether an exception was created in a class of a package, going by the top frame of its stack trace, with
+     * what an empty stack trace answers given. A stack trace that can't be read, because {@code getStackTrace()}
+     * throws, returns {@code null} or has {@code null} for its top frame, answers {@code false}: only a subclass can
+     * give one.
+     *
+     * @param e             The exception
+     * @param packagePrefix The package's name, ending in a dot
+     * @param ifEmpty       What an empty stack trace answers
+     * @return {@code true} if the top frame is in the package, or {@code ifEmpty} if there is none
+     */
+    static boolean topFrameIn(Throwable e, String packagePrefix, boolean ifEmpty) {
+        StackTraceElement[] frames = read(e::getStackTrace, thrown -> null);
+        if (frames == null) {
+            return false;
+        }
+        if (frames.length == 0) {
+            return ifEmpty;
+        }
+        return frames[0] != null && frames[0].getClassName().startsWith(packagePrefix);
     }
 
     /**

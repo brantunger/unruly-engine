@@ -2,9 +2,12 @@ package io.github.brantunger.unruly.mvel;
 
 /**
  * Gives a test in another package, such as {@code core.TruncateCopiesTest}, which also reaches {@code core.Failures},
- * the copies of the engine's text helpers {@link FactNames} keeps.
+ * the copies of the engine's text helpers and limit {@link FactNames} keeps.
  */
 public final class FactNamesCopies {
+
+    /** The longest message about an expression MVEL rejected, as {@link FactNames#MAX_DESCRIPTION_LENGTH} is. */
+    public static final int MAX_DESCRIPTION_LENGTH = FactNames.MAX_DESCRIPTION_LENGTH;
 
     private FactNamesCopies() {
     }
