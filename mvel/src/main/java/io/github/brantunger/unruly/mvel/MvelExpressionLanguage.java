@@ -59,18 +59,22 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then throws
      * NoClassDefFoundError. This holder initializes it when a rule list starts loading, before any rule is compiled, so
      * an overflow only fails the rule that caused it. It isn't done when the language is created, because an engine
-     * creates its languages when it's built, and building an engine loads no MVEL class.
+     * creates its languages when it's built, and building an engine loads no MVEL class. It also installs
+     * {@link MvelWarningFilter} on MVEL's logger, once for each class loader that loads this module, before any rule
+     * runs, for the same reason: a run would otherwise initialize it first, possibly deep in the stack of a run nested
+     * in an action, where a stack overflow would leave it unusable and fail every later run.
      */
     private static final class ErrorReporting {
 
         static {
             new ErrorUtil();
+            MvelWarningFilter.initialize();
         }
 
         private ErrorReporting() {
         }
 
-        /** Initializes ErrorUtil, the first time it's called, by initializing this class. */
+        /** Initializes ErrorUtil and the filter, the first time it's called, by initializing this class. */
         static void initialize() {
             // The static initializer does the work.
         }

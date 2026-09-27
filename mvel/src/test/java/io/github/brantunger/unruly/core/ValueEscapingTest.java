@@ -20,7 +20,11 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
@@ -31,10 +35,28 @@ import static org.junit.jupiter.api.Assertions.*;
  * expression read, and a language that rejects a fact name quotes the name. Escaping only the names the engine
  * itself puts in a message left both of those able to start a log line of their own.
  */
+// Public, as is Nested: MVEL's reflective accessors need to reach its method.
 @DisplayName("text the engine didn't write is escaped too, so a fact value can't forge a log line")
-class ValueEscapingTest {
+public class ValueEscapingTest {
 
     private static final String FORGED = "[main] INFO com.example.Audit - forged entry";
+    // The logger MVEL logs a value it fails to convert for a method to, through java.util.logging.
+    private static final String MVEL_OPTIMIZER_LOGGER = "org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer";
+
+    /** A fact whose method runs another engine, from inside the action that calls it. */
+    public static class Nested {
+
+        private final RulesEngine<Map<String, Object>> engine;
+        private Map<String, Object> output;
+
+        Nested(RulesEngine<Map<String, Object>> engine) {
+            this.engine = engine;
+        }
+
+        public void run() {
+            output = engine.run(new FactMap<>());
+        }
+    }
 
     /** A language that rejects every fact name, quoting the name the way {@code docs/languages/custom.md} shows. */
     private record PickyLanguage() implements ExpressionLanguage {
@@ -76,6 +98,102 @@ class ValueEscapingTest {
 
     private static void assertNoForgedLine(String logs) {
         assertTrue(lines(logs).stream().noneMatch(line -> line.startsWith("[main] INFO com.example")), logs);
+    }
+
+    /**
+     * Runs a task and returns the records MVEL's optimizer logged meanwhile, as a handler on its logger sees them: a
+     * handler only gets the records the logger's filter passes. They aren't passed on to the parent handlers, so a
+     * record doesn't print its stack trace in the build.
+     */
+    private static List<LogRecord> mvelRecordsOf(Runnable task) {
+        Logger logger = Logger.getLogger(MVEL_OPTIMIZER_LOGGER);
+        List<LogRecord> records = new CopyOnWriteArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+                // Nothing buffered.
+            }
+
+            @Override
+            public void close() {
+                // Nothing to release.
+            }
+        };
+        boolean useParentHandlers = logger.getUseParentHandlers();
+        logger.addHandler(handler);
+        logger.setUseParentHandlers(false);
+        try {
+            task.run();
+        } finally {
+            logger.setUseParentHandlers(useParentHandlers);
+            logger.removeHandler(handler);
+        }
+        return records;
+    }
+
+    private static Throwable rootCause(Throwable thrown) {
+        Throwable cause = thrown;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
+    /**
+     * Runs a rule list, in a new engine so MVEL has built no accessor yet, with a String index that can't be
+     * converted to the int {@code items.get} takes, and checks MVEL logged nothing while the run failed as it would.
+     */
+    private static void assertFailsWithoutMvelRecord(Rule rule, Map<String, Object> extraFacts) {
+        RulesEngine<Map<String, Object>> engine =
+                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        engine.load(List.of(rule));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("items", List.of(1));
+        facts.setValue("index", "0\n" + FORGED);
+        extraFacts.forEach(facts::setValue);
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        List<LogRecord> records =
+                mvelRecordsOf(() -> thrown.set(assertThrows(RuntimeException.class, () -> engine.run(facts))));
+
+        assertEquals(List.of(), records.stream().map(LogRecord::getThrown).toList(), "MVEL logged the value itself");
+        String message = thrown.get().getMessage();
+        assertFalse(message.contains("\n"), "the engine's own message still carries a line break: " + message);
+        assertTrue(message.contains("\\n" + FORGED), message);
+        assertInstanceOf(NumberFormatException.class, rootCause(thrown.get()));
+    }
+
+    @Test
+    @DisplayName("a condition MVEL fails to convert a fact for doesn't log the value through MVEL's own logger")
+    void conditionConversionNotLoggedByMvel() {
+        assertFailsWithoutMvelRecord(Rule.builder().ruleName("r").condition("items.get(index) == 1")
+                .action("output.put('k', 1)").build(), Map.of());
+    }
+
+    @Test
+    @DisplayName("an action MVEL fails to convert a fact for doesn't log the value through MVEL's own logger")
+    void actionConversionNotLoggedByMvel() {
+        assertFailsWithoutMvelRecord(Rule.builder().ruleName("r").condition("true")
+                .action("output.put('k', items.get(index))").build(), Map.of());
+    }
+
+    @Test
+    @DisplayName("a run nested in an action leaves MVEL's record dropped for the rest of the outer action")
+    void nestedRunKeepsTheOuterRunsFilter() {
+        RulesEngine<Map<String, Object>> inner =
+                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        inner.load(List.of(Rule.builder().ruleName("inner").condition("true").action("output.put('x', 1)").build()));
+
+        Nested nested = new Nested(inner);
+
+        assertFailsWithoutMvelRecord(Rule.builder().ruleName("r").condition("true")
+                .action("nested.run(); output.put('k', items.get(index))").build(), Map.of("nested", nested));
+        assertEquals(Map.of("x", 1), nested.output, "the nested run didn't run its rule");
     }
 
     @Test
