@@ -412,11 +412,11 @@ class NestedStopLoggingTest {
                 engine.get().load(List.of(inner()));
                 // Parks rather than spins, and ends only once past has gone by, however early a park returns: parkNanos
                 // can wake spuriously. On an interrupted thread it returns at once, so the wait still lasts past, as a
-                // spin, and the interrupt status is left set for the run to see. No test here arms it on one.
-                Instant until = Instant.now().plus(past);
-                for (Duration left = Duration.between(Instant.now(), until); left.isPositive();
-                     left = Duration.between(Instant.now(), until)) {
-                    LockSupport.parkNanos(left.toNanos());
+                // spin, and the interrupt status is left set for the run to see. No test here arms it on one. Timed on
+                // System.nanoTime(), which decides the run's deadline: the system clock can be a moment either side.
+                long until = System.nanoTime() + past.toNanos();
+                for (long left = past.toNanos(); left > 0; left = until - System.nanoTime()) {
+                    LockSupport.parkNanos(left);
                 }
             }
             return Instant.now();

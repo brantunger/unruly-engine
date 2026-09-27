@@ -17,22 +17,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * A run reads the engine's rules again when the set it read was closed before it could borrow a copy of it. A
  * reload does that to the set it replaces, and {@code close()} to the set it detaches: each retires it, and the last
- * run to give a copy back closes it. The engine's own invariant makes one reading enough, so the bound is far above
- * it; what the bound rules out is a run that finds a closed set every time and spins for ever, leaving nobody a
- * failed run or a stack trace to work from.
+ * run to give a copy back closes it. A run that finds a different closed set each time is being overtaken by
+ * reloads, and reads again for as long as that goes on. The engine's own invariant makes the same closed set read
+ * again impossible, so the bound on those readings is far above one; what it rules out is a run that finds the
+ * engine's current set closed every time and spins for ever, leaving nobody a failed run or a stack trace to work
+ * from.
  */
 @DisplayName("a run that finds the rules it read closed reads them again, but not for ever")
 class ClosedRulesRetryTest {
 
     /**
-     * An engine whose {@code currentRules()} hands back a closed rule set the first {@code closedReads} times, and
-     * the rules it loaded after that.
+     * An engine whose {@code currentRules()} hands back the same closed rule set the first {@code closedReads} times,
+     * and the rules it loaded after that.
      *
      * @param closedReads How many readings find a closed rule set
      * @param reads       Counts every reading, closed or not
@@ -51,17 +54,33 @@ class ClosedRulesRetryTest {
     private static AbstractRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
                                                                        Duration runTimeout,
                                                                        List<RuleListener> listeners) {
-        // A rule set no run holds a copy of, retired: retiring closes it there and then, which is the state a run
-        // can find when a reload, or a close of the engine, retired the rules it had just read.
+        RuleSet closedRules = closedRules();
+        return engineReading(closedReads, reads, runTimeout, listeners, () -> closedRules);
+    }
+
+    /**
+     * A rule set no run holds a copy of, retired: retiring closes it there and then, which is the state a run can find
+     * when a reload, or a close of the engine, retired the rules it had just read.
+     */
+    private static RuleSet closedRules() {
         RuleSet closedRules = new RuleSet(List.of(), Map.of(), CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
         closedRules.retire();
+        return closedRules;
+    }
+
+    /**
+     * An engine like {@link #engineFindingClosedRules(int, AtomicInteger, Duration, List)}, whose readings that
+     * find a closed rule set find the one {@code closed} gives each time.
+     */
+    private static AbstractRulesEngine<String> engineReading(int closedReads, AtomicInteger reads, Duration runTimeout,
+                                                            List<RuleListener> listeners, Supplier<RuleSet> closed) {
         EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
                 null, List.of(), listeners, CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
                 OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
             @Override
             RuleSet currentRules() {
-                return reads.getAndIncrement() < closedReads ? closedRules : super.currentRules();
+                return reads.getAndIncrement() < closedReads ? closed.get() : super.currentRules();
             }
 
             @Override
@@ -99,9 +118,41 @@ class ClosedRulesRetryTest {
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>()));
 
-        assertTrue(thrown.getMessage().contains("closed 64 times in a row"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(
+                "was found closed 64 times in a row while this run was borrowing a copy of it"), thrown.getMessage());
         assertTrue(thrown.getMessage().contains("that invariant has broken"), thrown.getMessage());
         assertEquals(64, reads.get(), "the run read the rules again after it had given up");
+    }
+
+    @Test
+    @DisplayName("a run overtaken by one reload after another reads the rules again for as long as it takes")
+    void aRunOvertakenByReloadsKeepsReading() {
+        AtomicInteger reads = new AtomicInteger();
+        // A different closed rule set at every reading, far more of them than the bound: what a loader reloading fast
+        // leaves a run, when each reload retires the set the run has just read. None of them is the engine's current
+        // set, so no invariant has broken, and the run borrows once a reading finds that.
+        AbstractRulesEngine<String> engine = engineReading(100, reads, null, List.of(),
+                ClosedRulesRetryTest::closedRules);
+
+        assertEquals("ran", engine.run(new FactMap<>()));
+
+        assertEquals(101, reads.get(), "one reading for each closed rule set, and one that found the engine's own");
+    }
+
+    @Test
+    @DisplayName("a run that finds one closed rule set many times, then another, counts each set's readings apart")
+    void aRunCountsEachClosedSetInARowApart() {
+        AtomicInteger reads = new AtomicInteger();
+        RuleSet first = closedRules();
+        RuleSet second = closedRules();
+        // Forty readings of each, eighty in all: more than the bound together, but fewer than it in a row, which is
+        // what the failure's message says happened.
+        AbstractRulesEngine<String> engine = engineReading(80, reads, null, List.of(),
+                () -> reads.get() <= 40 ? first : second);
+
+        assertEquals("ran", engine.run(new FactMap<>()));
+
+        assertEquals(81, reads.get(), "one reading for each closed rule set, and one that found the engine's own");
     }
 
     @Test

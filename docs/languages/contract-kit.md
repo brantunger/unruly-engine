@@ -234,7 +234,8 @@ language handles each;
 
 `LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or compiled
 expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
-`evaluation(facts, deadline)` gives a real `isCancelled()`.
+`evaluation(facts, deadline)` gives a real `isCancelled()` and `timeLeft()`. They read the system clock once, when
+the context is made, then time `deadline` as a run does, so one built from `Instant.now()` passes when you expect.
 
 A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
 `facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,

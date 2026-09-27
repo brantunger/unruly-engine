@@ -7,7 +7,6 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -437,7 +436,7 @@ public final class Failures {
      * @param deadline The deadline the run around it passed, or {@code null} if its thread was interrupted
      * @return {@code true} if the innermost {@link ReportedFailure} in {@code e}'s cause chain is that same stop
      */
-    static boolean nestedRunStopped(Throwable e, Instant deadline) {
+    static boolean nestedRunStopped(Throwable e, Deadline deadline) {
         ReportedFailure innermost = innermostReported(e);
         return innermost != null && innermost.isStopFor(deadline);
     }

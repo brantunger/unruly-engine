@@ -26,13 +26,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
@@ -323,18 +323,19 @@ class NestedRunFailureLogTest {
     @DisplayName("an output supplier's Error below a nested run still fails the rule once the deadline has passed")
     void factoryErrorPastTheDeadline() {
         Duration timeout = Duration.ofMillis(500);
-        AtomicReference<Instant> actionStarted = new AtomicReference<>();
+        AtomicLong actionStarted = new AtomicLong();
         AtomicBoolean reached = new AtomicBoolean();
         RulesEngine<Map<String, Object>> middle = engine("b-rule", doing(() -> { }), () -> {
             reached.set(true);
-            // The action started after the outer run did, so this is past the outer run's deadline.
-            while (!Instant.now().isAfter(actionStarted.get().plus(timeout))) {
+            // The action started after the outer run did, so this is past the outer run's deadline. Timed on
+            // System.nanoTime(), which decides the deadline: the system clock can be a moment either side of it.
+            while (System.nanoTime() - actionStarted.get() <= timeout.toNanos()) {
                 LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
             }
             throw new FactoryError("factory broke");
         });
         RulesEngine<Map<String, Object>> engine = engine("a-rule", doing(() -> {
-            actionStarted.set(Instant.now());
+            actionStarted.set(System.nanoTime());
             middle.run(new FactMap<>());
         }), HashMap::new);
 

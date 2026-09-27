@@ -14,6 +14,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -96,6 +98,26 @@ class LanguageTestContextsTest {
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> context.facts().put("y", 2));
         assertTrue(ex.getMessage().startsWith("The facts passed to an action are read-only; 'y'"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("the contexts it creates give the time left before their deadline, as the engine's do")
+    void timeLeft() {
+        Instant ahead = Instant.now().plusSeconds(60);
+        Instant passed = Instant.now().minusSeconds(1);
+        Map<String, Object> output = new HashMap<>();
+
+        for (EvaluationContext context : List.of(LanguageTestContexts.evaluation(Map.of(), ahead),
+                LanguageTestContexts.action(Map.of(), output, ahead))) {
+            Duration left = context.timeLeft();
+            // Converted once, when the context was created, with the system clock read again: allow a moment for that.
+            assertTrue(left.compareTo(Duration.ofSeconds(59)) > 0 && left.compareTo(Duration.ofSeconds(61)) < 0,
+                    left.toString());
+        }
+        assertEquals(Duration.ZERO, LanguageTestContexts.evaluation(Map.of(), passed).timeLeft());
+        assertEquals(Duration.ZERO, LanguageTestContexts.action(Map.of(), output, passed).timeLeft());
+        assertEquals(Duration.ofNanos(Long.MAX_VALUE), LanguageTestContexts.evaluation(Map.of()).timeLeft());
+        assertEquals(Duration.ofNanos(Long.MAX_VALUE), LanguageTestContexts.action(Map.of(), output).timeLeft());
     }
 
     private static void assertNullMessage(String expected, Executable creation) {

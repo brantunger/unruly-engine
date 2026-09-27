@@ -6,7 +6,6 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -305,8 +304,9 @@ final class RuleSet {
      *
      * @return A copy for the caller alone, to give back with {@link #release(Copy)}, or {@code null} if the rule set is
      *         closed: it was retired, and every copy was given back
-     * @param deadline When the run must stop, or {@code null} if it has none. Waiting for a copy that is in use stops
-     *                 there; waiting for a build slot gives up at half the time left, and the run makes its copy.
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none. Waiting for a copy that is in use
+     *                 stops there; waiting for a build slot gives up at half the time left, and the run makes its
+     *                 copy.
      * @throws InterruptedException   if the thread is interrupted while it waits for a copy that is in use, or for a
      *                                build slot; its interrupt status is set again before this is thrown. A thread
      *                                whose interrupt status is already set still gets a free copy, or makes one; the
@@ -325,7 +325,7 @@ final class RuleSet {
      */
     // Any Throwable: a failed borrow must leave however it ends, as a finally would, and a failure that isn't fatal is
     // kept under a fatal Error from closing. A stopped wait is the exception: the run leaves once it's reported it.
-    Copy borrow(Instant deadline) throws InterruptedException, TimeoutException {
+    Copy borrow(Deadline deadline) throws InterruptedException, TimeoutException {
         // Found or made before anything is held, so that failing to make it leaves nothing to give back.
         int[] runs = runsOnThread();
         // A run already in progress on this thread, whatever engine or rule list it uses, makes this one nested.
@@ -539,7 +539,7 @@ final class RuleSet {
         return fatal;
     }
 
-    private Copy lend(Instant deadline, boolean nested) throws InterruptedException, TimeoutException {
+    private Copy lend(Deadline deadline, boolean nested) throws InterruptedException, TimeoutException {
         Map<String, Session> shared = sharedSessions;
         if (shared != null) {
             return new Copy(shared, Kind.SHARED, Held.NOTHING);
@@ -593,23 +593,29 @@ final class RuleSet {
      * given back after it was retired for it, though not those it closed as it was retired. A copy given back without
      * a slot doesn't wake a waiting run: runs arriving meanwhile take it.
      *
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @return The copy
      * @throws InterruptedException if the thread is interrupted while it waits for a slot
      */
-    private Copy slottedCopy(Instant deadline) throws InterruptedException {
+    private Copy slottedCopy(Deadline deadline) throws InterruptedException {
         Map<String, Session> sessions = idle.poll();
         if (sessions == null) {
             // A run that gives up waiting still makes its copy: an engine without a limit never fails a run for want
             // of one. Counted until it has looked for a copy again, so a copy given back while it waited is kept for
-            // it, even once the rule set is retired.
-            Held held;
+            // it, even once the rule set is retired, and the slot given back if looking fails, as lend() gives back a
+            // permit, so a failure leaves neither behind.
+            Held held = Held.NOTHING;
+            boolean looked = false;
             waiting.incrementAndGet();
             try {
                 held = permits.awaitSlot(stallWindow, deadline) ? Held.SLOT : Held.NOTHING;
                 sessions = idle.poll();
+                looked = true;
             } finally {
                 waiting.decrementAndGet();
+                if (!looked) {
+                    giveBack(held);
+                }
             }
             if (sessions == null) {
                 boolean made = false;
@@ -636,34 +642,30 @@ final class RuleSet {
      * @param permits  The permits to wait for
      * @param returned How many permits have been given back so far
      * @param window   How long to wait for progress, in milliseconds
-     * @param deadline When the run must stop, or {@code null} if it has none
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @return {@code true} if a permit was taken, {@code false} if nothing came back within one window
      * @throws InterruptedException if the thread is interrupted while it waits
      * @throws TimeoutException     if the deadline comes before a permit does
      */
-    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window, Instant deadline)
+    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window, Deadline deadline)
             throws InterruptedException, TimeoutException {
         // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even when
         // copies are free, and the run would fail saying every copy was in use when none was.
         if (permits.tryAcquire()) {
             return true;
         }
-        Duration windowLength = Duration.ofMillis(window);
+        long windowNanos = TimeUnit.MILLISECONDS.toNanos(window);
         long seen = returned.getAsLong();
         while (true) {
-            Duration left = Cancellation.timeLeft(deadline);
-            if (left != null && left.compareTo(windowLength) < 0) {
+            long left = deadline.nanosLeft();
+            if (left < windowNanos) {
                 // The deadline comes before the window ends, so the run waits only until then: a whole window never
-                // passes, and a run past its deadline makes no extra copy either.
-                if (permits.tryAcquire(Math.max(0, left.toNanos()), TimeUnit.NANOSECONDS)) {
+                // passes, and a run past its deadline makes no extra copy either. The wait is timed on nanoTime(), as
+                // the deadline is, so a wait that ends without a permit ends with the deadline passed.
+                if (permits.tryAcquire(Math.max(0, left), TimeUnit.NANOSECONDS)) {
                     return true;
                 }
-                if (!left.isPositive()) {
-                    throw Cancellation.timedOut(deadline);
-                }
-                // The wait is timed on System.nanoTime(), but the deadline is on the wall clock, which on Windows can
-                // still be a moment short of it when the wait ends: look at the wall clock again before giving up.
-                continue;
+                throw Cancellation.timedOut(deadline);
             }
             if (permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
                 return true;

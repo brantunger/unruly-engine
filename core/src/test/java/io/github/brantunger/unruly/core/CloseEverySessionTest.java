@@ -26,7 +26,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.AbstractQueue;
 import java.util.ArrayList;
@@ -1149,7 +1148,7 @@ class CloseEverySessionTest {
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
         RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(null);
+        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(fatal);
         AtomicReference<Error> returned = new AtomicReference<>();
         AtomicReference<Throwable> thrown = new AtomicReference<>();
@@ -1161,7 +1160,7 @@ class CloseEverySessionTest {
         assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
         assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later run, so"
                 + " its sessions were closed: keeping the copy"), logs);
-        rules.release(rules.borrow(Instant.now().plusSeconds(10)));
+        rules.release(rules.borrow(Deadline.from(Duration.ofSeconds(10))));
         assertEquals(2, compiler.sessionsMade.get(), "the next run made a copy of its own under the limit");
     }
 
@@ -1174,7 +1173,7 @@ class CloseEverySessionTest {
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
         RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(null);
+        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(keeping);
         compiler.sessionCloseFailure = closing;
         AtomicReference<Error> returned = new AtomicReference<>();
@@ -1197,7 +1196,7 @@ class CloseEverySessionTest {
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
         RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(null);
+        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(new IllegalStateException("queue full"));
         AtomicReference<Error> returned = new AtomicReference<>();
         AtomicReference<Throwable> thrown = new AtomicReference<>();
@@ -1240,12 +1239,12 @@ class CloseEverySessionTest {
         rules.prepareCopies(1);
         idle.pollFailure.set(fatal);
 
-        Throwable thrown = thrownBy(() -> rules.borrow(null));
+        Throwable thrown = thrownBy(() -> rules.borrow(Deadline.NONE));
 
         assertSame(fatal, thrown);
         assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be lent");
         assertEquals(1, permits.available().availablePermits(), "the permit taken for it was given back");
-        rules.release(rules.borrow(Instant.now().plusSeconds(10)));
+        rules.release(rules.borrow(Deadline.from(Duration.ofSeconds(10))));
         assertEquals(2, compiler.sessionsMade.get(), "the next run made a copy of its own under the limit");
     }
 
@@ -1357,13 +1356,13 @@ class CloseEverySessionTest {
         AtomicReference<Error> left = new AtomicReference<>();
         AtomicBoolean interrupted = new AtomicBoolean();
         Thread waiter = new Thread(() -> {
-            thrown.set(thrownBy(() -> waitedFor.borrow(null)));
+            thrown.set(thrownBy(() -> waitedFor.borrow(Deadline.NONE)));
             closedBeforeLeaving.set(List.copyOf(compiler.closed));
             left.set(waitedFor.leaveAfterStop());
             interrupted.set(Thread.currentThread().isInterrupted());
         });
         // The one permit, held with a copy of the other rule set, so the waiter waits for it.
-        RuleSet.Copy copy = held.borrow(null);
+        RuleSet.Copy copy = held.borrow(Deadline.NONE);
         try {
             logsOf(() -> {
                 waiter.start();
@@ -1405,7 +1404,7 @@ class CloseEverySessionTest {
         CountDownLatch copyGivenBack = new CountDownLatch(1);
         AtomicReference<Error> left = new AtomicReference<>();
         Thread waiter = new Thread(() -> {
-            thrown.set(thrownBy(() -> rules.borrow(null)));
+            thrown.set(thrownBy(() -> rules.borrow(Deadline.NONE)));
             stopped.countDown();
             if (!waiterLeavesFirst) {
                 // Cleared while it waits to leave, and set again before it does, as the engine leaves with it set.
@@ -1427,7 +1426,7 @@ class CloseEverySessionTest {
         };
         RuleSet.Copy copy;
         try {
-            copy = rules.borrow(null);
+            copy = rules.borrow(Deadline.NONE);
         } catch (InterruptedException | TimeoutException e) {
             throw new AssertionError("the free copy wasn't lent", e);
         }

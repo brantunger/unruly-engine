@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
@@ -19,7 +20,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -83,14 +83,14 @@ class OutputWriterTest {
     }
 
     /**
-     * An output bean whose setter gives up once the run's deadline, kept in {@code deadline}, has passed, and sets
-     * {@code reached} when it's called.
+     * An output bean whose setter gives up once the run's deadline has passed, as the action context kept in
+     * {@code deadline} tells, and sets {@code reached} when it's called.
      */
     public static final class LateBean {
-        private final AtomicReference<Instant> deadline;
+        private final AtomicReference<ActionContext> deadline;
         private final AtomicBoolean reached;
 
-        LateBean(AtomicReference<Instant> deadline, AtomicBoolean reached) {
+        LateBean(AtomicReference<ActionContext> deadline, AtomicBoolean reached) {
             this.deadline = deadline;
             this.reached = reached;
         }
@@ -113,9 +113,10 @@ class OutputWriterTest {
 
     /**
      * A language whose conditions are always true, and whose every action returns {@code rate=4.5} and keeps the
-     * run's deadline in {@code deadline}, so the output can be written once the deadline has passed.
+     * action's context, which knows the run's deadline, in {@code deadline}, so the output can be written once the
+     * deadline has passed.
      */
-    private static ExpressionLanguage keeping(AtomicReference<Instant> deadline) {
+    private static ExpressionLanguage keeping(AtomicReference<ActionContext> deadline) {
         return new ExpressionLanguage() {
             @Override
             public String name() {
@@ -133,7 +134,7 @@ class OutputWriterTest {
                     @Override
                     public CompiledAction compileAction(Expression source) {
                         return (action, session) -> {
-                            deadline.set(action.deadline());
+                            deadline.set(action);
                             return ActionResult.set(Map.of("rate", "4.5"));
                         };
                     }
@@ -153,12 +154,12 @@ class OutputWriterTest {
     }
 
     /**
-     * An engine with one rule, whose action returns {@code rate=4.5} and keeps the run's deadline in
-     * {@code deadline}, so its writer can wait until the deadline has passed. A run has a second, far more than it
-     * needs to reach the writer, which sets {@code reached} when it does. Runs write to {@code output}.
+     * An engine with one rule, whose action returns {@code rate=4.5} and keeps its context, which knows the run's
+     * deadline, in {@code deadline}, so its writer can wait until the deadline has passed. A run has a second, far
+     * more than it needs to reach the writer, which sets {@code reached} when it does. Runs write to {@code output}.
      */
     private static RulesEngine<Map<String, Object>> timedEngine(Map<String, Object> output,
-                                                                AtomicReference<Instant> deadline,
+                                                                AtomicReference<ActionContext> deadline,
                                                                 AtomicBoolean reached,
                                                                 OutputWriter<Map<String, Object>> writer) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(() -> output)
@@ -170,9 +171,12 @@ class OutputWriterTest {
         return engine;
     }
 
-    /** Returns once the run's deadline has passed, however long that takes, rather than after a fixed time. */
-    private static void waitPast(AtomicReference<Instant> deadline) throws InterruptedException {
-        while (!Instant.now().isAfter(deadline.get())) {
+    /**
+     * Returns once the run's deadline has passed, however long that takes, rather than after a fixed time. Asked of
+     * the run's own context, which decides it as the engine does: the system clock can be a moment either side.
+     */
+    private static void waitPast(AtomicReference<ActionContext> deadline) throws InterruptedException {
+        while (!deadline.get().isCancelled()) {
             Thread.sleep(5);
         }
     }
@@ -270,7 +274,7 @@ class OutputWriterTest {
     @DisplayName("a writer on the last rule that returns past the deadline stops the run, and what it set stays set")
     void slowWriterOnTheLastRuleStopsAtTheDeadline() {
         Map<String, Object> output = new HashMap<>();
-        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicReference<ActionContext> deadline = new AtomicReference<>();
         AtomicBoolean reached = new AtomicBoolean();
         RulesEngine<Map<String, Object>> engine = timedEngine(output, deadline, reached, (out, property, value) -> {
             waitPast(deadline);
@@ -289,7 +293,7 @@ class OutputWriterTest {
     @DisplayName("a writer that throws past the deadline stops the run, keeping what it threw")
     void writerThrowingPastTheDeadlineIsAStop() {
         IllegalStateException gaveUp = new IllegalStateException("gave up");
-        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicReference<ActionContext> deadline = new AtomicReference<>();
         AtomicBoolean reached = new AtomicBoolean();
         RulesEngine<Map<String, Object>> engine = timedEngine(new HashMap<>(), deadline, reached,
                 (out, property, value) -> {
@@ -309,7 +313,7 @@ class OutputWriterTest {
     @DisplayName("a writer that throws an Error past the deadline still fails the rule, as an action does")
     void writerErrorPastTheDeadlineIsStillAFailure() {
         AssertionError broke = new AssertionError("broke");
-        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicReference<ActionContext> deadline = new AtomicReference<>();
         AtomicBoolean reached = new AtomicBoolean();
         RulesEngine<Map<String, Object>> engine = timedEngine(new HashMap<>(), deadline, reached,
                 (out, property, value) -> {
@@ -362,7 +366,7 @@ class OutputWriterTest {
     @DisplayName("a bean setter that throws past the deadline stops the run under the default writer, keeping what"
             + " it threw")
     void beanSetterThrowingPastTheDeadlineIsAStop() {
-        AtomicReference<Instant> deadline = new AtomicReference<>();
+        AtomicReference<ActionContext> deadline = new AtomicReference<>();
         AtomicBoolean reached = new AtomicBoolean();
         List<RuleExecutionException> errors = new ArrayList<>();
         RuleListener listener = new RuleListener() {
