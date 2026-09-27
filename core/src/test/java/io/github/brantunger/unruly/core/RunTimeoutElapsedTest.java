@@ -32,6 +32,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a run is never told to stop before its timeout has gone by")
 class RunTimeoutElapsedTest {
 
+    /** What the condition's time is before it records one. */
+    private static final long NOT_CANCELLED = Long.MIN_VALUE;
+
     /** A language whose condition spins until its run is cancelled, and records when that was. */
     private static ExpressionLanguage spinning(AtomicLong cancelledAt) {
         return new ExpressionLanguage() {
@@ -78,12 +81,22 @@ class RunTimeoutElapsedTest {
         engine.load(List.of(Rule.builder().ruleName("r").condition("c").action("a").build()));
 
         // Many short runs, because a deadline on the system clock passed early only now and then.
-        for (int i = 0; i < 300; i++) {
+        int runs = 300;
+        int seen = 0;
+        for (int i = 0; i < runs; i++) {
+            // A run can pass its deadline before its condition starts: the first one, which compiles the rules, always
+            // does. Its condition then never records a time, and nothing is measured for that run.
+            cancelledAt.set(NOT_CANCELLED);
             long start = System.nanoTime();
             assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+            if (cancelledAt.get() == NOT_CANCELLED) {
+                continue;
+            }
+            seen++;
             long elapsed = cancelledAt.get() - start;
 
             assertTrue(elapsed >= timeout.toNanos(), "run " + i + " was cancelled after " + elapsed + " ns");
         }
+        assertTrue(seen >= runs / 2, "only " + seen + " of " + runs + " runs reached their condition");
     }
 }
