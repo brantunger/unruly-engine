@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,14 +21,17 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceConfigurationError;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("expression languages are found with ServiceLoader when an engine is built")
@@ -98,6 +102,10 @@ class LanguageDiscoveryTest {
         }
     }
 
+    /** A class that a services file lists, but that isn't a language. */
+    public static final class NotALanguage {
+    }
+
     private static Rule rule(String name, String language, String condition, String action) {
         return Rule.builder().ruleName(name).language(language).condition(condition).action(action).build();
     }
@@ -108,11 +116,47 @@ class LanguageDiscoveryTest {
 
     /** A class loader that sees the library, and a services file listing {@code languages}. */
     private URLClassLoader listing(Class<?>... languages) throws IOException {
+        return new URLClassLoader(new URL[]{servicesListing(Arrays.stream(languages).map(Class::getName)
+                .toArray(String[]::new))}, LanguageDiscoveryTest.class.getClassLoader());
+    }
+
+    /** The root of a services file listing the classes {@code names}. */
+    private URL servicesListing(String... names) throws IOException {
         Path file = servicesRoot.resolve(SERVICES_FILE);
         Files.createDirectories(file.getParent());
-        Files.writeString(file, Arrays.stream(languages).map(Class::getName).collect(Collectors.joining("\n")));
-        return new URLClassLoader(new URL[]{servicesRoot.toUri().toURL()},
-                LanguageDiscoveryTest.class.getClassLoader());
+        Files.writeString(file, String.join("\n", names));
+        return servicesRoot.toUri().toURL();
+    }
+
+    /** Where a class of the library was loaded from: a jar, or a directory of classes. */
+    private static URL codeOf(Class<?> type) {
+        return type.getProtectionDomain().getCodeSource().getLocation();
+    }
+
+    /**
+     * A child-first class loader, as plug-in hosts use: it defines its own copy of a class it holds before asking its
+     * parent.
+     */
+    private static class ChildFirst extends URLClassLoader {
+        ChildFirst(ClassLoader parent, URL... urls) {
+            super(urls, parent);
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            synchronized (getClassLoadingLock(name)) {
+                Class<?> type = findLoadedClass(name);
+                if (type == null && !name.startsWith("java.")) {
+                    try {
+                        type = findClass(name);
+                    } catch (ClassNotFoundException e) {
+                        // Not in the copy, so the parent's.
+                        type = null;
+                    }
+                }
+                return type != null ? type : super.loadClass(name, resolve);
+            }
+        }
     }
 
     private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
@@ -229,6 +273,113 @@ class LanguageDiscoveryTest {
 
             assertInstanceOf(IllegalStateException.class, error.getCause());
             assertEquals("no licence for this language", error.getCause().getMessage());
+        }
+    }
+
+    /** Builds an engine with {@code loader} as the context class loader, and checks that it runs MVEL's rules. */
+    private static String buildsWithMvel(ClassLoader loader) {
+        AtomicReference<RulesEngine<Map<String, Object>>> engine = new AtomicReference<>();
+        String logs = logsOf(() -> engine.set(withContextClassLoader(loader, () -> builder().build())));
+        engine.get().load(List.of(rule("mvel", null, "true", "output.put('m', 1)")));
+
+        assertEquals(Map.of("m", 1), engine.get().run(new FactMap<>()));
+        return logs;
+    }
+
+    @Test
+    @DisplayName("a context class loader with its own copy of the library is left at its first error, so MVEL is found"
+            + " once")
+    void secondCopySkipped() throws IOException {
+        try (URLClassLoader loader = new ChildFirst(LanguageDiscoveryTest.class.getClassLoader(),
+                servicesListing(MvelExpressionLanguage.class.getName()), codeOf(MvelExpressionLanguage.class),
+                codeOf(ExpressionLanguage.class))) {
+            String logs = buildsWithMvel(loader);
+
+            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": that class loader has"
+                    + " its own copy of this library, so the languages it lists are a second copy: "
+                    + ExpressionLanguage.class.getName() + ": " + MvelExpressionLanguage.class.getName()
+                    + " not a subtype"), logs);
+        }
+    }
+
+    @Test
+    @DisplayName("a context class loader with its own copy of the library whose listings can't be read doesn't stop"
+            + " build()")
+    void secondCopyWithUnreadableListings() throws IOException {
+        try (URLClassLoader loader = new ChildFirst(LanguageDiscoveryTest.class.getClassLoader(),
+                codeOf(ExpressionLanguage.class)) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                throw new IOException("the plug-in's jar index is broken");
+            }
+        }) {
+            // ServiceLoader reports the same error on every call, so going on to the next listing never ends.
+            String logs = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> buildsWithMvel(loader));
+
+            assertEquals(1, logs.split("Stopped finding expression languages", -1).length - 1, logs);
+        }
+    }
+
+    @Test
+    @DisplayName("a second copy of a language, in a context class loader without its own copy of the library, is"
+            + " skipped, and the language found first is kept")
+    void copyOfALanguageAloneSkipped() throws IOException {
+        // The plug-in holds its own copy of MVEL, which implements the library's ExpressionLanguage.
+        try (URLClassLoader loader = new ChildFirst(LanguageDiscoveryTest.class.getClassLoader(),
+                servicesListing(MvelExpressionLanguage.class.getName()), codeOf(MvelExpressionLanguage.class))) {
+            String logs = buildsWithMvel(loader);
+
+            assertTrue(logs.contains("Skipped the expression language " + MvelExpressionLanguage.class.getName()
+                    + " that " + loader + " found with ServiceLoader: it's a second copy of one already found with"
+                    + " another class loader"), logs);
+            LanguageRegistry registry = LanguageRegistry.resolve(Map.of(), null,
+                    List.of(ImportResolver.LIBRARY_CLASS_LOADER, loader));
+            assertSame(MvelExpressionLanguage.class,
+                    registry.languages().get(MvelExpressionLanguage.LANGUAGE_NAME).getClass());
+        }
+    }
+
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged, whether or not its loader sees the"
+            + " library")
+    void notALanguage() throws IOException {
+        // ServiceLoader skips a listed class in a named module, such as String, so the class is one of these tests'.
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader seesLibrary = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader());
+             URLClassLoader seesNothing = new URLClassLoader(urls, null)) {
+            for (URLClassLoader loader : List.of(seesLibrary, seesNothing)) {
+                ServiceConfigurationError error = withContextClassLoader(loader,
+                        () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+                assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName()
+                        + " not a subtype", error.getMessage());
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "a linkage error: {0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("a listed class that isn't a language fails build() unchanged when its loader can't look up"
+            + " ExpressionLanguage")
+    void notALanguageWhereTheApiCantBeLookedUp(boolean linkageError) throws IOException {
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.equals(ExpressionLanguage.class.getName())) {
+                    if (linkageError) {
+                        throw new NoClassDefFoundError("the plug-in's loader is closed");
+                    }
+                    throw new IllegalStateException("the plug-in's loader is closed");
+                }
+                return super.loadClass(name, resolve);
+            }
+        }) {
+            ServiceConfigurationError error = withContextClassLoader(loader,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype",
+                    error.getMessage());
         }
     }
 }

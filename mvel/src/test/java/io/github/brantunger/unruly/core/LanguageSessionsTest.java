@@ -438,7 +438,7 @@ class LanguageSessionsTest {
                 new CopyPermits(RuleSet.UNLIMITED));
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(), null, List.of(), List.of(),
+        EngineConfiguration<String> configuration = new EngineConfiguration<>(Map.of(), null, List.of(), List.of(),
                 CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
                 Map.of(), false);
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {

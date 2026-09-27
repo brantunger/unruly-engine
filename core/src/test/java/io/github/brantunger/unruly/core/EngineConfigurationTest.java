@@ -24,12 +24,14 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("an engine's configuration names the argument or collection that holds a null")
 class EngineConfigurationTest {
 
-    private static final List<ExpressionLanguage> LANGUAGES = List.of(new ToyExpressionLanguage());
+    private static final Map<String, ExpressionLanguage> LANGUAGES = Map.of(ToyExpressionLanguage.LANGUAGE_NAME,
+            new ToyExpressionLanguage());
     private static final CopyLimit LIMIT = CopyLimit.none();
     private static final Clock CLOCK = Clock.systemUTC();
     private static final OutputWriter<Object> WRITER = OutputWriter.beansAndMaps();
 
-    private static EngineConfiguration<Object> configuration(List<ExpressionLanguage> languages, List<String> imports,
+    private static EngineConfiguration<Object> configuration(Map<String, ExpressionLanguage> languages,
+                                                             List<String> imports,
                                                              List<RuleListener> listeners, CopyLimit copyLimit,
                                                              Clock clock, Class<Object> outputType,
                                                              OutputWriter<Object> outputWriter,
@@ -78,8 +80,11 @@ class EngineConfigurationTest {
                 Arguments.of("a null declaredFacts", "declaredFacts must not be null", (Executable) () -> configuration(
                         LANGUAGES, List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER, Map.of(), null)),
                 Arguments.of("a null language", "languages must not contain null", (Executable) () -> configuration(
-                        Collections.singletonList(null), List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER,
+                        Collections.singletonMap("toy", null), List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER,
                         Map.of(), Map.of())),
+                Arguments.of("a null language name", "languages must not contain null",
+                        (Executable) () -> configuration(Collections.singletonMap(null, new ToyExpressionLanguage()),
+                                List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER, Map.of(), Map.of())),
                 Arguments.of("a null import", "imports must not contain null", (Executable) () -> configuration(
                         LANGUAGES, Collections.singletonList(null), List.of(), LIMIT, CLOCK, Object.class, WRITER,
                         Map.of(), Map.of())),
@@ -122,10 +127,10 @@ class EngineConfigurationTest {
                         () -> configuration(null, List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER,
                                 Map.of(), null)).getMessage()),
                 () -> assertEquals("copyLimit must not be null", assertThrows(NullPointerException.class,
-                        () -> configuration(Collections.singletonList(null), List.of(), List.of(), null, CLOCK,
+                        () -> configuration(Collections.singletonMap("toy", null), List.of(), List.of(), null, CLOCK,
                                 Object.class, WRITER, Map.of(), Map.of())).getMessage()),
                 () -> assertEquals("languages must not contain null", assertThrows(NullPointerException.class,
-                        () -> configuration(Collections.singletonList(null), Collections.singletonList(null),
+                        () -> configuration(Collections.singletonMap("toy", null), Collections.singletonList(null),
                                 List.of(), LIMIT, CLOCK, Object.class, WRITER, Map.of(), Map.of())).getMessage()),
                 () -> assertEquals("imports must not contain null", assertThrows(NullPointerException.class,
                         () -> configuration(LANGUAGES, Collections.singletonList(null),
@@ -163,9 +168,9 @@ class EngineConfigurationTest {
     }
 
     @Test
-    @DisplayName("the lists, options and declarations are unmodifiable copies, detached from the caller's")
+    @DisplayName("the languages, lists, options and declarations are unmodifiable copies, detached from the caller's")
     void keepsDetachedCopies() {
-        List<ExpressionLanguage> languages = new ArrayList<>(LANGUAGES);
+        Map<String, ExpressionLanguage> languages = new HashMap<>(LANGUAGES);
         List<String> imports = new ArrayList<>(List.of("java.util"));
         RuleListener listener = new RuleListener() {
         };

@@ -253,7 +253,9 @@ try {
 
 - `validate(rules)` captures a loader the same way, on whichever thread calls it.
 - `build()` uses the **building** thread's context class loader, for the engine's languages and for an import that
-  names a single class. Imported packages are looked up with the **loading** thread's.
+  names a single class. Imported packages are looked up with the **loading** thread's. A second copy of a
+  language, or of `unruly-engine-core`, on the building thread's loader is skipped; see
+  [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language).
 - A thread with no context class loader leaves the engine using this library's own class loader.
 
 In MVEL, when the loading thread's loader is one of the JDK's own (the application or platform class loader), a
