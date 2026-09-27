@@ -9,6 +9,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.RecordComponent;
+import java.security.CodeSource;
+import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -47,13 +49,19 @@ import java.util.TreeMap;
 public final class FactProperties {
 
     // The readable properties of each class, by name: a record's components, or a bean's public no-argument getX and
-    // isX methods. Methods declared by Object are left out, so getClass() isn't a property.
+    // isX methods. Methods declared by Object or Enum are left out, so getClass() and an enum's getDeclaringClass()
+    // aren't properties, and a class isRuntimeType() matches has none.
     private static final ClassValue<Map<String, Method>> ACCESSORS = new ClassValue<>() {
         @Override
         protected Map<String, Method> computeValue(Class<?> type) {
             return accessorsOf(type);
         }
     };
+
+    // The JVM's own types that have no properties, with their subclasses, besides the classes in java.lang.reflect:
+    // through them a rule could walk from a fact to the class loaders, the modules and the application's files.
+    private static final List<Class<?>> RUNTIME_TYPES = List.of(Class.class, ClassLoader.class, Module.class,
+            ModuleLayer.class, Package.class, ProtectionDomain.class, CodeSource.class, Thread.class);
 
     /** The fewest levels {@link #toData} converts: the target itself. */
     private static final int MIN_DEPTH = 1;
@@ -89,13 +97,24 @@ public final class FactProperties {
      * Exporting the package isn't enough, because calling a method of a class that isn't public is deep reflection.
      * </p>
      *
+     * <p>
+     * <b>Rules can't read their way into the JVM through a fact.</b> An enum's {@code getDeclaringClass()} isn't a
+     * property, as {@code getClass()} isn't one. And a {@link Class}, a {@link ClassLoader}, a {@link Module}, a
+     * {@link ModuleLayer}, a {@link Package}, a {@link java.security.ProtectionDomain}, a
+     * {@link java.security.CodeSource}, a {@link Thread}, an application's own subclass of one of them, or an object
+     * of a class in {@code java.lang.reflect}, such as a {@link Method}, has no properties here at all, so
+     * {@link #toData} leaves one as it is too. A fact's own property may still return one of them as its value; only
+     * reading a property of that value is refused.
+     * </p>
+     *
      * @param target   The fact, which must not be {@code null}
      * @param property The property's name, as the rule wrote it
      * @return The property's value, which may be {@code null}
      * @throws NullPointerException     if {@code target} or {@code property} is {@code null}
-     * @throws IllegalArgumentException if the fact has no such property. A language should let this reach the
-     *                                  engine, which fails the rule with it: a missing property is a mistake in the
-     *                                  rule, and evaluating it to {@code false} or to undefined hides it
+     * @throws IllegalArgumentException if the fact has no such property, or is one of the JVM's own objects whose
+     *                                  properties aren't read. A language should let this reach the engine, which
+     *                                  fails the rule with it: a missing property is a mistake in the rule, and
+     *                                  evaluating it to {@code false} or to undefined hides it
      * @throws IllegalStateException    if the property exists but can't be read, because nothing public declares its
      *                                  accessor and its package isn't open to this module; or if the accessor
      *                                  threw, with what it threw as the cause. What an
@@ -119,6 +138,12 @@ public final class FactProperties {
         }
         Method accessor = ACCESSORS.get(target.getClass()).get(property);
         if (accessor == null) {
+            // Only once the read has failed, so a fact that is read costs nothing more.
+            if (isRuntimeType(target.getClass())) {
+                throw new IllegalArgumentException("A " + target.getClass().getName() + " has no property '"
+                        + property + "'. The properties of a class, a class loader, a module, a package, a thread,"
+                        + " or a reflection or security object aren't read.");
+            }
             throw new IllegalArgumentException(noSuchProperty(target, property));
         }
         return invoke(accessor, target, property);
@@ -157,7 +182,9 @@ public final class FactProperties {
      * enum, a lambda or an array of primitives from being taken apart into the properties of its implementation. A
      * proxy over an interface is data, because that's a shape facts take: a projection, a lazy association, a test
      * double. A lambda or an anonymous class is converted when it's the {@code target}, because then the caller
-     * asked for its properties, and left alone when it's met as a value.
+     * asked for its properties, and left alone when it's met as a value. An object whose properties {@link #read}
+     * doesn't read, such as an application's own class loader or thread, is left as it is too, and can't be the
+     * {@code target}.
      * </p>
      *
      * <p>
@@ -273,12 +300,30 @@ public final class FactProperties {
         if (type.isRecord()) {
             return true;
         }
-        // instanceof, not Class.isEnum(): an enum constant with a body is an anonymous subclass, for which
-        // isEnum() is false, and it would otherwise convert to the junk property declaringClass.
+        // An enum is a value, even one with getters of its own. instanceof, not Class.isEnum(): an enum constant with
+        // a body is an anonymous subclass, for which isEnum() is false.
         if (value instanceof Enum) {
             return false;
         }
         return !isPlatformValue(type) && !ACCESSORS.get(type).isEmpty();
+    }
+
+    /**
+     * Whether a class is one of the JVM's own that lead into it, rather than a value a rule reads: a class, a class
+     * loader, a module, a package, a thread, or a reflection or security object, or an application's subclass of one
+     * of them. A class in {@code java.lang.reflect} is matched by its package, not as a subtype: a proxy is a
+     * {@link Proxy}, and a proxy is data.
+     *
+     * @param type The value's class
+     * @return {@code true} if it has no properties
+     */
+    private static boolean isRuntimeType(Class<?> type) {
+        for (Class<?> runtimeType : RUNTIME_TYPES) {
+            if (runtimeType.isAssignableFrom(type)) {
+                return true;
+            }
+        }
+        return "java.lang.reflect".equals(type.getPackageName());
     }
 
     /**
@@ -305,6 +350,9 @@ public final class FactProperties {
     }
 
     private static Map<String, Method> accessorsOf(Class<?> type) {
+        if (isRuntimeType(type)) {
+            return Map.of();
+        }
         Map<String, Method> accessors = new LinkedHashMap<>();
         if (type.isRecord()) {
             for (RecordComponent component : type.getRecordComponents()) {
@@ -320,9 +368,10 @@ public final class FactProperties {
         List<Method> methods = new ArrayList<>(List.of(type.getMethods()));
         methods.sort(Comparator.comparing(Method::getName));
         for (Method method : methods) {
-            // Declared by Object, so getClass() is never a property.
-            if (method.getDeclaringClass() == Object.class || Modifier.isStatic(method.getModifiers())
-                    || method.getParameterCount() != 0 || method.getReturnType() == void.class) {
+            // Declared by Object or Enum, so getClass() and getDeclaringClass() are never properties.
+            if (method.getDeclaringClass() == Object.class || method.getDeclaringClass() == Enum.class
+                    || Modifier.isStatic(method.getModifiers()) || method.getParameterCount() != 0
+                    || method.getReturnType() == void.class) {
                 continue;
             }
             String property = propertyName(method);

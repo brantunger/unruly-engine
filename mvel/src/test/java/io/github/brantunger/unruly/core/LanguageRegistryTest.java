@@ -25,12 +25,12 @@ class LanguageRegistryTest {
     void noLanguage() throws IOException {
         try (URLClassLoader loader = noLanguages()) {
             IllegalStateException ex = assertThrows(IllegalStateException.class,
-                    () -> LanguageRegistry.resolve(List.of(), null, List.of(loader)));
+                    () -> LanguageRegistry.resolve(Map.of(), null, List.of(loader)));
             assertEquals("The engine has no expression language: add one with language(), or put a language on the "
                     + "class path or, with a provides clause, on the module path", ex.getMessage());
 
             ex = assertThrows(IllegalStateException.class,
-                    () -> LanguageRegistry.resolve(List.of(), "mvel", List.of(loader)));
+                    () -> LanguageRegistry.resolve(Map.of(), "mvel", List.of(loader)));
             assertEquals("The default language 'mvel' isn't one of the engine's expression languages: []",
                     ex.getMessage());
         }
@@ -41,7 +41,7 @@ class LanguageRegistryTest {
     void foundOnce() {
         ClassLoader library = ImportResolver.LIBRARY_CLASS_LOADER;
 
-        LanguageRegistry registry = LanguageRegistry.resolve(List.of(), null, List.of(library, library));
+        LanguageRegistry registry = LanguageRegistry.resolve(Map.of(), null, List.of(library, library));
 
         assertEquals(Map.of(MvelExpressionLanguage.LANGUAGE_NAME, MvelExpressionLanguage.class),
                 Map.of(registry.defaultLanguage(), registry.languages().get(registry.defaultLanguage()).getClass()));

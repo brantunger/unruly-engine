@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.core.CopyLimit;
 import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
+import io.github.brantunger.unruly.core.LanguageNames;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Clock;
@@ -72,7 +73,8 @@ public final class RulesEngineBuilder<O> {
 
     private final Supplier<O> outputFactory;
     private final EngineFactory<O> engineFactory;
-    private final List<ExpressionLanguage> languageList = new ArrayList<>();
+    // By the name each language had when it was added, which is the name the engine uses.
+    private final Map<String, ExpressionLanguage> languageMap = new LinkedHashMap<>();
     private @Nullable String defaultLanguageName;
     private final List<String> importNames = new ArrayList<>();
     private final List<RuleListener> listenerList = new ArrayList<>();
@@ -158,6 +160,11 @@ public final class RulesEngineBuilder<O> {
      * Adds an expression language that rules can be written in, chosen by each rule's {@code language}. Once this is
      * called, the engine has exactly the languages added, and finds none with {@link java.util.ServiceLoader}.
      *
+     * <p>
+     * The language's {@link ExpressionLanguage#name()} is read once, here, and the engine knows the language by that
+     * name from then on.
+     * </p>
+     *
      * @param language The language
      * @return This builder
      * @throws IllegalArgumentException if the language's name is {@code null} or blank, or a language with the same
@@ -167,17 +174,16 @@ public final class RulesEngineBuilder<O> {
     public RulesEngineBuilder<O> language(ExpressionLanguage language) {
         Objects.requireNonNull(language, "language must not be null");
         String name = language.name();
-        if (name == null || name.isBlank()) {
+        LanguageNames.Problem problem = LanguageNames.check(name, languageMap);
+        if (problem == LanguageNames.Problem.NULL_OR_BLANK) {
             throw new IllegalArgumentException("An expression language's name must not be null or blank: "
                     + language.getClass().getName());
         }
-        for (ExpressionLanguage added : languageList) {
-            if (name.equals(added.name())) {
-                throw new IllegalArgumentException("Two expression languages are named '" + Names.quote(name) + "': "
-                        + added.getClass().getName() + " and " + language.getClass().getName());
-            }
+        if (problem == LanguageNames.Problem.TAKEN) {
+            throw new IllegalArgumentException("Two expression languages are named '" + Names.quote(name) + "': "
+                    + languageMap.get(name).getClass().getName() + " and " + language.getClass().getName());
         }
-        languageList.add(language);
+        languageMap.put(name, language);
         return this;
     }
 
@@ -597,7 +603,7 @@ public final class RulesEngineBuilder<O> {
             throw new IllegalArgumentException("copiesAtLoad(" + loadCopies + ") is more than maxCopies("
                     + limit.maxCopies() + "): no more copies than that are used at once");
         }
-        EngineConfiguration<O> configuration = new EngineConfiguration<>(languageList, defaultLanguageName,
+        EngineConfiguration<O> configuration = new EngineConfiguration<>(languageMap, defaultLanguageName,
                 importNames, listenerList, limit, loadCopies, timeout, runClock,
                 outputClass, writer, languageOptions, factTypes, allFactsDeclared);
         return engineFactory.create(outputFactory, configuration);

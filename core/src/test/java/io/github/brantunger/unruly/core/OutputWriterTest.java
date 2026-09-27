@@ -426,4 +426,16 @@ class OutputWriterTest {
                         () -> writer.set(new StringBuilder(), "", 1)).getMessage()));
         assertEquals(Map.of(), map);
     }
+
+    @Test
+    @DisplayName("the default writer rejects a null output, before it looks at the property")
+    void defaultWriterRejectsNullOutput() {
+        OutputWriter<Object> writer = OutputWriter.beansAndMaps();
+
+        assertAll(
+                () -> assertEquals("output must not be null", assertThrows(NullPointerException.class,
+                        () -> writer.set(null, "total", 1)).getMessage()),
+                () -> assertEquals("output must not be null", assertThrows(NullPointerException.class,
+                        () -> writer.set(null, null, 1)).getMessage()));
+    }
 }

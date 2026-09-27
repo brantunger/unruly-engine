@@ -16,7 +16,8 @@ import java.util.Objects;
  * The settings an engine is built with, as {@link io.github.brantunger.unruly.api.RulesEngineBuilder} collected them.
  * The engine resolves them when it's created. <b>Internal:</b> this record may change in any release.
  *
- * @param languages       The languages given to the builder, or none to find them with {@link java.util.ServiceLoader}
+ * @param languages       The languages given to the builder, by the name each had when it was added, or none to find
+ *                        them with {@link java.util.ServiceLoader}
  * @param defaultLanguage The name of the default language, or {@code null} to use the only language
  * @param imports         The package and class names to import, not yet resolved
  * @param listeners       The listeners, in the order they're called
@@ -34,9 +35,9 @@ import java.util.Objects;
  * @param options         Each language's options, by language name
  * @param <O>             The type of the output object
  */
-public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String defaultLanguage, List<String> imports,
-                                     List<RuleListener> listeners, CopyLimit copyLimit, int copiesAtLoad,
-                                     Duration runTimeout, Clock clock,
+public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, String defaultLanguage,
+                                     List<String> imports, List<RuleListener> listeners, CopyLimit copyLimit,
+                                     int copiesAtLoad, Duration runTimeout, Clock clock,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
                                      Map<String, Map<String, String>> options,
                                      Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
@@ -45,12 +46,12 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
     private static final String NULL_OPTION = "options must not contain null";
 
     /**
-     * Keeps unmodifiable copies of the lists, options and declarations, so later changes to the builder don't change
-     * an engine. A declared type is checked as {@link EngineCompileContext#checkDeclaration(String, Class)} checks it,
-     * and kept as it was declared.
+     * Keeps unmodifiable copies of the languages, lists, options and declarations, so later changes to the builder
+     * don't change an engine. A declared type is checked as
+     * {@link EngineCompileContext#checkDeclaration(String, Class)} checks it, and kept as it was declared.
      *
      * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
-     *                                  element, is {@code null}
+     *                                  element, a language's name or a language, is {@code null}
      * @throws IllegalArgumentException if a fact is declared with the name {@code output}
      */
     public EngineConfiguration {
@@ -63,9 +64,10 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
         Objects.requireNonNull(outputWriter, "outputWriter must not be null");
         Objects.requireNonNull(options, "options must not be null");
         Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
-        for (ExpressionLanguage language : languages) {
+        languages.forEach((name, language) -> {
+            Objects.requireNonNull(name, "languages must not contain null");
             Objects.requireNonNull(language, "languages must not contain null");
-        }
+        });
         for (String name : imports) {
             Objects.requireNonNull(name, "imports must not contain null");
         }
@@ -80,7 +82,7 @@ public record EngineConfiguration<O>(List<ExpressionLanguage> languages, String 
                 Objects.requireNonNull(value, NULL_OPTION);
             });
         });
-        languages = List.copyOf(languages);
+        languages = Map.copyOf(languages);
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();

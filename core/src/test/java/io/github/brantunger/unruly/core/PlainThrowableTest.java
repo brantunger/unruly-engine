@@ -609,7 +609,8 @@ class PlainThrowableTest {
      * output is called, which is the one place in a run that nothing reports it but the run itself.
      */
     private static AbstractRulesEngine<String> engineWhoseRunsThrow(Throwable failure, RuleListener listener) {
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(new StubExpressionLanguage()),
+        EngineConfiguration<String> configuration = new EngineConfiguration<>(
+                Map.of(StubExpressionLanguage.LANGUAGE_NAME, new StubExpressionLanguage()),
                 null, List.of(), List.of(listener), CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class,
                 OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {

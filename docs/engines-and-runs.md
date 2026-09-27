@@ -280,8 +280,8 @@ An action changes the output in one of two ways:
 
 The default writer, `OutputWriter.beansAndMaps()`, calls `put` on a `Map` output, with the value as is, and
 otherwise the output's public setter, such as `setInterestRate`. Of setters taking the value as is, the most specific
-wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`, `setP(Integer)` over `setP(int)`. If several
-tie, it calls the same one every run. A `null` property name throws `NullPointerException`, an empty one
+wins, as in Java: `setAmount(BigDecimal)` over `setAmount(Number)`, `setP(Integer)` over `setP(int)`. Ties go
+to the same setter every run. A `null` output or property name throws `NullPointerException`, an empty name
 `IllegalArgumentException`, even for a `Map`; the engine passes neither.
 
 Only when none accepts the value does it widen it to the nearest primitive, as a

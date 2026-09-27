@@ -43,11 +43,13 @@ class EngineVisibilityTest {
     void enginesEntryPoint() {
         assertTrue(Modifier.isFinal(Engines.class.getModifiers()));
         assertEquals(0, Engines.class.getConstructors().length);
-        EngineConfiguration<Object> unlimited = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
+        EngineConfiguration<Object> unlimited = new EngineConfiguration<>(
+                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), List.of(),
                 CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
                 Map.of(), false);
-        EngineConfiguration<Object> limited = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
+        EngineConfiguration<Object> limited = new EngineConfiguration<>(
+                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), List.of(),
                 CopyLimit.of(2), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
                 Map.of(), false);

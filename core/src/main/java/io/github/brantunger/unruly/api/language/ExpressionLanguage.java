@@ -27,7 +27,9 @@ package io.github.brantunger.unruly.api.language;
 public interface ExpressionLanguage {
 
     /**
-     * Returns the language's name, such as {@code "mvel"}.
+     * Returns the language's name, such as {@code "mvel"}. It must return the same name every time. The engine reads
+     * it once, when the language is given to the builder or found with {@link java.util.ServiceLoader}, and knows the
+     * language by that name from then on.
      *
      * @return The name, never {@code null} or blank
      */

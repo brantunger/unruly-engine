@@ -74,7 +74,8 @@ class ClosedRulesRetryTest {
      */
     private static AbstractRulesEngine<String> engineReading(int closedReads, AtomicInteger reads, Duration runTimeout,
                                                             List<RuleListener> listeners, Supplier<RuleSet> closed) {
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(List.of(new ToyExpressionLanguage()),
+        EngineConfiguration<String> configuration = new EngineConfiguration<>(
+                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), listeners, CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
                 OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {

@@ -41,8 +41,8 @@ sequenceDiagram
     participant Comp as ExpressionCompiler
     participant Expr as Compiled condition or action
     participant Sess as Session
-    App->>Engine: build()
-    Engine->>Lang: name()
+    App->>Engine: language(lang), or build() finds it
+    Engine->>Lang: name(), once
     App->>Engine: load(rules)
     Engine->>Lang: newCompiler(context), at the first rule in this language
     Engine->>Comp: compileCondition(), then compileAction(), for each rule in priority order
@@ -58,7 +58,7 @@ sequenceDiagram
 
 | Method | When | Thread | Concurrent with itself? |
 | --- | --- | --- | --- |
-| `name()` | `language(...)`, `build()`, and when `ServiceLoader` finds the language | The building thread | Keep it constant |
+| `name()` | Once: in `language(...)`, or when `ServiceLoader` finds it | The building thread | Keep it constant |
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
 | `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |

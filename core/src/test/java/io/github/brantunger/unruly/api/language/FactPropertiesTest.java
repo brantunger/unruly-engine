@@ -4,7 +4,10 @@ import io.github.brantunger.unruly.hidden.HiddenFacts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.lang.reflect.Proxy;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -167,6 +170,37 @@ class FactPropertiesTest {
             }
         },
         CLOSED
+    }
+
+    /** An enum with a getter of its own. */
+    public enum Tier {
+        GOLD;
+
+        public String getLabel() {
+            return "Gold";
+        }
+    }
+
+    /** A fact whose own property holds a class. */
+    public record Plugin(Class<?> type) {
+    }
+
+    /** An application's own class loader, which has getters of its own through URLClassLoader. */
+    public static class AppLoader extends URLClassLoader {
+        public AppLoader() {
+            super(new URL[0], FactPropertiesTest.class.getClassLoader());
+        }
+    }
+
+    /** An application's own thread, with a getter it declares itself. */
+    public static class Worker extends Thread {
+        public int getJobs() {
+            return 3;
+        }
+    }
+
+    /** A fact that holds any object. */
+    public record Carrier(Object value) {
     }
 
     /** Two objects that hold each other, so a conversion would never end without a depth limit. */
@@ -377,6 +411,72 @@ class FactPropertiesTest {
         Map<String, Object> data = FactProperties.toData(Map.of("a", Status.OPEN, "b", Status.CLOSED), 3);
         assertSame(Status.OPEN, data.get("a"));
         assertSame(Status.CLOSED, data.get("b"));
+    }
+
+    @Test
+    @DisplayName("an enum's declaring class isn't a property, so an enum fact doesn't lead to its class")
+    void enumDeclaringClassIsntAProperty() {
+        for (Status status : Status.values()) {
+            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                    () -> FactProperties.read(status, "declaringClass"));
+            assertEquals("A " + status.getClass().getName() + " has no property 'declaringClass'. A fact's properties"
+                    + " are a record's components, a bean's getters, or a map's keys.", thrown.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a class, a class loader, a module, a thread, or a reflection or security object isn't read")
+    void reflectionAndRuntimeObjectsArentRead() throws NoSuchMethodException {
+        Map<Object, String> refused = new LinkedHashMap<>();
+        refused.put(String.class, "name");
+        refused.put(FactPropertiesTest.class.getClassLoader(), "parent");
+        refused.put(String.class.getModule(), "name");
+        refused.put(ModuleLayer.boot(), "configuration");
+        refused.put(String.class.getPackage(), "name");
+        refused.put(FactPropertiesTest.class.getProtectionDomain(), "codeSource");
+        refused.put(FactPropertiesTest.class.getProtectionDomain().getCodeSource(), "location");
+        refused.put(Object.class.getMethod("toString"), "name");
+        refused.put(Thread.currentThread(), "name");
+
+        refused.forEach((target, property) -> {
+            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                    () -> FactProperties.read(target, property), target.getClass().getName());
+            assertEquals("A " + target.getClass().getName() + " has no property '" + property + "'. The properties"
+                    + " of a class, a class loader, a module, a package, a thread, or a reflection or security object"
+                    + " aren't read.", thrown.getMessage());
+        });
+    }
+
+    @Test
+    @DisplayName("an application's own class loader or thread has no properties, so toData leaves it as it is too")
+    void applicationRuntimeSubclassesArentTakenApart() throws IOException {
+        try (AppLoader loader = new AppLoader()) {
+            Worker worker = new Worker();
+            worker.setContextClassLoader(loader);
+
+            for (Object runtime : List.of(loader, worker)) {
+                String property = runtime == loader ? "parent" : "jobs";
+                IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                        () -> FactProperties.read(runtime, property));
+                assertEquals("A " + runtime.getClass().getName() + " has no property '" + property + "'. The"
+                        + " properties of a class, a class loader, a module, a package, a thread, or a reflection or"
+                        + " security object aren't read.", thrown.getMessage());
+                assertThrows(IllegalArgumentException.class, () -> FactProperties.toData(runtime, 2));
+                assertSame(runtime, FactProperties.toData(new Carrier(runtime), 3).get("value"));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a fact's own property may hold a class, and the platform's values and an enum's getters still read")
+    void ordinaryValuesStillRead() {
+        assertSame(String.class, FactProperties.read(new Plugin(String.class), "type"));
+        assertSame(String.class, FactProperties.toData(new Plugin(String.class), 5).get("type"));
+        assertEquals(2026, FactProperties.read(LocalDate.of(2026, 9, 16), "year"));
+        assertEquals(false, FactProperties.read("abc", "empty"));
+        assertEquals(90L, FactProperties.read(java.time.Duration.ofSeconds(90), "seconds"));
+        assertEquals("Gold", FactProperties.read(Tier.GOLD, "label"));
+        assertSame(Tier.GOLD, FactProperties.toData(Map.of("tier", Tier.GOLD), 3).get("tier"));
     }
 
     @Test

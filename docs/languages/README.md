@@ -100,9 +100,23 @@ flowchart TD
 **Otherwise `build()` finds languages** with `java.util.ServiceLoader`: every class named in a jar's
 `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` file or in a module's `provides` clause,
 which is how MVEL is found. It looks on every `build()`, with this library's class loader and then the building thread's
-context class loader, and creates a new instance of each language it finds. Two found languages with the same name, or
-one whose name is blank, fail `build()`. Anything a language throws while it's created, such as a
-`ServiceConfigurationError`, comes out of `build()` unchanged.
+context class loader, and creates a new instance of each language it finds. Two different language classes that
+return the same `name()`, or a language whose name is blank, fail `build()`. Anything a language throws while it's
+created, such as a `ServiceConfigurationError`, comes out of `build()` unchanged.
+
+**A second copy of a language** on the context class loader, as in a plug-in host or an application server, is
+skipped. A language whose class has the name of one already found is left out, so the copy this library's loader found
+wins, and a newer build of it on the context class loader is ignored. Each skip is a DEBUG line on the logger
+`io.github.brantunger.unruly.engine`: set that logger to DEBUG to see which copy an engine uses; see
+[Logging setup](../listeners-and-logging.md#-logging-setup).
+
+When that loader also holds its own copy of `unruly-engine-core`, `build()` stops reading it at its first
+`ServiceLoader` error, with one DEBUG line, so a listing problem there, such as a missing class, a class without a
+public no-argument constructor or a malformed services file, doesn't fail `build()`. On a loader without its own copy,
+such an error fails `build()`.
+
+From any loader, a language whose creation fails still fails `build()`, and so does a different class that claims a
+name already taken: `The expression languages ... found with ServiceLoader are both named 'mvel'`.
 
 **The default language** is the one `defaultLanguage(...)` names, which must be one of the engine's languages: otherwise
 `build()` fails with `The default language 'cel' isn't one of the engine's expression languages: [mvel]`. Without a
@@ -164,6 +178,10 @@ to 2.0](../migrating-to-2.md#-expression-languages-are-found-with-serviceloader)
 A rule's condition and action are code, and what they can reach depends on the language. MVEL rules have the same
 access to the JVM as your own code; see [Security in MVEL](mvel.md#-security). A language that can't reach the JVM,
 such as one that only reads facts, is safer for rules written by less trusted people.
+
+`FactProperties` doesn't read into a `Class`, a class loader or other reflection objects, but it still calls other
+getters, including platform ones with side effects, such as a `URL`'s `content`, so it doesn't make a language safe on
+its own; see [Reading a fact's properties](../facts.md#-reading-a-facts-properties).
 
 A [timeout](../stopping-runs.md#-what-a-timeout-doesnt-do) stops a run only between rules, or when an expression
 returns, unless the language honours `isCancelled()`, so a language that allows loops and ignores it can still block

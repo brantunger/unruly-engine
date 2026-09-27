@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -221,6 +222,40 @@ class ExpressionLanguageRegistrationTest {
 
         assertEquals("Two expression languages are named 'mvel': " + ToyExpressionLanguage.class.getName() + " and "
                 + MvelExpressionLanguage.class.getName(), ex.getMessage());
+    }
+
+    /** The toy language, named {@code toy} the first time it's asked and {@code later} every time after that. */
+    private static final class Renamed implements ExpressionLanguage {
+        private final String later;
+        private final AtomicInteger calls = new AtomicInteger();
+
+        Renamed(String later) {
+            this.later = later;
+        }
+
+        @Override
+        public String name() {
+            return calls.getAndIncrement() == 0 ? ToyExpressionLanguage.LANGUAGE_NAME : later;
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            return new ToyExpressionLanguage().newCompiler(context);
+        }
+    }
+
+    @ParameterizedTest(name = "then \"{0}\"")
+    @NullSource
+    @ValueSource(strings = {" ", "mvel"})
+    @DisplayName("a language's name is read once, when it's added, so a name that changes later changes nothing")
+    void nameReadOnce(String later) {
+        Renamed renamed = new Renamed(later);
+        StatefulRulesEngine<Map<String, Object>> engine = withMvel(renamed);
+
+        engine.load(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "output.put('m', 2)")));
+
+        assertEquals(Map.of("k", 1, "m", 2), engine.run(new FactMap<>()));
+        assertEquals(1, renamed.calls.get());
     }
 
     @Test
