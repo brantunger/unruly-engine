@@ -91,7 +91,7 @@ the checks never run. With Maven and Surefire 3.5.4, Surefire supplies the test 
 unless your main code is a named module: then see [A named module with Maven](#a-named-module-with-maven).
 
 `ExpressionLanguageContractTest` checks the promises [Writing an expression language](custom.md) describes for any
-language. Extend it and supply expressions in your language, one method for each hook. Its eighteen checks:
+language. Extend it and supply expressions in your language, one method for each hook. Its twenty checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -110,6 +110,8 @@ language. Extend it and supply expressions in your language, one method for each
 | `copiesAtLoad` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, two runs on two threads each see their own facts, and `x` = 2 fires nothing |
 | `compilerClosed` | `factEquals`, `putFact` | No | Each compiler is closed exactly once, after a reload and after `close()`, and its `close()` throws nothing |
 | `sessionsClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, `newSession()` never returns one instance twice, unless it's `Session.none()`, and no session's `close()` throws anything |
+| `sessionClosedWhileAnotherRuns` | `factEquals`, `putFact` | No | A nested run's extra copy is closed during the outer run, both give the right output, and no session's `close()` throws anything |
+| `sessionClosedOnAnotherThread` | `factEquals`, `putFact` | No | A session a worker thread's run made closes without throwing when the test thread closes the engine |
 | `conditionDetail` | `factEquals`, `putFact` | No | For a rule that matches and one that doesn't, the detail isn't a session `newSession()` returned, and its `toString()` gives the same text after another run and after `close()` |
 | `evaluateAgreesWithDetail` | `factEquals` | No | For `x` = 1, 2, `1L`, `2L`, `(short) 1` and `BigDecimal.ONE`, a compiled condition's `evaluate` returns the value `evaluateWithDetail` reports, or both throw |
 | `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
@@ -127,18 +129,31 @@ names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
-closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, and
-`compilerClosed`, `sessionsClosed` and `conditionDetail` wrap your language to watch its compiler or sessions.
+closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`.
+`sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and `maxCopies(1)`, and `sessionClosedOnAnotherThread` adds
+`copiesAtLoad(0)`. `compilerClosed`, `conditionDetail` and the three session checks, `sessionsClosed`,
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`, wrap your language to watch its compiler or
+sessions.
 `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
 `Double` whole numbers pass.
 
-`compilerClosed`, `sessionsClosed` and `evaluateAgreesWithDetail` show a session or exception whose `toString()` or
-`getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
+`compilerClosed`, the three session checks and `evaluateAgreesWithDetail` show a session or exception whose
+`toString()` or `getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
 
 The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
 decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
 shares one copy, calls `newSession()` once and warms nothing up. A `null` from `newSession()` isn't watched, so the
-engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, at the first run in `conditionDetail`.
+engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, and at the first run in
+`conditionDetail`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
+
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too: it has no
+session to close, though both checks still compare output.
+
+In `sessionClosedWhileAnotherRuns`, a listener starts a run nested in
+the check's run. With `maxCopies(1)`, the check's run holds the only kept copy, so the nested run gets an
+[extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run still has a rule to
+run. For any other language, the check fails if no session was closed during its run, if a `close()` threw, or if
+either run failed or gave the wrong output.
 
 `conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
 catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
@@ -157,7 +172,7 @@ language that doesn't override `evaluateWithDetail` passes: the default returns 
 
 In the table, "both throw" means an exception or a non-fatal `Error`, such as `StackOverflowError`, from each. A
 fatal one, a `VirtualMachineError` other than `StackOverflowError`, is thrown on unchanged. Anything else a
-`close()` throws passes: `sessionsClosed` and `compilerClosed` own that.
+`close()` throws passes: `compilerClosed` and the three session checks own that.
 
 `evaluateAgreesWithDetail` tries whole numbers of four types, because an `evaluate` that compares by type and an
 `evaluateWithDetail` that compares by value agree for an `Integer` fact and disagree for a `Long`, `Short` or
@@ -186,26 +201,15 @@ protected CompileContext compileContext() {
 `configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
 `runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
 checks could fail for reasons unrelated to your language. Nor may it declare the `unusableFactName()` name: `load()`
-checks declared names with your language, which rejects it. A `copiesAtLoad` it sets doesn't change the two checks
-that set their own.
+checks declared names with your language, which rejects it. A `copiesAtLoad` it sets doesn't change the four checks
+that set their own, and a `maxCopies` it sets doesn't change `sessionClosedWhileAnotherRuns`.
 
-### Upgrading from 2.6
+### Upgrading the kit
 
-In 2.7.0 five checks got stricter and `usableFactNamesAccepted` was added, so a language that passed the 2.6 kit may
-now fail. Each new failure is a real defect, not a kit change to work around:
+A newer kit can fail a language that passed an older one. [Upgrading the contract test kit](contract-kit-upgrading.md)
+lists, for each version, the checks that were added or got stricter and the defect each new failure means.
 
-| Check | Now fails a language that | The defect |
-| --- | --- | --- |
-| `actionVariablesStayLocal` | Keeps an action's variable in its session | A later rule, or a later run, reads a value that no rule set for it |
-| `evaluateAgreesWithDetail` | Compares whole numbers differently in `evaluate` and `evaluateWithDetail`, such as by type in one and by value in the other | A wrapper that calls only `evaluate` matches a `Long`, `Short` or `BigDecimal` fact differently than the engine does |
-| `conditionDetail` | Returns a detail that reads the session when it's printed | The run's result reports another run's values; `CompiledCondition` forbids a detail that holds the session |
-| `unusableFactNameRejected` | Returns `output` from `unusableFactName()` | The check never reached your `checkFactName`; return a name only your language rejects |
-| `compilerClosed` | Has a compiler whose `close()` throws | The engine only logs it at WARN, and the compiler has usually leaked what it holds |
-
-`usableFactNamesAccepted` runs only when `usableFactNames()` returns names, so it can't fail a language that doesn't
-override the hook. Skipped, JUnit counts it as aborted, so a launcher that expects every check found to succeed now
-sees one more aborted check than with 2.6 (18 found and 17 succeeded, when no other check is skipped): override
-`usableFactNames()`, or count aborted checks as passing.
+### What the kit doesn't check
 
 Two things no check exercises, so passing the kit says nothing about them.
 

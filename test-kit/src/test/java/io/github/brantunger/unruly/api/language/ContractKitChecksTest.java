@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
@@ -14,7 +15,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -329,6 +332,92 @@ class ContractKitChecksTest {
         });
     }
 
+    /**
+     * Wraps a language so that each of its compilers has a runtime that all its sessions share, which its conditions
+     * need, and that each session it creates is new. When {@code closeTearsDown}, closing any one session shuts that
+     * runtime down, and every other session's conditions fail.
+     */
+    private static ExpressionLanguage sharedRuntime(ExpressionLanguage language, boolean closeTearsDown) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                AtomicBoolean running = new AtomicBoolean(true);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            if (!running.get()) {
+                                throw new IllegalStateException(
+                                        "shared runtime was torn down by another session's close()");
+                            }
+                            return condition.evaluate(evaluation, session);
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Session() {
+                            @Override
+                            public void close() {
+                                if (closeTearsDown) {
+                                    running.set(false);
+                                }
+                            }
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /** Wraps the toy so that each session it creates is new, and throws when it's closed on another thread. */
+    private static ExpressionLanguage threadBound() {
+        return withSessions(new ToyExpressionLanguage(), () -> {
+            Thread creator = Thread.currentThread();
+            return new Session() {
+                @Override
+                public void close() {
+                    if (!Thread.currentThread().equals(creator)) {
+                        throw new IllegalStateException("the session's runtime is bound to the thread that made it");
+                    }
+                }
+            };
+        });
+    }
+
+    /**
+     * Wraps the toy so that each session it creates is new, and throws when it's closed while another is still open,
+     * as a session that pops a context stack its compiler's sessions share might.
+     */
+    private static ExpressionLanguage closeFailsWhileAnotherOpen() {
+        Set<Session> open = ConcurrentHashMap.newKeySet();
+        return withSessions(new ToyExpressionLanguage(), () -> {
+            Session session = new Session() {
+                @Override
+                public void close() {
+                    open.remove(this);
+                    if (!open.isEmpty()) {
+                        throw new IllegalStateException("another session of the compiler is still in use");
+                    }
+                }
+            };
+            open.add(session);
+            return session;
+        });
+    }
+
     /** A contract test whose actions put the fact under the wrong key, so every check that reads the output fails. */
     private static ExpressionLanguageContractTest wrongKey(ExpressionLanguage language) {
         return new ToyExpressionLanguageContractTest() {
@@ -604,6 +693,163 @@ class ContractKitChecksTest {
                 () -> runCheck(withSessions(new ToyExpressionLanguage(), () -> null), "sessionsClosed"));
 
         assertTrue(failure.getMessage().endsWith("expression language returned no session"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose session's close() tears down what its compiler's other sessions share fails the"
+            + " nested-run check (#696)")
+    void tornDownRuntimeFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(sharedRuntime(new ToyExpressionLanguage(), true), "sessionClosedWhileAnotherRuns"));
+
+        assertEquals("the run failed after a run nested in it ended and its session was closed, so a session's"
+                + " close(), or the nested run's session, broke what its compiler's other sessions share: Failed to"
+                + " evaluate condition for rule 'b': shared runtime was torn down by another session's close()",
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the nested-run check can't be undone by configure(): it still fails a close() that tears down what"
+            + " the sessions share (#696)")
+    void tornDownRuntimeFailsWhateverConfigureSets() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return sharedRuntime(new ToyExpressionLanguage(), true);
+            }
+
+            // Enough copies, all made when the rules load, that no run would need an extra one.
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.maxCopies(4).copiesAtLoad(4);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "sessionClosedWhileAnotherRuns"));
+
+        assertTrue(failure.getMessage().endsWith("shared runtime was torn down by another session's close()"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose session's close() throws while another session of its compiler is in use fails the"
+            + " nested-run check (#696)")
+    void closeWhileAnotherInUseFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(closeFailsWhileAnotherOpen(), "sessionClosedWhileAnotherRuns"));
+
+        assertEquals("a session's close() threw java.lang.IllegalStateException: another session of the compiler is"
+                + " still in use, which the engine only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the nested-run check says a run failed before a run could be nested in it, rather than blaming a"
+            + " session's close() (#696)")
+    void nestedRunNeverStartedReported() {
+        // Every condition fails, so rule a's does, before the listener can start the nested run.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return assigningConditions(new ToyExpressionLanguage(), (evaluation, session) -> {
+                    throw new IllegalStateException("the condition failed");
+                });
+            }
+
+            @Override
+            protected String factEquals(String fact, int value) {
+                return fact + " = " + value;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "sessionClosedWhileAnotherRuns"));
+
+        assertEquals("the run failed before a run could be nested in it: Failed to evaluate condition for rule 'a':"
+                + " the condition failed", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the nested-run check says both runs failed, with the nested run's failure attached, rather than"
+            + " blaming a session's close() (#696)")
+    void bothRunsFailedReported() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(throwingActions(new ToyExpressionLanguage()), "sessionClosedWhileAnotherRuns"));
+
+        assertEquals("the run failed, and so did the run nested in it, which is attached: Failed to execute action for"
+                + " rule 'a': the action failed", failure.getMessage());
+        assertEquals(1, failure.getSuppressed().length);
+        assertEquals("Failed to execute action for rule 'a': the action failed",
+                failure.getSuppressed()[0].getMessage());
+    }
+
+    @Test
+    @DisplayName("the nested-run check says which run returned the wrong output (#696)")
+    void wrongOutputNamesTheRun() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(wrongKey(new ToyExpressionLanguage()), "sessionClosedWhileAnotherRuns"));
+
+        // The expected map's order isn't fixed.
+        assertTrue(failure.getMessage().startsWith("the run nested in the check's run ==> expected: <"),
+                failure.getMessage());
+        assertTrue(failure.getMessage().endsWith("> but was: <{wrong=1}>"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose sessions leave what they share running passes the nested-run check, and so do one"
+            + " with no session and one whose sessions close only on their own thread (#696)")
+    void runtimeKeptPasses() {
+        assertDoesNotThrow(() -> runCheck(sharedRuntime(new ToyExpressionLanguage(), false),
+                "sessionClosedWhileAnotherRuns"));
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "sessionClosedWhileAnotherRuns"));
+        // The nested run's copy is made and closed on the check's thread, and so is the outer run's.
+        assertDoesNotThrow(() -> runCheck(threadBound(), "sessionClosedWhileAnotherRuns"));
+    }
+
+    @Test
+    @DisplayName("a language whose session's close() throws on a thread other than the one that made it fails the"
+            + " other-thread check (#696)")
+    void threadBoundCloseFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(threadBound(), "sessionClosedOnAnotherThread"));
+
+        assertEquals("a session's close() threw java.lang.IllegalStateException: the session's runtime is bound to the"
+                + " thread that made it, which the engine only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the other-thread check can't be undone by configure(): it still fails a thread-bound close() (#696)")
+    void threadBoundCloseFailsWhateverConfigureSets() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return threadBound();
+            }
+
+            // Copies made on this thread when the rules load, which the run would use instead of making its own.
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.maxCopies(4).copiesAtLoad(4);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "sessionClosedOnAnotherThread"));
+
+        assertTrue(failure.getMessage().startsWith("a session's close() threw java.lang.IllegalStateException: "),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose sessions close on any thread passes the other-thread check, and so do one with no"
+            + " session and one whose close() tears down what the sessions share (#696)")
+    void anyThreadClosePasses() {
+        assertDoesNotThrow(() -> runCheck(withSessions(new ToyExpressionLanguage(), () -> new Session() {
+        }), "sessionClosedOnAnotherThread"));
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "sessionClosedOnAnotherThread"));
+        // Its one session is closed when the engine is, once the run is over.
+        assertDoesNotThrow(() -> runCheck(sharedRuntime(new ToyExpressionLanguage(), true),
+                "sessionClosedOnAnotherThread"));
     }
 
     @Test

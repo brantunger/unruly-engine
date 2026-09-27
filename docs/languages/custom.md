@@ -424,7 +424,7 @@ Object execute(JexlScript script, CancellableContext jexlContext, Instant deadli
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return a session it returned before, unless it's `Session.none()`: the engine doesn't check, and the kit's `sessionsClosed` check fails it |
-| `Session.close()` | May run while other sessions of the same compiler are in use, so don't tear down what they share. The kit's `sessionsClosed` check fails a `close()` that throws |
+| `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw. The kit's `sessionClosedWhileAnotherRuns` fails either; `sessionsClosed` and `sessionClosedOnAnotherThread` fail a throw |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
 Keep whatever changes while an expression runs in a `Session`: `newSession()` creates one for each
@@ -533,7 +533,7 @@ checks promises, and [the Surefire setting](contract-kit.md#a-named-module-with-
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
 | **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
-| **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `sessionsClosed` and `compilerClosed` checks fail it |
+| **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](#-thread-safety) fail it |
 
 ## ❓ Questions you might not think to ask
 
