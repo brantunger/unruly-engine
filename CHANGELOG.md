@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.12](https://github.com/brantunger/unruly-engine/compare/v2.8.11...v2.8.12) (2026-09-27)
+
+
+### Bug Fixes
+
+* shorten MVEL compile messages once, place import issues at the import, and read MVEL's rejections without stack traces ([#748](https://github.com/brantunger/unruly-engine/issues/748)) ([036c82e](https://github.com/brantunger/unruly-engine/commit/036c82eaf4fe42f018b137691171ffe11ddfc49f))
+
 ## [2.8.11](https://github.com/brantunger/unruly-engine/compare/v2.8.10...v2.8.11) (2026-09-27)
 
 
