@@ -11,7 +11,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 3. [Anatomy of a rule](writing-rules.md#-anatomy-of-a-rule): every field of a `Rule`.
 4. [Adding facts](facts.md#-adding-facts) and [Null and missing facts](facts.md#-null-and-missing-facts).
 5. [Testing rules](writing-rules.md#-testing-rules): a test for each rule, with sample facts.
-6. [MVEL gotchas](languages/mvel-gotchas.md): what MVEL compares, computes or assigns differently from Java.
+6. [MVEL gotchas](languages/mvel-gotchas.md): what MVEL compares, computes or assigns differently from Java, and what it
+   logs itself.
 
 ## 🏭 Running in production
 
@@ -49,7 +50,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, which rules a run uses, first match, all matches or unique match, the output object, and reloading |
 | 🏁 [Run results and audits](run-results.md) | Application developers | What a run reports and why each rule did or didn't apply, the loaded rules, and what to record to audit a decision, checksums included |
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, facts, strong typing, compile errors, compiled copies, virtual threads and security |
-| 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes or assigns differently from Java, and what to write instead |
+| 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes or assigns differently from Java, what to write instead, and what MVEL logs itself |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions and packaging for a language of your own |
 | 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, what each of its checks promises, and testing a compiler without an engine |

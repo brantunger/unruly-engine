@@ -11,6 +11,8 @@ module io.github.brantunger.unruly {
     // mvel2 has no module name, so its name comes from its jar's file name.
     requires mvel2;
     requires org.slf4j;
+    // MVEL logs through java.util.logging; the engine filters one of its records (see MvelWarningFilter).
+    requires java.logging;
 
     exports io.github.brantunger.unruly.mvel;
 

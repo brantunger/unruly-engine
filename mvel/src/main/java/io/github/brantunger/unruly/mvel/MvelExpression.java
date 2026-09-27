@@ -31,6 +31,12 @@ import java.util.regex.Pattern;
  * when a later run binds the same name to a different kind of object, so MVEL's compiled form isn't shared: each
  * {@link MvelSession} runs its own, from {@link #newCompiled()}.
  * </p>
+ *
+ * <p>
+ * While it runs, {@link MvelWarningFilter} drops the WARNING MVEL logs itself, with the value unescaped, when a method
+ * call or an indexed read fails inside it, most often because MVEL can't convert a fact to the method's parameter
+ * type. The run still fails, and the engine reports the failure.
+ * </p>
  */
 final class MvelExpression implements CompiledCondition, CompiledAction {
 
@@ -73,11 +79,15 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
 
     @Override
     public Object evaluate(EvaluationContext context, Session session) throws Exception {
+        // MVEL's WARNING for a failed method call or indexed read can quote a fact unescaped; the engine escapes it.
+        boolean outermost = MvelWarningFilter.enter();
         try {
             return MVEL.executeExpression(compiledIn(session), (Object) null, context.facts());
         } catch (RuntimeException e) {
             // What the rule's Java code threw, so a failure has the same cause before and after MVEL's JIT.
             throw CalledCodeFailures.<RuntimeException>unwrapped(e);
+        } finally {
+            MvelWarningFilter.leave(outermost);
         }
     }
 
@@ -85,11 +95,14 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     public ActionResult execute(ActionContext context, Session session) throws Exception {
         // Reads the facts; the output object and the action's own assignments stay in this action, which changes the
         // output in place.
+        boolean outermost = MvelWarningFilter.enter();
         try {
             MVEL.executeExpression(compiledIn(session), (Object) null,
                     new ActionVariables(context.facts(), context.output()));
         } catch (RuntimeException e) {
             throw CalledCodeFailures.<RuntimeException>unwrapped(e);
+        } finally {
+            MvelWarningFilter.leave(outermost);
         }
         return ActionResult.done();
     }
