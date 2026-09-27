@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.9.0](https://github.com/brantunger/unruly-engine/compare/v2.8.12...v2.9.0) (2026-09-27)
+
+
+### Features
+
+* time run deadlines on a monotonic clock per run, add EvaluationContext.timeLeft(), and keep runs going through reload storms ([#750](https://github.com/brantunger/unruly-engine/issues/750)) ([b7cbd64](https://github.com/brantunger/unruly-engine/commit/b7cbd64a2069a29f15f5575c9afa70e811dee8ce))
+
 ## [2.8.12](https://github.com/brantunger/unruly-engine/compare/v2.8.11...v2.8.12) (2026-09-27)
 
 
