@@ -70,6 +70,11 @@ This can indicate that a dependency has been compromised. Please carefully verif
 
 The full report is in
 `build/reports/dependency-verification/at-<epoch-millis>/dependency-verification-report.html`, in the root project.
+It names why each file failed, such as a missing signature or a wrong checksum. When a `build` or `native-image`
+job fails, CI uploads it as the `dependency-verification-report-*` artifact.
+
+When CI prints the second line for `.pom` or `.module` files the metadata verifies by signature only, and names the
+Gradle Central Plugin Repository, an `.asc` download usually failed on the runner. Re-run the job.
 
 ## 🧰 How to regenerate
 
