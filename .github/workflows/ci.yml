@@ -144,6 +144,16 @@ jobs:
             test-kit/build/reports/japicmp/
           if-no-files-found: ignore
 
+      # Gradle's report names why each file failed verification, such as a missing signature or a wrong checksum. It
+      # lands in the root build directory even when buildSrc's dependencies fail, and goes with the runner otherwise.
+      - name: Upload Dependency Verification Report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: dependency-verification-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
+          path: build/reports/dependency-verification/
+          if-no-files-found: ignore
+
       # The test results go up with the coverage, because coverage alone can't tell a test that ran from one that
       # was skipped: the JUnit XML names the skipped tests and says why, which is how a leg proves it ran the
       # lookups that only a case-insensitive file system has.
@@ -212,6 +222,15 @@ jobs:
 
       - name: Build the application
         run: ./gradlew :native-smoke:installDist
+
+      # See the same step in the build job.
+      - name: Upload Dependency Verification Report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: dependency-verification-report-native-image
+          path: build/reports/dependency-verification/
+          if-no-files-found: ignore
 
       - name: Build the native image
         run: |

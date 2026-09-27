@@ -187,14 +187,15 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 What the jobs leave behind:
 
 - **Artifacts:** each build job's JUnit XML, always, in `jacoco-report-jdk21-<os>` with the coverage or in
-  `test-results-jdk25-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` only when a job fails.
-- **Codecov** gets one upload per run, from the Linux JDK 21 job, authenticated with OIDC. Runs from a fork or
-  Dependabot skip it: GitHub gives them no OIDC token.
-- **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests only read them,
-  as does the release workflow's `publish` job. The configuration cache isn't saved: that needs an
-  encryption key.
+  `test-results-jdk25-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` and `dependency-verification-report-*`
+  only when a job fails.
+- **Codecov** gets one upload per run, from the Linux JDK 21 job, with OIDC. Fork and Dependabot runs skip it:
+  they get no OIDC token.
+- **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests and the release
+  workflow's `publish` job only read them. The configuration cache isn't saved: that needs an encryption key.
 
-No branch protection requires a check; maintainers merge when CI and the title check are green.
+No branch protection requires a check; maintainers merge when CI and the title check are green, except
+[release PRs](../../RELEASING.md#-the-normal-flow).
 
 ## 🔢 Running the tests on JDK 25
 
