@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * #652: MVEL's issues were as long as the text they quote, where the engine's own message about them is shortened to
  * about 1,000 characters. Each is shortened the same way now, in the issue and the language's own exception alike.
+ * #704: so that the whole of MVEL's message, {@code failed to compile at line 1, column 8: } included, is at most 1,000
+ * characters once escaped, and the engine reports it without shortening it again.
  */
 @DisplayName("MVEL's issues are shortened as the engine's messages are")
 class IssueLengthTest {
@@ -40,11 +42,52 @@ class IssueLengthTest {
         RuleCompilationException ex = validated(engine, sum.toString());
 
         String quoted = "class not found: " + sum;
-        String description = quoted.substring(0, 1_000) + "... (" + (quoted.length() - 1_000) + " more characters)";
+        // 1,000 characters, less the 39 of "failed to compile at line 1, column 8: " and the 27 of the count.
+        String description = quoted.substring(0, 934) + "... (" + (quoted.length() - 934) + " more characters)";
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 8, description)), ex.issues());
         InvalidExpressionException cause = assertInstanceOf(InvalidExpressionException.class, ex.getCause());
         assertEquals("failed to compile at line 1, column 8: " + description, cause.getMessage());
+        assertEquals(1_000, cause.getMessage().length());
         assertEquals(ex.issues(), cause.issues());
+    }
+
+    // #704: the engine cut MVEL's message again, after MVEL's own count, and wrote a second count of its own.
+    @Test
+    @DisplayName("MVEL's message fits the engine's limit, so the engine reports it without cutting it again")
+    void messageNotCutTwice() {
+        String action = "import java.util.Lisst; x = '" + "q".repeat(1_453) + "'";
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
+                List.of(Rule.builder().ruleName("r").condition("true").action(action).build())));
+
+        String quoted = "class not found: " + action;
+        // 1,000 characters, less the 39 of "failed to compile at line 1, column 8: " and the 25 of the count.
+        String description = quoted.substring(0, 936) + "... (564 more characters)";
+        assertEquals(1_500, quoted.length());
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 8: " + description, ex.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 8, description)), ex.issues());
+        assertEquals(1_000, ex.getCause().getMessage().length());
+    }
+
+    // #704: the engine cut the escaped message inside an escape, and counted the escapes' characters it cut.
+    @Test
+    @DisplayName("MVEL's message is shortened before the escapes it holds, never inside one, and counts characters")
+    void escapesNotCut() {
+        String action = "import java.util.Lisst; x = '" + "\u200b".repeat(400) + "'";
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
+                List.of(Rule.builder().ruleName("r").condition("true").action(action).build())));
+
+        // 1,000 characters, less the 39 of "failed to compile at line 1, column 8: " and the 25 of the count, holds
+        // the 46 before the first U+200B and 148 of them, each escaped as 6: the count is of the other 253.
+        String description = "class not found: import java.util.Lisst; x = '" + "\\u200b".repeat(148)
+                + "... (253 more characters)";
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 8: " + description, ex.getMessage());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 8, description)), ex.issues());
     }
 
     @Test
@@ -62,7 +105,7 @@ class IssueLengthTest {
 
         assertTrue(description.startsWith("(1,5) could not resolve class: Nosuch0; (1,20) could not resolve class: "
                 + "Nosuch1; "), description);
-        assertTrue(description.endsWith("... (21317 more characters)"), description);
-        assertEquals(1_027, description.length());
+        assertTrue(description.endsWith("... (21383 more characters)"), description);
+        assertEquals(961, description.length());
     }
 }

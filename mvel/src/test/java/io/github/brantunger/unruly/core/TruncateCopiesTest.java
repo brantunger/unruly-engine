@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.mvel.FactNamesCopies;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -13,10 +14,11 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code mvel.FactNames} keeps its own copy of {@code core.Failures.truncate}, which shortens MVEL's issues, because
- * the {@code mvel} package may not use {@code core.Failures}, whose {@code truncate} isn't public either: this test is
- * in {@code core}'s package to reach it. The copies shorten text for the same messages, so a change to one that misses
- * the other makes the engine and MVEL shorten the same text differently. Every case here runs on both.
+ * {@code mvel.FactNames} keeps its own copy of {@code core.Failures.truncate}, and of the limit it shortens to, which
+ * MVEL's issues are fitted in, because the {@code mvel} package may not use {@code core.Failures}, whose
+ * {@code truncate} isn't public either: this test is in {@code core}'s package to reach it. A change to one copy that
+ * misses the other makes the engine and MVEL shorten the same text differently, or the engine shorten MVEL's messages
+ * again. Every case here runs on both.
  */
 @DisplayName("the engine's truncate and the copy in FactNames shorten text identically")
 class TruncateCopiesTest {
@@ -51,6 +53,13 @@ class TruncateCopiesTest {
                 new String[]{beforeLast + high + "b", beforeLast + "... (2 more characters)"},
                 new String[]{full + low, full + "... (1 more characters)"},
                 new String[]{beforeLast + low + "b", beforeLast + low + "... (1 more characters)"});
+    }
+
+    // #704: MVEL fits each message about an expression it rejected in this limit, so the engine doesn't cut it again.
+    @Test
+    @DisplayName("the MVEL module's limit is the engine's")
+    void sameLimit() {
+        assertEquals(Failures.MAX_DESCRIPTION_LENGTH, FactNamesCopies.MAX_DESCRIPTION_LENGTH);
     }
 
     @ParameterizedTest(name = "{0}")

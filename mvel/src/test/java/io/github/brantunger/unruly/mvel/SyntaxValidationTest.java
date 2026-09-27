@@ -262,6 +262,26 @@ class SyntaxValidationTest {
                 "whether MVEL's asserts are on, then load()'s and validate()'s messages; scenario output:\n" + output);
     }
 
+    // #723: the first lost its issue, its cause MVEL's own RuntimeException, and the second read as
+    // "null (caused by java.lang.AssertionError)".
+    @Test
+    @DisplayName("MVEL's plain rejection and a failed assert inside MVEL read the same on a JVM without stack traces")
+    void rejectionsWithoutStackTraces(@TempDir Path dir) throws Exception {
+        String output = ChildJvm.run(dir, NoStackTracesScenario.class, "-ea", "-XX:-StackTraceInThrowable");
+
+        List<String> messages = output.lines().filter(line -> line.startsWith(NoStackTracesScenario.MESSAGE))
+                .map(line -> line.substring(NoStackTracesScenario.MESSAGE.length()))
+                .toList();
+        assertEquals(List.of("0",
+                "Action for rule 'syntax' failed to compile: illegal use of reserved word: in",
+                "[Issue[severity=ERROR, line=0, column=0, message=illegal use of reserved word: in]]",
+                InvalidExpressionException.class.getName(),
+                BADLY_FORMED,
+                "[Issue[severity=ERROR, line=1, column=5, message=not a statement, or badly formed structure]]",
+                InvalidExpressionException.class.getName()), messages,
+                "the stack trace's length, then each action's message, issues and cause; scenario output:\n" + output);
+    }
+
     /**
      * Loads and validates a rule whose action or condition doesn't compile, and checks it's reported with one issue:
      * the description and, if the line isn't 0, the line and column.

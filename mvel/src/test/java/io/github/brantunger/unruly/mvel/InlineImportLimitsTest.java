@@ -124,6 +124,107 @@ class InlineImportLimitsTest {
                 + name + "': it has 65 dot-separated parts, and an import may have at most 64");
     }
 
+    // #722: the position was the string's, at line 1, column 13.
+    @Test
+    @DisplayName("the position is the import's, not that of the same import in a string before it")
+    void positionAfterStringWithImport() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "s = 'import " + name + "';\nimport " + name + ".*; x = v0;"), 2, 8,
+                "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // #722: the position was the comment's, at line 1, column 11.
+    @Test
+    @DisplayName("the position is the import's, not that of the same import in a comment before it")
+    void positionAfterCommentWithImport() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "// import " + name + "\nimport " + name + ".*; x = v0;"), 2, 8,
+                "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // #722: the position was the comment's, at line 1, column 11.
+    @Test
+    @DisplayName("the position is the import's, not that of the same import in a block comment or a division before it")
+    void positionAfterBlockCommentWithImport() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "/* import " + name + " */ x = 4 / 2;\nimport " + name + ".*; x = v0;"), 2, 8,
+                "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // The scan reads /*/ as the start of a comment, which MVEL doesn't: the load failed with "Index 150 out of bounds
+    // for length 150", with no issue.
+    @Test
+    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't that never ends")
+    void positionAfterCommentMvelDoesntRead() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "/*/ import " + name + ".*; x = 1;"), 1, 12, "Can't import '" + name
+                + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    @Test
+    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't that ends later")
+    void positionAfterCommentMvelDoesntReadEndingLater() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "/*/ import " + name + ".*; x = 1; /* c */"), 1, 12, "Can't import '" + name
+                + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // Pins today's fallback: once the scan misreads /*/ as a comment that never ends, the first import in the text is
+    // taken, here the one in the string (line 1, column 13), not the import at column 158. #747 fixes the misread.
+    @Test
+    @DisplayName("after a comment MVEL doesn't read, the position is the first import in the text, even in a string")
+    void positionAfterStringAndCommentMvelDoesntRead() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "s = 'import " + name + ".*'; /*/ import " + name + ".*; x = 1;"), 1, 13,
+                "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // Searching from where the last character was skipped found no import: NoSuchElementException.
+    @Test
+    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't, with code after it")
+    void positionAfterCommentMvelDoesntReadWithCodeAfter() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "/*/ import " + name + ".*; x = 1; /* c */ y = 2;"), 1, 12, "Can't import '"
+                + name + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // Searching from where the last character was skipped found the name in the string after the import.
+    @Test
+    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't, before a string")
+    void positionAfterCommentMvelDoesntReadBeforeString() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "/*/ import " + name + ".*; /* c */ s = 'import " + name + "'"), 1, 12,
+                "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
+    // #704: the name's escapes made the message 1,335 characters, which the engine cut again, inside an escape.
+    @Test
+    @DisplayName("a long name that escapes to more than the message has room for is shortened within it")
+    void escapedNameShortenedWithinTheMessage() {
+        String name = "a" + "\u200b".repeat(1_100);
+        RulesEngine<Map<String, Object>> engine = engine();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                () -> load(new RecordingClassLoader(), engine, rule("true", "import " + name + ".*; x = 1;")));
+
+        // 1,000 characters, less the 39 of "failed to compile at line 1, column 8: " and the 76 of the rest of the
+        // description, holds the first character, 143 of the others, each escaped as 6, and the count of the other 957.
+        String description = "Can't import 'a" + "\\u200b".repeat(143) + "... (957 more characters)': it has 1101 "
+                + "characters, and an import may have at most 1000";
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 1,
+                8, description)), ex.issues());
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 8: " + description, ex.getMessage());
+        assertEquals(999, ex.getCause().getMessage().length());
+    }
+
     @Test
     @DisplayName("a package import with exactly 64 parts is still imported, and the rule runs")
     void sixtyFourPartsAccepted() {

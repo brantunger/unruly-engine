@@ -93,13 +93,13 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      */
     static void checkSize(String name) {
         if (name.length() > MAX_IMPORT_LENGTH) {
-            throw new ImportTooLarge(name, "Can't import '" + FactNames.quote(name) + "': it has " + name.length()
-                    + " characters, and an import may have at most " + MAX_IMPORT_LENGTH);
+            throw new ImportTooLarge(name, "': it has " + name.length() + " characters, and an import may have at "
+                    + "most " + MAX_IMPORT_LENGTH);
         }
         long parts = name.chars().filter(c -> c == '.').count() + 1;
         if (parts > MAX_IMPORT_PARTS) {
-            throw new ImportTooLarge(name, "Can't import '" + FactNames.quote(name) + "': it has " + parts
-                    + " dot-separated parts, and an import may have at most " + MAX_IMPORT_PARTS);
+            throw new ImportTooLarge(name, "': it has " + parts + " dot-separated parts, and an import may have at "
+                    + "most " + MAX_IMPORT_PARTS);
         }
     }
 
@@ -205,11 +205,32 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
 
         private static final long serialVersionUID = 1L;
 
-        private final String name;
+        private static final String START = "Can't import '";
 
-        ImportTooLarge(String name, String message) {
-            super(message);
+        private final String name;
+        private final String after;
+
+        /**
+         * Creates the exception, whose message is {@code Can't import '}, the name quoted, and what follows it.
+         *
+         * @param name  The rejected name, as the expression writes it
+         * @param after What the message says after the name, from its closing quote on
+         */
+        ImportTooLarge(String name, String after) {
+            super(START + FactNames.quote(name) + after);
             this.name = name;
+            this.after = after;
+        }
+
+        /**
+         * Returns the exception's message with the name escaped within what the rest leaves of a room (see
+         * {@link FactNames#quoteWithin}), for a message about the expression: the message itself if it fits.
+         *
+         * @param room The most characters the message may take
+         * @return The message, within the room
+         */
+        String describedWithin(int room) {
+            return START + FactNames.quoteWithin(name, room - START.length() - after.length()) + after;
         }
 
         /**

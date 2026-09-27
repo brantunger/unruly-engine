@@ -208,6 +208,27 @@ class MvelCompileErrorTest {
                 MvelExpressionCompiler.compileError(mvel).getMessage());
     }
 
+    /** An assert's error whose stack trace's top frame is {@code null}. */
+    private static final class NullTopFrame extends AssertionError {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public StackTraceElement[] getStackTrace() {
+            return new StackTraceElement[] {null};
+        }
+    }
+
+    // Reading the top frame threw a NullPointerException.
+    @Test
+    @DisplayName("an assert whose stack trace's top frame is null is named, as one whose stack trace can't be read")
+    void failedAssertWithNullTopFrame() {
+        CompileException mvel = withMessage("[Error: null]");
+        mvel.initCause(new NullTopFrame());
+
+        assertEquals("failed to compile: null (caused by " + NullTopFrame.class.getName() + ")",
+                MvelExpressionCompiler.compileError(mvel).getMessage());
+    }
+
     @Test
     @DisplayName("an assert that failed inside MVEL reads as a badly formed structure")
     void failedAssertInsideMvel() {
@@ -272,15 +293,16 @@ class MvelCompileErrorTest {
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "first\\nsecond")), ex.issues());
     }
 
+    // #723: the message was "failed to compile: null (caused by java.lang.AssertionError)".
     @Test
-    @DisplayName("an assert with no stack trace is named as the root cause")
+    @DisplayName("an assert with no stack trace, as on a JVM run with -XX:-StackTraceInThrowable, is MVEL's")
     void failedAssertWithoutStackTrace() {
         AssertionError assertion = new AssertionError();
         assertion.setStackTrace(new StackTraceElement[0]);
         CompileException mvel = withMessage("[Error: null]");
         mvel.initCause(assertion);
 
-        assertEquals("failed to compile: null (caused by java.lang.AssertionError)",
+        assertEquals("failed to compile: not a statement, or badly formed structure",
                 MvelExpressionCompiler.compileError(mvel).getMessage());
     }
 
@@ -456,14 +478,18 @@ class MvelCompileErrorTest {
 
     // #652: MVEL's description was as long as the expression it quotes.
     @Test
-    @DisplayName("MVEL's description is shortened to 1,000 characters before it's escaped")
+    @DisplayName("MVEL's description is shortened before it's escaped, so the escaped message fits in 1,000 characters")
     void longDescriptionShortened() {
         CompileException mvel = withMessage("[Error: " + "\n".repeat(1_500) + "]\n[Near : {... x ....}]\n"
                 + "[Line: 1, Column: 1]");
 
-        String description = "\\n".repeat(1_000) + "... (500 more characters)";
-        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)),
-                MvelExpressionCompiler.compileError(mvel).issues());
+        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+
+        // 1,000 characters, less the 39 of "failed to compile at line 1, column 1: " and the 26 of the count, holds 467
+        // line breaks escaped as 2 each.
+        String description = "\\n".repeat(467) + "... (1033 more characters)";
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), ex.issues());
+        assertEquals(999, ex.getMessage().length());
     }
 
     @Test
@@ -472,7 +498,7 @@ class MvelCompileErrorTest {
         InvalidExpressionException ex = MvelExpressionCompiler.compileError(
                 listing(error(1, 5, "could not resolve class: " + "\n".repeat(1_000))));
 
-        String description = "could not resolve class: " + "\\n".repeat(975) + "... (25 more characters)";
+        String description = "could not resolve class: " + "\\n".repeat(455) + "... (545 more characters)";
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 5, description)), ex.issues());
     }
 
@@ -488,8 +514,8 @@ class MvelCompileErrorTest {
 
         assertTrue(description.startsWith("(1,0) could not resolve class: N0; (1,1) could not resolve class: N1; "),
                 description);
-        assertTrue(description.endsWith("... (2678 more characters)"), description);
-        assertEquals(1_026, description.length());
+        assertTrue(description.endsWith("... (2743 more characters)"), description);
+        assertEquals(961, description.length());
     }
 
     @Test
@@ -498,10 +524,12 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: null]\n[Line: 1, Column: 1]");
         mvel.initCause(new ExceptionInInitializerError(new IllegalStateException("L".repeat(5_000))));
 
-        String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(1_000)
-                + "... (4000 more characters))";
-        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)),
-                MvelExpressionCompiler.compileError(mvel).issues());
+        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+
+        String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(885)
+                + "... (4115 more characters))";
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), ex.issues());
+        assertEquals(1_000, ex.getMessage().length());
     }
 
     // #661: without the escape, the issue carried a raw U+2028.
@@ -528,7 +556,8 @@ class MvelCompileErrorTest {
 
         RuleCompilationException ex = engine.validate(List.of(rule)).get(0);
 
-        String description = "not an identifier: 1" + "x".repeat(980) + "... (220 more characters)";
+        // 1,000 characters, less the 19 of "failed to compile: " and the 25 of the count.
+        String description = "not an identifier: 1" + "x".repeat(936) + "... (264 more characters)";
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, description)), ex.issues());
     }
 
@@ -625,6 +654,16 @@ class MvelCompileErrorTest {
     void plainRuntimeExceptionFromMvel() {
         assertTrue(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("not an identifier: 1x"),
                 "org.mvel2.util.ParseTools")));
+    }
+
+    // #723: one without a stack trace wasn't, so the expression's issue was lost.
+    @Test
+    @DisplayName("one with no stack trace, as on a JVM run with -XX:-StackTraceInThrowable, rejects a declaration too")
+    void plainRuntimeExceptionWithoutStackTrace() {
+        RuntimeException e = new RuntimeException("illegal use of reserved word: in");
+        e.setStackTrace(new StackTraceElement[0]);
+
+        assertTrue(MvelExpressionCompiler.rejectedPlainly(e));
     }
 
     @Test

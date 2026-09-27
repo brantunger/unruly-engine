@@ -36,8 +36,11 @@ final class FactNames {
     // The longest part of a fact name a message shows, as in the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
 
-    // The longest part of a description a message shows, as in the engine's messages.
-    private static final int MAX_DESCRIPTION_LENGTH = 1_000;
+    /**
+     * The longest part of a description a message shows, as in the engine's messages, and so the longest message about
+     * an expression MVEL rejected that the engine reports without shortening it again.
+     */
+    static final int MAX_DESCRIPTION_LENGTH = 1_000;
 
     // The default-ignorable code points that aren't format characters, as in the engine's escaping: the first and
     // last code point of each range, in order.
@@ -97,10 +100,7 @@ final class FactNames {
      * surrogate pair. MVEL's messages about its options show the option's name and value this way too.
      */
     static String quote(String name) {
-        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
-        if (shown < name.length() && Character.isHighSurrogate(name.charAt(shown - 1))) {
-            shown--;
-        }
+        int shown = shownOf(name);
         String quoted = escape(name.substring(0, shown));
         if (shown < name.length()) {
             return quoted + "... (" + (name.length() - shown) + " more characters)";
@@ -109,11 +109,27 @@ final class FactNames {
     }
 
     /**
+     * Tells how many of a name's characters {@link #quote} shows: at most {@value #MAX_NAME_LENGTH}, and never half a
+     * surrogate pair.
+     *
+     * @param name The name
+     * @return How many of its first characters are shown
+     */
+    private static int shownOf(String name) {
+        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
+        if (shown < name.length() && Character.isHighSurrogate(name.charAt(shown - 1))) {
+            shown--;
+        }
+        return shown;
+    }
+
+    /**
      * Shortens text to at most {@value #MAX_DESCRIPTION_LENGTH} characters (UTF-16 units), saying how many were left
      * out, as the engine's {@code core.Failures.truncate} does, which the {@code mvel} package may not use;
      * {@code TruncateCopiesTest} runs the same cases on both. A surrogate pair the limit falls inside is left out
      * whole, so the text never ends in half a character. The text isn't escaped: it's shortened before it's escaped,
-     * as the engine does, so the count of what was left out counts the text's own characters.
+     * as the engine does, so the count of what was left out counts the text's own characters. MVEL's issues are
+     * shortened by {@link #escapeWithin} instead, which leaves room for the rest of their message.
      *
      * @param text The text
      * @return The text, shortened if it was longer
@@ -124,7 +140,77 @@ final class FactNames {
         }
         int kept = Character.isHighSurrogate(text.charAt(MAX_DESCRIPTION_LENGTH - 1))
                 ? MAX_DESCRIPTION_LENGTH - 1 : MAX_DESCRIPTION_LENGTH;
-        return text.substring(0, kept) + "... (" + (text.length() - kept) + " more characters)";
+        return text.substring(0, kept) + leftOut(text.length() - kept);
+    }
+
+    /**
+     * Escapes text as {@link #escape} does, shortened first, if its escaped form is longer than {@code room}
+     * characters, to as many of its first characters as fit in {@code room} with {@code ... (N more characters)}
+     * after them, as the engine's {@code core.Failures.truncate} writes it. N counts the text's own characters left
+     * out, not escaped ones, and the text is cut between code points, so never inside a surrogate pair or an escape.
+     * A message about an expression MVEL rejected is its description and a fixed part, such as {@code failed to
+     * compile at line 1, column 8: }, so given the room the fixed part leaves in {@value #MAX_DESCRIPTION_LENGTH}
+     * characters, the message is shortened once, here, and the engine, which shortens a message longer than that,
+     * reports it whole. A room too small for the count alone gets the count alone.
+     *
+     * @param text The text, not escaped
+     * @param room The most characters the escaped text may take, the count included
+     * @return The text, shortened if it didn't fit, and escaped
+     */
+    static String escapeWithin(String text, int room) {
+        return escapeWithin(text, text.length(), room);
+    }
+
+    /**
+     * Escapes text within a room as {@link #escapeWithin(String, int)} does, showing at most its first {@code most}
+     * characters.
+     *
+     * @param text The text, not escaped
+     * @param most The most of its characters to show, which ends between code points
+     * @param room The most characters the escaped text may take, the count included
+     * @return The text, shortened if it didn't fit or is longer than {@code most}, and escaped
+     */
+    private static String escapeWithin(String text, int most, int room) {
+        // Each code point escapes to at least its own characters, and each one kept can shorten the count by at most
+        // one digit, so the two together only grow as more is kept, and once they don't fit, nothing more will.
+        int kept = 0;
+        int shown = 0;
+        int end = 0;
+        while (end < most && shown <= room) {
+            int next = end + Character.charCount(text.codePointAt(end));
+            shown += escape(text.substring(end, next)).length();
+            if (shown + leftOut(text.length() - next).length() <= room) {
+                kept = next;
+            }
+            end = next;
+        }
+        return end == text.length() && shown <= room ? escape(text)
+                : escape(text.substring(0, kept)) + leftOut(text.length() - kept);
+    }
+
+    /**
+     * Quotes a name as {@link #quote} does, or, if that is longer than {@code room} characters, escapes it within the
+     * room as {@link #escapeWithin} does, for a name that is part of a message about an expression MVEL rejected, such
+     * as a class or an import, so the name can't make the message too long. Either way it shows no more of the name
+     * than {@link #quote} does.
+     *
+     * @param name The name
+     * @param room The most characters the quoted name may take, the count of what was left out included
+     * @return The name, quoted
+     */
+    static String quoteWithin(String name, int room) {
+        String quoted = quote(name);
+        return quoted.length() <= room ? quoted : escapeWithin(name, shownOf(name), room);
+    }
+
+    /**
+     * Says how many characters were left out of a text, as the engine does after the part of it a message shows.
+     *
+     * @param count How many characters were left out
+     * @return {@code ... (N more characters)}
+     */
+    static String leftOut(int count) {
+        return "... (" + count + " more characters)";
     }
 
     /**

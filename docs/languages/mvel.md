@@ -260,10 +260,13 @@ Action for rule 'prime-rate' failed to compile at line 1, column 11: unbalanced 
 ```
 
 for the condition `applicant.creditScore >= ` and the action `output.put('rate', `. Each failure carries one `ERROR`
-`Issue` with that line and column (from 1) and the description, shortened to 1,000 characters. `b.` or `( )` get
-the engine's `malformed expression`, and `ArrayList(y)` with `java.util` imported `a class can't be called like a
-method: use new`, both at line and column 0; `x == 1 && in` gets `malformed expression` at MVEL's position. MVEL's
-errors without a position keep its description, such as `illegal use of reserved word: in`.
+`Issue` with that line and column (from 1) and the description. `b.` or `( )` get the engine's
+`malformed expression`, and `ArrayList(y)` with `java.util` imported `a class can't be called like a method: use new`,
+both at line and column 0; `x == 1 && in` gets `malformed expression` at MVEL's position. MVEL's errors without a
+position keep its description, such as `illegal use of reserved word: in`.
+
+**MVEL shortens the description once**, so the escaped message from `failed to compile` on fits 1,000 characters;
+`(N more characters)` counts characters before escaping.
 
 **A description of `null` ends with the root cause**, unless MVEL's own parser failed. The first rule to use, by
 full name, a class whose static initializer throws gets `null`:
@@ -290,10 +293,10 @@ its class instead, such as Math.max(a, b).` See
 **A condition that doesn't compile hides its action's errors** until the next `load()`; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
 
-**What `load()` doesn't catch:** a missing import or an unknown identifier fails only at `run()`, unless
-it's a declared variable's type or [strong typing](#-strong-typing) is on; see
-[Classes and imports](#-classes-and-imports). With strong typing, `new Nosuch()` reads
-`could not resolve class: Nosuch`; several errors read `(1,5) ...; (1,19) ...` at the first's position.
+**What `load()` doesn't catch:** a missing import or an unknown identifier, unless it's a declared variable's type
+or [strong typing](#-strong-typing) is on; see [Classes and imports](#-classes-and-imports). With strong typing,
+`new Nosuch()` reads `could not resolve class: Nosuch`; several errors read `(1,5) ...; (1,19) ...` at the first's
+position.
 
 ## 📑 Compiled copies
 
@@ -318,10 +321,10 @@ A copy an engine makes when the rules load, with [`copiesAtLoad(n)`](../compiled
 different: `load()` compiles every condition and action into it, reached or not, and the first such copy takes the forms
 `load()` compiled. Its accessor classes are still generated as it runs.
 
-So an [extra copy](../glossary.md#extra-copy) — one a run makes because no copy is free, rather than one it borrows —
-pays that price and then throws it away when the run ends. A rule that keeps making them, by starting a run of the
-same engine on another thread under a full [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and
-regenerates accessors over and over, costing CPU and metaspace churn.
+So an [extra copy](../glossary.md#extra-copy) pays that price and then throws it away when the run ends. A rule that
+keeps making them, by starting a run of the same engine on another thread under a full
+[copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and regenerates accessors over and over, costing
+CPU and metaspace churn.
 
 Because a session's expressions belong to one run at a time, they're safe with any MVEL optimizer, and the engine
 leaves MVEL's global optimizer setting alone. MVEL's default JIT optimizer stays in effect (unless you pass

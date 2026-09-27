@@ -62,6 +62,11 @@ class ConditionAssignmentsTest {
             "claim.with == 1 && claim.?def == null",
             "order.\n    with(1) == 1",
             "m. with == 2",
+            // #721: MVEL skips every character up to a space between the dot and the name, not only Java's whitespace.
+            "claim.\u0000with == 1",
+            "claim.\u0001with == 1",
+            "claim.\u001bwith == 1",
+            "m.\u2003with == 2",
             "m .\tfunction == 2 && m.? def == null",
             "claim.import_static == 1",
             "isdef x && x > 1",
@@ -74,6 +79,14 @@ class ConditionAssignmentsTest {
     })
     void acceptsComparisons(String condition) {
         assertNull(ConditionAssignments.find(condition));
+    }
+
+    @Test
+    @DisplayName("a keyword at the start of the condition, after a control character or not, is still found")
+    void keywordAtStart() {
+        assertEquals(new ConditionAssignments.Write("with", 0), ConditionAssignments.find("with (claim) { a = 1 }"));
+        assertEquals(new ConditionAssignments.Write("with", 1),
+                ConditionAssignments.find("\u0001with (claim) { a = 1 }"));
     }
 
     @Test
