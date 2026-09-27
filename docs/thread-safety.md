@@ -131,8 +131,8 @@ serves them.
 
 Each run's sessions are closed as it returns, or kept for a run still waiting for a copy of the same rules. Any copies
 still kept, then the languages' compilers, are closed after the last run leaves. A failure to close a session or a
-compiler is logged at WARN and doesn't fail the run, `load()` or `close()` that closes them, unless it's a
-[fatal error](glossary.md#fatal-error); see
+compiler is logged at WARN, unless a [nested run](nested-runs.md#-what-is-logged) logged it, and doesn't fail the run,
+`load()` or `close()` that closes them, unless it's a [fatal error](glossary.md#fatal-error); see
 [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
 
 `RulesEngine` is `AutoCloseable`, so an engine built for a short task can go in a try-with-resources block. Closing an

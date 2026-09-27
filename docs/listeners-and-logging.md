@@ -296,7 +296,7 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. MVE
 | `io.github.brantunger.unruly.engine` | `ERROR` | A fact `run()` rejects, or a fact name a language failed to check |
 | `io.github.brantunger.unruly.engine` | `ERROR` | An output supplier that fails, or a language that fails to create a session for a run, or to create or warm up one for a copy `load()` makes with `copiesAtLoad(n)` |
 | `io.github.brantunger.unruly.engine` | `ERROR` | A listener that throws a fatal `Error` from a callback other than `onError`, such as `A listener threw java.lang.OutOfMemoryError in afterRun` |
-| `io.github.brantunger.unruly.engine` | `WARN` | `Listener threw exception in <callback>: <class>: <message>`, shortened to 1,000 characters, then escaped (no `: <message>` when it has none), then a root-cause note when an exception or cause has no readable message; see [Exception messages](exceptions-by-method.md). A failed nested `run()` or `load()` gives `<callback>: a nested run() failed: ...` or `<callback>: a nested load() failed: ...` |
+| `io.github.brantunger.unruly.engine` | `WARN` | `Listener threw exception in <callback>: <class>: <message>`, shortened to 1,000 characters, then escaped (no `: <message>` when it has none), then a root-cause note when an exception or cause has no readable message; see [Exception messages](exceptions-by-method.md). Nested failures: see [Nested runs](nested-runs.md#-what-is-logged) |
 | `io.github.brantunger.unruly.engine` | `WARN` | A run stopped because its thread was interrupted or it passed its deadline, once when a nested run's stop reaches the run around it for the same interrupt or deadline |
 | `io.github.brantunger.unruly.engine` | `WARN` | A warning a language reports through `CompileContext.warn` while `load()` compiles |
 | `io.github.brantunger.unruly.engine` | `WARN` | A language failed to close a session or a compiler |
@@ -308,7 +308,8 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. MVE
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
 | `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` (JUL) | `WARNING` | A failed method call, often with a fact value unescaped; dropped during the engine's MVEL rules |
 
-Each failure is logged where it happens, before it's thrown. Misuse isn't logged: a `null` argument, `run()`
+Each failure is logged where it happens, before it's thrown. A nested run's failure is logged once, unless wrapped
+with its own message ([Nested runs](nested-runs.md#-what-is-logged)). Misuse isn't logged: a `null` argument, `run()`
 before `load()`, or an invalid builder setting, such as an import that is neither a class nor a package name.
 
 The engine already logs each failure at ERROR, so if you also log the exception you catch, you'll see it twice. Lower

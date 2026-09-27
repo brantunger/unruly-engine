@@ -129,7 +129,7 @@ class LoggedFailuresTest {
             assertFalse(LoggedFailures.find(byRun).byLoad());
             assertTrue(LoggedFailures.find(byLoad).byLoad());
             assertNull(LoggedFailures.find(new IllegalArgumentException("by run")));
-            assertEquals("a nested load() failed: by load",
+            assertEquals("wrapped (after a nested load() failed: by load)",
                     Failures.describe(new IllegalStateException("wrapped", byLoad)));
         } finally {
             LoggedFailures.leave();

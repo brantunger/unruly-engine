@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +53,36 @@ class CalledCodeFailuresTest {
         IllegalStateException target = new IllegalStateException("target");
 
         assertSame(target, CalledCodeFailures.thrownByCalledCode(fromMvel(fromReflection(target))));
+    }
+
+    @Test
+    @DisplayName("an engine's own failure right under MVEL's exception, as a nested run's in an argument, is unwrapped")
+    void engineFailureUnderMvel() {
+        RuleExecutionException nested = new RuleExecutionException("a nested run's failure");
+        RuleCompilationException load = new RuleCompilationException("a nested load's failure");
+
+        assertSame(nested, CalledCodeFailures.thrownByCalledCode(fromMvel(nested)));
+        assertSame(load, CalledCodeFailures.thrownByCalledCode(wrappedInMvel(2, load)));
+    }
+
+    @Test
+    @DisplayName("an exception the engine or this language's check of a fact name created, under MVEL's, is unwrapped")
+    void engineCreatedExceptionUnderMvel() {
+        IllegalArgumentException rejected = new IllegalArgumentException("rejected by the engine");
+        rejected.setStackTrace(frameIn("io.github.brantunger.unruly.core.AbstractRulesEngine"));
+        IllegalArgumentException badName = new IllegalArgumentException("rejected by the language");
+        badName.setStackTrace(frameIn(FactNames.class.getName()));
+
+        assertSame(rejected, CalledCodeFailures.thrownByCalledCode(fromMvel(rejected)));
+        assertSame(badName, CalledCodeFailures.thrownByCalledCode(fromMvel(badName)));
+    }
+
+    @Test
+    @DisplayName("any other exception directly under MVEL's exception keeps MVEL's wrapper, as MVEL's own errors do")
+    void otherExceptionUnderMvel() {
+        RuntimeException mvel = fromMvel(new IllegalStateException("from an argument"));
+
+        assertSame(mvel, CalledCodeFailures.thrownByCalledCode(mvel));
     }
 
     @Test

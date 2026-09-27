@@ -9,10 +9,11 @@ import java.util.Map;
 
 /**
  * Closes the sessions and compilers expression languages created for a rule list. Whatever a {@code close()} throws,
- * any {@link Throwable}, is logged at WARN, and the rest are still closed. A fatal {@link Error} (see
- * {@link Failures#fatalError}) is returned unchanged once everything has been closed, for the caller to throw once it
- * has closed the rest of what it closes: the first, if several were thrown. Nothing else a {@code close()} throws
- * reaches the caller.
+ * any {@link Throwable}, is logged at WARN, and the rest are still closed; unless it's the failure of a
+ * {@code run()} or a {@code load()} the {@code close()} started, or a fatal {@link Error} that run logged, which that
+ * run or load logged already (see {@link LoggedFailures#logged}). A fatal error (see {@link Failures#fatalError}) is
+ * returned unchanged once everything has been closed, for the caller to throw once it has closed the rest of what it
+ * closes: the first, if several were thrown. Nothing else a {@code close()} throws reaches the caller.
  */
 final class Closing {
 
@@ -42,7 +43,8 @@ final class Closing {
     }
 
     // Any Throwable: one that stopped the loop would leave the rest open, and callers that close more after this, such
-    // as the compilers after the sessions, would never reach them.
+    // as the compilers after the sessions, would never reach them. Every caller is inside a run, a load(), a
+    // validate() or a close(), so what a run a close() starts logged is known.
     private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
         Error fatal = null;
         for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
@@ -50,8 +52,10 @@ final class Closing {
                 resource.getValue().close();
             } catch (Throwable e) {
                 Failures.keepInterruptStatus(e);
-                log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(resource.getKey()), what,
-                        Failures.describe(e));
+                if (!LoggedFailures.logged(e)) {
+                    log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(resource.getKey()),
+                            what, Failures.describe(e));
+                }
                 if (fatal == null) {
                     fatal = Failures.fatalError(e);
                 }

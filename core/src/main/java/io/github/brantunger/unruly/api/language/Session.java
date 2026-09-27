@@ -43,11 +43,12 @@ public interface Session extends AutoCloseable {
      * Releases what the session holds. The engine calls it once, when no run is using the session, on whichever
      * thread finishes with it: the run's thread, or the thread that calls {@code load()} or {@code close()} when the
      * session is idle. A language whose runtime is bound to a thread must not assume which. By default, does nothing.
-     * Anything it throws is logged at WARN, and the engine still closes the other sessions and compilers it is closing.
-     * Only a fatal {@link Error} then fails the run, {@code load()} or {@code close()}: it's rethrown unchanged, unless
-     * a fatal error of the call's own came first. An {@link InterruptedException} in the cause chain of what it throws
-     * puts back the interrupt status of the thread that closes it, which can be a run's thread, so a run on that
-     * thread, such as the outer run of a nested one, then stops as interrupted.
+     * Anything it throws is logged at WARN, unless a {@code run()} or {@code load()} it started logged it already, and
+     * the engine still closes the other sessions and compilers it is closing. Only a fatal {@link Error} then fails the
+     * run, {@code load()} or {@code close()}: it's rethrown unchanged, unless a fatal error of the call's own came
+     * first. An {@link InterruptedException} in the cause chain of what it throws puts back the interrupt status of the
+     * thread that closes it, which can be a run's thread, so a run on that thread, such as the outer run of a nested
+     * one, then stops as interrupted.
      */
     @Override
     default void close() {

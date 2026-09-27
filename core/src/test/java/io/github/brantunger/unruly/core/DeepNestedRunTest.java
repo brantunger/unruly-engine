@@ -216,10 +216,6 @@ class DeepNestedRunTest {
         return new Outermost(thrown.get(), listener.onError, listener.onRunError, reached.get());
     }
 
-    private static int count(String text, String part) {
-        return text.split(java.util.regex.Pattern.quote(part), -1).length - 1;
-    }
-
     @ParameterizedTest(name = "{0} runs deep")
     @ValueSource(ints = {150, 1_000})
     @DisplayName("a failure more than 100 runs deep reads as one nested failure, as a failure one run deep does")
@@ -232,13 +228,17 @@ class DeepNestedRunTest {
 
     @ParameterizedTest(name = "{0} runs deep")
     @ValueSource(ints = {60, 150})
-    @DisplayName("a language that wraps each nested failure doesn't repeat it either")
+    @DisplayName("a language that wraps each nested failure with a message of its own keeps it, and the message stays"
+            + " short")
     void deepWrappedFailureDescribedOnce(int depth) throws InterruptedException {
         Outermost outermost = runNested(depth, "fail", true, RunOptions.defaults());
 
         RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outermost.thrown());
-        assertEquals(ONE_FAILURE + "bottom failure", failure.getMessage());
-        assertEquals(1, count(failure.getMessage(), "a nested run() failed: "), failure.getMessage());
+        String wrapped = "Failed to execute action for rule 'r': wrapped (after a nested run() failed: ";
+        assertTrue(failure.getMessage().startsWith(wrapped + wrapped), failure.getMessage());
+        // Each run's note of the run below it is shortened, so the message doesn't grow with the depth.
+        assertTrue(failure.getMessage().length() < 1_200, failure.getMessage());
+        assertTrue(failure.getMessage().endsWith(" more characters))"), failure.getMessage());
     }
 
     /**

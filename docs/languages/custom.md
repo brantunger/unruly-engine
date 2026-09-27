@@ -450,9 +450,10 @@ languages already made for that copy; it happens before `beforeRun`, so no liste
 them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one; see
 [A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
-A `close()` that throws is logged at WARN and the rest are still closed. Only a fatal error is rethrown, once every
-idle session of the rule list is closed, and its compilers too if no run still uses it; if there are several, the
-first. See [A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
+A `close()` that throws is logged at WARN, unless a [nested run](../nested-runs.md#-what-is-logged) logged it, and the
+rest are still closed. Only a fatal error is rethrown, once every idle session of the rule list is closed, and its
+compilers too if no run still uses it.
+See [A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
 ### Warming up a session
 

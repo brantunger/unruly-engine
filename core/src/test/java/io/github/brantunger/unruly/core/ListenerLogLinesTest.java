@@ -125,7 +125,7 @@ class ListenerLogLinesTest {
 
     @ParameterizedTest(name = "root cause message {0}")
     @ValueSource(strings = {"disk full", ""})
-    @DisplayName("the WARN line for a nested run() a listener started names the hidden cause once")
+    @DisplayName("a nested run() a listener started and rethrew is logged once, naming the hidden cause once")
     void nestedRunCauseNamedOnce(String rootMessage) {
         RulesEngine<Map<String, Object>> inner = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .language(new ToyExpressionLanguage()).build();
@@ -150,16 +150,17 @@ class ListenerLogLinesTest {
 
         String logs = logsOf(() -> assertEquals(Map.of("k", 1), engine.run(new FactMap<>())));
 
-        String warn = logs.lines().filter(line -> line.contains("Listener threw exception in beforeRun: "))
-                .findFirst().orElseThrow(() -> new AssertionError(logs));
-        assertEquals(1, warn.split("caused by java.io.IOException", -1).length - 1, warn);
-        assertTrue(warn.endsWith("Listener threw exception in beforeRun: a nested run() failed: "
-                + nestedMessage.get()), warn);
+        assertFalse(logs.contains("WARN " + ENGINE_LOGGER), logs);
+        List<String> errors = logs.lines().filter(line -> line.contains("ERROR " + ENGINE_LOGGER)).toList();
+        assertEquals(1, errors.size(), logs);
+        assertEquals(1, errors.get(0).split("caused by java.io.IOException", -1).length - 1, logs);
+        assertTrue(errors.get(0).endsWith(ENGINE_LOGGER + nestedMessage.get()), logs);
     }
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"wrapped", "wrapped without a message", "shortened"})
-    @DisplayName("the WARN line names the hidden cause once when a nested run()'s failure is wrapped or shortened")
+    @DisplayName("a listener's wrapper with a message of its own gets a WARN line naming the hidden cause once; one"
+            + " that adds nothing gets none")
     void wrappedOrShortenedNestedRunCauseNamedOnce(String how) {
         String message = "shortened".equals(how) ? "m".repeat(1100) : "audit";
         RulesEngine<Map<String, Object>> inner = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
@@ -188,11 +189,16 @@ class ListenerLogLinesTest {
 
         String logs = logsOf(() -> assertEquals(Map.of("k", 1), engine.run(new FactMap<>())));
 
-        String warn = logs.lines().filter(line -> line.contains("Listener threw exception in beforeRun: "))
-                .findFirst().orElseThrow(() -> new AssertionError(logs));
+        List<String> warnings = logs.lines().filter(line -> line.contains("WARN " + ENGINE_LOGGER)).toList();
+        if (!"wrapped".equals(how)) {
+            assertEquals(List.of(), warnings, logs);
+            return;
+        }
+        assertEquals(1, warnings.size(), logs);
+        String warn = warnings.get(0);
         assertEquals(1, warn.split("caused by java.io.IOException", -1).length - 1, warn);
-        assertTrue(warn.endsWith("Listener threw exception in beforeRun: a nested run() failed: "
-                + nestedMessage.get()), warn);
+        assertTrue(warn.endsWith("Listener threw exception in beforeRun: audit failed (after a nested run() failed: "
+                + nestedMessage.get() + ")"), warn);
     }
 
     @Test

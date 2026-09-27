@@ -1,10 +1,12 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
+import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -123,6 +126,65 @@ class RuleNameOnExceptionTest {
         thrown(OutOfMemoryError.class, () -> listened.run(new FactMap<>()));
 
         assertEquals("heard", reported.get().getRuleName());
+    }
+
+    @Test
+    @DisplayName("a run started from onRunError that stops before it gets a copy isn't told of the outer run's rule")
+    void nestedRunStoppedBeforeACopyNamesNoOuterRule() {
+        List<RuntimeException> nestedRunErrors = new ArrayList<>();
+        AtomicReference<RulesEngine<Map<String, Object>>> engine = new AtomicReference<>();
+        FactReference<Object> reloadThenInterrupt = new FactReference<>() {
+            @Override
+            public String getName() {
+                return "x";
+            }
+
+            @Override
+            public Object getValue() {
+                // Closes the rules the nested run just read, which no run uses, so it reads them again, and stops.
+                engine.get().load(List.of(rule("third", "c", "a")));
+                Thread.currentThread().interrupt();
+                return 1;
+            }
+        };
+        RuleListener listener = new RuleListener() {
+            @Override
+            public void beforeRun(RunContext run) {
+                if (run.parent() != null) {
+                    throw new InternalError("nested run's beforeRun fatal error");
+                }
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                if (run.parent() != null) {
+                    nestedRunErrors.add(error);
+                    return;
+                }
+                engine.get().load(List.of(rule("second", "c", "a")));
+                try {
+                    assertThrows(InternalError.class, () -> engine.get().run(new FactMap<>(reloadThenInterrupt)));
+                } finally {
+                    Thread.interrupted();
+                }
+            }
+        };
+        engine.set(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new StubExpressionLanguage().action((action, session) -> {
+                    throw new InternalError("outer rule's fatal error");
+                }))
+                .listener(listener).build());
+        engine.get().load(List.of(rule("outer", "c", "a")));
+
+        InternalError outer = thrown(InternalError.class, () -> engine.get().run(new FactMap<>()));
+
+        assertEquals("outer rule's fatal error", outer.getMessage());
+        assertEquals(1, nestedRunErrors.size(), "onRunError of the nested run: " + nestedRunErrors);
+        RuleExecutionException nested = assertInstanceOf(RuleExecutionException.class, nestedRunErrors.get(0));
+        assertNull(nested.getRuleName(), nested::toString);
+        assertEquals("The run failed with java.lang.InternalError: nested run's beforeRun fatal error",
+                nested.getMessage());
+        assertEquals("nested run's beforeRun fatal error", nested.getCause().getMessage());
     }
 
     @Test
