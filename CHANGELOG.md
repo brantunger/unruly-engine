@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.9.3](https://github.com/brantunger/unruly-engine/compare/v2.9.2...v2.9.3) (2026-09-27)
+
+
+### Bug Fixes
+
+* read a language's name once, skip a second copy of a language found in the context class loader, give JVM runtime objects no fact properties, and reject a null output in the beans-and-maps writer ([#760](https://github.com/brantunger/unruly-engine/issues/760)) ([1016229](https://github.com/brantunger/unruly-engine/commit/1016229b0d26205efe906a07216789171636a018))
+
 ## [2.9.2](https://github.com/brantunger/unruly-engine/compare/v2.9.1...v2.9.2) (2026-09-27)
 
 
