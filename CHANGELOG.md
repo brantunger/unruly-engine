@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.8](https://github.com/brantunger/unruly-engine/compare/v2.8.7...v2.8.8) (2026-09-27)
+
+
+### Bug Fixes
+
+* stop MVEL's nested-class search on a long dotted name before it asks the class loader ([#718](https://github.com/brantunger/unruly-engine/issues/718)) ([0b93d5c](https://github.com/brantunger/unruly-engine/commit/0b93d5ce6eda721c0451a61fbc320eac3ba3fa7a))
+
 ## [2.8.7](https://github.com/brantunger/unruly-engine/compare/v2.8.6...v2.8.7) (2026-09-26)
 
 
