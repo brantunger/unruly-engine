@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.9.1](https://github.com/brantunger/unruly-engine/compare/v2.9.0...v2.9.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* cache long fact-name misses, stop MVEL name lookups leaving class-loader locks, explain a late package import, and resolve Outer.Nested through a class import ([#755](https://github.com/brantunger/unruly-engine/issues/755)) ([d1be576](https://github.com/brantunger/unruly-engine/commit/d1be5763bdc07e6ea7faad204da902e7873b5dc6))
+
 ## [2.9.0](https://github.com/brantunger/unruly-engine/compare/v2.8.12...v2.9.0) (2026-09-27)
 
 
