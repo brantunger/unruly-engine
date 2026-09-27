@@ -242,7 +242,8 @@ final class FactNames {
      * {@code date.class} finds {@code Date.class}. A class that exists but can't be loaded isn't a class here either:
      * MVEL's own lookup of a name in an imported package ignores every error, so it reads the name as the fact. That
      * is why every error the load throws is read as "not a class", bar a {@link VirtualMachineError}, where the JVM
-     * itself is failing and a fact name isn't what to report.
+     * itself is failing and a fact name isn't what to report. A name the rule list's class loader refuses to look up,
+     * as too long or with too many parts (see {@link ExactNameClassLoader}), isn't a class either, as MVEL reads it.
      *
      * <p>
      * In a native image the class file isn't looked up at all. An image serves no class file as a resource unless
