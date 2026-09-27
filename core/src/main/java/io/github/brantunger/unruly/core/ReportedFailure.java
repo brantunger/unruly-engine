@@ -24,8 +24,10 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
  * It records too the failure a nested run or load logged that names its chain, and whether a {@code load()} logged
  * it, which may be an exception thrown as is, such as a fact a nested run rejected, rather than one of these (see
  * {@link LoggedFailures}): the thread's record of those is forgotten when its outermost run ends, and this failure
- * may be thrown on, or read, after that. A form serialized before that was recorded names its chain by the innermost
- * failure, as it did then.
+ * may be thrown on, or read, after that. When an exception with a message of its own is wrapped around that failure
+ * (see {@link Failures#below}), this one, which the engine logged with that message, names its chain instead, so a
+ * run around it doesn't lose the message either. A form serialized before that was recorded names its chain by the
+ * innermost failure, as it did then.
  * </p>
  */
 final class ReportedFailure extends RuleExecutionException {
@@ -50,8 +52,9 @@ final class ReportedFailure extends RuleExecutionException {
     /** Whether the two above were recorded; {@code false} only in a form serialized before they were. */
     private final boolean belowRecorded;
     /**
-     * The failure a nested run or load logged that names the cause chain (see {@link Failures#below}), or
-     * {@code null} if there is none, or in a form serialized before it was recorded.
+     * The failure a nested run or load logged that names the cause chain (see {@link Failures#below}), this one if an
+     * exception with a message of its own is wrapped around that failure, or {@code null} if there is none, or in a
+     * form serialized before it was recorded.
      */
     private final Throwable loggedBelow;
     /** Whether a {@code load()} logged {@link #loggedBelow}, rather than a {@code run()}. */
@@ -76,8 +79,8 @@ final class ReportedFailure extends RuleExecutionException {
         this.innermostBelow = below.innermost();
         this.firstError = below.error();
         this.belowRecorded = true;
-        this.loggedBelow = below.logged();
-        this.loggedBelowByLoad = below.loggedByLoad();
+        this.loggedBelow = below.news() == null ? below.logged() : this;
+        this.loggedBelowByLoad = below.news() == null && below.loggedByLoad();
     }
 
     /**
@@ -133,8 +136,8 @@ final class ReportedFailure extends RuleExecutionException {
         this.innermostBelow = below.innermost();
         this.firstError = below.error();
         this.belowRecorded = true;
-        this.loggedBelow = below.logged();
-        this.loggedBelowByLoad = below.loggedByLoad();
+        this.loggedBelow = below.news() == null ? below.logged() : this;
+        this.loggedBelowByLoad = below.news() == null && below.loggedByLoad();
     }
 
     /**
@@ -162,8 +165,8 @@ final class ReportedFailure extends RuleExecutionException {
      * as {@link Failures#below} found it when this was built. Only {@link Failures#below} asks, and only a failure
      * that {@link #recorded()} it.
      *
-     * @return That failure, or {@link #innermost()} if it was serialized before it recorded one or its chain holds
-     *         none
+     * @return That failure, this one if an exception with a message of its own is wrapped around it, or
+     *         {@link #innermost()} if it was serialized before it recorded one or its chain holds none
      */
     Throwable logged() {
         return loggedBelow != null ? loggedBelow : innermost();

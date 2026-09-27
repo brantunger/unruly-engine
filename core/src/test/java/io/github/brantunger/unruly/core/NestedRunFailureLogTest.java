@@ -45,8 +45,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * A {@code run()} started on the same thread while another run is in progress, from an action, the output supplier, a
  * listener callback or a language, logs its own failure, and the code around it doesn't log that failure again: the
  * output supplier's failure reads {@code Output factory threw: a nested run() failed: } and the innermost failure, a
- * listener's WARN line names the innermost failure the same way, and a language's failure to create a session or
- * check a fact name isn't logged a second time. A fatal {@link Error}, which every run rethrows unchanged, is logged
+ * listener's exception gets no WARN line, and a language's failure to create a session or check a fact name isn't
+ * logged a second time. An exception wrapped around the nested failure with a message of its own is news, and is
+ * logged. A fatal {@link Error}, which every run rethrows unchanged, is logged
  * once, by the first run that logs it, however many runs it passes through, and listeners are still told of it at
  * every level; once the outermost run on the thread has ended, the same instance is logged again.
  */
@@ -58,6 +59,8 @@ class NestedRunFailureLogTest {
     private static final String NESTED_FAILURE = "a nested run() failed: " + INNER_FAILURE;
     private static final String INNER_FATAL = "Failed to execute action for rule 'inner-rule': simulated heap "
             + "exhaustion";
+    private static final String OUTPUT_REJECTED = "'output' is reserved for the output object and cannot be used as "
+            + "a fact name";
 
     private final OutOfMemoryError oom = new OutOfMemoryError("simulated heap exhaustion");
     private final AtomicInteger onError = new AtomicInteger();
@@ -280,10 +283,17 @@ class NestedRunFailureLogTest {
         Outcome outcome = failed(() -> engine.run(new FactMap<>()));
 
         RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
-        assertEquals("Output factory threw: a nested run() failed: " + innermost.get(), failure.getMessage());
         assertEquals(1, failure.getMessage().split("a nested run\\(\\) failed: ", -1).length - 1,
                 failure.getMessage());
-        assertEquals(List.of(innermost.get()), outcome.errors(), outcome.logs());
+        if ("wrapped".equals(how)) {
+            // The wrapper's message is news: nothing logged it.
+            assertEquals("Output factory threw: audit failed (after a nested run() failed: " + innermost.get() + ")",
+                    failure.getMessage());
+            assertEquals(List.of(innermost.get(), failure.getMessage()), outcome.errors(), outcome.logs());
+        } else {
+            assertEquals("Output factory threw: a nested run() failed: " + innermost.get(), failure.getMessage());
+            assertEquals(List.of(innermost.get()), outcome.errors(), outcome.logs());
+        }
     }
 
     // Actions
@@ -317,6 +327,31 @@ class NestedRunFailureLogTest {
         Outcome outcome = failed(() -> engine.run(new FactMap<>()));
 
         assertFailedWith(outcome, "Failed to execute action for rule 'a-rule': " + NESTED_FAILURE);
+    }
+
+    @Test
+    @DisplayName("an action that wraps its run()'s failure in one of its own has that logged, and the run around it"
+            + " names it, not the failure below it")
+    void wrapperMessageKeptRunsDeep() {
+        RulesEngine<Map<String, Object>> inner = failing();
+        RulesEngine<Map<String, Object>> middle = engine("mid-rule", doing(() -> {
+            try {
+                inner.run(new FactMap<>());
+            } catch (RuleExecutionException nested) {
+                throw new IllegalStateException("fallback pricing failed for order 42", nested);
+            }
+        }), HashMap::new);
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(running(middle)), HashMap::new);
+
+        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+
+        String midFailure = "Failed to execute action for rule 'mid-rule': fallback pricing failed for order 42 (after "
+                + NESTED_FAILURE + ")";
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
+        assertEquals("Failed to execute action for rule 'outer-rule': a nested run() failed: " + midFailure,
+                failure.getMessage());
+        assertEquals(List.of(INNER_FAILURE, midFailure), outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
     }
 
     @Test
@@ -391,7 +426,7 @@ class NestedRunFailureLogTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"beforeRun", "afterExecute"})
-    @DisplayName("a listener whose run() fails gets one WARN line naming the nested failure, logged once, at ERROR")
+    @DisplayName("a listener whose run() fails gets no WARN line: the nested run logged the failure once, at ERROR")
     void listenerNestedFailure(String callback) {
         RulesEngine<Map<String, Object>> inner = failing();
         RuleListener listener = "beforeRun".equals(callback)
@@ -401,12 +436,13 @@ class NestedRunFailureLogTest {
         Outcome outcome = returned(() -> engine.run(new FactMap<>()));
 
         assertEquals(List.of(INNER_FAILURE), outcome.errors(), outcome.logs());
-        assertEquals(List.of("Listener threw exception in " + callback + ": " + NESTED_FAILURE),
-                outcome.warnings(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+        assertTrue(outcome.logs().contains("DEBUG " + ENGINE_LOGGER + "Listener threw exception in " + callback),
+                outcome.logs());
     }
 
     @Test
-    @DisplayName("a listener whose run() runs a listener whose run() fails gets one WARN line, from the middle run")
+    @DisplayName("a listener whose run() runs a listener whose run() fails gets no WARN line at either level")
     void listenerTwoLevels() {
         RulesEngine<Map<String, Object>> mid = plain("mid-rule", onBeforeRun(running(failing())));
         RulesEngine<Map<String, Object>> engine = plain("outer-rule", onBeforeRun(running(mid)));
@@ -414,8 +450,7 @@ class NestedRunFailureLogTest {
         Outcome outcome = returned(() -> engine.run(new FactMap<>()));
 
         assertEquals(List.of(INNER_FAILURE), outcome.errors(), outcome.logs());
-        assertEquals(List.of("Listener threw exception in beforeRun: " + NESTED_FAILURE), outcome.warnings(),
-                outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -443,7 +478,7 @@ class NestedRunFailureLogTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"onError", "onRunError"})
-    @DisplayName("a listener whose onError or onRunError runs a failing run() gets one WARN line naming the nested one")
+    @DisplayName("a listener whose onError or onRunError runs a failing run() gets no WARN line for it")
     void failureCallbackNestedFailure(String callback) {
         Runnable nested = running(failing());
         RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
@@ -470,8 +505,7 @@ class NestedRunFailureLogTest {
 
         assertEquals(List.of("Failed to execute action for rule 'outer-rule': outer rule failed", INNER_FAILURE),
                 outcome.errors(), outcome.logs());
-        assertEquals(List.of("Listener threw exception in " + callback + ": " + NESTED_FAILURE), outcome.warnings(),
-                outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -560,7 +594,9 @@ class NestedRunFailureLogTest {
         } else if ("rejected".equals(how)) {
             IllegalArgumentException failure = assertInstanceOf(IllegalArgumentException.class, outcome.thrown());
             assertEquals("rejected", failure.getMessage());
-            assertEquals(List.of(INNER_FAILURE), outcome.errors(), outcome.logs());
+            // The rejection's message is news, which the nested run didn't log.
+            assertEquals(List.of(INNER_FAILURE, "rejected (after " + NESTED_FAILURE + ")"), outcome.errors(),
+                    outcome.logs());
         } else {
             IllegalArgumentException failure = assertInstanceOf(IllegalArgumentException.class, outcome.thrown());
             assertEquals("The 'stub' expression language failed to check fact name 'x': " + NESTED_FAILURE,
@@ -703,5 +739,178 @@ class NestedRunFailureLogTest {
         Outcome outcome = failed(() -> engine.run(new FactMap<>()));
 
         assertOnlyInnerFatalLogged(outcome, 2, 2);
+    }
+
+    /**
+     * An engine whose language's sessions run {@code close} as they're closed, with one session made and kept idle, so
+     * a reload or a close of the engine closes it.
+     */
+    private RulesEngine<Map<String, Object>> closingWith(Runnable close) {
+        RulesEngine<Map<String, Object>> engine = engine("closing-rule", new StubExpressionLanguage().newSession(
+                () -> new Session() {
+                    @Override
+                    public void close() {
+                        close.run();
+                    }
+                }), HashMap::new);
+        engine.run(new FactMap<>());
+        return engine;
+    }
+
+    /**
+     * Reloads the engine, or closes it, which closes the idle session of the rules it had.
+     *
+     * @param engine The engine
+     * @param how    {@code load()} or {@code close()}
+     */
+    private static void closeTheSession(RulesEngine<Map<String, Object>> engine, String how) {
+        if ("load()".equals(how)) {
+            engine.load(List.of(Rule.builder().ruleName("next-rule").condition("c").action("a").build()));
+        } else {
+            engine.close();
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"load()", "close()"})
+    @DisplayName("a session whose close() runs a failing run() isn't logged again, at load() or close()")
+    void sessionCloseNestedFailure(String how) {
+        RulesEngine<Map<String, Object>> engine = closingWith(running(failing()));
+
+        Outcome outcome = returned(() -> closeTheSession(engine, how));
+
+        assertEquals(List.of(INNER_FAILURE), outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"load()", "close()"})
+    @DisplayName("a session whose close() runs a run() that rejects its facts isn't logged again, at load() or close()")
+    void sessionCloseNestedRejection(String how) {
+        RulesEngine<Map<String, Object>> nested = plain("inner-rule");
+        RulesEngine<Map<String, Object>> engine = closingWith(() -> {
+            FactMap<Object> facts = new FactMap<>();
+            facts.setValue("output", 1);
+            nested.run(facts);
+        });
+
+        Outcome outcome = returned(() -> closeTheSession(engine, how));
+
+        assertEquals(List.of(OUTPUT_REJECTED), outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"load()", "close()"})
+    @DisplayName("a session whose close() runs a run() that throws a fatal Error logs it once, and rethrows it")
+    void sessionCloseNestedFatal(String how) {
+        RulesEngine<Map<String, Object>> engine = closingWith(running(throwingOom()));
+
+        Outcome outcome = failed(() -> closeTheSession(engine, how));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of(INNER_FATAL), outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+    }
+
+    @Test
+    @DisplayName("a session whose close() wraps its run()'s failure in one of its own gets a WARN line for it")
+    void sessionCloseWrappedNestedFailure() {
+        RulesEngine<Map<String, Object>> inner = failing();
+        RulesEngine<Map<String, Object>> engine = closingWith(() -> {
+            try {
+                inner.run(new FactMap<>());
+            } catch (RuleExecutionException nested) {
+                throw new IllegalStateException("session cleanup failed", nested);
+            }
+        });
+
+        Outcome outcome = returned(engine::close);
+
+        assertEquals(List.of(INNER_FAILURE), outcome.errors(), outcome.logs());
+        assertEquals(List.of("The 'stub' expression language failed to close a session: session cleanup failed (after "
+                + NESTED_FAILURE + ")"), outcome.warnings(), outcome.logs());
+    }
+
+    @Test
+    @DisplayName("a second fatal Error in one callback, from a listener's run(), isn't logged again")
+    void listenerNestedFatalSecondInACallback() {
+        OutOfMemoryError first = new OutOfMemoryError("the listener's own");
+        RulesEngine<Map<String, Object>> engine = plain("outer-rule", onBeforeRun(() -> {
+            throw first;
+        }), onBeforeRun(running(throwingOom())));
+
+        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(first, outcome.thrown());
+        assertEquals(List.of(INNER_FATAL, "A listener threw java.lang.OutOfMemoryError in beforeRun"),
+                outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+    }
+
+    @Test
+    @DisplayName("a fatal Error from the run() of a listener's onError, kept on a fatal failure, isn't logged again")
+    void keptSecondFatalFromANestedRun() {
+        OutOfMemoryError ruleError = new OutOfMemoryError("the rule's own");
+        Runnable nested = running(throwingOom());
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            throw ruleError;
+        }), HashMap::new, new RuleListener() {
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                nested.run();
+            }
+        });
+
+        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(ruleError, outcome.thrown());
+        assertEquals(List.of("Failed to execute action for rule 'outer-rule': the rule's own", INNER_FATAL),
+                outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"rethrows", "wraps"})
+    @DisplayName("a listener whose onRunError rethrows or wraps the run's fatal failure isn't taken for a nested run")
+    void onRunErrorRethrowsTheRunsFatalFailure(String how) {
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            throw new IllegalStateException("pricing cache blew up", oom);
+        }), HashMap::new, new RuleListener() {
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                throw "rethrows".equals(how) ? error : new IllegalStateException("audit of failed run failed", error);
+            }
+        });
+
+        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of("Failed to execute action for rule 'outer-rule': pricing cache blew up"),
+                outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+    }
+
+    /**
+     * A named guard of today's behaviour, which a later change may choose to flip: the nested run logged the fatal
+     * {@link Error}, and the message the rule's code wrapped it in is logged nowhere.
+     */
+    @Test
+    @DisplayName("an action that wraps a nested run's fatal Error in its own exception has only the Error logged, once,"
+            + " and the Error rethrown")
+    void wrappedNestedFatalNotLoggedAgain() {
+        Runnable nested = running(throwingOom());
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            try {
+                nested.run();
+            } catch (OutOfMemoryError e) {
+                throw new IllegalStateException("audit write failed", e);
+            }
+        }), HashMap::new);
+
+        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertOnlyInnerFatalLogged(outcome, 2, 2);
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
     }
 }

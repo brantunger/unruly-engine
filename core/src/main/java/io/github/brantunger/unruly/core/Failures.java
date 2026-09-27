@@ -195,18 +195,50 @@ public final class Failures {
      * A failure of a {@code run()} or a {@code load()} started from a condition, an action, the output supplier, a
      * listener callback or a language is described by the innermost failure it logged only, as
      * {@code a nested run() failed: } or {@code a nested load() failed: } and that failure, so a failure nested many
-     * runs deep isn't repeated once per level (see {@link #nestedRunFailure}).
+     * runs deep isn't repeated once per level (see {@link #nestedRunFailure}). That holds while every exception
+     * wrapped around it adds nothing to it (see {@link #below}). Otherwise the first exception from the top of the
+     * chain with a message of its own is described by that message, shortened and escaped, with the nested failure as
+     * a note, {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is
+     * lost. The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
+     * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
+     * written (see {@link #noteText}).
      *
      * @param e The exception to describe
      * @return A description of the exception for an error message
      */
     static String describe(Throwable e) {
         Below below = below(e);
-        if (below.logged() != null) {
-            return "a nested " + (below.loggedByLoad() ? "load()" : "run()") + " failed: " + loggedText(below.logged());
+        Throwable logged = below.logged();
+        if (logged == null) {
+            String text = escape(truncate(messageOr(e, e.getClass().getName())));
+            return text + causeNote(causeChain(e), readableMessage(e));
         }
-        String text = escape(truncate(messageOr(e, e.getClass().getName())));
-        return text + causeNote(causeChain(e), readableMessage(e));
+        String nested = "a nested " + (below.loggedByLoad() ? "load()" : "run()") + " failed: ";
+        Throwable news = below.news();
+        if (news == null) {
+            return nested + loggedText(logged);
+        }
+        return escape(truncate(messageOr(news, news.getClass().getName()))) + " (after " + nested + noteText(logged)
+                + ")";
+    }
+
+    /**
+     * Returns the text of a nested failure for the note {@link #describe} adds after an exception's own message: the
+     * text {@link #loggedText} returns, shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole before it's
+     * escaped, as {@link #quoteAll} shortens a list, because the nested failure may itself hold news, run after run.
+     * Its text names the root cause if it's hidden, so the note of the exception around it doesn't.
+     *
+     * @param logged The nested failure
+     * @return Its text, shortened, then escaped
+     */
+    private static String noteText(Throwable logged) {
+        String message = messageOr(logged, logged.getClass().getName());
+        if (logged instanceof ReportedFailure) {
+            return escape(truncate(message));
+        }
+        // Shortened before it's escaped, as a whole, so a cut never falls inside an escape.
+        String note = rawCauseNote(causeChain(logged), readableMessage(logged));
+        return escape(truncate(escape(message).contains(escape(note)) ? message : message + note));
     }
 
     /**
@@ -246,13 +278,25 @@ public final class Failures {
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
      */
     private static String causeNote(List<Throwable> chain, @Nullable String text) {
+        return escape(rawCauseNote(chain, text));
+    }
+
+    /**
+     * Names the root cause as {@link #causeNote} does, before the note is escaped: the root cause's class shortened as
+     * {@link #quote} shortens a name, and its message as {@link #truncate} shortens one.
+     *
+     * @param chain An exception and its causes
+     * @param text  As for {@link #causeNote}
+     * @return {@code " (caused by ...)"}, unescaped, or an empty string if nothing is hidden
+     */
+    private static String rawCauseNote(List<Throwable> chain, @Nullable String text) {
         if (chain.subList(1, chain.size()).isEmpty()) {
             return "";
         }
         Throwable root = chain.get(chain.size() - 1);
         String rootMessage = messageOf(root);
         if (rootMessage == null) {
-            return " (caused by " + quote(root.getClass().getName()) + ")";
+            return " (caused by " + shorten(root.getClass().getName()) + ")";
         }
         // The kept characters themselves, not truncate()'s text, whose note of what was left out could match.
         String shown = text == null || text.length() <= MAX_DESCRIPTION_LENGTH
@@ -260,7 +304,7 @@ public final class Failures {
         boolean hidden = !chain.stream().allMatch(t -> readableMessage(t) != null)
                 && (shown == null || !shown.contains(rootMessage));
         return hidden
-                ? " (caused by " + quote(root.getClass().getName()) + ": " + escape(truncate(rootMessage)) + ")"
+                ? " (caused by " + shorten(root.getClass().getName()) + ": " + truncate(rootMessage) + ")"
                 : "";
     }
 
@@ -418,14 +462,17 @@ public final class Failures {
      * or load already logged it, and a run told its listeners. Only a failure an engine threw counts: a
      * {@link ReportedFailure}, of any engine, or a failure a nested run or load on this thread logged and threw as is,
      * such as a fact it rejected or a rule that failed to compile (see {@link LoggedFailures}). A
-     * {@link RuleExecutionException} a language or a rule throws itself was never logged.
+     * {@link RuleExecutionException} a language or a rule throws itself was never logged. Nor was an exception wrapped
+     * around that failure with a message of its own (see {@link #below}), so a chain that holds one is news, and is
+     * taken for no nested run's failure here.
      *
      * @param e What was caught, or {@code null}
      * @return That failure, the innermost if there are several (see {@link #below}), or {@code null} if {@code e}'s
-     *         cause chain holds none
+     *         cause chain holds none, or an exception with a message of its own is wrapped around it
      */
     static Throwable nestedRunFailure(Throwable e) {
-        return below(e).logged();
+        Below below = below(e);
+        return below.news() == null ? below.logged() : null;
     }
 
     /**
@@ -454,15 +501,19 @@ public final class Failures {
 
     /**
      * What an exception's cause chain holds of the engine's own failures: the innermost {@link ReportedFailure}, the
-     * first {@link Error}, and the failure a nested run or load logged that names the chain.
+     * first {@link Error}, the failure a nested run or load logged that names the chain, and the first exception
+     * wrapped around that failure that says something of its own.
      *
      * @param innermost    The innermost failure of a nested {@code run()}, or {@code null} if there is none
      * @param error        The first error, or {@code null} if there is none
      * @param logged       The failure a nested run or load logged that names the chain, or {@code null} if there is
      *                     none (see {@link #below})
      * @param loggedByLoad {@code true} if a {@code load()} logged {@code logged}, {@code false} if a {@code run()} did
+     * @param news         The first exception from the top of the chain, above {@code logged}, with a message of its
+     *                     own, which nothing has logged, or {@code null} if there is none, and {@code logged} names
+     *                     the chain whole
      */
-    record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad) {
+    record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad, Throwable news) {
     }
 
     /**
@@ -482,22 +533,37 @@ public final class Failures {
      * around it; and failing that, the innermost {@link ReportedFailure}.
      * </p>
      *
+     * <p>
+     * That failure names the chain only while every link above it adds nothing to it (see {@link #isNews}): a
+     * {@link ReportedFailure}, which the engine wrote, or an exception with no message, one whose message is its
+     * cause's {@code toString()}, as {@code new RuntimeException(cause)} makes, or one whose message already has the
+     * nested failure's text. Otherwise the first link that says something of its own is the news, which nothing has
+     * logged: the code that caught the chain logs it, and describes it with the nested failure as a note (see
+     * {@link #describe}).
+     * </p>
+     *
      * @param e What was caught, or {@code null}
-     * @return The innermost failure, the first error and the failure logged, each {@code null} if the chain has none
+     * @return The innermost failure, the first error, the failure logged and the first link above it with a message of
+     *         its own, each {@code null} if the chain has none
      */
     static Below below(Throwable e) {
+        List<Throwable> chain = causeChain(e);
         ReportedFailure innermost = null;
+        int innermostAt = -1;
         Error error = null;
         LoggedFailures.Logged logged = null;
-        for (Throwable t : causeChain(e)) {
+        int loggedAt = -1;
+        for (int i = 0; i < chain.size(); i++) {
+            Throwable t = chain.get(i);
             if (t instanceof ReportedFailure failure) {
                 if (failure.recorded()) {
                     Error first = error != null ? error : failure.error();
                     return logged != null
-                            ? new Below(failure.innermost(), first, logged.failure(), logged.byLoad())
-                            : new Below(failure.innermost(), first, failure.logged(), failure.loggedByLoad());
+                            ? below(chain, loggedAt, failure.innermost(), first, logged.failure(), logged.byLoad())
+                            : below(chain, i, failure.innermost(), first, failure.logged(), failure.loggedByLoad());
                 }
                 innermost = failure;
+                innermostAt = i;
                 continue;
             }
             if (error == null && t instanceof Error found) {
@@ -505,11 +571,89 @@ public final class Failures {
             }
             if (logged == null) {
                 logged = LoggedFailures.find(t);
+                loggedAt = i;
             }
         }
         return logged != null
-                ? new Below(innermost, error, logged.failure(), logged.byLoad())
-                : new Below(innermost, error, innermost, false);
+                ? below(chain, loggedAt, innermost, error, logged.failure(), logged.byLoad())
+                : below(chain, innermostAt, innermost, error, innermost, false);
+    }
+
+    /**
+     * Makes what {@link #below} found, with the first link above the failure logged that says something of its own.
+     *
+     * @param chain    The cause chain
+     * @param loggedAt Where in {@code chain} the failure logged is, or the failure that recorded it; {@code -1} if
+     *                 there is none
+     */
+    private static Below below(List<Throwable> chain, int loggedAt, ReportedFailure innermost, Error error,
+                               Throwable logged, boolean byLoad) {
+        return new Below(innermost, error, logged, byLoad, firstNews(chain, loggedAt, logged));
+    }
+
+    /**
+     * Finds the first link of a cause chain, from the top, above a failure a nested run or load logged, that says
+     * something of its own (see {@link #isNews}).
+     *
+     * @param chain    The cause chain
+     * @param loggedAt Where in {@code chain} that failure is, or the failure that recorded it
+     * @param nested   That failure
+     * @return The link, or {@code null} if every link above {@code loggedAt} adds nothing to {@code nested}
+     */
+    private static Throwable firstNews(List<Throwable> chain, int loggedAt, Throwable nested) {
+        for (int i = 0; i < loggedAt; i++) {
+            if (isNews(chain.get(i), chain.get(i + 1), nested)) {
+                return chain.get(i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Tells whether one link of a cause chain, above a failure a nested run or load logged, says something that
+     * failure doesn't: it has a message of its own, one that can be read, isn't its cause's {@code toString()}, and
+     * doesn't already have the nested failure's text, as the engine writes it or as it is. A {@link ReportedFailure}
+     * never does: the engine wrote it, around the nested failure. The same test tells a fatal {@link Error} a nested
+     * run logged from something new wrapped around it (see {@link #newsAbove}).
+     *
+     * @param link   The link
+     * @param cause  The next link, its cause
+     * @param nested The failure logged below it
+     * @return {@code true} if nothing has logged what {@code link} says
+     */
+    private static boolean isNews(Throwable link, Throwable cause, Throwable nested) {
+        if (link instanceof ReportedFailure) {
+            return false;
+        }
+        String message = readableMessage(link);
+        return message != null && !message.equals(read(cause::toString, thrown -> null))
+                && !mentions(message, loggedText(nested)) && !mentions(message, readableMessage(nested));
+    }
+
+    /** Tells whether {@code message} has {@code text}, which a text that is missing or empty never counts as. */
+    private static boolean mentions(String message, @Nullable String text) {
+        return text != null && !text.isEmpty() && message.contains(text);
+    }
+
+    /**
+     * Finds what, wrapped around a fatal {@link Error} in what was caught, says something of its own (see
+     * {@link #isNews}), which nothing logged when a nested run logged the error.
+     *
+     * @param thrown What was caught
+     * @param fatal  The fatal error among its causes (see {@link #fatalError})
+     * @return The first link from the top above {@code fatal} with a message of its own, or {@code null} if there is
+     *         none
+     */
+    // The very same instance: an equal one is another error.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    static Throwable newsAbove(Throwable thrown, Error fatal) {
+        List<Throwable> chain = causeChain(thrown);
+        int fatalAt = 0;
+        // Bounded by the chain, which a getCause() of its own may not give the same way twice.
+        while (fatalAt < chain.size() - 1 && chain.get(fatalAt) != fatal) {
+            fatalAt++;
+        }
+        return firstNews(chain, fatalAt, fatal);
     }
 
     /**

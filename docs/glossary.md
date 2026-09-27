@@ -110,7 +110,7 @@ too, and under the default limit can be more than it. See
 
 The instant a run must stop, taken from its [timeout](#timeout) when `run()` is called. A [nested run](#nested-run)
 stops at whichever comes first, its own deadline or the outer run's. See
-[Nested runs](stopping-runs.md#-nested-runs).
+[Nested runs](nested-runs.md).
 
 ### Declared fact
 
@@ -224,7 +224,7 @@ decides for itself. See [Null and missing facts](facts.md#-null-and-missing-fact
 
 A run started on the same thread from inside another run, such as from an action or a listener, on any engine. It never
 waits for a compiled copy or a [build slot](#build-slot), and it stops at the outer run's deadline if that comes first.
-On the same engine, `RunContext.parent()` names the outer run. See [Nested runs](stopping-runs.md#-nested-runs) and
+On the same engine, `RunContext.parent()` names the outer run. See [Nested runs](nested-runs.md) and
 [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ### Null reference

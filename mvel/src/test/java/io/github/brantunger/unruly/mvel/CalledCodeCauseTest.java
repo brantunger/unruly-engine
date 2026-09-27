@@ -25,10 +25,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -307,17 +309,21 @@ public class CalledCodeCauseTest {
     }
 
     /**
-     * A run that fails while MVEL's JIT compiles the call to {@code put} leaves MVEL calling {@code put} through its
-     * reflective accessor for good, and the JIT compiles the argument later, on its own. What the argument's code
-     * throws then reaches the reflective accessor unwrapped, and it wraps it in a {@link RuntimeException} with no
-     * {@link InvocationTargetException} under it. Unwrapping that too would also unwrap MVEL's own errors in an
-     * argument, such as a null in a property path, so it's left as MVEL threw it. This documents what happens; a
-     * change to it is a change of behaviour to decide on.
+     * An engine whose action MVEL calls as {@link Stage#MIXED}: a run failed while the JIT compiled the call to
+     * {@code put}, so MVEL calls {@code put} through its reflective accessor for good, and the JIT has since compiled
+     * its argument.
      */
-    @Test
-    @DisplayName("known gap: an argument the JIT compiled, in a call MVEL keeps making through reflection")
-    void argumentCompiledInAReflectiveCall() {
-        RulesEngine<Map<String, Object>> engine = engine("true", "output.put('v', code.value)");
+    private static RulesEngine<Map<String, Object>> mixedEngine() {
+        return mixedEngine("output.put('v', code.value)");
+    }
+
+    /**
+     * An engine whose action MVEL calls as {@link Stage#MIXED}, as {@link #mixedEngine()} is, with its own action.
+     *
+     * @param action An action whose call takes {@code code.value} as its argument
+     */
+    private static RulesEngine<Map<String, Object>> mixedEngine(String action) {
+        RulesEngine<Map<String, Object>> engine = engine("true", action);
         IllegalStateException whileCompiled = new IllegalStateException("while compiled");
         RuleExecutionException compiling = null;
         for (int run = 0; compiling == null && run < RUNS_FOR_THE_JIT; run++) {
@@ -330,6 +336,21 @@ public class CalledCodeCauseTest {
         assertNotNull(compiling, "MVEL's JIT didn't compile the expression in " + RUNS_FOR_THE_JIT + " runs");
         assertSame(whileCompiled, compiling.getCause(), compiling.getMessage());
         runUntil(engine, Stage.MIXED);
+        return engine;
+    }
+
+    /**
+     * A run that fails while MVEL's JIT compiles the call to {@code put} leaves MVEL calling {@code put} through its
+     * reflective accessor for good, and the JIT compiles the argument later, on its own. What the argument's code
+     * throws then reaches the reflective accessor unwrapped, and it wraps it in a {@link RuntimeException} with no
+     * {@link InvocationTargetException} under it. Unwrapping that too would also unwrap MVEL's own errors in an
+     * argument, such as a null in a property path, so it's left as MVEL threw it. This documents what happens; a
+     * change to it is a change of behaviour to decide on.
+     */
+    @Test
+    @DisplayName("known gap: an argument the JIT compiled, in a call MVEL keeps making through reflection")
+    void argumentCompiledInAReflectiveCall() {
+        RulesEngine<Map<String, Object>> engine = mixedEngine();
         IllegalStateException failure = new IllegalStateException("from the compiled argument");
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class,
@@ -339,6 +360,48 @@ public class CalledCodeCauseTest {
         assertTrue(thrown.getCause().getMessage().startsWith("cannot invoke method: put"),
                 thrown.getCause().getMessage());
         assertSame(failure, thrown.getCause().getCause());
+    }
+
+    /**
+     * The same argument failing with a nested run's failure: MVEL's wrapper, whose message the rule's code didn't
+     * write, would otherwise read as a message of the code's own around it, so the rule's failure would be logged a
+     * second time, named by MVEL's message.
+     */
+    @Test
+    @DisplayName("a nested run's failure from that argument is the cause, named as nested and not logged again")
+    void nestedRunFailureInAReflectiveCall() {
+        RulesEngine<Map<String, Object>> engine = mixedEngine();
+        RulesEngine<Map<String, Object>> inner = engine("true", "output.put('v', code.value)");
+        AtomicReference<RuleExecutionException> nested = new AtomicReference<>();
+        logsOf(() -> nested.set(assertThrows(RuleExecutionException.class,
+                () -> inner.run(facts(new IllegalStateException("inner failed"))))));
+        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
+
+        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class,
+                () -> engine.run(facts(nested.get())))));
+
+        assertSame(nested.get(), thrown.get().getCause());
+        assertEquals("Failed to execute action for rule 'r': a nested run() failed: " + nested.get().getMessage(),
+                thrown.get().getMessage());
+        assertFalse(logs.contains("ERROR"), logs);
+    }
+
+    @Test
+    @DisplayName("a nested run's rejected fact from an argument to a constructor MVEL keeps calling through reflection "
+            + "is the cause, not MVEL's wrapper")
+    void nestedRunRejectionInAReflectiveCall() {
+        RulesEngine<Map<String, Object>> engine = mixedEngine(
+                "x = new java.lang.StringBuilder(code.value); output.put('v', x)");
+        RulesEngine<Map<String, Object>> inner = engine("true", "output.put('v', 1)");
+        FactStore<Object> badName = new FactMap<>();
+        badName.setValue("bad name", 1);
+        AtomicReference<IllegalArgumentException> rejected = new AtomicReference<>();
+        logsOf(() -> rejected.set(assertThrows(IllegalArgumentException.class, () -> inner.run(badName))));
+
+        RuleExecutionException thrown = assertThrows(RuleExecutionException.class,
+                () -> logsOf(() -> engine.run(facts(rejected.get()))));
+
+        assertSame(rejected.get(), thrown.getCause());
     }
 
     @Test

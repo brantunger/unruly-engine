@@ -100,6 +100,18 @@ class ReportedFailureTest {
     }
 
     @Test
+    @DisplayName("a failure whose chain has a wrapper with a message of its own names itself, after serialization too")
+    void failureAroundNewsNamesItselfAfterSerialization() throws Exception {
+        ReportedFailure top = failure("top: fallback", new IllegalStateException("fallback", failure("bottom", null)));
+
+        ReportedFailure copy = roundTrip(top);
+
+        assertSame(top, Failures.nestedRunFailure(top));
+        assertSame(copy, Failures.nestedRunFailure(copy));
+        assertEquals("a nested run() failed: top: fallback", Failures.describe(new IllegalStateException(copy)));
+    }
+
+    @Test
     @DisplayName("an old form wrapping a nested stop still tells the run around it that the nested run stopped")
     void oldFormWrappingAStop() throws Exception {
         ReportedFailure stop = ReportedFailure.stop("stopped", new InterruptedException(), null);

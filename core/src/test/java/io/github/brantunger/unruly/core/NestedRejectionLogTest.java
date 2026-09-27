@@ -418,7 +418,7 @@ class NestedRejectionLogTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"run()", "load()"})
-    @DisplayName("a listener whose run() rejects its facts, or whose load() fails, gets a WARN line naming it")
+    @DisplayName("a listener whose run() rejects its facts, or whose load() fails, has it logged once, by that call")
     void listenerNestedRejection(String call) {
         boolean run = "run()".equals(call);
         RulesEngine<Map<String, Object>> nested = run ? plain("inner-rule") : unloaded();
@@ -434,8 +434,9 @@ class NestedRejectionLogTest {
         Outcome outcome = returned(() -> engine.run(new FactMap<>()));
 
         assertEquals(List.of(failure), outcome.errors(), outcome.logs());
-        assertEquals(List.of("Listener threw exception in beforeRun: " + (run ? NESTED_RUN : NESTED_LOAD) + failure),
-                outcome.warnings(), outcome.logs());
+        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+        assertTrue(outcome.logs().contains("DEBUG " + ENGINE_LOGGER + "Listener threw exception in beforeRun"),
+                outcome.logs());
     }
 
     @Test
@@ -548,7 +549,7 @@ class NestedRejectionLogTest {
     // What an action does with the nested failure
 
     @Test
-    @DisplayName("an action that wraps a nested run()'s rejection names it, logged once")
+    @DisplayName("an action that wraps a nested run()'s rejection keeps its own message, and names the rejection")
     void wrappedNestedRejection() {
         RulesEngine<Map<String, Object>> nested = plain("inner-rule");
         RulesEngine<Map<String, Object>> engine = outer(() -> {
@@ -556,6 +557,42 @@ class NestedRejectionLogTest {
                 runWithOutputFact(nested);
             } catch (IllegalArgumentException e) {
                 throw new IllegalStateException("wrapped", e);
+            }
+        });
+        String failure = OUTER_ACTION + "wrapped (after " + NESTED_RUN + OUTPUT_REJECTED + ")";
+
+        assertFailed(failed(() -> engine.run(new FactMap<>())), failure, OUTPUT_REJECTED, failure);
+    }
+
+    @Test
+    @DisplayName("a run around an action that wrapped a nested load()'s failure in its own names a run() that failed")
+    void wrappedNestedLoadFailureRunsDeep() {
+        RulesEngine<Map<String, Object>> loader = unloaded();
+        RulesEngine<Map<String, Object>> middle = engine("mid-rule", new StubExpressionLanguage().action(doing(() -> {
+            try {
+                loadDuplicates(loader);
+            } catch (RuleCompilationException e) {
+                throw new IllegalStateException("fallback pricing failed", e);
+            }
+        })), HashMap::new);
+        RulesEngine<Map<String, Object>> engine = outer(() -> middle.run(new FactMap<>()));
+        String midFailure = "Failed to execute action for rule 'mid-rule': fallback pricing failed (after "
+                + NESTED_LOAD + DUPLICATE + ")";
+
+        assertFailed(failed(() -> engine.run(new FactMap<>())), OUTER_ACTION + NESTED_RUN + midFailure, DUPLICATE,
+                midFailure);
+    }
+
+    @Test
+    @DisplayName("an action that wraps a nested run()'s rejection in an exception that adds nothing names it, logged"
+            + " once")
+    void transparentlyWrappedNestedRejection() {
+        RulesEngine<Map<String, Object>> nested = plain("inner-rule");
+        RulesEngine<Map<String, Object>> engine = outer(() -> {
+            try {
+                runWithOutputFact(nested);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException(e);
             }
         });
 

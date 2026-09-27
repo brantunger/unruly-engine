@@ -680,6 +680,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
         Deadline outerDeadline = Cancellation.enter(deadline);
+        // Cleared as runWithCopy clears it, so a run started from onRunError of a run a fatal Error left isn't told of
+        // that run's rule.
+        fatalFailure.remove();
         try {
             try {
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
@@ -692,6 +695,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             notifyRunError(snapshot, run, failure, tally);
             return failure;
         } finally {
+            fatalFailure.remove();
             Cancellation.leave(outerDeadline);
             if (parent == null) {
                 currentRun.remove();
@@ -915,7 +919,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             ruleSet = null;
         }
         if (replaced != null) {
-            Failures.throwIfPresent(replaced.retire());
+            // As in load(): a run a language's close() starts is nested in this one, so what it logged isn't logged
+            // again (see LoggedFailures).
+            LoggedFailures.enter();
+            try {
+                Failures.throwIfPresent(replaced.retire());
+            } finally {
+                LoggedFailures.leave();
+            }
         }
     }
 
@@ -1535,7 +1546,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                that run logged, and one of a {@code load()} it started
      *                                {@code Output factory threw: a nested load() failed: } and that load's failure;
      *                                neither is logged again, as that run or load logged it; nor is a fatal error that
-     *                                run logged (see {@link LoggedFailures}).
+     *                                run logged (see {@link LoggedFailures}). A nested failure that isn't a fatal
+     *                                error, wrapped by the factory in an exception with a message of its own, reads
+     *                                {@code Output factory threw: }, that message and the nested failure as a note
+     *                                (see {@link Failures#describe}), and is logged; a fatal error wrapped so isn't
+     *                                logged again.
      */
     O createOutput(Supplier<O> outputFactory) {
         O output;
@@ -1543,7 +1558,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             output = outputFactory.get();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            String msg = Failures.nestedRunFailure(e) != null
+            String msg = Failures.below(e).logged() != null
                     ? "Output factory threw: " + Failures.describe(e)
                     : "Output factory threw " + Failures.describeWithClass(e);
             if (LoggedFailures.unlogged(e)) {
@@ -1837,25 +1852,32 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Logs what a listener threw, where it isn't the error {@code run()} goes on to throw. A failure of a
-     * {@code run()} or a {@code load()} the listener started is described by the innermost failure it logged only, as
-     * {@code a nested run() failed: ...} or {@code a nested load() failed: ...}: that run or load logged it, naming it
-     * in full. The failure the callback told the listener of, rethrown or wrapped, isn't one: it's described with its
-     * class, as anything else is.
+     * {@code run()} or a {@code load()} the listener started, and a fatal {@link Error} such a run logged, isn't logged
+     * at WARN, as that run or load logged it already (see {@link LoggedFailures#logged}), unless an exception wrapped
+     * around it says something of its own: that's logged, described with the nested failure as a note, as
+     * {@code ... (after a nested run() failed: ...)}, or, around a fatal error, with its class. The failure the
+     * callback told the listener of, rethrown or wrapped, isn't one, nor is its fatal error: it's described with its
+     * class, as anything else is. The stack trace is logged at DEBUG either way.
      *
      * @param callback The callback the listener threw from
      * @param thrown   What it threw
      * @param told     The exception the callback told the listener of, or {@code null}
      */
-    // The innermost failure of the very run whose failure the listener was told of is no nested run's.
+    // The innermost failure of the very run whose failure the listener was told of is no nested run's, nor is the very
+    // fatal error that run failed with.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
     private static void logListenerException(String callback, Throwable thrown, Throwable told) {
+        Error fatal = Failures.fatalError(thrown);
+        boolean rethrowsTold = fatal != null ? fatal == Failures.fatalError(told)
+                : Failures.below(thrown).logged() == Failures.below(told).logged();
+        boolean hasNested = fatal == null && !rethrowsTold && Failures.below(thrown).logged() != null;
         // Escaped, like every message the engine logs: a listener's message can quote request data. The stack trace,
         // which prints the message as it is, goes to DEBUG for whoever debugs the listener; it's left out if printing
         // it throws, as a listener's own exception can.
-        Throwable nested = Failures.nestedRunFailure(thrown);
-        log.warn("Listener threw exception in {}: {}", callback,
-                nested != null && nested != Failures.nestedRunFailure(told)
-                        ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
+        if (rethrowsTold || !LoggedFailures.logged(thrown)) {
+            log.warn("Listener threw exception in {}: {}", callback,
+                    hasNested ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
+        }
         logStackTrace(() -> log.debug("Listener threw exception in {}", callback, thrown));
     }
 
@@ -1880,7 +1902,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Keeps a fatal {@link Error} a listener's {@link RuleListener#onError} threw while it closed a failure that is
      * fatal itself. The failure's own error is still the one {@code run()} rethrows, so this one is logged like a
      * second fatal error in one callback, and added to the exception listeners were told about, where
-     * {@link RuleListener#onRunError} finds it. The rethrown error isn't changed.
+     * {@link RuleListener#onRunError} finds it. The rethrown error isn't changed. One a run the listener started logged
+     * already isn't logged at WARN again (see {@link LoggedFailures#logged}); its stack trace is still logged at DEBUG.
      *
      * @param reported     The exception every listener's {@code onError} got
      * @param fromListener The fatal error a listener threw from {@code onError}, or {@code null}
@@ -1889,8 +1912,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (fromListener != null) {
             reported.addSuppressed(fromListener);
             // Says which one onRunError can see: the loop has already logged any later fatal error.
-            log.warn("Listener threw exception in onError, kept on the failure: {}",
-                    Failures.describeWithClass(fromListener));
+            if (!LoggedFailures.logged(fromListener)) {
+                log.warn("Listener threw exception in onError, kept on the failure: {}",
+                        Failures.describeWithClass(fromListener));
+            }
             logStackTrace(() -> log.debug("Listener threw exception in onError", fromListener));
         }
     }
@@ -1899,7 +1924,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
      * {@code before*} callback still gets a closing call. A failure of a {@code run()} or a {@code load()} the rule
      * started isn't logged again, as that run or load logged it, nor is a fatal {@link Error} a run logged already
-     * (see {@link LoggedFailures}).
+     * (see {@link LoggedFailures}), unless the rule wrapped a nested failure that isn't a fatal {@link Error} in an
+     * exception with a message of its own, which is logged, with the nested failure as a note (see
+     * {@link Failures#describe}); a fatal error wrapped so isn't logged again.
      * An interrupt in {@code cause} sets the thread's interrupt status again. Returns the exception for the caller to
      * throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a

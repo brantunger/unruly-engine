@@ -3,8 +3,9 @@ package io.github.brantunger.unruly.core;
 /**
  * Whether a failure the engine caught has been logged already, so a failure a nested {@code run()} or {@code load()}
  * reported, or a fatal {@link Error}, is logged once, where it happened, however many runs it passes through on its
- * way out. A {@code load()} or {@code validate()} counts as a run here: a run a language starts while it compiles,
- * checks a declared fact's name, or creates or warms up a session is nested in it.
+ * way out. A {@code load()}, a {@code validate()} or a {@code close()} counts as a run here: a run a language starts
+ * while it compiles, checks a declared fact's name, creates, warms up or closes a session, or closes a compiler is
+ * nested in it.
  *
  * <p>
  * A failure a {@code run()} reports, when it was started on the same thread while another run is in progress, from a
@@ -80,7 +81,10 @@ final class LoggedFailures {
         private int next;
     }
 
-    /** Counts a run, a {@code load()} or a {@code validate()} starting on this thread, until {@link #leave()}. */
+    /**
+     * Counts a run, a {@code load()}, a {@code validate()} or a {@code close()} starting on this thread, until
+     * {@link #leave()}.
+     */
     static void enter() {
         Runs runs = RUNS.get();
         if (runs == null) {
@@ -110,6 +114,29 @@ final class LoggedFailures {
     static boolean unlogged(Throwable thrown) {
         Error fatal = Failures.fatalError(thrown);
         return fatal != null ? unloggedFatal(fatal) : Failures.nestedRunFailure(thrown) == null;
+    }
+
+    /**
+     * Tells whether what was caught has been logged already, as {@link #unlogged} does, without recording anything, for
+     * a caller that logs at WARN what it doesn't throw, such as a listener's exception or a failure to close a session:
+     * a nested run's or load's failure (see {@link Failures#nestedRunFailure}), or a fatal {@link Error} a run in
+     * progress on this thread logged, when nothing wrapped around it says something of its own (see
+     * {@link Failures#newsAbove}). Recording a fatal error here would take the place of the one the run is throwing,
+     * which would then be logged again. Every caller in the engine is inside a run, a {@code load()}, a
+     * {@code validate()} or a {@code close()} on this thread; with none in progress, no fatal error has been logged.
+     *
+     * @param thrown What was caught
+     * @return {@code true} if the caller leaves it out of the log
+     */
+    // The very same instance is what was logged; an equal one would still be news.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    static boolean logged(Throwable thrown) {
+        Error fatal = Failures.fatalError(thrown);
+        if (fatal == null) {
+            return Failures.nestedRunFailure(thrown) != null;
+        }
+        Runs runs = RUNS.get();
+        return runs != null && runs.loggedFatal == fatal && Failures.newsAbove(thrown, fatal) == null;
     }
 
     /**

@@ -65,7 +65,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🧨 [Exceptions by method](exceptions-by-method.md) | Application developers | Every exception by method, and what the engine does with an exception's text in its messages |
 | 🩺 [Troubleshooting](troubleshooting.md) | Everyone | Symptoms and exception messages from `build()`, `load()` and `run()`, each linked to the guide that explains it |
 | 🏭 [Before you go to production](production.md) | Application developers | A checklist: rules and their source, startup, failures, auditing, threads and shutdown |
-| ⏳ [Stopping a run](stopping-runs.md) | Application developers | Timeouts and interrupts: where a run stops, what a timeout can't stop, and nested runs |
+| ⏳ [Stopping a run](stopping-runs.md) | Application developers | Timeouts and interrupts: where a run stops and what a timeout can't stop |
+| 🪆 [Nested runs](nested-runs.md) | Application developers | Runs started inside a run: the deadline they inherit, how their stops and failures reach the outer run, and what is logged |
 | 🟣 [Kotlin](kotlin.md) | Application developers | Nullness from Kotlin, and what to change in code written for 1.4 or earlier |
 | 🧵 [Thread safety](thread-safety.md) | Application developers | What's shared, the engine's lifecycle and closing, the class loader `load()` captures, and reloading rules under traffic |
 | 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, and what a run waits for |
