@@ -16,8 +16,9 @@ class FactNamesMissCacheTest {
     }
 
     @Test
-    @DisplayName("the longest cached name is the one FactNamesTest writes out")
-    void longestCachedMissAgrees() {
+    @DisplayName("the characters the cache may hold, and the longest name it keeps, are those FactNamesTest writes out")
+    void cachedMissCharsAgree() {
+        assertEquals(FactNamesTest.CACHED_MISS_CHARS, FactNames.MAX_CACHED_MISS_CHARS);
         assertEquals(FactNamesTest.LONGEST_CACHED_MISS, FactNames.MAX_CACHED_MISS_LENGTH);
     }
 
@@ -59,7 +60,10 @@ class FactNamesMissCacheTest {
         names.check("x".repeat(FactNames.MAX_CACHED_MISS_LENGTH + 1));
         assertEquals(0, names.cachedMisses(), "a name one character too long isn't cached");
 
+        names.check("x".repeat(256));
+        assertEquals(1, names.cachedMisses(), "a name of more than 255 characters is (#700)");
+
         names.check("x".repeat(FactNames.MAX_CACHED_MISS_LENGTH));
-        assertEquals(1, names.cachedMisses(), "a name of the longest cached length is");
+        assertEquals(2, names.cachedMisses(), "a name of the longest cached length is");
     }
 }
