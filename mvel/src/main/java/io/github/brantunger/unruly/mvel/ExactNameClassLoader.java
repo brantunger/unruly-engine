@@ -155,6 +155,9 @@ final class ExactNameClassLoader extends ClassLoader {
      *                                and more than {@value #MAX_NAME_PARTS} parts, counting one for the {@code $}
      */
     private static void checkSize(String name) throws ClassNotFoundException {
+        if (!refuses(name)) {
+            return;
+        }
         long parts = name.chars().filter(c -> c == '.').count() + 1;
         if (name.indexOf('$') >= 0) {
             if (parts > MAX_NAME_PARTS - 1) {
@@ -170,10 +173,24 @@ final class ExactNameClassLoader extends ClassLoader {
             throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + parts
                     + " dot-separated parts, and a class name may have at most " + MAX_NAME_PARTS);
         }
-        if (name.length() > MAX_NAME_LENGTH) {
-            throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + name.length()
-                    + " characters, and a class name may have at most " + MAX_NAME_LENGTH);
-        }
+        // Refused, and not for its parts, so for its length.
+        throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + name.length()
+                + " characters, and a class name may have at most " + MAX_NAME_LENGTH);
+    }
+
+    /**
+     * Tells whether a name looked up with this loader is refused, before the application's class loader is asked:
+     * whether it has more than {@value #MAX_NAME_LENGTH} characters, more than {@value #MAX_NAME_PARTS} dot-separated
+     * parts and no {@code $}, or a {@code $} and more than {@value #MAX_NAME_PARTS} parts, counting one for the
+     * {@code $}. No class can be found by such a name.
+     *
+     * @param name The name to look up
+     * @return {@code true} if the name is refused
+     */
+    static boolean refuses(String name) {
+        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        long mostParts = name.indexOf('$') >= 0 ? MAX_NAME_PARTS - 1 : MAX_NAME_PARTS;
+        return name.length() > MAX_NAME_LENGTH || parts > mostParts;
     }
 
     /**

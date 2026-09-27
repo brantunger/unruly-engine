@@ -23,10 +23,13 @@ class FactNamesTest {
     private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
 
     /**
-     * {@code FactNames.MAX_CACHED_MISS_LENGTH}, written out so these tests also run on a check that has no such limit;
+     * {@code FactNames.MAX_CACHED_MISS_CHARS}, written out so these tests also run on a check that has no such limit;
      * {@code FactNamesMissCacheTest} asserts the two agree.
      */
-    static final int LONGEST_CACHED_MISS = 255;
+    static final int CACHED_MISS_CHARS = 4096 * 255;
+
+    /** {@code FactNames.MAX_CACHED_MISS_LENGTH}, written out as {@link #CACHED_MISS_CHARS} is. */
+    static final int LONGEST_CACHED_MISS = CACHED_MISS_CHARS / 16;
 
     private static FactNames javaUtil(ClassLoader loader) {
         return new FactNames(new Imports(Set.of("java.util"), Set.of(), loader));
@@ -113,9 +116,23 @@ class FactNamesTest {
                 "the full cache was cleared, so name0 is looked up again");
     }
 
+    // #700: a name of more than 255 characters wasn't cached, so its class file was looked up again on every run.
+    @Test
+    @DisplayName("a name of more than 255 characters is cached, so it is looked up once")
+    void longMissCached() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtil(loader);
+        String name = "x".repeat(256);
+
+        names.check(name);
+        names.check(name);
+
+        assertEquals(1, Collections.frequency(loader.resources, "java/util/" + name + ".class"));
+    }
+
     @Test
     @DisplayName("a name longer than the longest cached one is looked up every time, so it isn't kept")
-    void longMissNotCached() {
+    void missLongerThanTheLongestNotCached() {
         RecordingClassLoader loader = new RecordingClassLoader();
         FactNames names = javaUtil(loader);
         String name = "x".repeat(LONGEST_CACHED_MISS + 1);
@@ -128,7 +145,7 @@ class FactNamesTest {
 
     @Test
     @DisplayName("a name as long as the longest cached one is still cached")
-    void missAtLengthLimitCached() {
+    void missAsLongAsTheLongestCached() {
         RecordingClassLoader loader = new RecordingClassLoader();
         FactNames names = javaUtil(loader);
         String name = "x".repeat(LONGEST_CACHED_MISS);
@@ -137,6 +154,46 @@ class FactNamesTest {
         names.check(name);
 
         assertEquals(1, Collections.frequency(loader.resources, "java/util/" + name + ".class"));
+    }
+
+    @Test
+    @DisplayName("the cache is cleared when a name would take its characters past what it may hold")
+    void missesBoundedByCharacters() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtil(loader);
+        // Sixteen names of the longest cached length fill the cache, so a seventeenth doesn't fit with them.
+        List<String> longest = new ArrayList<>();
+        for (char c = 'a'; c <= 'q'; c++) {
+            longest.add(String.valueOf(c).repeat(LONGEST_CACHED_MISS));
+        }
+
+        longest.subList(0, 16).forEach(names::check);
+        names.check(longest.get(15));
+        names.check(longest.get(16));
+        names.check(longest.get(0));
+
+        assertEquals(1, Collections.frequency(loader.resources, "java/util/" + longest.get(15) + ".class"),
+                "the first sixteen fit, so the sixteenth is still cached");
+        assertEquals(2, Collections.frequency(loader.resources, "java/util/" + longest.get(0) + ".class"),
+                "the seventeenth didn't fit with them, so the cache was cleared and the first is looked up again");
+    }
+
+    // Review of #700: two names of more than half of what the cache may hold, checked in turn, cleared it each time.
+    @Test
+    @DisplayName("very long names checked in turn don't clear the cache of the short ones")
+    void veryLongMissesKeepShortOnes() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtil(loader);
+        String half = "y".repeat(CACHED_MISS_CHARS / 2 + 1);
+
+        names.check("shortName");
+        for (int i = 0; i < 2; i++) {
+            names.check(half);
+            names.check(half.replace('y', 'z'));
+        }
+        names.check("shortName");
+
+        assertEquals(1, Collections.frequency(loader.resources, "java/util/shortName.class"));
     }
 
     @Test

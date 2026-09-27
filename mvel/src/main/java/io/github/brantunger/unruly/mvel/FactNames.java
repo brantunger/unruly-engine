@@ -25,13 +25,24 @@ final class FactNames {
     /**
      * How many names that aren't classes are remembered. The cache is cleared when it is full, because fact names
      * can be unbounded (IDs, JSON keys) and must not grow it forever. It only saves looking a name up in the imported
-     * packages, so with none imported nothing is remembered, and a name longer than {@value #MAX_CACHED_MISS_LENGTH}
-     * characters isn't either, so the memory it holds is bounded as well as its count.
+     * packages, so with none imported nothing is remembered. The characters of the names remembered are bounded too,
+     * by {@value #MAX_CACHED_MISS_CHARS} in all, so the memory the cache holds is bounded as well as its count: it is
+     * cleared, too, when a name would take it past that. A name longer than {@value #MAX_CACHED_MISS_LENGTH}
+     * characters isn't remembered, so a few very long names can't clear the cache of every short one, time after time.
      */
     static final int MAX_CACHED_MISSES = 4096;
 
-    /** The longest name, in characters (UTF-16 units), that is remembered as not being a class. */
-    static final int MAX_CACHED_MISS_LENGTH = 255;
+    /**
+     * The most characters (UTF-16 units), all names together, remembered as not being a class: as many as
+     * {@value #MAX_CACHED_MISSES} names of 255 characters take.
+     */
+    static final int MAX_CACHED_MISS_CHARS = MAX_CACHED_MISSES * 255;
+
+    /**
+     * The longest name, in characters (UTF-16 units), remembered as not being a class: a sixteenth of
+     * {@link #MAX_CACHED_MISS_CHARS}, so at least sixteen names fill the cache.
+     */
+    static final int MAX_CACHED_MISS_LENGTH = MAX_CACHED_MISS_CHARS / 16;
 
     // The longest part of a fact name a message shows, as in the engine's messages.
     private static final int MAX_NAME_LENGTH = 200;
@@ -57,6 +68,10 @@ final class FactNames {
     // Names found to be classes in an imported package. Bounded by the classes in those packages.
     private final Set<String> packageClassNames = ConcurrentHashMap.newKeySet();
     private final Set<String> misses = ConcurrentHashMap.newKeySet();
+    // The characters of the names in misses, all together. Both change together, under this lock, so the total
+    // is what the cache holds when names are cached on several threads at once.
+    private final Object missesLock = new Object();
+    private int missChars;
 
     /**
      * Creates a check for the imports a rule list was compiled with.
@@ -303,10 +318,16 @@ final class FactNames {
         if (name.length() > MAX_CACHED_MISS_LENGTH) {
             return false;
         }
-        if (misses.size() >= MAX_CACHED_MISSES) {
-            misses.clear();
+        synchronized (missesLock) {
+            if (misses.size() >= MAX_CACHED_MISSES || missChars + name.length() > MAX_CACHED_MISS_CHARS) {
+                misses.clear();
+                missChars = 0;
+            }
+            // Counted only if it is new: another thread may have cached it since the check above.
+            int before = misses.size();
+            misses.add(name);
+            missChars += (misses.size() - before) * name.length();
         }
-        misses.add(name);
         return false;
     }
 
@@ -341,7 +362,7 @@ final class FactNames {
      * </p>
      */
     private boolean isClass(String pkg, String name) {
-        if (!inNativeImage() && classLoader.getResource(pkg.replace('.', '/') + '/' + name + ".class") == null) {
+        if (!mayBeClass(classLoader, pkg + '.' + name)) {
             return false;
         }
         try {
@@ -362,12 +383,29 @@ final class FactNames {
     }
 
     /**
+     * Tells whether a class loader may have a class by a name, without asking it to load one: whether it serves the
+     * class file, which keeps no lock object in a parallel-capable loader, as asking it to load the class would (see
+     * {@link #isClass}). In a native image, which serves no class file it wasn't configured to, and whose loaders keep
+     * no such lock, any name may be a class. A name this answers {@code true} for may still not be a class, such as
+     * {@code date} for {@code Date.class} in a class directory on a case-insensitive file system, so only loading it
+     * tells.
+     *
+     * @param loader     The class loader
+     * @param binaryName The class's binary name, such as {@code java.util.Map$Entry}
+     * @return {@code false} if the class loader has no class by that name
+     */
+    static boolean mayBeClass(ClassLoader loader, String binaryName) {
+        return inNativeImage() || loader.getResource(binaryName.replace('.', '/') + ".class") != null;
+    }
+
+    /**
      * Tells whether this call is running in a native image, as GraalVM's own {@code ImageInfo.inImageRuntimeCode}
      * does, without a dependency on its SDK. The property is {@code "runtime"} only in an image, and
      * {@code "buildtime"} while one is being built, where class loading is an ordinary JVM's and the lock the class
      * file lookup avoids is real, so the value is compared and not merely tested for. It is read on every call and
      * never into a field: a field an image's build filled in would answer {@code "buildtime"} for the image's whole
-     * life. Only a name neither cache knows gets this far.
+     * life. Only a name no cache knows gets this far: neither of this check's, nor, for a name in a rule, the rule
+     * list's own (see {@link Imports}).
      */
     private static boolean inNativeImage() {
         return "runtime".equals(System.getProperty("org.graalvm.nativeimage.imagecode"));

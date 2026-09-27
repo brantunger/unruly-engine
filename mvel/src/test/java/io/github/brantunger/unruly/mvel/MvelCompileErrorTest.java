@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
@@ -685,5 +686,75 @@ class MvelCompileErrorTest {
     void runtimeExceptionSubclassFromMvel() {
         assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new IllegalStateException("bad state"),
                 "org.mvel2.util.ParseTools")));
+    }
+
+    private static final String PACKAGE_IMPORT_TOO_FAR = "the '.' before the '*' of an import of a whole package "
+            + "must be within the first 32,768 characters of the expression, as far as MVEL can read one: move the "
+            + "import nearer the start, or import the package with the engine's imports";
+
+    /** An action whose {@code import java.util.*;} has the {@code .} before its {@code *} at this index. */
+    private static Rule packageImportWithLastDotAt(int index) {
+        String action = " ".repeat(index - "import java.util".length())
+                + "import java.util.*; output.put('k', new ArrayList().size())";
+        return Rule.builder().ruleName("r").condition("true").action(action).build();
+    }
+
+    // #702: MVEL keeps the index of that '.' in a short, which wraps, and said "unexpected end of statement".
+    @Test
+    @DisplayName("an import of a whole package too far into the expression for MVEL to read says so")
+    void packageImportTooFar() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        RuleCompilationException ex = engine.validate(List.of(packageImportWithLastDotAt(32_768))).get(0);
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 32_771, PACKAGE_IMPORT_TOO_FAR)), ex.issues());
+        assertEquals("Action for rule 'r' failed to compile at line 1, column 32771: " + PACKAGE_IMPORT_TOO_FAR,
+                ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("an import of a whole package whose '.' is the last character MVEL can read one at still runs")
+    void packageImportAtTheLimit() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        engine.load(List.of(packageImportWithLastDotAt(32_767)));
+
+        assertEquals(Map.of("k", 0), engine.run(new FactMap<>()));
+    }
+
+    private static CompileException endOfStatement(StringIndexOutOfBoundsException cause) {
+        CompileException mvel = withMessage("[Error: unexpected end of statement]\n[Near : {... ....}]\n"
+                + "[Line: 1, Column: 20]");
+        mvel.initCause(cause);
+        return mvel;
+    }
+
+    private static StringIndexOutOfBoundsException outOfBoundsIn(String className, String method) {
+        StringIndexOutOfBoundsException e = new StringIndexOutOfBoundsException("offset 5, count -3, length 30");
+        e.setStackTrace(new StackTraceElement[] {
+            new StackTraceElement("java.lang.String", "<init>", null, -1),
+            new StackTraceElement(className, method, null, -1)
+        });
+        return e;
+    }
+
+    @Test
+    @DisplayName("an out-of-bounds read elsewhere in MVEL's import keeps MVEL's description")
+    void outOfBoundsElsewhereInTheImport() {
+        CompileException mvel = endOfStatement(outOfBoundsIn("org.mvel2.ast.ImportNode", "<init>"));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 20, "unexpected end of statement")),
+                MvelExpressionCompiler.compileError(mvel).issues());
+    }
+
+    @Test
+    @DisplayName("an out-of-bounds read in a method of that name in another class keeps MVEL's description")
+    void outOfBoundsInAnotherClass() {
+        CompileException mvel = endOfStatement(outOfBoundsIn("com.example.ImportNode", "getPackageImport"));
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 20, "unexpected end of statement")),
+                MvelExpressionCompiler.compileError(mvel).issues());
     }
 }

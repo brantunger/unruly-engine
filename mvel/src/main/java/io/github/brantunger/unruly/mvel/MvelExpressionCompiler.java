@@ -10,6 +10,7 @@ import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -54,6 +55,14 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     private static final String BADLY_FORMED = "not a statement, or badly formed structure";
     // What an expression MVEL's parser reads out of bounds for, such as b., ? or ( ), is reported as.
     private static final String MALFORMED_EXPRESSION = "malformed expression";
+    // What an import of a whole package whose last '.' MVEL can't read, at index 32,768 or later of the expression, is
+    // reported as. MVEL keeps that index in a short, so it wraps, and MVEL reads the name out of bounds.
+    private static final String PACKAGE_IMPORT_TOO_FAR = "the '.' before the '*' of an import of a whole package must "
+            + "be within the first 32,768 characters of the expression, as far as MVEL can read one: move the import "
+            + "nearer the start, or import the package with the engine's imports";
+    // Where MVEL reads the name of an import of a whole package, and the class it is in.
+    private static final String IMPORT_NODE_CLASS = ExceptionReads.MVEL_PACKAGE + "ast.ImportNode";
+    private static final String PACKAGE_IMPORT_METHOD = "getPackageImport";
     // The JDK's packages, whose frames are skipped to find whose code threw, as when the JDK's bounds check threw.
     private static final List<String> JDK_PACKAGES = List.of("java.", "jdk.", "sun.", "com.sun.");
 
@@ -332,6 +341,14 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * </p>
      *
      * <p>
+     * MVEL can't read the name of an import of a whole package, such as {@code import java.util.*;}, whose {@code .}
+     * before the {@code *} is at index 32,768 or later of the expression, and says {@code unexpected end of
+     * statement} (see {@link #packageImportUnread}). The description says that instead, at MVEL's line and column,
+     * which are those of the import's end: {@code the '.' before the '*' of an import of a whole package must be
+     * within the first 32,768 characters of the expression, ...}.
+     * </p>
+     *
+     * <p>
      * When the root cause is a {@link NullPointerException} thrown in MVEL's own code, as one is for an operator with
      * nothing after it, such as {@code x = y &&}, the description is
      * {@code not a statement, or badly formed structure}: MVEL's own for such a failure elsewhere in its parser.
@@ -385,6 +402,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
         Throwable root = chain.get(chain.size() - 1);
         if (!errors.isEmpty()) {
             description = oneLine(errors, room);
+        } else if (chain.stream().anyMatch(MvelExpressionCompiler::packageImportUnread)) {
+            description = PACKAGE_IMPORT_TOO_FAR;
         } else if (nullPointerInMvel(root)) {
             description = BADLY_FORMED;
         } else {
@@ -482,6 +501,23 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             described.add("(" + error.getLineNumber() + "," + error.getColumn() + ") " + error.getMessage());
         }
         return FactNames.escapeWithin(String.join("; ", described), room);
+    }
+
+    /**
+     * Tells whether an exception in a compile error's cause chain is MVEL failing to read the name of an import of a
+     * whole package, such as {@code import java.util.*;}, whose last {@code .} is at index 32,768 or later of the
+     * expression: MVEL 2.5.4 keeps that index in a {@code short}, which wraps, so reading the name throws a
+     * {@link StringIndexOutOfBoundsException}, which MVEL reports as {@code unexpected end of statement}. It goes by
+     * the frame of MVEL's method that reads the name, so one thrown without a stack trace isn't recognised, and MVEL's
+     * own description stays.
+     *
+     * @param link An exception in the chain
+     * @return {@code true} if it's a {@link StringIndexOutOfBoundsException} thrown reading a package import's name
+     */
+    private static boolean packageImportUnread(Throwable link) {
+        return link instanceof StringIndexOutOfBoundsException && Arrays.stream(ExceptionReads.stackTraceOf(link))
+                .anyMatch(frame -> IMPORT_NODE_CLASS.equals(frame.getClassName())
+                        && PACKAGE_IMPORT_METHOD.equals(frame.getMethodName()));
     }
 
     /**

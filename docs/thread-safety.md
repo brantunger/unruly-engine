@@ -256,6 +256,11 @@ try {
   names a single class. Imported packages are looked up with the **loading** thread's.
 - A thread with no context class loader leaves the engine using this library's own class loader.
 
+In MVEL, when the loading thread's loader is one of the JDK's own (the application or platform class loader), a
+package import finds only classes with a `.class` file. A class defined at run time, such as with Byte Buddy or
+`MethodHandles.Lookup.defineClass`, needs a class import instead, such as in `imports(...)`. Other loaders, such as
+Spring Boot's or an application server's, find it either way.
+
 In MVEL, setting the context class loader around `run()` instead leaves the rule failing, and closing the engine
 doesn't release the loader `load()` captured: MVEL's dynamic optimizer holds it, and holds the first loader to
 evaluate a rule for the life of the JVM. That, and the flag that frees them, are in
