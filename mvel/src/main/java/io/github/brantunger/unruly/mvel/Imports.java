@@ -25,9 +25,10 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
                Map<String, Class<?>> inputs) {
 
     // The most characters and dot-separated parts an import in an expression's own text may have, as the engine's
-    // core.ImportResolver allows an engine's imports, which the mvel package may not use.
-    private static final int MAX_IMPORT_LENGTH = 1_000;
-    private static final int MAX_IMPORT_PARTS = 64;
+    // core.ImportResolver allows an engine's imports, which the mvel package may not use. ExactNameClassLoader bounds
+    // the names it looks up from these.
+    static final int MAX_IMPORT_LENGTH = 1_000;
+    static final int MAX_IMPORT_PARTS = 64;
 
     /**
      * Creates the imports for one rule list, with nothing known yet about which names aren't classes. The class loader

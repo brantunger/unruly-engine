@@ -33,6 +33,33 @@ import org.mvel2.MVEL;
  * compiles a rule or {@link Class#forName(String, boolean, ClassLoader)} with this loader, calls
  * {@link #loadClass(String)}, which asks the application's class loader for every class.
  * </p>
+ *
+ * <p>
+ * A name looked up with this loader itself is refused, before the application's class loader is asked, when it has
+ * more than {@value #MAX_NAME_LENGTH} characters or more than {@value #MAX_NAME_PARTS} parts: its dot-separated
+ * parts, and one more for a name with a {@code $}, which names a nested class. MVEL reads a dotted chain in a rule,
+ * such as {@code a.b.c.d == 1}, by looking the chain up as a class, then again with its dots turned into {@code $} one
+ * at a time from the right, as a nested class, and again for each shorter chain, so a chain of n parts cost lookups
+ * that grew with n squared, each of which a parallel-capable class loader keeps a lock object for. Only the dots
+ * make that loop longer, so only they are counted: MVEL also looks a property up as a class nested in the type it is
+ * read from, such as {@code java.lang.Object$x$y} for {@code m.x$y}, and a property may have any number of
+ * {@code $}.
+ * </p>
+ *
+ * <p>
+ * A refused name is reported as a {@link ClassNotFoundException}, so MVEL reads it as it reads any name that isn't a
+ * class: a chain as properties, {@code (a.b...c)}, which MVEL first tries as a cast, as the expression in
+ * parentheses, and {@code new a.b...c$D()} as a class it can't find when it runs. The one exception is a name with
+ * too many parts and a {@code $} that MVEL's lookup of a nested class tries, which is reported as a
+ * {@link NameTooLarge}. That lookup tries the next name with a {@code $} after a {@link ClassNotFoundException}, but
+ * gives up on the chain after any other exception, which every caller of it catches and reads as "not a class", so a
+ * chain costs lookups that grow with n. The first name with a {@code $} it tries is refused, as turning the last dot
+ * into a {@code $} leaves the count as it is. A name too long alone doesn't make that loop any longer, so it is always
+ * a {@link ClassNotFoundException}. Every rule that loaded without the bound and names no class of more than 80
+ * parts still loads, and runs the same. A member read through a class of more than 80 parts, such as
+ * {@code pkg.Outer.Inner.FIELD} with 81 parts before the field, is read as properties, as MVEL gives up on the chain
+ * before it looks up the class.
+ * </p>
  */
 final class ExactNameClassLoader extends ClassLoader {
 
@@ -40,6 +67,24 @@ final class ExactNameClassLoader extends ClassLoader {
     // that may not see MVEL.
     @SuppressWarnings("PMD.UseProperClassLoader")
     private static final ClassLoader MVEL_CLASS_LOADER = MVEL.class.getClassLoader();
+
+    /**
+     * The most characters a name looked up with this loader may have: as many as an import may have, for a package,
+     * and as many again for a class in it.
+     */
+    static final int MAX_NAME_LENGTH = 2 * Imports.MAX_IMPORT_LENGTH;
+
+    /**
+     * The most parts a name looked up with this loader may have, counting its dot-separated parts and one more for a
+     * {@code $}: as many as an import may have, for a package, 16 more for a class in it and the classes nested in
+     * that one, and one more for a member read through the innermost, such as {@code pkg.Outer.Inner.FIELD}, which
+     * MVEL looks up as a class first.
+     */
+    static final int MAX_NAME_PARTS = Imports.MAX_IMPORT_PARTS + 17;
+
+    // MVEL's lookup of a nested class, which turns the dots of a name into $ one at a time, and the class it is in.
+    private static final String NESTED_LOOKUP_CLASS = ExceptionReads.MVEL_PACKAGE + "util.ParseTools";
+    private static final String NESTED_LOOKUP_METHOD = "findInnerClass";
 
     static {
         registerAsParallelCapable();
@@ -55,8 +100,23 @@ final class ExactNameClassLoader extends ClassLoader {
         super(parent);
     }
 
+    /**
+     * Looks a class up in the application's class loader, unless its name is too long, or has too many parts, to be
+     * a class the engine can import.
+     *
+     * @param name The class's binary name
+     * @return The class
+     * @throws ClassNotFoundException if the application's class loader has no class by that name, or only a class
+     *                                file whose name differs in case, or, before the application's class loader is
+     *                                asked, if {@code name} has more than {@value #MAX_NAME_LENGTH} characters, or
+     *                                more than {@value #MAX_NAME_PARTS} dot-separated parts and no {@code $}
+     * @throws NameTooLarge           if MVEL's lookup of a nested class asks for {@code name}, which has a {@code $}
+     *                                and more than {@value #MAX_NAME_PARTS} parts, counting one for the {@code $},
+     *                                before the application's class loader is asked
+     */
     @Override
     public Class<?> loadClass(String name) throws ClassNotFoundException {
+        checkSize(name);
         try {
             return getParent().loadClass(name);
         } catch (NoClassDefFoundError e) {
@@ -80,6 +140,55 @@ final class ExactNameClassLoader extends ClassLoader {
     }
 
     /**
+     * Refuses a name too long, or with too many parts, to look up, as {@link Imports#checkSize} refuses an import: as
+     * a class that isn't there, unless it has too many parts and a {@code $} and MVEL's lookup of a nested class asks
+     * for it, when a {@link NameTooLarge} stops that lookup. Each message says why, such as
+     * {@code Can't look up 'a.a.a...$B': it has 81 dot-separated parts and a '$', and a class name with a '$' may have
+     * at most 80}.
+     *
+     * @param name The name to look up
+     * @throws ClassNotFoundException if {@code name} has more than {@value #MAX_NAME_LENGTH} characters, more than
+     *                                {@value #MAX_NAME_PARTS} dot-separated parts and no {@code $}, or a {@code $}
+     *                                and more than {@value #MAX_NAME_PARTS} parts, counting one for the {@code $},
+     *                                and MVEL's lookup of a nested class isn't what asks for it
+     * @throws NameTooLarge           if MVEL's lookup of a nested class asks for {@code name}, which has a {@code $}
+     *                                and more than {@value #MAX_NAME_PARTS} parts, counting one for the {@code $}
+     */
+    private static void checkSize(String name) throws ClassNotFoundException {
+        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        if (name.indexOf('$') >= 0) {
+            if (parts > MAX_NAME_PARTS - 1) {
+                String refusal = "Can't look up '" + FactNames.quote(name) + "': it has " + parts
+                        + " dot-separated parts and a '$', and a class name with a '$' may have at most "
+                        + (MAX_NAME_PARTS - 1);
+                if (inNestedLookup()) {
+                    throw new NameTooLarge(refusal);
+                }
+                throw new ClassNotFoundException(refusal);
+            }
+        } else if (parts > MAX_NAME_PARTS) {
+            throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + parts
+                    + " dot-separated parts, and a class name may have at most " + MAX_NAME_PARTS);
+        }
+        if (name.length() > MAX_NAME_LENGTH) {
+            throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + name.length()
+                    + " characters, and a class name may have at most " + MAX_NAME_LENGTH);
+        }
+    }
+
+    /**
+     * Tells whether MVEL's lookup of a nested class is what asks for a name. Only a name already refused asks, so the
+     * stack is walked only for a name a rule has no use for.
+     *
+     * @return {@code true} if {@code ParseTools.findInnerClass} is on the calling thread's stack
+     */
+    private static boolean inNestedLookup() {
+        return StackWalker.getInstance().walk(frames -> frames.anyMatch(frame
+                -> NESTED_LOOKUP_CLASS.equals(frame.getClassName())
+                && NESTED_LOOKUP_METHOD.equals(frame.getMethodName())));
+    }
+
+    /**
      * Tells whether a linkage error only means that a class file was found for a name that differs in case, so there
      * is no class by the name that was looked up.
      *
@@ -91,5 +200,20 @@ final class ExactNameClassLoader extends ClassLoader {
     static boolean isWrongName(LinkageError error) {
         String message = ExceptionReads.messageOf(error);
         return error instanceof NoClassDefFoundError && message != null && message.contains("(wrong name: ");
+    }
+
+    /**
+     * What the class loader throws, in place of a lookup, when MVEL's lookup of a nested class asks for a name with a
+     * {@code $} and too many dot-separated parts. The lookup gives up on the name after it, as after any exception
+     * that isn't a {@link ClassNotFoundException}, and each of its callers in MVEL catches it and reads the name as
+     * properties or as no import.
+     */
+    static final class NameTooLarge extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
+
+        NameTooLarge(String message) {
+            super(message);
+        }
     }
 }

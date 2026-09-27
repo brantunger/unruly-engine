@@ -265,6 +265,54 @@ class FactNamesTest {
     }
 
     /**
+     * A class loader that serves {@code classFile} as a resource and records every class it is asked to load, then
+     * finds none: what the rule list's class loader must not ask for a name too long to look up.
+     */
+    private static ClassLoader recordingLoads(URL found, String classFile, List<String> loads) {
+        return new ClassLoader(null) {
+            @Override
+            public URL getResource(String name) {
+                return name.equals(classFile) ? found : null;
+            }
+
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                loads.add(name);
+                throw new ClassNotFoundException(name);
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("a class file whose name has too many parts to look up isn't a class, and isn't loaded (#687)")
+    void nameWithTooManyPartsIsntAClass(@TempDir Path dir) throws IOException {
+        // A package of 81 parts, as a test can make one: the engine imports at most 64. With the fact's name, the
+        // class has 82.
+        String pkg = "p.".repeat(80) + "p";
+        List<String> loads = new ArrayList<>();
+        ClassLoader loader = recordingLoads(dir.toUri().toURL(), pkg.replace('.', '/') + "/Thing.class", loads);
+        FactNames names = new FactNames(new Imports(Set.of(pkg), Set.of(), loader));
+
+        assertDoesNotThrow(() -> names.check("Thing"), "the name reads as the fact, as MVEL's own lookup reads it");
+
+        assertEquals(List.of(), loads, "the class loader was asked for a name of 82 parts");
+    }
+
+    @Test
+    @DisplayName("in a native image a name too long to look up isn't a class, and isn't loaded (#687)")
+    void nameTooLongIsntAClassInImage() {
+        // A fact's name may have a '$': a name too long to look up is refused as a missing class, '$' or not.
+        List<String> loads = new ArrayList<>();
+        FactNames names = javaUtil(recordingLoads(null, "", loads));
+        String name = "x$".repeat(1_000);
+
+        withImageCode("runtime", () -> assertDoesNotThrow(() -> names.check(name),
+                "the name reads as the fact, as MVEL's own lookup reads it"));
+
+        assertEquals(List.of(), loads, "the class loader was asked for a name of 2,010 characters");
+    }
+
+    /**
      * Stands in for a native image's {@code MissingReflectionRegistrationError}, which is an {@link Error} but not a
      * {@link LinkageError}, so the catch that reads a name it can't load as the fact has to name {@code Error} to
      * hold it.
