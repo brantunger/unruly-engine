@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleEvaluation;
+import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
@@ -42,7 +43,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -295,11 +298,15 @@ public abstract class ExpressionLanguageContractTest {
      * </ul>
      *
      * <p>
-     * The two checks that need copies made when the rules load set {@code copiesAtLoad(2)} after this, so a
-     * {@code copiesAtLoad} set here doesn't change them. Listeners that don't change the output may be added: the
-     * engine only logs what a listener throws, unless it's a fatal {@link Error}, but {@code beforeExecute} and
-     * {@code afterExecute} are given the output the checks compare. {@code evaluateAgreesWithDetail} builds no engine,
-     * and compiles with {@link #compileContext()} instead: a language that overrides both keeps them consistent.
+     * The two checks that need copies made when the rules load set {@code copiesAtLoad(2)} after this, and the two
+     * that need a run to make its own copy, {@code sessionClosedWhileAnotherRuns} and
+     * {@code sessionClosedOnAnotherThread}, set {@code copiesAtLoad(0)}, so a {@code copiesAtLoad} set here doesn't
+     * change them. {@code sessionClosedWhileAnotherRuns} also sets {@code maxCopies(1)} after this, so that a run
+     * nested in another gets an extra copy, and a limit set here doesn't change it either. Listeners that don't
+     * change the output may be added: the engine only logs what a listener throws, unless it's a fatal
+     * {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks compare.
+     * {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead: a
+     * language that overrides both keeps them consistent.
      * </p>
      *
      * @param builder The builder of an engine a check is about to build
@@ -440,8 +447,20 @@ public abstract class ExpressionLanguageContractTest {
      * @param actual   The output the engine returned
      */
     private static void assertSameOutput(@Nullable Object expected, @Nullable Object actual) {
+        assertSameOutput(expected, actual, "");
+    }
+
+    /**
+     * Asserts that a run's output is what was expected, as {@link #assertSameOutput(Object, Object)} does, for a check
+     * with more than one run, whose failure says which run it was.
+     *
+     * @param expected The expected output
+     * @param actual   The output the engine returned
+     * @param run      The run that returned it, which the failure's message starts with; empty for none
+     */
+    private static void assertSameOutput(@Nullable Object expected, @Nullable Object actual, String run) {
         if (!sameValue(expected, actual)) {
-            fail("expected: <" + expected + "> but was: <" + actual + ">");
+            fail((run.isEmpty() ? "" : run + " ==> ") + "expected: <" + expected + "> but was: <" + actual + ">");
         }
     }
 
@@ -928,22 +947,135 @@ public abstract class ExpressionLanguageContractTest {
         // Two copies when the rules load. A language that keeps state gets newSession() called twice, once for each
         // copy, and each session warmed up; one that returns Session.none() is asked once, and its copy is shared.
         // Closed however the check ends, so a failed run still closes the sessions.
-        try {
-            closing(builder(sessions.watching(language())).copiesAtLoad(2).build(), engine -> {
-                engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-                assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
-            });
-        } catch (Throwable e) {
-            // The engine is closed by now. The run's failure stays the one reported, with what closing the sessions
-            // threw attached to it.
-            sessions.suppressCloseFailures(e);
-            throw e;
-        }
+        sessions.closing(builder(sessions.watching(language())).copiesAtLoad(2).build(), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+            assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
+        });
 
         // The engine closes every session itself, once, so what's left to check is the language's part: a session
         // returned to two copies is used by two runs at once and closed twice, and a close() that throws is only
         // logged at WARN, so nothing else would show either.
         sessions.assertNoneShared();
+        sessions.assertNoneThrewOnClose();
+    }
+
+    /**
+     * Closes a session while another session of the same compiler is in use, as the engine does when a run nested in
+     * another ends: the engine keeps one copy of the rules, which the outer run holds, so the nested run gets an extra
+     * copy, whose sessions are closed as soon as it ends. The outer run must then finish as if nothing had been
+     * closed, so a {@code close()} that tears down what the compiler's sessions share, such as the runtime they all
+     * run in, fails the check, and so does one that throws while another session is in use, which the engine only
+     * logs at WARN. A language that returns {@link Session#none()} has no session to close, and passes.
+     */
+    @Test
+    @DisplayName("a session closed while another session of its compiler is in use leaves that one working")
+    void sessionClosedWhileAnotherRuns() throws Exception {
+        SessionWatch sessions = new SessionWatch();
+        AtomicReference<RulesEngine<Map<String, Object>>> built = new AtomicReference<>();
+        AtomicBoolean nested = new AtomicBoolean();
+        AtomicReference<@Nullable Object> nestedOutput = new AtomicReference<>();
+        AtomicReference<@Nullable RuntimeException> nestedFailure = new AtomicReference<>();
+        // One copy kept and none made when the rules load, set after configure() so it can't change them: the outer
+        // run makes the only copy, so the run nested in it gets an extra one.
+        RulesEngineBuilder<Map<String, Object>> builder = builder(sessions.watching(language())).maxCopies(1)
+                .copiesAtLoad(0).listener(new RuleListener() {
+                    @Override
+                    public void afterEvaluate(Rule rule, Map<String, @Nullable Object> facts, boolean matched) {
+                        // Once, since the nested run evaluates the rule too. The engine only logs what a listener
+                        // throws, so what the nested run returns or throws is kept for the check.
+                        if ("a".equals(rule.getRuleName()) && nested.compareAndSet(false, true)) {
+                            try {
+                                nestedOutput.set(built.get().run(new FactMap<>(new Fact<>("x", 1))));
+                            } catch (RuntimeException e) {
+                                nestedFailure.set(e);
+                            }
+                        }
+                    }
+                });
+        sessions.closing(builder.build(), engine -> {
+            built.set(engine);
+            engine.load(List.of(rule("a", 2, factEquals("x", 1), putFact("a", "x")),
+                    rule("b", 1, factEquals("x", 1), putFact("b", "x"))));
+
+            // The nested run ends after rule a is evaluated, and before rule b is.
+            Map<String, Object> output;
+            try {
+                output = engine.run(new FactMap<>(new Fact<>("x", 1)));
+            } catch (RuleExecutionException e) {
+                throw outerRunFailed(e, nested.get(), nestedFailure.get());
+            }
+            int closedDuringRun = sessions.closed();
+            assertTrue(nested.get(), "the listener didn't start a run nested in the check's run");
+            RuntimeException failure = nestedFailure.get();
+            if (failure instanceof RuleExecutionException e) {
+                throw new AssertionFailedError("the run nested in the check's run failed: " + e.getMessage(), e);
+            } else if (failure != null) {
+                throw failure;
+            }
+            assertSameOutput(Map.of("a", 1, "b", 1), nestedOutput.get(), "the run nested in the check's run");
+            assertSameOutput(Map.of("a", 1, "b", 1), output, "the check's run");
+            // What the check is there for: a language with sessions of its own had one closed while the check's run
+            // held another.
+            if (sessions.anyReturned() && closedDuringRun == 0) {
+                fail("the engine closed no session while the check's run was in progress, so no session was closed"
+                        + " while another was in use");
+            }
+        });
+
+        // A close() that throws is only logged at WARN, so nothing else would show it.
+        sessions.assertNoneThrewOnClose();
+    }
+
+    /**
+     * Describes a failed run of {@code sessionClosedWhileAnotherRuns} by what happened in it: the nested run's
+     * session is blamed only when the nested run started and ended as it should.
+     *
+     * @param failure       What the run threw
+     * @param nested        Whether the run nested in it started
+     * @param nestedFailure What the nested run threw, attached to the check's failure, or {@code null}
+     * @return The check's failure, with the engine's message: the exception's class is the engine's internal one
+     */
+    private static AssertionFailedError outerRunFailed(RuleExecutionException failure, boolean nested,
+                                                       @Nullable RuntimeException nestedFailure) {
+        if (!nested) {
+            return new AssertionFailedError("the run failed before a run could be nested in it: "
+                    + failure.getMessage(), failure);
+        }
+        if (nestedFailure != null) {
+            AssertionFailedError both = new AssertionFailedError("the run failed, and so did the run nested in it,"
+                    + " which is attached: " + failure.getMessage(), failure);
+            both.addSuppressed(nestedFailure);
+            return both;
+        }
+        return new AssertionFailedError("the run failed after a run nested in it ended and its session was closed, so"
+                + " a session's close(), or the nested run's session, broke what its compiler's other sessions share: "
+                + failure.getMessage(), failure);
+    }
+
+    /**
+     * Makes a session on one thread and closes it on another, as the engine does with the sessions of a copy of the
+     * rules a run made: the run's thread makes them, and {@code close()}, or a {@code load()} that replaces the rules,
+     * closes them on the thread that calls it. A {@code close()} that throws there, as one whose runtime is bound to
+     * the thread that made it may, fails the check, since the engine only logs it at WARN. A language that returns
+     * {@link Session#none()} has no session to close, and passes.
+     */
+    @Test
+    @DisplayName("a session made on one thread closes without throwing on another")
+    void sessionClosedOnAnotherThread() throws Exception {
+        SessionWatch sessions = new SessionWatch();
+        // No copy made when the rules load, set after configure() so it can't change it: the run makes the one copy,
+        // on the worker, and closing the engine closes its sessions, on this thread.
+        sessions.closing(builder(sessions.watching(language())).copiesAtLoad(0).build(), engine -> {
+            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+            ExecutorService worker = Executors.newSingleThreadExecutor();
+            try {
+                Future<Map<String, Object>> run = worker.submit(() -> engine.run(new FactMap<>(new Fact<>("x", 1))));
+                assertSameOutput(Map.of(SEEN, 1), run.get(30, TimeUnit.SECONDS));
+            } finally {
+                stop(worker);
+            }
+        });
+
         sessions.assertNoneThrewOnClose();
     }
 
@@ -1000,9 +1132,12 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Watches the sessions a language returns: whether it returns one instance twice, and whether closing one throws.
-     * Each session the engine gets is wrapped, so its close can be seen, and the language is handed back its own
-     * session, unwrapped, wherever the engine passes one.
+     * Watches the sessions a language returns: whether it returns one instance twice, whether closing one throws,
+     * how many have been closed so far ({@code closed()}), and whether the language returned any session of its own,
+     * rather than {@link Session#none()} ({@code anyReturned()}). Each session the engine gets is wrapped, so its
+     * close can be seen, and the language is handed back its own session, unwrapped, wherever the engine passes one.
+     * {@code closing()} runs a check with an engine built with {@link #watching}, and attaches what closing the
+     * sessions threw to the check's failure.
      */
     private static final class SessionWatch {
 
@@ -1011,6 +1146,33 @@ public abstract class ExpressionLanguageContractTest {
                 Collections.newSetFromMap(new IdentityHashMap<>()));
         private final List<Session> shared = new CopyOnWriteArrayList<>();
         private final List<Throwable> closeFailures = new CopyOnWriteArrayList<>();
+        private final AtomicInteger closes = new AtomicInteger();
+
+        /**
+         * Runs a check with an engine built with {@link #watching}, and closes it, however the check ends, as
+         * {@code closing} does.
+         */
+        void closing(RulesEngine<Map<String, Object>> engine, ResourceCheck<RulesEngine<Map<String, Object>>> check)
+                throws Exception {
+            try {
+                ExpressionLanguageContractTest.closing(engine, check);
+            } catch (Throwable e) {
+                // The engine is closed by now. The check's failure stays the one reported, with what closing the
+                // sessions threw attached to it.
+                suppressAll(e, closeFailures);
+                throw e;
+            }
+        }
+
+        /** Whether the language returned a session of its own, rather than {@link Session#none()}. */
+        boolean anyReturned() {
+            return !returned.isEmpty();
+        }
+
+        /** How many times a session's close() has been called so far, whether it threw or not. */
+        int closed() {
+            return closes.get();
+        }
 
         void assertNoneShared() {
             if (!shared.isEmpty()) {
@@ -1024,10 +1186,6 @@ public abstract class ExpressionLanguageContractTest {
                 fail("a session's close() threw " + describe(closeFailures.get(0))
                         + ", which the engine only logs at WARN");
             }
-        }
-
-        void suppressCloseFailures(Throwable runFailure) {
-            suppressAll(runFailure, closeFailures);
         }
 
         void assertNotASession(@Nullable Object detail) {
@@ -1131,6 +1289,7 @@ public abstract class ExpressionLanguageContractTest {
             // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception or Error.
             @Override
             public void close() {
+                closes.incrementAndGet();
                 try {
                     session.close();
                 } catch (Throwable e) {
@@ -1155,8 +1314,9 @@ public abstract class ExpressionLanguageContractTest {
      *
      * <p>
      * An exception or an {@link Error} from closing the session or the compiler doesn't fail this check, unless it's
-     * a fatal one: the engine only logs the rest, and {@code sessionsClosed} is the check that fails a session whose
-     * {@code close()} throws, and {@code compilerClosed} the one that fails a compiler whose {@code close()} throws.
+     * a fatal one: the engine only logs the rest, and {@code sessionsClosed}, {@code sessionClosedWhileAnotherRuns}
+     * and {@code sessionClosedOnAnotherThread} are the checks that fail a session whose {@code close()} throws, and
+     * {@code compilerClosed} the one that fails a compiler whose {@code close()} throws.
      * </p>
      */
     @Test
