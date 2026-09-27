@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.8.9](https://github.com/brantunger/unruly-engine/compare/v2.8.8...v2.8.9) (2026-09-27)
+
+
+### Bug Fixes
+
+* drop MVEL's own JUL warning that logs a fact value raw while an engine rule runs ([#740](https://github.com/brantunger/unruly-engine/issues/740)) ([db59af8](https://github.com/brantunger/unruly-engine/commit/db59af89b9cac8bf020281db887a226d238af14f))
+
 ## [2.8.8](https://github.com/brantunger/unruly-engine/compare/v2.8.7...v2.8.8) (2026-09-27)
 
 
