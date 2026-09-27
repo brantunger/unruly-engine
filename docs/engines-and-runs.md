@@ -343,8 +343,8 @@ When an engine that already has rules is loaded again:
   ones, never a mix.
 - **A failed load changes nothing.** If a rule fails, `load()` throws a `RuleCompilationException`; the old rules,
   their checksum and their `loadedAt()` stay, and runs keep using them.
-- **A fatal error can follow a swap:** see [A fatal error while closing](thread-safety.md#a-fatal-error-while-closing);
-  the new rules stay loaded.
+- **A fatal error can follow a swap:** see
+  [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing); the new rules stay loaded.
 - **A run in progress finishes with the rules it started with,** so its `ruleSetChecksum()` can differ from
   `rules().checksum()` read after it returns.
 - **Only the rules change.** The match policy, the output supplier and every other builder setting are fixed at

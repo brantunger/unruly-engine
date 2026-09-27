@@ -96,7 +96,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Object lifecycle = new Object();
     // How many compiled copies of the rules runs hold at once, and which runs that applies to.
     private final CopyLimit copyLimit;
-    // The permits for copyLimit, which every rule list this engine loads shares, so a reload can't raise the limit.
+    // The permits for copyLimit, which every rule list this engine loads shares, so a reload can't raise the limit on
+    // runs holding copies.
     private final CopyPermits copyPermits;
     // How long a run waits without one copy being given back before it makes an extra one. Only a test changes it,
     // with stallWindow(long).
@@ -873,8 +874,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Closes the engine. The rule list is closed once no run is using it: a run holding a copy finishes, and so does
      * one waiting for a copy, because {@link RuleSet#borrow(Instant)} counts the run before it waits, and a rule list
-     * with a run counted on it can't close. Their sessions are closed as each one returns, and the languages'
-     * compilers after the last one. Afterwards, {@code run()} and {@link #load(List)} throw
+     * with a run counted on it can't close. Their sessions are closed as each one returns, unless a run still waiting
+     * for a copy of the same rules is there to take them: then the last run to leave closes the copies it kept, and
+     * the languages' compilers after them. Afterwards, {@code run()} and {@link #load(List)} throw
      * {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a copy
      * when this method closed them, because it reads them again and finds a closed engine. A {@code load()} that
      * found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on an
@@ -886,7 +888,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once every idle copy,
      * and the compilers if no run holds a copy, has been closed: the first, if there are several. The engine is closed
      * all the same, so closing it again does nothing. A copy a run still holds is closed when the run gives it back,
-     * and a fatal error from that reaches the run.
+     * or, when it's kept for a run still waiting for a copy, by the last run to leave, and a fatal error from that
+     * reaches the run that closes it.
      * </p>
      */
     // A closed engine has no rule set.

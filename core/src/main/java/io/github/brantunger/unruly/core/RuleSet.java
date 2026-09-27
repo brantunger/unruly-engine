@@ -62,7 +62,8 @@ import java.util.function.LongSupplier;
  * Either gets an extra copy, whose sessions are closed when it's given back, so the limit is a limit on runs that
  * can make progress rather than a hard ceiling. The engine's rule sets share one set of {@link CopyPermits}, so while a
  * reload replaces one rule set with another, runs still using the old one count against the same limit as runs on
- * the new one.
+ * the new one. The idle copies the old one keeps for its runs still waiting, described below, hold no permit, so for a
+ * short time they come on top of the limit: no more than the limit's worth, and only until its last run leaves.
  * </p>
  *
  * <p>
@@ -72,9 +73,15 @@ import java.util.function.LongSupplier;
  *
  * <p>
  * Once {@link #retire()} is called, because a reload replaced the rule list or the engine was closed, idle copies are
- * closed at once, and a copy given back is closed instead of kept. When no run holds a copy any more, the rule set
- * closes the compilers, and then lends no more copies. A fatal {@link Error} from closing one copy doesn't stop the
- * others being closed, nor the compilers after them: the first is returned for the caller to throw once they have.
+ * closed at once, and a copy given back is closed instead of kept, unless a run of this rule list is still waiting for
+ * a permit or a build slot: it's kept for that run then, so the runs that were waiting when the rule list was replaced
+ * take the copies given back rather than each making one of its own. That isn't exact: a copy given back just as a run
+ * starts or stops waiting may be closed when a run could have used it, or kept when none can, which costs a copy and
+ * leaves none open; and no waiting run saves the copies that were idle when the rule list was retired, which are
+ * closed then. When no run holds a copy any more, the rule set closes the copies still idle and then the compilers,
+ * and then lends no more copies; a fatal {@link Error} from that reaches the last run to leave. A fatal
+ * {@link Error} from closing one copy doesn't stop the others being closed, nor the compilers after them: the first is
+ * returned for the caller to throw once they have.
  * </p>
  */
 final class RuleSet {
@@ -109,13 +116,20 @@ final class RuleSet {
     private final AtomicBoolean warnedAboutOverflow = new AtomicBoolean();
     // The sessions every run shares, once a copy has shown that no language keeps state between runs.
     private volatile Map<String, Session> sharedSessions;
-    // How many copies runs hold, or CLOSED.
+    // How many runs hold a copy or are getting one, or CLOSED.
     private final AtomicInteger users = new AtomicInteger();
+    // How many runs are waiting for a permit or a build slot, each until it stops waiting: once it has looked for an
+    // idle copy, or when it gives up, is interrupted or passes its deadline. A retired rule set keeps a copy given
+    // back for them rather than closing it and leaving them to make another.
+    private final AtomicInteger waiting = new AtomicInteger();
     private volatile boolean retired;
 
     /** What {@link #release(Copy)} does with a copy when the run that borrowed it gives it back. */
     enum Kind {
-        /** Kept for a later run, unless the rule set has been retired or the idle queue can't take it. */
+        /**
+         * Kept for a later run, unless the rule set has been retired and no run of it is waiting for a copy, or the
+         * idle queue can't take it.
+         */
         KEPT,
         /** An extra copy made above the limit: its sessions are closed. */
         EXTRA,
@@ -270,6 +284,17 @@ final class RuleSet {
     }
 
     /**
+     * Returns how many runs are waiting for a permit or a build slot. It is a deliberate test seam: a test reads it to
+     * know that its runs are waiting before it retires the rule set, which nothing but a test needs.
+     *
+     * @return The number of runs waiting, each counted until it stops waiting: once it has looked for an idle copy,
+     *         or when it gives up, is interrupted or passes its deadline
+     */
+    int waiters() {
+        return waiting.get();
+    }
+
+    /**
      * Takes a copy of the rules that no other run is using, making a new one if necessary. With a limit, waits for a
      * copy when all of them are in use, unless the current thread already holds one: then an extra copy that isn't
      * kept is made instead. So is a run started on the same thread while another run is getting its copy, as a
@@ -414,8 +439,9 @@ final class RuleSet {
 
     /**
      * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
-     * is retired, or the idle queue can't take it; any other copy's sessions are closed. The last copy given back to a
-     * retired rule set closes its compilers too.
+     * is retired and no run of it is waiting for a copy, or the idle queue can't take it; any other copy's sessions are
+     * closed. The last copy given back to a retired rule set closes the copies kept for runs that were waiting, if
+     * none of them took them, and its compilers too.
      *
      * @param borrowed The copy, which the caller must no longer use
      * @return The first fatal {@link Error} keeping the copy, or closing its sessions or the compilers, threw, for the
@@ -443,13 +469,15 @@ final class RuleSet {
         return fatal;
     }
 
-    // Keeps a copy given back for a later run, or closes its sessions if the rule set is retired, returning the first
-    // fatal Error from closing them. A copy the idle queue can't take, as when it can't allocate room for it, is closed
-    // too, rather than lost with its sessions open, and what the queue threw is logged at WARN, and returned first if
-    // it's fatal.
+    // Keeps a copy given back for a later run, or closes its sessions if the rule set is retired and no run of it is
+    // waiting for a copy, returning the first fatal Error from closing them. A copy kept for a run that is waiting is
+    // never left open: the run giving it back is counted until it leaves, after this, so if no run takes it, the last
+    // run to leave closes it, even one that stopped waiting. A copy the idle queue can't take, as when it can't
+    // allocate room for it, is closed too, rather than lost with its sessions open, and what the queue threw is logged
+    // at WARN, and returned first if it's fatal.
     // Any Throwable: the sessions must be closed however keeping them fails, and the run must still leave.
     private Error keep(Map<String, Session> sessions) {
-        if (retired) {
+        if (retired && waiting.get() == 0) {
             return Closing.sessions(sessions);
         }
         try {
@@ -493,9 +521,9 @@ final class RuleSet {
 
     /**
      * Retires the rule set, which runs no longer start with: closes the idle copies, and the compilers too if no run
-     * holds a copy. Otherwise, the compilers are closed when the last copy is given back. Calling it again does
-     * nothing more. A fatal {@link Error} from closing one copy doesn't stop the others being closed, nor the
-     * compilers after them.
+     * holds a copy. Otherwise, a copy given back is kept only while a run of the rule set is waiting for one, and the
+     * last run to leave closes the copies still idle and then the compilers. Calling it again does nothing more. A
+     * fatal {@link Error} from closing one copy doesn't stop the others being closed, nor the compilers after them.
      *
      * @return The first fatal {@link Error} closing threw, for the caller to throw, or {@code null} if none did
      */
@@ -520,17 +548,40 @@ final class RuleSet {
             // A thread pool's size bounds the copies its runs make, and virtual threads have nothing but the build
             // slots. A nested run never waits for one: its own thread may hold the slot it would wait for.
             return copyLimit.limits() || !Thread.currentThread().isVirtual() || nested
-                    ? keptCopy(Held.NOTHING) : slottedCopy(deadline);
+                    ? keptCopy(Held.NOTHING, null) : slottedCopy(deadline);
         }
-        // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
-        if (nested ? !permits.available().tryAcquire()
-                : !awaitPermit(permits.available(), permits::returned, stallWindow, deadline)) {
-            // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of
-            // these rules has learned whether they need copies at all. An extra copy can learn it too, and then
-            // nothing overflowed.
-            return copy(newSessions(), Kind.EXTRA, Held.NOTHING, !nested);
+        // A run that finds a permit free doesn't wait, so it isn't counted as waiting.
+        if (permits.available().tryAcquire()) {
+            return keptCopy(Held.PERMIT, null);
         }
-        return keptCopy(Held.PERMIT);
+        // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of these
+        // rules has learned whether they need copies at all. An extra copy can learn it too, and then nothing
+        // overflowed.
+        if (nested) {
+            // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
+            return copy(newSessions(), Kind.EXTRA, Held.NOTHING, false);
+        }
+        // Counted while it waits, and until it has looked for an idle copy, so a copy given back meanwhile is kept for
+        // it, even once the rule set is retired; uncounted before it makes a copy of its own, so that copies given back
+        // while it makes one aren't kept for it. Uncounted once however the wait ends, and the permit given back if
+        // looking fails, so a failure leaves neither behind.
+        boolean permit = false;
+        boolean looked = false;
+        Map<String, Session> found = null;
+        waiting.incrementAndGet();
+        try {
+            permit = awaitPermit(permits.available(), permits::returned, stallWindow, deadline);
+            if (permit) {
+                found = idle.poll();
+            }
+            looked = true;
+        } finally {
+            waiting.decrementAndGet();
+            if (permit && !looked) {
+                giveBack(Held.PERMIT);
+            }
+        }
+        return permit ? keptCopy(Held.PERMIT, found) : copy(newSessions(), Kind.EXTRA, Held.NOTHING, true);
     }
 
     /**
@@ -538,8 +589,9 @@ final class RuleSet {
      * waits for a build slot, and holds it while it runs its new copy for the first time, which is when a language
      * such as MVEL compiles the expressions and loads classes. So at most one new copy for each slot is in its first
      * run at once, apart from those of runs that gave up waiting. A run that gets a slot looks for an idle copy again
-     * first, so copies given back while it waited are used before a new one is made. A copy given back without a slot
-     * doesn't wake a waiting run: runs arriving meanwhile take it.
+     * first, so copies given back while it waited are used before a new one is made: a retired rule set keeps those
+     * given back after it was retired for it, though not those it closed as it was retired. A copy given back without
+     * a slot doesn't wake a waiting run: runs arriving meanwhile take it.
      *
      * @param deadline When the run must stop, or {@code null} if it has none
      * @return The copy
@@ -549,9 +601,16 @@ final class RuleSet {
         Map<String, Session> sessions = idle.poll();
         if (sessions == null) {
             // A run that gives up waiting still makes its copy: an engine without a limit never fails a run for want
-            // of one.
-            Held held = permits.awaitSlot(stallWindow, deadline) ? Held.SLOT : Held.NOTHING;
-            sessions = idle.poll();
+            // of one. Counted until it has looked for a copy again, so a copy given back while it waited is kept for
+            // it, even once the rule set is retired.
+            Held held;
+            waiting.incrementAndGet();
+            try {
+                held = permits.awaitSlot(stallWindow, deadline) ? Held.SLOT : Held.NOTHING;
+                sessions = idle.poll();
+            } finally {
+                waiting.decrementAndGet();
+            }
             if (sessions == null) {
                 boolean made = false;
                 try {
@@ -620,14 +679,15 @@ final class RuleSet {
     /**
      * Takes an idle copy, or makes one, that the run keeps until it gives it back.
      *
-     * @param held What the run took for this copy, given back if no copy can be made
+     * @param held  What the run took for this copy, given back if no copy can be made
+     * @param found An idle copy the run has already taken, or {@code null} to look for one now
      * @return The copy
      */
-    private Copy keptCopy(Held held) {
+    private Copy keptCopy(Held held, Map<String, Session> found) {
         Map<String, Session> sessions;
         boolean taken = false;
         try {
-            sessions = take();
+            sessions = found != null ? found : take();
             taken = true;
         } finally {
             if (!taken) {

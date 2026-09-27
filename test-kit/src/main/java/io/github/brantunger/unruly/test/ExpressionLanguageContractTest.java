@@ -769,7 +769,8 @@ public abstract class ExpressionLanguageContractTest {
      * Stops a check's workers before its engine is closed: interrupts them, which also stops workers that a broken
      * language leaves running, and waits a while for them to end, so that none still holds a copy of the rules when
      * the engine closes it. On a thread that is already interrupted, the wait is skipped and the thread stays
-     * interrupted; a copy a worker gives back later is closed then, by the closed engine.
+     * interrupted; a copy a worker gives back later is closed by the closed engine, then or when the last worker
+     * leaves.
      *
      * @param workers The workers
      */

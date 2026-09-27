@@ -16,18 +16,25 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.time.Instant;
+import java.util.AbstractQueue;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -112,6 +119,94 @@ class RuleSetTest {
                 return new RecordingSession(counter.incrementAndGet(), closed);
             }
         };
+    }
+
+    /**
+     * A compiler whose sessions record when they're closed, as {@link #recordingCompiler}'s do, and which records its
+     * own close as {@code 0}, after them.
+     */
+    private static ExpressionCompiler closingCompiler(AtomicInteger counter, List<Integer> closed) {
+        ExpressionCompiler sessions = recordingCompiler(counter, closed);
+        return new ExpressionCompiler() {
+            @Override
+            public CompiledCondition compileCondition(Expression expression) {
+                return sessions.compileCondition(expression);
+            }
+
+            @Override
+            public CompiledAction compileAction(Expression expression) {
+                return sessions.compileAction(expression);
+            }
+
+            @Override
+            public Session newSession() {
+                return sessions.newSession();
+            }
+
+            @Override
+            public void close() {
+                closed.add(0);
+            }
+        };
+    }
+
+    /**
+     * Asserts that each of the {@code made} copies, numbered from 1, was closed once, in any order, and the compiler
+     * after them.
+     */
+    private static void assertEachCopyClosedOnceThenTheCompiler(int made, List<Integer> closed) {
+        List<Integer> expected = new ArrayList<>(IntStream.rangeClosed(1, made).boxed().toList());
+        expected.add(0);
+        List<Integer> sorted = new ArrayList<>(closed.subList(0, Math.max(0, closed.size() - 1)).stream().sorted()
+                .toList());
+        sorted.addAll(closed.subList(Math.max(0, closed.size() - 1), closed.size()));
+        assertEquals(expected, sorted, "each copy closed once, then the compiler: " + closed);
+    }
+
+    /**
+     * An idle queue that runs {@code hook} each time a copy is added to it, before adding it, so a test can act while
+     * the run giving the copy back still holds its permit. A retired rule set adds a copy only when it keeps it, so the
+     * hook running tells the test that it did. The hook must not throw: the rule set would close the copy and log it.
+     * With {@code pollFailure} set, the next look for an idle copy throws it, once.
+     */
+    private static final class HookedQueue extends AbstractQueue<Map<String, Session>> {
+        final AtomicReference<Error> pollFailure = new AtomicReference<>();
+        private final Queue<Map<String, Session>> copies = new ConcurrentLinkedQueue<>();
+        private final Runnable hook;
+
+        HookedQueue(Runnable hook) {
+            this.hook = hook;
+        }
+
+        @Override
+        public boolean offer(Map<String, Session> sessions) {
+            hook.run();
+            return copies.offer(sessions);
+        }
+
+        @Override
+        public Map<String, Session> poll() {
+            Error failure = pollFailure.getAndSet(null);
+            if (failure != null) {
+                throw failure;
+            }
+            return copies.poll();
+        }
+
+        @Override
+        public Map<String, Session> peek() {
+            return copies.peek();
+        }
+
+        @Override
+        public Iterator<Map<String, Session>> iterator() {
+            return copies.iterator();
+        }
+
+        @Override
+        public int size() {
+            return copies.size();
+        }
     }
 
     /**
@@ -259,6 +354,15 @@ class RuleSetTest {
             }
         });
         return new VirtualRun(thread, borrowed, askedBack, held, failure);
+    }
+
+    /** Waits until {@code count} runs are waiting for a permit or a build slot of {@code rules}. */
+    private static void awaitWaiters(RuleSet rules, int count) throws InterruptedException {
+        long giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (rules.waiters() != count) {
+            assertTrue(System.nanoTime() < giveUp, rules.waiters() + " of the " + count + " runs started waiting");
+            Thread.sleep(2);
+        }
     }
 
     /** Waits until {@code thread} is parked with a timeout, which is how a run waiting for a build slot waits. */
@@ -724,6 +828,334 @@ class RuleSetTest {
         assertEquals(List.of(1), closed, "the copy given back was closed at once, not when the last run left");
         second.giveBack();
         assertEquals(List.of(1, 2), closed, "and the last copy when its own run gave it back");
+    }
+
+    @Test
+    @DisplayName("runs waiting for a permit when the rule set is retired take the copies given back, so they make none,"
+            + " and each copy is closed once, before the compilers, when the last run leaves")
+    void waitingRunsShareTheCopiesOfARetiredRuleSet() throws InterruptedException {
+        int limit = 2;
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        // A window far longer than the test, so a run that waits never gives up and makes an extra copy.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.of(limit),
+                new CopyPermits(limit), TimeUnit.MINUTES.toMillis(5));
+        List<Holder> holders = new ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            holders.add(holdOneCopy(rules));
+        }
+        // More runs waiting than there are copies, each giving its copy back as soon as it has it, so the runs that
+        // take a copy late take one another run gave back.
+        List<VirtualRun> waiting = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            VirtualRun run = startVirtualRun(rules);
+            run.askedBack().countDown();
+            waiting.add(run);
+        }
+        awaitWaiters(rules, waiting.size());
+
+        assertNull(rules.retire());
+        assertEquals(List.of(), closed, "no copy was idle, and none has been given back");
+        for (Holder holder : holders) {
+            holder.giveBack();
+        }
+        for (VirtualRun run : waiting) {
+            assertEquals(RuleSet.Held.PERMIT, run.copy().held(), "the run took a kept copy with a permit");
+            run.giveBack();
+        }
+
+        assertEquals(limit, made.get(), "the runs that waited made no copy of their own");
+        assertEachCopyClosedOnceThenTheCompiler(limit, closed);
+        assertEquals(0, rules.waiters(), "no run is still counted as waiting");
+    }
+
+    @Test
+    @DisplayName("copies a retired rule set kept for runs that then stopped waiting are each closed once, before the"
+            + " compilers, by the last run to leave")
+    void copiesKeptForRunsThatStoppedAreClosedOnce() throws InterruptedException {
+        int limit = 2;
+        int waiting = 3;
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        CountDownLatch bothKept = new CountDownLatch(limit);
+        CountDownLatch allStopped = new CountDownLatch(waiting);
+        AtomicBoolean stopping = new AtomicBoolean();
+        List<Thread> waiters = new CopyOnWriteArrayList<>();
+        AtomicReference<Throwable> hookFailure = new AtomicReference<>();
+        // Each copy given back waits, while its run still holds the permit, until both are being kept; then the runs
+        // waiting are interrupted, once, and each copy waits until all of them have stopped, so that none can take
+        // one. Never throws: the rule set would close the copy instead of keeping it.
+        HookedQueue idle = new HookedQueue(() -> {
+            try {
+                bothKept.countDown();
+                if (!bothKept.await(30, TimeUnit.SECONDS)) {
+                    hookFailure.set(new AssertionError("the copies were never both kept"));
+                    return;
+                }
+                if (stopping.compareAndSet(false, true)) {
+                    waiters.forEach(Thread::interrupt);
+                }
+                if (!allStopped.await(30, TimeUnit.SECONDS)) {
+                    hookFailure.set(new AssertionError("the runs waiting never stopped"));
+                }
+            } catch (InterruptedException e) {
+                hookFailure.set(e);
+            }
+        });
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.of(limit),
+                new CopyPermits(limit), TimeUnit.MINUTES.toMillis(5), idle);
+        List<Holder> holders = new ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            holders.add(holdOneCopy(rules));
+        }
+        CountDownLatch leave = new CountDownLatch(1);
+        List<Throwable> stops = new CopyOnWriteArrayList<>();
+        List<Error> left = new CopyOnWriteArrayList<>();
+        for (int i = 0; i < waiting; i++) {
+            // Left only once the copies have been given back, so the last of these runs to leave closes them. The
+            // interrupt status is cleared while the run waits to leave, and set again before it does, as the engine
+            // leaves with it set.
+            Thread waiter = Thread.ofPlatform().daemon().start(() -> {
+                try {
+                    rules.release(rules.borrow(deadline()));
+                    stops.add(new AssertionError("the run got a copy"));
+                } catch (InterruptedException | TimeoutException e) {
+                    stops.add(e);
+                    boolean interrupted = Thread.interrupted();
+                    allStopped.countDown();
+                    try {
+                        assertTrue(leave.await(30, TimeUnit.SECONDS), "the run was never let leave");
+                    } catch (InterruptedException | AssertionError failure) {
+                        stops.add(failure);
+                    }
+                    if (interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    left.add(rules.leaveAfterStop());
+                }
+            });
+            waiters.add(waiter);
+        }
+        awaitWaiters(rules, waiting);
+
+        assertNull(rules.retire());
+        holders.forEach(holder -> holder.askedBack().countDown());
+        for (Holder holder : holders) {
+            holder.giveBack();
+        }
+        assertNull(hookFailure.get(), "the copies were kept, and the runs stopped");
+        assertEquals(List.of(), closed, "both copies were kept for the runs waiting, and not closed as they came back");
+        leave.countDown();
+        for (Thread waiter : waiters) {
+            waiter.join(TimeUnit.SECONDS.toMillis(30));
+            assertFalse(waiter.isAlive(), "a run that stopped never left");
+        }
+
+        assertEquals(waiting, stops.stream().filter(InterruptedException.class::isInstance).count(), stops.toString());
+        assertEquals(waiting, left.size(), "every run that stopped left");
+        left.forEach(error -> assertNull(error, "no fatal Error from closing"));
+        assertEquals(limit, made.get(), "the copies held, and no more");
+        assertEachCopyClosedOnceThenTheCompiler(limit, closed);
+    }
+
+    /**
+     * A compiler like {@link #closingCompiler}, whose session number {@code held} waits, as it's made, until
+     * {@code letGo} is counted down, after counting down {@code making}, so a test can act while a run makes a copy.
+     */
+    private static ExpressionCompiler heldCompiler(AtomicInteger counter, List<Integer> closed, int held,
+                                                   CountDownLatch making, CountDownLatch letGo) {
+        ExpressionCompiler sessions = closingCompiler(counter, closed);
+        return new ExpressionCompiler() {
+            @Override
+            public CompiledCondition compileCondition(Expression expression) {
+                return sessions.compileCondition(expression);
+            }
+
+            @Override
+            public CompiledAction compileAction(Expression expression) {
+                return sessions.compileAction(expression);
+            }
+
+            @Override
+            public Session newSession() {
+                if (counter.get() == held - 1) {
+                    making.countDown();
+                    try {
+                        assertTrue(letGo.await(30, TimeUnit.SECONDS), "the copy being made was never let go");
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(e);
+                    }
+                }
+                return sessions.newSession();
+            }
+
+            @Override
+            public void close() {
+                sessions.close();
+            }
+        };
+    }
+
+    /**
+     * Borrows a copy of {@code rules} on a platform thread of its own and gives it back at once, recording the copy's
+     * kind and what the thread threw.
+     */
+    private static Thread borrowAndGiveBack(RuleSet rules, AtomicReference<RuleSet.Kind> kind,
+                                            AtomicReference<Throwable> failure) {
+        return Thread.ofPlatform().daemon().start(() -> {
+            try {
+                RuleSet.Copy copy = rules.borrow(deadline());
+                kind.set(copy.kind());
+                assertNull(rules.release(copy));
+            } catch (Exception | Error e) {
+                failure.set(e);
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("guard: a run that gave up waiting isn't counted as waiting while it makes its extra copy, so a"
+            + " retired rule set closes the copies given back meanwhile at once")
+    void aRunMakingAnExtraCopyIsntCountedAsWaiting() throws InterruptedException {
+        int limit = 2;
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        CountDownLatch making = new CountDownLatch(1);
+        CountDownLatch letGo = new CountDownLatch(1);
+        // A short window, which the run waits out, as nothing is given back until it has begun its extra copy.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", heldCompiler(made, closed, limit + 1, making, letGo)),
+                CopyLimit.of(limit), new CopyPermits(limit), 100);
+        List<Holder> holders = new ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            holders.add(holdOneCopy(rules));
+        }
+        assertNull(rules.retire());
+        AtomicReference<RuleSet.Kind> kind = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread run = borrowAndGiveBack(rules, kind, failure);
+        assertTrue(making.await(30, TimeUnit.SECONDS), "the run never began its extra copy");
+
+        int counted = rules.waiters();
+        for (Holder holder : holders) {
+            holder.giveBack();
+        }
+        List<Integer> closedAsGivenBack = List.copyOf(closed);
+        letGo.countDown();
+        run.join(TimeUnit.SECONDS.toMillis(30));
+
+        assertFalse(run.isAlive(), "the run never ended");
+        assertNull(failure.get(), "the run failed: " + failure.get());
+        assertEquals(RuleSet.Kind.EXTRA, kind.get(), "the run gave up waiting and made an extra copy");
+        assertEquals(0, counted, "the run making its copy was still counted as waiting");
+        assertEquals(List.of(1, 2), closedAsGivenBack.stream().sorted().toList(),
+                "the copies given back were closed at once, not kept for a run that no longer needed them");
+        assertEachCopyClosedOnceThenTheCompiler(limit + 1, closed);
+    }
+
+    @Test
+    @DisplayName("guard: a run that got a permit and found no idle copy isn't counted as waiting while it makes one, so"
+            + " a retired rule set closes a copy given back meanwhile at once")
+    void aRunMakingAKeptCopyIsntCountedAsWaiting() throws InterruptedException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        CountDownLatch making = new CountDownLatch(1);
+        CountDownLatch letGo = new CountDownLatch(1);
+        // Two permits, one held by a run of another rule set sharing them, as the rules a reload loaded would. It is
+        // given back while the run waits, so the run gets a permit with no idle copy to take. The window is far
+        // longer than the test, so the run never gives up.
+        CopyPermits permits = new CopyPermits(2);
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", heldCompiler(made, closed, 2, making, letGo)),
+                CopyLimit.of(2), permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet next = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(2),
+                permits, TimeUnit.MINUTES.toMillis(5));
+        Holder holder = holdOneCopy(rules);
+        Holder other = holdOneCopy(next);
+        AtomicReference<RuleSet.Kind> kind = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread run = borrowAndGiveBack(rules, kind, failure);
+        awaitWaiters(rules, 1);
+        assertNull(rules.retire());
+        other.giveBack();
+        assertTrue(making.await(30, TimeUnit.SECONDS), "the run never began its copy");
+
+        int counted = rules.waiters();
+        holder.giveBack();
+        List<Integer> closedAsGivenBack = List.copyOf(closed);
+        letGo.countDown();
+        run.join(TimeUnit.SECONDS.toMillis(30));
+
+        assertFalse(run.isAlive(), "the run never ended");
+        assertNull(failure.get(), "the run failed: " + failure.get());
+        assertEquals(RuleSet.Kind.KEPT, kind.get(), "the run made a kept copy with the permit it got");
+        assertEquals(0, counted, "the run making its copy was still counted as waiting");
+        assertEquals(List.of(1), closedAsGivenBack, "the copy given back was closed at once, not kept for a run that no"
+                + " longer needed it");
+        assertEachCopyClosedOnceThenTheCompiler(2, closed);
+    }
+
+    @Test
+    @DisplayName("guard: a run whose look for an idle copy fails once it has waited for its permit is no longer counted"
+            + " as waiting, and gives the permit back")
+    void aRunThatFailsToLookAfterItsWaitLeavesNothingBehind() throws InterruptedException {
+        StackOverflowError failure = new StackOverflowError("looking for an idle copy");
+        HookedQueue idle = new HookedQueue(() -> {
+        });
+        // A window far longer than the test, so the run waits for the copy held rather than giving up.
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet rules = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1),
+                permits, TimeUnit.MINUTES.toMillis(5), idle);
+        Holder holder = holdOneCopy(rules);
+        // Only a run that has waited looks now: giving the held copy back adds it without looking.
+        idle.pollFailure.set(failure);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        Thread run = Thread.ofPlatform().daemon().start(() -> {
+            try {
+                rules.release(rules.borrow(deadline()));
+            } catch (Exception | Error e) {
+                thrown.set(e);
+            }
+        });
+        awaitWaiters(rules, 1);
+
+        holder.giveBack();
+        run.join(TimeUnit.SECONDS.toMillis(30));
+
+        assertFalse(run.isAlive(), "the run never ended");
+        assertSame(failure, thrown.get(), "the run failed with what looking threw");
+        assertEquals(0, rules.waiters(), "the run is no longer counted as waiting");
+        assertEquals(1, permits.available().availablePermits(), "the permit the run took was given back");
+    }
+
+    @Test
+    @DisplayName("a run waiting for a build slot when the rule set is retired takes the copy given back, rather than"
+            + " making one of its own")
+    void aRunWaitingForASlotTakesTheCopyOfARetiredRuleSet() throws InterruptedException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        // One build slot, held by the first run while its new copy runs, so the second run waits for it. The window is
+        // far longer than the test, so the run that waits never gives up and makes a copy without a slot.
+        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.none(),
+                permits, TimeUnit.MINUTES.toMillis(5));
+        VirtualRun holder = startVirtualRun(rules);
+        assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
+        VirtualRun waiter = startVirtualRun(rules);
+        waiter.askedBack().countDown();
+        awaitWaiters(rules, 1);
+
+        assertNull(rules.retire());
+        holder.giveBack();
+        RuleSet.Copy taken = waiter.copy();
+        waiter.giveBack();
+
+        assertSame(holder.copy().sessions(), taken.sessions(), "the run that waited took the copy given back");
+        assertEquals(1, made.get(), "so it made no copy of its own");
+        assertEachCopyClosedOnceThenTheCompiler(1, closed);
+        assertEquals(0, rules.waiters(), "no run is still counted as waiting");
+        assertTrue(permits.awaitSlot(0, null), "the slot was given back");
     }
 
     @Test

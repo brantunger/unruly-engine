@@ -43,17 +43,18 @@ classes for that session alone. See [Compiled copies in MVEL](languages/mvel.md#
 | Runs the limit applies to | At most the limit, for the whole engine, across reloads |
 | Runs the limit doesn't apply to | One for each such run at your busiest moment |
 | [Extra copies](glossary.md#extra-copy) | At most one for each nested or stalled run in progress; a nested run that finds a place free takes a kept copy |
-| A rule list [a reload replaced](thread-safety.md#-reloading-rules-while-running) | The copies its unfinished runs still hold, unlimited ones only |
+| A rule list [a reload replaced](thread-safety.md#-reloading-rules-while-running) | The copies its runs the limit doesn't apply to still hold, and idle ones kept for its waiting runs. Under `maxCopies(n)`, at most `n`, besides extra copies |
 | [Copies made at load](#making-copies-at-load) | `n` idle copies from each `load()` until the next one, even above the default limit, which bounds only the copies runs hold; during a reload, the new rules' `n` and the old rules' kept copies, until the swap |
 
 Count each engine separately: an engine's limit is its own. By default the limit applies only to runs on virtual
 threads, so a platform thread pool of `N` threads can keep up to `N` copies. Don't add the last row to the first: a
-draining list's *limited* runs hold permits from the same limit, so they're already in it.
+draining list's *limited* runs hold permits from the same limit, so they're already in it. Its idle copies kept for
+waiting runs hold no permit, so they can come on top of the first row until its last run leaves, and overlapping reloads
+add up.
 
 **Kept copies never shrink.** The engine keeps as many as the most runs that held one at once, up to the limit, or as
-many as it [made at load](#making-copies-at-load) if that is more, until the next `load()` or `close()`. Memory
-doesn't come back after a traffic spike; a periodic reload releases it, at the cost of rebuilding copies on the next
-runs.
+many as it [made at load](#making-copies-at-load) if that is more, until the next `load()` or `close()`. A periodic
+reload releases them, and the next runs build copies again.
 
 ## 🔧 Limiting the copies
 
@@ -91,7 +92,8 @@ the new rules may wait for runs on the old rules to finish, when together they a
 engines each have a limit of their own, so their limits add up.
 
 `maxCopies(n)` therefore bounds the runs that make progress, not the copies that can exist at one instant: nested and
-stalled runs take an extra copy on top (below), and the list a reload replaced keeps the copies its runs still hold.
+stalled runs take an extra copy on top (below), and the list a reload replaced keeps idle copies for its runs still
+waiting.
 
 ### Making copies at load
 
@@ -114,7 +116,7 @@ What it costs:
   about 80 ms to the first load in a new JVM. What those copies buy at run time is in
   [Class loading pins carriers](virtual-threads.md#-class-loading-pins-carriers).
 - **Memory from the start.** The copies exist from `load()` until the next `load()` or `close()`, whether runs use
-  them or not. During a reload, the old rules' copies and the new ones exist together until the swap.
+  them or not.
 
 What it doesn't change:
 
@@ -194,8 +196,8 @@ When the wait is stopped:
 - If the run's deadline passes while it waits, `run()` throws a `RuleExecutionException` caused by a
   `TimeoutException`. Waiting counts towards the timeout.
 
-When the wait itself is stopped, by the deadline or by an interrupt with no copy free, the listeners still hear of
-it: the run calls `beforeRun` and then `onRunError`, although it never held a copy and ran no rule. See
+Listeners still hear of a stopped wait: the run calls `beforeRun`, then `onRunError`, though it held no copy and ran
+no rule. See
 [What listeners see](stopping-runs.md#-what-listeners-see).
 
 ### Runs that don't wait
@@ -227,8 +229,7 @@ ends `If runs are meant to wait for each other, build the engine with a larger m
 if it runs on a thread pool.`
 
 A stalled run, and a nested run that finds no place free, get an extra copy that isn't kept: its sessions are closed
-when the run gives it back. So a limit bounds the runs that can make progress, rather than the copies that can exist
-at one instant.
+when the run gives it back.
 
 ## 🚧 Gotchas
 
@@ -245,8 +246,8 @@ at one instant.
 ### Does `maxCopies(4)` mean at most four copies exist?
 
 No. It bounds the runs making progress. A stalled run, or a nested run that finds no place free, takes an extra copy;
-runs the limit doesn't apply to keep copies of their own, also on a rule list a reload replaced; and every other
-engine has its own limit. See [Memory sizing](#memory-sizing).
+runs the limit doesn't apply to keep copies of their own; a rule list a reload replaced keeps idle copies for its
+runs still waiting; and every other engine has its own limit. See [Memory sizing](#memory-sizing).
 
 ### Does memory shrink after a traffic spike?
 

@@ -11,6 +11,7 @@ message? [Troubleshooting](troubleshooting.md) maps each one to the section that
 - [Caught when loading or only when running?](#-caught-when-loading-or-only-when-running)
 - [Stopping a run](#-stopping-a-run)
 - [What happens on each failure](#-what-happens-on-each-failure)
+- [A fatal error while closing](#-a-fatal-error-while-closing)
 - [Handling failures](#-handling-failures)
 
 ---
@@ -120,7 +121,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; the reported exception keeps the first other one a listener threw in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure: <class>: <message>` at WARN, with the [root-cause note](exceptions-by-method.md) when it applies |
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
 | A fatal error from `onRunError` | That error, in place of the exception the run failed with | Every listener gets `onRunError` | ERROR |
-| A fatal error from closing the copy the run gives back, or the retired rules a failed borrow was the last to use (see [A fatal error while closing](thread-safety.md#a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| A fatal error from closing the copy the run gives back, or, when it's the last run to leave retired rules (even after a failed borrow), the copies kept for runs that waited on them and the rules' compilers (see [A fatal error while closing](#-a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
 | `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](exceptions-by-method.md) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 
 > [!NOTE]
@@ -138,6 +139,36 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 - **A run of an empty rule list evaluates nothing**, so an interrupt or a passed deadline can stop it only while it
   waits for a compiled copy, or while it reads the engine's rules again after a reload or `close()` closed the list
   it had read; an interrupt can also stop it while it waits for a build slot. Otherwise it returns normally.
+
+## 💥 A fatal error while closing
+
+Closing a rule list's sessions and compilers is never cut short. When one of them throws a fatal error, such as an
+`OutOfMemoryError`, the engine still closes every idle session of that list, then its compilers if no run is still
+using it, and only then rethrows the error. If several are fatal, the first is rethrown and the others are only
+logged at WARN.
+
+A failure of the call's own that isn't fatal loses to a fatal error from closing, which keeps it in
+`getSuppressed()`, or logs it at WARN if it can't keep one (see below). That's a failed `load()`'s own failure (a
+`RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), or a run's failure
+when that run is the one that closes. A fatal failure of the call's own came first, so it's thrown instead, and the
+one from closing is only logged at WARN.
+
+The call that closes throws it:
+
+- `close()`, and `validate()`, which closes the compilers it created.
+- A `load()` that replaced the rules (after the swap; see
+  [Reloading rules while running](thread-safety.md#-reloading-rules-while-running)), failed, or found the engine closed.
+
+A run throws it too, even when its rules ran without failing: from closing an extra copy it gives back, a copy that
+couldn't be kept, a copy of retired rules that no waiting run needs, or the sessions of a copy only partly made. The
+last run to leave retired rules, even one whose borrow failed or was stopped, closes the copies still kept, then the
+compilers, so a fatal error from those reaches that run, never `load()` or `close()`.
+
+A stopped wait for a copy, or for a build slot to make one, is reported first: its WARN line, `beforeRun`, then
+`onRunError`. The fatal error carries the stop's `RuleExecutionException`; an interrupted thread stays interrupted.
+
+An `OutOfMemoryError` the JVM throws itself can't keep suppressed exceptions, so the engine logs the failure it
+replaces at WARN instead; see [Logging setup](listeners-and-logging.md#-logging-setup).
 
 ## 🧯 Handling failures
 
@@ -169,7 +200,7 @@ try {
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before, unless it's a
-  [fatal error from closing](thread-safety.md#a-fatal-error-while-closing) the replaced rules, after the swap.
+  [fatal error from closing](#-a-fatal-error-while-closing) the replaced rules, after the swap.
 - **Failures are already logged.** The engine logs each one at ERROR before throwing, except a run stopped by an
   interrupt or a deadline, and a fatal error from closing sessions or compilers, which are logged at WARN; see
   [Logging setup](listeners-and-logging.md#-logging-setup). The message can contain fact values, copied from the

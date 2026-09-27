@@ -72,6 +72,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * copy is reported as a stop before it leaves the rules it waited on, even when leaving closes them with a fatal
  * {@code Error}.
  * </p>
+ *
+ * <p>
+ * #695: a copy given back to retired rules while a run of them waits for one is kept for it, and if no run takes it,
+ * the last run to leave closes it, and gets the fatal {@code Error} from that, even a run that stopped waiting.
+ * </p>
  */
 @DisplayName("closing a rule list closes every session and then the compilers, and throws the first fatal Error")
 class CloseEverySessionTest {
@@ -286,16 +291,20 @@ class CloseEverySessionTest {
     /**
      * An idle queue that fails the way one that can't allocate room for a copy does: the next {@code add()} throws
      * {@code addFailure}, once. With {@code pollFailure} set, the next copy it gives out throws that, once, when it's
-     * lent and the rule set first reads its sessions.
+     * lent and the rule set first reads its sessions. {@code duringAdd} runs before each copy is added, while the run
+     * giving it back still holds its permit; it must not throw, or the rule set closes the copy instead.
      */
     private static final class FailingQueue extends AbstractQueue<Map<String, Session>> {
         final AtomicReference<Throwable> addFailure = new AtomicReference<>();
         final AtomicReference<Throwable> pollFailure = new AtomicReference<>();
+        volatile Runnable duringAdd = () -> {
+        };
         private final Queue<Map<String, Session>> copies = new ConcurrentLinkedQueue<>();
 
         @Override
         public boolean offer(Map<String, Session> sessions) {
             throwIfSet(addFailure.getAndSet(null));
+            duringAdd.run();
             return copies.offer(sessions);
         }
 
@@ -1378,6 +1387,98 @@ class CloseEverySessionTest {
     }
 
     /**
+     * Retires a rule set while a run waits for its one copy, which the test's thread holds, and gives the copy back.
+     * The copy is kept for the run, and as it's kept, before its permit comes back, the run is interrupted, so the copy
+     * stays idle and the run stops waiting. The run leaves before the copy's run does if {@code waiterLeavesFirst},
+     * and after it otherwise; whichever leaves last closes the idle copy, whose session throws {@code fatal}, and then
+     * the compiler.
+     *
+     * @return What the copy's run got back from giving it back, and what the waiting run got back from leaving
+     */
+    private static Error[] keptCopyClosedByTheLastToLeave(RecordingCompiler compiler, OutOfMemoryError fatal,
+                                                         boolean waiterLeavesFirst, AtomicReference<Throwable> thrown) {
+        CopyPermits permits = new CopyPermits(1);
+        FailingQueue idle = new FailingQueue();
+        RuleSet rules = ruleSet(compiler, permits, idle);
+        CountDownLatch stopped = new CountDownLatch(1);
+        CountDownLatch waiterLeft = new CountDownLatch(1);
+        CountDownLatch copyGivenBack = new CountDownLatch(1);
+        AtomicReference<Error> left = new AtomicReference<>();
+        Thread waiter = new Thread(() -> {
+            thrown.set(thrownBy(() -> rules.borrow(null)));
+            stopped.countDown();
+            if (!waiterLeavesFirst) {
+                // Cleared while it waits to leave, and set again before it does, as the engine leaves with it set.
+                boolean interrupted = Thread.interrupted();
+                await(copyGivenBack);
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            left.set(rules.leaveAfterStop());
+            waiterLeft.countDown();
+        });
+        AtomicBoolean kept = new AtomicBoolean();
+        // Never throws, which would close the copy instead of keeping it.
+        idle.duringAdd = () -> {
+            kept.set(true);
+            waiter.interrupt();
+            await(stopped, waiterLeavesFirst ? waiterLeft : stopped);
+        };
+        RuleSet.Copy copy;
+        try {
+            copy = rules.borrow(null);
+        } catch (InterruptedException | TimeoutException e) {
+            throw new AssertionError("the free copy wasn't lent", e);
+        }
+        waiter.start();
+        awaitQueued(permits);
+        compiler.sessionCloseFailure = fatal;
+        assertNull(rules.retire());
+
+        Error released = rules.release(copy);
+        copyGivenBack.countDown();
+        join(waiter);
+
+        assertTrue(kept.get(), "the copy was kept for the run waiting");
+        return new Error[] {released, left.get()};
+    }
+
+    @Test
+    @DisplayName("a copy of retired rules kept for a run that then stopped waiting is closed by that run, as the last"
+            + " to leave, which gets the fatal Error from closing it")
+    void keptCopyClosedByAStoppedWaiterThatLeavesLast() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the kept copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicReference<Error[]> results = new AtomicReference<>();
+
+        logsOf(() -> results.set(keptCopyClosedByTheLastToLeave(compiler, fatal, false, thrown)));
+
+        assertInstanceOf(InterruptedException.class, thrown.get(), "the run stopped waiting");
+        assertNull(results.get()[0], "giving the copy back closed nothing: the copy was kept, and a run was left");
+        assertSame(fatal, results.get()[1], "the run that stopped closed the kept copy as it left, and got the error");
+        assertEquals(List.of("session 1", "compiler"), compiler.closed, "the kept copy once, then the compiler");
+    }
+
+    @Test
+    @DisplayName("a copy of retired rules kept for a run that then stopped waiting and left is closed by the run that"
+            + " gave it back, as the last to leave, which gets the fatal Error from closing it")
+    void keptCopyClosedByTheRunThatGaveItBackAndLeavesLast() {
+        OutOfMemoryError fatal = new OutOfMemoryError("closing the kept copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        AtomicReference<Error[]> results = new AtomicReference<>();
+
+        logsOf(() -> results.set(keptCopyClosedByTheLastToLeave(compiler, fatal, true, thrown)));
+
+        assertInstanceOf(InterruptedException.class, thrown.get(), "the run stopped waiting");
+        assertNull(results.get()[1], "the run that stopped left first, and closed nothing");
+        assertSame(fatal, results.get()[0], "the copy's own run closed it, kept, as the last to leave");
+        assertEquals(List.of("session 1", "compiler"), compiler.closed, "the kept copy once, then the compiler");
+    }
+
+    /**
      * Records the run callbacks a listener gets, each with the name of the thread it came on, and the class of the
      * error {@code onRunError} got and of its cause.
      */
@@ -1938,6 +2039,20 @@ class CloseEverySessionTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AssertionError(e);
+        }
+    }
+
+    /**
+     * Waits for both latches, where a failure must not be thrown, as in an idle queue's {@code add()}: a wait that
+     * times out, or is interrupted, is left for the test's own assertions to find.
+     */
+    private static void await(CountDownLatch first, CountDownLatch second) {
+        try {
+            if (first.await(10, TimeUnit.SECONDS)) {
+                second.await(10, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
