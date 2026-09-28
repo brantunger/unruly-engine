@@ -120,6 +120,20 @@ class LanguageTestContextsTest {
         assertEquals(Duration.ofNanos(Long.MAX_VALUE), LanguageTestContexts.action(Map.of(), output).timeLeft());
     }
 
+    @Test
+    @DisplayName("a context it creates equals only itself, as in a run, not another created from the same facts")
+    void contextsEqualOnlyThemselves() {
+        Map<String, Object> facts = Map.of("x", 1);
+        Map<String, Object> output = new HashMap<>();
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(facts);
+        ActionContext action = LanguageTestContexts.action(facts, output);
+
+        assertNotEquals(evaluation, LanguageTestContexts.evaluation(facts));
+        assertNotEquals(action, LanguageTestContexts.action(facts, output));
+        assertEquals(evaluation, evaluation);
+        assertEquals(action, action);
+    }
+
     private static void assertNullMessage(String expected, Executable creation) {
         assertEquals(expected, assertThrows(NullPointerException.class, creation).getMessage());
     }

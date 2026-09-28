@@ -49,6 +49,14 @@ such as `classImports must not contain null`. A `null` declared fact name or typ
 The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared with a
 blank name or as `output`, and a package import over the [size limits](mvel.md#-classes-and-imports).
 
+As in a run, each evaluation or action context equals only itself, and its `hashCode()` never reads the facts or, for
+an action context, the output object. A run passes the same evaluation context to every condition, and a new action
+context to each action.
+
+A [session](custom.md#-thread-safety) serves one run at a time and later runs reuse it, and no call marks where a
+run starts or ends, so state a run leaves in a session is still there for the next run. A map keyed on contexts must
+not keep them alive, as a `WeakHashMap` doesn't.
+
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import io.github.brantunger.unruly.test.LanguageTestContexts;

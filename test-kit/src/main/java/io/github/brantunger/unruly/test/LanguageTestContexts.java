@@ -110,6 +110,7 @@ public final class LanguageTestContexts {
      *
      * @param facts The facts by name, whose values can be {@code null}; copied
      * @return The context. Its facts are read-only, and a write fails with the message the engine uses for a condition.
+     *         It equals only itself, as in a run, so two created from the same facts aren't equal.
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts) {
@@ -130,7 +131,7 @@ public final class LanguageTestContexts {
      *                 {@code runTimeout} gives it
      * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run: {@code true} once
      *         the deadline has passed, measured with a monotonic clock from when the context was created, or while
-     *         the calling thread's interrupt status is set.
+     *         the calling thread's interrupt status is set. It equals only itself, as in a run.
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
@@ -145,6 +146,7 @@ public final class LanguageTestContexts {
      * @param facts  The facts by name, whose values can be {@code null}; copied
      * @param output The output object, which the action changes in place
      * @return The context. Its facts are read-only, and a write fails with the message the engine uses for an action.
+     *         It equals only itself, as in a run, so two created from the same facts and output aren't equal.
      * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output) {
@@ -164,7 +166,8 @@ public final class LanguageTestContexts {
      * @param output   The output object, which the action changes in place
      * @param deadline When the run must stop, or {@code null} if it has none, as an engine built without
      *                 {@code runTimeout} gives it
-     * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run.
+     * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run, and it equals only
+     *         itself.
      * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output,

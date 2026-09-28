@@ -17,6 +17,13 @@ import java.util.Objects;
  * allocated. {@link #isCancelled()} still answers for the moment it's called.
  * </p>
  *
+ * <p>
+ * It compares by identity, as {@link EngineRunContext} does, and so departs on purpose from the rule of
+ * {@link Record#equals(Object)} that a copy with the same components is equal: a value {@code equals} would make the
+ * contexts of two runs with equal facts equal, and a value {@code hashCode} would call each fact's, which can throw,
+ * and change when a fact changes during the run.
+ * </p>
+ *
  * @param facts       The run's facts, read-only
  * @param runDeadline When the run must stop, which decides whether it has to
  */
@@ -66,6 +73,23 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
         Deadline deadline = context instanceof EngineEvaluationContext evaluation ? evaluation.runDeadline
                 : ((EngineActionContext) context).runDeadline();
         return deadline.timeLeft();
+    }
+
+    /**
+     * Tells whether {@code other} is this context: a context equals only itself, not even a copy with the same
+     * components.
+     *
+     * @param other The other object
+     * @return {@code true} if it is this context
+     */
+    @Override
+    public boolean equals(Object other) {
+        return this == other;
+    }
+
+    @Override
+    public int hashCode() {
+        return System.identityHashCode(this);
     }
 
     /**
