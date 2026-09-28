@@ -35,7 +35,9 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 4. [The contract test kit](languages/contract-kit.md): adding `unruly-engine-test` and what its checks promise.
 5. [Upgrading the contract test kit](languages/contract-kit-upgrading.md): the checks a newer kit adds, and what a new
    failure means.
-6. [Packaging](languages/custom.md#-packaging).
+6. [Testing beyond the contract kit](languages/beyond-the-contract-kit.md): what the checks leave untested, and
+   `LanguageTestContexts`.
+7. [Packaging](languages/custom.md#-packaging).
 
 ## 🔼 Upgrading from 1.x
 
@@ -55,8 +57,9 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes or assigns differently from Java, what to write instead, and what MVEL logs itself |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions and packaging for a language of your own |
-| 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, what each of its checks promises, and testing a compiler without an engine |
+| 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, and what each of its checks promises |
 | 🔼 [Upgrading the contract test kit](languages/contract-kit-upgrading.md) | Language authors | The checks each kit version added or made stricter, and the defect each new failure means |
+| 🔬 [Testing beyond the contract kit](languages/beyond-the-contract-kit.md) | Language authors | What the kit's checks leave untested, testing a compiler without an engine with `LanguageTestContexts`, and a named module with Maven |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
 | 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: turning MVEL's JIT off, registering reflection, the errors a missing registration gives, Flight Recorder, and what was tested |
 | 🌱 [Spring Boot](spring-boot.md) | Application developers | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |

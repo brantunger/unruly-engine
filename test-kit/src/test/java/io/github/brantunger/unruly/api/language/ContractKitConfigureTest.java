@@ -36,7 +36,7 @@ class ContractKitConfigureTest {
 
     /** The facts the kit's checks read, as a typed language declares them. */
     private static final Map<String, Class<?>> CHECKS_FACTS = Map.of("x", Object.class, "y", Object.class,
-            "applicant", Object.class);
+            "applicant", Object.class, "nest", Object.class);
 
     /** The checks the kit has, found as JUnit finds them. */
     private static List<Method> checks() {
@@ -235,7 +235,7 @@ class ContractKitConfigureTest {
             }
         }
 
-        assertEquals(20, checks.size(), "the kit's checks");
+        assertEquals(21, checks.size(), "the kit's checks");
         assertEquals(List.of(), unconfigured, "checks that compiled without configure() or compileContext()");
         assertEquals(List.of(), createdNothing, "checks that ran and created no compiler");
     }

@@ -1,11 +1,10 @@
 # 🧫 The contract test kit
 
-How to add `unruly-engine-test` to a language's tests, what each of the contract kit's checks promises, and how to
-test a compiler without an engine.
+How to add `unruly-engine-test` to a language's tests, and what each of the contract kit's checks promises.
 
 **Who it's for:** language authors.
 **You'll be able to:** add the kit to a Gradle or Maven build, extend `ExpressionLanguageContractTest` for your
-language, read what a failing check means, and test a compiled expression with `LanguageTestContexts`.
+language, and read what a failing check means.
 **Before you start:** [Writing an expression language](custom.md).
 
 [← Documentation index](../README.md)
@@ -88,10 +87,11 @@ The kit is built with JUnit Jupiter 6, and brings `unruly-engine-core` and `juni
 needs the rest: a JUnit test engine to run the checks, the JUnit Platform launcher to start it, and
 `useJUnitPlatform()`, because a Gradle `Test` task runs JUnit 4 unless it is told otherwise, and without that setting
 the checks never run. With Maven and Surefire 3.5.4, Surefire supplies the test engine, so the block above is enough,
-unless your main code is a named module: then see [A named module with Maven](#a-named-module-with-maven).
+unless your main code is a named module: then see
+[A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven).
 
 `ExpressionLanguageContractTest` checks the promises [Writing an expression language](custom.md) describes for any
-language. Extend it and supply expressions in your language, one method for each hook. Its twenty checks:
+language. Extend it and supply expressions in your language, one method for each hook. Its twenty-one checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -114,11 +114,13 @@ language. Extend it and supply expressions in your language, one method for each
 | `sessionClosedOnAnotherThread` | `factEquals`, `putFact` | No | A session a worker thread's run made closes without throwing when the test thread closes the engine |
 | `conditionDetail` | `factEquals`, `putFact` | No | For a rule that matches and one that doesn't, the detail isn't a session `newSession()` returned, and its `toString()` gives the same text after another run and after `close()` |
 | `evaluateAgreesWithDetail` | `factEquals` | No | For `x` = 1, 2, `1L`, `2L`, `(short) 1` and `BigDecimal.ONE`, a compiled condition's `evaluate` returns the value `evaluateWithDetail` reports, or both throw |
-| `concurrentRuns` | `factEquals`, `putFact` | No | 8 threads, 200 runs each, all see their own facts |
+| `concurrentRuns` | `factEquals`, `putFact`, `copyThroughVariable` | No; a `null` from `copyThroughVariable()` leaves the action variables out | 8 threads, 200 runs each, all see their own facts and action variables, and `newSession()` never returns one session twice, unless it's `Session.none()` |
+| `nestedRunInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null` | A run that a getter starts inside an action, on the same thread, and the outer run each give their own output |
 
-- Only the five `@Nullable` hooks, `assignment`, `declareVariable`, `reassignOutput`, `unusableFactName` and
-  `missingFactProperty`, may return `null`. Two hooks skip their check another way:
-  `comparesWholeNumbersByValue()` by returning `false`, and `usableFactNames()` by returning an empty collection.
+- Only the seven `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
+  `unusableFactName`, `missingFactProperty`, `copyThroughVariable` and `putFactProperty`.
+- `comparesWholeNumbersByValue()` skips its check by returning `false`, and `usableFactNames()` by returning an empty
+  collection.
 - Since 2.3.0, a language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`,
   rather than a syntax error standing in for one.
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
@@ -131,20 +133,20 @@ Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(Hash
 [`configure(builder)`](#a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
 closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`.
 `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and `maxCopies(1)`, and `sessionClosedOnAnotherThread` adds
-`copiesAtLoad(0)`. `compilerClosed`, `conditionDetail` and the three session checks, `sessionsClosed`,
-`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`, wrap your language to watch its compiler or
-sessions.
+`copiesAtLoad(0)`. `compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks,
+`sessionsClosed`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`, wrap your language to watch its
+compiler or sessions.
 `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
 `Double` whole numbers pass.
 
-`compilerClosed`, the three session checks and `evaluateAgreesWithDetail` show a session or exception whose
-`toString()` or `getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
+`compilerClosed`, `concurrentRuns`, the three session checks and `evaluateAgreesWithDetail` show a session or exception
+whose `toString()` or `getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
 
 The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
 decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
 shares one copy, calls `newSession()` once and warms nothing up. A `null` from `newSession()` isn't watched, so the
 engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, and at the first run in
-`conditionDetail`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
+`conditionDetail`, `concurrentRuns`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
 
 `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too: it has no
 session to close, though both checks still compare output.
@@ -181,20 +183,21 @@ fatal one, a `VirtualMachineError` other than `StackOverflowError`, is thrown on
 ### A language that needs declared facts, imports or options
 
 Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
-the same. The checks' expressions read `x`, `y`, `applicant` and the names `usableFactNames()` returns. `x` is also a
-`Boolean`, a `String` and `null`, and `applicant` a record, a bean and a map, so declare both as `Object`: a fact
-that isn't its declared type fails the run before your language evaluates anything.
+the same. The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is
+also a `Boolean`, a `String` and `null`, and `applicant` a record, a bean and a map, so declare both as `Object`: a
+fact that isn't its declared type fails the run before your language evaluates anything. Declare `nest` as `Object`
+too, or as `ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
 
 ```java
 @Override
 protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
-    builder.fact("x", Object.class).fact("y", Object.class).fact("applicant", Object.class);
+    builder.fact("x", Object.class).fact("y", Object.class).fact("applicant", Object.class).fact("nest", Object.class);
 }
 
 @Override
 protected CompileContext compileContext() {
     return LanguageTestContexts.compile(Set.of(), Set.of(), getClass().getClassLoader(), Object.class, Map.of(),
-            Map.of("x", Object.class, "y", Object.class, "applicant", Object.class), false);
+            Map.of("x", Object.class, "y", Object.class, "applicant", Object.class, "nest", Object.class), false);
 }
 ```
 
@@ -202,114 +205,22 @@ protected CompileContext compileContext() {
 `runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
 checks could fail for reasons unrelated to your language. Nor may it declare the `unusableFactName()` name: `load()`
 checks declared names with your language, which rejects it. A `copiesAtLoad` it sets doesn't change the four checks
-that set their own, and a `maxCopies` it sets doesn't change `sessionClosedWhileAnotherRuns`.
+that set their own, and a `maxCopies` it sets doesn't change `sessionClosedWhileAnotherRuns`. A `maxCopies(2)`
+keeps `concurrentRuns` to two sessions, so it can't catch a repeat after the second.
 
 ### Upgrading the kit
 
 A newer kit can fail a language that passed an older one. [Upgrading the contract test kit](contract-kit-upgrading.md)
 lists, for each version, the checks that were added or got stricter and the defect each new failure means.
 
-### What the kit doesn't check
+### Beyond the kit
 
-Two things no check exercises, so passing the kit says nothing about them.
-
-**Cancellation.** No check runs the rules with an interrupt, a deadline or a timeout. A runtime that clears the
-thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does, passes the kit and still hides the
-caller's interrupt from the engine.
-
-The hole is a narrow one. The engine checks before each condition and each action, again when each returns, and once
-an action's properties are set, so an interrupt raised between rules always stops the run, and the deadline path is
-unaffected. Only an interrupt raised and swallowed inside one expression escapes; see
-[Stopping a run](custom.md#-stopping-a-run).
-
-Putting the interrupt back has its own trap, which the kit doesn't catch either: an adapter that restores it after
-cancelling its runtime for the deadline turns each timeout into an interrupt. And JEXL clears the status whatever
-cancelled it, so an interrupt that lands as the adapter cancels for the deadline is lost, and the run reports the
-timeout.
-
-**The `CompileContext`.** Every check compiles with the context `configure` or `compileContext()` gives, empty by
-default, so a language that ignores imports, options, declared facts and the output type passes. Test how your
-language handles each;
-[Implementing the interfaces](custom.md#-implementing-the-interfaces) says what the context carries.
-
-`LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or compiled
-expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
-`evaluation(facts, deadline)` gives a real `isCancelled()` and `timeLeft()`. They read the system clock once, when
-the context is made, then time `deadline` as a run does, so one built from `Instant.now()` passes when you expect.
-
-A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
-`facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
-such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
-`type must not be null`. A fact's value may be `null`.
-
-The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared as
-`output` and a package import over the [size limits](mvel.md#-classes-and-imports).
-
-```java
-import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
-import io.github.brantunger.unruly.test.LanguageTestContexts;
-
-class MyLanguageContractTest extends ExpressionLanguageContractTest {
-    @Override
-    protected ExpressionLanguage language() {
-        return new MyLanguage();
-    }
-
-    @Override
-    protected String factEquals(String fact, int value) {
-        return fact + " == " + value;
-    }
-
-    // ... one method for each expression the checks need
-
-    @Test
-    void conditionComparesFacts() throws Exception {
-        ExpressionCompiler compiler = language().newCompiler(LanguageTestContexts.compile());
-        CompiledCondition condition = compiler.compileCondition(
-                new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
-
-        assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1)), compiler.newSession()));
-    }
-}
-```
-
-On the module path, the kit is the module `io.github.brantunger.unruly.test`; see [Packaging](custom.md#-packaging).
-
-### A named module with Maven
-
-When your main code has a `module-info.java`, Surefire 3.5.4 runs the tests on the module path: it patches the test
-classes into your module and leaves the kit and JUnit on the class path. Core exports the package whose contexts
-`LanguageTestContexts` creates only to the kit's module, so every `LanguageTestContexts` call, and the
-`evaluateAgreesWithDetail` check, throws `IllegalAccessError`:
-
-```text
-... does not export io.github.brantunger.unruly.core to unnamed module ...
-```
-
-Export that package to the class path in Surefire's `argLine`. The module and the package have the same name, and
-your module is still tested on the module path:
-
-```xml
-<plugin>
-    <artifactId>maven-surefire-plugin</artifactId>
-    <version>3.5.4</version>
-    <configuration>
-        <argLine>--add-exports io.github.brantunger.unruly.core/io.github.brantunger.unruly.core=ALL-UNNAMED</argLine>
-    </configuration>
-</plugin>
-```
-
-If your POM already sets an `argLine`, such as JaCoCo's `@{argLine}`, keep it and add the flag after it:
-`<argLine>@{argLine} --add-exports ...</argLine>`. Or run the tests on the class path instead, with
-`<useModulePath>false</useModulePath>` in the same `<configuration>`, but then your `module-info.java` isn't in force
-during the tests.
-
-Gradle isn't affected: it runs these tests on the class path. Surefire gives JUnit access to your test classes, so
-this layout needs no `opens` clause; a test module of its own, one that `requires` the kit, does.
+[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, testing a compiler
+without an engine with `LanguageTestContexts`, and the setting a named module needs with Maven.
 
 ## 🚧 Gotchas
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A named main module, with Maven** | `LanguageTestContexts` and `evaluateAgreesWithDetail` throw `IllegalAccessError`, because the kit is on the class path | Add `--add-exports` to Surefire's `argLine`; see [A named module with Maven](#a-named-module-with-maven) |
+| **A named main module, with Maven** | `LanguageTestContexts` and `evaluateAgreesWithDetail` throw `IllegalAccessError`, because the kit is on the class path | Add `--add-exports` to Surefire's `argLine`; see [A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven) |
 | **An older kit or third-party language declared first, with Maven** | Unless the POM imports the BOM or declares `unruly-engine-core` itself, Maven takes core's version from the first of them, so a newer `unruly-engine` runs on the older core | Import `unruly-engine-bom` whenever anything brings in `unruly-engine-core`, and drop the modules' versions; without a BOM, declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`. See [Testing with the contract kit](#-testing-with-the-contract-kit) |

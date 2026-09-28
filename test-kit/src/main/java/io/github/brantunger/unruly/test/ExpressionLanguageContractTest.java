@@ -46,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -171,6 +172,22 @@ public abstract class ExpressionLanguageContractTest {
     protected abstract @Nullable String declareVariable(String name, int value);
 
     /**
+     * Returns an action that declares a variable holding a fact's value, and then puts the variable's value into the
+     * output map under a key. {@code concurrentRuns} runs it in many runs at once, each with its own value, so it is
+     * likely to catch an action whose variables every run shares, such as a map compiled into the action or a static:
+     * such an action puts another run's value, or fails, when another run changes the variable between its declaring
+     * the variable and putting it. By default, {@code null}.
+     *
+     * @param key  The key to put the value under
+     * @param fact The fact's name
+     * @return The action, or {@code null} if the language's actions have no variables, which leaves the variable out
+     *         of {@code concurrentRuns} rather than skipping it
+     */
+    protected @Nullable String copyThroughVariable(String key, String fact) {
+        return null;
+    }
+
+    /**
      * Returns an action that assigns a new object to the output.
      *
      * @return The action, or {@code null} if the language's actions can't assign anything, as for a language that
@@ -260,20 +277,36 @@ public abstract class ExpressionLanguageContractTest {
     protected abstract @Nullable String missingFactProperty(String fact, String property, int value);
 
     /**
+     * Returns an action that puts one property of a fact, read through its getter, into the output map under a key.
+     * {@code nestedRunInsideAnAction} runs it against a {@link Nesting} fact, whose getter starts a run nested inside
+     * the action, on the action's own thread. By default, {@code null}.
+     *
+     * @param key      The key to put the value under
+     * @param fact     The fact's name
+     * @param property The property to read
+     * @return The action, or {@code null} if the language's actions can't read a fact's property, which skips the
+     *         check
+     */
+    protected @Nullable String putFactProperty(String key, String fact, String property) {
+        return null;
+    }
+
+    /**
      * Configures each engine the checks build, for a language that needs what the builder carries to compile its
      * expressions: declared facts, imports or options of its own. By default, nothing. It's called once for each
      * engine, after the kit has started an {@code allMatches} engine whose output is a {@link HashMap}, and added the
      * language.
      *
      * <p>
-     * The facts the checks' expressions refer to are {@code x}, {@code y} and {@code applicant}, and the names
-     * {@link #usableFactNames()} returns. The checks supply {@code x} as a {@code Boolean}, a {@code String},
+     * The facts the checks' expressions refer to are {@code x}, {@code y}, {@code applicant} and {@code nest}, and the
+     * names {@link #usableFactNames()} returns. The checks supply {@code x} as a {@code Boolean}, a {@code String},
      * {@code null}, an {@code Integer}, a {@code Long}, a {@code Short} and a {@code BigDecimal}, {@code y} as an
-     * {@code Integer}, {@code applicant} as an {@link Applicant}, an {@link ApplicantBean} and a {@link Map}, and each
-     * of the names {@link #usableFactNames()} and {@link #unusableFactName()} return as the {@code Integer} 1. So a
-     * language that declares them declares {@code x} and {@code applicant} as {@link Object}: the engine fails a run
-     * whose fact isn't an instance of its declared type with an {@link IllegalArgumentException}, before the language
-     * evaluates anything, and the check with it.
+     * {@code Integer}, {@code applicant} as an {@link Applicant}, an {@link ApplicantBean} and a {@link Map},
+     * {@code nest} as a {@link Nesting}, and each of the names {@link #usableFactNames()} and
+     * {@link #unusableFactName()} return as the {@code Integer} 1. So a language that declares them declares {@code x}
+     * and {@code applicant} as {@link Object}, and {@code nest} as {@link Object} or {@link Nesting}: the engine fails
+     * a run whose fact isn't an instance of its declared type with an {@link IllegalArgumentException}, before the
+     * language evaluates anything, and the check with it.
      * </p>
      *
      * <p>
@@ -289,7 +322,9 @@ public abstract class ExpressionLanguageContractTest {
      *     load to fail then pass or fail for reasons unrelated to the language.</li>
      *     <li>{@code runTimeout(...)}: a run that outlasts it fails, and its check with it.</li>
      *     <li>{@code maxCopies(...)} below 2: two checks make two copies of the rules when they load, which
-     *     {@code build()} refuses with more copies than the limit.</li>
+     *     {@code build()} refuses with more copies than the limit. A higher limit also caps how many sessions
+     *     {@code concurrentRuns} asks for, so {@code maxCopies(2)} hides a {@code newSession()} that returns a
+     *     session twice only after its second call.</li>
      *     <li>Another language, or a {@code defaultLanguage(...)} other than the language's own name: {@code build()}
      *     throws an {@link IllegalStateException} for an engine with two languages and no default, or with a default
      *     that isn't one of its languages. {@code defaultLanguage(language().name())} changes nothing.</li>
@@ -302,7 +337,8 @@ public abstract class ExpressionLanguageContractTest {
      * that need a run to make its own copy, {@code sessionClosedWhileAnotherRuns} and
      * {@code sessionClosedOnAnotherThread}, set {@code copiesAtLoad(0)}, so a {@code copiesAtLoad} set here doesn't
      * change them. {@code sessionClosedWhileAnotherRuns} also sets {@code maxCopies(1)} after this, so that a run
-     * nested in another gets an extra copy, and a limit set here doesn't change it either. Listeners that don't
+     * nested in another gets an extra copy, and a limit set here doesn't change it either; {@code concurrentRuns}
+     * sets none, so a limit set here caps the copies, and the sessions, its runs get. Listeners that don't
      * change the output may be added: the engine only logs what a listener throws, unless it's a fatal
      * {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks compare.
      * {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead: a
@@ -369,6 +405,42 @@ public abstract class ExpressionLanguageContractTest {
          */
         public int getCreditScore() {
             return creditScore;
+        }
+    }
+
+    /**
+     * The fact {@code nestedRunInsideAnAction} runs its action against: its {@code value} property starts a run nested
+     * inside the run that reads it, on the same thread, as a getter an action reads, or a function it calls, does when
+     * it runs rules. Only that check creates one. It's public, with a public getter, so that a language can read the
+     * property, by reflection or however else it reads a JavaBean's. It keeps what the nested run returned, or the
+     * exception it threw.
+     */
+    public static final class Nesting {
+
+        private final Supplier<@Nullable Map<String, Object>> nestedRun;
+        private boolean started;
+        private @Nullable Map<String, Object> nestedOutput;
+        private @Nullable RuntimeException nestedFailure;
+
+        Nesting(Supplier<@Nullable Map<String, Object>> nestedRun) {
+            this.nestedRun = nestedRun;
+        }
+
+        /**
+         * Starts the nested run, and returns 7 whether the run returned or threw an exception; an {@link Error} it
+         * threw is thrown on.
+         *
+         * @return 7
+         */
+        public int getValue() {
+            started = true;
+            try {
+                nestedOutput = nestedRun.get();
+            } catch (RuntimeException e) {
+                // Kept for the check: the engine would report it as the outer action's failure.
+                nestedFailure = e;
+            }
+            return 7;
         }
     }
 
@@ -864,6 +936,22 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Returns an exception's message, or, when {@code getMessage()} throws, what {@link #describe} prints for it, so a
+     * check's failure message can't throw.
+     *
+     * @param thrown The exception
+     * @return Its message, or its class name followed by {@code (message unavailable: ...)}
+     */
+    private static String message(Throwable thrown) {
+        try {
+            return String.valueOf(thrown.getMessage());
+        } catch (Throwable unreadable) {
+            // What describe() prints for an exception whose message can't be read.
+            return describe(thrown);
+        }
+    }
+
+    /**
      * Describes an object of the language's, such as what it threw, for a check's failure message: its
      * {@code toString()}, or, when that throws, its class name and a note that its text is unavailable, as the engine
      * describes an exception whose {@code getMessage()} throws. Whatever {@code toString()} throws, a fatal
@@ -1176,9 +1264,17 @@ public abstract class ExpressionLanguageContractTest {
         }
 
         void assertNoneShared() {
+            assertNoneShared(null);
+        }
+
+        /**
+         * Fails if the language returned one session twice, with {@code cause}, what went wrong in the check because
+         * of it, as the failure's cause.
+         */
+        void assertNoneShared(@Nullable Throwable cause) {
             if (!shared.isEmpty()) {
-                fail("newSession() returned the same session for two copies of the rules, so two runs use it at once"
-                        + " and the engine closes it twice: " + describe(shared.get(0)));
+                throw new AssertionFailedError("newSession() returned the same session for two copies of the rules, so"
+                        + " two runs use it at once and the engine closes it twice: " + describe(shared.get(0)), cause);
             }
         }
 
@@ -1392,11 +1488,54 @@ public abstract class ExpressionLanguageContractTest {
         }
     }
 
+    /**
+     * Runs one rule list on eight threads at once, 200 runs each, with a different {@code y} in each run, and checks
+     * that each run puts its own {@code y}. With {@link #copyThroughVariable}, a second rule copies {@code y} through
+     * a variable of its action, so the check is likely to catch an action whose variables every run shares: it fails
+     * when another run changes the variable between one run's declaring it and putting it, which so many runs at once
+     * make likely but can't make certain. The check also records each session {@code newSession()} returns, and fails
+     * when it returns one it returned before, other than {@link Session#none()}, as {@code sessionsClosed} does:
+     * {@code sessionsClosed} asks for two sessions only, and this check for as many as the runs going at once need.
+     * That failure is reported even when a run failed or returned the wrong output, which a session used by two runs
+     * at once usually causes, with the run's failure as its cause.
+     *
+     * <p>
+     * Two limits. A {@code maxCopies(2)} set in {@link #configure} keeps the engine at two copies of the rules, so a
+     * {@code newSession()} that starts returning a session twice after its second call is never reached. And a run that
+     * throws, with no session returned twice, fails the check with the worker's
+     * {@link java.util.concurrent.ExecutionException}, which wraps what the engine threw.
+     * </p>
+     */
     @Test
-    @DisplayName("concurrent runs of one rule list each see their own facts")
+    @DisplayName("concurrent runs of one rule list each see their own facts, action variables and sessions")
     void concurrentRuns() throws Exception {
-        closing(engine(), engine -> {
-            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
+        SessionWatch sessions = new SessionWatch();
+        String copy = copyThroughVariable("copied", "y");
+        try {
+            concurrentRuns(sessions, copy);
+        } catch (InterruptedException e) {
+            // Interrupted while it waited for a worker: the thread stays interrupted, whatever is reported.
+            Thread.currentThread().interrupt();
+            sessions.assertNoneShared(e);
+            throw e;
+        } catch (Exception | AssertionError e) {
+            // A session returned to two copies is what made the runs go wrong, so that is what's reported.
+            sessions.assertNoneShared(e);
+            throw e;
+        }
+
+        // A session returned to two copies is used by two runs at once, which is what this check is for.
+        sessions.assertNoneShared();
+    }
+
+    private void concurrentRuns(SessionWatch sessions, @Nullable String copy) throws Exception {
+        sessions.closing(engine(sessions.watching(language())), engine -> {
+            List<Rule> rules = new ArrayList<>();
+            rules.add(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y")));
+            if (copy != null) {
+                rules.add(rule("v", 2, factEquals("x", 1), copy));
+            }
+            engine.load(rules);
             CountDownLatch start = new CountDownLatch(1);
             ExecutorService workers = Executors.newFixedThreadPool(8);
             try {
@@ -1413,7 +1552,8 @@ public abstract class ExpressionLanguageContractTest {
                             FactStore<Object> facts = new FactMap<>();
                             facts.setValue("x", x);
                             facts.setValue("y", y);
-                            expected.add(x == 1 ? Map.of(SEEN, y) : null);
+                            Map<String, Object> fired = copy != null ? Map.of(SEEN, y, "copied", y) : Map.of(SEEN, y);
+                            expected.add(x == 1 ? fired : null);
                             actual.add(engine.run(facts));
                         }
                         return List.of(expected, actual);
@@ -1429,5 +1569,65 @@ public abstract class ExpressionLanguageContractTest {
                 stop(workers);
             }
         });
+    }
+
+    /**
+     * Starts a run from inside an action, on the action's own thread: the action reads the {@code value} of a
+     * {@link Nesting} fact, whose getter runs the same engine again. A language that keeps a run's state on the stack,
+     * or in its {@link Session}, of which the nested run gets its own, passes. One that keeps what an expression works
+     * on in per-thread state, such as a {@link ThreadLocal} or a static, and looks it up again after the read, finds
+     * the nested run's state there: the outer run's value goes into the nested run's output and is missing from its
+     * own, and nothing fails.
+     */
+    @Test
+    @DisplayName("a run started inside an action, on its thread, leaves the action writing to its own run's output")
+    void nestedRunInsideAnAction() throws Exception {
+        String action = putFactProperty(SEEN, "nest", "value");
+        assumeTrue(action != null, "the language's actions can't read a fact's property");
+        closing(engine(), engine -> {
+            engine.load(List.of(rule("outer", 2, factEquals("x", 1), action),
+                    rule("inner", 1, factEquals("x", 2), putFact("inner", "x"))));
+            Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 2))));
+
+            Map<String, Object> output;
+            try {
+                output = engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>("nest", nest)));
+            } catch (RuleExecutionException e) {
+                if (!nest.started) {
+                    throw e;
+                }
+                throw runAroundNestedFailed(e, nest.nestedFailure);
+            }
+            assertTrue(nest.started, "the action didn't read nest.value, so no run was started inside it");
+            RuntimeException failure = nest.nestedFailure;
+            if (failure != null) {
+                throw new AssertionFailedError("the run started inside the action failed: " + message(failure),
+                        failure);
+            }
+            assertSameOutput(Map.of("inner", 2), nest.nestedOutput, "the run started inside the action");
+            assertSameOutput(Map.of(SEEN, 7), output, "the run around it");
+        });
+    }
+
+    /**
+     * Describes a failed run of {@code nestedRunInsideAnAction} whose action had started a run inside itself: a
+     * language that keeps a run's state per thread may find it replaced, or removed, by the nested run.
+     *
+     * @param failure       What the run threw
+     * @param nestedFailure What the run started inside its action threw, attached to the check's failure, or
+     *                      {@code null}
+     * @return The check's failure, with the engine's message: the exception's class is the engine's internal one
+     */
+    private static AssertionFailedError runAroundNestedFailed(RuleExecutionException failure,
+                                                              @Nullable RuntimeException nestedFailure) {
+        if (nestedFailure != null) {
+            AssertionFailedError both = new AssertionFailedError("the run failed after a run started inside its action"
+                    + " failed too, which is attached: " + failure.getMessage(), failure);
+            both.addSuppressed(nestedFailure);
+            return both;
+        }
+        return new AssertionFailedError("the run failed after a run started inside its action ended, so the nested"
+                + " run may have replaced or removed state the action kept for its own run: " + failure.getMessage(),
+                failure);
     }
 }
