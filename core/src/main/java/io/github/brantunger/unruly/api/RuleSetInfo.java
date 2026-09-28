@@ -20,7 +20,9 @@ import java.util.Objects;
  *
  * <p>
  * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
- * against this one.
+ * against this one. {@code equals} compares every field; a field added in a later release takes part too.
+ * {@code hashCode} hashes only the checksum and the load time, which equal information shares, so that it doesn't
+ * walk every rule.
  * </p>
  */
 public final class RuleSetInfo {
@@ -95,6 +97,30 @@ public final class RuleSetInfo {
      */
     public @Nullable Instant loadedAt() {
         return loadTime;
+    }
+
+    /**
+     * Compares every field.
+     *
+     * @param other The object to compare with
+     * @return Whether {@code other} is information with equal rules, in the same order, an equal checksum and an
+     *         equal load time
+     */
+    @Override
+    public boolean equals(@Nullable Object other) {
+        return other instanceof RuleSetInfo that && ruleChecksum.equals(that.ruleChecksum) && loaded.equals(that.loaded)
+                && Objects.equals(loadTime, that.loadTime);
+    }
+
+    /**
+     * Combines the hash codes of the checksum and the load time, consistently with {@link #equals(Object)}. It hashes
+     * only these, so that it doesn't walk every rule.
+     *
+     * @return The hash code
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(ruleChecksum, loadTime);
     }
 
     /**

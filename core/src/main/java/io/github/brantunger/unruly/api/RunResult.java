@@ -20,7 +20,17 @@ import java.util.Set;
  *
  * <p>
  * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
- * against this one.
+ * against this one. {@code equals} compares every field except {@link #startedAt()}; a field added in a later release
+ * takes part too. Leaving out the start lets results compare equal whatever the engine's clock, such as a test
+ * double's result and a real engine's from a run without tags, when their other fields are equal too. The output is
+ * compared with its own {@code equals}, so an array output is compared by reference. The evaluations are compared as
+ * {@link RuleEvaluation} compares them: by rule and outcome, not by {@linkplain RuleEvaluation#detail() detail}.
+ * </p>
+ *
+ * <p>
+ * The output takes part in {@code hashCode} too, so a result whose output is changed afterwards, such as a map an
+ * action filled, no longer hashes the same: don't use a result as a key in a hash-based collection while its output
+ * can change.
  * </p>
  *
  * @param <O> The type of the output object
@@ -173,6 +183,31 @@ public final class RunResult<O> {
      */
     public @Nullable Instant startedAt() {
         return start;
+    }
+
+    /**
+     * Compares every field except {@link #startedAt()}, which the class description explains.
+     *
+     * @param other The object to compare with
+     * @return Whether {@code other} is a result with an equal output, fired rules, evaluations, checksum and tags,
+     *         whenever each run started
+     */
+    @Override
+    public boolean equals(@Nullable Object other) {
+        return other instanceof RunResult<?> that && checksum.equals(that.checksum)
+                && Objects.equals(outputValue, that.outputValue) && fired.equals(that.fired)
+                && evaluated.equals(that.evaluated) && runTags.equals(that.runTags);
+    }
+
+    /**
+     * Combines the hash codes of the output, the checksum and the tags with the number of fired rules, consistently
+     * with {@link #equals(Object)}. It hashes only these, so that it doesn't walk every evaluation.
+     *
+     * @return The hash code
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(outputValue, checksum, runTags, fired.size());
     }
 
     /**

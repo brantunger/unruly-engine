@@ -50,6 +50,17 @@ its result with `RunResult.of(...)` returns empty `tags()` and a `null` `started
 form has empty `evaluations()`. `withRun(run)` returns a copy of a result that carries a `RunContext`'s tags and
 instant.
 
+Since 2.11.0, two results are `equals` when their `output()`, `firedRules()`, `evaluations()`, `ruleSetChecksum()`
+and `tags()` are equal, whatever their `startedAt()`. So a test double's result from the four-argument
+`RunResult.of(...)` can equal a real engine's result from a run without tags, and copies of one result from two
+runs with the same tags are equal, because `startedAt()` is left out. Evaluations compare their rule and outcome,
+not their `detail()`.
+
+The output's own `equals` decides: an output class that doesn't override it makes results from two runs unequal,
+since the factory returns a new object each run, unless neither fired a rule. An array output compares by reference.
+A result's hash includes its output's, so don't change an output while its result is in a `HashSet` or is a
+`HashMap` key.
+
 A run that fails throws, so there's never a partial result, and no evaluation is reported for a rule that failed.
 
 The evaluations answer "why didn't rule X apply?" without a listener:
@@ -100,6 +111,10 @@ listener callbacks all give you those same instances, so you can compare them wi
 Before the first `load()`, `run()` throws `IllegalStateException` (`load() must be called before run()`). After an empty
 `load()`, every run returns `null`, and still checks the facts' names. On a closed engine, `rules()` throws
 `IllegalStateException`.
+
+Since 2.11.0, two `RuleSetInfo`s are `equals` when their `rules()`, `checksum()` and `loadedAt()` are equal.
+Loading the same rules again records a new `loadedAt()`, so to tell whether the rules changed, compare checksums, not
+`RuleSetInfo`s.
 
 ## 🚧 Gotchas
 
@@ -207,3 +222,10 @@ Yes, exactly. A rule that fired gives a non-`null` output even when its action c
 No. It covers only the rules: each one's name, priority, resolved language, condition, action, whether it's enabled,
 its validity window and its tags. Record
 `RunContext.matchPolicy()` with `RunResult.ruleSetChecksum()`. See [Auditing a decision](#-auditing-a-decision).
+
+### Can I compare results, rule sets and run options with `equals`?
+
+Yes, since 2.11.0. A `RunResult` compares every field except `startedAt()`, and a `RuleSetInfo` every field; see
+[What a run reports](#-what-a-run-reports). A `RunOptions` compares its `timeout()` and `tags()`, so options given the
+same tags in any order are equal. Before 2.11.0 each instance equalled only itself: code that keeps these objects in a
+`Set` or as `Map` keys now sees equal instances merge.
