@@ -13,7 +13,8 @@ import java.util.Map;
  * {@code run()} or a {@code load()} the {@code close()} started, or a fatal {@link Error} that run logged, which that
  * run or load logged already (see {@link LoggedFailures#logged}). A fatal error (see {@link Failures#fatalError}) is
  * returned unchanged once everything has been closed, for the caller to throw once it has closed the rest of what it
- * closes: the first, if several were thrown. Nothing else a {@code close()} throws reaches the caller.
+ * closes: the first, if several were thrown, carrying the others as suppressed exceptions (see
+ * {@link Failures#first}). Nothing else a {@code close()} throws reaches the caller.
  */
 final class Closing {
 
@@ -56,9 +57,7 @@ final class Closing {
                     log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(resource.getKey()),
                             what, Failures.describe(e));
                 }
-                if (fatal == null) {
-                    fatal = Failures.fatalError(e);
-                }
+                fatal = Failures.first(fatal, Failures.fatalError(e));
             }
         }
         return fatal;

@@ -76,5 +76,5 @@ failure's text. In MVEL, MVEL's own exception around an engine failure from a me
 
 A wrapper around a nested fatal `Error` isn't logged at ERROR: the call it was thrown in rethrows the `Error`, which the
 nested run logged. From `onError` closing a rule's own fatal `Error`, `run()` rethrows the rule's, and the nested one is
-kept in the `getSuppressed()` of the exception `onRunError` gets. A `close()` still logs such a wrapper at WARN, as does
-a listener for any but the first fatal `Error` thrown in a callback.
+kept in its `getSuppressed()` and in that of the exception `onRunError` gets. A `close()` still logs such a wrapper at
+WARN, as does a listener for any but the first fatal `Error` thrown in a callback.

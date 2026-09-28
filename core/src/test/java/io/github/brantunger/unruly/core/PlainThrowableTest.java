@@ -604,6 +604,39 @@ class PlainThrowableTest {
         assertSame(raw, listener.runError.get().getCause());
     }
 
+    @Test
+    @DisplayName("from anywhere else in a run, a fatal Error from onRunError is thrown in its place, carrying the"
+            + " failure")
+    void fromAnywhereElseInARunThenFatalOnRunError() {
+        Throwable raw = new Throwable("raw");
+        OutOfMemoryError listenerFatal = new OutOfMemoryError("onRunError");
+        Recorder listener = new Recorder("A", new CopyOnWriteArrayList<>(), "onRunError", listenerFatal);
+        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+
+        assertSame(listenerFatal, thrown.get());
+        assertArrayEquals(new Throwable[] {listener.runError.get()}, listenerFatal.getSuppressed());
+        assertSame(raw, listener.runError.get().getCause());
+    }
+
+    @Test
+    @DisplayName("from anywhere else in a run, with a fatal Error as its cause, a fatal Error from onRunError is thrown"
+            + " in its place, carrying the cause")
+    void fromAnywhereElseInARunWithAFatalCauseThenFatalOnRunError() {
+        OutOfMemoryError fatal = new OutOfMemoryError("run oom");
+        OutOfMemoryError listenerFatal = new OutOfMemoryError("onRunError");
+        Recorder listener = new Recorder("A", new CopyOnWriteArrayList<>(), "onRunError", listenerFatal);
+        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(new Throwable("raw", fatal), listener);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+
+        assertSame(listenerFatal, thrown.get());
+        assertArrayEquals(new Throwable[] {fatal}, listenerFatal.getSuppressed());
+    }
+
     /**
      * An engine with no rules whose every run's body throws {@code failure}, from where no rule, listener, language or
      * output is called, which is the one place in a run that nothing reports it but the run itself.

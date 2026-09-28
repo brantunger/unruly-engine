@@ -473,7 +473,7 @@ A fatal error from closing a failed load's sessions and compilers wins over the 
 `RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), which it keeps in
 `getSuppressed()` unless it can't keep one; see
 [A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing). If the load itself failed with a
-fatal error, that one came first and is thrown instead, and the one from closing is only logged at WARN.
+fatal error, that one came first and is thrown, with the one from closing, logged at WARN, in its `getSuppressed()`.
 
 ## 📦 Packaging
 

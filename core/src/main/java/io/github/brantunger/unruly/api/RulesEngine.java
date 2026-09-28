@@ -65,9 +65,10 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               compiler, once everything being closed has been closed: the first, if there are
      *                               several. When a load that failed closes what it made, that error is thrown in
      *                               place of the load's own failure, unless the load failed with a fatal error, which
-     *                               came first and is thrown instead. The error carries the failure it replaces as a
-     *                               suppressed exception; if it can't carry one, as an {@link OutOfMemoryError} the
-     *                               JVM throws itself can't, that failure is logged at WARN.
+     *                               came first and is thrown instead. The error thrown carries the others the load
+     *                               met, and the failure it replaces, as suppressed exceptions; if it can't carry one,
+     *                               as an {@link OutOfMemoryError} the JVM throws itself can't, that is logged at
+     *                               WARN.
      *                               When a reload closes the rules it replaced, it is thrown after the new rules were
      *                               swapped in: they stay loaded, and runs use them. The reload closes the idle copies
      *                               of the rules it replaced, and closes their compilers too, throwing their error, if
@@ -111,8 +112,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               compiling, also as the cause of another exception, is logged and then rethrown
      *                               unchanged. So is one a language throws while closing a compiler, once every
      *                               compiler created has been closed: the first, if there are several, unless
-     *                               compiling threw a fatal error, which came first and is thrown instead. Either way
-     *                               the problems found aren't returned.
+     *                               compiling threw a fatal error, which came first and is thrown instead. The error
+     *                               thrown carries the others as suppressed exceptions. Either way the problems found
+     *                               aren't returned.
      */
     List<RuleCompilationException> validate(List<Rule> ruleList);
 
@@ -167,7 +169,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               and in place of a failure of the run that isn't fatal, which it carries as a
      *                               suppressed exception; if it can't carry one, as an {@link OutOfMemoryError} the JVM
      *                               throws itself can't, that failure is logged at WARN. A fatal error of the run's own
-     *                               came first, and is thrown instead.
+     *                               came first, and is thrown instead. Of several fatal errors, the first is thrown,
+     *                               carrying the others as suppressed exceptions; one a listener throws from
+     *                               {@code onRunError} is thrown in place of the run's failure, which it carries.
      *                               Every other {@link Error} from a rule, the output supplier, an output writer or
      *                               a language creating a session, including a {@link LinkageError}, is reported as
      *                               a {@code RuleExecutionException}; one from a language's check of a fact name as
@@ -256,14 +260,15 @@ public interface RulesEngine<O> extends AutoCloseable {
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
      * is rethrown unchanged once every session that was idle when this method closed the rules, and the compilers if no
      * run is using the rules by then (holding a copy, waiting for one, or not yet returned), has been closed: the
-     * first, if there are several. The engine is closed all the same, so closing it again does nothing. A copy given
-     * back while this method is still taking the idle copies, before it has marked the rules closed, counts as one of
-     * them: this method closes it too if no run is using the rules by then, and the last run to leave does otherwise. A
-     * copy a run still holds is closed when the run gives it back, or, when it's kept for a run still waiting for a
-     * copy, by that run or the last run to leave, and a fatal error from that reaches the run that closes it, never
-     * this method. The compilers are closed once both this method has closed the idle sessions and the last run has
-     * left, by whichever finishes second, which gets their fatal error: so when a run leaves while this method is still
-     * closing, this method closes the compilers and throws their error. By default, this method does nothing.
+     * first, if there are several, carrying the others as suppressed exceptions. The engine is closed all the same, so
+     * closing it again does nothing. A copy given back while this method is still taking the idle copies, before it has
+     * marked the rules closed, counts as one of them: this method closes it too if no run is using the rules by then,
+     * and the last run to leave does otherwise. A copy a run still holds is closed when the run gives it back, or, when
+     * it's kept for a run still waiting for a copy, by that run or the last run to leave, and a fatal error from that
+     * reaches the run that closes it, never this method. The compilers are closed once both this method has closed the
+     * idle sessions and the last run has left, by whichever finishes second, which gets their fatal error: so when a
+     * run leaves while this method is still closing, this method closes the compilers and throws their error. By
+     * default, this method does nothing.
      * </p>
      */
     @Override

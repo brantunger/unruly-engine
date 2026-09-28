@@ -118,7 +118,8 @@ class ListenerFatalErrorTest {
     }
 
     @Test
-    @DisplayName("from beforeEvaluate, then from onError: the error from beforeEvaluate is rethrown")
+    @DisplayName("from beforeEvaluate, then from onError: the error from beforeEvaluate is rethrown, carrying the"
+            + " other")
     void fromBeforeEvaluateThenOnError() {
         OutOfMemoryError fromBefore = new OutOfMemoryError("beforeEvaluate");
         OutOfMemoryError fromOnError = new OutOfMemoryError("onError");
@@ -127,10 +128,12 @@ class ListenerFatalErrorTest {
 
         assertSame(fromBefore, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
         assertEquals(List.of("L1.beforeEvaluate", "L2.beforeEvaluate", "L1.onError", "L2.onError"), events);
+        assertArrayEquals(new Throwable[] {fromOnError}, fromBefore.getSuppressed());
     }
 
     @Test
-    @DisplayName("from the rule, then from onError: the rule's error is rethrown once every listener got onError")
+    @DisplayName("from the rule, then from onError: the rule's error is rethrown once every listener got onError,"
+            + " carrying the other")
     void fromRuleThenOnError() {
         OutOfMemoryError fromRule = new OutOfMemoryError("rule");
         OutOfMemoryError fromOnError = new OutOfMemoryError("onError");
@@ -141,10 +144,12 @@ class ListenerFatalErrorTest {
 
         assertSame(fromRule, assertThrows(OutOfMemoryError.class, () -> engine.run(facts)));
         assertEquals(List.of("L1.beforeEvaluate", "L2.beforeEvaluate", "L1.onError", "L2.onError"), events);
+        assertArrayEquals(new Throwable[] {fromOnError}, fromRule.getSuppressed());
     }
 
     @Test
-    @DisplayName("two fatal errors in one callback: every listener is called and the first error is rethrown")
+    @DisplayName("two fatal errors in one callback: every listener is called and the first error is rethrown,"
+            + " carrying the second")
     void twoFatalErrors() {
         OutOfMemoryError first = new OutOfMemoryError("first");
         OutOfMemoryError second = new OutOfMemoryError("second");
@@ -155,5 +160,6 @@ class ListenerFatalErrorTest {
         assertSame(first, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
         assertEquals(List.of("L1.afterExecute", "L2.afterExecute", "L3.afterExecute"),
                 events.stream().filter(event -> event.endsWith("afterExecute")).toList());
+        assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
     }
 }

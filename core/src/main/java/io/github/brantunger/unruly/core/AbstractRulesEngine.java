@@ -384,11 +384,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally, selection))
                         .withRun(run);
             } catch (RuntimeException e) {
-                notifyRunError(snapshot, run, e, tally);
+                notifyRunError(snapshot, run, e, e, tally);
                 throw e;
             } catch (Error e) {
                 // run() rethrows the error itself; listeners see what it failed with.
-                notifyRunError(snapshot, run, runFailure(e), tally);
+                notifyRunError(snapshot, run, runFailure(e), e, tally);
                 throw e;
             } catch (Throwable t) {
                 // A backstop: every place the run calls a rule, a listener, a language or the output reports a
@@ -399,8 +399,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 String msg = "The run failed with " + Failures.describeWithClass(t);
                 log.error(msg);
                 RuleExecutionException failure = new ReportedFailure(msg, t);
-                notifyRunError(snapshot, run, failure, tally);
-                Failures.throwIfPresent(Failures.fatalError(t));
+                Error fatal = Failures.fatalError(t);
+                notifyRunError(snapshot, run, failure, fatal != null ? fatal : failure, tally);
+                Failures.throwIfPresent(fatal);
                 throw failure;
             }
             notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
@@ -435,16 +436,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Closes a run that failed with {@code onRunError} on every listener. A stop is recorded on the tally first, so
      * a fatal error a listener throws in its place still leaves the run's event saying the run stopped, as the
      * listeners were told, and so is an interrupt that caused it, so the thread's interrupt status is set again
-     * before the copy is given back and when {@code run()} returns (see {@link #keepInterruptOfStop}).
+     * before the copy is given back and when {@code run()} returns (see {@link #keepInterruptOfStop}). A fatal error a
+     * listener throws is rethrown in place of what the run failed with, and carries that as a suppressed exception
+     * (see {@link Failures#keepAlso}).
+     *
+     * @param error   The exception listeners are told of
+     * @param failing What the run throws if no listener throws a fatal error: {@code error}, or the fatal error it
+     *                carries
      */
-    private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error, RunTally tally) {
+    private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error,
+                                Throwable failing, RunTally tally) {
         if (ReportedFailure.isStop(error)) {
             tally.markStopped();
             if (error.getCause() instanceof InterruptedException) {
                 tally.markInterrupted();
             }
         }
-        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error), error);
+        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error), error, failing);
     }
 
     /** Creates the context one run is reported to listeners with. */
@@ -460,22 +468,26 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * run it started logged it already (see {@link LoggedFailures}).
      */
     private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        notifyRun(snapshot, callback, call, null);
+        notifyRun(snapshot, callback, call, null, null);
     }
 
     /**
      * Calls one run callback on every listener, as {@link #notifyRun(List, String, Consumer)} does, for a callback
-     * that tells listeners of the run's failure.
+     * that tells listeners of the run's failure. A fatal {@link Error} a listener throws carries what it's rethrown in
+     * place of as a suppressed exception (see {@link Failures#keepAlso}).
      *
-     * @param told The exception the callback tells listeners of, or {@code null}; see {@link #logListenerException}
+     * @param told    The exception the callback tells listeners of, or {@code null}; see
+     *                {@link #logListenerException}
+     * @param failing What the run throws if no listener throws a fatal error, or {@code null}
      */
     private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
-                           Throwable told) {
+                           Throwable told, Throwable failing) {
         Error fatal = notifyListeners(snapshot, callback, call, null, told);
         if (fatal != null) {
             if (LoggedFailures.unloggedFatal(fatal)) {
                 log.error("A listener threw {} in {}", fatal.getClass().getName(), callback);
             }
+            Failures.keepAlso(fatal, failing);
             throw fatal;
         }
     }
@@ -579,8 +591,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * this returns, or what it throws. Leaving closes the rule set only if it was retired and this run was its last
      * user; a fatal {@link Error} from that closing is thrown in place of the stop, carrying it as a suppressed
      * exception, unless a listener threw a fatal error while the stop was reported, which came first and is thrown
-     * instead. An interrupted run sets its thread's interrupt status again before it leaves, and {@code run()} again
-     * when it returns (see {@link #keepInterruptOfStop}).
+     * instead, carrying the one from closing. An interrupted run sets its thread's interrupt status again before it
+     * leaves, and {@code run()} again when it returns (see {@link #keepInterruptOfStop}).
      *
      * @param stop What the wait stopped with: an {@link InterruptedException} or a {@link TimeoutException}
      * @return The stop, for the caller to throw
@@ -688,10 +700,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             } catch (Error e) {
                 // The run stopped, though the error keeps the stop from reaching onRunError: its event says so.
                 tally.markStopped();
-                notifyRunError(snapshot, run, runFailure(e), tally);
+                notifyRunError(snapshot, run, runFailure(e), e, tally);
                 throw e;
             }
-            notifyRunError(snapshot, run, failure, tally);
+            notifyRunError(snapshot, run, failure, failure, tally);
             return failure;
         } finally {
             fatalFailure.remove();
@@ -757,11 +769,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * <p>
      * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once everything being
-     * closed has been closed: the first, if there are several. A rule list that fails to load throws it in place of
-     * its own failure, which the error carries as a suppressed exception, or which is logged at WARN if the error
-     * can't carry one, as the JVM's own {@link OutOfMemoryError} can't; unless that failure is itself a fatal error,
-     * which came first and is thrown instead. A reload throws it after swapping its rules in, when it closes the rule
-     * list they replaced: the new rules stay loaded, and runs use them.
+     * closed has been closed: the first, if there are several, carrying the others as suppressed exceptions. A rule
+     * list that fails to load throws it in place of its own failure, which the error carries as a suppressed
+     * exception, or which is logged at WARN if the error can't carry one, as the JVM's own {@link OutOfMemoryError}
+     * can't; unless that failure is itself a fatal error, which came first and is thrown instead, carrying the one
+     * from closing. A reload throws it after swapping its rules in, when it closes the rule list they replaced: the
+     * new rules stay loaded, and runs use them.
      * </p>
      *
      * @param ruleList The List of {@link Rule} objects to compile.
@@ -874,7 +887,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Retires a rule set that {@code load()} won't swap in, before the caller throws {@code failure}: closes its
      * copies, and then its compilers. A fatal {@link Error} from closing them is thrown here instead, carrying
      * {@code failure} as suppressed, or logging it at WARN if the error can't carry one, unless {@code failure} is a
-     * fatal error itself, which came first (see {@link Failures#fatalInsteadOf}).
+     * fatal error itself, which came first, and carries the one from closing (see {@link Failures#fatalInsteadOf}).
      *
      * @param loaded  The rule set, which no run can see
      * @param failure What the caller throws next
@@ -900,15 +913,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * <p>
      * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once every copy that
      * was idle when this method closed the rules, and the compilers if no run is using the rules by then (holding a
-     * copy, waiting for one, or not yet returned), has been closed: the first, if there are several. The engine is
-     * closed all the same, so closing it again does nothing. A copy given back while this method is still taking the
-     * idle copies, before it has marked the rules closed, counts as one of them: this method closes it too if no run is
-     * using the rules by then, and the last run to leave does otherwise. A copy a run still holds is closed when the
-     * run gives it back, or, when it's kept for a run still waiting for a copy, by that run or the last run to leave,
-     * and a fatal error from that reaches the run that closes it, never this method. The compilers are closed once both
-     * this method has closed the idle copies and the last run has left, by whichever finishes second, which gets their
-     * fatal error: so when a run leaves while this method is still closing, this method closes the compilers and throws
-     * their error.
+     * copy, waiting for one, or not yet returned), has been closed: the first, if there are several, carrying the
+     * others as suppressed exceptions. The engine is closed all the same, so closing it again does nothing. A copy
+     * given back while this method is still taking the idle copies, before it has marked the rules closed, counts as
+     * one of them: this method closes it too if no run is using the rules by then, and the last run to leave does
+     * otherwise. A copy a run still holds is closed when the run gives it back, or, when it's kept for a run still
+     * waiting for a copy, by that run or the last run to leave, and a fatal error from that reaches the run that closes
+     * it, never this method. The compilers are closed once both this method has closed the idle copies and the last run
+     * has left, by whichever finishes second, which gets their fatal error: so when a run leaves while this method is
+     * still closing, this method closes the compilers and throws their error.
      * </p>
      */
     // A closed engine has no rule set.
@@ -1766,7 +1779,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RuleExecutionException failure = new RuleExecutionException(listenerFatalMessage(fatal, callback, rule),
                     fatal, rule.rule().getRuleName());
             // Already on its way out of run(), so a second fatal error from onError can't replace it, but it's kept.
-            keepSecondFatal(failure, reportFailure(snapshot, rule, failure, LoggedFailures.unloggedFatal(fatal)));
+            keepSecondFatal(failure, fatal,
+                    reportFailure(snapshot, rule, failure, LoggedFailures.unloggedFatal(fatal)));
             fatalFailure.set(failure);
             throw fatal;
         }
@@ -1798,7 +1812,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * run. A fatal {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener
      * throws, doesn't stop the other listeners either, so each still gets the callback, and closes whatever it opened;
      * the error is returned for the caller to rethrow. A second fatal error in the same callback is logged like an
-     * exception.
+     * exception, and kept on the first as a suppressed exception (see {@link Failures#keepAlso}).
      *
      * @return The first fatal {@link Error} a listener threw, or {@code null}
      */
@@ -1849,8 +1863,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 } else if (found != null && fatal == null) {
                     fatal = found;
                 } else {
-                    // A non-fatal exception, or a second fatal error in this callback, which the caller can't rethrow.
+                    // A non-fatal exception, or a second fatal error in this callback, which the caller can't rethrow
+                    // but finds on the first.
                     logListenerException(callback, e, told);
+                    Failures.keepAlso(fatal, found);
                 }
             }
         }
@@ -1909,15 +1925,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Keeps a fatal {@link Error} a listener's {@link RuleListener#onError} threw while it closed a failure that is
      * fatal itself. The failure's own error is still the one {@code run()} rethrows, so this one is logged like a
      * second fatal error in one callback, and added to the exception listeners were told about, where
-     * {@link RuleListener#onRunError} finds it. The rethrown error isn't changed. One a run the listener started logged
-     * already isn't logged at WARN again (see {@link LoggedFailures#logged}); its stack trace is still logged at DEBUG.
+     * {@link RuleListener#onRunError} finds it, and to the rethrown error (see {@link Failures#keepAlso}). One a run
+     * the listener started logged already isn't logged at WARN again (see {@link LoggedFailures#logged}); its stack
+     * trace is still logged at DEBUG.
      *
      * @param reported     The exception every listener's {@code onError} got
+     * @param rethrown     The failure's own fatal error, which {@code run()} rethrows
      * @param fromListener The fatal error a listener threw from {@code onError}, or {@code null}
      */
-    private static void keepSecondFatal(RuleExecutionException reported, Error fromListener) {
+    private static void keepSecondFatal(RuleExecutionException reported, Error rethrown, Error fromListener) {
         if (fromListener != null) {
             reported.addSuppressed(fromListener);
+            Failures.keepAlso(rethrown, fromListener);
             // Says which one onRunError can see: the loop has already logged any later fatal error.
             if (!LoggedFailures.logged(fromListener)) {
                 log.warn("Listener threw exception in onError, kept on the failure: {}",
@@ -1952,7 +1971,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             error.addSuppressed(listenerFatal);
             fatal = listenerFatal;
         } else if (listenerFatal != null) {
-            keepSecondFatal(error, listenerFatal);
+            keepSecondFatal(error, fatal, listenerFatal);
         }
         if (fatal != null) {
             fatalFailure.set(error);

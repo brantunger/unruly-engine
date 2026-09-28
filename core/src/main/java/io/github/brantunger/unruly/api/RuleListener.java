@@ -17,8 +17,10 @@ import java.util.Map;
  * or action doesn't run, and every listener first gets {@link #onError} to close that callback.
  * When {@link #onError} closes a failure that is fatal itself, whether the rule or a {@code before*} callback threw
  * that error, and a listener throws another {@link VirtualMachineError} there, the failure's own error is still the
- * one {@code run()} throws: the first such error, other than that failure's own, is suppressed on the exception
- * {@link #onRunError} gets, and any later one is only logged.
+ * one {@code run()} throws, and carries the first such error, other than that failure's own, as a suppressed
+ * exception, which the exception {@link #onRunError} gets carries too; any later one is suppressed on that first
+ * one. A fatal error from {@link #onRunError} is what {@code run()} throws instead, and carries the failure it
+ * replaces as a suppressed exception.
  *
  * <p>
  * <b>Thread safety:</b> an engine shared across threads invokes the same listener from every
