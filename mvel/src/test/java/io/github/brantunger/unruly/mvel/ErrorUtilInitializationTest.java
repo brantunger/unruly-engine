@@ -1,13 +1,13 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.ChildJvm;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,21 +19,14 @@ class ErrorUtilInitializationTest {
      * run in this JVM: other tests have initialized MVEL here already, and the coverage agent instruments classes as
      * they load, which changes how much stack the overflowing compile has left.
      */
-    private static String runScenario() throws IOException, InterruptedException {
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
-        Process process = new ProcessBuilder(java.toString(), "-Dorg.slf4j.simpleLogger.defaultLogLevel=off",
-                "-cp", System.getProperty("java.class.path"), DeepRuleScenario.class.getName())
-                .redirectErrorStream(true)
-                .start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the scenario didn't finish");
-        return output;
+    private static String runScenario(Path dir) throws IOException, InterruptedException {
+        return ChildJvm.run(dir, DeepRuleScenario.class);
     }
 
     @Test
     @DisplayName("a deeply nested rule on a small stack fails alone, and a later syntax error is reported normally")
-    void overflowOnlyFailsItsRule() throws Exception {
-        String output = runScenario();
+    void overflowOnlyFailsItsRule(@TempDir Path dir) throws Exception {
+        String output = runScenario(dir);
 
         List<String> outcomes = output.lines().filter(line -> line.startsWith(DeepRuleScenario.OUTCOMES))
                 .map(line -> line.substring(DeepRuleScenario.OUTCOMES.length()))

@@ -7,15 +7,29 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
+import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
+import javax.tools.SimpleJavaFileObject;
+import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,6 +43,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class InitializerFailureTest {
 
     private static final String PREFIX = "Condition for rule 'r' failed to compile at line 1, column 1: ";
+
+    /** The simple name of an exception class whose binary name is longer than a note shows, 249 characters. */
+    private static final String LONG_SIMPLE_NAME = "LongNamedFailure" + "X".repeat(200);
+
+    /** The class named {@link #LONG_SIMPLE_NAME}, defined by {@link #defineLongNamedFailure}. */
+    private static Class<?> longNamedClass;
 
     public static class PlainInit {
         public static int x = 1;
@@ -228,6 +248,62 @@ class InitializerFailureTest {
         }
     }
 
+    public static class LongClassNameInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw longNamedFailure("init failed");
+            }
+        }
+    }
+
+    public static class LongClassNameNoMessageInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw longNamedFailure(null);
+            }
+        }
+    }
+
+    /**
+     * Compiles and defines, in this test's class loader and package, an exception class whose name is too long for a
+     * line of source here, once for the JVM.
+     */
+    @BeforeAll
+    static void defineLongNamedFailure(@TempDir Path dir) throws Exception {
+        String pkg = InitializerFailureTest.class.getPackageName();
+        JavaFileObject source = new SimpleJavaFileObject(URI.create("string:///" + LONG_SIMPLE_NAME + ".java"),
+                JavaFileObject.Kind.SOURCE) {
+            @Override
+            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+                return "package " + pkg + ";\npublic class " + LONG_SIMPLE_NAME + " extends RuntimeException {\n"
+                        + "    public " + LONG_SIMPLE_NAME + "(String message) { super(message); }\n}\n";
+            }
+        };
+        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        boolean compiled = javac.getTask(null, null, diagnostics, List.of("-proc:none", "-d", dir.toString()), null,
+                List.of(source)).call();
+        assertTrue(compiled, diagnostics.getDiagnostics().stream()
+                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
+                .collect(Collectors.joining("\n")));
+        longNamedClass = MethodHandles.lookup().defineClass(Files.readAllBytes(dir.resolve(pkg.replace('.', '/'))
+                .resolve(LONG_SIMPLE_NAME + ".class")));
+    }
+
+    /** A new exception of the class named {@link #LONG_SIMPLE_NAME}, for an initializer to throw. */
+    private static RuntimeException longNamedFailure(String message) {
+        try {
+            return (RuntimeException) longNamedClass.getConstructor(String.class).newInstance(message);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /**
      * Loads a rule whose condition reads {@code x} of the class, on a thread of its own: an unbounded walk of a cause
      * chain that never ends can't be interrupted, so a daemon thread that is left running fails the test instead of
@@ -383,5 +459,25 @@ class InitializerFailureTest {
                 + "... (4115 more characters))";
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 1, description)), thrown.issues());
         assertEquals("failed to compile at line 1, column 1: " + description, thrown.getCause().getMessage());
+    }
+
+    // #717: a root cause's class name longer than a note shows was only ever short in the tests.
+    @Test
+    @DisplayName("a root cause's long class name is shortened in the note, before its message")
+    void longRootCauseClassNameShortened() throws InterruptedException {
+        String name = longNamedClass.getName();
+
+        assertEquals(249, name.length(), name);
+        assertEquals(PREFIX + "null (caused by " + name.substring(0, 200) + "... (49 more characters): init failed)",
+                loadFailure(LongClassNameInit.class).getMessage());
+    }
+
+    @Test
+    @DisplayName("a root cause's long class name is shortened in the note when it has no message")
+    void longRootCauseClassNameWithoutAMessageShortened() throws InterruptedException {
+        String name = longNamedClass.getName();
+
+        assertEquals(PREFIX + "null (caused by " + name.substring(0, 200) + "... (49 more characters))",
+                loadFailure(LongClassNameNoMessageInit.class).getMessage());
     }
 }

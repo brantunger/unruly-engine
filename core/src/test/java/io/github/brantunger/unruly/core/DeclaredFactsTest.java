@@ -123,6 +123,11 @@ class DeclaredFactsTest {
         store.setValue("b", "b");
 
         assertEquals(Map.of("ok", true), engine.run(store));
+        // Only the map declares b, so a run that gives it the wrong type is rejected only if the map declared it.
+        store.setValue("b", 1);
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> engine.run(store));
+        assertEquals("Fact 'b' was declared as java.lang.String, but the run supplied a java.lang.Integer",
+                thrown.getMessage());
     }
 
     @Test
