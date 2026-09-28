@@ -122,7 +122,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; the reported exception keeps the first other one a listener threw in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure: <class>: <message>` at WARN, unless a nested run logged it, with the [root-cause note](exceptions-by-method.md) when it applies |
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
 | A fatal error from `onRunError` | That error, in place of the exception the run failed with | Every listener gets `onRunError` | ERROR |
-| A fatal error from closing the copy the run gives back, or, when it's the last run to leave retired rules (even after a failed borrow), the copies kept for runs that waited on them and the rules' compilers (see [A fatal error while closing](#-a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| A fatal error from closing the copy the run gives back, or, when it's the last run to leave retired rules (even after a failed borrow), the copies still kept, and the rules' compilers if `load()` or `close()` finished closing first (see [A fatal error while closing](#-a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
 | `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](exceptions-by-method.md) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 
 > [!NOTE]
@@ -145,7 +145,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 
 Closing a rule list's sessions and compilers is never cut short. When one of them throws a fatal error, such as an
 `OutOfMemoryError`, the engine still closes every idle session of that list, then its compilers if no run is still
-using it, and only then rethrows the error. If several are fatal, the first is rethrown and the others are only
+using it by then, and only then rethrows the error. If several are fatal, the first is rethrown and the others are only
 logged. Each fatal error from closing is logged at WARN unless a nested run did.
 
 A failure of the call's own that isn't fatal loses to a fatal error from closing, which keeps it in
@@ -161,9 +161,16 @@ The call that closes throws it:
   [Reloading rules while running](thread-safety.md#-reloading-rules-while-running)), failed, or found the engine closed.
 
 A run throws it too, even when its rules ran without failing: from closing an extra copy it gives back, a copy that
-couldn't be kept, a copy of retired rules that no waiting run needs, or the sessions of a copy only partly made. The
-last run to leave retired rules, even one whose borrow failed or was stopped, closes the copies still kept, then the
-compilers, so a fatal error from those reaches that run, never `load()` or `close()`.
+couldn't be kept, a copy of retired rules that no waiting run needs, or the sessions of a copy only partly made.
+
+`load()` and `close()` close only the copies that were idle when they retired the rules. A copy given back later is
+kept only while a run is waiting for one, and the last run to leave, even one whose borrow failed or was stopped,
+closes any copy still kept. So a fatal error from a copy kept for a waiting run reaches a run, never `load()` or
+`close()`.
+
+The compilers are closed once, after `load()` or `close()` has closed the idle copies and the last run has left.
+Whichever of the two finishes second closes them and throws their fatal error: the last run, or `load()` or `close()`
+when that run left before they finished closing.
 
 A stopped wait for a copy, or for a build slot to make one, is reported first: its WARN line, `beforeRun`, then
 `onRunError`. The fatal error carries the stop's `RuleExecutionException`; an interrupted thread stays interrupted.
