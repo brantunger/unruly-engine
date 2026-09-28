@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.12.0](https://github.com/brantunger/unruly-engine/compare/v2.11.0...v2.12.0) (2026-09-28)
+
+
+### Features
+
+* catch leaked and namespaced variables, condition writes and unwarmed compilers in the contract kit ([#794](https://github.com/brantunger/unruly-engine/issues/794)) ([043b034](https://github.com/brantunger/unruly-engine/commit/043b034bf8dd17ee67b1e73c9df22c59c03da157))
+
 ## [2.11.0](https://github.com/brantunger/unruly-engine/compare/v2.10.2...v2.11.0) (2026-09-28)
 
 
