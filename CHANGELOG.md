@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.11.0](https://github.com/brantunger/unruly-engine/compare/v2.10.2...v2.11.0) (2026-09-28)
+
+
+### Features
+
+* compare RunOptions, RuleSetInfo and RunResult by value, leaving out a result's start time ([#792](https://github.com/brantunger/unruly-engine/issues/792)) ([f4f5b2a](https://github.com/brantunger/unruly-engine/commit/f4f5b2a6ee5c15464070690d06285bc05221818c))
+
 ## [2.10.2](https://github.com/brantunger/unruly-engine/compare/v2.10.1...v2.10.2) (2026-09-28)
 
 
