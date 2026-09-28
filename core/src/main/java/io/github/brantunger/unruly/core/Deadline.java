@@ -17,15 +17,14 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>
  * A run started from inside another inherits that run's deadline itself, so the engine tells a stop for the same
- * deadline by identity. {@link #equals(Object)} is value equality only for deadlines created {@link #at(Instant) at an
- * instant}, which are equal when their instants are: two contexts a test creates from one instant are equal, as they
- * were when a context held the instant itself. No decision uses it.
+ * deadline by identity. A deadline equals only itself: two created at the same instant read {@code nanoTime()} at
+ * different moments, so they needn't pass together.
  * </p>
  */
 final class Deadline {
 
     /** No deadline: it never passes, and there is always time left. */
-    static final Deadline NONE = new Deadline(false, 0, null, null, false);
+    static final Deadline NONE = new Deadline(false, 0, null, null);
 
     // The most time left there can be: the most that converts to nanoseconds without overflowing.
     private static final Duration LONGEST = Duration.ofNanos(Long.MAX_VALUE);
@@ -39,18 +38,15 @@ final class Deadline {
     // it's asked for. A deadline created at an instant keeps that instant here, with a timeout of zero.
     private final Instant start;
     private final Duration timeout;
-    // Whether it was created at an instant, which makes it equal to another created at the same one.
-    private final boolean atInstant;
     // The instant, once worked out. Not volatile: an Instant is immutable, and a thread that reads null works out the
     // same one again from the final fields above.
     private Instant shown;
 
-    private Deadline(boolean set, long nanos, Instant start, Duration timeout, boolean atInstant) {
+    private Deadline(boolean set, long nanos, Instant start, Duration timeout) {
         this.set = set;
         this.nanos = nanos;
         this.start = start;
         this.timeout = timeout;
-        this.atInstant = atInstant;
     }
 
     /**
@@ -63,7 +59,7 @@ final class Deadline {
         // Each clock read once, the system clock first, so the instant shown is never later than when the deadline
         // passes. The instant is worked out only if it's shown, so a run allocates no more for it.
         Instant start = Instant.now();
-        return new Deadline(true, System.nanoTime() + nanosOf(timeout), start, timeout, false);
+        return new Deadline(true, System.nanoTime() + nanosOf(timeout), start, timeout);
     }
 
     /**
@@ -79,7 +75,7 @@ final class Deadline {
         }
         // The system clock first, as in from(), so the deadline passes no earlier than the instant.
         long left = nanosOf(Duration.between(Instant.now(), instant));
-        return new Deadline(true, System.nanoTime() + left, instant, Duration.ZERO, true);
+        return new Deadline(true, System.nanoTime() + left, instant, Duration.ZERO);
     }
 
     /**
@@ -170,22 +166,5 @@ final class Deadline {
             shown = instant;
         }
         return instant;
-    }
-
-    /**
-     * Tells whether two deadlines were both created at the same instant; any other deadline equals only itself.
-     *
-     * @param other The other deadline
-     * @return {@code true} if they are equal
-     */
-    @Override
-    public boolean equals(Object other) {
-        return this == other || other instanceof Deadline deadline && atInstant && deadline.atInstant
-                && start.equals(deadline.start);
-    }
-
-    @Override
-    public int hashCode() {
-        return atInstant ? start.hashCode() : System.identityHashCode(this);
     }
 }

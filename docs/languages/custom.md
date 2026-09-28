@@ -95,11 +95,11 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
-The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
-sealed, so only the engine implements them; tests create them with
-[`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine). A method added to an
-interface you implement is a `default` method, so a language written against an earlier 2.x release keeps compiling
-and working.
+Your language gets a `CompileContext`, `EvaluationContext` and `ActionContext` from the engine, which alone implements
+these sealed interfaces; tests create them with
+[`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine). An evaluation or action
+context equals only itself. Methods added to interfaces you implement are `default`, so a language from an earlier 2.x
+release keeps compiling and working.
 
 ```java
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;

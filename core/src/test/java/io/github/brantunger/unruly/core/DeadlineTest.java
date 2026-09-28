@@ -115,20 +115,17 @@ class DeadlineTest {
     }
 
     @Test
-    @DisplayName("deadlines created at the same instant are equal, and any other deadline equals only itself")
+    @DisplayName("a deadline equals only itself, even one created at the same instant as another")
     void equality() {
         Instant instant = Instant.parse("2030-01-01T00:00:00Z");
         Deadline at = Deadline.at(instant);
         Deadline from = Deadline.from(Duration.ofSeconds(60));
 
-        assertEquals(at, Deadline.at(instant));
-        assertEquals(at.hashCode(), Deadline.at(instant).hashCode());
-        assertNotEquals(at, Deadline.at(instant.plusSeconds(1)));
+        assertEquals(at, at);
+        assertNotEquals(at, Deadline.at(instant));
+        assertEquals(System.identityHashCode(at), at.hashCode());
         assertEquals(from, from);
         assertNotEquals(from, Deadline.from(Duration.ofSeconds(60)));
-        assertNotEquals(at, from);
-        assertNotEquals(from, at);
-        assertNotEquals(at, instant);
         assertEquals(System.identityHashCode(from), from.hashCode());
     }
 

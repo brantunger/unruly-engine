@@ -9,6 +9,12 @@ import java.util.Objects;
 /**
  * What one action runs against. <b>Internal:</b> public only because {@link ActionContext} is sealed to it.
  *
+ * <p>
+ * It compares by identity, as {@link EngineEvaluationContext} does, and so departs on purpose from the rule of
+ * {@link Record#equals(Object)} that a copy with the same components is equal: each action gets a context of its own,
+ * and neither the facts nor the output object is compared or hashed.
+ * </p>
+ *
  * @param facts       The run's facts, read-only
  * @param output      The output object the action changes
  * @param runDeadline When the run must stop, which decides whether it has to
@@ -48,6 +54,23 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
     @Override
     public Instant deadline() {
         return runDeadline.instant();
+    }
+
+    /**
+     * Tells whether {@code other} is this context: a context equals only itself, not even a copy with the same
+     * components.
+     *
+     * @param other The other object
+     * @return {@code true} if it is this context
+     */
+    @Override
+    public boolean equals(Object other) {
+        return this == other;
+    }
+
+    @Override
+    public int hashCode() {
+        return System.identityHashCode(this);
     }
 
     /**

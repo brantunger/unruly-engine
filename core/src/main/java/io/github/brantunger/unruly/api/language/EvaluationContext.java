@@ -15,6 +15,15 @@ import java.util.Map;
  * {@code unruly-engine-test} artifact. Because only the engine implements it, a later release can add methods to it
  * without breaking languages.
  * </p>
+ *
+ * <p>
+ * <b>Identity:</b> a context equals only itself, however its facts change and whatever another run's facts are, and its
+ * {@code hashCode()} reads neither the facts nor, for an {@link ActionContext}, the output object. A run passes one
+ * evaluation context to every condition, and a new action context to each action, so the two are different objects. A
+ * {@link Session} serves one run at a time and later runs reuse it, and no call marks where a run starts or ends, so
+ * state a run leaves in a session is still there for the next run. A map keyed on contexts must not keep them alive, as
+ * a {@link java.util.WeakHashMap} doesn't.
+ * </p>
  */
 public sealed interface EvaluationContext
         permits ActionContext, io.github.brantunger.unruly.core.EngineEvaluationContext {

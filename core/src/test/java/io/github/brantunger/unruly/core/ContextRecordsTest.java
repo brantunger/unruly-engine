@@ -196,20 +196,39 @@ class ContextRecordsTest {
     }
 
     @Test
-    @DisplayName("contexts created from the same instant are equal, as they were when they held the instant itself")
-    void contextsFromTheSameInstantAreEqual() {
+    @DisplayName("a context equals only itself, even another created from the same facts and instant")
+    void aContextEqualsOnlyItself() {
         Instant instant = Instant.parse("2030-01-01T00:00:00Z");
         Map<String, Object> output = new HashMap<>();
+        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of(), instant);
+        EngineActionContext action = new EngineActionContext(Map.of(), output, instant);
 
-        assertEquals(new EngineEvaluationContext(Map.of(), instant), new EngineEvaluationContext(Map.of(), instant));
-        assertEquals(new EngineEvaluationContext(Map.of(), instant).hashCode(),
-                new EngineEvaluationContext(Map.of(), instant).hashCode());
-        assertEquals(new EngineActionContext(Map.of(), output, instant),
-                new EngineActionContext(Map.of(), output, instant));
-        assertNotEquals(new EngineEvaluationContext(Map.of(), instant),
-                new EngineEvaluationContext(Map.of(), instant.plusSeconds(1)));
-        assertEquals(new EngineEvaluationContext(Map.of(), (Instant) null),
+        assertNotEquals(evaluation, new EngineEvaluationContext(Map.of(), instant));
+        assertNotEquals(action, new EngineActionContext(Map.of(), output, instant));
+        assertNotEquals(new EngineEvaluationContext(Map.of(), (Instant) null),
                 new EngineEvaluationContext(Map.of(), (Instant) null));
+        assertNotEquals(new EngineActionContext(Map.of(), output, (Instant) null),
+                new EngineActionContext(Map.of(), output, (Instant) null));
+        assertEquals(evaluation, evaluation);
+        assertEquals(action, action);
+        assertEquals(System.identityHashCode(evaluation), evaluation.hashCode());
+        assertEquals(System.identityHashCode(action), action.hashCode());
+    }
+
+    @Test
+    @DisplayName("a context's hash reads no fact and no output object, so one whose hashCode throws doesn't matter")
+    void hashReadsNoFact() {
+        Object boom = new Object() {
+            @Override
+            public int hashCode() {
+                throw new IllegalStateException("a fact's hashCode");
+            }
+        };
+        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("boom", boom), Deadline.NONE);
+        EngineActionContext action = new EngineActionContext(Map.of("boom", boom), boom, Deadline.NONE);
+
+        assertEquals(System.identityHashCode(evaluation), assertDoesNotThrow(evaluation::hashCode));
+        assertEquals(System.identityHashCode(action), assertDoesNotThrow(action::hashCode));
     }
 
     @Test
