@@ -145,8 +145,8 @@ sessions are closed when the run ends. See [Runs that don't wait](compiled-copie
 
 ### Fact
 
-A named input value that rules refer to by its name, such as `applicant`. `Fact` is the built-in `FactReference`. A fact
-can't be named `null` or `output`, or have a name the rules' languages can't refer to. See
+A named input value that rules refer to by its name, such as `applicant`. `Fact` is the built-in `FactReference`. A
+fact's name can't be `null`, blank, `output` or one the rules' languages can't refer to. See
 [Facts](facts.md#-the-fact-types).
 
 ### Fact store

@@ -92,12 +92,13 @@ variable declared as `FactMap` has the `Map` methods too, such as `remove` and `
 
 ## 🔤 Naming rules
 
-A rule can only refer to a fact whose name its expression language can read as a variable. Two rules hold for every
+A rule can only refer to a fact whose name its expression language can read as a variable. Three rules hold for every
 language, and each language adds its own.
 
 | Name | Every language | Why |
 | --- | --- | --- |
 | `null` (only a custom `FactStore` can hold one) | ❌ rejected | `fact name must not be null` |
+| Blank: empty or only whitespace | ❌ rejected | `fact name must not be blank` |
 | `output` | ❌ rejected | `'output' is reserved for the output object and cannot be used as a fact name` |
 | `Output`, `OUTPUT` | ✅ allowed | The check is exact and case-sensitive |
 | Anything else | The rules' languages decide | Each language rejects the names it can't refer to |
@@ -251,8 +252,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 - **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
   declaration. A run that leaves the fact out is unaffected. A primitive type [widens](#primitive-types-widen), and a
-  `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring `output` fails at once,
-  and `load()` fails for a declared name the rules' languages can't refer to.
+  `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring `output` or a blank name
+  fails at once, and `load()` fails for a declared name the rules' languages can't refer to.
 - **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
 - **`facts(map)`** declares several at once, as `fact()` does each one. If it rejects an entry, it declares none.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,

@@ -168,6 +168,15 @@ class EngineConfigurationTest {
     }
 
     @Test
+    @DisplayName("a declared fact can't have a blank name")
+    void blankDeclaredFactRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> configuration(LANGUAGES,
+                List.of(), List.of(), LIMIT, CLOCK, Object.class, WRITER, Map.of(), Map.of("\t", String.class)));
+
+        assertEquals("fact name must not be blank", ex.getMessage());
+    }
+
+    @Test
     @DisplayName("the languages, lists, options and declarations are unmodifiable copies, detached from the caller's")
     void keepsDetachedCopies() {
         Map<String, ExpressionLanguage> languages = new HashMap<>(LANGUAGES);

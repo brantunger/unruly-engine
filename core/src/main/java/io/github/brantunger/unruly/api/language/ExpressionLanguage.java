@@ -7,8 +7,8 @@ package io.github.brantunger.unruly.api.language;
  * The engine compiles each rule list with a new {@link ExpressionCompiler}, which keeps whatever the language caches
  * for that list. The engine enforces the rest of the rule contract itself, whatever the language: rule names are
  * unique, conditions and actions aren't blank, rules run in priority order, a condition evaluates to a
- * {@link Boolean}, no fact is named {@value ActionContext#OUTPUT_NAME}, and failures are reported as
- * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} or
+ * {@link Boolean}, no fact has a blank name or is named {@value ActionContext#OUTPUT_NAME}, and failures are reported
+ * as {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} or
  * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} and to listeners.
  * </p>
  *

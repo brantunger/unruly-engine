@@ -42,7 +42,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, or a fact is declared with the name {@code output}
+     *                                  dot-separated parts, or a fact is declared with a blank name or the name
+     *                                  {@code output}
      */
     public EngineCompileContext {
         Objects.requireNonNull(packageImports, "packageImports must not be null");
@@ -78,14 +79,20 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @param name The fact's name
      * @param type The type it was declared with
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
+     * @throws IllegalArgumentException if {@code name} is blank, or is {@code output}, which actions use for the
+     *                                  output object
      */
     public static void checkDeclaration(String name, Class<?> type) {
         Objects.requireNonNull(name, "name must not be null");
         Objects.requireNonNull(type, "type must not be null");
-        if (ActionContext.OUTPUT_NAME.equals(name)) {
-            throw new IllegalArgumentException("'" + ActionContext.OUTPUT_NAME
-                    + "' is reserved for the output object and cannot be declared as a fact");
+        FactNames.Problem problem = FactNames.check(name);
+        if (problem != null) {
+            throw new IllegalArgumentException(switch (problem) {
+                case BLANK -> "fact name must not be blank";
+                // The name isn't null, as checked above, so the only other problem it can have is being output.
+                default -> "'" + ActionContext.OUTPUT_NAME
+                        + "' is reserved for the output object and cannot be declared as a fact";
+            });
         }
     }
 
@@ -97,7 +104,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @param type The type it was declared with
      * @return The type to tell languages
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
+     * @throws IllegalArgumentException if {@code name} is blank, or is {@code output}, which actions use for the
+     *                                  output object
      */
     public static Class<?> declaredType(String name, Class<?> type) {
         checkDeclaration(name, type);
@@ -131,7 +139,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, or a fact is declared with the name {@code output}
+     *                                  dot-separated parts, or a fact is declared with a blank name or the name
+     *                                  {@code output}
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                 Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,

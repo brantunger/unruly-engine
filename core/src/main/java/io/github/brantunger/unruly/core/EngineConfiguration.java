@@ -30,7 +30,7 @@ import java.util.Objects;
  * @param outputWriter    Sets the properties actions return on the output object
  * @param declaredFacts   The declared type of each fact, by name, empty if none were declared. A primitive type is
  *                        kept as it was declared, not as its wrapper, so a run widens a boxed primitive to it, and no
- *                        fact may be named {@code output}
+ *                        fact may have a blank name or be named {@code output}
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param <O>             The type of the output object
@@ -52,7 +52,7 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
      *
      * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
      *                                  element, a language's name or a language, is {@code null}
-     * @throws IllegalArgumentException if a fact is declared with the name {@code output}
+     * @throws IllegalArgumentException if a fact is declared with a blank name or the name {@code output}
      */
     public EngineConfiguration {
         Objects.requireNonNull(languages, "languages must not be null");

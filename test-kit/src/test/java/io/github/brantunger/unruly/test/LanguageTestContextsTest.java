@@ -185,6 +185,17 @@ class LanguageTestContextsTest {
     }
 
     @Test
+    @DisplayName("a blank declared fact name is rejected, as an engine's builder rejects it")
+    void blankDeclaredFactName() {
+        ClassLoader loader = getClass().getClassLoader();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> LanguageTestContexts.compile(
+                Set.of(), Set.of(), loader, Object.class, Map.of(), Map.of(" ", Integer.class), false));
+
+        assertEquals("fact name must not be blank", ex.getMessage());
+    }
+
+    @Test
     @DisplayName("a language's compiled condition and action can be tested without an engine")
     void unitTestLanguage() throws Exception {
         ExpressionCompiler compiler = new ToyExpressionLanguage().newCompiler(LanguageTestContexts.compile());

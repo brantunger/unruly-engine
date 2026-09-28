@@ -361,7 +361,8 @@ public final class RulesEngineBuilder<O> {
      *             type-check
      * @return This builder
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is {@code output}, which actions use for the output object
+     * @throws IllegalArgumentException if {@code name} is blank, or is {@code output}, which actions use for the output
+     *                                  object
      */
     public RulesEngineBuilder<O> fact(String name, Class<?> type) {
         EngineCompileContext.checkDeclaration(name, type);
@@ -375,7 +376,7 @@ public final class RulesEngineBuilder<O> {
      * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
      * @return This builder
      * @throws NullPointerException     if {@code types}, a name or a type is {@code null}; nothing is declared
-     * @throws IllegalArgumentException if a name is {@code output}; nothing is declared
+     * @throws IllegalArgumentException if a name is blank or {@code output}; nothing is declared
      */
     public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
         Objects.requireNonNull(types, "types must not be null");

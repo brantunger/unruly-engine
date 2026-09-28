@@ -165,7 +165,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `IllegalStateException` | `load() must be called before run()` | No `load()` has succeeded yet. Load the rules before traffic; see [Lifecycle and closing](thread-safety.md#-lifecycle-and-closing) |
 | `IllegalStateException` | `The engine is closed` | Your framework closed the engine at shutdown; see [Closing](thread-safety.md#closing) and [Shutting down](spring-boot.md#-shutting-down) |
 | `IllegalStateException` | `while this run was borrowing a copy of it` | Not your code: an engine invariant has broken, and the message says which one. Report it with the stack trace at the issue link the message gives |
-| `IllegalArgumentException` | `' is reserved for the output object` | A fact is named `output`; see [Naming rules](facts.md#-naming-rules) |
+| `IllegalArgumentException` | `' is reserved for the output object`, `must not be blank` | A fact's name is `output` or blank; see [Naming rules](facts.md#-naming-rules) |
 | `IllegalArgumentException` | `' is not a valid fact name`, `' cannot be used as a fact name` | In MVEL, the name isn't an identifier, or is a keyword or class name; see [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
 | `IllegalArgumentException` | `was declared as`, `wasn't declared`, `was declared, but the run didn't supply it` | A fact doesn't match its declaration; see [Declaring facts](facts.md#-declaring-facts) |
 | `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, or a class that isn't imported; see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
@@ -204,10 +204,9 @@ message; the original is `getCause()`. See [Exceptions by method](exceptions-by-
 
 ### A rule fails for ever after about 50 runs in quick succession
 
-A rule works in tests and in the first minutes of production, then fails on every run. In MVEL that comes after about
-50 runs in quick succession, when the JIT optimizer takes over the rule's accessors; see
-[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders). It has two
-shapes:
+A rule works in tests and in the first minutes of production, then fails on every run. In MVEL, that's when the JIT
+optimizer takes over the rule's accessors; see
+[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders). It has two shapes:
 
 - On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
   isn't reachable from the context class loader of the thread that called `load()`; see

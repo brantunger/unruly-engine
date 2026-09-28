@@ -223,10 +223,10 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Returns a fact name that rules in this language can't refer to. It must not be {@code "output"}, and the check
-     * fails when it is: the engine rejects that name itself, before the language is asked, so it would pass the check
-     * without the language's {@code checkFactName} ever running. Nor may it be {@code "x"}, the fact the check's rule
-     * reads, and the check fails when it is too.
+     * Returns a fact name that rules in this language can't refer to. It must not be {@code "output"} or blank, and
+     * the check fails when it is: the engine rejects those names itself, before the language is asked, so they would
+     * pass the check without the language's {@code checkFactName} ever running. Nor may it be {@code "x"}, the fact
+     * the check's rule reads, and the check fails when it is too.
      *
      * @return The name, or {@code null} if every name is accepted
      */
@@ -735,9 +735,10 @@ public abstract class ExpressionLanguageContractTest {
     void unusableFactNameRejected() throws Exception {
         String name = unusableFactName();
         assumeTrue(name != null, "the language accepts every fact name");
-        // The engine rejects "output" before the language is asked, so it would make this check pass without the
-        // language's checkFactName running at all.
+        // The engine rejects "output" and blank names before the language is asked, so either would make this check
+        // pass without the language's checkFactName running at all.
         assertNotEquals("output", name, "unusableFactName() must return a name the language itself rejects");
+        assertFalse(name.isBlank(), "unusableFactName() must return a name the language itself rejects");
         // The check's rule reads x, which the run supplies alongside the name, so x can't be the name as well.
         assertNotEquals("x", name, "unusableFactName() must not be x, which the check's rule reads");
         closing(engine(), engine -> {

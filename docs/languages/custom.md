@@ -330,9 +330,9 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
   `Declared fact 'empty' can't be used: ` and your message.
 
 Only the languages the loaded rules use are asked, in the order the rules first used them, or the default language
-for an empty rule list. The engine has already rejected `null` and `output`, and caches nothing, so keep the check
-cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways, through `unusableFactName()` and
-`usableFactNames()`.
+for an empty rule list. The engine rejects `null`, blank names and `output` first, and caches nothing, so keep
+`checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways, through
+`unusableFactName()` and `usableFactNames()`.
 
 ## ⏳ Stopping a run
 

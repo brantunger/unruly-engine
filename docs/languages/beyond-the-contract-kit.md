@@ -46,8 +46,8 @@ A `null` argument other than `deadline` throws `NullPointerException` with `<par
 such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
 `type must not be null`. A fact's value may be `null`.
 
-The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared as
-`output` and a package import over the [size limits](mvel.md#-classes-and-imports).
+The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared with a
+blank name or as `output`, and a package import over the [size limits](mvel.md#-classes-and-imports).
 
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;

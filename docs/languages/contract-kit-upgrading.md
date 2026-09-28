@@ -10,6 +10,17 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.10.0
+
+The kit after 2.10.0 has a stricter `unusableFactNameRejected` and no new check, so a subclass that passed the 2.10.0
+kit may now fail. The failure is in your subclass's hook, not in your language:
+
+| Check | Now fails a subclass that | The defect |
+| --- | --- | --- |
+| `unusableFactNameRejected` | Returns a blank name, empty or only whitespace, from `unusableFactName()` | The engine now rejects a blank fact name itself, so the check never reached your `checkFactName`; return a name only your language rejects |
+
+The check fails with `unusableFactName() must return a name the language itself rejects`, as it does for `output`.
+
 ## 🔼 Upgrading from 2.9
 
 In 2.10.0 `concurrentRuns` got stricter and `nestedRunInsideAnAction` was added, so a language that passed the 2.9 kit

@@ -143,9 +143,9 @@ misspelled property, or a private field with no getter, fails the run with
 
 ### Fact names MVEL rejects
 
-`run()` rejects a fact whose name MVEL can't read as that fact, with an `IllegalArgumentException`. A declared fact
-with such a name fails `load()` instead, with a `RuleCompilationException`
-(`Declared fact 'Math' can't be used: ...`).
+`run()` throws `IllegalArgumentException` for a fact whose name MVEL can't read as that fact. A declared one fails
+`load()` instead, with a `RuleCompilationException` (`Declared fact 'Math' can't be used: ...`); a blank one fails
+`fact()`.
 
 A name must be a Java identifier. `my-fact` would read as `my - fact`, so it, `2nd` and `first name` are rejected with:
 
