@@ -82,16 +82,11 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that its conditions can't read a fact that is neither a record nor a map. */
     private static ExpressionLanguage beanBlind(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -104,16 +99,6 @@ class ContractKitChecksTest {
                             return !bean && Boolean.TRUE.equals(condition.evaluate(evaluation, session));
                         };
                     }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
                 };
             }
         };
@@ -121,30 +106,15 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that its actions compile on first use instead of when the rule is loaded. */
     private static ExpressionLanguage lazyActions(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         return (actionContext, session) ->
                                 compiler.compileAction(expression).execute(actionContext, session);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -156,29 +126,14 @@ class ContractKitChecksTest {
      * of being rejected when the rule loads.
      */
     private static ExpressionLanguage assigningConditions(ExpressionLanguage language, CompiledCondition assignment) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         return expression.text().contains(" = ") ? assignment : compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -205,42 +160,17 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that a condition reading a misspelled {@code creditScor} is rejected when the rule loads. */
     private static ExpressionLanguage missingPropertyAtLoad(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         if (expression.text().contains(".creditScor ")) {
                             throw new IllegalArgumentException("the fact has no property creditScor");
                         }
                         return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
                     }
                 };
             }
@@ -252,21 +182,11 @@ class ContractKitChecksTest {
      * can't finish, and its thread must wait for them, until the test lets them go.
      */
     private static ExpressionLanguage waitingActions(ExpressionLanguage language, CountDownLatch release) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         CompiledAction action = compiler.compileAction(expression);
@@ -275,16 +195,6 @@ class ContractKitChecksTest {
                             return action.execute(actionContext, session);
                         };
                     }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
-                    }
                 };
             }
         };
@@ -292,31 +202,16 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that every action it compiles fails when it runs. */
     private static ExpressionLanguage throwingActions(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         return (actionContext, session) -> {
                             throw new IllegalStateException("the action failed");
                         };
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -325,26 +220,11 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that its compiler's newSession() returns what {@code sessions} supplies. */
     static ExpressionLanguage withSessions(ExpressionLanguage language, Supplier<Session> sessions) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public Session newSession() {
                         return sessions.get();
@@ -387,17 +267,12 @@ class ContractKitChecksTest {
      * runtime down, and every other session's conditions fail.
      */
     private static ExpressionLanguage sharedRuntime(ExpressionLanguage language, boolean closeTearsDown) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
                 AtomicBoolean running = new AtomicBoolean(true);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -408,11 +283,6 @@ class ContractKitChecksTest {
                             }
                             return condition.evaluate(evaluation, session);
                         };
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
                     }
 
                     @Override
@@ -499,21 +369,11 @@ class ContractKitChecksTest {
      * same run doesn't see the variable, and a later run does.
      */
     private static ExpressionLanguage sessionVariables(ExpressionLanguage language, boolean oneRunLate) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         CompiledAction action = compiler.compileAction(expression);
@@ -554,21 +414,11 @@ class ContractKitChecksTest {
      * when a {@code put} last ran with the session, so a later run sees the variable only if it gets the same session.
      */
     private static ExpressionLanguage sessionCachedVariables(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         CompiledAction action = compiler.compileAction(expression);
@@ -606,21 +456,11 @@ class ContractKitChecksTest {
      * JsonLogic-style language reads a name it doesn't know, or, if {@code atLoad}, is refused when the rule loads.
      */
     private static ExpressionLanguage unknownNames(ExpressionLanguage language, boolean atLoad) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         // The only name the checks' actions read that is never a fact is the variable y.
@@ -637,11 +477,6 @@ class ContractKitChecksTest {
                             return ActionResult.set(properties);
                         };
                     }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
                 };
             }
         };
@@ -653,16 +488,11 @@ class ContractKitChecksTest {
      * condition sees what an earlier run's action declared, and no later action does.
      */
     private static ExpressionLanguage conditionsReadVariables(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -707,21 +537,11 @@ class ContractKitChecksTest {
      * NAME} reads a name that isn't a fact from there: a variable outlives only an action that fails.
      */
     private static ExpressionLanguage clearsVariablesOnSuccess(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         String[] statements = expression.text().split(";", 2);
@@ -769,16 +589,11 @@ class ContractKitChecksTest {
      * read as a fact is never found.
      */
     private static ExpressionLanguage hashVariables(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         String[] tokens = expression.text().trim().split("\\s+");
@@ -863,16 +678,11 @@ class ContractKitChecksTest {
      * lets its conditions write the facts and declare variables.
      */
     private static ExpressionLanguage writingConditions(ExpressionLanguage language, boolean thenFail) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     @SuppressWarnings("unchecked")
                     public CompiledCondition compileCondition(Expression expression) {
@@ -894,16 +704,6 @@ class ContractKitChecksTest {
                             return true;
                         };
                     }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
                 };
             }
         };
@@ -914,27 +714,12 @@ class ContractKitChecksTest {
      * once it has warmed up a session, as a compiler whose warm-up starts a runtime that fails to stop might.
      */
     private static ExpressionLanguage closeFailsOnceWarmedUp(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
                 AtomicBoolean warmedUp = new AtomicBoolean();
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public Session newSession() {
                         return new Session() {
@@ -963,21 +748,11 @@ class ContractKitChecksTest {
      * an output that prints as the one expected, and isn't.
      */
     private static ExpressionLanguage textOutputs(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     @SuppressWarnings("unchecked")
                     public CompiledAction compileAction(Expression expression) {
@@ -988,11 +763,6 @@ class ContractKitChecksTest {
                                     String.valueOf(value));
                             return result;
                         };
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -1019,31 +789,11 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that its checkFactName() rejects any name but letters, such as {@code credit_score2}. */
     private static ExpressionLanguage lettersOnly(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public void checkFactName(String name) {
                         if (!name.matches("[A-Za-z]+")) {
@@ -1067,31 +817,11 @@ class ContractKitChecksTest {
      */
     private static ExpressionLanguage throwingCompilerClose(ExpressionLanguage language,
                                                             Supplier<? extends Throwable> failure) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public void close() {
                         compiler.close();
@@ -1109,21 +839,11 @@ class ContractKitChecksTest {
      */
     private static ExpressionLanguage sharedActionVariables(ExpressionLanguage language) {
         CountDownLatch bothDeclared = new CountDownLatch(2);
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         String[] tokens = expression.text().trim().split("\\s+");
@@ -1139,11 +859,6 @@ class ContractKitChecksTest {
                             return ActionResult.set(Map.of(tokens[6], variables.get(tokens[7])));
                         };
                     }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
                 };
             }
         };
@@ -1157,16 +872,11 @@ class ContractKitChecksTest {
     private static ExpressionLanguage overlapping(ExpressionLanguage language, int runs, boolean failsWhenShared) {
         CountDownLatch together = new CountDownLatch(runs);
         Set<Session> inUse = ConcurrentHashMap.newKeySet();
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -1187,21 +897,6 @@ class ContractKitChecksTest {
                                 }
                             }
                         };
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
                     }
                 };
             }
@@ -1228,21 +923,11 @@ class ContractKitChecksTest {
      * then fails.
      */
     private static ExpressionLanguage readThenThrow(ExpressionLanguage language, Set<String> keys) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         String[] tokens = expression.text().trim().split("\\s+");
@@ -1257,21 +942,6 @@ class ContractKitChecksTest {
                             throw new IllegalStateException("the action failed after reading " + tokens[2]);
                         };
                     }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
-                    }
                 };
             }
         };
@@ -1285,21 +955,11 @@ class ContractKitChecksTest {
      */
     private static ExpressionLanguage threadLocalOutput(ExpressionLanguage language) {
         ThreadLocal<Map<String, Object>> output = new ThreadLocal<>();
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         String[] tokens = expression.text().trim().split("\\s+");
@@ -1317,11 +977,6 @@ class ContractKitChecksTest {
                             output.get().put(tokens[1], value);
                             return ActionResult.done();
                         };
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -1638,24 +1293,12 @@ class ContractKitChecksTest {
     @Test
     @DisplayName("comparing numbers by value still fails a language that returns the wrong number")
     void wrongNumberStillFails() {
-        ExpressionLanguage offByOne = new ExpressionLanguage() {
-            private final ExpressionLanguage longs =
-                    LongNumbersContractTest.longNumbers(new ToyExpressionLanguage("toy-longs", true));
-
-            @Override
-            public String name() {
-                return longs.name();
-            }
-
+        ExpressionLanguage offByOne = new ForwardingExpressionLanguage(
+                LongNumbersContractTest.longNumbers(new ToyExpressionLanguage("toy-longs", true))) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
-                ExpressionCompiler compiler = longs.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                ExpressionCompiler compiler = super.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         CompiledAction action = compiler.compileAction(expression);
@@ -1665,11 +1308,6 @@ class ContractKitChecksTest {
                                     properties.put(key, value instanceof Long number ? number + 1 : value));
                             return ActionResult.set(properties);
                         };
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }

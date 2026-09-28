@@ -56,12 +56,7 @@ class ContractKitConfigureTest {
      */
     private static ExpressionLanguage watchingContexts(ExpressionLanguage language, AtomicInteger compilers,
                                                        List<CompileContext> unconfigured) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 compilers.incrementAndGet();
@@ -78,16 +73,11 @@ class ContractKitConfigureTest {
      * as a statically typed language that needs each fact's type does.
      */
     private static ExpressionLanguage typed(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         typeCheck(expression);
@@ -98,11 +88,6 @@ class ContractKitConfigureTest {
                     public CompiledAction compileAction(Expression expression) {
                         typeCheck(expression);
                         return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
 
                     private void typeCheck(Expression expression) {
@@ -120,16 +105,11 @@ class ContractKitConfigureTest {
 
     /** Wraps a language so that it counts the conditions it evaluates. */
     private static ExpressionLanguage countingEvaluations(ExpressionLanguage language, AtomicInteger evaluated) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -137,16 +117,6 @@ class ContractKitConfigureTest {
                             evaluated.incrementAndGet();
                             return condition.evaluate(evaluation, session);
                         };
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -351,31 +321,11 @@ class ContractKitConfigureTest {
 
     /** Wraps a language so that it refuses a fact name with a {@code -} in it. */
     private static ExpressionLanguage rejectingDashes(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public void checkFactName(String name) {
                         if (name.contains("-")) {
