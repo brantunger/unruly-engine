@@ -235,7 +235,7 @@ class ContractKitConfigureTest {
             }
         }
 
-        assertEquals(21, checks.size(), "the kit's checks");
+        assertEquals(23, checks.size(), "the kit's checks");
         assertEquals(List.of(), unconfigured, "checks that compiled without configure() or compileContext()");
         assertEquals(List.of(), createdNothing, "checks that ran and created no compiler");
     }

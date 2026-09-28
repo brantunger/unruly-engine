@@ -14,6 +14,7 @@ import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.UNAVAILABLE;
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
+import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.twoCopiesAtLoad;
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.withSessions;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -466,6 +467,19 @@ class ConditionDetailKitCheckTest {
     void detailReadingTheSessionWhenPrintedFails() {
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> runCheck(readsSessionWhenPrinted(new ToyExpressionLanguage()), "conditionDetail"));
+
+        assertTrue(failure.getMessage().startsWith("the detail of rule 'matches' changed after another run"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the detail check can't be undone by configure(): with two copies made when the rules load, it still"
+            + " fails a detail that reads its session when it's printed")
+    void detailReadingTheSessionWhenPrintedFailsWhateverConfigureSets() {
+        // Otherwise the other run gets the other copy, and the detail's session is never used again.
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoCopiesAtLoad(readsSessionWhenPrinted(new ToyExpressionLanguage())),
+                        "conditionDetail"));
 
         assertTrue(failure.getMessage().startsWith("the detail of rule 'matches' changed after another run"),
                 failure.getMessage());

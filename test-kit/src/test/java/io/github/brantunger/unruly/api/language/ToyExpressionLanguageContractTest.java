@@ -38,6 +38,16 @@ class ToyExpressionLanguageContractTest extends ExpressionLanguageContractTest {
     }
 
     @Override
+    protected String propertyAssignment(String fact, String property, int value) {
+        return fact + "." + property + " = " + value;
+    }
+
+    @Override
+    protected String conditionDeclaration(String name, int value) {
+        return "let " + name + " = " + value + " ; true";
+    }
+
+    @Override
     protected String putFact(String key, String fact) {
         return "put " + key + " " + fact;
     }
@@ -45,6 +55,12 @@ class ToyExpressionLanguageContractTest extends ExpressionLanguageContractTest {
     @Override
     protected String declareVariable(String name, int value) {
         return "let " + name + " = " + value;
+    }
+
+    // The toy fails the run on a name that is neither a variable nor a fact.
+    @Override
+    protected String declareVariableThenFail(String name, int value) {
+        return "let " + name + " = " + value + " ; put failed unknown";
     }
 
     @Override
