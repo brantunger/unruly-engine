@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.10.0](https://github.com/brantunger/unruly-engine/compare/v2.9.5...v2.10.0) (2026-09-28)
+
+
+### Features
+
+* catch shared action variables, reused sessions and per-thread run state in the contract kit ([#785](https://github.com/brantunger/unruly-engine/issues/785)) ([c4b7fb4](https://github.com/brantunger/unruly-engine/commit/c4b7fb4eb145d1c48fea047d84dc2ae0a37ef7d8))
+
 ## [2.9.5](https://github.com/brantunger/unruly-engine/compare/v2.9.4...v2.9.5) (2026-09-28)
 
 
