@@ -6,6 +6,8 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -32,7 +34,7 @@ class FactNameValidationTest {
     }
 
     @ParameterizedTest(name = "\"{0}\"")
-    @ValueSource(strings = {"my-fact", "a.b", "has space", "1x", ""})
+    @ValueSource(strings = {"my-fact", "a.b", "has space", "1x"})
     void nonIdentifiersRejected(String name) {
         RulesEngine<Map<String, Object>> engine = engine("true");
 
@@ -41,6 +43,18 @@ class FactNameValidationTest {
 
         assertEquals("'" + name + "' is not a valid fact name: rules can only refer to a fact named with a Java "
                 + "identifier", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("an empty name, which the engine rejects before asking the language, is rejected by MVEL's own check")
+    void emptyNameRejectedByTheCompiler() {
+        try (ExpressionCompiler compiler = new MvelExpressionLanguage().newCompiler(LanguageTestContexts.compile())) {
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                    () -> compiler.checkFactName(""));
+
+            assertEquals("'' is not a valid fact name: rules can only refer to a fact named with a Java identifier",
+                    ex.getMessage());
+        }
     }
 
     @Test

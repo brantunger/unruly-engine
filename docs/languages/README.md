@@ -141,7 +141,7 @@ The project ships only MVEL. The other names are examples of what a language can
 here; anyone can write one, as [Writing a language](custom.md) shows.
 
 Whatever the language, the engine enforces the same contract: unique rule names, no blank expressions, priority
-order, a `Boolean` from every condition, no fact named `output` or `null`, failures reported as
+order, a `Boolean` from every condition, no fact whose name is `null`, blank or `output`, failures reported as
 `RuleCompilationException` or `RuleExecutionException` and to listeners, and a run stopped between rules and when an
 expression returns. Stopping inside an expression is up to the language; see
 [Stopping a run](custom.md#-stopping-a-run).

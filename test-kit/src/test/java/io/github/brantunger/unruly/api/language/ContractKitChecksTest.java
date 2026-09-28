@@ -1259,6 +1259,25 @@ class ContractKitChecksTest {
     }
 
     @Test
+    @DisplayName("a contract test that names a blank fact name as the one its language rejects fails the fact-name"
+            + " check (#712)")
+    void blankUnusableNameFails() {
+        // The engine rejects a blank name itself, so a language that accepts every name, as the toy does, would pass.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String unusableFactName() {
+                return " ";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unusableFactNameRejected"));
+
+        assertTrue(failure.getMessage().startsWith("unusableFactName() must return a name the language itself"
+                + " rejects"), failure.getMessage());
+    }
+
+    @Test
     @DisplayName("a language whose checkFactName accepts the name its contract test says it rejects fails the"
             + " fact-name check, naming checkFactName (#618)")
     void unusableFactNameAcceptedFails() {

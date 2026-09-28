@@ -166,8 +166,8 @@ class NestedRejectionLogTest {
     // A nested run whose facts are rejected
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"a fact named output", "a fact of the wrong type", "a declared fact left out",
-        "a fact nobody declared"})
+    @ValueSource(strings = {"a fact named output", "a fact with a blank name", "a fact of the wrong type",
+        "a declared fact left out", "a fact nobody declared"})
     @DisplayName("an action whose run() is given facts the engine rejects names that failure, logged once")
     void actionNestedRejectedFacts(String how) {
         RulesEngineBuilder<Map<String, Object>> inner = builder(new StubExpressionLanguage());
@@ -176,6 +176,10 @@ class NestedRejectionLogTest {
             case "a fact named output" -> {
                 facts.setValue("output", 1);
                 yield OUTPUT_REJECTED;
+            }
+            case "a fact with a blank name" -> {
+                facts.setValue(" ", 1);
+                yield "fact name must not be blank";
             }
             case "a fact of the wrong type" -> {
                 inner.fact("n", Integer.class);

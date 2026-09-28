@@ -11,6 +11,8 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.AbstractMap;
 import java.util.HashMap;
@@ -167,6 +169,16 @@ class DeclaredFactsTest {
     }
 
     @Test
+    @DisplayName("a map with a blank name declares none of its entries")
+    void rejectedBlankNameDeclaresNothing() {
+        RulesEngineBuilder<Map<String, Object>> builder = requiring();
+
+        assertThrows(IllegalArgumentException.class, () -> builder.facts(validThen(" ", String.class)));
+
+        assertNothingDeclared(builder);
+    }
+
+    @Test
     @DisplayName("a map with a null type declares none of its entries")
     void rejectedNullTypeDeclaresNothing() {
         RulesEngineBuilder<Map<String, Object>> builder = requiring();
@@ -241,6 +253,36 @@ class DeclaredFactsTest {
         assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
                 thrown.getMessage());
         assertThrows(IllegalArgumentException.class, () -> builder.facts(Map.of("output", String.class)));
+    }
+
+    @ParameterizedTest(name = "\"{0}\"")
+    @ValueSource(strings = {"", " ", "\t"})
+    @DisplayName("declaring a fact with a blank name is rejected, as a blank rule name or tag is")
+    void blankNameCannotBeDeclared(String name) {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> builder.fact(name, String.class));
+        assertEquals("fact name must not be blank", thrown.getMessage());
+        thrown = assertThrows(IllegalArgumentException.class, () -> builder.facts(Map.of(name, String.class)));
+        assertEquals("fact name must not be blank", thrown.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> new EngineCompileContext(Set.of(), Set.of(),
+                ClassLoader.getSystemClassLoader(), Object.class, Map.of(), Map.of(name, String.class), true));
+    }
+
+    @Test
+    @DisplayName("a declaration's name is checked for null, then its type, then the name for blank and output")
+    void declarationCheckOrder() {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+
+        assertEquals("name must not be null",
+                assertThrows(NullPointerException.class, () -> builder.fact(null, null)).getMessage());
+        assertEquals("type must not be null",
+                assertThrows(NullPointerException.class, () -> builder.fact(" ", null)).getMessage());
+        assertEquals("type must not be null",
+                assertThrows(NullPointerException.class, () -> builder.fact("output", null)).getMessage());
+        // A name with whitespace that isn't blank is the language's to check, at load().
+        assertSame(builder, builder.fact(" a ", String.class));
     }
 
     @Test

@@ -95,8 +95,8 @@ public final class LanguageTestContexts {
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, or a fact is declared with the name {@code output}, which
-     *                                  an engine rejects too
+     *                                  dot-separated parts, or a fact is declared with a blank name or the name
+     *                                  {@code output}, which an engine rejects too
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,

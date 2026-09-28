@@ -68,7 +68,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private static final Logger log = LoggerFactory.getLogger(LOGGER_NAME);
 
-    private static final String OUTPUT_KEYWORD = ActionContext.OUTPUT_NAME;
     private static final String CLOSED_MESSAGE = "The engine is closed";
     // Where a cancelled run stopped, as its message says: before a rule's condition or action, or while one ran.
     private static final String BEFORE_RULE = "before";
@@ -1130,27 +1129,28 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Checks every fact name of a run: not {@code null}, not the output's name, and one the language of each loaded
-     * rule can refer to.
+     * Checks every fact name of a run: not {@code null}, not blank, not the output's name, and one the language of each
+     * loaded rule can refer to.
      *
      * @param values The fact values by name
      * @param checks The compilers of the rule list the run uses, which check each name, by language name
-     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, has a name a language
-     *                                  can't refer to, isn't an instance of the type it was declared with or of its
-     *                                  wrapper, or, when
-     *                                  the engine requires declared facts, was declared and left out or supplied
-     *                                  without being declared; or if a language's check of the name throws anything
-     *                                  else
+     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, has a blank name or a name a
+     *                                  language can't refer to, isn't an instance of the type it was declared with or
+     *                                  of its wrapper, or, when the engine requires declared facts, was declared and
+     *                                  left out or supplied without being declared; or if a language's check of the
+     *                                  name throws anything else
      */
     private void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
         for (String name : values.keySet()) {
-            if (name == null) {
-                throw rejectedFact("fact name must not be null");
-            }
-            // Actions bind the output object to this name, silently hiding a fact of the same name.
-            if (OUTPUT_KEYWORD.equals(name)) {
-                throw rejectedFact("'" + OUTPUT_KEYWORD + "' is reserved for the output object and cannot be used as "
-                        + "a fact name");
+            FactNames.Problem problem = FactNames.check(name);
+            if (problem != null) {
+                throw rejectedFact(switch (problem) {
+                    case NULL -> "fact name must not be null";
+                    case BLANK -> "fact name must not be blank";
+                    // Actions bind the output object to this name, silently hiding a fact of the same name.
+                    case OUTPUT -> "'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot"
+                            + " be used as a fact name";
+                });
             }
             IllegalArgumentException rejected = factNameRejection(name, checks, true);
             if (rejected != null) {

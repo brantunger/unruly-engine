@@ -137,13 +137,14 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
      *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
      *         {@code null}.
-     * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a name that the
-     *         language of a loaded rule can't refer to (a rule list without rules is checked against the engine's
-     *         default language); if a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a non-null
-     *         value that isn't an instance of its declared type or, for a primitive type, of its wrapper or of a
-     *         wrapper whose primitive Java widens to it; or, with {@link RulesEngineBuilder#requireDeclaredFacts()},
-     *         if a declared fact is missing or an undeclared one is supplied. Also if a language's check of a fact
-     *         name fails with any other exception, which becomes the cause.
+     * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a blank name or a
+     *         name that the language of a loaded rule can't refer to (a rule list without rules is checked against
+     *         the engine's default language); if a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a
+     *         non-null value that isn't an instance of its declared type or, for a primitive type, of its wrapper or
+     *         of a wrapper whose primitive Java widens to it; or, with
+     *         {@link RulesEngineBuilder#requireDeclaredFacts()}, if a declared fact is missing or an undeclared one is
+     *         supplied. Also if a language's check of a fact name fails with any other exception, which becomes the
+     *         cause.
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
      *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
      *         an engine invariant has broken rather than that the call was wrong
