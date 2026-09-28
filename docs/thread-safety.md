@@ -206,7 +206,8 @@ it. While any of them waits, a copy given back is kept for them instead of close
 rather than each building one.
 
 Under `maxCopies(n)`, the replaced list never has more than `n` copies, apart from
-[extra copies](glossary.md#extra-copy). The last run to leave it closes the copies still kept, then its compilers.
+[extra copies](glossary.md#extra-copy). The last run to leave it closes the copies still kept. Its compilers are
+closed once, after both that run and the `load()` closing the idle copies are done, by whichever finishes second.
 
 A run that read the engine's rules just before the swap uses that list only while a run of it is still going, and may
 then take a kept copy or build one; when the list is already closed, the run starts again on the new rules, unless

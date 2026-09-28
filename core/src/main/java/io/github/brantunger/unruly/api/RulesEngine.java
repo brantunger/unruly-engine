@@ -69,11 +69,13 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               suppressed exception; if it can't carry one, as an {@link OutOfMemoryError} the
      *                               JVM throws itself can't, that failure is logged at WARN.
      *                               When a reload closes the rules it replaced, it is thrown after the new rules were
-     *                               swapped in: they stay loaded, and runs use them. A {@link Throwable} that is
-     *                               neither an {@link Exception} nor an {@link Error} is never fatal: it's handled
-     *                               like an exception from the same place, reported as a
-     *                               {@code RuleCompilationException} while compiling or making copies, and logged at
-     *                               WARN while closing.
+     *                               swapped in: they stay loaded, and runs use them. The reload closes the idle copies
+     *                               of the rules it replaced, and closes their compilers too, throwing their error, if
+     *                               the last run using those rules left before it had finished closing the idle copies,
+     *                               as {@link #close()} does. A {@link Throwable} that is neither an {@link Exception}
+     *                               nor an {@link Error} is never fatal: it's handled like an exception from the same
+     *                               place, reported as a {@code RuleCompilationException} while compiling or making
+     *                               copies, and logged at WARN while closing.
      */
     void load(List<Rule> ruleList);
 
@@ -153,17 +155,18 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               run that gives back an extra copy, made because every kept copy was in use, a
      *                               copy that couldn't be kept for a later run, or a copy of rules a reload or
      *                               {@link #close()} replaced that no run of them is waiting for, closes that copy,
-     *                               and the last run to leave replaced rules closes the copies kept for runs that
-     *                               were waiting, if none took them, and then their compilers; a run whose new copy
-     *                               was only partly made closes the sessions it made; and a run that fails to get a
-     *                               copy does that closing without having held one, if it was the last to use the
-     *                               rules; if its wait for a copy, or for a build slot to make one, was stopped, it
-     *                               has already reported the stop to its listeners. A fatal error from that closing
-     *                               reaches the run: it's thrown even when the rules ran without failing, and in
-     *                               place of a failure of the run that isn't fatal, which it carries as a suppressed
-     *                               exception; if it can't carry one, as an {@link OutOfMemoryError} the JVM throws
-     *                               itself can't, that failure is logged at WARN. A fatal error of the run's own came
-     *                               first, and is thrown instead.
+     *                               and the last run to leave replaced rules closes the copies still kept, and then
+     *                               their compilers, unless the reload or {@code close()} is still closing the copies
+     *                               that were idle when it replaced them, which then closes the compilers itself once
+     *                               it has; a run whose new copy was only partly made closes the sessions it made; and
+     *                               a run that fails to get a copy does that closing without having held one, if it was
+     *                               the last to use the rules; if its wait for a copy, or for a build slot to make one,
+     *                               was stopped, it has already reported the stop to its listeners. A fatal error from
+     *                               that closing reaches the run: it's thrown even when the rules ran without failing,
+     *                               and in place of a failure of the run that isn't fatal, which it carries as a
+     *                               suppressed exception; if it can't carry one, as an {@link OutOfMemoryError} the JVM
+     *                               throws itself can't, that failure is logged at WARN. A fatal error of the run's own
+     *                               came first, and is thrown instead.
      *                               Every other {@link Error} from a rule, the output supplier, an output writer or
      *                               a language creating a session, including a {@link LinkageError}, is reported as
      *                               a {@code RuleExecutionException}; one from a language's check of a fact name as
@@ -235,26 +238,31 @@ public interface RulesEngine<O> extends AutoCloseable {
     RuleSetInfo rules();
 
     /**
-     * Closes the engine, and releases what its expression languages hold for the rules, such as interpreter contexts.
-     * A run holding a copy of the rules finishes normally, and so does one waiting for a copy, because a rule list
-     * can't close under a run that has begun borrowing from it: the languages' sessions are closed as each run
-     * returns, unless another run is still waiting for a copy of the same rules and takes them, and their compilers
-     * after the last run. Afterwards, {@link #run(FactStore)} and {@link #load(List)}
-     * throw {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a
-     * copy when this method closed them, because it reads them again and finds a closed engine. A {@code load()}
-     * that found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on
-     * an open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules in first,
-     * and this method closes them like any others, or it finds the engine closed, closes its rules rather than
-     * swapping them in, and throws {@link IllegalStateException}. Closing an engine that is already closed does
+     * Closes the engine, and releases what its expression languages hold for the rules, such as interpreter contexts. A
+     * run holding a copy of the rules finishes normally, and so does one waiting for a copy, because a rule list can't
+     * close under a run that has begun borrowing from it: the languages' sessions are closed as each run returns,
+     * unless another run is still waiting for a copy of the same rules and takes them, and their compilers once the
+     * last run has left and this method has closed the idle sessions. Afterwards, {@link #run(FactStore)} and
+     * {@link #load(List)} throw {@link IllegalStateException} — as does a run that had read the rules but had not yet
+     * begun to borrow a copy when this method closed them, because it reads them again and finds a closed engine. A
+     * {@code load()} that found the engine open before this method closed it isn't stopped. If it fails, it throws what
+     * it would on an open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules
+     * in first, and this method closes them like any others, or it finds the engine closed, closes its rules rather
+     * than swapping them in, and throws {@link IllegalStateException}. Closing an engine that is already closed does
      * nothing.
      *
      * <p>
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
-     * is rethrown unchanged once every idle session, and the compilers if no run holds a copy, has been closed: the
-     * first, if there are several. The engine is closed all the same, so closing it again does nothing. A copy a run
-     * still holds is closed when the run gives it back, or, when it's kept for a run still waiting for a copy, by the
-     * last run to leave, and a fatal error from that reaches the run that closes it. By default, this method does
-     * nothing.
+     * is rethrown unchanged once every session that was idle when this method closed the rules, and the compilers if no
+     * run is using the rules by then (holding a copy, waiting for one, or not yet returned), has been closed: the
+     * first, if there are several. The engine is closed all the same, so closing it again does nothing. A copy given
+     * back while this method is still taking the idle copies, before it has marked the rules closed, counts as one of
+     * them: this method closes it too if no run is using the rules by then, and the last run to leave does otherwise. A
+     * copy a run still holds is closed when the run gives it back, or, when it's kept for a run still waiting for a
+     * copy, by that run or the last run to leave, and a fatal error from that reaches the run that closes it, never
+     * this method. The compilers are closed once both this method has closed the idle sessions and the last run has
+     * left, by whichever finishes second, which gets their fatal error: so when a run leaves while this method is still
+     * closing, this method closes the compilers and throws their error. By default, this method does nothing.
      * </p>
      */
     @Override

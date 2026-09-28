@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -76,11 +77,16 @@ import java.util.function.LongSupplier;
  * a permit or a build slot: it's kept for that run then, so the runs that were waiting when the rule list was replaced
  * take the copies given back rather than each making one of its own. That isn't exact: a copy given back just as a run
  * starts or stops waiting may be closed when a run could have used it, or kept when none can, which costs a copy and
- * leaves none open; and no waiting run saves the copies that were idle when the rule list was retired, which are
- * closed then. When no run holds a copy any more, the rule set closes the copies still idle and then the compilers,
- * and then lends no more copies; a fatal {@link Error} from that reaches the last run to leave. A fatal
- * {@link Error} from closing one copy doesn't stop the others being closed, nor the compilers after them: the first is
- * returned for the caller to throw once they have.
+ * leaves none open; and no waiting run saves the copies that were idle when the rule list was retired, which are closed
+ * then. A copy given back while {@code retire()} is still taking the idle copies, before it has marked the rule set
+ * retired, is kept as on a rule set in use: {@code retire()} closes it too if no run is using the rule set by the time
+ * it marks the rule set retired. Only those copies' fatal {@link Error}s reach {@code retire()}; a copy kept after that
+ * for a waiting run never does. When no run is using the rule set any more, it closes the copies still idle, and then
+ * lends no more copies; a fatal {@link Error} from that reaches the last run to leave. The compilers are closed once
+ * both {@code retire()} has closed the copies that were idle and no run is using the rule set, by whichever of the two
+ * finishes second, which gets their fatal {@link Error}: so when the last run leaves while {@code retire()} is still
+ * closing, {@code retire()} closes them, after every session. A fatal {@link Error} from closing one copy doesn't stop
+ * the others being closed, nor the compilers after them: the first is returned for the caller to throw once they have.
  * </p>
  */
 final class RuleSet {
@@ -91,6 +97,12 @@ final class RuleSet {
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
     // The number of users once the rule set is closed.
     private static final int CLOSED = -1;
+    // Set in the number of users once the rule set is retired, so that a run leaving reads whether it's retired in the
+    // same step as it uncounts itself. A retired rule set that no run uses is CLOSED, never this alone. So the count
+    // is bounded: a rule set that 2^30 runs were using at once would read as retired, which no JVM's threads reach.
+    private static final int RETIRED = 1 << 30;
+    // The copies retire() closes if it fails to make room for those it takes: none. Shared, and nothing adds to it.
+    private static final Queue<Map<String, Session>> NO_COPIES = new ConcurrentLinkedQueue<>();
     // How long a run waits without one copy being given back before it decides they aren't coming back. Long
     // enough that only a rule slower than this, or a run waiting for another thread's run, reaches it.
     static final long STALL_WINDOW_MILLIS = 5000;
@@ -115,13 +127,19 @@ final class RuleSet {
     private final AtomicBoolean warnedAboutOverflow = new AtomicBoolean();
     // The sessions every run shares, once a copy has shown that no language keeps state between runs.
     private volatile Map<String, Session> sharedSessions;
-    // How many runs hold a copy or are getting one, or CLOSED.
+    // How many runs hold a copy or are getting one, with RETIRED set once the rule set is retired, or CLOSED.
     private final AtomicInteger users = new AtomicInteger();
     // How many runs are waiting for a permit or a build slot, each until it stops waiting: once it has looked for an
     // idle copy, or when it gives up, is interrupted or passes its deadline. A retired rule set keeps a copy given
     // back for them rather than closing it and leaving them to make another.
     private final AtomicInteger waiting = new AtomicInteger();
-    private volatile boolean retired;
+    // Whether retire() has been called, so that a second call does nothing. Set before retire() takes the idle copies,
+    // and RETIRED after it has taken them, so a copy kept after the rule set was retired is never among them.
+    private final AtomicBoolean retiring = new AtomicBoolean();
+    // The two parts that must finish before the compilers close: retire() closing the copies that were idle when it
+    // retired the rule set, and closing the copies still idle once no run uses it (closeUnused). Whichever finishes
+    // second closes them.
+    private final AtomicInteger pendingParts = new AtomicInteger(2);
 
     /** What {@link #release(Copy)} does with a copy when the run that borrowed it gives it back. */
     enum Kind {
@@ -440,8 +458,9 @@ final class RuleSet {
     /**
      * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
      * is retired and no run of it is waiting for a copy, or the idle queue can't take it; any other copy's sessions are
-     * closed. The last copy given back to a retired rule set closes the copies kept for runs that were waiting, if
-     * none of them took them, and its compilers too.
+     * closed. The last copy given back to a retired rule set closes the copies still idle, and its compilers too,
+     * unless {@link #retire()} is still closing the copies that were idle when it retired the rule set: then
+     * {@code retire()} closes the compilers once it has.
      *
      * @param borrowed The copy, which the caller must no longer use
      * @return The first fatal {@link Error} keeping the copy, or closing its sessions or the compilers, threw, for the
@@ -477,7 +496,7 @@ final class RuleSet {
     // at WARN, and returned first if it's fatal.
     // Any Throwable: the sessions must be closed however keeping them fails, and the run must still leave.
     private Error keep(Map<String, Session> sessions) {
-        if (retired && waiting.get() == 0) {
+        if (isRetired() && waiting.get() == 0) {
             return Closing.sessions(sessions);
         }
         try {
@@ -520,21 +539,62 @@ final class RuleSet {
     }
 
     /**
-     * Retires the rule set, which runs no longer start with: closes the idle copies, and the compilers too if no run
-     * holds a copy. Otherwise, a copy given back is kept only while a run of the rule set is waiting for one, and the
-     * last run to leave closes the copies still idle and then the compilers. Calling it again does nothing more. A
-     * fatal {@link Error} from closing one copy doesn't stop the others being closed, nor the compilers after them.
+     * Retires the rule set, which runs no longer start with: takes the idle copies, then marks the rule set retired,
+     * and closes the copies it took. If no run is using the rule set when it marks it retired (holding a copy, getting
+     * one, or not yet left after a stopped wait), it then closes the copies given back while it was taking them, which
+     * are still idle. Otherwise a copy given back is kept only while a run of the rule set is waiting for one, and the
+     * last run to leave closes the copies still idle, so a fatal {@link Error} from closing a copy kept for a waiting
+     * run reaches a run, never this method. The compilers are closed once both this method has closed the copies it
+     * took and no run is using the rule set, by whichever of the two finishes second, which gets their fatal
+     * {@link Error}. Calling it again does nothing more. A fatal {@link Error} from closing one copy doesn't stop the
+     * others being closed, nor the compilers after them.
      *
      * @return The first fatal {@link Error} closing threw, for the caller to throw, or {@code null} if none did
      */
     Error retire() {
-        retired = true;
+        if (!retiring.compareAndSet(false, true)) {
+            return null;
+        }
+        Queue<Map<String, Session>> wereIdle = NO_COPIES;
+        boolean unused;
         Error fatal = null;
         try {
-            fatal = closeIdle();
+            // Taken before the rule set is marked retired: a copy given back until then is kept as on a rule set in
+            // use, so it's among them or still idle for closeUnused() to close, and one kept for a waiting run after
+            // it never is. Room is made for them before the first is taken, and no more are taken than it holds, so
+            // setting one aside never allocates, and can't fail and lose it: one given back meanwhile past those stays
+            // idle as well.
+            int left = idle.size();
+            wereIdle = new ArrayDeque<>(left);
+            for (; left > 0; left--) {
+                Map<String, Session> sessions = idle.poll();
+                if (sessions == null) {
+                    break;
+                }
+                wereIdle.add(sessions);
+            }
         } finally {
-            // Also if closing the idle copies throws, so the compilers are still closed.
-            fatal = Failures.first(fatal, closeIfUnused());
+            // Also if taking the idle copies throws, so copies given back are no longer kept for later runs, and the
+            // compilers are still closed. In one step with the count of runs, so that either no run uses the rule set
+            // and this method closes it now, or the last run to leave does: never both, and never this method once a
+            // run has kept a copy for a waiting run.
+            unused = users.getAndUpdate(count -> count == 0 ? CLOSED : count | RETIRED) == 0;
+            try {
+                fatal = closeAll(wereIdle);
+            } finally {
+                try {
+                    // Nothing more, unless closing one of them threw: then the rest.
+                    fatal = Failures.first(fatal, closeAll(wereIdle));
+                } finally {
+                    try {
+                        fatal = Failures.first(fatal, partDone());
+                    } finally {
+                        if (unused) {
+                            fatal = Failures.first(fatal, closeUnused());
+                        }
+                    }
+                }
+            }
         }
         return fatal;
     }
@@ -766,33 +826,45 @@ final class RuleSet {
     }
 
     // Uncounts a run that gave back its copy, closing a retired rule set that no run uses any more. Returns the first
-    // fatal Error from closing it.
+    // fatal Error from closing it. Whether the rule set is retired is read in the same step, so a run that leaves last
+    // closes it, and retire() never does once a run was counted when it retired the rule set.
     private Error leave() {
-        if (users.decrementAndGet() == 0 && retired) {
-            return closeIfUnused();
+        if (users.updateAndGet(count -> count - 1 == RETIRED ? CLOSED : count - 1) == CLOSED) {
+            return closeUnused();
         }
         return null;
     }
 
-    // Closes the idle copies and then the compilers, once, if no run holds a copy. Returns the first fatal Error from
-    // closing them.
-    private Error closeIfUnused() {
-        if (!users.compareAndSet(0, CLOSED)) {
-            return null;
-        }
+    // Whether retire() has marked the rule set retired.
+    private boolean isRetired() {
+        return (users.get() & RETIRED) != 0;
+    }
+
+    // Closes the copies still idle, once no run uses the retired rule set, and then the compilers, unless retire() is
+    // still closing the copies that were idle when it retired the rule set: then retire() closes them once it has.
+    // Called once, by whichever of retire() and the last run to leave closed the rule set. Returns the first fatal
+    // Error from closing them.
+    private Error closeUnused() {
         Error fatal = null;
         try {
-            fatal = closeIdle();
+            fatal = closeAll(idle);
         } finally {
-            fatal = Failures.first(fatal, Closing.compilers(compilers));
+            fatal = Failures.first(fatal, partDone());
         }
         return fatal;
     }
 
-    // Closes every idle copy, even after one throws a fatal Error, and returns the first such error.
-    private Error closeIdle() {
+    // Marks one of the two parts done that the compilers wait for, retire()'s closing or the last run leaving, and
+    // closes the compilers if it was the second. Returns the first fatal Error from closing them.
+    private Error partDone() {
+        return pendingParts.decrementAndGet() == 0 ? Closing.compilers(compilers) : null;
+    }
+
+    // Closes every copy in the queue, even after one throws a fatal Error, and returns the first such error. A copy is
+    // taken from the queue as it's closed, so if closing one throws, the rest are still there to close.
+    private static Error closeAll(Queue<Map<String, Session>> copies) {
         Error fatal = null;
-        for (Map<String, Session> sessions = idle.poll(); sessions != null; sessions = idle.poll()) {
+        for (Map<String, Session> sessions = copies.poll(); sessions != null; sessions = copies.poll()) {
             fatal = Failures.first(fatal, Closing.sessions(sessions));
         }
         return fatal;

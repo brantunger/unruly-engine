@@ -888,21 +888,28 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Closes the engine. The rule list is closed once no run is using it: a run holding a copy finishes, and so does
      * one waiting for a copy, because {@link RuleSet#borrow(Deadline)} counts the run before it waits, and a rule list
      * with a run counted on it can't close. Their sessions are closed as each one returns, unless a run still waiting
-     * for a copy of the same rules is there to take them: then the last run to leave closes the copies it kept, and
-     * the languages' compilers after them. Afterwards, {@code run()} and {@link #load(List)} throw
-     * {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a copy
-     * when this method closed them, because it reads them again and finds a closed engine. A {@code load()} that
-     * found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on an
-     * open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules in first, and
-     * this method retires them like any others, or it finds the engine closed, retires its rules rather than swapping
-     * them in, and throws {@link IllegalStateException}. Closing it again does nothing.
+     * for a copy of the same rules is there to take them: then the last run to leave closes the copies it kept. The
+     * languages' compilers are closed after them, once this method has closed the idle copies too. Afterwards,
+     * {@code run()} and {@link #load(List)} throw {@link IllegalStateException} — as does a run that had read the rules
+     * but had not yet begun to borrow a copy when this method closed them, because it reads them again and finds a
+     * closed engine. A {@code load()} that found the engine open before this method closed it isn't stopped. If it
+     * fails, it throws what it would on an open engine, such as {@link RuleCompilationException}. If it succeeds,
+     * either it swapped its rules in first, and this method retires them like any others, or it finds the engine
+     * closed, retires its rules rather than swapping them in, and throws {@link IllegalStateException}. Closing it
+     * again does nothing.
      *
      * <p>
-     * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once every idle copy,
-     * and the compilers if no run holds a copy, has been closed: the first, if there are several. The engine is closed
-     * all the same, so closing it again does nothing. A copy a run still holds is closed when the run gives it back,
-     * or, when it's kept for a run still waiting for a copy, by the last run to leave, and a fatal error from that
-     * reaches the run that closes it.
+     * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once every copy that
+     * was idle when this method closed the rules, and the compilers if no run is using the rules by then (holding a
+     * copy, waiting for one, or not yet returned), has been closed: the first, if there are several. The engine is
+     * closed all the same, so closing it again does nothing. A copy given back while this method is still taking the
+     * idle copies, before it has marked the rules closed, counts as one of them: this method closes it too if no run is
+     * using the rules by then, and the last run to leave does otherwise. A copy a run still holds is closed when the
+     * run gives it back, or, when it's kept for a run still waiting for a copy, by that run or the last run to leave,
+     * and a fatal error from that reaches the run that closes it, never this method. The compilers are closed once both
+     * this method has closed the idle copies and the last run has left, by whichever finishes second, which gets their
+     * fatal error: so when a run leaves while this method is still closing, this method closes the compilers and throws
+     * their error.
      * </p>
      */
     // A closed engine has no rule set.
