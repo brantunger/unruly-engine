@@ -1,6 +1,7 @@
 # 🚧 MVEL gotchas
 
-Where MVEL compares, computes or assigns differently from Java, what to write instead, and what MVEL logs itself.
+Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, what
+compiles slowly, and what MVEL logs itself.
 
 **Who it's for:** rule authors, and application developers who configure logging.
 **You'll be able to:** spot a condition that matches, or doesn't, only because of how MVEL compares, write an
@@ -11,6 +12,8 @@ action that stores exactly the value you meant, and turn off what MVEL logs itse
 
 - [Comparison gotchas](#-comparison-gotchas)
 - [Assignment gotchas](#-assignment-gotchas)
+- [Calling Java code](#-calling-java-code)
+- [Compile time](#-compile-time)
 - [MVEL's own logging](#-mvels-own-logging)
 
 ---
@@ -29,7 +32,6 @@ unexpectedly.
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](mvel.md#null-and-missing-facts) | `isdef x && x > 1` |
 | 🔑 **A key missing from a `Map` fact** | `order.missing == null` fails the run with `could not access: missing`, rather than being `true` | `order['missing'] == null`, or `order.containsKey('missing')` |
-| 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path | Make the record public, or have it implement a public interface that declares `score()` |
 
 ## 🚧 Assignment gotchas
 
@@ -48,6 +50,32 @@ type instead: `output.setX(n)` with a `long` calls `setX(long)`.
 The last two depend on MVEL's JIT optimizer, which compiles an expression's accessor once it has run about 50 times
 in quick succession, and can compile it again later, for example in each compiled copy. See
 [The dynamic optimizer and class loaders](mvel.md#the-dynamic-optimizer-and-class-loaders).
+
+## ☕ Calling Java code
+
+MVEL reaches a fact's methods and getters through reflection, which fails in some cases where a Java call works.
+
+| Gotcha | Example | Do this instead |
+| --- | --- | --- |
+| 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path. So does `color.label` on an enum constant with a body that overrides `getLabel()`, such as `RED { ... }`: the constant's class is a non-public subclass | Make the record public, or have it implement a public interface that declares `score()`. For the enum constant, call the getter: `color.getLabel()` |
+| 🫥 **An exception whose `getMessage()` throws** | When a method or getter a rule calls throws such an exception, MVEL loses it: the rule fails with what `getMessage()` threw as the cause, such as `Failed to execute action for rule 'r': nope`, and the original exception and its causes are gone. This lasts until one evaluation of the expression succeeds in that [compiled copy](../glossary.md#compiled-copy); later failures keep the original, with a `(message unavailable: ...)` note | Give the exception a `getMessage()` that doesn't throw |
+
+## 🐢 Compile time
+
+MVEL's compile time about doubles with each level of `new` nested inside `new`, or of `in` nested inside `in`. With
+MVEL 2.5.4.Final, a condition of 17 nested `new Integer(` took about 400 ms to load, and one of 17 nested `(1 in [`
+about 700 ms. Nothing bounds the time: only a stack overflow fails `load()`, as too deeply nested to compile.
+
+Who pays it:
+
+- `load()` and `validate()` compile each expression twice, once to check it and once to run it.
+- The first [compiled copy](../glossary.md#compiled-copy) to run an expression takes the form `load()` compiled. Each
+  later copy compiles it again, as described in [Compiled copies](mvel.md#-compiled-copies).
+- A nested `new` also costs about half its load time on a copy's first run of it; a nested `in` doesn't.
+
+Split a deep construction into local variables in an action, or move it into a Java method the rule calls; a
+condition can't assign, so use a method there. An action with 16 nested `new Integer(` took 311 ms to load, and the
+same value built in two steps of 8 took 5 ms.
 
 ## 🪵 MVEL's own logging
 
