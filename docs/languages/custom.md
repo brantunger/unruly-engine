@@ -97,8 +97,9 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 The engine creates the `CompileContext`, `EvaluationContext` and `ActionContext` it passes to your language. They're
 sealed, so only the engine implements them; tests create them with
-[`LanguageTestContexts`](contract-kit.md). A method added to an interface you implement is a
-`default` method, so a language written against an earlier 2.x release keeps compiling and working.
+[`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine). A method added to an
+interface you implement is a `default` method, so a language written against an earlier 2.x release keeps compiling
+and working.
 
 ```java
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
@@ -335,9 +336,9 @@ cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways
 
 ## ⏳ Stopping a run
 
-A run can be interrupted, or given a [timeout](../stopping-runs.md). A run your language starts from inside an
-expression, on the same thread, stops no later than the run around it. The engine checks between rules, so what your
-language can do decides whether a rule that is already running can be stopped:
+A run can be interrupted, or given a [timeout](../stopping-runs.md), which a
+[nested run](../nested-runs.md#-what-counts-as-nested) inherits. The engine checks between rules, so what your language
+can do decides whether a running rule can be stopped:
 
 | Language | Can it stop inside an expression? |
 | --- | --- |
@@ -429,16 +430,16 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 | `warmUp` | Called on the `load()` thread, one session at a time, after every compile call and before any run sees the compiler |
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
-| A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return a session it returned before, unless it's `Session.none()`: the engine doesn't check, and the kit's `sessionsClosed` check fails it |
+| A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |
 | `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw. The kit's `sessionClosedWhileAnotherRuns` fails either; `sessionsClosed` and `sessionClosedOnAnotherThread` fail a throw |
+| Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, so keep a run's state in its `Session`, as the kit's `nestedRunInsideAnAction` checks |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
-Keep whatever changes while an expression runs in a `Session`: `newSession()` creates one for each
-[compiled copy](../glossary.md#compiled-copy) of the rules, and every condition and action of your language in a run
-gets that copy's session. Return `Session.none()` when your compiled expressions keep no state while they run, and a
-new session when they do, such as a single-threaded interpreter context. A rule list whose languages all return
-`Session.none()` needs no copies: every run shares one set of sessions, and no
-[copy limit](../compiled-copies.md#-limiting-the-copies) applies to it.
+`newSession()` creates a session for each [compiled copy](../glossary.md#compiled-copy) of the rules, and every
+condition and action of your language in a run gets that copy's session. Return `Session.none()` when your compiled
+expressions keep no state while they run, and a new session when they do, such as a single-threaded interpreter
+context. A rule list whose languages all return `Session.none()` needs no copies: every run shares one set of
+sessions, and no [copy limit](../compiled-copies.md#-limiting-the-copies) applies to it.
 
 > [!WARNING]
 > Only the `Session.none()` instance counts as stateless: the engine checks identity, not `equals`. A stateless
@@ -526,8 +527,8 @@ read and write them by reflection. Only MVEL has been tested in an image; see [N
 
 ## 🧪 Testing with the contract kit
 
-[The contract test kit](contract-kit.md) covers adding `unruly-engine-test` to a language's tests, what each of its
-checks promises, and [the Surefire setting](contract-kit.md#a-named-module-with-maven) a named module needs.
+See [The contract test kit](contract-kit.md), and [Testing beyond the contract kit](beyond-the-contract-kit.md) for
+`LanguageTestContexts` and the Surefire setting a named module needs.
 
 ## 🚧 Gotchas
 

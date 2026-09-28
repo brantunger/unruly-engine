@@ -46,6 +46,11 @@ class MvelExpressionLanguageContractTest extends ExpressionLanguageContractTest 
     }
 
     @Override
+    protected String copyThroughVariable(String key, String fact) {
+        return "tmp = " + fact + "; output.put('" + key + "', tmp)";
+    }
+
+    @Override
     protected String reassignOutput() {
         return "output = new java.util.HashMap()";
     }
@@ -74,5 +79,10 @@ class MvelExpressionLanguageContractTest extends ExpressionLanguageContractTest 
     @Override
     protected String missingFactProperty(String fact, String property, int value) {
         return factProperty(fact, property, value);
+    }
+
+    @Override
+    protected String putFactProperty(String key, String fact, String property) {
+        return "output.put('" + key + "', " + fact + "." + property + ")";
     }
 }

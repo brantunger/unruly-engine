@@ -1,6 +1,8 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -620,6 +625,232 @@ class ContractKitChecksTest {
                     public void close() {
                         compiler.close();
                         ContractKitChecksTest.<RuntimeException>sneakyThrow(failure.get());
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that an action {@code let NAME = FACT ; put KEY NAME} keeps its variable in a map compiled
+     * into the action, which every run shares. The first two runs of the action wait for each other between declaring
+     * the variable and putting it, each on its own thread, so one of them puts the other's value.
+     */
+    private static ExpressionLanguage sharedActionVariables(ExpressionLanguage language) {
+        CountDownLatch bothDeclared = new CountDownLatch(2);
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 8 || !"let".equals(tokens[0]) || !"put".equals(tokens[5])) {
+                            return compiler.compileAction(expression);
+                        }
+                        Map<String, Object> variables = new ConcurrentHashMap<>();
+                        return (actionContext, session) -> {
+                            variables.put(tokens[1], actionContext.facts().get(tokens[3]));
+                            // Later runs don't wait. A timeout, so a check that runs one run at a time only waits.
+                            bothDeclared.countDown();
+                            bothDeclared.await(10, TimeUnit.SECONDS);
+                            return ActionResult.set(Map.of(tokens[6], variables.get(tokens[7])));
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that the first {@code runs} conditions it evaluates wait for each other, each on its own
+     * thread, so that as many runs at once hold a copy of the rules each. If {@code failsWhenShared}, a condition fails
+     * when another run is using its session, as a session whose state two runs at once corrupt would make it.
+     */
+    private static ExpressionLanguage overlapping(ExpressionLanguage language, int runs, boolean failsWhenShared) {
+        CountDownLatch together = new CountDownLatch(runs);
+        Set<Session> inUse = ConcurrentHashMap.newKeySet();
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            // Marked before this run is counted, so the run it shares a session with is still waiting.
+                            boolean own = inUse.add(session);
+                            // A timeout, so a check that runs one run at a time only waits.
+                            together.countDown();
+                            if (!own && failsWhenShared) {
+                                throw new IllegalStateException("the session is in use by another run");
+                            }
+                            try {
+                                together.await(10, TimeUnit.SECONDS);
+                                return condition.evaluate(evaluation, session);
+                            } finally {
+                                if (own) {
+                                    inUse.remove(session);
+                                }
+                            }
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void close() {
+                        compiler.close();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * The toy, with sessions whose {@code newSession()} returns a new one twice, and from then on one it already
+     * returned, and whose first four runs overlap, so that the engine asks for four sessions at once. If
+     * {@code failsWhenShared}, the run that finds its session in use by another fails.
+     */
+    private static ExpressionLanguage reusedAfterTwo(boolean failsWhenShared) {
+        AtomicInteger created = new AtomicInteger();
+        Session reused = new Session() {
+        };
+        return overlapping(withSessions(new ToyExpressionLanguage(), () -> created.incrementAndGet() > 2
+                ? reused
+                : new Session() {
+                }), 4, failsWhenShared);
+    }
+
+    /**
+     * Wraps a language so that an action {@code put KEY OPERAND} whose key is one of {@code keys} reads its operand and
+     * then fails.
+     */
+    private static ExpressionLanguage readThenThrow(ExpressionLanguage language, Set<String> keys) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 3 || !"put".equals(tokens[0]) || !keys.contains(tokens[1])) {
+                            return compiler.compileAction(expression);
+                        }
+                        // The toy reads a condition that is one operand as the operand's value.
+                        CompiledCondition operand = compiler.compileCondition(
+                                new Expression(expression.ruleName(), ExpressionKind.CONDITION, tokens[2]));
+                        return (actionContext, session) -> {
+                            operand.evaluate(actionContext, session);
+                            throw new IllegalStateException("the action failed after reading " + tokens[2]);
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void checkFactName(String name) {
+                        compiler.checkFactName(name);
+                    }
+
+                    @Override
+                    public void close() {
+                        compiler.close();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that an action {@code put KEY OPERAND} keeps the output it writes to in a
+     * {@link ThreadLocal}, and looks it up again after reading the operand, as an adapter over a runtime whose context
+     * is bound to the thread might. A run started on the same thread while the operand is read, by a getter, replaces
+     * it, so the action writes to that run's output.
+     */
+    private static ExpressionLanguage threadLocalOutput(ExpressionLanguage language) {
+        ThreadLocal<Map<String, Object>> output = new ThreadLocal<>();
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 3 || !"put".equals(tokens[0])) {
+                            return compiler.compileAction(expression);
+                        }
+                        // The toy reads a condition that is one operand as the operand's value.
+                        CompiledCondition operand = compiler.compileCondition(
+                                new Expression(expression.ruleName(), ExpressionKind.CONDITION, tokens[2]));
+                        return (actionContext, session) -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> target = (Map<String, Object>) actionContext.output();
+                            output.set(target);
+                            Object value = operand.evaluate(actionContext, session);
+                            output.get().put(tokens[1], value);
+                            return ActionResult.done();
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
                     }
                 };
             }
@@ -1280,5 +1511,199 @@ class ContractKitChecksTest {
         assertEquals("newSession() returned the same session for two copies of the rules, so two runs use it at once"
                 + " and the engine closes it twice: " + UnprintableSession.class.getName() + UNAVAILABLE,
                 failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose actions keep their variables where every run shares them fails the concurrent-runs"
+            + " check (#764)")
+    void sharedActionVariablesFail() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(sharedActionVariables(new ToyExpressionLanguage()), "concurrentRuns"));
+
+        assertTrue(failure.getMessage().contains("copied="), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose newSession() returns a session twice after its second call fails the"
+            + " concurrent-runs check (#764)")
+    void sessionReusedAfterTwoFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(reusedAfterTwo(false), "concurrentRuns"));
+
+        assertTrue(failure.getMessage().startsWith("newSession() returned the same session for two copies of the"
+                + " rules, so two runs use it at once and the engine closes it twice: "), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a contract test whose copyThroughVariable() returns null still has the concurrent-runs check watch"
+            + " the sessions (#764)")
+    void sessionReusedAfterTwoFailsWithoutTheVariable() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return reusedAfterTwo(false);
+            }
+
+            @Override
+            protected String copyThroughVariable(String key, String fact) {
+                return null;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "concurrentRuns"));
+
+        assertTrue(failure.getMessage().startsWith("newSession() returned the same session for two copies of the"
+                + " rules"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose runs have variables and sessions of their own passes the concurrent-runs check, and"
+            + " so does one with no session (#764)")
+    void ownVariablesAndSessionsPassConcurrentRuns() {
+        assertDoesNotThrow(() -> runCheck(overlapping(withSessions(new ToyExpressionLanguage(), () -> new Session() {
+        }), 4, true), "concurrentRuns"));
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "concurrentRuns"));
+    }
+
+    @Test
+    @DisplayName("a language that keeps an action's output in per-thread state fails the check that starts a run inside"
+            + " an action (#765)")
+    void threadLocalOutputFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(threadLocalOutput(new ToyExpressionLanguage()), "nestedRunInsideAnAction"));
+
+        assertEquals("the run started inside the action ==> expected: <{inner=2}> but was: <{inner=2, seen=7}>",
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that keeps a run's state on the stack or in its sessions passes the check that starts a"
+            + " run inside an action (#765)")
+    void ownRunStatePassesNestedRunInsideAnAction() {
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "nestedRunInsideAnAction"));
+        assertDoesNotThrow(() -> runCheck(withSessions(new ToyExpressionLanguage(), () -> new Session() {
+        }), "nestedRunInsideAnAction"));
+    }
+
+    @Test
+    @DisplayName("a contract test whose putFactProperty() returns null skips the check that starts a run inside an"
+            + " action (#765)")
+    void noPutFactPropertySkipped() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String putFactProperty(String key, String fact, String property) {
+                return null;
+            }
+        };
+
+        TestAbortedException skipped = assertThrows(TestAbortedException.class,
+                () -> runCheck(test, "nestedRunInsideAnAction"));
+
+        assertEquals("Assumption failed: the language's actions can't read a fact's property", skipped.getMessage());
+    }
+
+    @Test
+    @DisplayName("the concurrent-runs check reports a session returned twice, with the run it made fail as the cause,"
+            + " rather than the run's failure alone (#764)")
+    void sessionReusedAfterTwoReportedOverTheRunItFailed() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(reusedAfterTwo(true), "concurrentRuns"));
+
+        assertTrue(failure.getMessage().startsWith("newSession() returned the same session for two copies of the"
+                + " rules"), failure.getMessage());
+        assertInstanceOf(ExecutionException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("the concurrent-runs check leaves its thread interrupted when it's interrupted while it waits for the"
+            + " runs (#764)")
+    void interruptedConcurrentRunsStaysInterrupted() {
+        Thread.currentThread().interrupt();
+        try {
+            assertThrows(InterruptedException.class, () -> runCheck(new ToyExpressionLanguage(), "concurrentRuns"));
+
+            assertTrue(Thread.currentThread().isInterrupted(), "the check cleared the thread's interrupt");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("the concurrent-runs check fails a run that throws with the worker's exception, when no session was"
+            + " returned twice (#764)")
+    void throwingRunNotWrapped() {
+        ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> runCheck(throwingActions(new ToyExpressionLanguage()), "concurrentRuns"));
+
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("the check that starts a run inside an action fails when that run fails (#765)")
+    void failedRunInsideAnActionReported() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                readThenThrow(new ToyExpressionLanguage(), Set.of("inner")), "nestedRunInsideAnAction"));
+
+        assertTrue(failure.getMessage().startsWith("the run started inside the action failed: "),
+                failure.getMessage());
+        // The engine's message, without the class of the engine's internal exception that carries it.
+        assertFalse(failure.getMessage().contains("ReportedFailure"), failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("the check that starts a run inside an action fails an action that never reads the fact's property"
+            + " (#765)")
+    void actionThatNeverReadsTheGetterFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String putFactProperty(String key, String fact, String property) {
+                return "put " + key + " 7";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "nestedRunInsideAnAction"));
+
+        assertTrue(failure.getMessage().startsWith("the action didn't read nest.value, so no run was started inside"
+                + " it"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the check that starts a run inside an action says the run around it failed after that run ended,"
+            + " with the engine's failure as the cause (#765)")
+    void runAroundTheNestedRunFailedReported() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                readThenThrow(new ToyExpressionLanguage(), Set.of("seen")), "nestedRunInsideAnAction"));
+
+        assertTrue(failure.getMessage().startsWith("the run failed after a run started inside its action ended, so"
+                + " the nested run may have replaced or removed state the action kept for its own run: "),
+                failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+        assertEquals(0, failure.getSuppressed().length);
+    }
+
+    @Test
+    @DisplayName("the check that starts a run inside an action says both runs failed, with the nested run's failure"
+            + " attached (#765)")
+    void bothRunsFailedInsideAnActionReported() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                readThenThrow(new ToyExpressionLanguage(), Set.of("seen", "inner")), "nestedRunInsideAnAction"));
+
+        assertTrue(failure.getMessage().startsWith("the run failed after a run started inside its action failed too,"
+                + " which is attached: "), failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+        assertEquals(1, failure.getSuppressed().length);
+        assertInstanceOf(RuleExecutionException.class, failure.getSuppressed()[0]);
+    }
+
+    @Test
+    @DisplayName("the check that starts a run inside an action reports a run that fails before starting one as the"
+            + " engine reported it (#765)")
+    void runFailedBeforeNestingNotWrapped() {
+        assertThrows(RuleExecutionException.class,
+                () -> runCheck(throwingActions(new ToyExpressionLanguage()), "nestedRunInsideAnAction"));
     }
 }

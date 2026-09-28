@@ -48,6 +48,11 @@ class ToyExpressionLanguageContractTest extends ExpressionLanguageContractTest {
     }
 
     @Override
+    protected String copyThroughVariable(String key, String fact) {
+        return "let tmp = " + fact + " ; put " + key + " tmp";
+    }
+
+    @Override
     protected String reassignOutput() {
         return "output = 1";
     }
@@ -70,5 +75,10 @@ class ToyExpressionLanguageContractTest extends ExpressionLanguageContractTest {
     @Override
     protected String missingFactProperty(String fact, String property, int value) {
         return factProperty(fact, property, value);
+    }
+
+    @Override
+    protected String putFactProperty(String key, String fact, String property) {
+        return "put " + key + " " + fact + "." + property;
     }
 }

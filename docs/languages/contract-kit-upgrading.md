@@ -10,6 +10,31 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.9
+
+In 2.10.0 `concurrentRuns` got stricter and `nestedRunInsideAnAction` was added, so a language that passed the 2.9 kit
+may now fail. Each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `concurrentRuns` | Returns, from its third `newSession()` call on, a session it returned before, when runs overlap enough to need a third | Two runs use one session at once, and the engine closes it twice |
+| `concurrentRuns`, once `copyThroughVariable()` returns an action | Keeps an action's variables where every run reaches them, such as in the compiled action or a static. The check is likely, not certain, to catch it: another run must change the variable while the action runs | A run reads another run's value, or fails |
+| `nestedRunInsideAnAction`, once `putFactProperty()` returns an action | Keeps a run's state per thread, such as in a `ThreadLocal`, where a run nested inside an expression replaces it | The outer run's value lands in the nested run's output, and nothing throws |
+
+Both hooks return `null` by default, so a subclass written for the 2.9 kit still compiles, and the parts they turn on
+stay off. Override them to turn those parts on:
+
+- `copyThroughVariable(key, fact)`: an action that declares a variable holding the fact's value, then puts the
+  variable under the key. For MVEL, `"tmp = " + fact + "; output.put('" + key + "', tmp)"`.
+- `putFactProperty(key, fact, property)`: an action that puts the fact's property, read through its getter, under the
+  key. For MVEL, `"output.put('" + key + "', " + fact + "." + property + ")"`. If your `configure` declares facts,
+  declare `nest` too; see
+  [A language that needs declared facts](contract-kit.md#a-language-that-needs-declared-facts-imports-or-options).
+
+Skipped, `nestedRunInsideAnAction` counts as aborted, as `usableFactNamesAccepted` does, so a launcher that expects
+every check found to succeed sees one more aborted check: override `putFactProperty()`, or count aborted checks as
+passing. Like `sessionClosedWhileAnotherRuns`, it also needs a second session on a thread whose first is still in use.
+
 ## 🔼 Upgrading from 2.8.8
 
 The kit after 2.8.8 has two more checks, both on `Session.close()` and neither skippable, so a language that passed
