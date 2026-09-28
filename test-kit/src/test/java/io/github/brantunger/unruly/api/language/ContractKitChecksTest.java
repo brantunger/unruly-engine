@@ -12,6 +12,7 @@ import org.opentest4j.TestAbortedException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -246,6 +247,49 @@ class ContractKitChecksTest {
         };
     }
 
+    /**
+     * Wraps a language so that every action it compiles waits for {@code release} before it runs, so a check's runs
+     * can't finish, and its thread must wait for them, until the test lets them go.
+     */
+    private static ExpressionLanguage waitingActions(ExpressionLanguage language, CountDownLatch release) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        return (actionContext, session) -> {
+                            release.await();
+                            return action.execute(actionContext, session);
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+
+                    @Override
+                    public void close() {
+                        compiler.close();
+                    }
+                };
+            }
+        };
+    }
+
     /** Wraps a language so that every action it compiles fails when it runs. */
     private static ExpressionLanguage throwingActions(ExpressionLanguage language) {
         return new ExpressionLanguage() {
@@ -438,10 +482,14 @@ class ContractKitChecksTest {
         };
     }
 
-    /** The variables a language's actions declare, kept in its session. */
+    /**
+     * The variables a language's actions declare, kept in its session, and, for {@link #sessionCachedVariables}, the
+     * variables as a {@code put} last found them.
+     */
     private static final class Variables implements Session {
 
         private final Map<String, Object> declared = new ConcurrentHashMap<>();
+        private final AtomicReference<Map<String, Object>> resolved = new AtomicReference<>(Map.of());
     }
 
     /**
@@ -501,6 +549,59 @@ class ContractKitChecksTest {
     }
 
     /**
+     * Wraps a language as {@link #sessionVariables} does one run late, but with the cache in the session rather than
+     * in the compiled action, which every copy of the rules shares: each {@code put} reads the variables as they were
+     * when a {@code put} last ran with the session, so a later run sees the variable only if it gets the same session.
+     */
+    private static ExpressionLanguage sessionCachedVariables(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length == 4 && "let".equals(tokens[0])) {
+                            return (actionContext, session) -> {
+                                ((Variables) session).declared.put(tokens[1], Integer.valueOf(tokens[3]));
+                                return ActionResult.done();
+                            };
+                        }
+                        if (tokens.length != 3 || !"put".equals(tokens[0])) {
+                            return action;
+                        }
+                        return (actionContext, session) -> {
+                            Variables variables = (Variables) session;
+                            Map<String, Object> visible = variables.resolved.getAndSet(Map.copyOf(variables.declared));
+                            if (actionContext.facts().containsKey(tokens[2]) || !visible.containsKey(tokens[2])) {
+                                return action.execute(actionContext, session);
+                            }
+                            return ActionResult.set(Map.of(tokens[1], visible.get(tokens[2])));
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Variables();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
      * Wraps a language so that a {@code put} of a name that is neither a fact nor a variable puts {@code null}, as a
      * JsonLogic-style language reads a name it doesn't know, or, if {@code atLoad}, is refused when the rule loads.
      */
@@ -522,7 +623,7 @@ class ContractKitChecksTest {
 
                     @Override
                     public CompiledAction compileAction(Expression expression) {
-                        // The checks' only name that is never a fact is the variable y.
+                        // The only name the checks' actions read that is never a fact is the variable y.
                         if (!expression.text().endsWith(" y")) {
                             return compiler.compileAction(expression);
                         }
@@ -544,6 +645,376 @@ class ContractKitChecksTest {
                 };
             }
         };
+    }
+
+    /**
+     * Wraps a language so that an action's {@code let NAME = VALUE} keeps the variable in the session, and a condition
+     * {@code NAME == VALUE} reads a name that isn't a fact from there, while its actions read only facts: a later run's
+     * condition sees what an earlier run's action declared, and no later action does.
+     */
+    private static ExpressionLanguage conditionsReadVariables(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 3 || !"==".equals(tokens[1])) {
+                            return condition;
+                        }
+                        return (evaluation, session) -> {
+                            Map<String, Object> declared = ((Variables) session).declared;
+                            if (evaluation.facts().containsKey(tokens[0]) || !declared.containsKey(tokens[0])) {
+                                return condition.evaluate(evaluation, session);
+                            }
+                            return declared.get(tokens[0]).equals(Integer.valueOf(tokens[2]));
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length == 4 && "let".equals(tokens[0])) {
+                            return (actionContext, session) -> {
+                                ((Variables) session).declared.put(tokens[1], Integer.valueOf(tokens[3]));
+                                return ActionResult.done();
+                            };
+                        }
+                        return action;
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Variables();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that an action {@code let NAME = VALUE ; ...} keeps the variable in the session while the
+     * rest of the action runs, and removes it once the rest has succeeded, but not when it throws, and {@code put KEY
+     * NAME} reads a name that isn't a fact from there: a variable outlives only an action that fails.
+     */
+    private static ExpressionLanguage clearsVariablesOnSuccess(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] statements = expression.text().split(";", 2);
+                        String[] tokens = statements[0].trim().split("\\s+");
+                        if (tokens.length == 4 && "let".equals(tokens[0])) {
+                            CompiledAction rest = statements.length == 2
+                                    ? compiler.compileAction(new Expression(expression.ruleName(), expression.kind(),
+                                    statements[1]))
+                                    : (actionContext, session) -> ActionResult.done();
+                            return (actionContext, session) -> {
+                                Map<String, Object> declared = ((Variables) session).declared;
+                                declared.put(tokens[1], Integer.valueOf(tokens[3]));
+                                ActionResult result = rest.execute(actionContext, session);
+                                // Not in a finally block: the variable is left behind when the rest throws.
+                                declared.remove(tokens[1]);
+                                return result;
+                            };
+                        }
+                        CompiledAction action = compiler.compileAction(expression);
+                        if (tokens.length != 3 || !"put".equals(tokens[0])) {
+                            return action;
+                        }
+                        return (actionContext, session) -> {
+                            Map<String, Object> declared = ((Variables) session).declared;
+                            if (actionContext.facts().containsKey(tokens[2]) || !declared.containsKey(tokens[2])) {
+                                return action.execute(actionContext, session);
+                            }
+                            return ActionResult.set(Map.of(tokens[1], declared.get(tokens[2])));
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Variables();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that its variables have a namespace of their own, as SpEL's do: an action's
+     * {@code let NAME = VALUE} keeps the variable in the session, where every later rule and run finds it, and only
+     * {@code #NAME} reads it, in an action {@code put KEY #NAME} and in a condition {@code #NAME == VALUE}. A variable
+     * read as a fact is never found.
+     */
+    private static ExpressionLanguage hashVariables(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length == 3 && tokens[0].startsWith("#")) {
+                            return (evaluation, session) -> Integer.valueOf(tokens[2])
+                                    .equals(variable(session, tokens[0]));
+                        }
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length == 4 && "let".equals(tokens[0])) {
+                            return (actionContext, session) -> {
+                                ((Variables) session).declared.put(tokens[1], Integer.valueOf(tokens[3]));
+                                return ActionResult.done();
+                            };
+                        }
+                        if (tokens.length == 3 && "put".equals(tokens[0]) && tokens[2].startsWith("#")) {
+                            return (actionContext, session) ->
+                                    ActionResult.set(Map.of(tokens[1], variable(session, tokens[2])));
+                        }
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Variables();
+                    }
+
+                    private Object variable(Session session, String name) {
+                        Object value = ((Variables) session).declared.get(name.substring(1));
+                        if (value == null) {
+                            throw new IllegalStateException("unknown variable '" + name + "'");
+                        }
+                        return value;
+                    }
+                };
+            }
+        };
+    }
+
+    /** A contract test for {@code language} that reads a variable only as {@code #NAME}, as {@link #hashVariables}. */
+    private static ExpressionLanguageContractTest readingHashVariables(ExpressionLanguage language) {
+        return new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+
+            @Override
+            protected String putVariable(String key, String variable) {
+                return "put " + key + " #" + variable;
+            }
+
+            @Override
+            protected String variableEquals(String variable, int value) {
+                return "#" + variable + " == " + value;
+            }
+        };
+    }
+
+    /** A contract test for {@code language} whose configure() makes two copies of the rules when they load. */
+    static ExpressionLanguageContractTest twoCopiesAtLoad(ExpressionLanguage language) {
+        return new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.copiesAtLoad(2);
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that a condition {@code FACT.PROPERTY = VALUE} writes the value into a map fact, and then is
+     * true, or, if {@code thenFail}, throws, and a condition {@code let NAME = VALUE ; true} is true: a language that
+     * lets its conditions write the facts and declare variables.
+     */
+    private static ExpressionLanguage writingConditions(ExpressionLanguage language, boolean thenFail) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    @SuppressWarnings("unchecked")
+                    public CompiledCondition compileCondition(Expression expression) {
+                        String text = expression.text();
+                        if (text.startsWith("let ")) {
+                            return (evaluation, session) -> true;
+                        }
+                        String[] tokens = text.trim().split("\\s+");
+                        if (tokens.length != 3 || !"=".equals(tokens[1]) || !tokens[0].contains(".")) {
+                            return compiler.compileCondition(expression);
+                        }
+                        String[] path = tokens[0].split("\\.");
+                        return (evaluation, session) -> {
+                            ((Map<String, Object>) evaluation.facts().get(path[0]))
+                                    .put(path[1], Integer.valueOf(tokens[2]));
+                            if (thenFail) {
+                                throw new IllegalStateException("a condition can't write a fact");
+                            }
+                            return true;
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that each of its compilers returns a new session each time, and throws when it's closed
+     * once it has warmed up a session, as a compiler whose warm-up starts a runtime that fails to stop might.
+     */
+    private static ExpressionLanguage closeFailsOnceWarmedUp(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                AtomicBoolean warmedUp = new AtomicBoolean();
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return compiler.compileAction(expression);
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new Session() {
+                        };
+                    }
+
+                    @Override
+                    public void warmUp(Session session) {
+                        warmedUp.set(true);
+                    }
+
+                    @Override
+                    public void close() {
+                        compiler.close();
+                        if (warmedUp.get()) {
+                            throw new IllegalStateException("close() fails after warmUp()");
+                        }
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that each action it compiles turns every value in the output into its text once it has run:
+     * an output that prints as the one expected, and isn't.
+     */
+    private static ExpressionLanguage textOutputs(ExpressionLanguage language) {
+        return new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return language.name();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    @SuppressWarnings("unchecked")
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        return (actionContext, session) -> {
+                            ActionResult result = action.execute(actionContext, session);
+                            ((Map<String, Object>) actionContext.output()).replaceAll((key, value) ->
+                                    String.valueOf(value));
+                            return result;
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return compiler.newSession();
+                    }
+                };
+            }
+        };
+    }
+
+    /** Runs every one of the kit's checks on the contract test, and returns the name of each that failed. */
+    private static List<String> failedChecks(ExpressionLanguageContractTest test) {
+        List<String> failed = new ArrayList<>();
+        for (Method check : ExpressionLanguageContractTest.class.getDeclaredMethods()) {
+            if (!check.isAnnotationPresent(Test.class)) {
+                continue;
+            }
+            try {
+                runCheck(test, check.getName());
+            } catch (TestAbortedException e) {
+                // Skipped by one of the toy's hooks, as it is in the toy's own contract test.
+            } catch (Throwable e) {
+                failed.add(check.getName());
+            }
+        }
+        return failed;
     }
 
     /** Wraps a language so that its checkFactName() rejects any name but letters, such as {@code credit_score2}. */
@@ -1638,12 +2109,17 @@ class ContractKitChecksTest {
     @DisplayName("the concurrent-runs check leaves its thread interrupted when it's interrupted while it waits for the"
             + " runs (#764)")
     void interruptedConcurrentRunsStaysInterrupted() {
+        // The runs wait until the check has been interrupted, so it is still waiting for them when it looks: runs
+        // that have all finished are collected without a wait, and the interrupt is never seen.
+        CountDownLatch release = new CountDownLatch(1);
         Thread.currentThread().interrupt();
         try {
-            assertThrows(InterruptedException.class, () -> runCheck(new ToyExpressionLanguage(), "concurrentRuns"));
+            assertThrows(InterruptedException.class,
+                    () -> runCheck(waitingActions(new ToyExpressionLanguage(), release), "concurrentRuns"));
 
             assertTrue(Thread.currentThread().isInterrupted(), "the check cleared the thread's interrupt");
         } finally {
+            release.countDown();
             // Cleared for the tests that run on this thread next.
             Thread.interrupted();
         }
@@ -1724,5 +2200,271 @@ class ContractKitChecksTest {
     void runFailedBeforeNestingNotWrapped() {
         assertThrows(RuleExecutionException.class,
                 () -> runCheck(throwingActions(new ToyExpressionLanguage()), "nestedRunInsideAnAction"));
+    }
+
+    @Test
+    @DisplayName("a language whose later run's condition reads a variable an earlier run's action declared fails the"
+            + " variable check (#697)")
+    void conditionReadingAnEarlierRunsVariableFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(conditionsReadVariables(new ToyExpressionLanguage()), "actionVariablesStayLocal"));
+
+        assertEquals("a later run's condition read the variable 'y' an action declared in an earlier one, although"
+                + " the rule that declares it didn't fire: {seen=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the variable check fails a language whose run that declares the variable read by a later run's"
+            + " condition fails, rather than passing it (#697)")
+    void failedRunBeforeTheConditionReadsFails() {
+        // The toy's > compares numbers, and fails the rule for a string.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String variableEquals(String variable, int value) {
+                return "'text' > " + value;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "actionVariablesStayLocal"));
+
+        assertTrue(failure.getMessage().startsWith("the run that declares the variable 'y', with y a fact, failed ==>"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the variable check reads a variable with putVariable(), so a language whose variables have a"
+            + " namespace of their own fails it when they leak (#766)")
+    void namespacedVariablesFail() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(readingHashVariables(hashVariables(new ToyExpressionLanguage())),
+                        "actionVariablesStayLocal"));
+
+        assertEquals("a later rule read the variable 'y' an action declared: {seen=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that keeps the variable of an action that fails fails the failed-action check, whatever"
+            + " configure() sets, and passes the variable check (#766)")
+    void failedActionsVariablesFail() throws Throwable {
+        ExpressionLanguage language = clearsVariablesOnSuccess(new ToyExpressionLanguage());
+        for (ExpressionLanguageContractTest test : List.of(new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        }, twoCopiesAtLoad(language))) {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(test, "failedActionVariablesStayLocal"));
+
+            assertEquals("a later run read the variable 'y' that a failed action declared: {seen=2}",
+                    failure.getMessage());
+            // Only a failed action leaves its variable behind.
+            runCheck(test, "actionVariablesStayLocal");
+        }
+    }
+
+    @Test
+    @DisplayName("the failed-action check fails a contract test whose declareVariableThenFail() returns an action that"
+            + " doesn't fail the run (#766)")
+    void declareVariableThenFailThatSucceedsFails() {
+        // A language that reads the unknown y as null, so that the rule that reads it doesn't fail the run either.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return unknownNames(new ToyExpressionLanguage(), false);
+            }
+
+            @Override
+            protected String declareVariableThenFail(String name, int value) {
+                return "let " + name + " = " + value;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "failedActionVariablesStayLocal"));
+
+        assertTrue(failure.getMessage().startsWith("the action from declareVariableThenFail() didn't fail the run"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that clears a failed action's variables, or keeps none, passes the failed-action check"
+            + " (#766)")
+    void failedActionsVariablesClearedPass() {
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "failedActionVariablesStayLocal"));
+        assertDoesNotThrow(() -> runCheck(unknownNames(new ToyExpressionLanguage(), false),
+                "failedActionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("a language that refuses a name that isn't a fact when it loads the rule passes the failed-action"
+            + " check, as it passes the variable check (#766)")
+    void unknownNamesRefusedAtLoadPassFailedActionCheck() {
+        assertDoesNotThrow(() -> runCheck(unknownNames(new ToyExpressionLanguage(), true),
+                "failedActionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("a contract test whose declareVariableThenFail() returns null skips the failed-action check (#766)")
+    void noDeclareVariableThenFailSkipped() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String declareVariableThenFail(String name, int value) {
+                return null;
+            }
+        };
+
+        assertThrows(TestAbortedException.class, () -> runCheck(test, "failedActionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("the variable check can't be undone by configure(): with two copies made when the rules load, it"
+            + " still fails a language whose later run reads an earlier run's variable")
+    void earlierRunsVariablesFailWhateverConfigureSets() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoCopiesAtLoad(sessionCachedVariables(new ToyExpressionLanguage())),
+                        "actionVariablesStayLocal"));
+
+        assertEquals("a later run read the variable 'y' an action declared in an earlier one, although the rule that"
+                + " declares it didn't fire: {seen=2}", failure.getMessage());
+        // And a later run's condition.
+        assertThrows(AssertionFailedError.class,
+                () -> runCheck(twoCopiesAtLoad(conditionsReadVariables(new ToyExpressionLanguage())),
+                        "actionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("a language whose condition writes a map fact's property and is true fails the condition-write check"
+            + " (#767)")
+    void propertyWritingConditionFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(writingConditions(new ToyExpressionLanguage(), false), "conditionWritesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("a condition that writes a fact's property was neither rejected by"
+                + " load nor failed by run"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose condition writes a map fact's property before it fails the rule fails the"
+            + " condition-write check, since the fact has changed (#767)")
+    void propertyWrittenBeforeTheFailureFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(writingConditions(new ToyExpressionLanguage(), true), "conditionWritesRejected"));
+
+        assertEquals("a condition that writes a fact's property changed it ==> expected: <{creditScore=750}> but was:"
+                + " <{creditScore=1}>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose condition declares a variable and is true fails the condition-write check, when"
+            + " its contract test writes no property (#767)")
+    void declaringConditionFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return writingConditions(new ToyExpressionLanguage(), false);
+            }
+
+            @Override
+            protected String propertyAssignment(String fact, String property, int value) {
+                return null;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "conditionWritesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("a condition that declares a variable was neither rejected by load"
+                + " nor failed by run"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that rejects a condition that writes a property or declares a variable passes the"
+            + " condition-write check, and so does one whose contract test has only one of them (#767)")
+    void rejectedConditionWritesPass() {
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "conditionWritesRejected"));
+        ExpressionLanguageContractTest noDeclaration = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String conditionDeclaration(String name, int value) {
+                return null;
+            }
+        };
+        assertDoesNotThrow(() -> runCheck(noDeclaration, "conditionWritesRejected"));
+    }
+
+    @Test
+    @DisplayName("a contract test whose propertyAssignment() and conditionDeclaration() return null skips the"
+            + " condition-write check (#767)")
+    void noConditionWritesSkipped() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String propertyAssignment(String fact, String property, int value) {
+                return null;
+            }
+
+            @Override
+            protected String conditionDeclaration(String name, int value) {
+                return null;
+            }
+        };
+
+        assertThrows(TestAbortedException.class, () -> runCheck(test, "conditionWritesRejected"));
+    }
+
+    @Test
+    @DisplayName("a language whose compiler's close() throws once it has warmed up a session fails the compiler check"
+            + " when configure() makes copies when the rules load, and fails no other check (#725)")
+    void compilerCloseFailingOnceWarmedUpFails() {
+        ExpressionLanguageContractTest test = twoCopiesAtLoad(closeFailsOnceWarmedUp(new ToyExpressionLanguage()));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "compilerClosed"));
+
+        assertEquals("a compiler's close() threw java.lang.IllegalStateException: close() fails after warmUp(), which"
+                + " the engine only logs at WARN", failure.getMessage());
+        assertEquals(List.of("compilerClosed"), failedChecks(test));
+    }
+
+    @Test
+    @DisplayName("an output that prints as the one expected, and isn't, fails with a message that says where the"
+            + " values differ and what each one's class is (#768)")
+    void outputThatPrintsTheSameExplained() {
+        ExpressionLanguage language = textOutputs(new ToyExpressionLanguage());
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionReadsFacts"));
+
+        assertEquals("expected: <{seen=1}> but was: <{seen=1}>, and at seen, expected 1 (java.lang.Integer) but was 1"
+                + " (java.lang.String)", failure.getMessage());
+        assertEquals(Map.of("seen", 1), failure.getExpected().getValue());
+        assertEquals(Map.of("seen", "1"), failure.getActual().getValue());
+
+        AssertionFailedError notBoolean = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionMustBeBoolean"));
+        assertEquals("expected: <{seen=true}> but was: <{seen=true}>, and at seen, expected true (java.lang.Boolean)"
+                + " but was true (java.lang.String)", notBoolean.getMessage());
+
+        // A list of outputs: the second run of the first worker is the first that differs and prints the same.
+        AssertionFailedError concurrent = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "concurrentRuns"));
+        assertTrue(concurrent.getMessage().matches("(?s).*, and at \\[1]\\.(seen|copied), expected 1"
+                + " \\(java\\.lang\\.Integer\\) but was 1 \\(java\\.lang\\.String\\)"), concurrent.getMessage());
+
+        ExpressionLanguageContractTest usableName = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+
+            @Override
+            protected Collection<String> usableFactNames() {
+                return List.of("score");
+            }
+        };
+        AssertionFailedError usable = assertThrows(AssertionFailedError.class,
+                () -> runCheck(usableName, "usableFactNamesAccepted"));
+        assertEquals("a rule on the fact name 'score' didn't put its value: expected: <{seen=1}> but was: <{seen=1}>,"
+                + " and at seen, expected 1 (java.lang.Integer) but was 1 (java.lang.String)", usable.getMessage());
     }
 }

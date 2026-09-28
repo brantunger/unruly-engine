@@ -94,6 +94,9 @@ public abstract class ExpressionLanguageContractTest {
     /** The output key the checks' actions put a fact's value under. */
     private static final String SEEN = "seen";
 
+    /** The rule the variable checks declare their variable in. */
+    private static final String DECLARES = "declares";
+
     /** Creates the test. JUnit creates an instance of the extending class for each check. */
     protected ExpressionLanguageContractTest() {
     }
@@ -153,6 +156,36 @@ public abstract class ExpressionLanguageContractTest {
     protected abstract @Nullable String assignment(String fact, int value);
 
     /**
+     * Returns a condition that writes a property of a fact, which the language must reject when it loads or runs the
+     * rule, as {@code applicant.creditScore = 1} would be in MVEL. {@code conditionWritesRejected} runs it against a
+     * {@link Map} fact, which must be unchanged afterwards: a language that fails the rule only after the write has
+     * still changed the caller's fact. By default, {@code null}.
+     *
+     * @param fact     The fact's name
+     * @param property The property to write
+     * @param value    The value to write
+     * @return The condition, or {@code null} if the language's conditions can't write a property, which skips that
+     *         part of the check
+     */
+    protected @Nullable String propertyAssignment(String fact, String property, int value) {
+        return null;
+    }
+
+    /**
+     * Returns a condition that declares a variable and is then true, which the language must reject when it loads or
+     * runs the rule. {@code conditionWritesRejected} names a variable that is none of the checks' facts, so a language
+     * that declares its facts can't take the declaration for an assignment to one. By default, {@code null}.
+     *
+     * @param name  The variable's name
+     * @param value The value it holds
+     * @return The condition, or {@code null} if the language's conditions can't declare a variable, which skips that
+     *         part of the check
+     */
+    protected @Nullable String conditionDeclaration(String name, int value) {
+        return null;
+    }
+
+    /**
      * Returns an action that puts a fact's value into the output map, by changing the output or by returning the
      * property in an {@link io.github.brantunger.unruly.api.language.ActionResult}.
      *
@@ -170,6 +203,49 @@ public abstract class ExpressionLanguageContractTest {
      * @return The action, or {@code null} if the language's actions have no variables, which skips the check
      */
     protected abstract @Nullable String declareVariable(String name, int value);
+
+    /**
+     * Returns an action that puts a variable's value into the output map under a key. The variable checks read the
+     * variable an earlier action declared with it. By default, {@link #putFact putFact(key, variable)}, for a language
+     * that reads a variable as it reads a fact. A language whose variables have a namespace of their own, such as
+     * SpEL's {@code #y}, overrides it, and {@link #variableEquals} too: a variable read as a fact is never found, and
+     * the checks pass whether it leaked or not.
+     *
+     * @param key      The key to put the value under
+     * @param variable The variable's name
+     * @return The action
+     */
+    protected String putVariable(String key, String variable) {
+        return putFact(key, variable);
+    }
+
+    /**
+     * Returns a condition that is true when a whole-number variable equals a value. {@code actionVariablesStayLocal}
+     * reads with it the variable an earlier run's action declared. By default, {@link #factEquals factEquals(variable,
+     * value)}, for a language that reads a variable as it reads a fact; see {@link #putVariable}.
+     *
+     * @param variable The variable's name
+     * @param value    The value to compare it with
+     * @return The condition
+     */
+    protected String variableEquals(String variable, int value) {
+        return factEquals(variable, value);
+    }
+
+    /**
+     * Returns an action that declares a variable and then fails the run, as
+     * {@code y = 2; Integer.parseInt('not a number')} does in MVEL. {@code failedActionVariablesStayLocal} checks that
+     * a later run doesn't read the variable, as a language that clears its variables only when an action succeeds
+     * would let it. The action must declare the variable before it fails: one that fails first declares nothing, and
+     * the check proves nothing. By default, {@code null}.
+     *
+     * @param name  The variable's name
+     * @param value The value it holds
+     * @return The action, or {@code null} if the language's actions have no variables, which skips the check
+     */
+    protected @Nullable String declareVariableThenFail(String name, int value) {
+        return null;
+    }
 
     /**
      * Returns an action that declares a variable holding a fact's value, and then puts the variable's value into the
@@ -338,7 +414,11 @@ public abstract class ExpressionLanguageContractTest {
      * {@code sessionClosedOnAnotherThread}, set {@code copiesAtLoad(0)}, so a {@code copiesAtLoad} set here doesn't
      * change them. {@code sessionClosedWhileAnotherRuns} also sets {@code maxCopies(1)} after this, so that a run
      * nested in another gets an extra copy, and a limit set here doesn't change it either; {@code concurrentRuns}
-     * sets none, so a limit set here caps the copies, and the sessions, its runs get. Listeners that don't
+     * sets none, so a limit set here caps the copies, and the sessions, its runs get. The checks that look at what a
+     * run leaves for a later one, {@code actionVariablesStayLocal} in its parts with a later run,
+     * {@code failedActionVariablesStayLocal} and {@code conditionDetail}, set {@code maxCopies(1)} and
+     * {@code copiesAtLoad(0)} after this, so that each run gets the one copy, and its sessions, that the run before it
+     * used: with two copies made when the rules load, a later run would get the other one. Listeners that don't
      * change the output may be added: the engine only logs what a listener throws, unless it's a fatal
      * {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks compare.
      * {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead: a
@@ -470,6 +550,16 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Builds an engine that keeps one copy of the rules and makes none when they load, set after {@link #configure}
+     * so that it can't change them: the first run makes the copy, and every later run gets it, and its sessions, back.
+     * For a check that looks at what one run leaves for the next: with two copies made when the rules load, the next
+     * run would get the other copy, whose sessions never saw the run before.
+     */
+    private RulesEngine<Map<String, Object>> oneCopyEngine(ExpressionLanguage language) {
+        return builder(language).maxCopies(1).copiesAtLoad(0).build();
+    }
+
+    /**
      * What a check does with an engine, a compiler or a session that it closes afterwards.
      *
      * @param <T> The resource's type
@@ -532,8 +622,67 @@ public abstract class ExpressionLanguageContractTest {
      */
     private static void assertSameOutput(@Nullable Object expected, @Nullable Object actual, String run) {
         if (!sameValue(expected, actual)) {
-            fail((run.isEmpty() ? "" : run + " ==> ") + "expected: <" + expected + "> but was: <" + actual + ">");
+            // With both values, so that an IDE can show the difference.
+            throw new AssertionFailedError((run.isEmpty() ? "" : run + " ==> ") + mismatch(expected, actual),
+                    expected, actual);
         }
+    }
+
+    /**
+     * Describes two outputs that aren't the same, as {@code expected: <...> but was: <...>}. When the first value in
+     * them that differs prints the same on both sides, such as the {@code Integer} 1 and the {@code String} "1", it
+     * says where that value is and what each side's class is, since the two texts alone would look equal.
+     *
+     * @param expected The expected output
+     * @param actual   The output the engine returned
+     * @return The description
+     */
+    private static String mismatch(@Nullable Object expected, @Nullable Object actual) {
+        String text = "expected: <" + describe(expected) + "> but was: <" + describe(actual) + ">";
+        String hidden = hiddenDifference("", expected, actual);
+        return hidden == null ? text : text + ", and " + hidden;
+    }
+
+    /**
+     * Finds the first value that differs in two outputs that aren't the same, following maps with the same keys and
+     * lists of the same size down as {@link #sameValue} does, and describes it if both sides print it the same.
+     *
+     * @param path     Where the two values are in the outputs: keys joined with {@code .}, and list indexes in
+     *                 {@code []}; empty for the outputs themselves
+     * @param expected The expected value
+     * @param actual   The value the engine returned
+     * @return {@code at <path>, expected <text> (<class>) but was <text> (<class>)}, or {@code null} if the two texts
+     *         of the value that differs are different already
+     */
+    private static @Nullable String hiddenDifference(String path, @Nullable Object expected, @Nullable Object actual) {
+        if (expected instanceof Map<?, ?> left && actual instanceof Map<?, ?> right
+                && left.keySet().equals(right.keySet())) {
+            for (Map.Entry<?, ?> entry : left.entrySet()) {
+                Object other = right.get(entry.getKey());
+                if (!sameValue(entry.getValue(), other)) {
+                    String key = describe(entry.getKey());
+                    return hiddenDifference(path.isEmpty() ? key : path + "." + key, entry.getValue(), other);
+                }
+            }
+        }
+        if (expected instanceof List<?> left && actual instanceof List<?> right && left.size() == right.size()) {
+            for (int i = 0; i < left.size(); i++) {
+                if (!sameValue(left.get(i), right.get(i))) {
+                    return hiddenDifference(path + "[" + i + "]", left.get(i), right.get(i));
+                }
+            }
+        }
+        String expectedText = describe(expected);
+        String actualText = describe(actual);
+        if (!expectedText.equals(actualText)) {
+            return null;
+        }
+        return (path.isEmpty() ? "" : "at " + path + ", ") + "expected " + expectedText + " (" + className(expected)
+                + ") but was " + actualText + " (" + className(actual) + ")";
+    }
+
+    private static String className(@Nullable Object object) {
+        return object == null ? "null" : object.getClass().getName();
     }
 
     private static boolean sameValue(@Nullable Object expected, @Nullable Object actual) {
@@ -603,7 +752,7 @@ public abstract class ExpressionLanguageContractTest {
         closing(engine(), engine -> {
             engine.load(List.of(rule("r", 1, factValue("x"), putFact(SEEN, "x"))));
 
-            assertEquals(Map.of(SEEN, true), engine.run(new FactMap<>(new Fact<>("x", true))));
+            assertSameOutput(Map.of(SEEN, true), engine.run(new FactMap<>(new Fact<>("x", true))));
             for (Object notBoolean : Arrays.asList(null, "true", 1)) {
                 assertThrows(RuleExecutionException.class,
                         () -> engine.run(new FactMap<>(new Fact<>("x", notBoolean))), String.valueOf(notBoolean));
@@ -616,14 +765,60 @@ public abstract class ExpressionLanguageContractTest {
     void conditionAssignmentRejected() throws Exception {
         String assign = assignment("x", 2);
         assumeTrue(assign != null, "the language's conditions can't assign a fact");
+        assertConditionRejected(assign, new FactMap<>(new Fact<>("x", 1)), "assigns to a fact", () -> {
+        });
+    }
+
+    /**
+     * Checks that a condition that writes a property of a fact, or declares a variable, is rejected by load or run,
+     * naming the rule and its condition, as {@code conditionAssignmentRejected} checks for one that assigns to a fact:
+     * a condition can't change the facts or declare variables. Each part is skipped when its hook,
+     * {@link #propertyAssignment} or {@link #conditionDeclaration}, returns {@code null}, and the check when both do.
+     * The property is written to a {@link Map} fact, which must be unchanged afterwards: a language that fails the rule
+     * only after the write has still changed the caller's fact.
+     */
+    @Test
+    @DisplayName("a condition that writes a fact's property or declares a variable is rejected by load or run, naming"
+            + " the rule and its condition, and leaves the fact unchanged")
+    void conditionWritesRejected() throws Exception {
+        String write = propertyAssignment(APPLICANT, CREDIT_SCORE, 1);
+        // A name none of the checks' facts has, so that a language that declares its facts can't take it for an
+        // assignment to one, which conditionAssignmentRejected checks.
+        String declare = conditionDeclaration("z", 2);
+        assumeTrue(write != null || declare != null, "the language's conditions can't write a property or declare a"
+                + " variable");
+        if (write != null) {
+            Map<String, Object> applicant = new HashMap<>(Map.of(CREDIT_SCORE, 750));
+            assertConditionRejected(write, new FactMap<>(new Fact<>("x", 1), new Fact<>(APPLICANT, applicant)),
+                    "writes a fact's property", () -> assertEquals(Map.of(CREDIT_SCORE, 750), applicant,
+                            "a condition that writes a fact's property changed it"));
+        }
+        if (declare != null) {
+            assertConditionRejected(declare, new FactMap<>(new Fact<>("x", 1)), "declares a variable", () -> {
+            });
+        }
+    }
+
+    /**
+     * Checks that a condition is rejected by load or run: loads it in a rule {@code r} and runs the rule with
+     * {@code facts}, and requires an {@link UnrulyException} that names the rule and its condition. Then checks
+     * {@code afterwards}, before the engine is closed, so that what closing it throws can't hide a failure.
+     *
+     * @param condition  The condition
+     * @param facts      The facts the rule runs with
+     * @param what       What the condition does, which the failure's message says
+     * @param afterwards What else the check requires once the condition is rejected
+     */
+    private void assertConditionRejected(String condition, FactStore<Object> facts, String what, Runnable afterwards)
+            throws Exception {
         closing(engine(), engine -> {
-            // A language may reject the assignment when compiling or when running: by refusing it, by failing to
+            // A language may reject the condition when compiling or when running: by refusing it, by failing to
             // write to the read-only facts, or by evaluating to something that isn't a boolean. So loading is inside
             // the check.
             UnrulyException ex = assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(rule("r", 1, assign, putFact(SEEN, "x"))));
-                engine.run(new FactMap<>(new Fact<>("x", 1)));
-            }, "a condition that assigns to a fact was neither rejected by load nor failed by run");
+                engine.load(List.of(rule("r", 1, condition, putFact(SEEN, "x"))));
+                engine.run(facts);
+            }, "a condition that " + what + " was neither rejected by load nor failed by run");
 
             if (ex instanceof RuleCompilationException compilation) {
                 assertEquals("r", compilation.getRuleName(), ex.getMessage());
@@ -632,9 +827,10 @@ public abstract class ExpressionLanguageContractTest {
                 assertEquals("r", execution.getRuleName(), ex.getMessage());
                 assertEquals(ExpressionKind.CONDITION, execution.getExpressionKind(), ex.getMessage());
             } else {
-                fail("a condition that assigns to a fact failed with an UnrulyException that is neither a"
+                fail("a condition that " + what + " failed with an UnrulyException that is neither a"
                         + " RuleCompilationException nor a RuleExecutionException: " + ex);
             }
+            afterwards.run();
         });
     }
 
@@ -658,7 +854,7 @@ public abstract class ExpressionLanguageContractTest {
         assumeTrue(declare != null, "the language's actions have no variables");
         closing(engine(), engine -> {
             engine.load(List.of(
-                    rule("declares", 2, alwaysTrue(), declare),
+                    rule(DECLARES, 2, alwaysTrue(), declare),
                     rule("reads", 1, alwaysTrue(), putFact(SEEN, "x"))));
 
             assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
@@ -668,13 +864,14 @@ public abstract class ExpressionLanguageContractTest {
         // A variable that isn't a fact: a language that keeps it in the session, and reads the facts first, passes
         // the check above, and still hands it to every later rule and run. Reading it may fail the load or the run,
         // or read as null, as a JsonLogic-style language reads a name it doesn't know; anything but its value passes.
+        // One copy of the rules, so that the later run gets the session the earlier one used.
         String declareOther = Objects.requireNonNull(declareVariable("y", 2),
                 "declareVariable() returned null for 'y', but not for 'x'");
-        closing(engine(), engine -> {
+        closing(oneCopyEngine(language()), engine -> {
             try {
                 engine.load(List.of(
-                        rule("declares", 2, factEquals("x", 1), declareOther),
-                        rule("reads", 1, alwaysTrue(), putFact(SEEN, "y"))));
+                        rule(DECLARES, 2, factEquals("x", 1), declareOther),
+                        rule("reads", 1, alwaysTrue(), putVariable(SEEN, "y"))));
             } catch (UnrulyException e) {
                 // The language refuses a name that isn't a fact when it compiles the rule.
                 return;
@@ -693,6 +890,70 @@ public abstract class ExpressionLanguageContractTest {
                             : "a later run read the variable 'y' an action declared in an earlier one, although the"
                                     + " rule that declares it didn't fire: " + output);
                 }
+            }
+        });
+
+        // A later run's condition, which a language may read from where its actions left their variables, even when
+        // its actions read them no longer. y is a fact in the first run, which evaluates every condition before any
+        // action declares it, so that a language that can't read an unknown name still gets through the first run.
+        closing(oneCopyEngine(language()), engine -> {
+            try {
+                engine.load(List.of(
+                        rule(DECLARES, 2, factEquals("x", 1), declareOther),
+                        rule("readsInCondition", 1, variableEquals("y", 2), putFact(SEEN, "x"))));
+            } catch (UnrulyException e) {
+                // The language refuses a name that isn't a fact when it compiles the rule.
+                return;
+            }
+            assertDoesNotThrow(() -> engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>("y", 0))),
+                    "the run that declares the variable 'y', with y a fact, failed");
+            Map<String, Object> output;
+            try {
+                output = engine.run(new FactMap<>(new Fact<>("x", 2)));
+            } catch (UnrulyException e) {
+                // The condition that reads it failed: the variable isn't there.
+                return;
+            }
+            if (output != null) {
+                fail("a later run's condition read the variable 'y' an action declared in an earlier one, although the"
+                        + " rule that declares it didn't fire: " + output);
+            }
+        });
+    }
+
+    /**
+     * Declares a variable in an action that then fails the run, and checks that a later run doesn't read it: a
+     * language that clears what its actions declared only when an action succeeds leaves the variable for every later
+     * run. Skipped when {@link #declareVariableThenFail} returns {@code null}.
+     */
+    @Test
+    @DisplayName("a variable an action declares before it fails the run isn't read by a later run")
+    void failedActionVariablesStayLocal() throws Exception {
+        String declare = declareVariableThenFail("y", 2);
+        assumeTrue(declare != null, "the language's actions have no variables");
+        // One copy of the rules, so that the later run gets the session the failed one used.
+        closing(oneCopyEngine(language()), engine -> {
+            try {
+                engine.load(List.of(
+                        rule(DECLARES, 2, factEquals("x", 1), declare),
+                        rule("reads", 1, alwaysTrue(), putVariable(SEEN, "y"))));
+            } catch (UnrulyException e) {
+                // The language refuses a name that isn't a fact when it compiles the rule.
+                return;
+            }
+            assertThrows(UnrulyException.class, () -> engine.run(new FactMap<>(new Fact<>("x", 1))),
+                    "the action from declareVariableThenFail() didn't fail the run");
+
+            // Reading it may fail the run, or read as null; anything but its value passes.
+            Map<String, Object> output;
+            try {
+                output = engine.run(new FactMap<>(new Fact<>("x", 2)));
+            } catch (UnrulyException e) {
+                // The rule that reads it failed: the variable isn't there.
+                return;
+            }
+            if (output != null && sameValue(2, output.get(SEEN))) {
+                fail("a later run read the variable 'y' that a failed action declared: " + output);
             }
         });
     }
@@ -767,8 +1028,8 @@ public abstract class ExpressionLanguageContractTest {
                 }, "a rule couldn't use the fact name '" + name + "', which usableFactNames() says it can");
 
                 if (!sameValue(Map.of(SEEN, 1), output)) {
-                    fail("a rule on the fact name '" + name + "' didn't put its value: expected: <" + Map.of(SEEN, 1)
-                            + "> but was: <" + output + ">");
+                    fail("a rule on the fact name '" + name + "' didn't put its value: "
+                            + mismatch(Map.of(SEEN, 1), output));
                 }
             });
         }
@@ -1006,6 +1267,14 @@ public abstract class ExpressionLanguageContractTest {
                         return compiler.newSession();
                     }
 
+                    // Forwarded, so that a copy made when the rules load, as a configure() that sets copiesAtLoad
+                    // makes one, is warmed up as it would be without the wrapper: a compiler whose close() fails only
+                    // once a session was warmed up still fails the check.
+                    @Override
+                    public void warmUp(Session session) throws Exception {
+                        compiler.warmUp(session);
+                    }
+
                     @Override
                     public void checkFactName(String name) {
                         compiler.checkFactName(name);
@@ -1186,7 +1455,8 @@ public abstract class ExpressionLanguageContractTest {
         // and a failed run still closes them.
         List<RuleEvaluation> evaluations = new ArrayList<>();
         List<String> printed = new ArrayList<>();
-        closing(engine(sessions.watching(language())), engine -> {
+        // One copy of the rules, so that the other run gets the sessions the details' run used.
+        closing(oneCopyEngine(sessions.watching(language())), engine -> {
             // One rule that matches and one that doesn't, so the detail of a false condition is checked too.
             engine.load(List.of(rule("matches", 2, factEquals("x", 1), putFact(SEEN, "x")),
                     rule("misses", 1, factEquals("x", 2), putFact(SEEN, "x"))));

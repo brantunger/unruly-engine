@@ -10,9 +10,51 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.11
+
+In 2.12.0 `actionVariablesStayLocal`, `compilerClosed` and `conditionDetail` got stricter, and
+`conditionWritesRejected` and `failedActionVariablesStayLocal` were added, so a language that passed the 2.11 kit may
+now fail. Each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `actionVariablesStayLocal` | Lets a later run's condition read a variable an earlier run's action declared | A later run's rule fires on a value no rule in that run set |
+| `actionVariablesStayLocal`, when `configure` sets `copiesAtLoad(2)` or more | Keeps an action's variable in its session. The check used to miss it: the later run got the other copy, whose session never saw the variable | A later run reads a value that no rule set for it |
+| `actionVariablesStayLocal` | Fails the run whose action declares the variable `y` while a fact is also named `y` | An action can't declare a variable with a fact's name, which the check's first part already requires with `x` |
+| `compilerClosed`, when `configure` sets `copiesAtLoad(1)` or more | Has a compiler whose `close()` throws only once `warmUp` has run. The check's wrapper used to skip `warmUp` | The engine only logs it at WARN, and the compiler has usually leaked what it holds |
+| `conditionWritesRejected`, once `propertyAssignment()` or `conditionDeclaration()` returns a condition | Lets a condition set a property of a fact, or declare a variable | The caller's fact changes, or a later expression in the run reads a value no action set |
+| `failedActionVariablesStayLocal`, once `declareVariableThenFail()` returns an action | Clears an action's variables only when the action ends normally, rather than however it ends | The next run on that copy of the rules reads the failed action's variable |
+| `conditionDetail`, when `configure` sets `copiesAtLoad(2)` or more | Returns a detail that reads the session when it's printed. The check used to miss it: the other run got the other copy | The run's result reports another run's values |
+
+Why a variable left in a session reaches a later run is in
+[Testing a compiler without an engine](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
+
+A subclass written for the 2.11 kit still compiles. Three new hooks return `null` by default, which leaves their parts
+off. Override them to turn those parts on:
+
+- `propertyAssignment(fact, property, value)`: a condition that sets the fact's property to the value. For MVEL,
+  `fact + "." + property + " = " + value`.
+- `conditionDeclaration(name, value)`: a condition that declares a variable holding the value, and is then true. For
+  MVEL, `name + " = " + value + "; true"`.
+- `declareVariableThenFail(name, value)`: an action that declares a variable holding the value, then fails the run.
+  For MVEL, `name + " = " + value + "; Integer.parseInt('not a number')"`.
+
+The action must declare the variable before it fails, or `failedActionVariablesStayLocal` proves nothing.
+
+Two more, `putVariable(key, variable)` and `variableEquals(variable, value)`, default to `putFact` and `factEquals`. If
+your variables have a namespace of their own, such as SpEL's `#y`, override them with an action that puts the variable
+under the key and a condition that compares it with the value; see [The contract test kit](contract-kit.md).
+
+Skipped, `conditionWritesRejected` and `failedActionVariablesStayLocal` count as aborted, as `nestedRunInsideAnAction`
+does, so a launcher that expects every check found to succeed sees two more aborted checks: override the hooks, or
+count aborted checks as passing.
+
+When a run's output differs from what the check expected only in a value's type, such as the `Integer` 1 and the
+`String` "1", the failure now says so, rather than printing two identical outputs.
+
 ## 🔼 Upgrading from 2.10.0
 
-The kit after 2.10.0 has a stricter `unusableFactNameRejected` and no new check, so a subclass that passed the 2.10.0
+In 2.10.1 `unusableFactNameRejected` got stricter and no check was added, so a subclass that passed the 2.10.0
 kit may now fail. The failure is in your subclass's hook, not in your language:
 
 | Check | Now fails a subclass that | The defect |
