@@ -5,6 +5,7 @@ import org.mvel2.compiler.AbstractParser;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.SplittableRandom;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -23,12 +24,16 @@ import java.util.stream.Collectors;
 final class FactNames {
 
     /**
-     * How many names that aren't classes are remembered. The cache is cleared when it is full, because fact names
-     * can be unbounded (IDs, JSON keys) and must not grow it forever. It only saves looking a name up in the imported
-     * packages, so with none imported nothing is remembered. The characters of the names remembered are bounded too,
-     * by {@value #MAX_CACHED_MISS_CHARS} in all, so the memory the cache holds is bounded as well as its count: it is
-     * cleared, too, when a name would take it past that. A name longer than {@value #MAX_CACHED_MISS_LENGTH}
-     * characters isn't remembered, so a few very long names can't clear the cache of every short one, time after time.
+     * How many names that aren't classes are remembered, because fact names can be unbounded (IDs, JSON keys) and
+     * must not grow the cache forever. It only saves looking a name up in the imported packages, so with none imported
+     * nothing is remembered. The characters of the names remembered are bounded too, by
+     * {@value #MAX_CACHED_MISS_CHARS} in all, so the memory the cache holds is bounded as well as its count. When a new
+     * name doesn't fit, names picked at random are evicted, one at a time, until it does. The cache isn't cleared: a
+     * cycle of names just longer than the cache would clear it before any name came round again, and find none, where
+     * random eviction still finds most of them. Eviction doesn't weigh a name's length, so a long name can evict
+     * many short ones to make room: one of {@value #MAX_CACHED_MISS_LENGTH} characters, into a cache whose characters
+     * are all taken by names of 255, evicts 256 of them. A longer name isn't remembered, so no one name takes more than
+     * a sixteenth of what the cache may hold.
      */
     static final int MAX_CACHED_MISSES = 4096;
 
@@ -68,9 +73,14 @@ final class FactNames {
     // Names found to be classes in an imported package. Bounded by the classes in those packages.
     private final Set<String> packageClassNames = ConcurrentHashMap.newKeySet();
     private final Set<String> misses = ConcurrentHashMap.newKeySet();
-    // The characters of the names in misses, all together. Both change together, under this lock, so the total
-    // is what the cache holds when names are cached on several threads at once.
+    // The names in misses again, in the first slotCount slots, so one can be picked at random to evict, and the
+    // characters of those names, all together. All of them, and the evictions' random numbers, change together
+    // under this lock, so the total is what the cache holds when names are cached on several threads at once. With
+    // no package imported nothing is cached, so there are no slots.
     private final Object missesLock = new Object();
+    private final String[] slots;
+    private final SplittableRandom evictions;
+    private int slotCount;
     private int missChars;
 
     /**
@@ -79,11 +89,24 @@ final class FactNames {
      * @param ruleImports The packages and classes the engine imports, and their class loader
      */
     FactNames(Imports ruleImports) {
+        this(ruleImports, new SplittableRandom());
+    }
+
+    /**
+     * Creates a check for the imports a rule list was compiled with, which evicts the names it picks with
+     * {@code evictions}, so a test can seed it.
+     *
+     * @param ruleImports The packages and classes the engine imports, and their class loader
+     * @param evictions   Picks the name to evict when the cache is full; used only under a lock
+     */
+    FactNames(Imports ruleImports, SplittableRandom evictions) {
         importedClassNames = ruleImports.classes().stream()
                 .map(Class::getSimpleName)
                 .collect(Collectors.toUnmodifiableSet());
         packages = List.copyOf(ruleImports.packages());
         classLoader = ruleImports.classLoader();
+        slots = new String[packages.isEmpty() ? 0 : MAX_CACHED_MISSES];
+        this.evictions = evictions;
     }
 
     /**
@@ -319,16 +342,32 @@ final class FactNames {
             return false;
         }
         synchronized (missesLock) {
-            if (misses.size() >= MAX_CACHED_MISSES || missChars + name.length() > MAX_CACHED_MISS_CHARS) {
-                misses.clear();
-                missChars = 0;
+            if (misses.contains(name)) {
+                return false; // another thread cached it since the check above
             }
-            // Counted only if it is new: another thread may have cached it since the check above.
-            int before = misses.size();
+            // Ends: a name is at most a sixteenth of the characters the cache may hold, so an empty cache fits it.
+            while (slotCount >= MAX_CACHED_MISSES || missChars + name.length() > MAX_CACHED_MISS_CHARS) {
+                evictOne();
+            }
+            slots[slotCount] = name;
+            slotCount++;
             misses.add(name);
-            missChars += (misses.size() - before) * name.length();
+            missChars += name.length();
         }
         return false;
+    }
+
+    // Evicts a name picked at random, under missesLock. The last name moves into its slot, and the last slot is
+    // emptied, so the slots don't keep an evicted name, and its characters, past the cache's bound.
+    @SuppressWarnings("PMD.NullAssignment")
+    private void evictOne() {
+        int victim = evictions.nextInt(slotCount);
+        String evicted = slots[victim];
+        slotCount--;
+        slots[victim] = slots[slotCount];
+        slots[slotCount] = null;
+        misses.remove(evicted);
+        missChars -= evicted.length();
     }
 
     /**
@@ -337,7 +376,20 @@ final class FactNames {
      * @return The number of names in the cache
      */
     int cachedMisses() {
-        return misses.size();
+        synchronized (missesLock) {
+            return slotCount;
+        }
+    }
+
+    /**
+     * Tells how many characters the names that aren't classes remembered take, all together, for tests.
+     *
+     * @return The characters (UTF-16 units) of the names in the cache
+     */
+    int cachedMissChars() {
+        synchronized (missesLock) {
+            return missChars;
+        }
     }
 
     /**

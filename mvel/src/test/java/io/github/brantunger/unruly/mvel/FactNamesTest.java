@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.SplittableRandom;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,8 +33,16 @@ class FactNamesTest {
     /** {@code FactNames.MAX_CACHED_MISS_LENGTH}, written out as {@link #CACHED_MISS_CHARS} is. */
     static final int LONGEST_CACHED_MISS = CACHED_MISS_CHARS / 16;
 
+    /** Seeds the names a full cache evicts, so a test counting lookups after evictions sees the same ones each run. */
+    private static final long EVICTION_SEED = 763;
+
     private static FactNames javaUtil(ClassLoader loader) {
         return new FactNames(new Imports(Set.of("java.util"), Set.of(), loader));
+    }
+
+    private static FactNames javaUtilSeeded(ClassLoader loader) {
+        return new FactNames(new Imports(Set.of("java.util"), Set.of(), loader),
+                new SplittableRandom(EVICTION_SEED));
     }
 
     /**
@@ -97,8 +107,9 @@ class FactNamesTest {
         assertEquals(1, Collections.frequency(loader.resources, "java/util/Date.class"));
     }
 
+    // #763: a full cache was cleared, so one name more than it holds left 1 cached; now one is evicted, and 4,096 kept.
     @Test
-    @DisplayName("names that aren't classes are cached, and the cache is cleared when it is full")
+    @DisplayName("names that aren't classes are cached, and a full cache evicts one to make room for another")
     void missesBounded() {
         RecordingClassLoader loader = new RecordingClassLoader();
         FactNames names = javaUtil(loader);
@@ -110,10 +121,94 @@ class FactNamesTest {
         for (int i = 1; i <= FactNames.MAX_CACHED_MISSES; i++) {
             names.check("name" + i);
         }
-        names.check("name0");
 
-        assertEquals(2, Collections.frequency(loader.resources, "java/util/name0.class"),
-                "the full cache was cleared, so name0 is looked up again");
+        assertEquals(FactNames.MAX_CACHED_MISSES, names.cachedMisses(),
+                "the full cache evicted one name for the last, rather than being cleared");
+    }
+
+    // #763: once a full cache was cleared, every name it had held was looked up again the next time it came round.
+    @Test
+    @DisplayName("a full cache that takes one new name still answers for nearly all of the names it held")
+    void fullCacheKeepsItsWorkingSet() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtilSeeded(loader);
+        for (int i = 0; i < FactNames.MAX_CACHED_MISSES; i++) {
+            names.check("name" + i);
+        }
+        names.check("newName");
+        int before = loader.resources.size();
+
+        for (int i = 0; i < FactNames.MAX_CACHED_MISSES; i++) {
+            names.check("name" + i);
+        }
+
+        // One name was evicted for newName; looking it up again evicts another, which may come round too, and so on.
+        int lookups = loader.resources.size() - before;
+        assertTrue(lookups <= 16, lookups + " of " + FactNames.MAX_CACHED_MISSES + " names were looked up again");
+    }
+
+    // #763: a cycle of names just larger than the cache cleared it on every pass, so a working set just larger than
+    // the cache never found a name in it.
+    @Test
+    @DisplayName("a cycle of names larger than the cache still finds most of them in it")
+    void cycleLargerThanTheCacheMostlyCached() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = javaUtilSeeded(loader);
+        int cycle = FactNames.MAX_CACHED_MISSES + 50;
+        for (int i = 0; i < cycle; i++) {
+            names.check("name" + i);
+        }
+        int before = loader.resources.size();
+
+        for (int i = 0; i < cycle; i++) {
+            names.check("name" + i);
+        }
+
+        int lookups = loader.resources.size() - before;
+        assertTrue(lookups < cycle / 4, lookups + " of " + cycle + " names were looked up again");
+    }
+
+    // Review of #763: a name that needs more room than one eviction frees evicts as many names as it takes.
+    @Test
+    @DisplayName("a long name evicts as many names as it takes to fit within the characters the cache may hold")
+    void longNameEvictsUntilItFits() {
+        FactNames names = javaUtilSeeded(new RecordingClassLoader());
+        // 4,096 names of 255 characters take every character the cache may hold, and every slot.
+        for (int i = 0; i < FactNames.MAX_CACHED_MISSES; i++) {
+            names.check(String.format("n%04d", i).repeat(51));
+        }
+        assertEquals(CACHED_MISS_CHARS, names.cachedMissChars());
+
+        names.check("x".repeat(LONGEST_CACHED_MISS));
+
+        assertEquals(CACHED_MISS_CHARS, names.cachedMissChars(), "256 names of 255 characters were evicted for it");
+        assertEquals(FactNames.MAX_CACHED_MISSES - 256 + 1, names.cachedMisses());
+    }
+
+    @Test
+    @DisplayName("a name another check cached while this one looked it up is cached, and counted, once")
+    void missCachedMeanwhileCountedOnce() {
+        AtomicReference<FactNames> holder = new AtomicReference<>();
+        // Checks the name again while the first check is looking it up, as another thread could.
+        ClassLoader loader = new ClassLoader(FactNamesTest.class.getClassLoader()) {
+            private boolean nested;
+
+            @Override
+            public URL getResource(String name) {
+                if (!nested) {
+                    nested = true;
+                    holder.get().check("meanwhile");
+                }
+                return null;
+            }
+        };
+        FactNames names = javaUtil(loader);
+        holder.set(names);
+
+        names.check("meanwhile");
+
+        assertEquals(1, names.cachedMisses());
+        assertEquals("meanwhile".length(), names.cachedMissChars());
     }
 
     // #700: a name of more than 255 characters wasn't cached, so its class file was looked up again on every run.
@@ -157,10 +252,9 @@ class FactNamesTest {
     }
 
     @Test
-    @DisplayName("the cache is cleared when a name would take its characters past what it may hold")
+    @DisplayName("a name that would take the cache's characters past what it may hold evicts one to make room")
     void missesBoundedByCharacters() {
-        RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
+        FactNames names = javaUtil(new RecordingClassLoader());
         // Sixteen names of the longest cached length fill the cache, so a seventeenth doesn't fit with them.
         List<String> longest = new ArrayList<>();
         for (char c = 'a'; c <= 'q'; c++) {
@@ -168,14 +262,13 @@ class FactNamesTest {
         }
 
         longest.subList(0, 16).forEach(names::check);
-        names.check(longest.get(15));
-        names.check(longest.get(16));
-        names.check(longest.get(0));
+        assertEquals(16, names.cachedMisses(), "the first sixteen fit exactly, so none was evicted");
+        assertEquals(CACHED_MISS_CHARS, names.cachedMissChars());
 
-        assertEquals(1, Collections.frequency(loader.resources, "java/util/" + longest.get(15) + ".class"),
-                "the first sixteen fit, so the sixteenth is still cached");
-        assertEquals(2, Collections.frequency(loader.resources, "java/util/" + longest.get(0) + ".class"),
-                "the seventeenth didn't fit with them, so the cache was cleared and the first is looked up again");
+        names.check(longest.get(16));
+        assertEquals(16, names.cachedMisses(),
+                "the seventeenth didn't fit with them, so one was evicted for it rather than the cache being cleared");
+        assertEquals(CACHED_MISS_CHARS, names.cachedMissChars(), "the evicted name's characters were freed");
     }
 
     // Review of #700: two names of more than half of what the cache may hold, checked in turn, cleared it each time.
