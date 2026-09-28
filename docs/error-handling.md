@@ -119,10 +119,10 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from a rule | The error itself | `onError`, then `onRunError`, with a `RuleExecutionException` that names the rule | ERROR |
 | A fatal error from `beforeRun`, a `before*` or an `after*` callback | The error itself | Every listener gets that callback first, then `onRunError` | ERROR, naming the listener's error |
 | A fatal error from `onError`, closing a failure that isn't fatal itself | The error itself; the reported exception keeps it in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | Only the failure's own line: ERROR, or WARN for a stop |
-| A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; the reported exception keeps the first other one a listener threw in `getSuppressed()` | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure: <class>: <message>` at WARN, unless a nested run logged it, with the [root-cause note](exceptions-by-method.md) when it applies |
+| A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; it and the reported exception keep the first other one a listener threw in `getSuppressed()`, and that one keeps any later ones that don't already carry it | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure: <class>: <message>` at WARN, unless a nested run logged it, with the [root-cause note](exceptions-by-method.md) when it applies |
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
-| A fatal error from `onRunError` | That error, in place of the exception the run failed with | Every listener gets `onRunError` | ERROR |
-| A fatal error from closing the copy the run gives back, or, when it's the last run to leave retired rules (even after a failed borrow), the copies still kept, and the rules' compilers if `load()` or `close()` finished closing first (see [A fatal error while closing](#-a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| A fatal error from `onRunError` | That error, in place of what the run failed with, which it keeps in `getSuppressed()` | Every listener gets `onRunError` | ERROR |
+| A fatal error from closing the copy the run gives back, or, when it's the last run to leave retired rules (even after a failed borrow), the copies still kept, and the rules' compilers if `load()` or `close()` finished closing first (see [A fatal error while closing](#-a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one. A fatal run failure is thrown instead, and keeps this one in its `getSuppressed()` | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
 | `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](exceptions-by-method.md) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 
 > [!NOTE]
@@ -132,6 +132,9 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 
 - **A fatal error from the output supplier** is rethrown the same way; `onRunError` gets a `RuleExecutionException`
   that names no rule. One from a language creating a session reaches no listener, like any other session failure.
+- **Several listeners that throw a fatal error in one callback:** the first one's is the listener's error in the rows
+  above, and keeps the others, except one that already carries it, in its `getSuppressed()`. Each other one is logged
+  at WARN, unless a nested run logged it.
 - **A `before*` callback that throws a fatal error** is closed with `onError` on every listener, and its condition or
   action doesn't run. The rest of what listeners see is in [Guarantees](listeners-and-logging.md#-guarantees).
 - **A condition or action that throws once the run must stop** is a stop, unless an `Error` is anywhere in the cause
@@ -145,14 +148,15 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 
 Closing a rule list's sessions and compilers is never cut short. When one of them throws a fatal error, such as an
 `OutOfMemoryError`, the engine still closes every idle session of that list, then its compilers if no run is still
-using it by then, and only then rethrows the error. If several are fatal, the first is rethrown and the others are only
-logged. Each fatal error from closing is logged at WARN unless a nested run did.
+using it by then, and only then rethrows the error. If several are fatal, the first is rethrown and keeps the others,
+except one that already carries it, in its `getSuppressed()`. Each fatal error from closing is logged at WARN unless a
+nested run did.
 
 A failure of the call's own that isn't fatal loses to a fatal error from closing, which keeps it in
 `getSuppressed()`, or logs it at WARN if it can't keep one (see below). That's a failed `load()`'s own failure (a
 `RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), or a run's failure
-when that run is the one that closes. A fatal failure of the call's own came first, so it's thrown instead, and the
-one from closing is only logged at WARN.
+when that run is the one that closes. A fatal failure of the call's own came first, so it's thrown instead, and keeps
+the one from closing, still logged at WARN, in its `getSuppressed()`.
 
 The call that closes throws it:
 
@@ -175,8 +179,9 @@ when that run left before they finished closing.
 A stopped wait for a copy, or for a build slot to make one, is reported first: its WARN line, `beforeRun`, then
 `onRunError`. The fatal error carries the stop's `RuleExecutionException`; an interrupted thread stays interrupted.
 
-An `OutOfMemoryError` the JVM throws itself can't keep suppressed exceptions, so the engine logs the failure it
-replaces at WARN instead; see [Logging setup](listeners-and-logging.md#-logging-setup).
+An `OutOfMemoryError` the JVM throws itself can't keep suppressed exceptions, so the engine logs at WARN each failure
+it can't keep, whether one it replaces or another fatal error; see
+[Logging setup](listeners-and-logging.md#-logging-setup).
 
 ## 🧯 Handling failures
 

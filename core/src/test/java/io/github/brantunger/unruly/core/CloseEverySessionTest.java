@@ -363,14 +363,15 @@ class CloseEverySessionTest {
 
     @Test
     @DisplayName("close() with two sessions that throw a fatal Error closes the third and then the compiler, and"
-            + " throws the first")
+            + " throws the first, carrying the second")
     void twoFatalSessionsOnClose() {
         OutOfMemoryError first = new OutOfMemoryError("first");
+        OutOfMemoryError second = new OutOfMemoryError("second");
         RecordingLanguage language = new RecordingLanguage();
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, first);
-        language.sessionCloseFailures.put(2, new OutOfMemoryError("second"));
+        language.sessionCloseFailures.put(2, second);
         AtomicReference<Throwable> thrown = new AtomicReference<>();
 
         String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
@@ -378,8 +379,9 @@ class CloseEverySessionTest {
         assertSame(first, thrown.get());
         assertEquals(sessionsThenCompiler(1, 3), language.closed, "every session, then the compiler, once");
         assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
-                + "' expression language failed to close a session: second"), "the second is only logged: " + logs);
-        assertEquals(0, first.getSuppressed().length);
+                + "' expression language failed to close a session: second"), "the second is logged: " + logs);
+        assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
+        assertEquals(0, second.getSuppressed().length);
         engine.close();
         assertEquals(sessionsThenCompiler(1, 3), language.closed, "closing again closes nothing more");
     }
@@ -461,7 +463,8 @@ class CloseEverySessionTest {
     }
 
     @Test
-    @DisplayName("a load whose copy fails to warm up with a fatal Error throws that one, not a later one from closing")
+    @DisplayName("a load whose copy fails to warm up with a fatal Error throws that one, carrying a later one from"
+            + " closing")
     void fatalWarmUpBeatsFatalClose() {
         InternalError warmUp = new InternalError("warming up");
         OutOfMemoryError close = new OutOfMemoryError("closing");
@@ -474,7 +477,7 @@ class CloseEverySessionTest {
         logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules("r")))));
 
         assertSame(warmUp, thrown.get());
-        assertEquals(0, warmUp.getSuppressed().length);
+        assertArrayEquals(new Throwable[] {close}, warmUp.getSuppressed());
         assertEquals(0, close.getSuppressed().length);
         assertEquals(sessionsThenCompiler(1, 2), language.closed);
     }
@@ -669,7 +672,7 @@ class CloseEverySessionTest {
 
     @Test
     @DisplayName("a run that fails with a fatal Error and then gives back the last copy of closed rules throws its own,"
-            + " not the one from closing")
+            + " carrying the one from closing")
     void runFatalBeatsFatalOnGiveBack() {
         InternalError runFatal = new InternalError("the action");
         OutOfMemoryError closeFatal = new OutOfMemoryError("the run's copy");
@@ -686,7 +689,7 @@ class CloseEverySessionTest {
         logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
 
         assertSame(runFatal, thrown.get());
-        assertEquals(0, runFatal.getSuppressed().length);
+        assertArrayEquals(new Throwable[] {closeFatal}, runFatal.getSuppressed());
         assertEquals(sessionsThenCompiler(1, 1), language.closed);
     }
 
@@ -910,7 +913,8 @@ class CloseEverySessionTest {
     }
 
     @Test
-    @DisplayName("validate() that fails with a fatal Error throws that one, not a later one from closing a compiler")
+    @DisplayName("validate() that fails with a fatal Error throws that one, carrying a later one from closing a"
+            + " compiler")
     void validateFatalBeatsFatalClose() {
         InternalError compiling = new InternalError("creating a compiler");
         OutOfMemoryError closing = new OutOfMemoryError("closing the compiler");
@@ -925,7 +929,7 @@ class CloseEverySessionTest {
         logsOf(() -> thrown.set(thrownBy(() -> engine.validate(rules))));
 
         assertSame(compiling, thrown.get());
-        assertEquals(0, compiling.getSuppressed().length);
+        assertArrayEquals(new Throwable[] {closing}, compiling.getSuppressed());
         assertEquals(List.of("compiler"), first.closed, "the compiler created was still closed");
     }
 
@@ -1166,7 +1170,7 @@ class CloseEverySessionTest {
 
     @Test
     @DisplayName("a copy given back that the idle queue can't take with a fatal Error, and whose session then throws"
-            + " another as it's closed, returns the queue's, which came first")
+            + " another as it's closed, returns the queue's, which came first, carrying the session's")
     void fatalFromKeepingACopyBeatsFatalFromClosingIt() throws InterruptedException, TimeoutException {
         OutOfMemoryError keeping = new OutOfMemoryError("keeping the copy");
         OutOfMemoryError closing = new OutOfMemoryError("closing the copy");
@@ -1183,10 +1187,10 @@ class CloseEverySessionTest {
 
         assertNull(thrown.get(), "returned, for the run to weigh against its own failure");
         assertSame(keeping, returned.get());
-        assertEquals(0, keeping.getSuppressed().length);
+        assertArrayEquals(new Throwable[] {closing}, keeping.getSuppressed());
         assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
         assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language failed to close"
-                + " a session: closing the copy"), "the session's is only logged: " + logs);
+                + " a session: closing the copy"), "the session's is logged too: " + logs);
     }
 
     @Test
@@ -1854,7 +1858,8 @@ class CloseEverySessionTest {
 
     @Test
     @DisplayName("a run stopped while it waits for a copy, whose listener throws a fatal Error from onRunError, still"
-            + " leaves the retired rules, and throws the listener's error rather than the later one from closing")
+            + " leaves the retired rules, and throws the listener's error, carrying the stop and then the later one"
+            + " from closing")
     void stoppedWaitWithAFatalListenerStillLeaves() {
         InternalError listenerFatal = new InternalError("the listener");
         OutOfMemoryError closeFatal = new OutOfMemoryError("closing the compiler");
@@ -1875,9 +1880,45 @@ class CloseEverySessionTest {
                 CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
 
         assertSame(listenerFatal, thrown.get());
-        assertEquals(0, listenerFatal.getSuppressed().length);
+        assertEquals(2, listenerFatal.getSuppressed().length, "the stop it replaced, then the error from closing");
+        ReportedFailure stop = assertInstanceOf(ReportedFailure.class, listenerFatal.getSuppressed()[0]);
+        assertInstanceOf(InterruptedException.class, stop.getCause());
+        assertSame(closeFatal, listenerFatal.getSuppressed()[1]);
         assertEquals(List.of("compiler", "session 1", "compiler"), language.closed,
                 "the waiter's rules as it left, then the holder's copy and rules as it gave the copy back");
+    }
+
+    @Test
+    @DisplayName("a run stopped while it waits for a copy, whose listener throws a fatal Error from beforeRun and"
+            + " another from onRunError, throws the one from onRunError, carrying the one from beforeRun")
+    void stoppedWaitWithFatalBeforeRunAndOnRunError() {
+        InternalError fromBeforeRun = new InternalError("beforeRun");
+        InternalError fromOnRunError = new InternalError("onRunError");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.language(language).maxCopies(1)
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        if ("waiter".equals(Thread.currentThread().getName())) {
+                            throw fromBeforeRun;
+                        }
+                    }
+
+                    @Override
+                    public void onRunError(RunContext run, RuntimeException error) {
+                        if ("waiter".equals(Thread.currentThread().getName())) {
+                            throw fromOnRunError;
+                        }
+                    }
+                }), 0);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> waitRetireAndStop(language, engine, null,
+                () -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))),
+                CloseEverySessionTest::awaitWaitingForACopy, Thread::interrupt));
+
+        assertSame(fromOnRunError, thrown.get());
+        assertArrayEquals(new Throwable[] {fromBeforeRun}, fromOnRunError.getSuppressed());
     }
 
     @Test
@@ -1974,6 +2015,125 @@ class CloseEverySessionTest {
 
         assertArrayEquals(new Throwable[] {failure}, fatal.getSuppressed());
         assertEquals("", logs);
+    }
+
+    @Test
+    @DisplayName("close() whose sessions throw one cached fatal Error after another throws the first, carrying the"
+            + " cached one once")
+    void cachedFatalFromTwoSessionsKeptOnce() {
+        OutOfMemoryError first = new OutOfMemoryError("first");
+        OutOfMemoryError cached = new OutOfMemoryError("cached");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(language, 3);
+        engine.load(rules("r"));
+        language.sessionCloseFailures.put(1, first);
+        language.sessionCloseFailures.put(2, cached);
+        language.sessionCloseFailures.put(3, cached);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(engine::close)));
+
+        assertSame(first, thrown.get());
+        assertArrayEquals(new Throwable[] {cached}, first.getSuppressed());
+        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+    }
+
+    @Test
+    @DisplayName("two cached fatal Errors that sessions throw in turn, in one order and then the other, are each"
+            + " thrown, and only the first carries the second, which would otherwise make a loop")
+    void cachedFatalsInEitherOrderMakeNoLoop() {
+        OutOfMemoryError one = new OutOfMemoryError("one");
+        OutOfMemoryError other = new OutOfMemoryError("other");
+        RecordingLanguage first = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> firstEngine = engine(first, 2);
+        firstEngine.load(rules("r"));
+        first.sessionCloseFailures.put(1, one);
+        first.sessionCloseFailures.put(2, other);
+        RecordingLanguage second = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> secondEngine = engine(second, 2);
+        secondEngine.load(rules("r"));
+        second.sessionCloseFailures.put(1, other);
+        second.sessionCloseFailures.put(2, one);
+        AtomicReference<Throwable> firstThrown = new AtomicReference<>();
+        AtomicReference<Throwable> secondThrown = new AtomicReference<>();
+
+        logsOf(() -> {
+            firstThrown.set(thrownBy(firstEngine::close));
+            secondThrown.set(thrownBy(secondEngine::close));
+        });
+
+        assertSame(one, firstThrown.get());
+        assertSame(other, secondThrown.get());
+        assertArrayEquals(new Throwable[] {other}, one.getSuppressed());
+        assertEquals(0, other.getSuppressed().length);
+        SecondFatalFromOnErrorTest.assertNoLoop(one);
+    }
+
+    @Test
+    @DisplayName("a fatal Error that carries more exceptions than the engine reads still carries a second one")
+    void fatalCarryingManyStillCarriesASecond() {
+        OutOfMemoryError first = new OutOfMemoryError("first");
+        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ; i++) {
+            first.addSuppressed(new IllegalStateException("kept " + i));
+        }
+        OutOfMemoryError second = new OutOfMemoryError("second");
+
+        String logs = logsOf(() -> assertSame(first, Failures.first(first, second)));
+
+        assertSame(second, first.getSuppressed()[Failures.MAX_EXCEPTIONS_READ]);
+        assertEquals("", logs);
+    }
+
+    @Test
+    @DisplayName("a fatal Error whose cause is also among its suppressed exceptions is read once, and a second one"
+            + " is still kept")
+    void fatalReachingOneExceptionTwiceStillCarriesASecond() {
+        IllegalStateException shared = new IllegalStateException("shared");
+        OutOfMemoryError first = new OutOfMemoryError("first");
+        first.initCause(shared);
+        first.addSuppressed(shared);
+        OutOfMemoryError second = new OutOfMemoryError("second");
+
+        Failures.first(first, second);
+
+        assertArrayEquals(new Throwable[] {shared, second}, first.getSuppressed());
+    }
+
+    @Test
+    @DisplayName("guard: close() whose sessions all throw one cached fatal Error throws it, carrying nothing")
+    void cachedFatalFromEverySessionNotKeptOnItself() {
+        OutOfMemoryError cached = new OutOfMemoryError("cached");
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(language, 3);
+        engine.load(rules("r"));
+        language.sessionCloseFailures.put(1, cached);
+        language.sessionCloseFailures.put(2, cached);
+        language.sessionCloseFailures.put(3, cached);
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+        logsOf(() -> thrown.set(thrownBy(engine::close)));
+
+        assertSame(cached, thrown.get());
+        assertEquals(0, cached.getSuppressed().length);
+        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+    }
+
+    @Test
+    @DisplayName("a fatal Error that can't carry a second one, as the JVM's own OutOfMemoryError can't, logs that it's"
+            + " rethrown without it at WARN")
+    void fatalThatCantCarryASecondLogsIt() {
+        // Suppression disabled, as on an OutOfMemoryError the JVM keeps ready, which no constructor built.
+        Error first = new Error("preallocated", null, false, false) {
+        };
+        OutOfMemoryError second = new OutOfMemoryError("closing the compiler");
+        AtomicReference<Error> result = new AtomicReference<>();
+
+        String logs = logsOf(() -> result.set(Failures.first(first, second)));
+
+        assertSame(first, result.get());
+        assertEquals(0, first.getSuppressed().length);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The fatal error " + first + " can't carry a suppressed"
+                + " exception, so it's rethrown without java.lang.OutOfMemoryError: closing the compiler"), logs);
     }
 
     /**

@@ -7,9 +7,11 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
@@ -19,8 +21,9 @@ import java.util.stream.Collectors;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
- * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf} logs, and under the
- * engine's logger name, {@code io.github.brantunger.unruly.engine}, as every failure is logged.
+ * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf} and
+ * {@link #keepAlso} log, and under the engine's logger name, {@code io.github.brantunger.unruly.engine}, as every
+ * failure is logged.
  * <b>Internal:</b> this class may change in any release. It's public only so that the {@code api} package can escape
  * text the way the engine does, rather than keeping a copy of the escaping that could drift.
  */
@@ -34,6 +37,12 @@ public final class Failures {
 
     /** How many links of an exception's cause chain the engine reads; see {@link #causeChain}. */
     static final int MAX_CAUSE_CHAIN_LENGTH = 100;
+
+    /**
+     * How many exceptions, through causes and suppressed exceptions, the engine reads to learn whether one already
+     * reaches another; see {@link #reaches}.
+     */
+    static final int MAX_EXCEPTIONS_READ = 1_000;
 
     /**
      * The {@code Default_Ignorable_Code_Point} characters of Unicode's {@code DerivedCoreProperties.txt} (the same in
@@ -131,15 +140,92 @@ public final class Failures {
     }
 
     /**
-     * Chooses which of two fatal errors, from two things closed one after the other, the caller throws: the first. The
-     * other was logged when it was caught, as {@link Closing} logs every failure to close, and goes no further.
+     * Chooses which of two fatal errors, from two things closed one after the other, the caller throws: the first,
+     * which carries the other as a suppressed exception (see {@link #keepAlso}). The other was logged when it was
+     * caught, as {@link Closing} logs every failure to close.
      *
      * @param first  The fatal error from what was closed first, or {@code null}
      * @param second The fatal error from what was closed after it, or {@code null}
      * @return {@code first} if there is one, else {@code second}, which may be {@code null}
      */
     static Error first(Error first, Error second) {
-        return first != null ? first : second;
+        if (first == null) {
+            return second;
+        }
+        keepAlso(first, second);
+        return first;
+    }
+
+    /**
+     * Keeps a failure on the fatal {@link Error} the caller throws in its place, as a suppressed exception, so that
+     * every fatal error the engine meets reaches the caller of {@code run()}, {@code load()}, {@code validate()} or
+     * {@code close()}, not only the one it throws. Nothing is added when either is {@code null}, when they are the
+     * same instance, as a language that throws one cached error from every {@code close()} makes them, or when one
+     * already reaches the other through causes and suppressed exceptions (see {@link #reaches}): {@code winner} that
+     * reaches {@code loser} carries it already, and {@code loser} that reaches {@code winner}, as a listener's error
+     * that wraps the rule's does, or one kept on it before, as two cached errors met in turn in either order are,
+     * would make a loop of causes and suppressed exceptions. It was logged when it was caught either way. A
+     * {@code winner} built with suppression disabled, as the {@link OutOfMemoryError} the
+     * JVM keeps ready for when it has no memory left is, can't carry it: that is logged at WARN.
+     *
+     * @param winner What the caller throws, or {@code null}
+     * @param loser  What it's thrown in place of, or {@code null}
+     */
+    static void keepAlso(Throwable winner, Throwable loser) {
+        if (winner == null || loser == null || reaches(loser, winner) || reaches(winner, loser)) {
+            return;
+        }
+        winner.addSuppressed(loser);
+        // A throwable built with suppression disabled ignores addSuppressed().
+        if (!carries(winner, loser)) {
+            log.warn("The fatal error {} can't carry a suppressed exception, so it's rethrown without {}",
+                    describeWithClass(winner), describeWithClass(loser));
+        }
+    }
+
+    /**
+     * Tells whether {@code target} is {@code from} itself, or can be reached from it through causes and suppressed
+     * exceptions. A cause is read as {@link #causeOf} reads it, so a {@code getCause()} that throws ends that path;
+     * {@code getSuppressed()} is final. Each exception is read once, and at most {@value #MAX_EXCEPTIONS_READ} are,
+     * so a graph with loops of its own, or a {@code getCause()} that returns a new exception every time, ends too.
+     *
+     * @param from   Where to start
+     * @param target What to look for
+     * @return {@code true} if {@code target} was found
+     */
+    // The very same instance: an equal one is another failure.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static boolean reaches(Throwable from, Throwable target) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        Deque<Throwable> unread = new ArrayDeque<>();
+        unread.push(from);
+        while (!unread.isEmpty() && seen.size() < MAX_EXCEPTIONS_READ) {
+            Throwable t = unread.pop();
+            if (t == target) {
+                return true;
+            }
+            if (seen.add(t)) {
+                Throwable cause = causeOf(t);
+                if (cause != null) {
+                    unread.push(cause);
+                }
+                for (Throwable suppressed : t.getSuppressed()) {
+                    unread.push(suppressed);
+                }
+            }
+        }
+        return false;
+    }
+
+    // The very same instance: an equal one is another failure.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static boolean carries(Throwable winner, Throwable loser) {
+        for (Throwable kept : winner.getSuppressed()) {
+            if (kept == loser) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -147,7 +233,8 @@ public final class Failures {
      * error beats any other failure, and of two fatal errors the first wins. So {@code closeFatal} replaces
      * {@code failure} only when neither {@code failure} nor any of its causes is fatal (see {@link #fatalError}), and
      * then carries it as a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal
-     * error that loses was logged when it was caught, and goes no further.
+     * error that loses was logged when it was caught, and {@code failure}, which the caller throws, carries it as a
+     * suppressed exception (see {@link #keepAlso}).
      *
      * <p>
      * A {@code failure} caused by an interrupt sets the thread's interrupt status again when it's replaced (see
@@ -160,10 +247,14 @@ public final class Failures {
      * @param closeFatal The fatal error closing threw, or {@code null} if it threw none
      * @return {@code closeFatal}, with {@code failure} added to its suppressed exceptions, or logged if it can't carry
      *         one, if the caller throws it in place of {@code failure}; otherwise {@code null}, and the caller throws
-     *         {@code failure}
+     *         {@code failure}, with {@code closeFatal}, if there is one, added to its suppressed exceptions
      */
     static Error fatalInsteadOf(Throwable failure, Error closeFatal) {
-        if (closeFatal == null || fatalError(failure) != null) {
+        if (closeFatal == null) {
+            return null;
+        }
+        if (fatalError(failure) != null) {
+            keepAlso(failure, closeFatal);
             return null;
         }
         keepInterruptStatus(failure);

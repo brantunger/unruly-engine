@@ -397,19 +397,22 @@ class LanguageSessionsTest {
     }
 
     @Test
-    @DisplayName("a fatal Error from closing is rethrown once every session and the compilers have been closed")
+    @DisplayName("a fatal Error from closing is rethrown once every session and the compilers have been closed,"
+            + " carrying the next one")
     void fatalCloseErrorRethrownAfterClosingTheRest() {
         OutOfMemoryError first = new OutOfMemoryError("first");
+        OutOfMemoryError second = new OutOfMemoryError("second");
         ConfinedLanguage a = new ConfinedLanguage("a");
         a.closeFailure = first;
         ConfinedLanguage b = new ConfinedLanguage("b");
-        b.closeFailure = new OutOfMemoryError("second");
+        b.closeFailure = second;
         RulesEngine<Map<String, Object>> engine = stateful(a, b);
         engine.load(List.of(rule("x", "a"), rule("y", "b")));
         engine.run(new FactMap<>());
         List<Rule> next = List.of(rule("z", "a"));
 
         assertSame(first, assertThrows(OutOfMemoryError.class, () -> engine.load(next)));
+        assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
 
         assertEquals(List.of(1), a.closes());
         assertEquals(List.of(1), b.closes());
