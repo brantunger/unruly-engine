@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.9.4](https://github.com/brantunger/unruly-engine/compare/v2.9.3...v2.9.4) (2026-09-28)
+
+
+### Bug Fixes
+
+* close a retired rule list's compilers after every session, and never throw a kept copy's fatal error from load() or close() ([#781](https://github.com/brantunger/unruly-engine/issues/781)) ([df8257d](https://github.com/brantunger/unruly-engine/commit/df8257defe662af6368b75e64af376675e221a8c))
+
 ## [2.9.3](https://github.com/brantunger/unruly-engine/compare/v2.9.2...v2.9.3) (2026-09-27)
 
 
