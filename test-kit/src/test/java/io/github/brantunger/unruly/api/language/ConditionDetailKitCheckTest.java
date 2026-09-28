@@ -33,16 +33,11 @@ class ConditionDetailKitCheckTest {
      */
     private static ExpressionLanguage explainedBy(ExpressionLanguage language,
                                                   BiFunction<Object, Session, Object> detail) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -60,16 +55,6 @@ class ConditionDetailKitCheckTest {
                             }
                         };
                     }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
                 };
             }
         };
@@ -77,16 +62,11 @@ class ConditionDetailKitCheckTest {
 
     /** Wraps a language so that each condition's evaluate returns the opposite of what evaluateWithDetail reports. */
     private static ExpressionLanguage liar(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -102,16 +82,6 @@ class ConditionDetailKitCheckTest {
                                 return condition.evaluateWithDetail(evaluation, session);
                             }
                         };
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -166,16 +136,11 @@ class ConditionDetailKitCheckTest {
      */
     private static ExpressionLanguage twoPaths(ExpressionLanguage language, ConditionPath evaluate,
                                                ConditionPath detailed) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -191,16 +156,6 @@ class ConditionDetailKitCheckTest {
                                 return detailed.evaluate(condition, evaluation, session);
                             }
                         };
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }
@@ -224,26 +179,11 @@ class ConditionDetailKitCheckTest {
      */
     private static ExpressionLanguage recordingCloses(ExpressionLanguage language, List<String> closes,
                                                       Function<String, ? extends Throwable> failure) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public Session newSession() {
                         return new Session() {

@@ -25,21 +25,11 @@ class LongNumbersContractTest extends ToyPropertiesContractTest {
      * @return The wrapped language
      */
     static ExpressionLanguage longNumbers(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
                         CompiledAction action = compiler.compileAction(expression);
@@ -49,11 +39,6 @@ class LongNumbersContractTest extends ToyPropertiesContractTest {
                                     properties.put(key, value instanceof Integer number ? number.longValue() : value));
                             return ActionResult.set(properties);
                         };
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
                     }
                 };
             }

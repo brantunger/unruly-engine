@@ -50,27 +50,12 @@ class ContractKitClosesEnginesTest {
      * for each session, as it does for a language that keeps state. The toy's expressions ignore their session.
      */
     private static ExpressionLanguage counting(ExpressionLanguage language, Counts counts) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
                 counts.compilers.incrementAndGet();
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public Session newSession() {
                         counts.sessions.incrementAndGet();
@@ -80,11 +65,6 @@ class ContractKitClosesEnginesTest {
                                 counts.sessionsClosed.incrementAndGet();
                             }
                         };
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
                     }
 
                     @Override
@@ -103,16 +83,11 @@ class ContractKitClosesEnginesTest {
      * {@code -} in it, so the fact-name check runs rather than being skipped.
      */
     private static ExpressionLanguage lateRejecting(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         if (expression.text().contains(" = ")) {
@@ -134,21 +109,11 @@ class ContractKitClosesEnginesTest {
                     }
 
                     @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
                     public void checkFactName(String name) {
                         if (name.contains("-")) {
                             throw new IllegalArgumentException("a fact name can't contain '-': " + name);
                         }
                         compiler.checkFactName(name);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
                     }
                 };
             }
@@ -157,36 +122,11 @@ class ContractKitClosesEnginesTest {
 
     /** Wraps a language so that each of its compilers throws {@code crash}, the one instance, when it's closed. */
     private static ExpressionLanguage crashingOnClose(ExpressionLanguage language, InternalError crash) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public void close() {
                         compiler.close();
@@ -202,16 +142,11 @@ class ContractKitClosesEnginesTest {
      * {@code evaluateWithDetail}, from closing each of its sessions, and from closing each of its compilers.
      */
     private static ExpressionLanguage crashingEverywhere(ExpressionLanguage language, InternalError crash) {
-        return crashingOnClose(new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return crashingOnClose(new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -228,11 +163,6 @@ class ContractKitClosesEnginesTest {
                         };
                     }
 
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
                     // A session of its own, not Session.none(), so that the engine and the kit close it.
                     @Override
                     public Session newSession() {
@@ -242,16 +172,6 @@ class ContractKitClosesEnginesTest {
                                 throw crash;
                             }
                         };
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
                     }
                 };
             }
@@ -263,16 +183,11 @@ class ContractKitClosesEnginesTest {
      * true, as a language might when a run is interrupted.
      */
     private static ExpressionLanguage interruptingOnTwo(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
+        return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
                         CompiledCondition condition = compiler.compileCondition(expression);
@@ -283,26 +198,6 @@ class ContractKitClosesEnginesTest {
                             }
                             return condition.evaluate(evaluation, session);
                         };
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
                     }
                 };
             }
