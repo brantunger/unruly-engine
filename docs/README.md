@@ -54,7 +54,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, which rules a run uses, first match, all matches or unique match, the output object, and reloading |
 | 🏁 [Run results and audits](run-results.md) | Application developers | What a run reports and why each rule did or didn't apply, the loaded rules, and what to record to audit a decision, checksums included |
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, facts, strong typing, compile errors, compiled copies, virtual threads and security |
-| 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes or assigns differently from Java, what to write instead, and what MVEL logs itself |
+| 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, what compiles slowly, and what MVEL logs itself |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions and packaging for a language of your own |
 | 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, and what each of its checks promises |

@@ -75,8 +75,9 @@ text can show more than its limit, and the `(N more characters)` count is the `c
 | A failed [nested](nested-runs.md#-what-is-logged) `run()` or `load()`, a rejected fact included | `a nested run() failed: <innermost failure>` or `a nested load() failed: ...`, not logged again unless wrapped with its own message |
 | A `RuleExecutionException` a language or your code throws itself | Logged like any other exception |
 
-The underlying exception is never changed: when the language or your code threw it, it's available
-from `getCause()` and reads exactly as it was written. An expression the language rejected, such
+The underlying exception is kept unchanged, except in
+[one MVEL case](languages/mvel-gotchas.md#-calling-java-code): when the language or your code threw it, it's in
+`getCause()` as written. An expression the language rejected, such
 as a condition with an assignment or an MVEL syntax error, has an `InvalidExpressionException` as its cause.
 
 `load()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
