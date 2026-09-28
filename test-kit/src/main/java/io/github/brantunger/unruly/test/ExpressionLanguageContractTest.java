@@ -13,14 +13,13 @@ import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.test.KitResources.ClosedQuietly;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,13 +29,10 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -48,6 +44,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import static io.github.brantunger.unruly.test.CompilerCloseCounter.countingCloses;
+import static io.github.brantunger.unruly.test.KitFailures.describe;
+import static io.github.brantunger.unruly.test.KitFailures.message;
+import static io.github.brantunger.unruly.test.KitFailures.outerRunFailed;
+import static io.github.brantunger.unruly.test.KitFailures.rethrowIfFatal;
+import static io.github.brantunger.unruly.test.KitFailures.runAroundNestedFailed;
+import static io.github.brantunger.unruly.test.KitFailures.suppressAll;
+import static io.github.brantunger.unruly.test.KitResources.closing;
+import static io.github.brantunger.unruly.test.KitResources.stop;
+import static io.github.brantunger.unruly.test.SameOutput.assertSameOutput;
+import static io.github.brantunger.unruly.test.SameOutput.mismatch;
+import static io.github.brantunger.unruly.test.SameOutput.sameValue;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -84,11 +92,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * "https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md#-testing-with-the-contract-kit">
  * Testing with the contract kit</a>
  */
-// A test class: each check makes several assertions, and their failure messages show the values compared. Each check
-// closes the engine it builds. What PMD still takes for unclosed is closed or stopped elsewhere: a language's compiler
-// by the wrapper that holds it, a session by the ClosedQuietly that holds it, and a check's workers by stop().
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.UnitTestAssertionsShouldIncludeMessage",
-        "PMD.CloseResource"})
+// A test class: each check makes several assertions, and their failure messages show the values compared.
+@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.UnitTestAssertionsShouldIncludeMessage"})
 public abstract class ExpressionLanguageContractTest {
 
     /** The output key the checks' actions put a fact's value under. */
@@ -559,163 +564,6 @@ public abstract class ExpressionLanguageContractTest {
         return builder(language).maxCopies(1).copiesAtLoad(0).build();
     }
 
-    /**
-     * What a check does with an engine, a compiler or a session that it closes afterwards.
-     *
-     * @param <T> The resource's type
-     */
-    @FunctionalInterface
-    private interface ResourceCheck<T> {
-        void accept(T resource) throws Exception;
-    }
-
-    /**
-     * Runs a check with an engine, a compiler or a session, and then closes it, however the check ends, as
-     * try-with-resources would. A check builds its engine before it loads any rules, so a failed {@code load()} still
-     * leaves the engine to be closed. What closing throws is attached to the check's own failure, unless it is that
-     * failure or already attached to it: a language that throws one cached {@link Error} from {@code close()}, or from
-     * a condition and a {@code close()}, fails the check with it and then the close with it again, and
-     * try-with-resources would report {@code "Self-suppression not permitted"} instead.
-     *
-     * @param resource The engine, with no rules loaded yet, or the compiler or session
-     * @param check    What the check does with it
-     * @param <T>      The resource's type
-     * @throws Exception What the check throws, or, when the check passes, what closing the resource throws
-     */
-    // Any Throwable, as try-with-resources closes on any, compared by identity: the same instance is what's handled.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private static <T extends AutoCloseable> void closing(T resource, ResourceCheck<T> check) throws Exception {
-        try {
-            check.accept(resource);
-        } catch (Throwable failure) {
-            try {
-                resource.close();
-            } catch (Throwable closeFailure) {
-                if (closeFailure != failure
-                        && Arrays.stream(failure.getSuppressed()).noneMatch(known -> known == closeFailure)) {
-                    failure.addSuppressed(closeFailure);
-                }
-            }
-            throw failure;
-        }
-        resource.close();
-    }
-
-    /**
-     * Asserts that a run's output, or a list of outputs, is what was expected, comparing numbers by value: {@code 1},
-     * {@code 1L} and {@code 1.0} are the same output. Everything else is compared with {@code equals}.
-     *
-     * @param expected The expected output
-     * @param actual   The output the engine returned
-     */
-    private static void assertSameOutput(@Nullable Object expected, @Nullable Object actual) {
-        assertSameOutput(expected, actual, "");
-    }
-
-    /**
-     * Asserts that a run's output is what was expected, as {@link #assertSameOutput(Object, Object)} does, for a check
-     * with more than one run, whose failure says which run it was.
-     *
-     * @param expected The expected output
-     * @param actual   The output the engine returned
-     * @param run      The run that returned it, which the failure's message starts with; empty for none
-     */
-    private static void assertSameOutput(@Nullable Object expected, @Nullable Object actual, String run) {
-        if (!sameValue(expected, actual)) {
-            // With both values, so that an IDE can show the difference.
-            throw new AssertionFailedError((run.isEmpty() ? "" : run + " ==> ") + mismatch(expected, actual),
-                    expected, actual);
-        }
-    }
-
-    /**
-     * Describes two outputs that aren't the same, as {@code expected: <...> but was: <...>}. When the first value in
-     * them that differs prints the same on both sides, such as the {@code Integer} 1 and the {@code String} "1", it
-     * says where that value is and what each side's class is, since the two texts alone would look equal.
-     *
-     * @param expected The expected output
-     * @param actual   The output the engine returned
-     * @return The description
-     */
-    private static String mismatch(@Nullable Object expected, @Nullable Object actual) {
-        String text = "expected: <" + describe(expected) + "> but was: <" + describe(actual) + ">";
-        String hidden = hiddenDifference("", expected, actual);
-        return hidden == null ? text : text + ", and " + hidden;
-    }
-
-    /**
-     * Finds the first value that differs in two outputs that aren't the same, following maps with the same keys and
-     * lists of the same size down as {@link #sameValue} does, and describes it if both sides print it the same.
-     *
-     * @param path     Where the two values are in the outputs: keys joined with {@code .}, and list indexes in
-     *                 {@code []}; empty for the outputs themselves
-     * @param expected The expected value
-     * @param actual   The value the engine returned
-     * @return {@code at <path>, expected <text> (<class>) but was <text> (<class>)}, or {@code null} if the two texts
-     *         of the value that differs are different already
-     */
-    private static @Nullable String hiddenDifference(String path, @Nullable Object expected, @Nullable Object actual) {
-        if (expected instanceof Map<?, ?> left && actual instanceof Map<?, ?> right
-                && left.keySet().equals(right.keySet())) {
-            for (Map.Entry<?, ?> entry : left.entrySet()) {
-                Object other = right.get(entry.getKey());
-                if (!sameValue(entry.getValue(), other)) {
-                    String key = describe(entry.getKey());
-                    return hiddenDifference(path.isEmpty() ? key : path + "." + key, entry.getValue(), other);
-                }
-            }
-        }
-        if (expected instanceof List<?> left && actual instanceof List<?> right && left.size() == right.size()) {
-            for (int i = 0; i < left.size(); i++) {
-                if (!sameValue(left.get(i), right.get(i))) {
-                    return hiddenDifference(path + "[" + i + "]", left.get(i), right.get(i));
-                }
-            }
-        }
-        String expectedText = describe(expected);
-        String actualText = describe(actual);
-        if (!expectedText.equals(actualText)) {
-            return null;
-        }
-        return (path.isEmpty() ? "" : "at " + path + ", ") + "expected " + expectedText + " (" + className(expected)
-                + ") but was " + actualText + " (" + className(actual) + ")";
-    }
-
-    private static String className(@Nullable Object object) {
-        return object == null ? "null" : object.getClass().getName();
-    }
-
-    private static boolean sameValue(@Nullable Object expected, @Nullable Object actual) {
-        if (expected instanceof Number left && actual instanceof Number right) {
-            return sameNumber(left, right);
-        }
-        if (expected instanceof Map<?, ?> left && actual instanceof Map<?, ?> right) {
-            return left.keySet().equals(right.keySet())
-                    && left.keySet().stream().allMatch(key -> sameValue(left.get(key), right.get(key)));
-        }
-        if (expected instanceof List<?> left && actual instanceof List<?> right) {
-            if (left.size() != right.size()) {
-                return false;
-            }
-            for (int i = 0; i < left.size(); i++) {
-                if (!sameValue(left.get(i), right.get(i))) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return Objects.equals(expected, actual);
-    }
-
-    private static boolean sameNumber(Number left, Number right) {
-        try {
-            return new BigDecimal(left.toString()).compareTo(new BigDecimal(right.toString())) == 0;
-        } catch (NumberFormatException e) {
-            // NaN or an infinity, which have no BigDecimal form.
-            return left.toString().equals(right.toString());
-        }
-    }
-
     @Test
     @DisplayName("a condition reads the facts, and its rule fires only when the condition is true")
     void conditionReadsFacts() throws Exception {
@@ -1099,28 +947,6 @@ public abstract class ExpressionLanguageContractTest {
         });
     }
 
-    /**
-     * Stops a check's workers before its engine is closed: interrupts them, which also stops workers that a broken
-     * language leaves running, and waits a while for them to end, so that none still holds a copy of the rules when
-     * the engine closes it. On a thread that is already interrupted, the wait is skipped and the thread stays
-     * interrupted; a copy a worker gives back later is closed by the closed engine, then or when the last worker
-     * leaves.
-     *
-     * @param workers The workers
-     */
-    private static void stop(ExecutorService workers) {
-        workers.shutdownNow();
-        // Not close(), which waits for as long as a broken language keeps a worker running. A worker still running
-        // after this gives its copy back to the closed engine, which closes the copy then.
-        try {
-            workers.awaitTermination(5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            // Interrupted before or while it waits, as a JUnit timeout or an interrupted run leaves the thread. The
-            // check's own failure stays the one reported, and the thread stays interrupted.
-            Thread.currentThread().interrupt();
-        }
-    }
-
     @Test
     @DisplayName("the engine closes the language's compiler once: when a reload replaces the rules, and when it's"
             + " closed, and closing it doesn't throw")
@@ -1155,148 +981,6 @@ public abstract class ExpressionLanguageContractTest {
             fail("a compiler's close() threw " + describe(closeFailures.get(0))
                     + ", which the engine only logs at WARN");
         }
-    }
-
-    /**
-     * Attaches what closing a language's compilers or sessions threw to a check's failure, each once, unless it is
-     * that failure or already attached to it: the engine rethrows a fatal error from close() itself, and
-     * {@code closing()} has attached what {@code engine.close()} threw to the failure, so either may be one of them
-     * already. One exception a language throws from every close, cached, is attached once.
-     *
-     * @param failure       The check's failure
-     * @param closeFailures What closing threw
-     */
-    // By identity: the same instance is what's attached.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private static void suppressAll(Throwable failure, List<Throwable> closeFailures) {
-        for (Throwable closeFailure : closeFailures) {
-            if (closeFailure != failure
-                    && Arrays.stream(failure.getSuppressed()).noneMatch(known -> known == closeFailure)) {
-                failure.addSuppressed(closeFailure);
-            }
-        }
-    }
-
-    /**
-     * Whether the engine rethrows what a language's {@code close()} threw, rather than logging it: a
-     * {@link VirtualMachineError} other than a {@link StackOverflowError}, as the engine decides.
-     */
-    private static boolean isFatal(Throwable thrown) {
-        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError);
-    }
-
-    /**
-     * Throws what a language threw on, unchanged, when it's an error the engine rethrows too (see {@link #isFatal}),
-     * so that no check counts it as the language's answer.
-     *
-     * @param thrown What the language threw
-     */
-    private static void rethrowIfFatal(Throwable thrown) {
-        if (isFatal(thrown)) {
-            throw (VirtualMachineError) thrown;
-        }
-    }
-
-    /**
-     * Returns an exception's message, or, when {@code getMessage()} throws, what {@link #describe} prints for it, so a
-     * check's failure message can't throw.
-     *
-     * @param thrown The exception
-     * @return Its message, or its class name followed by {@code (message unavailable: ...)}
-     */
-    private static String message(Throwable thrown) {
-        try {
-            return String.valueOf(thrown.getMessage());
-        } catch (Throwable unreadable) {
-            // What describe() prints for an exception whose message can't be read.
-            return describe(thrown);
-        }
-    }
-
-    /**
-     * Describes an object of the language's, such as what it threw, for a check's failure message: its
-     * {@code toString()}, or, when that throws, its class name and a note that its text is unavailable, as the engine
-     * describes an exception whose {@code getMessage()} throws. Whatever {@code toString()} throws, a fatal
-     * {@link Error} too, only makes the text unavailable, so the check fails with its own message rather than with
-     * that.
-     *
-     * @param object The object
-     * @return Its {@code toString()}, or its class name followed by {@code (message unavailable: ...)}, naming the
-     *         class of what {@code toString()} threw
-     */
-    private static String describe(@Nullable Object object) {
-        try {
-            return String.valueOf(object);
-        } catch (Throwable thrown) {
-            // Only the class of what was thrown: its own message could be what throws.
-            return Objects.requireNonNull(object).getClass().getName() + " (message unavailable: "
-                    + thrown.getClass().getName() + ")";
-        }
-    }
-
-    /**
-     * Wraps a language so that each compiler it creates counts how often it's closed, and records in
-     * {@code closeFailures} what its close() throws that the engine only logs.
-     */
-    private static ExpressionLanguage countingCloses(ExpressionLanguage language, List<AtomicInteger> closes,
-                                                     List<Throwable> closeFailures) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
-            @Override
-            public ExpressionCompiler newCompiler(CompileContext context) {
-                ExpressionCompiler compiler = language.newCompiler(context);
-                AtomicInteger closed = new AtomicInteger();
-                closes.add(closed);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    // Forwarded, so that a copy made when the rules load, as a configure() that sets copiesAtLoad
-                    // makes one, is warmed up as it would be without the wrapper: a compiler whose close() fails only
-                    // once a session was warmed up still fails the check.
-                    @Override
-                    public void warmUp(Session session) throws Exception {
-                        compiler.warmUp(session);
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
-                    // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception
-                    // or Error but a fatal one, which it rethrows, and which fails the check by itself.
-                    @Override
-                    public void close() {
-                        closed.incrementAndGet();
-                        try {
-                            compiler.close();
-                        } catch (Throwable e) {
-                            if (!isFatal(e)) {
-                                closeFailures.add(e);
-                            }
-                            throw e;
-                        }
-                    }
-                };
-            }
-        };
     }
 
     @Test
@@ -1386,32 +1070,6 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Describes a failed run of {@code sessionClosedWhileAnotherRuns} by what happened in it: the nested run's
-     * session is blamed only when the nested run started and ended as it should.
-     *
-     * @param failure       What the run threw
-     * @param nested        Whether the run nested in it started
-     * @param nestedFailure What the nested run threw, attached to the check's failure, or {@code null}
-     * @return The check's failure, with the engine's message: the exception's class is the engine's internal one
-     */
-    private static AssertionFailedError outerRunFailed(RuleExecutionException failure, boolean nested,
-                                                       @Nullable RuntimeException nestedFailure) {
-        if (!nested) {
-            return new AssertionFailedError("the run failed before a run could be nested in it: "
-                    + failure.getMessage(), failure);
-        }
-        if (nestedFailure != null) {
-            AssertionFailedError both = new AssertionFailedError("the run failed, and so did the run nested in it,"
-                    + " which is attached: " + failure.getMessage(), failure);
-            both.addSuppressed(nestedFailure);
-            return both;
-        }
-        return new AssertionFailedError("the run failed after a run nested in it ended and its session was closed, so"
-                + " a session's close(), or the nested run's session, broke what its compiler's other sessions share: "
-                + failure.getMessage(), failure);
-    }
-
-    /**
      * Makes a session on one thread and closes it on another, as the engine does with the sessions of a copy of the
      * rules a run made: the run's thread makes them, and {@code close()}, or a {@code load()} that replaces the rules,
      * closes them on the thread that calls it. A {@code close()} that throws there, as one whose runtime is bound to
@@ -1492,183 +1150,6 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Watches the sessions a language returns: whether it returns one instance twice, whether closing one throws,
-     * how many have been closed so far ({@code closed()}), and whether the language returned any session of its own,
-     * rather than {@link Session#none()} ({@code anyReturned()}). Each session the engine gets is wrapped, so its
-     * close can be seen, and the language is handed back its own session, unwrapped, wherever the engine passes one.
-     * {@code closing()} runs a check with an engine built with {@link #watching}, and attaches what closing the
-     * sessions threw to the check's failure.
-     */
-    private static final class SessionWatch {
-
-        /** Every session the language returned, by identity: two sessions that are merely equal are still two. */
-        private final Set<Session> returned = Collections.synchronizedSet(
-                Collections.newSetFromMap(new IdentityHashMap<>()));
-        private final List<Session> shared = new CopyOnWriteArrayList<>();
-        private final List<Throwable> closeFailures = new CopyOnWriteArrayList<>();
-        private final AtomicInteger closes = new AtomicInteger();
-
-        /**
-         * Runs a check with an engine built with {@link #watching}, and closes it, however the check ends, as
-         * {@code closing} does.
-         */
-        void closing(RulesEngine<Map<String, Object>> engine, ResourceCheck<RulesEngine<Map<String, Object>>> check)
-                throws Exception {
-            try {
-                ExpressionLanguageContractTest.closing(engine, check);
-            } catch (Throwable e) {
-                // The engine is closed by now. The check's failure stays the one reported, with what closing the
-                // sessions threw attached to it.
-                suppressAll(e, closeFailures);
-                throw e;
-            }
-        }
-
-        /** Whether the language returned a session of its own, rather than {@link Session#none()}. */
-        boolean anyReturned() {
-            return !returned.isEmpty();
-        }
-
-        /** How many times a session's close() has been called so far, whether it threw or not. */
-        int closed() {
-            return closes.get();
-        }
-
-        void assertNoneShared() {
-            assertNoneShared(null);
-        }
-
-        /**
-         * Fails if the language returned one session twice, with {@code cause}, what went wrong in the check because
-         * of it, as the failure's cause.
-         */
-        void assertNoneShared(@Nullable Throwable cause) {
-            if (!shared.isEmpty()) {
-                throw new AssertionFailedError("newSession() returned the same session for two copies of the rules, so"
-                        + " two runs use it at once and the engine closes it twice: " + describe(shared.get(0)), cause);
-            }
-        }
-
-        void assertNoneThrewOnClose() {
-            if (!closeFailures.isEmpty()) {
-                fail("a session's close() threw " + describe(closeFailures.get(0))
-                        + ", which the engine only logs at WARN");
-            }
-        }
-
-        void assertNotASession(@Nullable Object detail) {
-            if (returned.contains(detail)) {
-                fail("the condition's detail is the session it ran with, which the engine gives to another run or"
-                        + " closes: " + describe(detail));
-            }
-        }
-
-        // Session.none() is one shared instance, and the engine asks whether a language's session is it by identity.
-        @SuppressWarnings("PMD.CompareObjectsWithEquals")
-        private @Nullable Session watch(@Nullable Session session) {
-            // Passed through as it is: a wrapped Session.none() would make the engine keep a copy of the rules for
-            // each run, where it shares one, and change what's being checked. A null is passed through too, so the
-            // engine still rejects it with its own message.
-            if (session == null || session == Session.none()) {
-                return session;
-            }
-            // Recorded, not failed here: an exception from newSession() would be the engine's failure to create a
-            // session, reported by load() here, not a message about the language's session being shared.
-            if (!returned.add(session)) {
-                shared.add(session);
-            }
-            return new Watched(session);
-        }
-
-        /** The language's own session, which is what its expressions and warmUp() expect. */
-        private static Session unwrap(Session session) {
-            return session instanceof Watched watched ? watched.session : session;
-        }
-
-        ExpressionLanguage watching(ExpressionLanguage language) {
-            return new ExpressionLanguage() {
-                @Override
-                public String name() {
-                    return language.name();
-                }
-
-                @Override
-                public ExpressionCompiler newCompiler(CompileContext context) {
-                    ExpressionCompiler compiler = language.newCompiler(context);
-                    return new ExpressionCompiler() {
-                        @Override
-                        public CompiledCondition compileCondition(Expression expression) {
-                            CompiledCondition condition = compiler.compileCondition(expression);
-                            // Not a lambda: that would implement only evaluate(), and drop the language's detail.
-                            return new CompiledCondition() {
-                                @Override
-                                public @Nullable Object evaluate(EvaluationContext evaluation, Session session)
-                                        throws Exception {
-                                    return condition.evaluate(evaluation, unwrap(session));
-                                }
-
-                                @Override
-                                public ConditionResult evaluateWithDetail(EvaluationContext evaluation,
-                                                                          Session session) throws Exception {
-                                    return condition.evaluateWithDetail(evaluation, unwrap(session));
-                                }
-                            };
-                        }
-
-                        @Override
-                        public CompiledAction compileAction(Expression expression) {
-                            CompiledAction action = compiler.compileAction(expression);
-                            return (actionContext, session) -> action.execute(actionContext, unwrap(session));
-                        }
-
-                        @Override
-                        public Session newSession() {
-                            return watch(compiler.newSession());
-                        }
-
-                        @Override
-                        public void warmUp(Session session) throws Exception {
-                            compiler.warmUp(unwrap(session));
-                        }
-
-                        @Override
-                        public void checkFactName(String name) {
-                            compiler.checkFactName(name);
-                        }
-
-                        @Override
-                        public void close() {
-                            compiler.close();
-                        }
-                    };
-                }
-            };
-        }
-
-        /** A language's session, whose close() records what it throws before throwing it on. */
-        private final class Watched implements Session {
-
-            private final Session session;
-
-            Watched(Session session) {
-                this.session = session;
-            }
-
-            // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception or Error.
-            @Override
-            public void close() {
-                closes.incrementAndGet();
-                try {
-                    session.close();
-                } catch (Throwable e) {
-                    closeFailures.add(e);
-                    throw e;
-                }
-            }
-        }
-    }
-
-    /**
      * Compiles a condition with the language's compiler, outside an engine, and evaluates it against one session, with
      * {@code evaluate} and with {@code evaluateWithDetail}, for a fact that is an {@code Integer} 1 or 2, a
      * {@code Long} 1 or 2, a {@code Short} 1 and a {@code BigDecimal} 1. The engine calls only
@@ -1734,29 +1215,6 @@ public abstract class ExpressionLanguageContractTest {
                 }
             });
         });
-    }
-
-    /**
-     * Closes a session or a compiler, ignoring what its {@code close()} throws that the engine only logs. A fatal
-     * {@link Error} (see {@link #isFatal}) is thrown on.
-     *
-     * @param resource The session or compiler
-     * @param <T>      Its type
-     */
-    private record ClosedQuietly<T extends AutoCloseable>(T resource) implements AutoCloseable {
-
-        // Anything but a fatal Error, a checked exception thrown sneakily and a StackOverflowError included: the
-        // engine logs any Exception or Error but a fatal one.
-        @Override
-        public void close() {
-            try {
-                resource.close();
-            } catch (Throwable e) {
-                // Logged by the engine, not thrown. Whether it throws is the session and compiler checks' question,
-                // not this one's.
-                rethrowIfFatal(e);
-            }
-        }
     }
 
     /**
@@ -1878,27 +1336,5 @@ public abstract class ExpressionLanguageContractTest {
             assertSameOutput(Map.of("inner", 2), nest.nestedOutput, "the run started inside the action");
             assertSameOutput(Map.of(SEEN, 7), output, "the run around it");
         });
-    }
-
-    /**
-     * Describes a failed run of {@code nestedRunInsideAnAction} whose action had started a run inside itself: a
-     * language that keeps a run's state per thread may find it replaced, or removed, by the nested run.
-     *
-     * @param failure       What the run threw
-     * @param nestedFailure What the run started inside its action threw, attached to the check's failure, or
-     *                      {@code null}
-     * @return The check's failure, with the engine's message: the exception's class is the engine's internal one
-     */
-    private static AssertionFailedError runAroundNestedFailed(RuleExecutionException failure,
-                                                              @Nullable RuntimeException nestedFailure) {
-        if (nestedFailure != null) {
-            AssertionFailedError both = new AssertionFailedError("the run failed after a run started inside its action"
-                    + " failed too, which is attached: " + failure.getMessage(), failure);
-            both.addSuppressed(nestedFailure);
-            return both;
-        }
-        return new AssertionFailedError("the run failed after a run started inside its action ended, so the nested"
-                + " run may have replaced or removed state the action kept for its own run: " + failure.getMessage(),
-                failure);
     }
 }
