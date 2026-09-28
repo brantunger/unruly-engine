@@ -16,10 +16,10 @@ import java.lang.module.ModuleFinder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -90,16 +90,9 @@ class ModulePathTest {
             assertTrue(compiled, () -> "the application didn't compile: " + diagnostics.getDiagnostics());
         }
 
-        Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Dorg.slf4j.simpleLogger.defaultLogLevel=off",
+        return ChildJvm.run(work, Duration.ofSeconds(120), List.of("-Dorg.slf4j.simpleLogger.defaultLogLevel=off",
                 "--module-path", classes + File.pathSeparator + path,
-                "-m", module + "/" + module + ".Main")
-                .redirectErrorStream(true)
-                .start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(process.waitFor(120, TimeUnit.SECONDS), "the application didn't finish:\n" + output);
-        assertEquals(0, process.exitValue(), "the application failed:\n" + output);
-        return output;
+                "-m", module + "/" + module + ".Main"));
     }
 
     @Test

@@ -1,13 +1,13 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.ChildJvm;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,23 +20,14 @@ class LazyLanguageTest {
      * Runs {@link LazyLanguageScenario} in a new JVM that logs every class it loads. This JVM has loaded MVEL already,
      * for other tests.
      */
-    private static List<String> runScenario() throws IOException, InterruptedException {
-        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
-        Process process = new ProcessBuilder(java.toString(), "-Xlog:class+load=info:stdout",
-                "-Dorg.slf4j.simpleLogger.defaultLogLevel=off",
-                "-cp", System.getProperty("java.class.path"), LazyLanguageScenario.class.getName())
-                .redirectErrorStream(true)
-                .start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the scenario didn't finish");
-        assertEquals(0, process.exitValue(), "scenario output:\n" + output);
-        return output.lines().toList();
+    private static List<String> runScenario(Path dir) throws IOException, InterruptedException {
+        return ChildJvm.run(dir, LazyLanguageScenario.class, "-Xlog:class+load=info:stdout").lines().toList();
     }
 
     @Test
     @DisplayName("building an engine loads no MVEL class; loading a rule list with an MVEL rule does")
-    void mvelLoadedWithRules() throws Exception {
-        List<String> lines = runScenario();
+    void mvelLoadedWithRules(@TempDir Path dir) throws Exception {
+        List<String> lines = runScenario(dir);
         int built = lines.indexOf(LazyLanguageScenario.BUILT);
         int loaded = lines.indexOf(LazyLanguageScenario.LOADED);
         assertTrue(built >= 0 && loaded > built, "markers missing");
