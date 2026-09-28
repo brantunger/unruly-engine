@@ -67,6 +67,10 @@ A result from `RunResult.of(...)` has empty `tags()` and a `null` `startedAt()`.
 implementation is internal to the engine, so you can't create one: call `withRun(run)` with a context an engine gave
 you, such as one your listener received, to return a copy that carries that run's tags and start instant.
 
+Since 2.11.0, `RunResult`, `RuleSetInfo` and `RunOptions` compare by value, and a result's `equals` ignores
+`startedAt()`, so a test double's result can equal a real engine's from a run without tags. For what
+each compares, see [Run results](run-results.md#can-i-compare-results-rule-sets-and-run-options-with-equals).
+
 > [!IMPORTANT]
 > `close()` has a default that does nothing, so a decorator that doesn't override it never closes the engine it
 > wraps, and that engine's compiled copies and language sessions are never released. See

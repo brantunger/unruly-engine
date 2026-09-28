@@ -225,6 +225,86 @@ class RunResultTest {
         assertNull(plain.startedAt());
     }
 
+    /** Runs {@code rules} on an engine whose clock is fixed at {@code start}, and returns the run's context. */
+    private static RunContext contextOf(Instant start, RunOptions options, Rule... rules) {
+        AtomicReference<RunContext> seen = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new ToyExpressionLanguage()).clock(Clock.fixed(start, ZoneOffset.UTC))
+                .listener(new RuleListener() {
+                    @Override
+                    public void beforeRun(RunContext run) {
+                        seen.set(run);
+                    }
+                }).build();
+        engine.load(List.of(rules));
+        engine.runWithResult(new FactMap<>(), options);
+        return seen.get();
+    }
+
+    @Test
+    @DisplayName("results with the same output, rules, evaluations, checksum and tags are equal, with the same hash"
+            + " code (#711)")
+    void equality() {
+        RuleEvaluation matched = RuleEvaluation.of(HIGH, RuleEvaluation.Outcome.MATCHED);
+        RunResult<String> result = RunResult.of("out", List.of(HIGH), List.of(matched), "c");
+
+        assertEquals(result, result);
+        assertEquals(RunResult.of("out", List.of(HIGH), List.of(matched), "c"), result);
+        assertEquals(RunResult.of("out", List.of(HIGH), List.of(matched), "c").hashCode(), result.hashCode());
+        assertEquals(RunResult.of(null, List.of(), "c"), RunResult.of(null, List.of(), List.of(), "c"),
+                "of(...) without evaluations has none");
+        assertEquals(RunResult.of(null, List.of(), "c").hashCode(), RunResult.of(null, List.of(), "c").hashCode());
+        assertNotEquals(RunResult.of("other", List.of(HIGH), List.of(matched), "c"), result);
+        assertNotEquals(RunResult.of(null, List.of(HIGH), List.of(matched), "c"), result);
+        assertNotEquals(RunResult.of("out", List.of(LOW), List.of(matched), "c"), result);
+        assertNotEquals(RunResult.of("out", List.of(HIGH), List.of(), "c"), result);
+        assertNotEquals(RunResult.of("out", List.of(HIGH),
+                List.of(RuleEvaluation.of(HIGH, RuleEvaluation.Outcome.NOT_MATCHED)), "c"), result,
+                "the same rule with another outcome");
+        assertNotEquals(RunResult.of("out", List.of(HIGH), List.of(matched), "d"), result);
+        // The result under test first: assertNotEquals calls equals on the value it's told not to expect.
+        assertNotEquals(result, null);
+        assertNotEquals(result, result.toString());
+    }
+
+    @Test
+    @DisplayName("results that differ only in when their runs started are equal, with the same hash code, but results"
+            + " with different tags aren't (#711)")
+    void equalityLeavesOutTheStart() {
+        RunResult<String> plain = RunResult.of("out", List.of(HIGH), "c");
+        RunContext untagged = contextOf(NOW, RunOptions.defaults(), HIGH);
+        RunContext untaggedLater = contextOf(NOW.plusSeconds(1), RunOptions.defaults(), HIGH);
+        RunContext tagged = contextOf(NOW, RunOptions.defaults().withTags(Set.of("eu")), HIGH);
+
+        RunResult<String> first = plain.withRun(untagged);
+        RunResult<String> later = plain.withRun(untaggedLater);
+
+        assertNotEquals(first.startedAt(), later.startedAt());
+        assertEquals(first, later);
+        assertEquals(first.hashCode(), later.hashCode());
+        assertEquals(plain, first, "a result without a start equals one with a start");
+        assertEquals(plain.hashCode(), first.hashCode());
+        assertNotEquals(plain.withRun(tagged), first, "the tags differ");
+    }
+
+    @Test
+    @DisplayName("a test double's result equals a real run's, and two runs of the same rules on the same facts are"
+            + " equal (#711)")
+    void doubleEqualsARealRun() {
+        RulesEngine<Map<String, Object>> engine = allMatches(HIGH, NEVER);
+        RunResult<Map<String, Object>> real = engine.runWithResult(new FactMap<>());
+
+        RunResult<Map<String, Object>> fake = RunResult.of(Map.of("high", 1), List.of(HIGH),
+                List.of(RuleEvaluation.of(HIGH, RuleEvaluation.Outcome.MATCHED),
+                        RuleEvaluation.of(NEVER, RuleEvaluation.Outcome.NOT_MATCHED)),
+                engine.rules().checksum());
+
+        assertNotNull(real.startedAt());
+        assertEquals(fake, real);
+        assertEquals(fake.hashCode(), real.hashCode());
+        assertEquals(engine.runWithResult(new FactMap<>()), real);
+    }
+
     @Test
     @DisplayName("withRun rejects a null run")
     void withRunRejectsNull() {

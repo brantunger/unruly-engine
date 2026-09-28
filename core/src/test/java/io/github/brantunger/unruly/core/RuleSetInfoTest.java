@@ -107,6 +107,29 @@ class RuleSetInfoTest {
     }
 
     @Test
+    @DisplayName("information with the same rules, checksum and load time is equal, with the same hash code (#711)")
+    void equality() {
+        RulesEngine<Map<String, Object>> engine = engine();
+        engine.load(List.of(LOW, HIGH));
+        RuleSetInfo info = engine.rules();
+        Instant loadedAt = info.loadedAt();
+
+        assertEquals(info, info);
+        assertEquals(RuleSetInfo.of(List.of(HIGH, LOW), info.checksum(), loadedAt), info,
+                "a test double's information equals the engine's");
+        assertEquals(RuleSetInfo.of(List.of(HIGH, LOW), info.checksum(), loadedAt).hashCode(), info.hashCode());
+        assertEquals(RuleSetInfo.of(List.of(), "c", null), RuleSetInfo.of(List.of(), "c", null));
+        assertEquals(RuleSetInfo.of(List.of(), "c", null).hashCode(), RuleSetInfo.of(List.of(), "c", null).hashCode());
+        assertNotEquals(RuleSetInfo.of(List.of(LOW, HIGH), info.checksum(), loadedAt), info, "rules in another order");
+        assertNotEquals(RuleSetInfo.of(List.of(HIGH, LOW), "other", loadedAt), info);
+        assertNotEquals(RuleSetInfo.of(List.of(HIGH, LOW), info.checksum(), loadedAt.plusSeconds(1)), info);
+        assertNotEquals(RuleSetInfo.of(List.of(HIGH, LOW), info.checksum(), null), info);
+        // The information under test first: assertNotEquals calls equals on the value it's told not to expect.
+        assertNotEquals(info, null);
+        assertNotEquals(info, info.toString());
+    }
+
+    @Test
     @DisplayName("a closed engine reports no rules")
     void closedEngine() {
         RulesEngine<Map<String, Object>> engine = engine();

@@ -21,7 +21,8 @@ import java.util.TreeSet;
  * <p>
  * It's immutable: each {@code with} method returns a copy with one setting changed, so a shared instance can't be
  * changed by another caller. It's a final class rather than a record, so a later 2.x release can add settings without
- * breaking code compiled against this one.
+ * breaking code compiled against this one. {@code equals} and {@code hashCode} compare every setting; one added in a
+ * later release takes part too.
  * </p>
  */
 public final class RunOptions {
@@ -129,6 +130,28 @@ public final class RunOptions {
      */
     public Set<String> tags() {
         return runTags;
+    }
+
+    /**
+     * Compares every setting.
+     *
+     * @param other The object to compare with
+     * @return Whether {@code other} is options with an equal timeout and equal tags
+     */
+    @Override
+    public boolean equals(@Nullable Object other) {
+        return other instanceof RunOptions that && Objects.equals(runTimeout, that.runTimeout)
+                && runTags.equals(that.runTags);
+    }
+
+    /**
+     * Combines the hash codes of every setting, consistently with {@link #equals(Object)}.
+     *
+     * @return The hash code
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(runTimeout, runTags);
     }
 
     /**

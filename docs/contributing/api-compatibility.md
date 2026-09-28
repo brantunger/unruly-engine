@@ -48,6 +48,10 @@ A change that stops earlier code compiling or linking against the new jar. Examp
 - A changed method of `Rule`. When you add a field to `Rule`, add it to the builder, `equals`, `hashCode` and
   `toString`; `Rule` has no public constructor to keep in step.
 
+The Javadoc promises that a field added to `RunOptions`, `RuleSetInfo` or `RunResult` joins `equals` (and, for
+`RunOptions`, `hashCode`), except `RunResult.startedAt()`, which `equals` leaves out. As with `Rule`, add such a
+field to `toString` too.
+
 Additions pass: new classes, new methods on a class, and `default` methods on an interface. The check compares
 members, not class-file versions, so `ClassFileVersionTest` separately checks that the published classes target
 Java 21.

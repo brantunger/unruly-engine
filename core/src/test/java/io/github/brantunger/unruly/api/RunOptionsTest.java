@@ -108,6 +108,33 @@ class RunOptionsTest {
     }
 
     @Test
+    @DisplayName("options with the same timeout and tags are equal, with the same hash code (#711)")
+    void equality() {
+        RunOptions options = RunOptions.withTimeoutOf(Duration.ofSeconds(1)).withTags(List.of("retail", "eu"));
+
+        assertEquals(options, options);
+        assertEquals(RunOptions.defaults().withTags(Set.of("eu", "retail")).withTimeout(Duration.ofSeconds(1)),
+                options, "built in another order");
+        assertEquals(RunOptions.defaults().withTags(Set.of("eu", "retail")).withTimeout(Duration.ofSeconds(1))
+                .hashCode(), options.hashCode());
+        assertEquals(RunOptions.withTimeoutOf(Duration.ofMillis(1000)), RunOptions.withTimeoutOf(Duration.ofSeconds(1)),
+                "the same duration, however it was written");
+        assertEquals(RunOptions.withTimeoutOf(Duration.ofMillis(1000)).hashCode(),
+                RunOptions.withTimeoutOf(Duration.ofSeconds(1)).hashCode());
+        assertEquals(RunOptions.defaults().withTags(Set.of("eu")).withTags(Set.of("uk")),
+                RunOptions.defaults().withTags(Set.of("uk")));
+        assertEquals(RunOptions.defaults().withTags(Set.of("uk")).hashCode(),
+                RunOptions.defaults().withTags(Set.of("eu")).withTags(Set.of("uk")).hashCode());
+        assertNotEquals(RunOptions.defaults().withTags(Set.of("eu", "retail")), options, "no timeout");
+        assertNotEquals(RunOptions.withTimeoutOf(Duration.ofSeconds(2)).withTags(Set.of("eu", "retail")), options);
+        assertNotEquals(RunOptions.withTimeoutOf(Duration.ofSeconds(1)).withTags(Set.of("eu")), options);
+        assertNotEquals(RunOptions.withTimeoutOf(Duration.ofSeconds(1)), options, "no tags");
+        // The options under test first: assertNotEquals calls equals on the value it's told not to expect.
+        assertNotEquals(options, null);
+        assertNotEquals(options, options.toString());
+    }
+
+    @Test
     @DisplayName("RunOptions is a final class, so a later release can add settings")
     void finalClass() {
         assertTrue(Modifier.isFinal(RunOptions.class.getModifiers()));
