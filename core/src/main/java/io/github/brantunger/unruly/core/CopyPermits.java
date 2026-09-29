@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
@@ -52,7 +53,8 @@ final class CopyPermits {
     }
 
     /**
-     * Returns the permits to take and release.
+     * Returns the permits to take and release. Only tests read them: a rule set takes a permit with
+     * {@link #tryTake()} or {@link #awaitPermit(long, Deadline)}.
      *
      * @return The semaphore
      */
@@ -61,12 +63,83 @@ final class CopyPermits {
     }
 
     /**
-     * Returns how many permits have been given back so far.
+     * Returns how many permits have been given back so far. Only tests read it: {@link #awaitPermit(long, Deadline)}
+     * reads the count itself.
      *
      * @return The count
      */
     long returned() {
         return givenBack.get();
+    }
+
+    /**
+     * Takes a permit if one is free, without waiting.
+     *
+     * @return {@code true} if a permit was taken, to give back with {@link #giveBack()}
+     */
+    boolean tryTake() {
+        return semaphore.tryAcquire();
+    }
+
+    /**
+     * Waits for a permit while copies are still being given back. A run that waits a whole {@code window} without one
+     * single permit coming back gives up: either every copy is held by a run that is itself waiting for this one, or
+     * the rules are so slow that an extra copy costs less than waiting. A run with a deadline never waits past it.
+     *
+     * @param window   How long to wait for progress, in milliseconds
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
+     * @return {@code true} if a permit was taken, to give back with {@link #giveBack()}; {@code false} if nothing came
+     *         back within one window
+     * @throws InterruptedException if the thread is interrupted while it waits
+     * @throws TimeoutException     if the deadline comes before a permit does
+     */
+    boolean awaitPermit(long window, Deadline deadline) throws InterruptedException, TimeoutException {
+        return awaitPermit(semaphore, givenBack::get, window, deadline);
+    }
+
+    /**
+     * Waits for one of {@code permits} while they're still being given back, as {@link #awaitPermit(long, Deadline)}
+     * describes. It takes the permits and their count rather than reading this engine's, so a test can drive the wait
+     * with permits of its own: it is a deliberate test seam, like
+     * {@link #awaitSlot(Semaphore, LongSupplier, long, Deadline)}.
+     *
+     * @param permits  The permits to wait for
+     * @param returned How many permits have been given back so far
+     * @param window   How long to wait for progress, in milliseconds
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
+     * @return {@code true} if a permit was taken, {@code false} if nothing came back within one window
+     * @throws InterruptedException if the thread is interrupted while it waits
+     * @throws TimeoutException     if the deadline comes before a permit does
+     */
+    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window, Deadline deadline)
+            throws InterruptedException, TimeoutException {
+        // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even when
+        // copies are free, and the run would fail saying every copy was in use when none was.
+        if (permits.tryAcquire()) {
+            return true;
+        }
+        long windowNanos = TimeUnit.MILLISECONDS.toNanos(window);
+        long seen = returned.getAsLong();
+        while (true) {
+            long left = deadline.nanosLeft();
+            if (left < windowNanos) {
+                // The deadline comes before the window ends, so the run waits only until then: a whole window never
+                // passes, and a run past its deadline makes no extra copy either. The wait is timed on nanoTime(), as
+                // the deadline is, so a wait that ends without a permit ends with the deadline passed.
+                if (permits.tryAcquire(Math.max(0, left), TimeUnit.NANOSECONDS)) {
+                    return true;
+                }
+                throw Cancellation.timedOut(deadline);
+            }
+            if (permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
+                return true;
+            }
+            long now = returned.getAsLong();
+            if (now == seen) {
+                return false;
+            }
+            seen = now;
+        }
     }
 
     /**
@@ -98,7 +171,8 @@ final class CopyPermits {
     /**
      * Waits for one of {@code slots} while they're still being given back, as {@link #awaitSlot(long, Deadline)}
      * describes. It takes the slots and their count rather than reading this engine's, so a test can drive the wait
-     * with slots of its own: it is a deliberate test seam, like {@link RuleSet#awaitPermit}.
+     * with slots of its own: it is a deliberate test seam, like
+     * {@link #awaitPermit(Semaphore, LongSupplier, long, Deadline)}.
      *
      * @param slots    The build slots to wait for
      * @param returned How many slots have been given back so far
