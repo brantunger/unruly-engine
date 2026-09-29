@@ -11,9 +11,12 @@ import org.mvel2.ErrorDetail;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.List;
+import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Compiles one rule list's MVEL expressions with the list's imports, and checks fact names against them.
@@ -175,10 +178,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * <p>
      * The position is that of the first {@code import} of the name in the text outside string literals and comments:
      * the name where it first follows {@code import} and any whitespace. The name's text in a string or a comment
-     * before it isn't taken for it, even after {@code import}, unless the scan reads a comment where MVEL reads none,
-     * as it does {@code /*}{@code /} (#747), and so finds no such {@code import}: then the first one in the text is
-     * taken, in a string or a comment or not. MVEL passes the name as a slice of the text, from just after the keyword
-     * and the characters it skips as whitespace, so that one is always found.
+     * before it isn't taken for it, even after {@code import}. The scan ends a comment where MVEL ends it, so
+     * {@code /*}{@code /} is a whole comment (#747), and MVEL passes the name as a slice of the text, from just after
+     * the keyword and the characters it skips as whitespace, so the {@code import} MVEL read is always found.
      * </p>
      *
      * <p>
@@ -191,25 +193,28 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * @return The exception to throw
      */
     private static InvalidExpressionException importTooLarge(String text, Imports.ImportTooLarge e) {
-        Matcher match = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")").matcher(text);
-        int at = -1;
+        // Where the scan reads code: a literal or a comment is skipped whole, as the check for assignments in a
+        // condition skips it. A comment that doesn't end takes the index to the end of the text, and a literal that
+        // doesn't end, past it.
+        BitSet code = new BitSet(text.length());
         int index = 0;
-        // A literal or a comment is skipped whole, as the check for assignments in a condition skips it. A comment
-        // that doesn't end takes the index to the end of the text, and a literal that doesn't end, past it.
-        while (at < 0 && index < text.length()) {
-            if (match.region(index, text.length()).lookingAt()) {
-                at = match.start(1);
-            } else {
-                index = switch (text.charAt(index)) {
-                    case '\'', '"' -> ConditionAssignments.endOfLiteral(text, index);
-                    case '/' -> ConditionAssignments.endOfSlash(text, index);
-                    default -> index + 1;
-                };
-            }
+        while (index < text.length()) {
+            code.set(index);
+            index = switch (text.charAt(index)) {
+                case '\'', '"' -> ConditionAssignments.endOfLiteral(text, index);
+                case '/' -> ConditionAssignments.endOfSlash(text, index);
+                default -> index + 1;
+            };
         }
-        if (at < 0) {
-            at = match.reset().results().findFirst().orElseThrow().start(1);
-        }
+        // MVEL passes the name as a slice of the text just after its import, so the pattern matches there, and that
+        // import is in code as MVEL reads it. The scan reads comments and literals as MVEL does (#747), so it finds
+        // MVEL's import in code. The first match in the text is the answer only if that ever failed, and is still a
+        // place in the text, so the position is always within it.
+        List<MatchResult> imports = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")")
+                .matcher(text).results().toList();
+        // The first in code, and only if there is none, the first of all: the stream reads the second part lazily.
+        int at = Stream.concat(imports.stream().filter(found -> code.get(found.start())), imports.stream())
+                .findFirst().orElseThrow().start(1);
         String before = text.substring(0, at);
         int line = 1 + (int) before.chars().filter(ch -> ch == NEW_LINE).count();
         int column = before.length() - (before.lastIndexOf(NEW_LINE) + 1) + 1;

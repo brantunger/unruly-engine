@@ -249,8 +249,9 @@ try {
 ```
 
 > [!IMPORTANT]
-> Wrap `load()`, not `run()`. The engine reads a context class loader in `build()`, `load()` and `validate()` only, so
-> a run never uses the one on its own thread to find your classes.
+> Wrap `load()`, not `run()`. The engine reads a context class loader in `build()`, `load()` and `validate()` only.
+> MVEL itself may still use the running thread's: it does for a class a rule creates with `new` that the loader
+> `load()` captured didn't find, such as a class defined at run time (below).
 
 - `validate(rules)` captures a loader the same way, on whichever thread calls it.
 - `build()` uses the **building** thread's context class loader, for the engine's languages and for an import that
@@ -259,10 +260,15 @@ try {
   [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language).
 - A thread with no context class loader leaves the engine using this library's own class loader.
 
-In MVEL, when the loading thread's loader is one of the JDK's own (the application or platform class loader), a
-package import finds only classes with a `.class` file. A class defined at run time, such as with Byte Buddy or
-`MethodHandles.Lookup.defineClass`, needs a class import instead, such as in `imports(...)`. Other loaders, such as
-Spring Boot's or an application server's, find it either way.
+In MVEL, with one of the JDK's own loaders (application or platform) on the loading thread, the loader `load()` captured
+finds by name only classes with a `.class` file. A class generated at run time fails `load()` when a rule imports it
+(`class not found`) or, with strong typing, names it in full (`could not resolve class`); a package import skips it.
+Import the class in `imports(...)`. Without strong typing, `new com.example.Gen()` still works, found with the
+running thread's context class loader. Spring Boot's and other loaders find it anyway.
+
+MVEL also asks the loading thread's context class loader for `java.lang.Object$<name>` for each distinct property name a
+rule reads through a value it types as `Object`, such as `java.lang.Object$total` for `order.total`; a JDK loader keeps
+a lock object for each ([#807](https://github.com/brantunger/unruly-engine/issues/807)).
 
 In MVEL, setting the context class loader around `run()` instead leaves the rule failing, and closing the engine
 doesn't release the loader `load()` captured: MVEL's dynamic optimizer holds it, and holds the first loader to

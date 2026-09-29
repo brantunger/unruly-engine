@@ -136,7 +136,9 @@ final class ConditionAssignments {
     }
 
     /**
-     * Skips a {@code //} or {@code /*} comment; a lone {@code /} is just division.
+     * Skips a {@code //} or {@code /*} comment; a lone {@code /} is just division. A block comment ends at the first
+     * {@code *}{@code /} from its opening {@code *}, as MVEL ends it, so {@code /*}{@code /} is a whole, empty
+     * comment (#747).
      *
      * @param text  The text
      * @param index Where the {@code /} is
@@ -145,7 +147,7 @@ final class ConditionAssignments {
     static int endOfSlash(String text, int index) {
         return switch (charAt(text, index + 1)) {
             case '/' -> endOf(text, "\n", index + 2);
-            case '*' -> endOf(text, "*/", index + 2);
+            case '*' -> endOf(text, "*/", index + 1);
             default -> index + 1;
         };
     }

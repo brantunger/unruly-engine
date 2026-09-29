@@ -161,6 +161,25 @@ class ConditionAssignmentRejectionTest {
         assertEquals(Map.of("score", 11), engine.run(new FactMap<>()));
     }
 
+    // #747: the check read /*/ as a comment that never ends, so load() accepted the condition, and each run set the
+    // fact through its setter before the condition returned true.
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', value = {
+            "/*/ claim.approved = true; true   | 20",
+            "(/*/ claim.approved = true; true) | 21",
+    })
+    @DisplayName("an assignment after /*/, which MVEL reads as a whole comment, is rejected")
+    void assignmentAfterSlashStarSlashRejected(String condition, int column) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
+                List.of(rule("comment", condition, "output.put('fired', true)"))));
+
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 1,
+                column, "contains an assignment ('=')")), ex.issues());
+    }
+
     /** The check reads the condition's text, so it can't tell that a method call changes a fact. */
     @Test
     @DisplayName("known limitation: a write made by calling a method is not detected")

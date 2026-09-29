@@ -76,7 +76,8 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * @return A new configuration, used by one compilation only
      */
     ParserConfiguration newConfiguration() {
-        // The class loader is an ExactNameClassLoader, which asks its parent, the application's, for every class.
+        // The class loader is an ExactNameClassLoader, which asks its parent, the application's, for every class a
+        // name may be.
         SharedLookupConfiguration configuration = new SharedLookupConfiguration(notClasses,
                 isJdkLoader(classLoader.getParent()));
         configuration.setClassLoader(classLoader);
@@ -190,8 +191,9 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * <p>
          * So a class defined at run time in one of the JDK's loaders, such as with
          * {@code MethodHandles.Lookup.defineClass} by a code generator, which has no class file, isn't found through
-         * an import of its package: it is imported by its class, with an import of the class itself, which finds it
-         * as before.
+         * an import of its package: it is imported by its class, with an import of the class itself in the engine,
+         * which finds it as before. An inline import of it in the rule's text doesn't (see
+         * {@link ExactNameClassLoader}).
          * </p>
          *
          * <p>

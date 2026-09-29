@@ -262,8 +262,8 @@ language. A rule list without rules checks fact names against the default langua
 ### The engine classes are no longer public
 
 `StatelessRulesEngine`, `StatefulRulesEngine` and `AbstractRulesEngine` in `io.github.brantunger.unruly.core` are no
-longer public, their constructors are removed, and so is `AbstractRulesEngine.JIT_PROPERTY`, which 1.x already
-ignored. The `core` package is internal and no longer in the Javadoc.
+longer public, their constructors are removed, and so is `AbstractRulesEngine.JIT_PROPERTY`, which 1.1.19 and later
+already ignored. The `core` package is internal and no longer in the Javadoc.
 
 | 1.x | 2.0 |
 | --- | --- |
@@ -271,7 +271,7 @@ ignored. The `core` package is internal and no longer in the Javadoc.
 | `new StatefulRulesEngine<>(Decision::new, 64)` | `RulesEngineBuilder.allMatches(Decision::new).maxCopies(64).build()` |
 | `StatelessRulesEngine<Decision> engine`, or `instanceof StatefulRulesEngine` | `RulesEngine<Decision> engine`; the match policy isn't a type you can test for |
 | `class MyEngine extends AbstractRulesEngine<Decision>` | Implement `RulesEngine`; see [Migrating a language or an engine](migrating-to-2-implementers.md#-if-you-implement-rulesengine) |
-| `AbstractRulesEngine.JIT_PROPERTY` | Delete it; it had no effect |
+| `AbstractRulesEngine.JIT_PROPERTY` | Delete it; it had no effect from 1.1.19 |
 
 ## 📜 Rules are immutable and need a name
 
