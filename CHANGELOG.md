@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.12.8](https://github.com/brantunger/unruly-engine/compare/v2.12.7...v2.12.8) (2026-09-29)
+
+
+### Bug Fixes
+
+* skip a class loader that sees another copy of the library, and keep failing loudly on a broken listing ([#820](https://github.com/brantunger/unruly-engine/issues/820)) ([12d9bf2](https://github.com/brantunger/unruly-engine/commit/12d9bf279fd8098851d6aa21128fcfbe90b946d9))
+
 ## [2.12.7](https://github.com/brantunger/unruly-engine/compare/v2.12.6...v2.12.7) (2026-09-29)
 
 
