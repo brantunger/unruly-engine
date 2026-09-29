@@ -64,6 +64,12 @@ it says `a nested run() failed: <innermost failure>` or `a nested load() failed:
 The thread remembers 32 failures, and 32 fatal `Error`s, until its outermost run, `load()`, `validate()` or `close()`
 ends; then, or past 32, one thrown on may be logged again.
 
+A run on another thread, such as one an action hands to an executor and waits for, isn't nested: it logs its failure on
+its own thread. A rule's failure, which `run()` throws as a `RuleExecutionException`, isn't logged again. What `run()`
+throws as is, a fatal `Error` or an `IllegalArgumentException` for rejected facts, for example, is logged again as the
+waiting rule's failure:
+`Failed to execute action for rule 'outer-rule': java.lang.InternalError: inner fatal`.
+
 An exception of your own with a message of its own, wrapped around a nested failure, is news, so it's logged: at ERROR
 for a rule's failure, the output supplier's, a language's or a rule that fails to compile in `load()`, and at WARN for
 a listener or a `close()`.

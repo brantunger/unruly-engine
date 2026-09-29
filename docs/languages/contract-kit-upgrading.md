@@ -88,10 +88,10 @@ Skipped, `nestedRunInsideAnAction` counts as aborted, as `usableFactNamesAccepte
 every check found to succeed sees one more aborted check: override `putFactProperty()`, or count aborted checks as
 passing. Like `sessionClosedWhileAnotherRuns`, it also needs a second session on a thread whose first is still in use.
 
-## 🔼 Upgrading from 2.8.8
+## 🔼 Upgrading from 2.8.9 or earlier
 
-The kit after 2.8.8 has two more checks, both on `Session.close()` and neither skippable, so a language that passed
-the 2.8.8 kit may now fail. Each new failure is a real defect:
+The kit in 2.8.10 has two more checks, both on `Session.close()` and neither skippable, so a language that passed
+the 2.8.9 kit may now fail. Each new failure is a real defect:
 
 | Check | Fails a `Session.close()` that | Then |
 | --- | --- | --- |

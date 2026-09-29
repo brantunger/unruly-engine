@@ -58,13 +58,13 @@ sequenceDiagram
     end
 ```
 
-A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A
-failure that belongs to no rule — a fact name no language can refer to, an output supplier that throws, more than one
-rule matching on a unique-match engine, an interrupt or a passed deadline while the run waits for a compiled copy of
-the rules or reads them again after a reload or a `close()`, an interrupt while it waits for a build slot, or a run
-stopped because its thread was interrupted or it passed its deadline between rules — reaches `onRunError` only,
-because no rule was involved. The rule a stopped run would have gone on to gets no callback either: the check runs
-before `beforeEvaluate` and `beforeExecute`, so there is no open callback for `onError` to close.
+A run's callbacks are paired like a rule's: `beforeRun` is followed by exactly one `afterRun` or `onRunError`. A failure
+that belongs to no rule — a fact name no language can refer to, an output supplier that throws, more than one rule
+matching on a unique-match engine, an interrupt or a passed deadline while the run waits for a compiled copy of the
+rules or reads them again after a reload or a `close()`, an interrupt while it waits for a build slot, or a run stopped
+because its thread was interrupted or it passed its deadline between rules — reaches `onRunError` only. The rule a
+stopped run would have gone on to gets no callback either: the check runs before `beforeEvaluate` and `beforeExecute`,
+so there is no open callback for `onError` to close.
 
 A run stopped while a condition or action was running is different: that rule's callback is closed with `onError`,
 whose exception has no rule name and an `InterruptedException` or `TimeoutException` cause, so don't count it as a
@@ -77,8 +77,8 @@ that rule's failure, named and at ERROR, even once the run must stop; see
 [Stopping a run](stopping-runs.md#-what-listeners-see) explains where a run stops.
 
 `onRunError`'s `error` is a `RuleExecutionException`, or an `IllegalArgumentException` for a fact the engine or a
-language rejects. When `run()` rethrows a fatal `Error`, such as an `OutOfMemoryError`, `error` is a
-`RuleExecutionException` that carries it, not the error `run()` throws.
+language rejects. When `run()` rethrows a fatal `Error`, `error` is a `RuleExecutionException` that carries it, not the
+error `run()` throws.
 
 A run of the same engine started on the same thread, from inside an action or a listener, has the run around it as
 its `parent()`, so nested runs stay apart without a `ThreadLocal`. A run of another engine started there has no
@@ -307,9 +307,10 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. MVE
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
 | `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` (JUL) | `WARNING` | A failed method call, often with a fact value unescaped; dropped during the engine's MVEL rules |
 
-Each failure is logged where it happens, before it's thrown. A nested run's failure is logged once, unless wrapped
-with its own message ([Nested runs](nested-runs.md#-what-is-logged)). Misuse isn't logged: a `null` argument, `run()`
-before `load()`, or an invalid builder setting, such as an import that is neither a class nor a package name.
+Each failure is logged where it happens, before it's thrown. A nested run's failure is logged once, unless wrapped with
+its own message; one on another thread may be logged twice ([Nested runs](nested-runs.md#-what-is-logged)). Misuse isn't
+logged: a `null` argument, `run()` before `load()`, or an invalid builder setting, such as an import that is neither a
+class nor a package name.
 
 The engine already logs each failure at ERROR, so if you also log the exception you catch, you'll see it twice. Lower
 the engine logger's level to handle logging yourself.

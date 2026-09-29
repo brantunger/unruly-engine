@@ -23,10 +23,13 @@ package io.github.brantunger.unruly.core;
  * </p>
  *
  * <p>
- * The record is per thread: a nested run on another thread, such as one an action hands to an executor, logs what it
- * throws on that thread, and the run that waits for it logs it again. It's forgotten when the outermost run on the
- * thread ends, because the JVM throws the {@link OutOfMemoryError} it keeps ready for when it has no memory left again
- * and again, and a later run must log it again, as it must an exception kept from an earlier run and thrown again.
+ * The record is per thread: a run on another thread, such as one an action hands to an executor, isn't nested. It
+ * logs what it throws on that thread, and the run that waits for it logs it again unless it's that run's
+ * {@link ReportedFailure}, which {@link Failures#nestedRunFailure} finds on any thread: a fatal {@link Error}, or an
+ * exception thrown as is, such as for facts that run rejected, is logged twice. It's forgotten when the outermost run
+ * on the thread ends, because the JVM throws the {@link OutOfMemoryError} it keeps ready for when it has no memory
+ * left again and again, and a later run must log it again, as it must an exception kept from an earlier run and
+ * thrown again.
  * Only a nested run or {@code load()} records a failure it logged, other than a fatal error: what the outermost one
  * logs goes to its caller, and no code of the engine's catches it on the way, so the outermost records nothing and
  * creates nothing to record it in. The record holds the last {@value #MAX_LOGGED} of them, and apart from them the last
