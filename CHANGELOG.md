@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.13.2](https://github.com/brantunger/unruly-engine/compare/v2.13.1...v2.13.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* compile MVEL rules with the rule list's loader as the thread's context loader, so MVEL leaves no lock per property name ([#828](https://github.com/brantunger/unruly-engine/issues/828)) ([f9ca296](https://github.com/brantunger/unruly-engine/commit/f9ca296ce50b24574eb0b9b41471f7f27e85872f))
+
 ## [2.13.1](https://github.com/brantunger/unruly-engine/compare/v2.13.0...v2.13.1) (2026-09-29)
 
 
