@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.12.7](https://github.com/brantunger/unruly-engine/compare/v2.12.6...v2.12.7) (2026-09-29)
+
+
+### Bug Fixes
+
+* report a map fact that throws as a failure, not as a missing property ([#818](https://github.com/brantunger/unruly-engine/issues/818)) ([479627e](https://github.com/brantunger/unruly-engine/commit/479627ef5e3dba48f7f24f4f155a334a7f7c048b))
+
 ## [2.12.6](https://github.com/brantunger/unruly-engine/compare/v2.12.5...v2.12.6) (2026-09-29)
 
 
