@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -66,13 +67,12 @@ class SecondFatalFromOnErrorTest {
         }
     }
 
-    private record Outcome(Throwable thrown, RuntimeException runError, String logs) {
-    }
-
-    /** Runs a rule with two listeners: the first may fail in beforeEvaluate, the second's onError throws. */
-    private static Outcome run(String condition, boolean fatalBefore, Error ruleError,
-                               Function<RuleExecutionException, Error> onError) {
-        Recorder recorder = new Recorder();
+    /**
+     * Runs a rule with two listeners: the first may fail in beforeEvaluate, the second's onError throws. The third,
+     * {@code recorder}, records what onRunError got.
+     */
+    private static Outcome<Error> run(Recorder recorder, String condition, boolean fatalBefore, Error ruleError,
+                                      Function<RuleExecutionException, Error> onError) {
         RuleListener first = new RuleListener() {
             @Override
             public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
@@ -91,16 +91,13 @@ class SecondFatalFromOnErrorTest {
                 .language(new ToyExpressionLanguage())
                 .listener(first).listener(closer).listener(recorder).build();
         engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action("put k 1").build()));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(Error.class,
-                () -> engine.run(new FactMap<>(new Fact<Object>("boom", new Boom(ruleError)))))));
-        return new Outcome(thrown.get(), recorder.runError.get(), logs);
+        return capture(Error.class, () -> engine.run(new FactMap<>(new Fact<Object>("boom", new Boom(ruleError)))));
     }
 
-    private static void assertKept(Outcome outcome, Error first, OutOfMemoryError second) {
+    private static void assertKept(Outcome<Error> outcome, Recorder recorder, Error first, OutOfMemoryError second) {
         assertSame(first, outcome.thrown(), "run() must rethrow the failure's own error");
-        assertTrue(Arrays.asList(outcome.runError().getSuppressed()).contains(second),
-                "onRunError's exception doesn't keep the listener's error: " + outcome.runError());
+        assertTrue(Arrays.asList(recorder.runError.get().getSuppressed()).contains(second),
+                "onRunError's exception doesn't keep the listener's error: " + recorder.runError.get());
         assertArrayEquals(new Throwable[] {second}, first.getSuppressed(), "the rethrown error doesn't keep it");
         assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, "
                 + "kept on the failure: java.lang.OutOfMemoryError: second from onError"), outcome.logs());
@@ -111,10 +108,11 @@ class SecondFatalFromOnErrorTest {
     void ruleError() {
         OutOfMemoryError ruleError = new OutOfMemoryError("rule oom");
         OutOfMemoryError second = new OutOfMemoryError("second from onError");
+        Recorder recorder = new Recorder();
 
-        Outcome outcome = run("boom.x", false, ruleError, error -> second);
+        Outcome<Error> outcome = run(recorder, "boom.x", false, ruleError, error -> second);
 
-        assertKept(outcome, ruleError, second);
+        assertKept(outcome, recorder, ruleError, second);
     }
 
     @Test
@@ -122,8 +120,9 @@ class SecondFatalFromOnErrorTest {
     void hiddenCauseLogged() {
         OutOfMemoryError second = new OutOfMemoryError();
         second.initCause(new IOException("disk full"));
+        Recorder recorder = new Recorder();
 
-        Outcome outcome = run("boom.x", false, new OutOfMemoryError("rule oom"), error -> second);
+        Outcome<Error> outcome = run(recorder, "boom.x", false, new OutOfMemoryError("rule oom"), error -> second);
 
         assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, "
                 + "kept on the failure: java.lang.OutOfMemoryError (caused by java.io.IOException: disk full)"),
@@ -134,11 +133,12 @@ class SecondFatalFromOnErrorTest {
     @DisplayName("when a before* callback's error is fatal")
     void beforeCallbackError() {
         OutOfMemoryError second = new OutOfMemoryError("second from onError");
+        Recorder recorder = new Recorder();
 
-        Outcome outcome = run("true", true, new OutOfMemoryError("rule oom"), error -> second);
+        Outcome<Error> outcome = run(recorder, "true", true, new OutOfMemoryError("rule oom"), error -> second);
 
         assertEquals("before oom", outcome.thrown().getMessage());
-        assertKept(outcome, (Error) outcome.thrown(), second);
+        assertKept(outcome, recorder, outcome.thrown(), second);
     }
 
     @Test
@@ -177,13 +177,14 @@ class SecondFatalFromOnErrorTest {
     @DisplayName("a listener that wraps the failure's own error is logged, and keeps nothing")
     void wrappedRethrow() {
         OutOfMemoryError ruleError = new OutOfMemoryError("rule oom");
-        Outcome outcome = run("boom.x", false, ruleError, error -> {
+        Recorder recorder = new Recorder();
+        Outcome<Error> outcome = run(recorder, "boom.x", false, ruleError, error -> {
             throw new IllegalStateException("could not close the span", error);
         });
 
         assertSame(ruleError, outcome.thrown());
         assertEquals(0, ruleError.getSuppressed().length, ruleError.toString());
-        assertEquals(0, outcome.runError().getSuppressed().length, outcome.runError().toString());
+        assertEquals(0, recorder.runError.get().getSuppressed().length, recorder.runError.get().toString());
         assertTrue(outcome.logs().contains("Listener threw exception in onError: java.lang.IllegalStateException: "
                 + "could not close the span"), outcome.logs());
     }
@@ -194,14 +195,15 @@ class SecondFatalFromOnErrorTest {
     void fatalWrappingTheRuleErrorNotKeptOnIt() {
         OutOfMemoryError ruleError = new OutOfMemoryError("rule oom");
         InternalError wrapping = new InternalError("second from onError", ruleError);
+        Recorder recorder = new Recorder();
 
-        Outcome outcome = run("boom.x", false, ruleError, error -> wrapping);
+        Outcome<Error> outcome = run(recorder, "boom.x", false, ruleError, error -> wrapping);
 
         assertSame(ruleError, outcome.thrown());
         assertFalse(Arrays.asList(ruleError.getSuppressed()).contains(wrapping), "kept on the error it wraps");
         assertNoLoop(ruleError);
-        assertTrue(Arrays.asList(outcome.runError().getSuppressed()).contains(wrapping),
-                "onRunError's exception doesn't keep the listener's error: " + outcome.runError());
+        assertTrue(Arrays.asList(recorder.runError.get().getSuppressed()).contains(wrapping),
+                "onRunError's exception doesn't keep the listener's error: " + recorder.runError.get());
     }
 
     /** Fails if a throwable reached from {@code thrown} through causes and suppressed exceptions leads back to it. */
@@ -224,18 +226,21 @@ class SecondFatalFromOnErrorTest {
     @DisplayName("a listener that rethrows the failure's own error, or the exception it got, adds nothing")
     void sameErrorRethrown() {
         OutOfMemoryError ruleError = new OutOfMemoryError("rule oom");
-        Outcome outcome = run("boom.x", false, ruleError, error -> ruleError);
-        Outcome rethrewException = run("boom.x", false, new OutOfMemoryError("rule oom"), error -> {
-            throw error;
-        });
+        Recorder recorder = new Recorder();
+        Outcome<Error> outcome = run(recorder, "boom.x", false, ruleError, error -> ruleError);
+        Recorder rethrewRecorder = new Recorder();
+        Outcome<Error> rethrewException = run(rethrewRecorder, "boom.x", false, new OutOfMemoryError("rule oom"),
+                error -> {
+                    throw error;
+                });
 
         assertFalse(rethrewException.logs().contains("Listener threw exception in onError"),
                 rethrewException.logs());
-        assertEquals(0, rethrewException.runError().getSuppressed().length,
-                rethrewException.runError().toString());
+        assertEquals(0, rethrewRecorder.runError.get().getSuppressed().length,
+                rethrewRecorder.runError.get().toString());
 
         assertSame(ruleError, outcome.thrown());
-        assertFalse(Arrays.asList(outcome.runError().getSuppressed()).contains(ruleError), outcome.runError()
+        assertFalse(Arrays.asList(recorder.runError.get().getSuppressed()).contains(ruleError), recorder.runError.get()
                 .toString());
         assertEquals(0, ruleError.getSuppressed().length, "kept on itself: " + ruleError);
         assertFalse(outcome.logs().contains("Listener threw exception in onError"), outcome.logs());

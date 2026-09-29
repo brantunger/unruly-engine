@@ -7,18 +7,17 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -33,19 +32,17 @@ class NameEscapingTest {
     private final RulesEngine<Map<String, Object>> engine =
             RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
 
-    /** The exception {@code action} throws, and the engine's log lines while it ran. */
-    private record Failure(Throwable thrown, List<String> logLines) {
+    /**
+     * Returns the lines logged while {@code failure} happened, split at every line break {@code \R} matches, not only
+     * at the ones {@link String#lines()} splits at.
+     */
+    private static List<String> logLines(Outcome<RuntimeException> failure) {
+        return Arrays.asList(failure.logs().split("\\R"));
     }
 
-    private static Failure failure(Executable action) {
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(RuntimeException.class, action)));
-        return new Failure(thrown.get(), Arrays.asList(logs.split("\\R")));
-    }
-
-    private static void assertNoForgedLine(Failure failure) {
-        assertTrue(failure.logLines().stream().noneMatch(line -> line.startsWith("[main] INFO com.example")),
-                String.join("\n", failure.logLines()));
+    private static void assertNoForgedLine(Outcome<RuntimeException> failure) {
+        assertTrue(logLines(failure).stream().noneMatch(line -> line.startsWith("[main] INFO com.example")),
+                String.join("\n", logLines(failure)));
     }
 
     @Test
@@ -56,14 +53,14 @@ class NameEscapingTest {
             FactStore<Object> facts = new FactMap<>();
             facts.setValue("a" + lineBreak + FORGED, 1);
 
-            Failure failure = failure(() -> engine.run(facts));
+            Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(facts));
 
             String escaped = lineBreak.equals("\n") ? "a\\n" : "a\\r\\n";
             assertEquals("'" + escaped + FORGED + "' is not a valid fact name: rules can only refer to a fact named "
                     + "with a Java identifier", failure.thrown().getMessage());
-            assertTrue(failure.logLines().stream()
+            assertTrue(logLines(failure).stream()
                             .anyMatch(line -> line.endsWith("ERROR " + ENGINE_LOGGER + failure.thrown().getMessage())),
-                    String.join("\n", failure.logLines()));
+                    String.join("\n", logLines(failure)));
             assertNoForgedLine(failure);
         }
     }
@@ -75,7 +72,7 @@ class NameEscapingTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("-".repeat(10_000), 1);
 
-        Failure failure = failure(() -> engine.run(facts));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(facts));
 
         assertEquals("'" + "-".repeat(Failures.MAX_NAME_LENGTH) + "... (9800 more characters)' is not a valid fact "
                 + "name: rules can only refer to a fact named with a Java identifier", failure.thrown().getMessage());
@@ -86,25 +83,25 @@ class NameEscapingTest {
     void ruleNameWithLineBreak() {
         engine.load(List.of(Rule.builder().ruleName("bad\n" + FORGED).condition("missing > 1").action("x")
                 .build()));
-        Failure run = failure(() -> engine.run(new FactMap<>()));
+        Outcome<RuntimeException> run = capture(RuntimeException.class, () -> engine.run(new FactMap<>()));
         assertTrue(run.thrown().getMessage().startsWith("Failed to evaluate condition for rule 'bad\\n" + FORGED
                 + "': "), run.thrown().getMessage());
         assertNoForgedLine(run);
 
-        Failure duplicate = failure(() -> engine.load(List.of(
+        Outcome<RuntimeException> duplicate = capture(RuntimeException.class, () -> engine.load(List.of(
                 Rule.builder().ruleName("dup\r\n" + FORGED).condition("true").action("x").build(),
                 Rule.builder().ruleName("dup\r\n" + FORGED).condition("true").action("x").build())));
         assertInstanceOf(RuleCompilationException.class, duplicate.thrown());
         assertEquals("Duplicate rule name 'dup\\r\\n" + FORGED + "'", duplicate.thrown().getMessage());
         assertNoForgedLine(duplicate);
 
-        Failure blank = failure(() -> engine.load(List.of(
+        Outcome<RuntimeException> blank = capture(RuntimeException.class, () -> engine.load(List.of(
                 Rule.builder().ruleName("blank\n" + FORGED).condition(" ").action("x").build())));
         assertEquals("Rule 'blank\\n" + FORGED + "' has a blank condition expression",
                 blank.thrown().getMessage());
 
-        Failure language = failure(() -> engine.load(List.of(Rule.builder().ruleName("r")
-                .language("lang\n" + FORGED).condition("true").action("x").build())));
+        Outcome<RuntimeException> language = capture(RuntimeException.class, () -> engine.load(List.of(
+                Rule.builder().ruleName("r").language("lang\n" + FORGED).condition("true").action("x").build())));
         assertTrue(language.thrown().getMessage().startsWith("Rule 'r' is written in 'lang\\n" + FORGED + "', "),
                 language.thrown().getMessage());
         assertNoForgedLine(language);
@@ -130,7 +127,7 @@ class NameEscapingTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("a" + (char) 0xd800, 1);
 
-        Failure failure = failure(() -> engine.run(facts));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(facts));
 
         assertEquals("'a\\ud800' is not a valid fact name: rules can only refer to a fact named with a Java "
                 + "identifier", failure.thrown().getMessage());
@@ -141,7 +138,7 @@ class NameEscapingTest {
     void exceptionKeepsRawName() {
         engine.load(List.of(Rule.builder().ruleName("raw\nname").condition("missing > 1").action("x").build()));
 
-        Failure failure = failure(() -> engine.run(new FactMap<>()));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(new FactMap<>()));
 
         assertEquals("raw\nname", assertInstanceOf(RuleExecutionException.class, failure.thrown()).getRuleName());
     }

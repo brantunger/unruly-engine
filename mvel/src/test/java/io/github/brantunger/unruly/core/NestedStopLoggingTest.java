@@ -15,6 +15,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -37,7 +38,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -146,9 +147,10 @@ class NestedStopLoggingTest {
     /** Runs {@code outer}, which must stop, and returns the log lines it wrote about stopping. */
     private static List<String> stopLines(RulesEngine<Map<String, Object>> outer, FactStore<Object> facts,
                                           AtomicReference<RuleExecutionException> thrown) {
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class, () -> outer.run(facts))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class, () -> outer.run(facts));
+        thrown.set(outcome.thrown());
         Thread.interrupted();
-        return logs.lines().filter(line -> STOP_LINE.matcher(line).find()).toList();
+        return outcome.logs().lines().filter(line -> STOP_LINE.matcher(line).find()).toList();
     }
 
     private static int count(List<String> lines, String text) {
@@ -313,14 +315,14 @@ class NestedStopLoggingTest {
     void nestedFailureThenOuterStop() {
         RulesEngine<Map<String, Object>> inner = engine(RulesEngineBuilder.firstMatch(HashMap::new),
                 rule("broken", "missing.value > 1", "output.put('x', 1)"));
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class,
-                () -> outer().run(nested(inner, false, true)))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> outer().run(nested(inner, false, true)));
 
-        assertInstanceOf(TimeoutException.class, thrown.get().getCause());
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Failed to evaluate condition for rule 'broken'"), logs);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "run() passed its deadline of "), logs);
-        assertTrue(logs.contains(" during rule 'outer'"), logs);
+        assertInstanceOf(TimeoutException.class, outcome.thrown().getCause());
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Failed to evaluate condition for rule 'broken'"),
+                outcome.logs());
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "run() passed its deadline of "), outcome.logs());
+        assertTrue(outcome.logs().contains(" during rule 'outer'"), outcome.logs());
     }
 
     @Test

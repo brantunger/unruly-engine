@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,12 +27,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -373,18 +374,16 @@ public class CalledCodeCauseTest {
     void nestedRunFailureInAReflectiveCall() {
         RulesEngine<Map<String, Object>> engine = mixedEngine();
         RulesEngine<Map<String, Object>> inner = engine("true", "output.put('v', code.value)");
-        AtomicReference<RuleExecutionException> nested = new AtomicReference<>();
-        logsOf(() -> nested.set(assertThrows(RuleExecutionException.class,
-                () -> inner.run(facts(new IllegalStateException("inner failed"))))));
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
+        RuleExecutionException nested = capture(RuleExecutionException.class,
+                () -> inner.run(facts(new IllegalStateException("inner failed")))).thrown();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class,
-                () -> engine.run(facts(nested.get())))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> engine.run(facts(nested)));
 
-        assertSame(nested.get(), thrown.get().getCause());
-        assertEquals("Failed to execute action for rule 'r': a nested run() failed: " + nested.get().getMessage(),
-                thrown.get().getMessage());
-        assertFalse(logs.contains("ERROR"), logs);
+        assertSame(nested, outcome.thrown().getCause());
+        assertEquals("Failed to execute action for rule 'r': a nested run() failed: " + nested.getMessage(),
+                outcome.thrown().getMessage());
+        assertFalse(outcome.logs().contains("ERROR"), outcome.logs());
     }
 
     @Test
@@ -396,13 +395,12 @@ public class CalledCodeCauseTest {
         RulesEngine<Map<String, Object>> inner = engine("true", "output.put('v', 1)");
         FactStore<Object> badName = new FactMap<>();
         badName.setValue("bad name", 1);
-        AtomicReference<IllegalArgumentException> rejected = new AtomicReference<>();
-        logsOf(() -> rejected.set(assertThrows(IllegalArgumentException.class, () -> inner.run(badName))));
+        IllegalArgumentException rejected = capture(IllegalArgumentException.class, () -> inner.run(badName)).thrown();
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class,
-                () -> logsOf(() -> engine.run(facts(rejected.get()))));
+                () -> logsOf(() -> engine.run(facts(rejected))));
 
-        assertSame(rejected.get(), thrown.getCause());
+        assertSame(rejected, thrown.getCause());
     }
 
     @Test

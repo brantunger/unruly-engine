@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("each language gets one session per copy of the rules, and the engine closes what it no longer needs")
@@ -323,11 +324,11 @@ class LanguageSessionsTest {
 
         String logs = logsOf(() -> engine.load(List.of(rule("b", "confined"))));
 
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - The 'confined' expression language failed "
-                + "to close a session: "), logs);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The 'confined' expression language failed to close a"
+                + " session: "), logs);
         assertTrue(logs.contains("session stuck"), logs);
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - The 'confined' expression language failed "
-                + "to close its compiler: "), logs);
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The 'confined' expression language failed to close its"
+                + " compiler: "), logs);
         assertTrue(logs.contains("compiler stuck"), logs);
         assertEquals(Map.of("b", 2), engine.run(new FactMap<>()));
     }

@@ -11,6 +11,7 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import io.github.brantunger.unruly.core.PlainThrowableTest.Recorder;
 import io.github.brantunger.unruly.core.PlainThrowableTest.ThrowingLanguage;
 import org.junit.jupiter.api.DisplayName;
@@ -28,12 +29,13 @@ import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
+import static io.github.brantunger.unruly.core.EngineLogs.thrownBy;
 import static io.github.brantunger.unruly.core.PlainThrowableTest.EVERY_CALLBACK;
 import static io.github.brantunger.unruly.core.PlainThrowableTest.FAILED_ACTION;
 import static io.github.brantunger.unruly.core.PlainThrowableTest.builder;
 import static io.github.brantunger.unruly.core.PlainThrowableTest.loaded;
 import static io.github.brantunger.unruly.core.PlainThrowableTest.rules;
-import static io.github.brantunger.unruly.core.PlainThrowableTest.thrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -171,14 +173,13 @@ class UnreadableMessageTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         RulesEngine<Map<String, Object>> engine = loaded(builder(new StubExpressionLanguage())
                 .listener(new Recorder("A", calls, callback, new Nasty())).listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertNull(thrown.get(), "the run goes on");
+        assertNull(outcome.thrown(), "the run goes on");
         assertEquals(EVERY_CALLBACK, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback + ": "
-                + nasty()), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback + ": "
+                + nasty()), outcome.logs());
     }
 
     @Test
@@ -191,14 +192,14 @@ class UnreadableMessageTest {
         });
         RulesEngine<Map<String, Object>> engine = loaded(builder(language)
                 .listener(new Recorder("A", calls, "onError", new Nasty())).listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("Failed to execute action for rule 'r': the action failed", failure.getMessage());
         assertEquals(FAILED_ACTION, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError: " + nasty()), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError: " + nasty()),
+                outcome.logs());
     }
 
     @Test
@@ -208,14 +209,13 @@ class UnreadableMessageTest {
         RulesEngine<Map<String, Object>> engine = loaded(builder(new StubExpressionLanguage())
                 .listener(new Recorder("A", calls, "beforeRun", new IllegalStateException("readable", new Nasty())))
                 .listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertNull(thrown.get(), "the run goes on");
+        assertNull(outcome.thrown(), "the run goes on");
         assertEquals(EVERY_CALLBACK, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun:"
-                + " java.lang.IllegalStateException: readable"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun:"
+                + " java.lang.IllegalStateException: readable"), outcome.logs());
     }
 
     @Test
@@ -226,17 +226,16 @@ class UnreadableMessageTest {
         language.conditionFailure = nasty;
         List<String> calls = new CopyOnWriteArrayList<>();
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         String msg = "Failed to evaluate condition for rule 'r': " + nasty();
         assertEquals(msg, failure.getMessage());
         assertEquals("r", failure.getRuleName());
         assertTrue(failure.getCause() == nasty, "the cause is what the condition threw");
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.onError", "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + msg), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + msg), outcome.logs());
     }
 
     @Test
@@ -247,17 +246,16 @@ class UnreadableMessageTest {
             throw new Nasty();
         });
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         String msg = "Failed to execute action for rule 'r': " + nasty();
         assertEquals(msg, failure.getMessage());
         assertEquals("r", failure.getRuleName());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.beforeExecute", "A.onError",
                 "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + msg), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + msg), outcome.logs());
     }
 
     @Test
@@ -267,15 +265,14 @@ class UnreadableMessageTest {
         ThrowingLanguage language = new ThrowingLanguage();
         language.conditionFailure = new IllegalStateException("readable", new Nasty());
         RulesEngine<Map<String, Object>> engine = loaded(builder(language));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         String msg = "Failed to evaluate condition for rule 'r': readable (caused by " + Nasty.class.getName()
                 + ": (message unavailable: java.lang.NullPointerException))";
         assertEquals(msg, failure.getMessage());
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + msg), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + msg), outcome.logs());
     }
 
     @Test
@@ -286,14 +283,14 @@ class UnreadableMessageTest {
             throw new Nasty();
         }).language(new StubExpressionLanguage()).defaultLanguage(StubExpressionLanguage.LANGUAGE_NAME)
                 .listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("Output factory threw " + nasty(), failure.getMessage());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Output factory threw " + nasty()), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Output factory threw " + nasty()),
+                outcome.logs());
     }
 
     @Test
@@ -303,15 +300,14 @@ class UnreadableMessageTest {
         language.compileFailure = new Nasty();
         RulesEngine<Map<String, Object>> engine = builder(language).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Outcome<Throwable> outcome = capture(() -> engine.load(rules));
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, outcome.thrown());
         String msg = "Condition for rule 'r' failed to compile: " + nasty();
         assertEquals(msg, failure.getMessage());
         assertEquals("r", failure.getRuleName());
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + msg), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + msg), outcome.logs());
     }
 
     @Test
@@ -321,11 +317,10 @@ class UnreadableMessageTest {
         language.compileFailure = new NastyInvalidExpression();
         RulesEngine<Map<String, Object>> engine = builder(language).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("Condition for rule 'r' was rejected by its expression language" + UNAVAILABLE,
                 failure.getMessage());
     }
@@ -340,11 +335,10 @@ class UnreadableMessageTest {
         });
         RulesEngine<Map<String, Object>> engine = builder(language).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("Condition for rule 'r' is bad", failure.getMessage());
         assertEquals(List.of(), failure.issues());
     }
@@ -357,11 +351,10 @@ class UnreadableMessageTest {
         language.compileFailure = new UnreadableIssues(() -> null);
         RulesEngine<Map<String, Object>> engine = builder(language).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("Condition for rule 'r' is bad", failure.getMessage());
         assertEquals(List.of(), failure.issues());
     }
@@ -408,14 +401,13 @@ class UnreadableMessageTest {
         engine.load(List.of(Rule.builder().ruleName("r1").condition("c").action("a").language("bad").build(),
                 Rule.builder().ruleName("r2").condition("c").action("a").language("good").build()));
         engine.run(new FactMap<>());
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Outcome<Throwable> outcome = capture(engine::close);
 
-        assertNull(thrown.get(), "close() returns");
+        assertNull(outcome.thrown(), "close() returns");
         assertEquals(List.of("bad", "good"), closed);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The 'bad' expression language failed to close a session: "
-                + nasty()), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The 'bad' expression language failed to close a"
+                + " session: " + nasty()), outcome.logs());
     }
 
     @Test
@@ -424,11 +416,10 @@ class UnreadableMessageTest {
         ThrowingLanguage language = new ThrowingLanguage();
         language.conditionFailure = new UnreadableCause();
         RulesEngine<Map<String, Object>> engine = loaded(builder(language));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown);
         assertEquals("Failed to evaluate condition for rule 'r': readable", failure.getMessage());
     }
 
@@ -441,11 +432,10 @@ class UnreadableMessageTest {
             throw new UnreadableTarget();
         };
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).outputWriter(writer));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown);
         assertEquals("Failed to set 'x' on the output for rule 'r': " + UnreadableTarget.class.getName(),
                 failure.getMessage());
         assertInstanceOf(UnreadableTarget.class, failure.getCause());
@@ -464,17 +454,16 @@ class UnreadableMessageTest {
         Recorder second = new Recorder("B", calls);
         RulesEngine<Map<String, Object>> engine = loaded(builder(language)
                 .listener(new Recorder("A", calls, "onError", fromListener)).listener(second));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, outcome.thrown());
         assertEquals(FAILED_ACTION, calls);
         Throwable[] kept = second.runError.get().getSuppressed();
         assertEquals(1, kept.length);
         assertTrue(kept[0] == fromListener, "the listener's error is kept on the failure");
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, kept on the failure: "
-                + NastyOutOfMemoryError.class.getName() + UNAVAILABLE), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, kept on the"
+                + " failure: " + NastyOutOfMemoryError.class.getName() + UNAVAILABLE), outcome.logs());
     }
 
     @Test
@@ -625,14 +614,13 @@ class UnreadableMessageTest {
                 .listener(new Recorder("A", calls, "beforeRun", first))
                 .listener(new Recorder("B", calls, "beforeRun", new FatalText(fromReading)))
                 .listener(new Recorder("C", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertSame(first, thrown.get());
+        assertSame(first, outcome.thrown());
         assertTrue(calls.contains("C.beforeRun"), calls.toString());
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun: "
-                + FatalText.class.getName() + " (message unavailable: java.lang.OutOfMemoryError)"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun: "
+                + FatalText.class.getName() + " (message unavailable: java.lang.OutOfMemoryError)"), outcome.logs());
     }
 
     @Test
@@ -644,14 +632,13 @@ class UnreadableMessageTest {
         RulesEngine<Map<String, Object>> engine = loaded(builder(new StubExpressionLanguage())
                 .listener(new Recorder("A", calls, "beforeRun", new FatalText(fromReading)))
                 .listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertEquals(null, thrown.get() == null ? null : thrown.get().getClass().getName(), "the run goes on");
+        assertEquals(null, outcome.thrown() == null ? null : outcome.thrown().getClass().getName(), "the run goes on");
         assertEquals(EVERY_CALLBACK, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun: "
-                + FatalText.class.getName() + " (message unavailable: java.lang.OutOfMemoryError)"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun: "
+                + FatalText.class.getName() + " (message unavailable: java.lang.OutOfMemoryError)"), outcome.logs());
     }
 
     @Test
@@ -663,14 +650,14 @@ class UnreadableMessageTest {
                 .listener(new Recorder("A", calls, "beforeRun",
                         new FatalText(new IllegalStateException("reading", new OutOfMemoryError("wrapped")))))
                 .listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertEquals(null, thrown.get() == null ? null : thrown.get().getClass().getName(), "the run goes on");
+        assertEquals(null, outcome.thrown() == null ? null : outcome.thrown().getClass().getName(), "the run goes on");
         assertEquals(EVERY_CALLBACK, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun: "
-                + FatalText.class.getName() + " (message unavailable: java.lang.IllegalStateException)"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun: "
+                + FatalText.class.getName() + " (message unavailable: java.lang.IllegalStateException)"),
+                outcome.logs());
     }
 
     @Test
@@ -685,11 +672,10 @@ class UnreadableMessageTest {
         Recorder second = new Recorder("B", calls);
         RulesEngine<Map<String, Object>> engine = loaded(builder(language)
                 .listener(new Recorder("A", calls, "onError", new FatalText(fatal))).listener(second));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(FAILED_ACTION, calls);
         assertEquals(0, second.runError.get().getSuppressed().length);
     }
@@ -705,15 +691,14 @@ class UnreadableMessageTest {
         engine.load(List.of(Rule.builder().ruleName("r1").condition("c").action("a").language("nasty").build(),
                 Rule.builder().ruleName("r2").condition("c").action("a").language("good").build()));
         engine.run(new FactMap<>());
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Outcome<Throwable> outcome = capture(engine::close);
 
-        assertEquals(null, thrown.get() == null ? null : thrown.get().getClass().getName(), "close() returns");
+        assertEquals(null, outcome.thrown() == null ? null : outcome.thrown().getClass().getName(), "close() returns");
         assertEquals(List.of("nasty", "good"), closed);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The 'nasty' expression language failed to close a"
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The 'nasty' expression language failed to close a"
                 + " session: " + FatalText.class.getName() + " (message unavailable: java.lang.OutOfMemoryError)"),
-                logs);
+                outcome.logs());
     }
 
     @Test
@@ -730,11 +715,10 @@ class UnreadableMessageTest {
                 Rule.builder().ruleName("r2").condition("c").action("a").language("nasty").build(),
                 Rule.builder().ruleName("r3").condition("c").action("a").language("good").build()));
         engine.run(new FactMap<>());
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
-        assertSame(first, thrown.get());
+        assertSame(first, thrown);
         assertEquals(List.of("oom", "nasty", "good"), closed);
     }
 
@@ -752,18 +736,17 @@ class UnreadableMessageTest {
         Recorder second = new Recorder("B", calls);
         RulesEngine<Map<String, Object>> engine = loaded(builder(language)
                 .listener(new Recorder("A", calls, "onError", fromListener)).listener(second));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, outcome.thrown());
         assertEquals(FAILED_ACTION, calls);
         Throwable[] kept = second.runError.get().getSuppressed();
         assertEquals(1, kept.length);
         assertTrue(kept[0] == fromListener, "the listener's error is kept on the failure");
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, kept on the failure: "
-                + FatalTextOutOfMemoryError.class.getName() + " (message unavailable: java.lang.OutOfMemoryError)"),
-                logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in onError, kept on the"
+                + " failure: " + FatalTextOutOfMemoryError.class.getName()
+                + " (message unavailable: java.lang.OutOfMemoryError)"), outcome.logs());
     }
 
     @Test
@@ -774,17 +757,15 @@ class UnreadableMessageTest {
         Error closeFatal = new Error("preallocated", null, false, false) {
         };
         FatalText failure = new FatalText(new OutOfMemoryError("reading"));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
         AtomicReference<Error> result = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(
-                () -> result.set(Failures.fatalInsteadOf(failure, closeFatal)))));
+        Outcome<Throwable> outcome = capture(() -> result.set(Failures.fatalInsteadOf(failure, closeFatal)));
 
-        assertEquals(null, thrown.get() == null ? null : thrown.get().getClass().getName());
+        assertEquals(null, outcome.thrown() == null ? null : outcome.thrown().getClass().getName());
         assertSame(closeFatal, result.get());
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A failure was replaced by the fatal error " + closeFatal
-                + ", which can't carry it as a suppressed exception: " + FatalText.class.getName()
-                + " (message unavailable: java.lang.OutOfMemoryError)"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "A failure was replaced by the fatal error "
+                + closeFatal + ", which can't carry it as a suppressed exception: " + FatalText.class.getName()
+                + " (message unavailable: java.lang.OutOfMemoryError)"), outcome.logs());
     }
 
     @Test

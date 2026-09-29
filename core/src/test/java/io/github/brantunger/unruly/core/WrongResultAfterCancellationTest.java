@@ -14,6 +14,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -26,7 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -107,12 +108,11 @@ class WrongResultAfterCancellationTest {
                 onError.set(error);
             }
         });
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(
-                assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> engine.run(new FactMap<>()));
 
-        RuleExecutionException stop = thrown.get();
+        RuleExecutionException stop = outcome.thrown();
         assertInstanceOf(TimeoutException.class, stop.getCause(), "the run didn't stop");
         assertNull(stop.getRuleName());
         assertEquals(1, stop.getSuppressed().length, "the wrong result isn't kept");
@@ -121,7 +121,7 @@ class WrongResultAfterCancellationTest {
         assertEquals(rule.getRuleName(), kept.getRuleName());
         assertEquals(kind, kept.getExpressionKind());
         assertSame(stop, onError.get(), "the rule's callback wasn't closed with the stop");
-        assertFalse(logs.contains("ERROR"), logs);
+        assertFalse(outcome.logs().contains("ERROR"), outcome.logs());
     }
 
     @Test

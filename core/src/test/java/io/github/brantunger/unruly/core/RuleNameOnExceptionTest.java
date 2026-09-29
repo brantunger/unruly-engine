@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("rule exceptions carry the name of the rule that failed")
@@ -41,9 +41,7 @@ class RuleNameOnExceptionTest {
 
     /** Runs {@code action}, which must throw {@code type}, without printing the engine's ERROR log. */
     private static <T extends Throwable> T thrown(Class<T> type, Executable action) {
-        AtomicReference<T> thrown = new AtomicReference<>();
-        logsOf(() -> thrown.set(assertThrows(type, action)));
-        return thrown.get();
+        return capture(type, action).thrown();
     }
 
     /** A language that fails to create a session, so the first run fails before it evaluates any rule. */

@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,8 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
-import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -49,12 +49,6 @@ class LoggedFailuresTest {
         Field logged = runs.getClass().getDeclaredField("logged");
         logged.setAccessible(true);
         return logged.get(runs);
-    }
-
-    private static List<String> errors(String logs) {
-        String prefix = "ERROR " + ENGINE_LOGGER;
-        return logs.lines().filter(line -> line.contains(prefix))
-                .map(line -> line.substring(line.indexOf(prefix) + prefix.length())).toList();
     }
 
     private static RulesEngine<Map<String, Object>> plain(String ruleName, RuleListener... listeners) {
@@ -105,9 +99,10 @@ class LoggedFailuresTest {
             }
         });
 
-        String logs = logsOf(() -> assertThrows(IllegalArgumentException.class, () -> runWithOutputFact(engine)));
+        Outcome<IllegalArgumentException> outcome = capture(IllegalArgumentException.class,
+                () -> runWithOutputFact(engine));
 
-        assertEquals(List.of(OUTPUT_REJECTED), errors(logs), logs);
+        assertEquals(List.of(OUTPUT_REJECTED), outcome.lines("ERROR"), outcome.logs());
         assertNull(ring.get());
     }
 
@@ -156,21 +151,21 @@ class LoggedFailuresTest {
                     throw "the oldest".equals(which) ? rejections.get(0) : rejections.get(rejections.size() - 1);
                 })).build();
         engine.load(List.of(Rule.builder().ruleName("outer-rule").condition("c").action("a").build()));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuntimeException.class, () -> engine.run(new FactMap<>()))));
+        Outcome<RuntimeException> outcome = capture(RuntimeException.class, () -> engine.run(new FactMap<>()));
 
-        List<String> errors = errors(logs);
-        assertEquals(LoggedFailures.MAX_LOGGED + 1, errors.stream().filter(OUTPUT_REJECTED::equals).count(), logs);
+        List<String> errors = outcome.lines("ERROR");
+        assertEquals(LoggedFailures.MAX_LOGGED + 1, errors.stream().filter(OUTPUT_REJECTED::equals).count(),
+                outcome.logs());
         String outer = "Failed to execute action for rule 'outer-rule': ";
         if ("the oldest".equals(which)) {
             // Logged twice, by the nested run and by the rule, but not left out.
-            assertEquals(outer + OUTPUT_REJECTED, thrown.get().getMessage());
-            assertEquals(outer + OUTPUT_REJECTED, errors.get(errors.size() - 1), logs);
-            assertEquals(LoggedFailures.MAX_LOGGED + 2, errors.size(), logs);
+            assertEquals(outer + OUTPUT_REJECTED, outcome.thrown().getMessage());
+            assertEquals(outer + OUTPUT_REJECTED, errors.get(errors.size() - 1), outcome.logs());
+            assertEquals(LoggedFailures.MAX_LOGGED + 2, errors.size(), outcome.logs());
         } else {
-            assertEquals(outer + "a nested run() failed: " + OUTPUT_REJECTED, thrown.get().getMessage());
-            assertEquals(LoggedFailures.MAX_LOGGED + 1, errors.size(), logs);
+            assertEquals(outer + "a nested run() failed: " + OUTPUT_REJECTED, outcome.thrown().getMessage());
+            assertEquals(LoggedFailures.MAX_LOGGED + 1, errors.size(), outcome.logs());
         }
         // Nothing is left behind on the thread.
         assertNull(LoggedFailures.find(rejections.get(rejections.size() - 1)));

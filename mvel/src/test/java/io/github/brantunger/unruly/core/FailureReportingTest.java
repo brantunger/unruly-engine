@@ -19,6 +19,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -37,6 +38,7 @@ import java.util.function.BiFunction;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -141,15 +143,14 @@ class FailureReportingTest {
         RulesEngine<Map<String, Object>> engine = builder(new ToyLanguage((context, expression) -> {
             throw new InvalidExpressionException("bad\n" + FORGED);
         }, DONE)).build();
-        AtomicReference<RuleCompilationException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleCompilationException.class,
-                () -> engine.load(rule("r1")))));
+        Outcome<RuleCompilationException> outcome = capture(RuleCompilationException.class,
+                () -> engine.load(rule("r1")));
 
-        assertFalse(thrown.get().getMessage().contains("\n"), thrown.get().getMessage());
-        assertTrue(thrown.get().getMessage().contains("bad\\n" + FORGED), thrown.get().getMessage());
-        assertFalse(logs.contains("\n" + FORGED), logs);
-        assertEquals("bad\n" + FORGED, thrown.get().getCause().getMessage(),
+        assertFalse(outcome.thrown().getMessage().contains("\n"), outcome.thrown().getMessage());
+        assertTrue(outcome.thrown().getMessage().contains("bad\\n" + FORGED), outcome.thrown().getMessage());
+        assertFalse(outcome.logs().contains("\n" + FORGED), outcome.logs());
+        assertEquals("bad\n" + FORGED, outcome.thrown().getCause().getMessage(),
                 "what the language threw keeps the text it wrote");
     }
 
@@ -175,14 +176,13 @@ class FailureReportingTest {
             throw new IllegalStateException("no connection\n" + FORGED);
         }).language(conditions((context, session) -> true)).defaultLanguage("toy").build();
         engine.load(rule("r"));
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class,
-                () -> engine.run(new FactMap<>()))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> engine.run(new FactMap<>()));
 
         assertEquals("Output factory threw java.lang.IllegalStateException: no connection\\n" + FORGED,
-                thrown.get().getMessage());
-        assertFalse(logs.contains("\n" + FORGED), logs);
+                outcome.thrown().getMessage());
+        assertFalse(outcome.logs().contains("\n" + FORGED), outcome.logs());
     }
 
     // ---- #358: only a failure an engine reported counts as a nested run's ----
@@ -194,14 +194,13 @@ class FailureReportingTest {
             throw new RuleExecutionException("own failure\n" + FORGED);
         })).build();
         engine.load(rule("r"));
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class,
-                () -> engine.run(new FactMap<>()))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> engine.run(new FactMap<>()));
 
-        String message = thrown.get().getMessage();
+        String message = outcome.thrown().getMessage();
         assertEquals("Failed to evaluate condition for rule 'r': own failure\\n" + FORGED, message);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + message), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + message), outcome.logs());
     }
 
     @Test
@@ -216,14 +215,13 @@ class FailureReportingTest {
             return true;
         })).build();
         outer.load(rule("outer"));
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class,
-                () -> outer.run(new FactMap<>()))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> outer.run(new FactMap<>()));
 
         assertEquals("Failed to evaluate condition for rule 'outer': a nested run() failed: "
-                + "Failed to evaluate condition for rule 'inner': inner boom", thrown.get().getMessage());
-        assertEquals(1, logs.split("ERROR " + ENGINE_LOGGER, -1).length - 1, logs);
+                + "Failed to evaluate condition for rule 'inner': inner boom", outcome.thrown().getMessage());
+        assertEquals(1, outcome.logs().split("ERROR " + ENGINE_LOGGER, -1).length - 1, outcome.logs());
     }
 
     // ---- #359: every listener's run is closed, naming the rule a fatal error came from ----

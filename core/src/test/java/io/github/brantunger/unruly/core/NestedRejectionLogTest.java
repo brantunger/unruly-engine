@@ -13,6 +13,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -29,6 +30,7 @@ import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -117,38 +119,12 @@ class NestedRejectionLogTest {
         };
     }
 
-    /**
-     * Returns the messages the engine logged at one level, in order.
-     *
-     * @param logs  What was logged
-     * @param level {@code ERROR} or {@code WARN}
-     * @return The messages, without the thread, level and logger
-     */
-    private static List<String> logged(String logs, String level) {
-        String prefix = level + " " + ENGINE_LOGGER;
-        return logs.lines().filter(line -> line.contains(prefix))
-                .map(line -> line.substring(line.indexOf(prefix) + prefix.length())).toList();
+    private static Outcome<Throwable> failed(Executable run) {
+        return capture(Throwable.class, run);
     }
 
-    /** What a run threw, and what the engine logged while it ran. */
-    private record Outcome(Throwable thrown, String logs) {
-        List<String> errors() {
-            return logged(logs, "ERROR");
-        }
-
-        List<String> warnings() {
-            return logged(logs, "WARN");
-        }
-    }
-
-    private static Outcome failed(Executable run) {
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(Throwable.class, run)));
-        return new Outcome(thrown.get(), logs);
-    }
-
-    private static Outcome returned(Runnable run) {
-        return new Outcome(null, logsOf(run));
+    private static Outcome<Throwable> returned(Runnable run) {
+        return new Outcome<>(null, logsOf(run));
     }
 
     /**
@@ -157,9 +133,9 @@ class NestedRejectionLogTest {
      *
      * @return What the outer run threw
      */
-    private static Throwable assertFailed(Outcome outcome, String message, String... logged) {
+    private static Throwable assertFailed(Outcome<Throwable> outcome, String message, String... logged) {
         assertEquals(message, outcome.thrown().getMessage(), outcome.logs());
-        assertEquals(List.of(logged), outcome.errors(), outcome.logs());
+        assertEquals(List.of(logged), outcome.lines("ERROR"), outcome.logs());
         return outcome.thrown();
     }
 
@@ -289,7 +265,7 @@ class NestedRejectionLogTest {
         String first = "Action for rule 'r1' failed to compile: no compile";
         String second = "Action for rule 'r2' failed to compile: no compile";
 
-        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
 
         if (two) {
             assertFailed(outcome, OUTER_ACTION + NESTED_LOAD + "2 rules failed to compile: " + first + "; " + second,
@@ -435,10 +411,10 @@ class NestedRejectionLogTest {
         }));
         String failure = run ? OUTPUT_REJECTED : DUPLICATE;
 
-        Outcome outcome = returned(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> outcome = returned(() -> engine.run(new FactMap<>()));
 
-        assertEquals(List.of(failure), outcome.errors(), outcome.logs());
-        assertEquals(List.of(), outcome.warnings(), outcome.logs());
+        assertEquals(List.of(failure), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
         assertTrue(outcome.logs().contains("DEBUG " + ENGINE_LOGGER + "Listener threw exception in beforeRun"),
                 outcome.logs());
     }
@@ -454,10 +430,10 @@ class NestedRejectionLogTest {
         });
         RulesEngine<Map<String, Object>> engine = outer(() -> runWithOutputFact(nested));
 
-        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
 
         assertEquals(List.of("Listener threw exception in onRunError: " + IllegalArgumentException.class.getName()
-                + ": " + OUTPUT_REJECTED), outcome.warnings(), outcome.logs());
+                + ": " + OUTPUT_REJECTED), outcome.lines("WARN"), outcome.logs());
     }
 
     // Two runs deep
@@ -478,7 +454,7 @@ class NestedRejectionLogTest {
         RulesEngine<Map<String, Object>> engine = outer(() -> mid.run(new FactMap<>()));
         String failure = run ? OUTPUT_REJECTED : DUPLICATE;
 
-        Outcome outcome = failed(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
 
         assertFailed(outcome, OUTER_ACTION + (run ? NESTED_RUN : NESTED_LOAD) + failure, failure);
         assertFalse(outcome.logs().contains("mid-rule"), outcome.logs());
@@ -658,10 +634,10 @@ class NestedRejectionLogTest {
             }
         });
 
-        Outcome first = returned(() -> engine.run(new FactMap<>()));
-        Outcome second = failed(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> first = returned(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> second = failed(() -> engine.run(new FactMap<>()));
 
-        assertEquals(List.of(OUTPUT_REJECTED), first.errors(), first.logs());
+        assertEquals(List.of(OUTPUT_REJECTED), first.lines("ERROR"), first.logs());
         assertFailed(second, OUTER_ACTION + OUTPUT_REJECTED, OUTER_ACTION + OUTPUT_REJECTED);
     }
 
@@ -675,9 +651,9 @@ class NestedRejectionLogTest {
         RulesEngine<Map<String, Object>> engine = outer(() -> problems.set(
                 other.validate(List.of(rule("dup"), rule("dup")))));
 
-        Outcome outcome = returned(() -> engine.run(new FactMap<>()));
+        Outcome<Throwable> outcome = returned(() -> engine.run(new FactMap<>()));
 
-        assertEquals(List.of(), outcome.errors(), outcome.logs());
+        assertEquals(List.of(), outcome.lines("ERROR"), outcome.logs());
         assertEquals(List.of(DUPLICATE), problems.get().stream().map(Throwable::getMessage).toList());
     }
 
@@ -707,8 +683,8 @@ class NestedRejectionLogTest {
     @Test
     @DisplayName("a top-level run() that rejects its facts, and a top-level load() that fails, log it once, as before")
     void topLevelUnchanged() {
-        Outcome run = failed(() -> runWithOutputFact(plain("inner-rule")));
-        Outcome load = failed(() -> loadDuplicates(unloaded()));
+        Outcome<Throwable> run = failed(() -> runWithOutputFact(plain("inner-rule")));
+        Outcome<Throwable> load = failed(() -> loadDuplicates(unloaded()));
 
         assertInstanceOf(IllegalArgumentException.class, assertFailed(run, OUTPUT_REJECTED, OUTPUT_REJECTED));
         assertInstanceOf(RuleCompilationException.class, assertFailed(load, DUPLICATE, DUPLICATE));

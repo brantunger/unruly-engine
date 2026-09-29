@@ -23,9 +23,9 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -43,6 +43,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
+import static io.github.brantunger.unruly.core.EngineLogs.thrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -231,14 +233,13 @@ class PlainThrowableTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         RulesEngine<Map<String, Object>> engine = loaded(builder(new StubExpressionLanguage())
                 .listener(new Recorder("A", calls, callback, raw)).listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        assertNull(thrown.get(), "the run goes on");
+        assertNull(outcome.thrown(), "the run goes on");
         assertEquals(EVERY_CALLBACK, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback
-                + ": java.lang.Throwable: raw"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback
+                + ": java.lang.Throwable: raw"), outcome.logs());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -253,15 +254,14 @@ class PlainThrowableTest {
         });
         RulesEngine<Map<String, Object>> engine = loaded(builder(language)
                 .listener(new Recorder("A", calls, callback, raw)).listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("r", failure.getRuleName(), "the run's own failure, not what the listener threw");
         assertEquals(FAILED_ACTION, calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback
-                + ": java.lang.Throwable: raw"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in " + callback
+                + ": java.lang.Throwable: raw"), outcome.logs());
     }
 
     @Test
@@ -273,11 +273,10 @@ class PlainThrowableTest {
         RulesEngine<Map<String, Object>> engine = loaded(builder(new StubExpressionLanguage())
                 .listener(new Recorder("A", calls, "afterExecute", new Throwable("raw", fatal)))
                 .listener(new Recorder("B", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(List.of("A.beforeRun", "B.beforeRun", "A.beforeEvaluate", "B.beforeEvaluate", "A.afterEvaluate",
                 "B.afterEvaluate", "A.beforeExecute", "B.beforeExecute", "A.afterExecute", "B.afterExecute",
                 "A.onRunError", "B.onRunError"), calls);
@@ -292,18 +291,18 @@ class PlainThrowableTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).listener(listener));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("Failed to evaluate condition for rule 'r': raw", failure.getMessage());
         assertEquals("r", failure.getRuleName());
         assertEquals(ExpressionKind.CONDITION, failure.getExpressionKind());
         assertSame(raw, failure.getCause());
         assertSame(failure, listener.runError.get());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.onError", "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Failed to evaluate condition for rule 'r': raw"), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Failed to evaluate condition for rule 'r': raw"),
+                outcome.logs());
     }
 
     @Test
@@ -316,17 +315,17 @@ class PlainThrowableTest {
             return ActionResult.done();
         });
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("Failed to execute action for rule 'r': raw", failure.getMessage());
         assertEquals(ExpressionKind.ACTION, failure.getExpressionKind());
         assertSame(raw, failure.getCause());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.beforeExecute", "A.onError",
                 "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Failed to execute action for rule 'r': raw"), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Failed to execute action for rule 'r': raw"),
+                outcome.logs());
     }
 
     @Test
@@ -340,11 +339,10 @@ class PlainThrowableTest {
             return ActionResult.done();
         });
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(0, fatal.getSuppressed().length);
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.beforeExecute", "A.onError",
                 "A.onRunError"), calls);
@@ -361,26 +359,26 @@ class PlainThrowableTest {
             return ActionResult.done();
         });
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs;
+        Outcome<Throwable> outcome;
         boolean interrupted;
 
         try {
-            logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+            outcome = capture(() -> engine.run(new FactMap<>()));
         } finally {
             // Cleared for the tests after this one, whatever happened.
             interrupted = Thread.interrupted();
         }
 
         assertTrue(interrupted, "the thread's interrupt status");
-        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("run() was interrupted during rule 'r'", stop.getMessage());
         assertNull(stop.getRuleName(), "a stop names no rule");
         assertInstanceOf(InterruptedException.class, stop.getCause());
         assertArrayEquals(new Throwable[] {raw}, stop.getSuppressed());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.beforeExecute", "A.onError",
                 "A.onRunError"), calls);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "run() was interrupted during rule 'r'"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "run() was interrupted during rule 'r'"),
+                outcome.logs());
     }
 
     @Test
@@ -392,15 +390,15 @@ class PlainThrowableTest {
             sneakyThrow(raw);
             return new HashMap<>();
         }).language(new StubExpressionLanguage()).defaultLanguage(LANGUAGE).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("Output factory threw java.lang.Throwable: raw", failure.getMessage());
         assertSame(raw, failure.getCause());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Output factory threw java.lang.Throwable: raw"), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Output factory threw java.lang.Throwable: raw"),
+                outcome.logs());
     }
 
     @Test
@@ -413,17 +411,16 @@ class PlainThrowableTest {
         OutputWriter<Object> writer = (output, property, value) -> sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = loaded(builder(language).outputWriter(writer)
                 .listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("Failed to set 'x' on the output for rule 'r': raw", failure.getMessage());
         assertSame(raw, failure.getCause());
         assertEquals(List.of("A.beforeRun", "A.beforeEvaluate", "A.afterEvaluate", "A.beforeExecute", "A.onError",
                 "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Failed to set 'x' on the output for rule 'r': raw"),
-                logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Failed to set 'x' on the output for rule 'r':"
+                + " raw"), outcome.logs());
     }
 
     @Test
@@ -433,16 +430,15 @@ class PlainThrowableTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         RulesEngine<Map<String, Object>> engine = loaded(builder(new StubExpressionLanguage()
                 .checkFactName(name -> sneakyThrow(raw))).listener(new Recorder("A", calls)));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(oneFact()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(oneFact()));
 
-        IllegalArgumentException failure = assertInstanceOf(IllegalArgumentException.class, thrown.get());
+        IllegalArgumentException failure = assertInstanceOf(IllegalArgumentException.class, outcome.thrown());
         String msg = "The '" + LANGUAGE + "' expression language failed to check fact name 'f': raw";
         assertEquals(msg, failure.getMessage());
         assertSame(raw, failure.getCause());
         assertEquals(List.of("A.beforeRun", "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + msg), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + msg), outcome.logs());
     }
 
     @Test
@@ -452,11 +448,10 @@ class PlainThrowableTest {
         RulesEngine<Map<String, Object>> engine = builder(new StubExpressionLanguage()
                 .checkFactName(name -> sneakyThrow(raw))).fact("f", Integer.class).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("Declared fact 'f' can't be used: The '" + LANGUAGE + "' expression language failed to check"
                 + " fact name 'f': raw", failure.getMessage());
         assertSame(raw, failure.getCause().getCause());
@@ -470,15 +465,15 @@ class PlainThrowableTest {
         language.compileFailure = raw;
         RulesEngine<Map<String, Object>> engine = builder(language).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Outcome<Throwable> outcome = capture(() -> engine.load(rules));
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, outcome.thrown());
         assertEquals("Condition for rule 'r' failed to compile: raw", failure.getMessage());
         assertEquals("r", failure.getRuleName());
         assertSame(raw, failure.getCause());
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Condition for rule 'r' failed to compile: raw"), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Condition for rule 'r' failed to compile: raw"),
+                outcome.logs());
     }
 
     @Test
@@ -489,11 +484,10 @@ class PlainThrowableTest {
         language.warmUpFailure = raw;
         RulesEngine<Map<String, Object>> engine = builder(language).copiesAtLoad(1).build();
         List<Rule> rules = rules();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException failure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("The '" + LANGUAGE + "' expression language failed to warm up a session: raw",
                 failure.getMessage());
         assertSame(raw, failure.getCause());
@@ -549,16 +543,16 @@ class PlainThrowableTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
         AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
         assertEquals("The run failed with java.lang.Throwable: raw", failure.getMessage());
         assertSame(raw, failure.getCause());
         assertSame(failure, listener.runError.get(), "the failure onRunError got is the one thrown");
         assertEquals(List.of("A.beforeRun", "A.onRunError"), calls);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "The run failed with java.lang.Throwable: raw"), logs);
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "The run failed with java.lang.Throwable: raw"),
+                outcome.logs());
     }
 
     @Test
@@ -569,18 +563,18 @@ class PlainThrowableTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
         AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        Throwable thrown;
         boolean interrupted;
 
         try {
-            logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+            thrown = capture(() -> engine.run(new FactMap<>())).thrown();
         } finally {
             // Cleared for the tests after this one, whatever happened.
             interrupted = Thread.interrupted();
         }
 
         assertTrue(interrupted, "the interrupt among the causes was swallowed");
-        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, thrown);
         assertSame(raw, failure.getCause());
         assertEquals(List.of("A.beforeRun", "A.onRunError"), calls);
     }
@@ -594,11 +588,10 @@ class PlainThrowableTest {
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
         AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(0, fatal.getSuppressed().length);
         assertEquals(List.of("A.beforeRun", "A.onRunError"), calls);
         assertSame(raw, listener.runError.get().getCause());
@@ -612,11 +605,10 @@ class PlainThrowableTest {
         OutOfMemoryError listenerFatal = new OutOfMemoryError("onRunError");
         Recorder listener = new Recorder("A", new CopyOnWriteArrayList<>(), "onRunError", listenerFatal);
         AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(listenerFatal, thrown.get());
+        assertSame(listenerFatal, thrown);
         assertArrayEquals(new Throwable[] {listener.runError.get()}, listenerFatal.getSuppressed());
         assertSame(raw, listener.runError.get().getCause());
     }
@@ -629,11 +621,10 @@ class PlainThrowableTest {
         OutOfMemoryError listenerFatal = new OutOfMemoryError("onRunError");
         Recorder listener = new Recorder("A", new CopyOnWriteArrayList<>(), "onRunError", listenerFatal);
         AbstractRulesEngine<String> engine = engineWhoseRunsThrow(new Throwable("raw", fatal), listener);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(listenerFatal, thrown.get());
+        assertSame(listenerFatal, thrown);
         assertArrayEquals(new Throwable[] {fatal}, listenerFatal.getSuppressed());
     }
 
@@ -662,19 +653,6 @@ class PlainThrowableTest {
         };
         engine.load(List.of());
         return engine;
-    }
-
-    /**
-     * Returns what {@code action} throws, or {@code null} if it throws nothing. Not {@code assertThrows()}, which
-     * rethrows an {@link OutOfMemoryError} it didn't expect, and so would stop the test JVM rather than fail the test.
-     */
-    static Throwable thrownBy(Executable action) {
-        try {
-            action.execute();
-        } catch (Throwable t) {
-            return t;
-        }
-        return null;
     }
 
     private static void await(CountDownLatch latch) {

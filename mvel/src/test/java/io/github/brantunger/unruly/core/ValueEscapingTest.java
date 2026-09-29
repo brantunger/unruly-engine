@@ -14,6 +14,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,7 @@ import java.util.logging.Logger;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -206,14 +208,14 @@ public class ValueEscapingTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("ssn", "1\n" + FORGED);
 
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(RuntimeException.class, () -> engine.run(facts))));
+        Outcome<RuntimeException> outcome = capture(RuntimeException.class, () -> engine.run(facts));
 
-        String message = thrown.get().getMessage();
+        String message = outcome.thrown().getMessage();
         assertFalse(message.contains("\n"), "the engine's own message still carries a line break: " + message);
         assertTrue(message.contains("\\n" + FORGED), message);
-        assertTrue(lines(logs).stream().anyMatch(line -> line.contains("ERROR " + ENGINE_LOGGER + message)), logs);
-        assertNoForgedLine(logs);
+        assertTrue(lines(outcome.logs()).stream().anyMatch(line -> line.contains("ERROR " + ENGINE_LOGGER + message)),
+                outcome.logs());
+        assertNoForgedLine(outcome.logs());
     }
 
     @Test
@@ -258,16 +260,15 @@ public class ValueEscapingTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("a\n" + FORGED, 1);
 
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(IllegalArgumentException.class, () -> engine.run(facts))));
+        Outcome<IllegalArgumentException> outcome = capture(IllegalArgumentException.class, () -> engine.run(facts));
 
-        assertTrue(lines(logs).stream()
+        assertTrue(lines(outcome.logs()).stream()
                         .anyMatch(line -> line.contains("ERROR " + ENGINE_LOGGER + "'a\\n" + FORGED
                                 + "' is not a valid picky fact name")),
-                logs);
-        assertNoForgedLine(logs);
+                outcome.logs());
+        assertNoForgedLine(outcome.logs());
         // The language's exception is thrown as it came, so a caller still reads exactly what the language said.
-        assertEquals("'a\n" + FORGED + "' is not a valid picky fact name", thrown.get().getMessage());
+        assertEquals("'a\n" + FORGED + "' is not a valid picky fact name", outcome.thrown().getMessage());
     }
 
     @Test
