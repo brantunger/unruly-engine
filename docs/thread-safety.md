@@ -266,14 +266,12 @@ finds by name only classes with a `.class` file. A class generated at run time f
 Import the class in `imports(...)`. Without strong typing, `new com.example.Gen()` still works, found with the
 running thread's context class loader. Spring Boot's and other loaders find it anyway.
 
-MVEL also asks the loading thread's context class loader for `java.lang.Object$<name>` for each distinct property name a
-rule reads through a value it types as `Object`, such as `java.lang.Object$total` for `order.total`; a JDK loader keeps
-a lock object for each ([#807](https://github.com/brantunger/unruly-engine/issues/807)).
+While MVEL compiles, the context class loader is the engine's wrapper of the loader `load()` captured, so a static
+initializer of a class a rule names in full sees the wrapper, which refuses a run-time class if that is a JDK loader.
 
 In MVEL, setting the context class loader around `run()` instead leaves the rule failing, and closing the engine
-doesn't release the loader `load()` captured: MVEL's dynamic optimizer holds it, and holds the first loader to
-evaluate a rule for the life of the JVM. That, and the flag that frees them, are in
-[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
+doesn't release the loader `load()` captured: MVEL's dynamic optimizer holds it. That, and the flag that frees it,
+are in [The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
 
 ## 🚧 Gotchas
 
