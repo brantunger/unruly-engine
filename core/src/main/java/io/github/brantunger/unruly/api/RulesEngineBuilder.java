@@ -426,10 +426,10 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * The limit bounds the copies of each rule list, and the runs holding a copy across reloads: a run still using
      * rules that {@link RulesEngine#load(List)} replaced holds its copy under the same limit as runs on the
-     * new rules. The replaced rules also keep copies given back idle for their runs still waiting for one, at most
-     * {@code maxCopies}, which hold no place under the limit. So for a short time after a reload the engine can have up
-     * to {@code maxCopies} more copies for each replaced rule list that still has runs waiting, until the last run on
-     * those rules has finished.
+     * new rules. The replaced rules also keep copies given back idle for their runs still waiting for one, at most one
+     * for each such run and never more than {@code maxCopies}, which hold no place under the limit. So for a short
+     * time after a reload the engine can have up to {@code maxCopies} more copies for each replaced rule list that
+     * still has runs waiting, until the last run on those rules has finished.
      * </p>
      *
      * @param maxCopies The most compiled copies of the rules to keep, and so the most runs making progress at once;

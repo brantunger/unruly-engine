@@ -201,9 +201,9 @@ For the load itself:
 > run can use newer rules, which the outer run's checksum doesn't describe.
 
 At the swap, the replaced list is retired, and its idle [compiled copies](compiled-copies.md) are closed at once, even
-when runs wait on it. Runs that were waiting on it, for a place under a copy limit or for a build slot, still finish on
-it. While any of them waits, a copy given back is kept for them instead of closed, so they reuse the copies they have
-rather than each building one.
+when runs wait on it. Runs that were waiting on it, for a place under a copy limit or a build slot, still finish on it.
+While any of them waits, a copy given back is kept for them, about one for each up to the limit, so they reuse the
+copies they have rather than each building one.
 
 Under `maxCopies(n)`, the replaced list never has more than `n` copies, apart from
 [extra copies](glossary.md#extra-copy). The last run to leave it closes the copies still kept. Its compilers are

@@ -1165,6 +1165,180 @@ class RuleSetTest {
         assertTrue(permits.awaitSlot(0, Deadline.NONE), "the slot was given back");
     }
 
+    @Test
+    @DisplayName("without a limit, a retired rule set that one run waits on keeps one copy given back for it, and"
+            + " closes the rest, which runs that hold no build slot give back without waking it")
+    void aRetiredRuleSetKeepsOneCopyForEachWaitingRun() throws InterruptedException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        // One build slot, held by a virtual run while its new copy runs, so a second virtual run waits for it. Runs on
+        // platform threads take no slot, so giving their copies back wakes nobody. The window is far longer than the
+        // test, so the run that waits never gives up.
+        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.none(),
+                permits, TimeUnit.MINUTES.toMillis(5));
+        VirtualRun slotted = startVirtualRun(rules);
+        assertEquals(RuleSet.Held.SLOT, slotted.copy().held(), "the virtual run took the only build slot");
+        List<Holder> platform = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            platform.add(holdOneCopy(rules));
+        }
+        VirtualRun waiter = startVirtualRun(rules);
+        waiter.askedBack().countDown();
+        awaitWaiters(rules, 1);
+
+        assertNull(rules.retire());
+        for (Holder holder : platform) {
+            holder.giveBack();
+        }
+        List<Integer> closedWhileWaiting = List.copyOf(closed);
+        slotted.giveBack();
+        RuleSet.Copy taken = waiter.copy();
+        waiter.giveBack();
+
+        assertEquals(List.of(3, 4), closedWhileWaiting, "the first copy given back was kept for the run waiting, and"
+                + " the other two closed as they came back");
+        assertEquals(new RecordingSession(2, closed), taken.sessions().get("a"),
+                "the run that waited took the copy kept for it");
+        assertEquals(4, made.get(), "so it made no copy of its own");
+        assertEachCopyClosedOnceThenTheCompiler(4, closed);
+    }
+
+    @Test
+    @DisplayName("a retired rule set keeps no more idle copies than the limit, however many of its runs wait")
+    void aRetiredRuleSetKeepsNoMoreCopiesThanTheLimit() throws InterruptedException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        // A limit of one for virtual threads, as the default limit is: a virtual run holds the permit, and two more
+        // wait for it, while runs on platform threads take copies without one, so giving them back wakes nobody.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), new CopyLimit(1, true),
+                new CopyPermits(1), TimeUnit.MINUTES.toMillis(5));
+        VirtualRun permitted = startVirtualRun(rules);
+        assertEquals(RuleSet.Held.PERMIT, permitted.copy().held(), "the virtual run took the only permit");
+        List<Holder> platform = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            platform.add(holdOneCopy(rules));
+        }
+        List<VirtualRun> waiting = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            VirtualRun run = startVirtualRun(rules);
+            run.askedBack().countDown();
+            waiting.add(run);
+        }
+        awaitWaiters(rules, waiting.size());
+
+        assertNull(rules.retire());
+        for (Holder holder : platform) {
+            holder.giveBack();
+        }
+        List<Integer> closedWhileWaiting = List.copyOf(closed);
+        permitted.giveBack();
+        for (VirtualRun run : waiting) {
+            assertEquals(RuleSet.Held.PERMIT, run.copy().held(), "the run took a kept copy with a permit");
+            run.giveBack();
+        }
+
+        assertEquals(List.of(3, 4), closedWhileWaiting, "one copy kept, as the limit is one, though two runs wait,"
+                + " and the other two closed as they came back");
+        assertEquals(4, made.get(), "the runs that waited made no copy of their own");
+        assertEachCopyClosedOnceThenTheCompiler(4, closed);
+    }
+
+    @Test
+    @DisplayName("a run that stalls on a retired rule set takes the copy kept for it, while a run on the new rules"
+            + " holds the permit, rather than making an extra one")
+    void aStalledRunTakesTheCopyKeptForIt() throws InterruptedException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        CountDownLatch kept = new CountDownLatch(1);
+        AtomicReference<Throwable> hookFailure = new AtomicReference<>();
+        // The run waiting on the old rules is the only virtual thread that uses them. Once it has stalled, it looks
+        // for an idle copy only after the copy has been kept for it, so the test doesn't depend on which comes first.
+        HookedQueue idle = new HookedQueue(() -> {
+        });
+        // The old and new rules share one permit for virtual threads, which a run on the new rules holds for the whole
+        // test, so the run waiting on the old rules sees nothing come back, and stalls after one short window. A run
+        // on a platform thread holds a copy of the old rules without a permit.
+        CopyPermits permits = new CopyPermits(1);
+        CopyLimit limit = new CopyLimit(1, true);
+        RuleSet newRules = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), limit, permits,
+                TimeUnit.MINUTES.toMillis(5));
+        RuleSet oldRules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), limit, permits,
+                100, idle);
+        VirtualRun onNewRules = startVirtualRun(newRules);
+        assertEquals(RuleSet.Held.PERMIT, onNewRules.copy().held(), "the run on the new rules took the only permit");
+        Holder platform = holdOneCopy(oldRules);
+        idle.beforePoll.set(() -> {
+            try {
+                if (Thread.currentThread().isVirtual() && !kept.await(30, TimeUnit.SECONDS)) {
+                    hookFailure.set(new AssertionError("the copy was never kept"));
+                }
+            } catch (InterruptedException e) {
+                hookFailure.set(e);
+            }
+        });
+        VirtualRun waiter = startVirtualRun(oldRules);
+        waiter.askedBack().countDown();
+        awaitWaiters(oldRules, 1);
+
+        assertNull(oldRules.retire());
+        platform.giveBack();
+        kept.countDown();
+        RuleSet.Copy taken = waiter.copy();
+        waiter.giveBack();
+        onNewRules.giveBack();
+
+        assertNull(hookFailure.get(), "the copy was kept before the run looked for one");
+        assertEquals(RuleSet.Kind.KEPT, taken.kind(), "the run took an idle copy, not an extra one");
+        assertEquals(RuleSet.Held.NOTHING, taken.held(), "holding no permit");
+        assertEquals(1, made.get(), "so no copy of the old rules was made for it");
+        assertEachCopyClosedOnceThenTheCompiler(1, closed);
+    }
+
+    @Test
+    @DisplayName("a run that stalls on a rule set in use takes an idle copy of it rather than making one, and closes it"
+            + " when it gives it back, so a run holding a permit meanwhile leaves no more kept copies than the limit")
+    void aStalledRunTakesAnIdleCopy() throws InterruptedException, TimeoutException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        HookedQueue idle = new HookedQueue(() -> {
+        });
+        // Both rule sets share one permit, which a run on the other one holds until the run here has stalled, after
+        // one short window whatever the timing, so nothing came back meanwhile. The copy at load is idle for it.
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet other = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1),
+                permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", recordingCompiler(made, closed)), CopyLimit.of(1),
+                permits, 100, idle);
+        rules.prepareCopies(1);
+        Holder onOther = holdOneCopy(other);
+
+        RuleSet.Copy stalled;
+        try {
+            stalled = rules.borrow(deadline());
+        } finally {
+            onOther.giveBack();
+        }
+        // The permit is back, and a run here takes it and makes a kept copy, as the idle one is in use.
+        Holder permitted;
+        try {
+            permitted = holdOneCopy(rules);
+        } finally {
+            assertNull(rules.release(stalled));
+        }
+        permitted.giveBack();
+
+        assertEquals(1, idle.size(), "no more copies are kept than the limit");
+        assertEquals(RuleSet.Kind.EXTRA, stalled.kind(), "the idle copy was lent as extra, as the rule set is in use");
+        assertEquals(RuleSet.Held.NOTHING, stalled.held(), "holding no permit");
+        assertEquals(new RecordingSession(1, closed), stalled.sessions().get("a"),
+                "the run took the copy made at load");
+        assertEquals(2, made.get(), "the stalled run made no copy; the run holding the permit made one");
+        assertEquals(List.of(1), closed, "the stalled run's copy was closed when it was given back");
+    }
+
     /**
      * A language for the tests of who closes a retired rule set's compilers. Its sessions are numbered from 1, and
      * each one's close runs {@code onClose} with its number, and is then recorded, even if that throws. Its compiler

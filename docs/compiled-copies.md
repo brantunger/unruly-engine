@@ -43,14 +43,13 @@ classes for that session alone. See [Compiled copies in MVEL](languages/mvel.md#
 | Runs the limit applies to | At most the limit, for the whole engine, across reloads |
 | Runs the limit doesn't apply to | One for each such run at your busiest moment |
 | [Extra copies](glossary.md#extra-copy) | At most one for each nested or stalled run in progress; a nested run that finds a place free takes a kept copy |
-| A rule list [a reload replaced](thread-safety.md#-reloading-rules-while-running) | The copies its runs the limit doesn't apply to still hold, and idle ones kept for its waiting runs. Under `maxCopies(n)`, at most `n`, besides extra copies |
+| A rule list [a reload replaced](thread-safety.md#-reloading-rules-while-running) | The copies its runs the limit doesn't apply to still hold, and idle ones kept for its waiting runs, one each up to the limit. Under `maxCopies(n)`, at most `n`, besides extra copies |
 | [Copies made at load](#making-copies-at-load) | `n` idle copies from each `load()` until the next one, even above the default limit, which bounds only the copies runs hold; during a reload, the new rules' `n` and the old rules' kept copies, until the swap |
 
 Count each engine separately: an engine's limit is its own. By default the limit applies only to runs on virtual
-threads, so a platform thread pool of `N` threads can keep up to `N` copies. Don't add the last row to the first: a
-draining list's *limited* runs hold permits from the same limit, so they're already in it. Its idle copies kept for
-waiting runs hold no permit, so they can come on top of the first row until its last run leaves, and overlapping reloads
-add up.
+threads, so a pool of `N` platform threads can keep up to `N` copies. Don't add the last row to the first: a draining
+list's *limited* runs hold permits from the same limit, so they're already in it. Its idle copies for waiting runs hold
+no permit and can come on top of the first row until its last run leaves; overlapping reloads add up.
 
 **Kept copies never shrink.** The engine keeps as many as the most runs that held one at once, up to the limit, or as
 many as it [made at load](#making-copies-at-load) if that is more, until the next `load()` or `close()`. A periodic
@@ -228,14 +227,15 @@ coming back restarts the five-second window. Giving up is logged at WARN once fo
 ends `If runs are meant to wait for each other, build the engine with a larger maxCopies(n), or with unlimitedCopies()
 if it runs on a thread pool.`
 
-A stalled run, and a nested run that finds no place free, get an extra copy that isn't kept: its sessions are closed
-when the run gives it back.
+A nested run finding no place free, and a stalled run, get an extra copy, closed when the run gives it back. A
+stalled run first uses its rule list's idle copy, if any, which
+[replaced rules](thread-safety.md#-reloading-rules-while-running) keep only for a waiting run.
 
 ## 🚧 Gotchas
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **`maxCopies(n)` isn't a cap on copies** | A stalled run, or a nested run that finds no place free, takes an extra copy, and runs the limit doesn't apply to keep copies of their own | Size memory with [Memory sizing](#memory-sizing) |
+| **`maxCopies(n)` isn't a cap on copies** | Nested and stalled runs can take extra copies, and runs the limit doesn't apply to keep copies of their own | Size memory with [Memory sizing](#memory-sizing) |
 | **Kept copies never shrink** | The memory a traffic spike took stays until the next `load()` or `close()` | Reload periodically, if that memory matters |
 | **`copiesAtLoad(n)` above the default limit** | `build()` accepts it, but runs on virtual threads never borrow more than the limit of them at once, so the rest sit idle unless runs on platform threads use them | Make `n` no more than the limit, or add `maxCopies(n)` with the same `n`, so the limit applies to every thread |
 | **A deadline under five seconds never takes an extra copy** | Under a limit, a fan-out that would need one waits until its deadline and fails with a `TimeoutException` cause | Give runs more than five seconds left when they start waiting, or give engines that run each other `unlimitedCopies()`, which never fails a run for want of a copy. On virtual threads, a cold fan-out can still wait up to five seconds, or half its time left, for a [build slot](virtual-threads.md#-waiting-for-a-build-slot) while its parents hold every slot; `copiesAtLoad(n)` avoids that |
@@ -245,9 +245,9 @@ when the run gives it back.
 
 ### Does `maxCopies(4)` mean at most four copies exist?
 
-No. It bounds the runs making progress. A stalled run, or a nested run that finds no place free, takes an extra copy;
-runs the limit doesn't apply to keep copies of their own; a rule list a reload replaced keeps idle copies for its
-runs still waiting; and every other engine has its own limit. See [Memory sizing](#memory-sizing).
+No. It bounds the runs making progress. Nested and stalled runs can take extra copies; runs the limit doesn't apply
+to keep copies of their own; a rule list a reload replaced keeps idle copies for its runs still waiting; and every
+other engine has its own limit. See [Memory sizing](#memory-sizing).
 
 ### Does memory shrink after a traffic spike?
 

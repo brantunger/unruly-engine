@@ -139,7 +139,7 @@ is one; an engine finds languages with `ServiceLoader` unless you give it some w
 
 ### Extra copy
 
-A [compiled copy](#compiled-copy) made above the [copy limit](#copy-limit) for a run that doesn't wait: a
+A [compiled copy](#compiled-copy) taken above the [copy limit](#copy-limit) for a run that doesn't wait: a
 [nested run](#nested-run), or a run that waited five seconds without any copy being given back. It isn't kept: its
 sessions are closed when the run ends. See [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
