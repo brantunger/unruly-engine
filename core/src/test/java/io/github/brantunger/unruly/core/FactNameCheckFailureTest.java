@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +18,7 @@ import java.util.function.UnaryOperator;
 
 import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedAtError;
 import static io.github.brantunger.unruly.core.EngineLogs.assertLoggedThenRethrown;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("a language's fact-name check that fails unexpectedly is reported like a rejected name")
@@ -77,6 +79,22 @@ class FactNameCheckFailureTest {
     }
 
     @Test
+    @DisplayName("a fatal Error inside the IllegalArgumentException the check throws is logged, then rethrown"
+            + " unchanged")
+    void fatalErrorInRejectionRethrown() {
+        OutOfMemoryError oom = new OutOfMemoryError("simulated");
+        load(name -> {
+            throw new IllegalArgumentException("wrapped", oom);
+        });
+
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>(new Fact<>("a", 1))));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of("The 'x' expression language failed to check fact name 'a': wrapped"),
+                outcome.lines("ERROR"), outcome.logs());
+    }
+
+    @Test
     @DisplayName("a name the language rejects with IllegalArgumentException is thrown as is")
     void rejectionUnchanged() {
         IllegalArgumentException rejection = new IllegalArgumentException("'a' is not allowed");
@@ -112,5 +130,20 @@ class FactNameCheckFailureTest {
                 () -> load(name -> {
                     throw new IllegalStateException("wrapped", oom);
                 }, builder -> builder.fact("a", Integer.class)));
+    }
+
+    @Test
+    @DisplayName("a fatal Error inside the IllegalArgumentException a declared name's check throws is logged, then"
+            + " rethrown from load() unchanged")
+    void declaredNameFatalErrorInRejectionRethrown() {
+        OutOfMemoryError oom = new OutOfMemoryError("simulated");
+
+        Outcome<Throwable> outcome = capture(() -> load(name -> {
+            throw new IllegalArgumentException("wrapped", oom);
+        }, builder -> builder.fact("a", Integer.class)));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of("The 'x' expression language failed to check fact name 'a': wrapped"),
+                outcome.lines("ERROR"), outcome.logs());
     }
 }
