@@ -392,7 +392,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                      Map<String, Object> listenerFacts, Deadline deadline, long runId,
                                      RunContext parent, RunTally tally, RuleSelection selection,
                                      RuntimeException rejected, RunBody<O> body) {
-        List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
         // runInScope has set this run's deadline already; set again, and put back, with the run's context.
@@ -402,7 +401,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RunResult<O> result;
             try {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
-                notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+                notifyRun("beforeRun", listener -> listener.beforeRun(run));
                 if (rejected != null) {
                     throw rejected;
                 }
@@ -413,11 +412,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally, selection))
                         .withRun(run);
             } catch (RuntimeException e) {
-                notifyRunError(snapshot, run, e, e, tally);
+                notifyRunError(run, e, e, tally);
                 throw e;
             } catch (Error e) {
                 // run() rethrows the error itself; listeners see what it failed with.
-                notifyRunError(snapshot, run, runFailure(e), e, tally);
+                notifyRunError(run, runFailure(e), e, tally);
                 throw e;
             } catch (Throwable t) {
                 // A backstop: every place the run calls a rule, a listener, a language or the output reports a
@@ -429,11 +428,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 log.error(msg);
                 RuleExecutionException failure = new ReportedFailure(msg, t);
                 Error fatal = Failures.fatalError(t);
-                notifyRunError(snapshot, run, failure, fatal != null ? fatal : failure, tally);
+                notifyRunError(run, failure, fatal != null ? fatal : failure, tally);
                 Failures.throwIfPresent(fatal);
                 throw failure;
             }
-            notifyRun(snapshot, "afterRun", listener -> listener.afterRun(run, result));
+            notifyRun("afterRun", listener -> listener.afterRun(run, result));
             return result;
         } finally {
             fatalFailure.remove();
@@ -473,15 +472,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param failing What the run throws if no listener throws a fatal error: {@code error}, or the fatal error it
      *                carries
      */
-    private void notifyRunError(List<RuleListener> snapshot, RunContext run, RuntimeException error,
-                                Throwable failing, RunTally tally) {
+    private void notifyRunError(RunContext run, RuntimeException error, Throwable failing, RunTally tally) {
         if (ReportedFailure.isStop(error)) {
             tally.markStopped();
             if (error.getCause() instanceof InterruptedException) {
                 tally.markInterrupted();
             }
         }
-        notifyRun(snapshot, "onRunError", listener -> listener.onRunError(run, error), error, failing);
+        notifyRun("onRunError", listener -> listener.onRunError(run, error), error, failing);
     }
 
     /** Creates the context one run is reported to listeners with. */
@@ -497,13 +495,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * run it started logged it already (see {@link LoggedFailures}), or else what it wrapped the error in, when that
      * says something of its own (see {@link #listenerFatalMessage}).
      */
-    private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        notifyRun(snapshot, callback, call, null, null);
+    private void notifyRun(String callback, Consumer<RuleListener> call) {
+        notifyRun(callback, call, null, null);
     }
 
     /**
-     * Calls one run callback on every listener, as {@link #notifyRun(List, String, Consumer)} does, for a callback
-     * that tells listeners of the run's failure. A fatal {@link Error} a listener throws carries what it's rethrown in
+     * Calls one run callback on every listener, as {@link #notifyRun(String, Consumer)} does, for a callback that
+     * tells listeners of the run's failure. A fatal {@link Error} a listener throws carries what it's rethrown in
      * place of as a suppressed exception (see {@link Failures#keepAlso}). The failure the callback tells listeners of,
      * rethrown or wrapped, is the run's own, whatever run logged its fatal error, so nothing a listener wrapped around
      * it is taken for news about a nested run.
@@ -512,9 +510,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                {@link #logListenerException}
      * @param failing What the run throws if no listener throws a fatal error, or {@code null}
      */
-    private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
-                           Throwable told, Throwable failing) {
-        ListenerFatal thrown = listenerFatal(snapshot, callback, call, null, told);
+    private void notifyRun(String callback, Consumer<RuleListener> call, Throwable told, Throwable failing) {
+        ListenerFatal thrown = listenerFatal(callback, call, null, told);
         if (thrown != null) {
             Error fatal = thrown.fatal();
             // Asked before unlogged() records a fatal error it's told of for the first time.
@@ -724,7 +721,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
         // from any other callback of a run that stopped.
-        List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
         Deadline outerDeadline = Cancellation.enter(deadline);
@@ -733,14 +729,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         fatalFailure.remove();
         try {
             try {
-                notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+                notifyRun("beforeRun", listener -> listener.beforeRun(run));
             } catch (Error e) {
                 // The run stopped, though the error keeps the stop from reaching onRunError: its event says so.
                 tally.markStopped();
-                notifyRunError(snapshot, run, runFailure(e), e, tally);
+                notifyRunError(run, runFailure(e), e, tally);
                 throw e;
             }
-            notifyRunError(snapshot, run, failure, failure, tally);
+            notifyRunError(run, failure, failure, tally);
             return failure;
         } finally {
             fatalFailure.remove();
@@ -1515,16 +1511,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Reports a condition or action that threw as its rule's failure.
      *
-     * @param snapshot The listeners the rule's callbacks went to
-     * @param rule     The rule whose expression threw
-     * @param kind     Whether the condition or the action threw
-     * @param thrown   What it threw
+     * @param rule   The rule whose expression threw
+     * @param kind   Whether the condition or the action threw
+     * @param thrown What it threw
      * @return The exception to throw
      */
-    private RuleExecutionException expressionFailure(List<RuleListener> snapshot, CompiledRule rule,
-                                                     ExpressionKind kind, Throwable thrown) {
+    private RuleExecutionException expressionFailure(CompiledRule rule, ExpressionKind kind, Throwable thrown) {
         String what = kind == ExpressionKind.CONDITION ? "Failed to evaluate condition" : "Failed to execute action";
-        return failure(snapshot, rule, kind, what + " for rule '" + rule.displayName() + "': "
+        return failure(rule, kind, what + " for rule '" + rule.displayName() + "': "
                 + Failures.describe(thrown), thrown);
     }
 
@@ -1539,7 +1533,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * has, because the code being run broke rather than gave up. Either way a fatal {@link Error} in what it threw
      * is rethrown as for any failure.
      *
-     * @param snapshot The listeners the rule's callbacks went to
      * @param rule     The rule whose expression threw
      * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @param thrown   What the expression threw
@@ -1547,8 +1540,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 {@link Error} anywhere in its cause chain
      * @return The exception to throw
      */
-    private RuleExecutionException stoppedOrFailed(List<RuleListener> snapshot, CompiledRule rule, Deadline deadline,
-                                                   Throwable thrown, Supplier<RuleExecutionException> failed) {
+    private RuleExecutionException stoppedOrFailed(CompiledRule rule, Deadline deadline, Throwable thrown,
+                                                   Supplier<RuleExecutionException> failed) {
         // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and an
         // Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
@@ -1558,14 +1551,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             return failed.get();
         }
         stop.addSuppressed(thrown);
-        return closedWithStop(snapshot, rule, stop);
+        return closedWithStop(rule, stop);
     }
 
     /**
      * Stops a run that was cancelled while a condition or action ran, once that expression has returned, so a run
      * past its deadline or interrupted never returns a result, even when the expression was its last one.
      *
-     * @param snapshot    The listeners the rule's callbacks went to
      * @param rule        The rule whose expression returned
      * @param kind        Whether the condition or the action returned
      * @param deadline    When the run must stop, {@link Deadline#NONE} if it has none
@@ -1573,14 +1565,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                    A stopped run keeps it as a suppressed exception, as it keeps what an expression threw.
      * @throws RuleExecutionException if the run was cancelled
      */
-    private void stopIfCancelled(List<RuleListener> snapshot, CompiledRule rule, ExpressionKind kind,
-                                 Deadline deadline, String wrongResult) {
+    private void stopIfCancelled(CompiledRule rule, ExpressionKind kind, Deadline deadline, String wrongResult) {
         RuleExecutionException stop = cancellation(rule, DURING_RULE, deadline, null);
         if (stop != null) {
             if (wrongResult != null) {
                 stop.addSuppressed(new RuleExecutionException(wrongResult, null, rule.rule().getRuleName(), kind));
             }
-            throw closedWithStop(snapshot, rule, stop);
+            throw closedWithStop(rule, stop);
         }
     }
 
@@ -1589,15 +1580,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * fatal {@link Error} a listener throws is rethrown, and isn't logged, unless the listener wrapped one logged
      * already in an exception that says something of its own, which is logged (see {@link #logWrappedFromOnError}).
      *
-     * @param snapshot The listeners the rule's callbacks went to
-     * @param rule     The rule the run stopped in
-     * @param stop     The exception the run stops with
+     * @param rule The rule the run stopped in
+     * @param stop The exception the run stops with
      * @return {@code stop}, to throw
      */
-    private RuleExecutionException closedWithStop(List<RuleListener> snapshot, CompiledRule rule,
-                                                  RuleExecutionException stop) {
-        ListenerFatal thrown = listenerFatal(snapshot, "onError", listener -> listener.onError(rule.rule(), stop),
-                null, stop);
+    private RuleExecutionException closedWithStop(CompiledRule rule, RuleExecutionException stop) {
+        ListenerFatal thrown = listenerFatal("onError", listener -> listener.onError(rule.rule(), stop), null, stop);
         if (thrown != null) {
             Error fatal = logWrappedFromOnError(thrown, rule);
             stop.addSuppressed(fatal);
@@ -1717,8 +1705,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The run's evaluation context has its own read-only view, whose messages are about conditions, so a
         // listener that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = facts.forListeners();
-        List<RuleListener> snapshot = listenerSnapshot();
-        notifyBefore(snapshot, rule, "beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
+        notifyBefore(rule, "beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing. Always with
@@ -1728,8 +1715,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             condition = rule.compiledCondition().evaluateWithDetail(facts.evaluation(),
                     copy.sessions().get(rule.language()));
         } catch (Throwable t) {
-            throw stoppedOrFailed(snapshot, rule, facts.deadline(), t, () -> expressionFailure(snapshot, rule,
-                    ExpressionKind.CONDITION, t));
+            throw stoppedOrFailed(rule, facts.deadline(), t,
+                    () -> expressionFailure(rule, ExpressionKind.CONDITION, t));
         }
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule. So would reading a null result.
@@ -1738,13 +1725,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 + (condition == null ? "' returned no result from evaluateWithDetail" : "' evaluated to "
                 + (evaluated == null ? "null" : "a " + evaluated.getClass().getName()))
                 + ". A condition expression must evaluate to a boolean.";
-        stopIfCancelled(snapshot, rule, ExpressionKind.CONDITION, facts.deadline(), wrongResult);
+        stopIfCancelled(rule, ExpressionKind.CONDITION, facts.deadline(), wrongResult);
         if (!(evaluated instanceof Boolean result)) {
-            throw failure(snapshot, rule, ExpressionKind.CONDITION, wrongResult, null);
+            throw failure(rule, ExpressionKind.CONDITION, wrongResult, null);
         }
 
-        notifyAfter(snapshot, rule, "afterEvaluate",
-                listener -> listener.afterEvaluate(rule.rule(), listenerFacts, result));
+        notifyAfter(rule, "afterEvaluate", listener -> listener.afterEvaluate(rule.rule(), listenerFacts, result));
 
         return condition;
     }
@@ -1794,8 +1780,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private O executeAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
-        List<RuleListener> snapshot = listenerSnapshot();
-        notifyBefore(snapshot, rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
+        notifyBefore(rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
@@ -1807,23 +1792,22 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
         } catch (Throwable t) {
-            throw stoppedOrFailed(snapshot, rule, facts.deadline(), t, () -> expressionFailure(snapshot, rule,
-                    ExpressionKind.ACTION, t));
+            throw stoppedOrFailed(rule, facts.deadline(), t, () -> expressionFailure(rule, ExpressionKind.ACTION, t));
         }
         String wrongResult = result != null ? null : "Action for rule '" + rule.displayName()
                 + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).";
         // Before the properties it returned are set: a run past its deadline changes the output no further.
-        stopIfCancelled(snapshot, rule, ExpressionKind.ACTION, facts.deadline(), wrongResult);
+        stopIfCancelled(rule, ExpressionKind.ACTION, facts.deadline(), wrongResult);
         if (result == null) {
-            throw failure(snapshot, rule, ExpressionKind.ACTION, wrongResult, null);
+            throw failure(rule, ExpressionKind.ACTION, wrongResult, null);
         }
         for (Map.Entry<String, Object> property : result.properties().entrySet()) {
-            setProperty(snapshot, rule, outputResult, property.getKey(), property.getValue(), facts.deadline());
+            setProperty(rule, outputResult, property.getKey(), property.getValue(), facts.deadline());
         }
         // After them too: a writer that took the run past its deadline stops it, though what it set stays set.
-        stopIfCancelled(snapshot, rule, ExpressionKind.ACTION, facts.deadline(), null);
+        stopIfCancelled(rule, ExpressionKind.ACTION, facts.deadline(), null);
 
-        notifyAfter(snapshot, rule, "afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
+        notifyAfter(rule, "afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
 
         return outputResult;
     }
@@ -1834,35 +1818,22 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @throws RuleExecutionException if the property can't be set, or the run was cancelled while it was being set
      */
-    private void setProperty(List<RuleListener> snapshot, CompiledRule rule, O output, String property, Object value,
-                             Deadline deadline) {
+    private void setProperty(CompiledRule rule, O output, String property, Object value, Deadline deadline) {
         try {
             outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
             // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
             Throwable cause = Failures.causeOf(e);
             Throwable thrown = cause != null ? cause : e;
-            throw stoppedOrFailed(snapshot, rule, deadline, thrown, () -> propertyFailure(snapshot, rule, property,
-                    thrown));
+            throw stoppedOrFailed(rule, deadline, thrown, () -> propertyFailure(rule, property, thrown));
         } catch (Throwable e) {
-            throw stoppedOrFailed(snapshot, rule, deadline, e, () -> propertyFailure(snapshot, rule, property, e));
+            throw stoppedOrFailed(rule, deadline, e, () -> propertyFailure(rule, property, e));
         }
     }
 
-    private RuleExecutionException propertyFailure(List<RuleListener> snapshot, CompiledRule rule, String property,
-                                                   Throwable cause) {
-        return failure(snapshot, rule, ExpressionKind.ACTION, "Failed to set '" + Failures.quote(property)
+    private RuleExecutionException propertyFailure(CompiledRule rule, String property, Throwable cause) {
+        return failure(rule, ExpressionKind.ACTION, "Failed to set '" + Failures.quote(property)
                 + "' on the output for rule '" + rule.displayName() + "': " + Failures.describe(cause), cause);
-    }
-
-    /**
-     * Returns the listeners for one condition evaluation or one action: the ones the engine was built with, which
-     * can't change.
-     *
-     * @return The listeners
-     */
-    private List<RuleListener> listenerSnapshot() {
-        return listeners;
     }
 
     /**
@@ -1872,9 +1843,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@link LoggedFailures}), or else what the listener wrapped it in, when that says something of its own (see
      * {@link #listenerFatalMessage}).
      */
-    private void notifyBefore(List<RuleListener> snapshot, CompiledRule rule, String callback,
-                              Consumer<RuleListener> call) {
-        ListenerFatal thrown = listenerFatal(snapshot, callback, call);
+    private void notifyBefore(CompiledRule rule, String callback, Consumer<RuleListener> call) {
+        ListenerFatal thrown = listenerFatal(callback, call);
         if (thrown != null) {
             Error fatal = thrown.fatal();
             // Described before unlogged() records a fatal error it's told of for the first time.
@@ -1883,7 +1853,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RuleExecutionException failure = new RuleExecutionException(msg, fatal, rule.rule().getRuleName());
             // Already on its way out of run(), so a second fatal error from onError can't replace it, but it's kept.
             keepSecondFatal(failure, fatal,
-                    reportFailure(snapshot, rule, failure, LoggedFailures.unlogged(thrown.thrown())));
+                    reportFailure(rule, failure, LoggedFailures.unlogged(thrown.thrown())));
             fatalFailure.set(failure);
             throw fatal;
         }
@@ -1895,9 +1865,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * wrapped it in, when that says something of its own (see {@link #listenerFatalMessage}), and rethrows it. Every
      * listener already closed its callback, so none gets {@code onError}.
      */
-    private void notifyAfter(List<RuleListener> snapshot, CompiledRule rule, String callback,
-                             Consumer<RuleListener> call) {
-        ListenerFatal thrown = listenerFatal(snapshot, callback, call);
+    private void notifyAfter(CompiledRule rule, String callback, Consumer<RuleListener> call) {
+        ListenerFatal thrown = listenerFatal(callback, call);
         if (thrown != null) {
             // Asked before unlogged() records a fatal error it's told of for the first time.
             boolean wrapped = Failures.wrapsLoggedFatal(thrown.thrown());
@@ -1958,8 +1927,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't interrupt a
-     * run. A fatal {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener
+     * Calls every listener, logging what a listener throws so a faulty listener can't interrupt a run. A fatal
+     * {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener
      * throws, doesn't stop the other listeners either, so each still gets the callback, and closes whatever it opened;
      * the error is returned for the caller to rethrow, with what the listener threw it in. A second fatal error in the
      * same callback is logged like an exception, and kept on the first as a suppressed exception (see
@@ -1967,12 +1936,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @return The first fatal {@link Error} a listener threw, and what it threw it in, or {@code null}
      */
-    private ListenerFatal listenerFatal(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        return listenerFatal(snapshot, callback, call, null, null);
+    private ListenerFatal listenerFatal(String callback, Consumer<RuleListener> call) {
+        return listenerFatal(callback, call, null, null);
     }
 
     /**
-     * Calls every listener, as {@link #listenerFatal(List, String, Consumer)} does, ignoring what the run already
+     * Calls every listener, as {@link #listenerFatal(String, Consumer)} does, ignoring what the run already
      * reports: a listener that rethrows the reported exception, or the fatal {@link Error} in it, has added nothing,
      * so it doesn't count as the first fatal error, whichever listener rethrows it. What a listener wrapped it in is
      * still logged, because its own message says something.
@@ -1986,12 +1955,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     // Rethrowing the very same instance is what makes it nothing new; an equal one would still be news.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private ListenerFatal listenerFatal(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
-                                        RuleExecutionException reported, Throwable told) {
+    private ListenerFatal listenerFatal(String callback, Consumer<RuleListener> call, RuleExecutionException reported,
+                                        Throwable told) {
         Error reportedFatal = reported == null ? null : Failures.fatalError(reported);
         Error fatal = null;
         Throwable fatalThrown = null;
-        for (RuleListener listener : snapshot) {
+        for (RuleListener listener : listeners) {
             try {
                 call.accept(listener);
             } catch (Throwable e) {
@@ -2101,12 +2070,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
-    private RuleExecutionException failure(List<RuleListener> snapshot, CompiledRule rule, ExpressionKind kind,
-                                           String msg, Throwable cause) {
+    private RuleExecutionException failure(CompiledRule rule, ExpressionKind kind, String msg, Throwable cause) {
         RuleExecutionException error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
         Failures.keepInterruptStatus(cause);
         // A failed run() started by this rule has already logged its failure, or the fatal error it rethrew.
-        Error listenerFatal = reportFailure(snapshot, rule, error, LoggedFailures.unlogged(cause));
+        Error listenerFatal = reportFailure(rule, error, LoggedFailures.unlogged(cause));
         // A fatal error in what the rule threw comes first; one from a listener's onError is rethrown otherwise.
         Error fatal = Failures.fatalError(cause);
         if (fatal == null && listenerFatal != null) {
@@ -2130,13 +2098,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @return The first fatal {@link Error} a listener threw from {@code onError}, or {@code null}
      */
-    private Error reportFailure(List<RuleListener> snapshot, CompiledRule rule, RuleExecutionException error,
-                                boolean logged) {
+    private Error reportFailure(CompiledRule rule, RuleExecutionException error, boolean logged) {
         if (logged) {
             log.error(error.getMessage());
         }
-        ListenerFatal thrown = listenerFatal(snapshot, "onError", listener -> listener.onError(rule.rule(), error),
-                error, error);
+        ListenerFatal thrown = listenerFatal("onError", listener -> listener.onError(rule.rule(), error), error, error);
         return thrown == null ? null : logWrappedFromOnError(thrown, rule);
     }
 
