@@ -305,9 +305,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
             // Checked before the run waits for a copy, which facts the engine will reject needn't do.
             RuntimeException rejected = factRejection(values);
+            RunFacts runFacts = RunFacts.of(values, listenerFacts, deadline, runId, parent, tally, selection);
             RuleSet.Copy copy = null;
             if (rejected == null) {
-                copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                copy = borrow(rules, runFacts);
                 int read = 1;
                 while (copy == null) {
                     // The rule set the run read was closed before it could borrow from it, which a reload does to the
@@ -316,7 +317,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     // reading again, and one that keeps finding the same set closed fails rather than spinning for
                     // ever. A different set starts the count again: a reload got through, however many overtake the
                     // run.
-                    stopIfCancelled(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                    stopIfCancelledWhileReading(rules, runFacts);
                     if (read == RULE_READS_PER_RUN) {
                         throw new IllegalStateException("The engine's rule list was found closed "
                                 + RULE_READS_PER_RUN + " times in a row while this run was borrowing a copy of it. A"
@@ -328,7 +329,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     RuleSet again = currentRules();
                     read = again == rules ? read + 1 : 1;
                     rules = again;
-                    copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                    copy = borrow(rules, runFacts);
                 }
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
@@ -337,8 +338,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // facts were rejected holds no copy, and gives nothing back.
             RunResult<O> result;
             try {
-                result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally, selection,
-                        rejected, body);
+                result = runWithCopy(rules, copy, runFacts, rejected, body);
             } catch (Throwable t) {
                 keepInterruptOfStop(tally);
                 Failures.throwIfPresent(Failures.fatalInsteadOf(t, copy == null ? null : rules.release(copy)));
@@ -385,18 +385,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * with what the check threw.
      *
      * @param copy     The copy the run borrowed, or {@code null} if its facts were rejected
+     * @param facts    The run's facts, and what the run carries with them
      * @param rejected What the engine's checks of the facts threw before the run borrowed a copy, or {@code null} if
      *                 they passed
      */
-    private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, Map<String, Object> values,
-                                     Map<String, Object> listenerFacts, Deadline deadline, long runId,
-                                     RunContext parent, RunTally tally, RuleSelection selection,
-                                     RuntimeException rejected, RunBody<O> body) {
-        EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
-        currentRun.set(run);
-        // runInScope has set this run's deadline already; set again, and put back, with the run's context.
-        Deadline outerDeadline = Cancellation.enter(deadline);
-        fatalFailure.remove();
+    private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, RunFacts facts, RuntimeException rejected,
+                                     RunBody<O> body) {
+        EngineRunContext run = newRun(rules, facts);
+        Deadline outerDeadline = enterRun(run, facts.deadline());
         try {
             RunResult<O> result;
             try {
@@ -406,17 +402,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     throw rejected;
                 }
                 // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name.
-                checkFactNames(values, rules.factChecks());
+                checkFactNames(facts.values(), rules.factChecks());
                 // Every run that returns passes here, a nested one too, so the result carries the run's tags and
                 // start before afterRun or the caller sees it.
-                result = body.run(rules, copy, RunFacts.of(values, listenerFacts, deadline, runId, tally, selection))
-                        .withRun(run);
+                result = body.run(rules, copy, facts).withRun(run);
             } catch (RuntimeException e) {
-                notifyRunError(run, e, e, tally);
+                notifyRunError(run, e, e, facts.tally());
                 throw e;
             } catch (Error e) {
                 // run() rethrows the error itself; listeners see what it failed with.
-                notifyRunError(run, runFailure(e), e, tally);
+                notifyRunError(run, runFailure(e), e, facts.tally());
                 throw e;
             } catch (Throwable t) {
                 // A backstop: every place the run calls a rule, a listener, a language or the output reports a
@@ -428,20 +423,49 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 log.error(msg);
                 RuleExecutionException failure = new ReportedFailure(msg, t);
                 Error fatal = Failures.fatalError(t);
-                notifyRunError(run, failure, fatal != null ? fatal : failure, tally);
+                notifyRunError(run, failure, fatal != null ? fatal : failure, facts.tally());
                 Failures.throwIfPresent(fatal);
                 throw failure;
             }
             notifyRun("afterRun", listener -> listener.afterRun(run, result));
             return result;
         } finally {
-            fatalFailure.remove();
-            Cancellation.leave(outerDeadline);
-            if (parent == null) {
-                currentRun.remove();
-            } else {
-                currentRun.set(parent);
-            }
+            leaveRun(facts.parent(), outerDeadline);
+        }
+    }
+
+    /**
+     * Opens the scope a run's listeners hear of it in: {@code run} becomes the thread's current run, which a run
+     * started from one of its callbacks takes as its parent, and {@code deadline} the one such a run inherits. A fatal
+     * failure a rule of an earlier run left recorded is cleared, so a run started from {@code onRunError} of a run a
+     * fatal {@link Error} left isn't told of that run's rule. {@link #runInScope} has set the run's deadline already;
+     * it's set again here, and put back by {@link #leaveRun}, with the run's context.
+     *
+     * @param run      The run that is starting
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
+     * @return The deadline to give {@link #leaveRun} when the run ends
+     */
+    private Deadline enterRun(EngineRunContext run, Deadline deadline) {
+        currentRun.set(run);
+        Deadline outerDeadline = Cancellation.enter(deadline);
+        fatalFailure.remove();
+        return outerDeadline;
+    }
+
+    /**
+     * Closes the scope {@link #enterRun} opened: clears what a rule of the run recorded as its fatal failure, puts
+     * back the deadline, and makes {@code parent} the thread's current run again.
+     *
+     * @param parent        The run this one was started from, or {@code null}
+     * @param outerDeadline What {@link #enterRun} returned
+     */
+    private void leaveRun(RunContext parent, Deadline outerDeadline) {
+        fatalFailure.remove();
+        Cancellation.leave(outerDeadline);
+        if (parent == null) {
+            currentRun.remove();
+        } else {
+            currentRun.set(parent);
         }
     }
 
@@ -483,10 +507,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /** Creates the context one run is reported to listeners with. */
-    private EngineRunContext newRun(long runId, RuleSet rules, Map<String, Object> listenerFacts, RunContext parent,
-                                    RuleSelection selection) {
-        return new EngineRunContext(runId, parent, matchPolicy(), rules.checksum(), listenerFacts, selection.tags(),
-                selection.startedAt());
+    private EngineRunContext newRun(RuleSet rules, RunFacts facts) {
+        return new EngineRunContext(facts.runId(), facts.parent(), matchPolicy(), rules.checksum(),
+                facts.forListeners(), facts.selection().tags(), facts.selection().startedAt());
     }
 
     /**
@@ -604,18 +627,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * </p>
      *
      * @param rules The rule set to borrow from
+     * @param facts The run's facts, and what the run carries with them
      * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
      * @throws RuleExecutionException if the thread is interrupted while it waits for a copy, or for a build slot to
      *                                make one, or if the run's deadline passes while it waits for a copy under a
      *                                limit
      */
-    private RuleSet.Copy borrow(RuleSet rules, Map<String, Object> listenerFacts, Deadline deadline, long runId,
-                                RunContext parent, RunTally tally, RuleSelection selection) {
+    private RuleSet.Copy borrow(RuleSet rules, RunFacts facts) {
         try {
-            return rules.borrow(deadline);
+            return rules.borrow(facts.deadline());
         } catch (InterruptedException | TimeoutException e) {
             // Straight on, allocating nothing: the run is still counted on the rule set until it leaves there.
-            throw stoppedThenLeft(rules, listenerFacts, e, deadline, runId, parent, tally, selection);
+            throw stoppedThenLeft(rules, facts, e);
         }
     }
 
@@ -628,16 +651,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * instead, carrying the one from closing. An interrupted run sets its thread's interrupt status again before it
      * leaves, and {@code run()} again when it returns (see {@link #keepInterruptOfStop}).
      *
-     * @param stop What the wait stopped with: an {@link InterruptedException} or a {@link TimeoutException}
+     * @param facts The run's facts, and what the run carries with them
+     * @param stop  What the wait stopped with: an {@link InterruptedException} or a {@link TimeoutException}
      * @return The stop, for the caller to throw
      */
     // Any Throwable: the run must leave however reporting the stop ends, as a finally would, and a failure that isn't
     // fatal is kept under a fatal Error from closing. Everything that allocates, the message too, is inside the try.
-    private RuleExecutionException stoppedThenLeft(RuleSet rules, Map<String, Object> listenerFacts, Exception stop,
-                                                   Deadline deadline, long runId, RunContext parent, RunTally tally,
-                                                   RuleSelection selection) {
+    private RuleExecutionException stoppedThenLeft(RuleSet rules, RunFacts facts, Exception stop) {
         RuleExecutionException failure;
         try {
+            Deadline deadline = facts.deadline();
             boolean interrupted = stop instanceof InterruptedException;
             String msg;
             if (interrupted) {
@@ -651,14 +674,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         + " all " + rules.limit() + " were in use";
             }
             // The deadline passed, or none did when an interrupt stopped the run.
-            failure = stoppedWaiting(rules, listenerFacts, msg, stop, deadline, interrupted ? null : deadline, runId,
-                    parent, tally, selection);
+            failure = stoppedWaiting(rules, facts, msg, stop, interrupted ? null : deadline);
         } catch (Throwable t) {
-            keepInterruptOfStop(tally);
+            keepInterruptOfStop(facts.tally());
             Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.leaveAfterStop()));
             throw t;
         }
-        keepInterruptOfStop(tally);
+        keepInterruptOfStop(facts.tally());
         Failures.throwIfPresent(Failures.fatalInsteadOf(failure, rules.leaveAfterStop()));
         return failure;
     }
@@ -668,26 +690,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * rule set it read had been closed. Reported like a run that stopped waiting for a copy: it too stopped before
      * it got one, and for the same two reasons.
      *
-     * @param rules         The rule set the run found closed
-     * @param listenerFacts The run's facts, as listeners see them
-     * @param deadline      When the run must stop, {@link Deadline#NONE} if it has none
-     * @param runId         The run's number
-     * @param parent        The run this one was started from, or {@code null}
-     * @param tally         The run's tally, which records the stop for the run's event
-     * @param selection     The run's tags and start, which its context carries
+     * @param rules The rule set the run found closed
+     * @param facts The run's facts, and what the run carries with them
      * @throws RuleExecutionException if the thread is interrupted, or the run's deadline has passed
      */
-    private void stopIfCancelled(RuleSet rules, Map<String, Object> listenerFacts, Deadline deadline, long runId,
-                                 RunContext parent, RunTally tally, RuleSelection selection) {
+    private void stopIfCancelledWhileReading(RuleSet rules, RunFacts facts) {
+        Deadline deadline = facts.deadline();
         String reading = " while reading the engine's rules again: the rules this run read had been closed by a"
                 + " reload or by close()";
-        if (Thread.currentThread().isInterrupted()) {
-            throw stoppedWaiting(rules, listenerFacts, "run() was interrupted" + reading, new InterruptedException(),
-                    deadline, null, runId, parent, tally, selection);
+        Cancellation.Reason reason = Cancellation.reason(deadline);
+        if (reason == Cancellation.Reason.INTERRUPTED) {
+            throw stoppedWaiting(rules, facts, "run() was interrupted" + reading, new InterruptedException(), null);
         }
-        if (deadline.hasPassed()) {
-            throw stoppedWaiting(rules, listenerFacts, "run() passed its deadline of " + deadline.instant() + reading,
-                    Cancellation.timedOut(deadline), deadline, deadline, runId, parent, tally, selection);
+        if (reason == Cancellation.Reason.TIMED_OUT) {
+            throw stoppedWaiting(rules, facts, "run() passed its deadline of " + deadline.instant() + reading,
+                    Cancellation.timedOut(deadline), deadline);
         }
     }
 
@@ -696,21 +713,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * while waiting. Logged at WARN, like the check between rules: a run the caller stopped isn't the rules or the
      * engine failing.
      *
-     * @param rules         The rule set the run was waiting on
-     * @param listenerFacts The run's facts, as listeners see them
-     * @param msg           What to log and what the exception says
-     * @param cause         An {@link InterruptedException} or a {@link TimeoutException}
-     * @param deadline      When the run had to stop, {@link Deadline#NONE} if it had none
-     * @param passed        The deadline the run passed, or {@code null} if it was interrupted instead
-     * @param runId         The run's number
-     * @param parent        The run this one was started from, or {@code null}
-     * @param tally         The run's tally, which records the stop for the run's event
-     * @param selection     The run's tags and start, which its context carries
+     * @param rules  The rule set the run was waiting on
+     * @param facts  The run's facts, and what the run carries with them
+     * @param msg    What to log and what the exception says
+     * @param cause  An {@link InterruptedException} or a {@link TimeoutException}
+     * @param passed The deadline the run passed, or {@code null} if it was interrupted instead
      * @return The exception to throw
      */
-    private RuleExecutionException stoppedWaiting(RuleSet rules, Map<String, Object> listenerFacts, String msg,
-                                                  Exception cause, Deadline deadline, Deadline passed, long runId,
-                                                  RunContext parent, RunTally tally, RuleSelection selection) {
+    private RuleExecutionException stoppedWaiting(RuleSet rules, RunFacts facts, String msg, Exception cause,
+                                                  Deadline passed) {
+        RunTally tally = facts.tally();
         // Recorded before any listener is told, as a fatal error from beforeRun would keep the stop from reaching
         // onRunError, which records it for every other stop.
         if (cause instanceof InterruptedException) {
@@ -721,12 +733,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
         // from any other callback of a run that stopped.
-        EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
-        currentRun.set(run);
-        Deadline outerDeadline = Cancellation.enter(deadline);
-        // Cleared as runWithCopy clears it, so a run started from onRunError of a run a fatal Error left isn't told of
-        // that run's rule.
-        fatalFailure.remove();
+        EngineRunContext run = newRun(rules, facts);
+        Deadline outerDeadline = enterRun(run, facts.deadline());
         try {
             try {
                 notifyRun("beforeRun", listener -> listener.beforeRun(run));
@@ -739,13 +747,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             notifyRunError(run, failure, failure, tally);
             return failure;
         } finally {
-            fatalFailure.remove();
-            Cancellation.leave(outerDeadline);
-            if (parent == null) {
-                currentRun.remove();
-            } else {
-                currentRun.set(parent);
-            }
+            leaveRun(facts.parent(), outerDeadline);
         }
     }
 
@@ -1497,11 +1499,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private RuleExecutionException cancellation(CompiledRule rule, String stage, Deadline deadline,
                                                 Throwable thrown) {
         // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
-        if (Thread.currentThread().isInterrupted()) {
+        Cancellation.Reason reason = Cancellation.reason(deadline);
+        if (reason == Cancellation.Reason.INTERRUPTED) {
             return cancelled("run() was interrupted " + stage + " rule '" + rule.displayName() + "'",
                     new InterruptedException(), null, thrown);
         }
-        if (deadline.hasPassed()) {
+        if (reason == Cancellation.Reason.TIMED_OUT) {
             return cancelled("run() passed its deadline of " + deadline.instant() + " " + stage + " rule '"
                     + rule.displayName() + "'", Cancellation.timedOut(deadline), deadline, thrown);
         }
