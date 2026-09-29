@@ -269,4 +269,13 @@ class FailuresTest {
                 + "java.lang.IllegalStateException: " + "a".repeat(1000) + "... (399001 more characters))",
                 description);
     }
+
+    @Test
+    @DisplayName("a line about a fatal Error that can't be built is the plain one, so the Error is still rethrown")
+    void lineThatCantBeBuiltIsPlain() {
+        assertEquals("full", Failures.lineOr(() -> "full", "plain"));
+        assertEquals("plain", Failures.lineOr(() -> {
+            throw new OutOfMemoryError("no memory left to describe it");
+        }, "plain"));
+    }
 }

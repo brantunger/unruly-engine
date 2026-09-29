@@ -61,9 +61,9 @@ it says `a nested run() failed: <innermost failure>` or `a nested load() failed:
 The thread remembers 32 failures, and 32 fatal `Error`s, until its outermost run, `load()`, `validate()` or `close()`
 ends; then, or past 32, one thrown on may be logged again.
 
-An exception of your own with a message of its own, wrapped around a nested failure that isn't a fatal `Error`, is
-news, so it's logged: at ERROR for a rule's failure, the output supplier's or a rule that fails to compile in `load()`,
-and at WARN for a listener or a `close()`.
+An exception of your own with a message of its own, wrapped around a nested failure, is news, so it's logged: at ERROR
+for a rule's failure, the output supplier's, a language's or a rule that fails to compile in `load()`, and at WARN for
+a listener or a `close()`.
 
 The wrapper's message comes first, shortened and escaped, and the nested failure follows as a note, shortened to 1,000
 characters before it's escaped, such as
@@ -74,7 +74,15 @@ A wrapper that adds nothing is left out, and the nested text stands alone: one w
 its cause's `toString()`, as `new RuntimeException(cause)` makes, or one whose message already contains the nested
 failure's text. In MVEL, MVEL's own exception around an engine failure from a method the rule calls is left out as well.
 
-A wrapper around a nested fatal `Error` isn't logged at ERROR: the call it was thrown in rethrows the `Error`, which the
-nested run logged. From `onError` closing a rule's own fatal `Error`, `run()` rethrows the rule's, and the nested one is
-kept in its `getSuppressed()` and in that of the exception `onRunError` gets. A `close()` still logs such a wrapper at
-WARN, as does a listener for any but the first fatal `Error` thrown in a callback.
+Around a nested fatal `Error`, the note is the `Error`'s class and message, such as
+`Failed to execute action for rule 'r': audit failed (after a nested run() failed: java.lang.OutOfMemoryError: ...)`,
+and the call still rethrows the `Error` itself. One logged already, but not below the code that wrapped it, such as by
+an earlier nested run, gets `(caused by java.lang.OutOfMemoryError: ..., already logged)` instead.
+
+A listener's first fatal `Error` in a callback, `onError` included, logs such a wrapper at ERROR, as
+`A listener threw <class> in <callback>: ...`; wrapping the failure a listener was told of adds nothing. From `onError`
+closing a rule's own fatal `Error`, `run()` rethrows the rule's, and the nested one is kept in its `getSuppressed()`
+and in that of the exception `onRunError` gets.
+
+A `close()` logs a wrapper around a nested fatal `Error` at WARN, with the note. So does a listener for any but the
+first fatal `Error` thrown in a callback, as `<class>: <message>`, without the note.
