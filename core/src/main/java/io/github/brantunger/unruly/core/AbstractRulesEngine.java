@@ -1266,10 +1266,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Checks a fact name with the language of each rule in use. A language rejects a name with an
      * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
      * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
-     * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, which is
-     * logged and rethrown. A failure of a {@code run()} or a {@code load()} the check started, and a fatal error that
-     * run logged, isn't logged a second time, and a rejection this logs is recorded as logged, so the code around a
-     * nested run doesn't log it again (see {@link LoggedFailures}).
+     * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, a
+     * rejection included, which is logged and rethrown. A failure of a {@code run()} or a {@code load()} the check
+     * started, and a fatal error that run logged, isn't logged a second time, and a rejection this logs is recorded as
+     * logged, so the code around a nested run doesn't log it again (see {@link LoggedFailures}).
      *
      * @param name   The fact's name
      * @param checks The compilers to check it with, by language name
@@ -1279,9 +1279,32 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static IllegalArgumentException factNameRejection(String name, Map<String, ExpressionCompiler> checks,
                                                               boolean logged) {
         for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
-            try {
-                check.getValue().checkFactName(name);
-            } catch (IllegalArgumentException e) {
+            IllegalArgumentException rejected = factNameRejection(name, check.getKey(), check.getValue(), logged);
+            if (rejected != null) {
+                return rejected;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks a fact name with one language, as {@link #factNameRejection(String, Map, boolean)} describes.
+     *
+     * @param name     The fact's name
+     * @param language The language's name
+     * @param compiler The compiler to check it with
+     * @param logged   Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own
+     *                 message
+     * @return The exception the language rejected the name with, or {@code null} if it accepts it
+     */
+    private static IllegalArgumentException factNameRejection(String name, String language,
+                                                              ExpressionCompiler compiler, boolean logged) {
+        Throwable failure;
+        try {
+            compiler.checkFactName(name);
+            return null;
+        } catch (IllegalArgumentException e) {
+            if (Failures.fatalError(e) == null) {
                 // The language wrote this message and it names the fact, so it's escaped before it's logged. The
                 // exception is returned as it came, so a caller still reads exactly what the language said. A failed
                 // run() or load() the check started has already logged its failure; the language's own instance is
@@ -1291,21 +1314,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     LoggedFailures.loggedByRun(e);
                 }
                 return e;
-            } catch (Throwable e) {
-                Failures.keepInterruptStatus(e);
-                String msg = "The '%s' expression language failed to check fact name '%s': %s"
-                        .formatted(Failures.quote(check.getKey()), Failures.quote(name), Failures.describe(e));
-                Error fatal = Failures.fatalError(e);
-                boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(e);
-                if (logs) {
-                    log.error(msg);
-                }
-                Failures.throwIfPresent(fatal);
-                IllegalArgumentException rejected = new IllegalArgumentException(msg, e);
-                return logs ? LoggedFailures.loggedByRun(rejected) : rejected;
             }
+            // A rejection that carries a fatal Error is handled like anything else that does.
+            failure = e;
+        } catch (Throwable e) {
+            failure = e;
         }
-        return null;
+        Failures.keepInterruptStatus(failure);
+        String msg = "The '%s' expression language failed to check fact name '%s': %s"
+                .formatted(Failures.quote(language), Failures.quote(name), Failures.describe(failure));
+        Error fatal = Failures.fatalError(failure);
+        boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(failure);
+        if (logs) {
+            log.error(msg);
+        }
+        Failures.throwIfPresent(fatal);
+        IllegalArgumentException rejected = new IllegalArgumentException(msg, failure);
+        return logs ? LoggedFailures.loggedByRun(rejected) : rejected;
     }
 
     /**

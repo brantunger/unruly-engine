@@ -957,6 +957,16 @@ class NestedRunFailureLogTest {
         };
     }
 
+    private static Runnable rejecting(Runnable nested) {
+        return () -> {
+            try {
+                nested.run();
+            } catch (OutOfMemoryError e) {
+                throw new IllegalArgumentException("audit write failed", e);
+            }
+        };
+    }
+
     private void assertWrapperLogged(Outcome<Throwable> outcome, String wrapper) {
         assertSame(oom, outcome.thrown());
         assertEquals(List.of(INNER_FATAL, wrapper + ": audit write failed" + AFTER_NESTED_FATAL),
@@ -1085,6 +1095,35 @@ class NestedRunFailureLogTest {
                     + " session";
             default -> "The 'stub' expression language failed to check fact name 'x'";
         });
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"run(), a fact's name", "load(), a declared fact's name",
+        "validate(), a declared fact's name"})
+    @DisplayName("a language that rejects a fact name with an IllegalArgumentException wrapping its run()'s fatal"
+            + " Error has that logged once, then rethrown")
+    void languageRejectionWrappingNestedFatal(String where) {
+        Runnable nested = rejecting(running(throwingOom()));
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>firstMatch(
+                HashMap::new).language(new StubExpressionLanguage().checkFactName(name -> nested.run()));
+        if (where.endsWith("declared fact's name")) {
+            builder.fact("x", Integer.class);
+        }
+        RulesEngine<Map<String, Object>> engine = builder.build();
+        List<Rule> rules = List.of(Rule.builder().ruleName("r").condition("c").action("a").build());
+        FactMap<Object> facts = new FactMap<>();
+        facts.setValue("x", 1);
+
+        Outcome<Throwable> outcome = failed(() -> {
+            if (where.startsWith("validate")) {
+                engine.validate(rules);
+            } else {
+                engine.load(rules);
+                engine.run(facts);
+            }
+        });
+
+        assertWrapperLogged(outcome, "The 'stub' expression language failed to check fact name 'x'");
     }
 
     @ParameterizedTest(name = "{0}")

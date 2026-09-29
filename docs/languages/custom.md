@@ -61,7 +61,7 @@ sequenceDiagram
 | `name()` | Once: in `language(...)`, or when `ServiceLoader` finds it | The building thread | Keep it constant |
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
-| `checkFactName` | Each declared fact, once every rule has been compiled or has failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
+| `checkFactName` | Each declared fact, once every rule has compiled or failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
 | `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled. Return `Session.none()` or a new session each time | The run's thread, or the `load()` thread | Yes |
 | `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it. Never for `Session.none()`, a session a run creates, or `validate()` | The `load()` thread | No |
 | `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
@@ -81,8 +81,8 @@ run's thread, at once, before it's used. A `load()` that fails closes the compil
 compiler once.
 
 A run holds its copy from before `checkFactName` until after its last expression, so the compiler's `close()` never
-overlaps them, and both compile methods finish before any run can see the compiler. A language the engine has but no
-loaded rule uses gets no compiler, no session and no fact-name check.
+overlaps them, and both compile methods finish before any run can see the compiler. A language no loaded rule uses
+gets no compiler, no session and no fact-name check.
 
 ## 🚀 Implementing the interfaces
 
@@ -223,8 +223,8 @@ doesn't receive it.
 ## 🚨 Errors when rules load
 
 What your compiler throws or returns decides what the user sees from `load()`, or gets back from `validate()`, which
-compiles the same way but returns the failures and logs only a fatal error, not your warnings and not the failures
-themselves. Every row but the session one, which only `load()` reaches, applies to both:
+compiles the same way but returns the failures and logs only a fatal error, not your warnings or the failures. Every
+row but the session one, which only `load()` reaches, applies to both:
 
 | You throw or return | The user sees | Reported |
 | --- | --- | --- |
@@ -235,7 +235,7 @@ themselves. Every row but the session one, which only `load()` reaches, applies 
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; the rules written in it aren't compiled |
 | An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
 | A [fatal error](../glossary.md#fatal-error), thrown or as a cause | Logged, then rethrown unchanged | At once |
-| `IllegalArgumentException` from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
+| `IllegalArgumentException` without a fatal cause from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. Your message is shortened and escaped as
@@ -324,14 +324,15 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 
 - for every fact of every run, on the run's thread, after `beforeRun`, so a rejection reaches `onRunError`. `run()`
   throws your exception unchanged, logged at ERROR. Anything else becomes an `IllegalArgumentException` reading
-  `The 'my' expression language failed to check fact name 'x': ...`; a fatal error is rethrown;
+  `The 'my' expression language failed to check fact name 'x': ...`;
 - for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has compiled or failed, by the
-  compilers created; with none, they wait for the next `load()`. A rejection fails the load with
+  compilers created; with none, they wait for the next `load()`. A rejection fails it with
   `Declared fact 'empty' can't be used: ` and your message.
 
-Only the languages the loaded rules use are asked, in the order the rules first used them, or the default language
-for an empty rule list. The engine rejects `null`, blank names and `output` first, and caches nothing, so keep
-`checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways, through
+A [fatal error](../glossary.md#fatal-error), even your exception's cause, is logged with that `failed to check`
+message and rethrown, by `load()` too. Only the loaded rules' languages are asked, in first-use order, or the default
+language for an empty list. The engine rejects `null`, blank names and `output` first, and caches nothing:
+keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways:
 `unusableFactName()` and `usableFactNames()`.
 
 ## ⏳ Stopping a run
