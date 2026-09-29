@@ -402,7 +402,8 @@ final class FactNames {
      * MVEL's own lookup of a name in an imported package ignores every error, so it reads the name as the fact. That
      * is why every error the load throws is read as "not a class", bar a {@link VirtualMachineError}, where the JVM
      * itself is failing and a fact name isn't what to report. A name the rule list's class loader refuses to look up,
-     * as too long or with too many parts (see {@link ExactNameClassLoader}), isn't a class either, as MVEL reads it.
+     * as too long or with too many parts (see {@link ExactNameClassLoader}), isn't a class either, as MVEL reads it,
+     * so its class file isn't looked up.
      *
      * <p>
      * In a native image the class file isn't looked up at all. An image serves no class file as a resource unless
@@ -414,11 +415,12 @@ final class FactNames {
      * </p>
      */
     private boolean isClass(String pkg, String name) {
-        if (!mayBeClass(classLoader, pkg + '.' + name)) {
+        String className = pkg + '.' + name;
+        if (ExactNameClassLoader.refuses(className) || !mayBeClass(classLoader, className)) {
             return false;
         }
         try {
-            Class.forName(pkg + '.' + name, false, classLoader);
+            Class.forName(className, false, classLoader);
             return true;
         } catch (ClassNotFoundException e) {
             return false;
