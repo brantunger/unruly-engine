@@ -14,12 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.LongSupplier;
 
 /**
  * One loaded rule list: the rules as {@code load()} compiled them, the compilers of the languages they use, and
@@ -167,6 +164,20 @@ final class RuleSet {
         PERMIT,
         /** A build slot, which a run holds while it runs a new copy for the first time. */
         SLOT
+    }
+
+    // Where a kept copy comes from when the run hasn't taken one already.
+    private enum Source {
+        // An idle copy if there is one, or else a new one.
+        IDLE_OR_NEW,
+        // A new one: the run has just looked for an idle copy and found none.
+        NEW
+    }
+
+    // Whether lending a copy warns that the run made it after waiting for a kept one.
+    private enum Warning {
+        NONE,
+        OVERFLOW
     }
 
     /**
@@ -477,7 +488,8 @@ final class RuleSet {
         Error fatal = null;
         try {
             if (borrowed.kind() == Kind.KEPT) {
-                // Kept before the permit is released, so a run that was waiting finds this copy.
+                // Kept before the permit is released, so a run that was waiting finds this copy, and before the run
+                // leaves, so a copy is never kept into a rule set the last run to leave has already closed.
                 fatal = keep(borrowed.sessions());
             } else if (borrowed.kind() == Kind.EXTRA) {
                 fatal = Closing.sessions(borrowed.sessions());
@@ -626,18 +638,18 @@ final class RuleSet {
             // A thread pool's size bounds the copies its runs make, and virtual threads have nothing but the build
             // slots. A nested run never waits for one: its own thread may hold the slot it would wait for.
             return copyLimit.limits() || !Thread.currentThread().isVirtual() || nested
-                    ? keptCopy(Held.NOTHING, null) : slottedCopy(deadline);
+                    ? keptCopy(Held.NOTHING, null, Source.IDLE_OR_NEW) : slottedCopy(deadline);
         }
         // A run that finds a permit free doesn't wait, so it isn't counted as waiting.
-        if (permits.available().tryAcquire()) {
-            return keptCopy(Held.PERMIT, null);
+        if (permits.tryTake()) {
+            return keptCopy(Held.PERMIT, null, Source.IDLE_OR_NEW);
         }
         // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of these
         // rules has learned whether they need copies at all. An extra copy can learn it too, and then nothing
         // overflowed.
         if (nested) {
             // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
-            return copy(newSessions(), Kind.EXTRA, Held.NOTHING, false);
+            return copy(newSessions(), Kind.EXTRA, Held.NOTHING);
         }
         // Counted while it waits, and until it has looked for an idle copy, so a copy given back meanwhile is kept for
         // it, even once the rule set is retired; uncounted before it makes a copy of its own, so that copies given back
@@ -649,7 +661,7 @@ final class RuleSet {
         Map<String, Session> found;
         waiting.incrementAndGet();
         try {
-            permit = awaitPermit(permits.available(), permits::returned, stallWindow, deadline);
+            permit = permits.awaitPermit(stallWindow, deadline);
             found = idle.poll();
             looked = true;
         } finally {
@@ -659,16 +671,16 @@ final class RuleSet {
             }
         }
         if (permit) {
-            return keptCopy(Held.PERMIT, found);
+            return keptCopy(Held.PERMIT, found, Source.IDLE_OR_NEW);
         }
         // Stalled: an idle copy is lent, holding no permit, before an extra one is made. The copy already existed, so
         // nothing overflowed. On a rule set in use it's lent as extra, and closed when it's given back: a run holding a
         // permit may make a kept copy meanwhile, and keeping both would leave more idle copies than the limit for as
         // long as the rule set serves. A retired rule set kept it for a waiting run, and keeps it again only for one.
         if (found != null) {
-            return copy(found, isRetired() ? Kind.KEPT : Kind.EXTRA, Held.NOTHING, false);
+            return copy(found, isRetired() ? Kind.KEPT : Kind.EXTRA, Held.NOTHING);
         }
-        return copy(newSessions(), Kind.EXTRA, Held.NOTHING, true);
+        return extraCopy(newSessions());
     }
 
     /**
@@ -690,7 +702,7 @@ final class RuleSet {
             // A run that gives up waiting still makes its copy: an engine without a limit never fails a run for want
             // of one. Counted until it has looked for a copy again, so a copy given back while it waited is kept for
             // it, even once the rule set is retired, and the slot given back if looking fails, as lend() gives back a
-            // permit, so a failure leaves neither behind.
+            // permit, so a failure leaves neither behind. A copy found then needs no slot either: it has run before.
             Held held = Held.NOTHING;
             boolean looked = false;
             waiting.incrementAndGet();
@@ -700,90 +712,41 @@ final class RuleSet {
                 looked = true;
             } finally {
                 waiting.decrementAndGet();
-                if (!looked) {
+                if (!looked || sessions != null) {
                     giveBack(held);
                 }
             }
             if (sessions == null) {
-                boolean made = false;
-                try {
-                    sessions = newSessions();
-                    made = true;
-                } finally {
-                    if (!made) {
-                        giveBack(held);
-                    }
-                }
-                return copy(sessions, Kind.KEPT, held, false);
+                return keptCopy(held, null, Source.NEW);
             }
-            giveBack(held);
         }
-        return copy(sessions, Kind.KEPT, Held.NOTHING, false);
-    }
-
-    /**
-     * Waits for a permit while copies are still being given back. A run that waits a whole {@code window} without one
-     * single permit coming back gives up: either every copy is held by a run that is itself waiting for this one, or
-     * the rules are so slow that an extra copy costs less than waiting. A run with a deadline never waits past it.
-     *
-     * @param permits  The permits to wait for
-     * @param returned How many permits have been given back so far
-     * @param window   How long to wait for progress, in milliseconds
-     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
-     * @return {@code true} if a permit was taken, {@code false} if nothing came back within one window
-     * @throws InterruptedException if the thread is interrupted while it waits
-     * @throws TimeoutException     if the deadline comes before a permit does
-     */
-    static boolean awaitPermit(Semaphore permits, LongSupplier returned, long window, Deadline deadline)
-            throws InterruptedException, TimeoutException {
-        // tryAcquire() first: acquire() throws at once on a thread whose interrupt status is already set, even when
-        // copies are free, and the run would fail saying every copy was in use when none was.
-        if (permits.tryAcquire()) {
-            return true;
-        }
-        long windowNanos = TimeUnit.MILLISECONDS.toNanos(window);
-        long seen = returned.getAsLong();
-        while (true) {
-            long left = deadline.nanosLeft();
-            if (left < windowNanos) {
-                // The deadline comes before the window ends, so the run waits only until then: a whole window never
-                // passes, and a run past its deadline makes no extra copy either. The wait is timed on nanoTime(), as
-                // the deadline is, so a wait that ends without a permit ends with the deadline passed.
-                if (permits.tryAcquire(Math.max(0, left), TimeUnit.NANOSECONDS)) {
-                    return true;
-                }
-                throw Cancellation.timedOut(deadline);
-            }
-            if (permits.tryAcquire(window, TimeUnit.MILLISECONDS)) {
-                return true;
-            }
-            long now = returned.getAsLong();
-            if (now == seen) {
-                return false;
-            }
-            seen = now;
-        }
+        return copy(sessions, Kind.KEPT, Held.NOTHING);
     }
 
     /**
      * Takes an idle copy, or makes one, that the run keeps until it gives it back.
      *
-     * @param held  What the run took for this copy, given back if no copy can be made
-     * @param found An idle copy the run has already taken, or {@code null} to look for one now
+     * @param held   What the run took for this copy, given back if no copy can be made
+     * @param found  An idle copy the run has already taken, or {@code null} to take or make one now
+     * @param source Where the copy comes from when {@code found} is {@code null}
      * @return The copy
      */
-    private Copy keptCopy(Held held, Map<String, Session> found) {
+    private Copy keptCopy(Held held, Map<String, Session> found, Source source) {
         Map<String, Session> sessions;
         boolean taken = false;
         try {
-            sessions = found != null ? found : take();
+            if (found != null) {
+                sessions = found;
+            } else {
+                sessions = source == Source.NEW ? newSessions() : take();
+            }
             taken = true;
         } finally {
             if (!taken) {
                 giveBack(held);
             }
         }
-        return copy(sessions, Kind.KEPT, held, false);
+        return copy(sessions, Kind.KEPT, held);
     }
 
     /**
@@ -796,19 +759,33 @@ final class RuleSet {
      * @param sessions The copy's sessions, which only this run holds
      * @param kind     What happens to the copy when it's given back, unless its sessions are shared
      * @param held     What the run took for this copy
-     * @param overflow Whether to warn, once, that the run made an extra copy after waiting for a kept one, unless its
-     *                 sessions are shared
      * @return The copy
      */
+    private Copy copy(Map<String, Session> sessions, Kind kind, Held held) {
+        return copy(sessions, kind, held, Warning.NONE);
+    }
+
+    /**
+     * Lends the given sessions as an extra copy that holds nothing, as {@link #copy(Map, Kind, Held)} does, and warns,
+     * once, that the run made an extra copy after waiting for a kept one, unless its sessions are shared.
+     *
+     * @param sessions The copy's sessions, which only this run holds
+     * @return The copy
+     */
+    private Copy extraCopy(Map<String, Session> sessions) {
+        return copy(sessions, Kind.EXTRA, Held.NOTHING, Warning.OVERFLOW);
+    }
+
     // Any Throwable: the sessions, and what the run took for them, must be given up however lending ends, as a finally
-    // would, and a failure that isn't fatal is kept under a fatal Error from closing.
-    private Copy copy(Map<String, Session> sessions, Kind kind, Held held, boolean overflow) {
+    // would, and a failure that isn't fatal is kept under a fatal Error from closing. Warning is inside the try for the
+    // same reason.
+    private Copy copy(Map<String, Session> sessions, Kind kind, Held held, Warning warning) {
         Copy copy;
         try {
             if (statelessSessions(sessions)) {
                 copy = new Copy(sessions, Kind.SHARED, Held.NOTHING);
             } else {
-                if (overflow) {
+                if (warning == Warning.OVERFLOW) {
                     warnAboutOverflow();
                 }
                 copy = new Copy(sessions, kind, held);

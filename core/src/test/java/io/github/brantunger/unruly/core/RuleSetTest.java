@@ -657,7 +657,7 @@ class RuleSetTest {
             return value;
         };
 
-        assertTrue(RuleSet.awaitPermit(permits, returned, 10, deadline()),
+        assertTrue(CopyPermits.awaitPermit(permits, returned, 10, deadline()),
                 "the run should have taken the freed permit");
         assertEquals(0, permits.availablePermits(), "it took the permit it waited for");
     }
@@ -670,7 +670,7 @@ class RuleSetTest {
     void givingUpWhenNothingComesBack() throws InterruptedException, TimeoutException {
         Semaphore permits = new Semaphore(0);
 
-        assertFalse(RuleSet.awaitPermit(permits, () -> 7L, 10, Deadline.NONE),
+        assertFalse(CopyPermits.awaitPermit(permits, () -> 7L, 10, Deadline.NONE),
                 "nothing came back, so the run makes an extra copy");
     }
 
@@ -683,7 +683,7 @@ class RuleSetTest {
         // windows, so a run that kept waiting fails the test at it instead of holding it.
         LongSupplier returned = () -> calls.getAndIncrement() == 0 ? 0L : 1L;
 
-        assertFalse(RuleSet.awaitPermit(permits, returned, 10, deadline()),
+        assertFalse(CopyPermits.awaitPermit(permits, returned, 10, deadline()),
                 "nothing came back in the second window, so the run makes an extra copy");
     }
 
@@ -692,7 +692,7 @@ class RuleSetTest {
     void takingAFreeCopy() throws InterruptedException, TimeoutException {
         Semaphore permits = new Semaphore(1);
 
-        assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
+        assertTrue(CopyPermits.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
         assertEquals(0, permits.availablePermits());
     }
 
@@ -704,7 +704,7 @@ class RuleSetTest {
         // Cleared whatever happens, so the tests after this one on the thread aren't interrupted as well.
         Thread.currentThread().interrupt();
         try {
-            assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
+            assertTrue(CopyPermits.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
         } finally {
             Thread.interrupted();
         }
@@ -718,7 +718,7 @@ class RuleSetTest {
         Deadline deadline = Deadline.from(Duration.ofMillis(50));
 
         TimeoutException thrown = assertThrows(TimeoutException.class,
-                () -> RuleSet.awaitPermit(permits, () -> 0L, 60_000, deadline));
+                () -> CopyPermits.awaitPermit(permits, () -> 0L, 60_000, deadline));
 
         // Asked of the deadline, which decides when a run stops: the system clock can be a moment either side of it.
         assertTrue(deadline.hasPassed(), "it gave up before the deadline");
@@ -731,7 +731,7 @@ class RuleSetTest {
         Semaphore permits = new Semaphore(0);
 
         assertThrows(TimeoutException.class,
-                () -> RuleSet.awaitPermit(permits, () -> 0L, 60_000, Deadline.at(Instant.now().minusSeconds(1))));
+                () -> CopyPermits.awaitPermit(permits, () -> 0L, 60_000, Deadline.at(Instant.now().minusSeconds(1))));
     }
 
     @Test
@@ -748,7 +748,7 @@ class RuleSetTest {
         });
         giver.start();
 
-        assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 60_000, deadline()));
+        assertTrue(CopyPermits.awaitPermit(permits, () -> 0L, 60_000, deadline()));
         giver.join();
     }
 
@@ -757,7 +757,7 @@ class RuleSetTest {
     void aLaterDeadlineKeepsTheWindow() throws InterruptedException, TimeoutException {
         Semaphore permits = new Semaphore(0);
 
-        assertFalse(RuleSet.awaitPermit(permits, () -> 7L, 10, deadline()));
+        assertFalse(CopyPermits.awaitPermit(permits, () -> 7L, 10, deadline()));
     }
 
     @Test
