@@ -76,8 +76,7 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         protected Map<String, List<Setter>> computeValue(Class<?> type) {
             Lookup lookup = new Lookup(type);
             return Arrays.stream(lookup.methods(type))
-                    .filter(method -> method.getParameterCount() == 1 && method.getName().startsWith("set")
-                            && !Modifier.isStatic(method.getModifiers()))
+                    .filter(Accessors::isSetter)
                     .sorted(Comparator.comparing((Method method) -> parameter(method).getName()))
                     .collect(Collectors.groupingBy(Method::getName, Collectors.collectingAndThen(Collectors.toList(),
                             overloads -> mostSpecificFirst(lookup.named(overloads)))));
@@ -98,6 +97,15 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     private record Setter(Method method, boolean generic, List<Class<?>> accepts) {
     }
 
+    /**
+     * The first setter that accepted the value but couldn't be reached, and why.
+     *
+     * @param setter The setter
+     * @param cause  What calling it threw
+     */
+    private record Refusal(Setter setter, IllegalAccessException cause) {
+    }
+
     private BeansAndMapsWriter() {
     }
 
@@ -115,7 +123,6 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      * @throws ReflectiveOperationException if the setter throws, which it reports as the cause of an
      *                                      {@link java.lang.reflect.InvocationTargetException}
      */
-    @SuppressWarnings("unchecked")
     @Override
     public void set(Object output, String property, @Nullable Object value) throws ReflectiveOperationException {
         Objects.requireNonNull(output, "output must not be null");
@@ -124,42 +131,52 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
             throw new IllegalArgumentException("property must not be empty");
         }
         if (output instanceof Map<?, ?> map) {
-            ((Map<String, @Nullable Object>) map).put(property, value);
+            put(map, property, value);
             return;
         }
-        String name = "set" + Character.toUpperCase(property.charAt(0)) + property.substring(1);
-        // The most specific setter that accepts the value is tried first. If the engine can't reach it, only generic
-        // setters' bridges are tried after it, as a generic interface's setter is reached through its bridge, not the
-        // class's typed one. Such a bridge accepts only the types of the setters it may call, which come before it,
-        // so but for the limit accepted() describes, it calls the setter that was refused. Calling any other setter,
-        // including a bridge that calls a method with its own parameter, would call a method Java wouldn't, so the
-        // setter that can't be reached fails instead.
-        IllegalAccessException refused = null;
-        Setter refusedSetter = null;
+        String name = Accessors.setterName(property);
         List<Setter> setters = SETTERS.get(output.getClass()).getOrDefault(name, List.of());
+        if (!written(output, property, setters, value)) {
+            throw new IllegalArgumentException(output.getClass().getName() + " has no public method " + name
+                    + " that accepts " + (value == null ? "null" : "a " + value.getClass().getName()
+                    + primitiveSetters(name, setters, value)));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void put(Map<?, ?> map, String property, @Nullable Object value) {
+        ((Map<String, @Nullable Object>) map).put(property, value);
+    }
+
+    // Calls the most specific setter that accepts the value, and says whether one did. If the engine can't reach it,
+    // only generic setters' bridges are tried after it, as a generic interface's setter is reached through its bridge,
+    // not the class's typed one. Such a bridge accepts only the types of the setters it may call, which come before
+    // it, so but for the limit accepted() describes, it calls the setter that was refused. Calling any other setter,
+    // including a bridge that calls a method with its own parameter, would call a method Java wouldn't, so the setter
+    // that can't be reached fails instead.
+    private static boolean written(Object output, String property, List<Setter> setters, @Nullable Object value)
+            throws ReflectiveOperationException {
+        Refusal refused = null;
         for (Setter setter : setters) {
             if (!accepts(setter, value)) {
                 continue;
             }
-            if (refusedSetter != null && !setter.generic()) {
+            if (refused != null && !setter.generic()) {
                 continue;
             }
             try {
                 setter.method().invoke(output, value);
-                return;
+                return true;
             } catch (IllegalAccessException e) {
                 if (refused == null) {
-                    refused = e;
-                    refusedSetter = setter;
+                    refused = new Refusal(setter, e);
                 }
             }
         }
         if (refused != null) {
-            throw unreachable(output, property, refusedSetter.method(), refused);
+            throw unreachable(output, property, refused);
         }
-        throw new IllegalArgumentException(output.getClass().getName() + " has no public method " + name
-                + " that accepts " + (value == null ? "null" : "a " + value.getClass().getName()
-                + primitiveSetters(name, setters, value)));
+        return false;
     }
 
     // For a number, a character or a boolean that no setter accepts, the setters of its name that take a primitive or
@@ -187,13 +204,9 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
                 + ", but " + Widening.ONLY_WIDENED + ")";
     }
 
-    private static IllegalStateException unreachable(Object output, String property, Method setter,
-                                                     IllegalAccessException refused) {
+    private static IllegalStateException unreachable(Object output, String property, Refusal refused) {
         return new IllegalStateException("A " + output.getClass().getName() + " has a setter for '" + property
-                + "', but " + setter.getDeclaringClass().getName() + " can't be reached from here, and no public"
-                + " supertype declares it. Declare the setter on a public type, or on a public interface the type"
-                + " implements; on the module path, also export that type's package, or open it to"
-                + " io.github.brantunger.unruly.core for a type that isn't public.", refused);
+                + "', but " + Accessors.unreachable("setter", refused.setter().method()), refused.cause());
     }
 
     // Orders one name's overloads, given in the order of their parameter type's name, the way Java picks between

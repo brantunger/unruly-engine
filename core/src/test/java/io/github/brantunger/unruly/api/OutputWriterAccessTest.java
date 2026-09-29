@@ -60,6 +60,92 @@ class OutputWriterAccessTest {
         }
     }
 
+    /** A bean whose property names test the naming rules that reading and writing share (#734). */
+    public static final class Named {
+        private String url;
+        private String xValue;
+        private boolean active;
+        private Boolean open;
+
+        public String getURL() {
+            return url;
+        }
+
+        public void setURL(String url) {
+            this.url = url;
+        }
+
+        public String getXValue() {
+            return xValue;
+        }
+
+        public void setXValue(String xValue) {
+            this.xValue = xValue;
+        }
+
+        public boolean isActive() {
+            return active;
+        }
+
+        public void setActive(boolean active) {
+            this.active = active;
+        }
+
+        public Boolean isOpen() {
+            return open;
+        }
+
+        public void setOpen(Boolean open) {
+            this.open = open;
+        }
+    }
+
+    @Test
+    @DisplayName("a property is read and written by the same rules, as java.beans names it (#734)")
+    void readAndWrittenByTheSameRules() throws Exception {
+        Named output = new Named();
+
+        OutputWriter.beansAndMaps().set(output, "URL", "u");
+        OutputWriter.beansAndMaps().set(output, "XValue", "x");
+        OutputWriter.beansAndMaps().set(output, "active", true);
+        OutputWriter.beansAndMaps().set(output, "open", Boolean.TRUE);
+
+        assertEquals("u", FactProperties.read(output, "URL"));
+        assertEquals("x", FactProperties.read(output, "XValue"));
+        assertEquals(true, FactProperties.read(output, "active"));
+        assertEquals(Boolean.TRUE, FactProperties.read(output, "open"));
+    }
+
+    @Test
+    @DisplayName("a class that isn't public is read and written by the same rules, through the public interface that"
+            + " declares the property (#734)")
+    void readAndWrittenThroughAPublicInterface() throws Exception {
+        HiddenOutputs.Scored output = HiddenOutputs.scored();
+
+        OutputWriter.beansAndMaps().set(output, "score", 3);
+
+        assertEquals(3, FactProperties.read(output, "score"));
+        OutputWriter.beansAndMaps().set(output, "Score", 4);
+        assertEquals(4, FactProperties.read(output, "score"), "setScore is reached from Score too");
+        assertThrows(IllegalArgumentException.class, () -> FactProperties.read(output, "Score"));
+    }
+
+    @Test
+    @DisplayName("a property decapitalized as java.beans wouldn't is written but not read (#734)")
+    void writtenFromANameThatIsNotRead() throws Exception {
+        // setXValue is reached from xValue and XValue alike, and setURL from uRL, but getXValue() reads only XValue
+        // and getURL() only URL, as java.beans names them.
+        Named output = new Named();
+
+        OutputWriter.beansAndMaps().set(output, "xValue", "x");
+        OutputWriter.beansAndMaps().set(output, "uRL", "u");
+
+        assertEquals("x", FactProperties.read(output, "XValue"));
+        assertEquals("u", FactProperties.read(output, "URL"));
+        assertThrows(IllegalArgumentException.class, () -> FactProperties.read(output, "xValue"));
+        assertThrows(IllegalArgumentException.class, () -> FactProperties.read(output, "uRL"));
+    }
+
     @Test
     @DisplayName("a public class's setter inherited from a class that isn't public is written through its bridge")
     void inheritedFromAClassThatIsNotPublic() throws Exception {
@@ -851,6 +937,27 @@ class OutputWriterAccessTest {
         assertInstanceOf(IllegalAccessException.class, thrown.getCause());
         assertTrue(thrown.getMessage().contains("open it to io.github.brantunger.unruly.core for a type that isn't"
                 + " public"), thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("on the module path, a getter and a setter that can't be reached give the same advice (#734)")
+    void unreachableGetterAndSetterGiveTheSameAdvice(@TempDir Path classes) throws Exception {
+        Object output = outputs(classes, "exports com.example.api;").getMethod("hidden").invoke(null);
+
+        IllegalStateException read = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(output, "score"));
+        IllegalStateException written = assertThrows(IllegalStateException.class,
+                () -> OutputWriter.beansAndMaps().set(output, "score", 1));
+
+        assertEquals("A com.example.api.Hidden has a property 'score', but its accessor on com.example.api.Hidden"
+                + " can't be reached from here, and no public supertype declares it. Declare the accessor on a public"
+                + " type, or on a public interface the type implements; on the module path, also export that type's"
+                + " package, or open it to io.github.brantunger.unruly.core for a type that isn't public.",
+                read.getMessage());
+        assertEquals("A com.example.api.Hidden has a setter for 'score', but com.example.api.Hidden can't be reached"
+                + " from here, and no public supertype declares it. Declare the setter on a public type, or on a"
+                + " public interface the type implements; on the module path, also export that type's package, or"
+                + " open it to io.github.brantunger.unruly.core for a type that isn't public.", written.getMessage());
     }
 
     @Test
