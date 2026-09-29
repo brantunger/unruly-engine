@@ -250,18 +250,22 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * callbacks, then exactly one of {@link RuleListener#afterRun} and {@link RuleListener#onRunError}.
      *
      * <p>
-     * The fact values are collected before the run borrows a copy of the rules, so the scope can carry them, and their
-     * names are checked inside the scope, so a name no language can refer to reaches {@code onRunError}. A run that
-     * waits for a copy opens its scope when the wait ends; an interrupt while waiting opens and closes a scope of its
-     * own. Failing because no rules are loaded, or because the engine is closed, is misuse and reaches no listener.
-     * Failing because the run found the same rule list closed time after time while it was borrowing a copy reaches
-     * none either: that means an engine invariant has broken rather than that the call was wrong.
+     * The fact values are collected before the run borrows a copy of the rules, so the scope can carry them. The
+     * engine's own checks of them run before the run waits for a copy, so a run whose facts it rejects fails at once,
+     * however many copies are in use, opening its scope without a copy. The languages check the names inside the
+     * scope, once the run holds its copy, so a name no language can refer to reaches {@code onRunError} and a
+     * compiler is never closed while it checks one. A run that waits for a copy opens its scope when the wait ends; an
+     * interrupt while waiting opens and closes a scope of its own. Failing because no rules are loaded, or because the
+     * engine is closed, is misuse and reaches no listener. Failing because the run found the same rule list closed
+     * time after time while it was borrowing a copy reaches none either: that means an engine invariant has broken
+     * rather than that the call was wrong.
      * </p>
      *
      * @param facts   The facts the run was given
      * @param timeout How long the run may take, or {@code null} if it has no timeout of its own. The deadline is
      *                taken from when the run starts, so waiting for a copy of the rules counts towards it, and a run
-     *                started from inside another run on this thread stops no later than that run's deadline.
+     *                started from inside another run on this thread stops no later than that run's deadline, even
+     *                one started while that run reads its facts or gets or gives back its copy.
      * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
      * @param body    What the engine does once it holds a copy of the rules
      * @return What the run did
@@ -286,47 +290,58 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         RunEvent event = FlightRecorderEvents.startRun();
         RunTally tally = new RunTally();
         String outcome = RunEvent.FAILED;
+        // Published before the facts are read, so a run started from a fact's getValue(), from a language's
+        // newSession() while the copy is made or from a session's close() while it's given back stops no later than
+        // this one, as a run started from a rule or a listener does.
+        Deadline deadline = Cancellation.deadlineFrom(timeout);
+        Deadline enclosingDeadline = Cancellation.enter(deadline);
         LoggedFailures.enter();
         try {
-            Deadline deadline = Cancellation.deadlineFrom(timeout);
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
             // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
             RuleSelection selection = new RuleSelection(
                     Objects.requireNonNull(clock.instant(), "the engine's clock returned a null instant"), tags);
             Map<String, Object> values = factValues(facts);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
-            RuleSet.Copy copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
-            int read = 1;
-            while (copy == null) {
-                // The rule set the run read was closed before it could borrow from it, which a reload does to the
-                // set it replaced, and close() to the set it detaches: reading again finds the set that replaced it,
-                // or reports the closed engine. A run the caller has stopped meanwhile stops here rather than
-                // reading again, and one that keeps finding the same set closed fails rather than spinning for ever.
-                // A different set starts the count again: a reload got through, however many overtake the run.
-                stopIfCancelled(rules, listenerFacts, deadline, runId, parent, tally, selection);
-                if (read == RULE_READS_PER_RUN) {
-                    throw new IllegalStateException("The engine's rule list was found closed " + RULE_READS_PER_RUN
-                            + " times in a row while this run was borrowing a copy of it. A rule list is closed only"
-                            + " after it has been retired, and only a rule list that is no longer the engine's"
-                            + " current one is retired, so the list a run reads can never already be closed: that"
-                            + " invariant has broken. Please report this stack trace at"
-                            + " https://github.com/brantunger/unruly-engine/issues");
-                }
-                RuleSet again = currentRules();
-                read = again == rules ? read + 1 : 1;
-                rules = again;
+            // Checked before the run waits for a copy, which facts the engine will reject needn't do.
+            RuntimeException rejected = factRejection(values);
+            RuleSet.Copy copy = null;
+            if (rejected == null) {
                 copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                int read = 1;
+                while (copy == null) {
+                    // The rule set the run read was closed before it could borrow from it, which a reload does to the
+                    // set it replaced, and close() to the set it detaches: reading again finds the set that replaced
+                    // it, or reports the closed engine. A run the caller has stopped meanwhile stops here rather than
+                    // reading again, and one that keeps finding the same set closed fails rather than spinning for
+                    // ever. A different set starts the count again: a reload got through, however many overtake the
+                    // run.
+                    stopIfCancelled(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                    if (read == RULE_READS_PER_RUN) {
+                        throw new IllegalStateException("The engine's rule list was found closed "
+                                + RULE_READS_PER_RUN + " times in a row while this run was borrowing a copy of it. A"
+                                + " rule list is closed only after it has been retired, and only a rule list that is"
+                                + " no longer the engine's current one is retired, so the list a run reads can never"
+                                + " already be closed: that invariant has broken. Please report this stack trace at"
+                                + " https://github.com/brantunger/unruly-engine/issues");
+                    }
+                    RuleSet again = currentRules();
+                    read = again == rules ? read + 1 : 1;
+                    rules = again;
+                    copy = borrow(rules, listenerFacts, deadline, runId, parent, tally, selection);
+                }
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
             // outlive its rule lists, so a permit that isn't returned would lower its limit for good. A fatal Error
-            // from closing the rules as it's given back replaces a failure of the run that isn't fatal.
+            // from closing the rules as it's given back replaces a failure of the run that isn't fatal. A run whose
+            // facts were rejected holds no copy, and gives nothing back.
             RunResult<O> result;
             try {
                 result = runWithCopy(rules, copy, values, listenerFacts, deadline, runId, parent, tally, selection,
-                        body);
+                        rejected, body);
             } catch (Throwable t) {
                 keepInterruptOfStop(tally);
-                Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.release(copy)));
+                Failures.throwIfPresent(Failures.fatalInsteadOf(t, copy == null ? null : rules.release(copy)));
                 throw t;
             }
             Failures.throwIfPresent(rules.release(copy));
@@ -340,6 +355,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw e;
         } finally {
             LoggedFailures.leave();
+            Cancellation.leave(enclosingDeadline);
             // Again on the way out, as a language's close() may have cleared it too.
             keepInterruptOfStop(tally);
             if (event != null) {
@@ -363,14 +379,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
-    /** Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. */
+    /**
+     * Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. A
+     * run whose facts the engine rejected before it borrowed one opens the same scope without a copy, and fails in it
+     * with what the check threw.
+     *
+     * @param copy     The copy the run borrowed, or {@code null} if its facts were rejected
+     * @param rejected What the engine's checks of the facts threw before the run borrowed a copy, or {@code null} if
+     *                 they passed
+     */
     private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, Map<String, Object> values,
                                      Map<String, Object> listenerFacts, Deadline deadline, long runId,
                                      RunContext parent, RunTally tally, RuleSelection selection,
-                                     RunBody<O> body) {
+                                     RuntimeException rejected, RunBody<O> body) {
         List<RuleListener> snapshot = listenerSnapshot();
         EngineRunContext run = newRun(runId, rules, listenerFacts, parent, selection);
         currentRun.set(run);
+        // runInScope has set this run's deadline already; set again, and put back, with the run's context.
         Deadline outerDeadline = Cancellation.enter(deadline);
         fatalFailure.remove();
         try {
@@ -378,6 +403,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
                 notifyRun(snapshot, "beforeRun", listener -> listener.beforeRun(run));
+                if (rejected != null) {
+                    throw rejected;
+                }
+                // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name.
                 checkFactNames(values, rules.factChecks());
                 // Every run that returns passes here, a nested one too, so the result carries the run's tags and
                 // start before afterRun or the caller sees it.
@@ -1150,36 +1179,63 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Checks every fact name of a run: not {@code null}, not blank, not the output's name, and one the language of each
-     * loaded rule can refer to.
+     * Checks a run's facts as the engine itself does, before the run borrows a copy of the rules, and returns what the
+     * check threw, for the run to fail with once its listeners have heard of it: every name is not {@code null}, not
+     * blank and not the output's name, every value is an instance of the type its fact was declared with or of its
+     * wrapper, and, when the engine requires declared facts, the run supplied every declared fact and nothing else.
+     * The languages check the names later, with {@link #checkFactNames}.
+     *
+     * @param values The fact values by name
+     * @return The {@link IllegalArgumentException} the check threw, or {@code null} if the facts passed
+     */
+    private RuntimeException factRejection(Map<String, Object> values) {
+        try {
+            for (Map.Entry<String, Object> fact : values.entrySet()) {
+                checkName(fact.getKey());
+                checkDeclaredType(fact.getKey(), fact.getValue());
+            }
+            checkNothingWasLeftOut(values);
+            return null;
+        } catch (RuntimeException e) {
+            return e;
+        }
+    }
+
+    /**
+     * Checks that a fact name is not {@code null}, not blank and not the output's name.
+     *
+     * @param name The fact's name
+     * @throws IllegalArgumentException if it is
+     */
+    private static void checkName(String name) {
+        FactNames.Problem problem = FactNames.check(name);
+        if (problem != null) {
+            throw rejectedFact(switch (problem) {
+                case NULL -> "fact name must not be null";
+                case BLANK -> "fact name must not be blank";
+                // Actions bind the output object to this name, silently hiding a fact of the same name.
+                case OUTPUT -> "'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot"
+                        + " be used as a fact name";
+            });
+        }
+    }
+
+    /**
+     * Checks every fact name of a run with the language of each loaded rule, once the engine's own checks have passed
+     * (see {@link #factRejection}).
      *
      * @param values The fact values by name
      * @param checks The compilers of the rule list the run uses, which check each name, by language name
-     * @throws IllegalArgumentException if a fact is named {@code null} or {@code output}, has a blank name or a name a
-     *                                  language can't refer to, isn't an instance of the type it was declared with or
-     *                                  of its wrapper, or, when the engine requires declared facts, was declared and
-     *                                  left out or supplied without being declared; or if a language's check of the
-     *                                  name throws anything else
+     * @throws IllegalArgumentException if a language can't refer to a fact's name, or its check of the name throws
+     *                                  anything else
      */
-    private void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
+    private static void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
         for (String name : values.keySet()) {
-            FactNames.Problem problem = FactNames.check(name);
-            if (problem != null) {
-                throw rejectedFact(switch (problem) {
-                    case NULL -> "fact name must not be null";
-                    case BLANK -> "fact name must not be blank";
-                    // Actions bind the output object to this name, silently hiding a fact of the same name.
-                    case OUTPUT -> "'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot"
-                            + " be used as a fact name";
-                });
-            }
             IllegalArgumentException rejected = factNameRejection(name, checks, true);
             if (rejected != null) {
                 throw rejected;
             }
-            checkDeclaredType(name, values.get(name));
         }
-        checkNothingWasLeftOut(values);
     }
 
     /**
