@@ -226,29 +226,56 @@ class FactNamesTest {
     }
 
     @Test
-    @DisplayName("a name longer than the longest cached one is looked up every time, so it isn't kept")
+    @DisplayName("a name longer than the longest cached one isn't kept")
     void missLongerThanTheLongestNotCached() {
-        RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
-        String name = "x".repeat(LONGEST_CACHED_MISS + 1);
+        FactNames names = javaUtil(new RecordingClassLoader());
 
-        names.check(name);
-        names.check(name);
+        names.check("x".repeat(LONGEST_CACHED_MISS + 1));
 
-        assertEquals(2, Collections.frequency(loader.resources, "java/util/" + name + ".class"));
+        assertEquals(0, names.cachedMisses());
+        assertEquals(0, names.cachedMissChars());
     }
 
     @Test
     @DisplayName("a name as long as the longest cached one is still cached")
     void missAsLongAsTheLongestCached() {
+        FactNames names = javaUtil(new RecordingClassLoader());
+
+        names.check("x".repeat(LONGEST_CACHED_MISS));
+
+        assertEquals(1, names.cachedMisses());
+        assertEquals(LONGEST_CACHED_MISS, names.cachedMissChars());
+    }
+
+    // #774: a name the rule list's class loader refuses, as over 2,000 characters, was still looked up on the class
+    // path, once for every imported package, and on every run when it was too long to cache.
+    @Test
+    @DisplayName("a name the class loader refuses as too long isn't looked up on the class path, and is still cached")
+    void refusedNameNotLookedUp() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = new FactNames(new Imports(Set.of("java.util", "java.time"), Set.of(), loader));
+        String refused = "x".repeat(ExactNameClassLoader.MAX_NAME_LENGTH - "java.util.".length() + 1);
+        String tooLongToCache = "x".repeat(LONGEST_CACHED_MISS + 1);
+
+        names.check(refused);
+        names.check(tooLongToCache);
+        names.check(tooLongToCache);
+
+        assertEquals(List.of(), loader.resources);
+        assertEquals(1, names.cachedMisses(), "the refused name is cached, as a name looked up and not found is");
+        assertEquals(refused.length(), names.cachedMissChars());
+    }
+
+    @Test
+    @DisplayName("a name the class loader doesn't refuse, however near the limit, is still looked up")
+    void longestNameNotRefusedLookedUp() {
         RecordingClassLoader loader = new RecordingClassLoader();
         FactNames names = javaUtil(loader);
-        String name = "x".repeat(LONGEST_CACHED_MISS);
+        String name = "x".repeat(ExactNameClassLoader.MAX_NAME_LENGTH - "java.util.".length());
 
         names.check(name);
-        names.check(name);
 
-        assertEquals(1, Collections.frequency(loader.resources, "java/util/" + name + ".class"));
+        assertEquals(List.of("java/util/" + name + ".class"), loader.resources);
     }
 
     @Test

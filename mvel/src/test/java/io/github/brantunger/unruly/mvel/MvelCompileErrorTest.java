@@ -724,6 +724,23 @@ class MvelCompileErrorTest {
         assertEquals(Map.of("k", 0), engine.run(new FactMap<>()));
     }
 
+    // #777: the issue quoted the whole run of operator characters before the =, so its description was as long as
+    // the run, where the message is shortened.
+    @Test
+    @DisplayName("an assignment after a long run of operator characters quotes only the operator's 4 characters")
+    void assignmentAfterLongOperatorRunBounded() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+        Rule rule = Rule.builder().ruleName("r").condition("x " + "*".repeat(5_000) + "= 1")
+                .action("output.put('k', 1)").build();
+
+        RuleCompilationException ex = engine.validate(List.of(rule)).get(0);
+
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 5_000, "contains an assignment ('***=')")), ex.issues());
+        assertEquals("Condition for rule 'r' contains an assignment ('***=' at line 1, column 5000). "
+                + "Conditions can't change facts or declare variables; use == to compare.", ex.getMessage());
+    }
+
     private static CompileException endOfStatement(StringIndexOutOfBoundsException cause) {
         CompileException mvel = withMessage("[Error: unexpected end of statement]\n[Near : {... ....}]\n"
                 + "[Line: 1, Column: 20]");

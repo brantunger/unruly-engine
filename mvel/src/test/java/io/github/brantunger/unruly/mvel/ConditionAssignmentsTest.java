@@ -22,6 +22,9 @@ class ConditionAssignmentsTest {
             "x <<= 1; true                           | '<<=' at position 2",
             "x >>= 1; true                           | '>>=' at position 2",
             "x >>>= 1; true                          | '>>>=' at position 2",
+            // #777: the whole run of operator characters before the = was taken as the operator, however long.
+            "x *****= 1; true                        | '***=' at position 4",
+            "x >>>>= 1; true                         | '>>>=' at position 3",
             "claim.amount++; true                    | '++' at position 12",
             "--x > 0                                 | '--' at position 0",
             "x == (y = 3)                            | '=' at position 8",

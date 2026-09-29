@@ -34,7 +34,8 @@ final class ConditionAssignments {
     /**
      * An assignment found in a condition.
      *
-     * @param text     The operator or keyword, such as {@code +=} or {@code with}
+     * @param text     The operator or keyword, such as {@code +=} or {@code with}. A run of operator characters
+     *                 longer than the longest operator, {@code >>>=}, is cut to its last 4, so the text is bounded
      * @param position Where it starts in the condition, as an index into its text counting from 0
      */
     record Write(String text, int position) {
@@ -113,7 +114,8 @@ final class ConditionAssignments {
 
     private static String operatorEndingAt(String text, int index) {
         int start = index;
-        while (OPERATOR_CHARS.indexOf(charAt(text, start - 1)) >= 0) {
+        // The longest assignment operator, >>>=, has 4 characters.
+        while (index - start < 3 && OPERATOR_CHARS.indexOf(charAt(text, start - 1)) >= 0) {
             start--;
         }
         return text.substring(start, index + 1);
