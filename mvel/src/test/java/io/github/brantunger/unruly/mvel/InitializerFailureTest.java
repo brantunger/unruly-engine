@@ -12,25 +12,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -275,22 +268,9 @@ class InitializerFailureTest {
     @BeforeAll
     static void defineLongNamedFailure(@TempDir Path dir) throws Exception {
         String pkg = InitializerFailureTest.class.getPackageName();
-        JavaFileObject source = new SimpleJavaFileObject(URI.create("string:///" + LONG_SIMPLE_NAME + ".java"),
-                JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return "package " + pkg + ";\npublic class " + LONG_SIMPLE_NAME + " extends RuntimeException {\n"
-                        + "    public " + LONG_SIMPLE_NAME + "(String message) { super(message); }\n}\n";
-            }
-        };
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        boolean compiled = javac.getTask(null, null, diagnostics, List.of("-proc:none", "-d", dir.toString()), null,
-                List.of(source)).call();
-        assertTrue(compiled, diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n")));
+        assertCompiles(List.of("-proc:none", "-d", dir.toString()), List.of(source(LONG_SIMPLE_NAME,
+                "package " + pkg + ";\npublic class " + LONG_SIMPLE_NAME + " extends RuntimeException {\n"
+                        + "    public " + LONG_SIMPLE_NAME + "(String message) { super(message); }\n}\n")));
         longNamedClass = MethodHandles.lookup().defineClass(Files.readAllBytes(dir.resolve(pkg.replace('.', '/'))
                 .resolve(LONG_SIMPLE_NAME + ".class")));
     }

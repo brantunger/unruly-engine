@@ -30,9 +30,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
+import static io.github.brantunger.unruly.TestSupport.await;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static org.junit.jupiter.api.Assertions.*;
@@ -131,14 +131,6 @@ class CompiledCopyLimitTest {
         return engine;
     }
 
-    private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting until " + what);
-            Thread.sleep(5);
-        }
-    }
-
     /**
      * Whether every one of {@code threads} is parked. A run waiting for a copy and a run held by the gate both park
      * with a timeout, so the two can't be told apart by their state: with two runs in progress, the other four are
@@ -186,7 +178,7 @@ class CompiledCopyLimitTest {
         // copies to come back before it makes an extra one instead.
         // The gate opens as soon as the four runs are waiting, well within the five seconds a waiting run gives
         // the copies to come back before it makes an extra one instead.
-        await(() -> language.inProgress.get() == 2 && allParked(threads), "2 runs are in progress and 4 wait");
+        await(() -> language.inProgress.get() == 2 && allParked(threads), 10, "2 runs are in progress and 4 wait");
         assertEquals(2, language.sessionsMade.get(), "sessions made while four runs wait");
         language.gate.countDown();
         for (Thread thread : threads) {
@@ -245,7 +237,7 @@ class CompiledCopyLimitTest {
         RulesEngine<Map<String, Object>> engine = engine(language, 1);
         Thread holder = new Thread(() -> engine.run(new FactMap<>()));
         holder.start();
-        await(() -> language.inProgress.get() == 1, "the first run holds the only copy");
+        await(() -> language.inProgress.get() == 1, 10, "the first run holds the only copy");
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         AtomicBoolean interruptStatus = new AtomicBoolean();
         Thread waiter = new Thread(() -> {
@@ -260,7 +252,7 @@ class CompiledCopyLimitTest {
         String logs = logsOf(() -> {
             try {
                 waiter.start();
-                await(() -> waiter.getState() == Thread.State.TIMED_WAITING, "the second run waits for a copy");
+                await(() -> waiter.getState() == Thread.State.TIMED_WAITING, 10, "the second run waits for a copy");
                 waiter.interrupt();
                 waiter.join();
             } catch (InterruptedException e) {

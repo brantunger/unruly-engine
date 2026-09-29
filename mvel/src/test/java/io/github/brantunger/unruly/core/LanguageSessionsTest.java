@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.TestSupport.await;
+import static io.github.brantunger.unruly.TestSupport.throwIfSet;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -143,15 +145,6 @@ class LanguageSessionsTest {
         }
     }
 
-    private static void throwIfSet(Throwable failure) {
-        if (failure instanceof RuntimeException exception) {
-            throw exception;
-        }
-        if (failure instanceof Error error) {
-            throw error;
-        }
-    }
-
     private static Rule rule(String name, String language) {
         return Rule.builder().ruleName(name).language(language).condition("c").action(name).build();
     }
@@ -169,15 +162,6 @@ class LanguageSessionsTest {
     /** An engine that fires the first match, with only the given language. */
     private static RulesEngine<Map<String, Object>> firstMatch(ExpressionLanguage language) {
         return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).language(language).build();
-    }
-
-    private static void await(CountDownLatch latch) {
-        try {
-            assertTrue(latch.await(10, TimeUnit.SECONDS), "timed out");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(e);
-        }
     }
 
     @Test

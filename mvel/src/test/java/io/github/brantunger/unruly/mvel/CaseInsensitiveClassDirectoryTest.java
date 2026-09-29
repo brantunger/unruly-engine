@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -40,17 +40,6 @@ class CaseInsensitiveClassDirectoryTest {
                 return super.loadClass(name, resolve);
             }
         };
-    }
-
-    private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
-        Thread thread = Thread.currentThread();
-        ClassLoader original = thread.getContextClassLoader();
-        thread.setContextClassLoader(loader);
-        try {
-            return action.get();
-        } finally {
-            thread.setContextClassLoader(original);
-        }
     }
 
     private static final Rule PRIME_RATE = Rule.builder().ruleName("prime-rate")

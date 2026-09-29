@@ -9,22 +9,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.lang.invoke.MethodHandles;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -41,21 +34,8 @@ class RunTimeDefinedClassTest {
     @BeforeAll
     static void defineClass(@TempDir Path dir) throws Exception {
         String pkg = RunTimeDefinedClassTest.class.getPackageName();
-        JavaFileObject source = new SimpleJavaFileObject(URI.create("string:///" + NAME + ".java"),
-                JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return "package " + pkg + ";\npublic class " + NAME + " {\n    public int v() { return 9; }\n}\n";
-            }
-        };
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        boolean compiled = javac.getTask(null, null, diagnostics, List.of("-proc:none", "-d", dir.toString()), null,
-                List.of(source)).call();
-        assertTrue(compiled, diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n")));
+        assertCompiles(List.of("-proc:none", "-d", dir.toString()), List.of(source(NAME,
+                "package " + pkg + ";\npublic class " + NAME + " {\n    public int v() { return 9; }\n}\n")));
         MethodHandles.lookup().defineClass(Files.readAllBytes(dir.resolve(pkg.replace('.', '/')).resolve(NAME
                 + ".class")));
     }

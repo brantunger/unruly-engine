@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -129,22 +130,8 @@ class RuleSetTest {
      */
     private static ExpressionCompiler closingCompiler(AtomicInteger counter, List<Integer> closed) {
         ExpressionCompiler sessions = recordingCompiler(counter, closed);
-        return new ExpressionCompiler() {
-            @Override
-            public CompiledCondition compileCondition(Expression expression) {
-                return sessions.compileCondition(expression);
-            }
-
-            @Override
-            public CompiledAction compileAction(Expression expression) {
-                return sessions.compileAction(expression);
-            }
-
-            @Override
-            public Session newSession() {
-                return sessions.newSession();
-            }
-
+        return new ForwardingExpressionCompiler(sessions) {
+            // Records its own close instead of forwarding it: the compiler it wraps has nothing to close.
             @Override
             public void close() {
                 closed.add(0);
@@ -974,17 +961,7 @@ class RuleSetTest {
     private static ExpressionCompiler heldCompiler(AtomicInteger counter, List<Integer> closed, int held,
                                                    CountDownLatch making, CountDownLatch letGo) {
         ExpressionCompiler sessions = closingCompiler(counter, closed);
-        return new ExpressionCompiler() {
-            @Override
-            public CompiledCondition compileCondition(Expression expression) {
-                return sessions.compileCondition(expression);
-            }
-
-            @Override
-            public CompiledAction compileAction(Expression expression) {
-                return sessions.compileAction(expression);
-            }
-
+        return new ForwardingExpressionCompiler(sessions) {
             @Override
             public Session newSession() {
                 if (counter.get() == held - 1) {
@@ -997,11 +974,6 @@ class RuleSetTest {
                     }
                 }
                 return sessions.newSession();
-            }
-
-            @Override
-            public void close() {
-                sessions.close();
             }
         };
     }

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.TestSupport.asMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Pins the documented tie-break: equal priorities keep their order from the rule list. */
@@ -29,12 +30,6 @@ class PriorityTieTest {
                 output.merge("order", expression.text(), (fired, name) -> "" + fired + name);
                 return ActionResult.done();
             });
-
-    /** The output object, which every engine here builds with {@code HashMap::new}. */
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object output) {
-        return (Map<String, Object>) output;
-    }
 
     private static Rule rule(String name, Integer priority) {
         return Rule.builder()

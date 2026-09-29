@@ -15,21 +15,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mvel2.util.ParseTools;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.io.IOException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -39,9 +31,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -125,22 +118,11 @@ class DottedNameLimitsTest {
         return Rule.builder().ruleName("r").condition(condition).action(action).build();
     }
 
-    // The engine takes its class loader for the rules' classes from the thread that loads them.
-    private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
-        Thread thread = Thread.currentThread();
-        ClassLoader previous = thread.getContextClassLoader();
-        thread.setContextClassLoader(loader);
-        try {
-            return action.get();
-        } finally {
-            thread.setContextClassLoader(previous);
-        }
-    }
-
     private static RulesEngine<Map<String, Object>> loaded(CountingLoader loader, Rule rule,
                                                            RuleListener... listeners) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .listeners(List.of(listeners)).build();
+        // The engine takes its class loader for the rules' classes from the thread that loads them.
         withContextClassLoader(loader, () -> {
             engine.load(List.of(rule));
             return null;
@@ -324,21 +306,7 @@ class DottedNameLimitsTest {
     }
 
     private static void compile(Path directory, String path, String text) {
-        JavaFileObject source = new SimpleJavaFileObject(URI.create("string:///" + path + ".java"),
-                JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return text;
-            }
-        };
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        boolean compiled = javac.getTask(null, null, diagnostics,
-                List.of("-proc:none", "-d", directory.toString()), null, List.of(source)).call();
-        assertTrue(compiled, diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n")));
+        assertCompiles(List.of("-proc:none", "-d", directory.toString()), List.of(source(path, text)));
     }
 
     @Test

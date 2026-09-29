@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.TestSupport.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -177,15 +178,6 @@ class FlightRecorderEventsTest {
         assertSame(bug, assertThrows(IllegalStateException.class, () -> FlightRecorderEvents.loads(() -> {
             throw bug;
         })));
-    }
-
-    private static void await(CountDownLatch latch) {
-        try {
-            assertTrue(latch.await(10, TimeUnit.SECONDS), "timed out");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(e);
-        }
     }
 
     private static void join(Thread thread) {

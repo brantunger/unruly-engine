@@ -4,20 +4,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.WildcardType;
-import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Locale;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -53,24 +46,8 @@ class AnyFactStoreTest {
                     }
                 }
                 """;
-        JavaFileObject file = new SimpleJavaFileObject(URI.create("string:///com/example/facts/Scores.java"),
-                JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return source;
-            }
-        };
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-
-        boolean compiled = javac.getTask(null, null, diagnostics,
+        assertCompiles(
                 List.of("-proc:none", "-classpath", System.getProperty("java.class.path"), "-d", classes.toString()),
-                null, List.of(file)).call();
-
-        String errors = diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n"));
-        assertTrue(compiled, errors);
+                List.of(source("com/example/facts/Scores", source)));
     }
 }

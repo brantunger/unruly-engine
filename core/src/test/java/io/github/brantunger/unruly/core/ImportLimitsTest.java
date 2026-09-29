@@ -4,13 +4,13 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("build() rejects an import string too long or with too many dots before it is looked up as a class (#650)")
@@ -40,17 +40,6 @@ class ImportLimitsTest {
         // Every import string in these tests is longer than 100 characters, and no class the engine loads is.
         long importLookups() {
             return names.stream().filter(name -> name.length() > 100).count();
-        }
-    }
-
-    private static void withContextClassLoader(ClassLoader loader, Executable action) throws Throwable {
-        Thread thread = Thread.currentThread();
-        ClassLoader original = thread.getContextClassLoader();
-        thread.setContextClassLoader(loader);
-        try {
-            action.execute();
-        } finally {
-            thread.setContextClassLoader(original);
         }
     }
 
@@ -95,7 +84,7 @@ class ImportLimitsTest {
 
     @Test
     @DisplayName("an import with exactly 64 dot-separated parts is looked up in each nested-class form, as before")
-    void sixtyFourPartsAccepted() throws Throwable {
+    void sixtyFourPartsAccepted() {
         RecordingLoader loader = new RecordingLoader();
         RulesEngineBuilder<Map<String, Object>> builder = importing("a.".repeat(63) + "Z");
 
@@ -106,7 +95,7 @@ class ImportLimitsTest {
 
     @Test
     @DisplayName("an import of exactly 1,000 characters is looked up and accepted, as before")
-    void thousandCharactersAccepted() throws Throwable {
+    void thousandCharactersAccepted() {
         RecordingLoader loader = new RecordingLoader();
         RulesEngineBuilder<Map<String, Object>> builder = importing("a".repeat(1000));
 

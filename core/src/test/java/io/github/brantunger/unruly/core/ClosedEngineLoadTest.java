@@ -68,6 +68,8 @@ class ClosedEngineLoadTest {
             this.closeRelease = closeRelease;
         }
 
+        // Not TestSupport.await: this one runs in the language's code, on the loading thread, waits 30 seconds, and
+        // fails with an IllegalStateException that says what never happened.
         private static void await(CountDownLatch latch, String never) {
             try {
                 if (!latch.await(30, TimeUnit.SECONDS)) {

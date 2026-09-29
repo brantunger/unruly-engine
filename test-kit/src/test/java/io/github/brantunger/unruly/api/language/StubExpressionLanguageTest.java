@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.TestSupport.asMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("the stub expression language's defaults and knobs")
@@ -143,10 +144,5 @@ class StubExpressionLanguageTest {
         assertSame(ActionResult.done(), run(original.compileAction(ACTION), new HashMap<>()));
         assertDoesNotThrow(() -> original.checkFactName("anything"));
         assertEquals("x", changed.name(), "the new language keeps what wasn't changed");
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object output) {
-        return (Map<String, Object>) output;
     }
 }

@@ -6,27 +6,21 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.lang.module.Configuration;
 import java.lang.module.ModuleFinder;
 import java.lang.reflect.GenericSignatureFormatError;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -1455,23 +1449,6 @@ class OutputWriterAccessTest {
     }
 
     private static void compile(Path classes, List<JavaFileObject> sources) {
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        boolean compiled = javac.getTask(null, null, diagnostics, List.of("-proc:none", "-d", classes.toString()),
-                null, sources).call();
-        String errors = diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n"));
-        assertTrue(compiled, errors);
-    }
-
-    private static JavaFileObject source(String path, String text) {
-        return new SimpleJavaFileObject(URI.create("string:///" + path + ".java"), JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return text;
-            }
-        };
+        assertCompiles(List.of("-proc:none", "-d", classes.toString()), sources);
     }
 }

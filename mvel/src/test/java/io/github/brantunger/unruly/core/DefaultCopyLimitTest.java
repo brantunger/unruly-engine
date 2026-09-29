@@ -29,6 +29,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.UnaryOperator;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.TestSupport.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -158,18 +159,10 @@ class DefaultCopyLimitTest {
         }
     }
 
-    private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting until " + what);
-            Thread.sleep(5);
-        }
-    }
-
-    /** {@link #await}, where an {@link InterruptedException} can't be thrown on, such as inside a lambda. */
+    /** {@code await}, where an {@link InterruptedException} can't be thrown on, such as inside a lambda. */
     private static void awaitUninterruptibly(BooleanSupplier condition, String what) {
         try {
-            await(condition, what);
+            await(condition, 20, what);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
@@ -188,7 +181,7 @@ class DefaultCopyLimitTest {
         try (RulesEngine<Map<String, Object>> engine = patientEngine(UnaryOperator.identity())) {
             start(LIMIT + EXTRA_RUNS, true, engine, gate);
             // The runs above the limit wait for a copy, and don't give up while the gate is shut.
-            await(() -> gate.inProgress.get() == LIMIT && allParked(),
+            await(() -> gate.inProgress.get() == LIMIT && allParked(), 20,
                     LIMIT + " runs are in progress and " + EXTRA_RUNS + " wait for a copy");
             int mostBeforeOpening = gate.mostInProgress.get();
             gate.open.countDown();
@@ -243,7 +236,7 @@ class DefaultCopyLimitTest {
         try (RulesEngine<Map<String, Object>> engine = patientEngine(RulesEngineBuilder::unlimitedCopies)) {
             // Each run in progress is a new copy's first run, which holds a build slot (BuildSlotsTest).
             start(PROCESSORS + EXTRA_RUNS, true, engine, gate);
-            await(() -> gate.inProgress.get() == PROCESSORS && allParked(),
+            await(() -> gate.inProgress.get() == PROCESSORS && allParked(), 20,
                     PROCESSORS + " runs are in progress, more than the default limit of " + LIMIT);
             // Read before the gate opens: the slots bound only the new copies in their first run, so once it opens,
             // the waiting runs can take the copies given back, and new ones made with the slots given back, while
@@ -262,7 +255,7 @@ class DefaultCopyLimitTest {
         Gate gate = new Gate();
         try (RulesEngine<Map<String, Object>> engine = patientEngine(builder -> builder.maxCopies(2))) {
             start(4, false, engine, gate);
-            await(() -> gate.inProgress.get() == 2 && allParked(), "2 runs are in progress and 2 wait for a copy");
+            await(() -> gate.inProgress.get() == 2 && allParked(), 20, "2 runs are in progress and 2 wait for a copy");
             int mostBeforeOpening = gate.mostInProgress.get();
             gate.open.countDown();
             joinTheRuns();
@@ -281,7 +274,7 @@ class DefaultCopyLimitTest {
                 List.of(Rule.builder().ruleName("gated").language("stateless").condition("c").action("a").build()));
 
         start(4, false, engine, gate);
-        await(() -> gate.inProgress.get() == 4, "every run is in progress at once, although the limit is 1");
+        await(() -> gate.inProgress.get() == 4, 20, "every run is in progress at once, although the limit is 1");
         gate.open.countDown();
         joinTheRuns();
 
