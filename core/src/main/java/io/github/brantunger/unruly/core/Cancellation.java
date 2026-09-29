@@ -26,6 +26,16 @@ final class Cancellation {
     // RuleSet's count of runs on a thread.
     private static final ThreadLocal<Deadline> RUN_DEADLINE = new ThreadLocal<>();
 
+    /** Why a run must stop, as {@link #reason(Deadline)} finds it. */
+    enum Reason {
+        /** Neither: the run may go on. */
+        NONE,
+        /** The run's thread has been interrupted. */
+        INTERRUPTED,
+        /** The run has passed its deadline, and its thread hasn't been interrupted. */
+        TIMED_OUT
+    }
+
     private Cancellation() {
     }
 
@@ -110,5 +120,21 @@ final class Cancellation {
     static boolean isCancelled(Deadline deadline) {
         // isInterrupted(), never interrupted(): the status stays set, so the caller still sees it.
         return Thread.currentThread().isInterrupted() || deadline.hasPassed();
+    }
+
+    /**
+     * Returns why a run with this deadline must stop: an interrupt first, and its deadline only when its thread hasn't
+     * been interrupted. It allocates nothing, so a caller that checks it often builds its message only when the run
+     * stops.
+     *
+     * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
+     * @return {@link Reason#INTERRUPTED}, {@link Reason#TIMED_OUT}, or {@link Reason#NONE} if the run may go on
+     */
+    static Reason reason(Deadline deadline) {
+        // isInterrupted(), never interrupted(): the status stays set, so the caller still sees it.
+        if (Thread.currentThread().isInterrupted()) {
+            return Reason.INTERRUPTED;
+        }
+        return deadline.hasPassed() ? Reason.TIMED_OUT : Reason.NONE;
     }
 }
