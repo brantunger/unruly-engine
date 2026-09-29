@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -117,24 +118,31 @@ public final class FactProperties {
      *                                  evaluating it to {@code false} or to undefined hides it
      * @throws IllegalStateException    if the property exists but can't be read, because nothing public declares its
      *                                  accessor and its package isn't open to this module; or if the accessor
-     *                                  threw, with what it threw as the cause. What an
-     *                                  accessor throws is always wrapped, so that a getter throwing
-     *                                  {@link IllegalArgumentException} isn't read as a missing property
+     *                                  threw, with what it threw as the cause. What a getter throws is always
+     *                                  wrapped, so that one throwing {@link IllegalArgumentException} isn't read
+     *                                  as a missing property. A map's own {@code containsKey} and {@code get} are
+     *                                  its accessors, and an unchecked exception from them is wrapped too, except
+     *                                  a {@link ClassCastException} or {@link NullPointerException}, which means
+     *                                  the map refuses the key, so the fact has no such property
      */
     public static @Nullable Object read(Object target, String property) {
         Objects.requireNonNull(target, "target must not be null");
         Objects.requireNonNull(property, "property must not be null");
         if (target instanceof Map<?, ?> map) {
             // A sorted or otherwise restricted map can refuse a key of the wrong type outright, which is the same
-            // answer as not having it: rules name properties with strings.
+            // answer as not having it: rules name properties with strings. Anything else the map throws is its own
+            // failure, wrapped as a getter's is; the missing key is reported after the try, so that isn't wrapped.
             try {
-                if (!map.containsKey(property)) {
-                    throw new IllegalArgumentException(noSuchProperty(target, property));
+                if (map.containsKey(property)) {
+                    return map.get(property);
                 }
-                return map.get(property);
             } catch (ClassCastException | NullPointerException e) {
                 throw new IllegalArgumentException(noSuchProperty(target, property), e);
+            } catch (RuntimeException e) {
+                throw new IllegalStateException("Reading '" + property + "' on a " + target.getClass().getName()
+                        + " failed", e);
             }
+            throw new IllegalArgumentException(noSuchProperty(target, property));
         }
         Method accessor = ACCESSORS.get(target.getClass()).get(property);
         if (accessor == null) {
@@ -203,7 +211,9 @@ public final class FactProperties {
      * @throws IllegalArgumentException if {@code depth} is outside {@code 1} to {@value #MAX_DEPTH}, or
      *                                  {@code target} is a value this doesn't take apart, such as a {@link String},
      *                                  a number or a collection
-     * @throws IllegalStateException    if an accessor can't be called, with what it threw as the cause
+     * @throws IllegalStateException    if an accessor can't be called, with what it threw as the cause. A map's
+     *                                  iteration and its keys' {@code toString()} count as accessors, so what they
+     *                                  throw is wrapped too
      */
     public static Map<String, @Nullable Object> toData(Object target, int depth) {
         Objects.requireNonNull(target, "target must not be null");
@@ -252,8 +262,33 @@ public final class FactProperties {
 
     private static Map<String, @Nullable Object> entriesOf(Map<?, ?> map, int depth, Set<Object> path) {
         Map<String, @Nullable Object> converted = new LinkedHashMap<>();
-        map.forEach((key, value) -> converted.put(String.valueOf(key), convert(value, depth - 1, path)));
-        return converted;
+        Iterator<? extends Map.Entry<?, ?>> entries;
+        try {
+            entries = map.entrySet().iterator();
+        } catch (RuntimeException e) {
+            throw entriesFailed(map, e);
+        }
+        while (true) {
+            String key;
+            @Nullable Object value;
+            // Only the map's own calls are wrapped here: a nested value's failure is converted outside the try, so
+            // it isn't wrapped a second time.
+            try {
+                if (!entries.hasNext()) {
+                    return converted;
+                }
+                Map.Entry<?, ?> entry = entries.next();
+                key = String.valueOf(entry.getKey());
+                value = entry.getValue();
+            } catch (RuntimeException e) {
+                throw entriesFailed(map, e);
+            }
+            converted.put(key, convert(value, depth - 1, path));
+        }
+    }
+
+    private static IllegalStateException entriesFailed(Map<?, ?> map, RuntimeException cause) {
+        return new IllegalStateException("Reading the entries of a " + map.getClass().getName() + " failed", cause);
     }
 
     private static List<@Nullable Object> elementsOf(Collection<?> collection, int depth, Set<Object> path) {

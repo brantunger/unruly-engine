@@ -13,11 +13,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.function.IntSupplier;
@@ -158,6 +160,45 @@ class FactPropertiesTest {
 
         public int getValidated() {
             throw new IllegalArgumentException("amount not set");
+        }
+    }
+
+    /** A lazily loaded map whose backend fails, so its lookups and its iteration throw. */
+    static final class FailingMap extends AbstractMap<String, Object> {
+
+        private final RuntimeException failure;
+        private final boolean failsOnContainsKey;
+
+        FailingMap(RuntimeException failure, boolean failsOnContainsKey) {
+            this.failure = failure;
+            this.failsOnContainsKey = failsOnContainsKey;
+        }
+
+        @Override
+        public boolean containsKey(Object key) {
+            if (failsOnContainsKey) {
+                throw failure;
+            }
+            return true;
+        }
+
+        @Override
+        public Object get(Object key) {
+            throw failure;
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            throw failure;
+        }
+    }
+
+    /** A map key whose {@code toString()} throws. */
+    static final class BadKey {
+
+        @Override
+        public String toString() {
+            throw new IllegalArgumentException("no name");
         }
     }
 
@@ -607,6 +648,50 @@ class FactPropertiesTest {
 
         assertTrue(thrown.getMessage().contains("has no property 'creditScore'"), thrown.getMessage());
         assertInstanceOf(ClassCastException.class, thrown.getCause());
+    }
+
+    @Test
+    @DisplayName("what a map fact's containsKey or get throws is wrapped, never read as a missing property")
+    void aMapThatThrows() {
+        IllegalArgumentException backendDown = new IllegalArgumentException("backend down");
+
+        IllegalStateException onGet = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(backendDown, false), "score"));
+        assertSame(backendDown, onGet.getCause());
+        assertTrue(onGet.getMessage().contains("Reading 'score' on a " + FailingMap.class.getName()),
+                onGet.getMessage());
+
+        IllegalStateException onContainsKey = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(backendDown, true), "score"));
+        assertSame(backendDown, onContainsKey.getCause());
+
+        // An IllegalStateException gets the context too, rather than escaping as it came.
+        IllegalStateException unavailable = new IllegalStateException("unavailable");
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(unavailable, false), "score"));
+        assertSame(unavailable, wrapped.getCause());
+    }
+
+    @Test
+    @DisplayName("what a map's iteration or a key's toString() throws in toData is wrapped, and a nested failure once")
+    void aMapThatThrowsWhileConverting() {
+        IllegalArgumentException backendDown = new IllegalArgumentException("backend down");
+        IllegalStateException onIteration = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new FailingMap(backendDown, false), 1));
+        assertSame(backendDown, onIteration.getCause());
+        assertTrue(onIteration.getMessage().contains(FailingMap.class.getName()), onIteration.getMessage());
+
+        Map<Object, Object> badKey = new LinkedHashMap<>();
+        badKey.put(new BadKey(), 1);
+        IllegalStateException onKey = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(badKey, 1));
+        assertEquals("no name", onKey.getCause().getMessage());
+
+        // A nested bean's getter is wrapped by the read of that getter, not again by the map holding it.
+        IllegalStateException nested = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(Map.of("broken", new Broken()), 2));
+        assertTrue(nested.getMessage().contains("Reading 'boom'"), nested.getMessage());
+        assertEquals("boom", nested.getCause().getMessage());
     }
 
     @Test
