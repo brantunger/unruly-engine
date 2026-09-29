@@ -58,8 +58,8 @@ logged again, even when a listener or a language's `close()` started it: the rul
 it says `a nested run() failed: <innermost failure>` or `a nested load() failed: ...`, and a listener's or a
 `close()`'s WARN is left out. A listener's stack trace is still logged at DEBUG.
 
-The thread remembers 32, and a fatal `Error`, until its outermost run, `load()`, `validate()` or `close()` ends; then,
-or past 32, one thrown on may be logged again.
+The thread remembers 32 failures, and 32 fatal `Error`s, until its outermost run, `load()`, `validate()` or `close()`
+ends; then, or past 32, one thrown on may be logged again.
 
 An exception of your own with a message of its own, wrapped around a nested failure that isn't a fatal `Error`, is
 news, so it's logged: at ERROR for a rule's failure, the output supplier's or a rule that fails to compile in `load()`,

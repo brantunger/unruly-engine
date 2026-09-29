@@ -847,6 +847,56 @@ class NestedRunFailureLogTest {
         assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
     }
 
+    @Test
+    @DisplayName("two listeners whose run()s fail with fatal Errors of their own have each logged once, by its run")
+    void twoListenersNestedFatals() {
+        InternalError first = new InternalError("first fatal");
+        InternalError second = new InternalError("second fatal");
+        RulesEngine<Map<String, Object>> engine = plain("outer-rule",
+                onBeforeRun(running(engine("inner1", doing(() -> {
+                    throw first;
+                }), HashMap::new))),
+                onBeforeRun(running(engine("inner2", doing(() -> {
+                    throw second;
+                }), HashMap::new))));
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(first, outcome.thrown());
+        assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
+        assertEquals(List.of("Failed to execute action for rule 'inner1': first fatal",
+                "Failed to execute action for rule 'inner2': second fatal"), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+    }
+
+    @Test
+    @DisplayName("a rule's fatal Error that onRunError rethrows after onError's run() logged another isn't logged"
+            + " again")
+    void onRunErrorRethrowsAfterANestedFatal() {
+        OutOfMemoryError ruleError = new OutOfMemoryError("the rule's own");
+        Runnable nested = running(throwingOom());
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            throw ruleError;
+        }), HashMap::new, new RuleListener() {
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                nested.run();
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                throw error;
+            }
+        });
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(ruleError, outcome.thrown());
+        assertEquals(List.of("Failed to execute action for rule 'outer-rule': the rule's own", INNER_FATAL),
+                outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"rethrows", "wraps"})
     @DisplayName("a listener whose onRunError rethrows or wraps the run's fatal failure isn't taken for a nested run")

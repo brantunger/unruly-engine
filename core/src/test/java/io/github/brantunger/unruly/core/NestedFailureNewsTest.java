@@ -187,8 +187,10 @@ class NestedFailureNewsTest {
             assertFalse(LoggedFailures.logged(new IllegalStateException("cleanup failed", oom)));
             assertTrue(LoggedFailures.logged(new IllegalStateException(inner)));
             assertFalse(LoggedFailures.logged(new IllegalStateException("cleanup failed", inner)));
-            assertFalse(LoggedFailures.logged(new OutOfMemoryError("another")));
-            assertFalse(LoggedFailures.unloggedFatal(oom), "logged() recorded another in the place of the one logged");
+            OutOfMemoryError another = new OutOfMemoryError("another");
+            assertFalse(LoggedFailures.logged(another));
+            assertFalse(LoggedFailures.unloggedFatal(oom), "logged() lost the one logged");
+            assertTrue(LoggedFailures.unloggedFatal(another), "logged() recorded it");
         } finally {
             LoggedFailures.leave();
         }

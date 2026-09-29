@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * The thread's record of the failures nested runs and loads logged: made only for a nested one, forgotten when the
  * outermost run ends, and bounded, so a failure logged before the last {@value LoggedFailures#MAX_LOGGED} is logged
- * again if it's thrown on, and none is ever left out.
+ * again if it's thrown on, and none is ever left out. The fatal {@link Error}s runs logged are bounded the same way.
  */
 @DisplayName("the thread's record of what nested runs logged is made only when nested, and bounded")
 class LoggedFailuresTest {
@@ -131,6 +131,75 @@ class LoggedFailuresTest {
         }
         assertNull(LoggedFailures.find(byRun));
         assertEquals("wrapped", Failures.describe(new IllegalStateException("wrapped", byLoad)));
+    }
+
+    @Test
+    @DisplayName("the ring of fatal Errors exists as soon as a run starts, so recording an OutOfMemoryError allocates"
+            + " nothing")
+    void fatalRingMadeBeforeAnyFailure() throws ReflectiveOperationException {
+        Field runsField = LoggedFailures.class.getDeclaredField("RUNS");
+        runsField.setAccessible(true);
+        LoggedFailures.enter();
+        try {
+            Object runs = ((ThreadLocal<?>) runsField.get(null)).get();
+            Field loggedFatal = runs.getClass().getDeclaredField("loggedFatal");
+            loggedFatal.setAccessible(true);
+            Object ring = loggedFatal.get(runs);
+            assertEquals(LoggedFailures.MAX_LOGGED, ((Error[]) ring).length);
+            assertTrue(LoggedFailures.unloggedFatal(new OutOfMemoryError("heap")));
+            assertSame(ring, loggedFatal.get(runs), "a ring made while recording");
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("a fatal Error logged once stays logged while fewer than the bound of others are logged after it")
+    void fatalStaysLoggedPastOthers() {
+        InternalError first = new InternalError("first");
+        LoggedFailures.enter();
+        try {
+            assertTrue(LoggedFailures.unloggedFatal(first));
+            for (int i = 1; i < LoggedFailures.MAX_LOGGED; i++) {
+                LoggedFailures.enter();
+                try {
+                    assertTrue(LoggedFailures.unloggedFatal(new InternalError("nested " + i)));
+                } finally {
+                    LoggedFailures.leave();
+                }
+            }
+            assertTrue(LoggedFailures.logged(first));
+            assertFalse(LoggedFailures.unloggedFatal(first));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("past the bound, the oldest fatal Error logged is logged again, and the newest isn't")
+    void boundedFatalRecord() {
+        InternalError first = new InternalError("first");
+        InternalError last = null;
+        LoggedFailures.enter();
+        try {
+            assertTrue(LoggedFailures.unloggedFatal(first));
+            for (int i = 1; i <= LoggedFailures.MAX_LOGGED; i++) {
+                last = new InternalError("later " + i);
+                assertTrue(LoggedFailures.unloggedFatal(last));
+            }
+            assertFalse(LoggedFailures.unloggedFatal(last));
+            assertFalse(LoggedFailures.logged(first));
+            assertTrue(LoggedFailures.unloggedFatal(first), "logged again");
+            assertFalse(LoggedFailures.unloggedFatal(first), "and recorded again");
+        } finally {
+            LoggedFailures.leave();
+        }
+        LoggedFailures.enter();
+        try {
+            assertTrue(LoggedFailures.unloggedFatal(first), "forgotten with the outermost run");
+        } finally {
+            LoggedFailures.leave();
+        }
     }
 
     @ParameterizedTest(name = "{0}")
