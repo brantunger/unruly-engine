@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("compile failures carry each rule's failure, the expression kind and the language's issues")
@@ -207,11 +208,11 @@ class CompileFailureDetailsTest {
 
         String logs = logsOf(() -> recording.load(rules));
 
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Condition for rule 'w' has a warning at "
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Condition for rule 'w' has a warning at "
                 + "line 2, column 5: deprecated"), logs);
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'w' has a warning at "
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Action for rule 'w' has a warning at "
                 + "line 3: odd spacing"), logs);
-        assertTrue(logs.contains("WARN io.github.brantunger.unruly.engine - Action for rule 'v' has a warning: "
+        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Action for rule 'v' has a warning: "
                 + "reported as a warning"), logs);
         FactStore<Object> facts = new FactMap<>();
         assertEquals(Map.of("ran", "warn"), recording.run(facts));

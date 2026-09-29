@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +17,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 // Public, as is the fact class: MVEL's reflective accessors need to reach its method.
@@ -68,15 +70,14 @@ public class ErrorMessageCauseTest {
         facts.setValue("store", facts);
         facts.setValue("depth", 1);
         facts.setValue("x", 1);
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(RuleExecutionException.class, () -> engine.run(facts))));
-        String message = thrown.get().getMessage();
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class, () -> engine.run(facts));
+        String message = outcome.thrown().getMessage();
 
         assertTrue(message.startsWith("Failed to execute action for rule 'rec': a nested run() failed: "
                 + "Failed to execute action for rule 'rec': [Error: could not access: missing"), message);
         assertEquals(2, count(message, "Failed to execute action for rule 'rec'"), message);
-        assertEquals(1, count(logs, "ERROR io.github.brantunger.unruly.engine"), logs);
+        assertEquals(1, count(outcome.logs(), "ERROR " + ENGINE_LOGGER), outcome.logs());
     }
 
     @Test

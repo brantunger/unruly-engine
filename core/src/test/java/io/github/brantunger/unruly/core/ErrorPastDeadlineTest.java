@@ -16,6 +16,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,8 +32,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -159,12 +160,11 @@ class ErrorPastDeadlineTest {
                 onError.set(error);
             }
         });
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(
-                assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
+                () -> engine.run(new FactMap<>()));
 
-        return new Reported(thrown.get(), onError.get(), logs);
+        return new Reported(outcome.thrown(), onError.get(), outcome.logs());
     }
 
     /**
@@ -268,12 +268,11 @@ class ErrorPastDeadlineTest {
         RulesEngine<Map<String, Object>> engine = engine(rule("breaks", "yes", "cancelled:fatal"), SHORT,
                 new RuleListener() {
                 });
-        AtomicReference<Error> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>()))));
+        Outcome<OutOfMemoryError> outcome = capture(OutOfMemoryError.class, () -> engine.run(new FactMap<>()));
 
-        assertEquals("boom", thrown.get().getMessage());
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER), logs);
+        assertEquals("boom", outcome.thrown().getMessage());
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER), outcome.logs());
     }
 
     @Test
@@ -299,18 +298,18 @@ class ErrorPastDeadlineTest {
         });
         FactMap<Object> facts = new FactMap<>();
         facts.setValue("nested", (Runnable) () -> inner.run(new FactMap<>()));
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(
-                assertThrows(RuleExecutionException.class, () -> outer.run(facts))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class, () -> outer.run(facts));
 
-        RuleExecutionException failure = thrown.get();
+        RuleExecutionException failure = outcome.thrown();
         assertEquals("outer", failure.getRuleName(), "the outer failure doesn't name the outer rule");
         assertEquals(ExpressionKind.ACTION, failure.getExpressionKind());
         assertInstanceOf(RuleExecutionException.class, failure.getCause(), "the cause isn't the nested run's failure");
-        assertEquals(1, logs.lines().filter(line -> line.contains("ERROR " + ENGINE_LOGGER)).count(), logs);
-        assertTrue(logs.contains("ERROR " + ENGINE_LOGGER + "Failed to execute action for rule 'inner'"), logs);
-        assertFalse(logs.contains("WARN " + ENGINE_LOGGER + "run() "), logs);
+        assertEquals(1, outcome.logs().lines().filter(line -> line.contains("ERROR " + ENGINE_LOGGER)).count(),
+                outcome.logs());
+        assertTrue(outcome.logs().contains("ERROR " + ENGINE_LOGGER + "Failed to execute action for rule 'inner'"),
+                outcome.logs());
+        assertFalse(outcome.logs().contains("WARN " + ENGINE_LOGGER + "run() "), outcome.logs());
         assertEquals(1, onErrors.get(), "the outer rule's callback wasn't closed exactly once");
         assertSame(failure, onError.get(), "the outer rule's callback wasn't closed with the outer failure");
         assertEquals(1, onRunErrors.get(), "the outer run didn't report its failure exactly once");

@@ -9,20 +9,19 @@ import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -40,19 +39,17 @@ class NameEscapingWithoutMvelTest {
 
     private static final String RLO = String.valueOf((char) 0x202e);
 
-    /** The exception {@code action} throws, and the engine's log lines while it ran. */
-    private record Failure(Throwable thrown, List<String> logLines) {
+    /**
+     * Returns the lines logged while {@code failure} happened, split at every line break {@code \R} matches, not only
+     * at the ones {@link String#lines()} splits at.
+     */
+    private static List<String> logLines(Outcome<RuntimeException> failure) {
+        return Arrays.asList(failure.logs().split("\\R"));
     }
 
-    private static Failure failure(Executable action) {
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        String logs = logsOf(() -> thrown.set(assertThrows(RuntimeException.class, action)));
-        return new Failure(thrown.get(), Arrays.asList(logs.split("\\R")));
-    }
-
-    private static void assertNoForgedLine(Failure failure) {
-        assertTrue(failure.logLines().stream().noneMatch(line -> line.startsWith("[main] INFO com.example")),
-                String.join("\n", failure.logLines()));
+    private static void assertNoForgedLine(Outcome<RuntimeException> failure) {
+        assertTrue(logLines(failure).stream().noneMatch(line -> line.startsWith("[main] INFO com.example")),
+                String.join("\n", logLines(failure)));
     }
 
     private static Rule rule(String name) {
@@ -66,8 +63,8 @@ class NameEscapingWithoutMvelTest {
                 .language(new ToyExpressionLanguage()).language(new ToyExpressionLanguage(EVIL))
                 .defaultLanguage(ToyExpressionLanguage.LANGUAGE_NAME).build();
 
-        Failure failure = failure(() -> twoLanguages.load(List.of(Rule.builder().ruleName("r").language("nope")
-                .condition("true").action("put k 1").build())));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> twoLanguages.load(List.of(
+                Rule.builder().ruleName("r").language("nope").condition("true").action("put k 1").build())));
 
         assertEquals("Rule 'r' is written in 'nope', which isn't one of the engine's expression languages: "
                 + "[evil\\n" + FORGED + ", toy]", failure.thrown().getMessage());
@@ -102,8 +99,9 @@ class NameEscapingWithoutMvelTest {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .language(new ToyExpressionLanguage()).build();
 
-        Failure failure = failure(() -> engine.load(List.of(Rule.builder().ruleName("r" + (char) 0x3164)
-                .language("toy" + (char) 0x3164).condition("true").action("put k 1").build())));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.load(List.of(
+                Rule.builder().ruleName("r" + (char) 0x3164).language("toy" + (char) 0x3164).condition("true")
+                        .action("put k 1").build())));
 
         assertEquals("Rule 'r\\u3164' is written in 'toy\\u3164', which isn't one of the engine's expression "
                 + "languages: [toy]", failure.thrown().getMessage());
@@ -129,7 +127,7 @@ class NameEscapingWithoutMvelTest {
         String rlo = RLO.repeat(250);
         unique.load(Stream.of("a", "b", "c", "d", "e").map(letter -> rule(letter + rlo)).toList());
 
-        Failure failure = failure(() -> unique.run(new FactMap<>()));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> unique.run(new FactMap<>()));
 
         // Each name is cut to 200 characters, which makes the list 1,138; its first 1,000 end inside the fifth name.
         String rest = "\\u202e".repeat(199) + "... (51 more characters)'";

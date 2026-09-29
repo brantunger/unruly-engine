@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.TestLogs;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -10,6 +9,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -351,11 +352,9 @@ class RunDeadlineTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("nested", new Propagating(inner));
 
-        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
-        String logs = TestLogs.logsOf(() -> thrown.set(
-                assertThrows(RuleExecutionException.class, () -> outer.run(facts))));
+        Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class, () -> outer.run(facts));
 
-        RuleExecutionException stop = thrown.get();
+        RuleExecutionException stop = outcome.thrown();
         assertNull(stop.getRuleName(), stop.getMessage());
         assertInstanceOf(TimeoutException.class, stop.getCause());
         assertTrue(stop.getMessage().startsWith("run() passed its deadline of "), stop.getMessage());
@@ -364,7 +363,7 @@ class RunDeadlineTest {
         assertTrue(chainMentions(stop.getSuppressed()[0], " during rule 'slow'"), "the inner stop isn't kept");
         assertEquals(List.of("beforeEvaluate outer", "beforeExecute outer", "onError outer"), callbacks.seen);
         assertSame(stop, callbacks.errors.get(0));
-        assertFalse(logs.contains("ERROR"), logs);
+        assertFalse(outcome.logs().contains("ERROR"), outcome.logs());
     }
 
     @Test

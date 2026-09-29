@@ -18,9 +18,9 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -51,6 +51,8 @@ import java.util.stream.IntStream;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
+import static io.github.brantunger.unruly.core.EngineLogs.thrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -372,14 +374,14 @@ class CloseEverySessionTest {
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, first);
         language.sessionCloseFailures.put(2, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Outcome<Throwable> outcome = capture(engine::close);
 
-        assertSame(first, thrown.get());
+        assertSame(first, outcome.thrown());
         assertEquals(sessionsThenCompiler(1, 3), language.closed, "every session, then the compiler, once");
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
-                + "' expression language failed to close a session: second"), "the second is logged: " + logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
+                + "' expression language failed to close a session: second"),
+                "the second is logged: " + outcome.logs());
         assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
         assertEquals(0, second.getSuppressed().length);
         engine.close();
@@ -398,11 +400,10 @@ class CloseEverySessionTest {
         language.sessionCloseFailures.put(1, first);
         language.sessionCloseFailures.put(2, new OutOfMemoryError("second"));
         List<Rule> next = rules("new");
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(next))));
+        Throwable thrown = capture(() -> engine.load(next)).thrown();
 
-        assertSame(first, thrown.get());
+        assertSame(first, thrown);
         assertEquals(sessionsThenCompiler(1, 3), language.closed, "every old session, then the old compiler, once");
         assertEquals("new", engine.rules().rules().get(0).getRuleName(), "the new rules stay loaded");
         assertEquals(Map.of("new", true), engine.run(new FactMap<>()));
@@ -449,11 +450,10 @@ class CloseEverySessionTest {
         language.warmUpFailures.put(2, new IllegalStateException("can't warm up"));
         language.sessionCloseFailures.put(2, fatal);
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules("r")))));
+        Throwable thrown = capture(() -> engine.load(rules("r"))).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the load's failure");
         RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class,
                 fatal.getSuppressed()[0]);
@@ -472,11 +472,10 @@ class CloseEverySessionTest {
         language.warmUpFailures.put(2, warmUp);
         language.sessionCloseFailures.put(2, close);
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules("r")))));
+        Throwable thrown = capture(() -> engine.load(rules("r"))).thrown();
 
-        assertSame(warmUp, thrown.get());
+        assertSame(warmUp, thrown);
         assertArrayEquals(new Throwable[] {close}, warmUp.getSuppressed());
         assertEquals(0, close.getSuppressed().length);
         assertEquals(sessionsThenCompiler(1, 2), language.closed);
@@ -492,11 +491,10 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(language, 0);
         List<Rule> broken = List.of(Rule.builder().ruleName("r").language(LANGUAGE).condition("bad").action("a")
                 .build());
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(broken))));
+        Throwable thrown = capture(() -> engine.load(broken)).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length);
         assertInstanceOf(RuleCompilationException.class, fatal.getSuppressed()[0]);
         assertEquals(List.of("compiler"), language.closed);
@@ -542,11 +540,10 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("r"));
         language.compilerCloseFailure = fatal;
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
     }
 
@@ -560,11 +557,10 @@ class CloseEverySessionTest {
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, session);
         language.compilerCloseFailure = new InternalError("compiler");
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
-        assertSame(session, thrown.get());
+        assertSame(session, thrown);
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
     }
 
@@ -577,11 +573,10 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("r"));
         language.sessionCloseFailures.put(2, fatal);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
     }
 
@@ -593,14 +588,13 @@ class CloseEverySessionTest {
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, new AssertionError("first"));
         language.sessionCloseFailures.put(2, new AssertionError("second"));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Outcome<Throwable> outcome = capture(engine::close);
 
-        assertNull(thrown.get());
+        assertNull(outcome.thrown());
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
-        assertTrue(logs.contains("failed to close a session: first"), logs);
-        assertTrue(logs.contains("failed to close a session: second"), logs);
+        assertTrue(outcome.logs().contains("failed to close a session: first"), outcome.logs());
+        assertTrue(outcome.logs().contains("failed to close a session: second"), outcome.logs());
     }
 
     @Test
@@ -638,11 +632,10 @@ class CloseEverySessionTest {
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, fatal);
         language.duringAction = engine::close;
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(sessionsThenCompiler(1, 1), language.closed);
     }
 
@@ -659,11 +652,10 @@ class CloseEverySessionTest {
             engine.close();
             throw new IllegalStateException("the action failed");
         };
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the run's failure");
         RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
         assertEquals("r", runFailure.getRuleName());
@@ -684,11 +676,10 @@ class CloseEverySessionTest {
             engine.close();
             throw runFatal;
         };
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(runFatal, thrown.get());
+        assertSame(runFatal, thrown);
         assertArrayEquals(new Throwable[] {closeFatal}, runFatal.getSuppressed());
         assertEquals(sessionsThenCompiler(1, 1), language.closed);
     }
@@ -704,11 +695,10 @@ class CloseEverySessionTest {
         language.compilerCloseFailure = fatal;
         // close() leaves the compiler open, as the run holds a copy: the run closes it when it gives the copy back.
         language.duringAction = engine::close;
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(0, fatal.getSuppressed().length);
         assertEquals(sessionsThenCompiler(1, 1), language.closed);
     }
@@ -722,12 +712,11 @@ class CloseEverySessionTest {
         language.duringAction = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = engine(language, 1);
         engine.load(rules("r"));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
         engine.close();
 
-        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, thrown);
         assertSame(raw, runFailure.getCause());
         assertEquals(sessionsThenCompiler(1, 1), language.closed, "the copy was given back, so close() closed it");
     }
@@ -746,14 +735,13 @@ class CloseEverySessionTest {
                     }
                 }), 1);
         engine.load(rules("r"));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
         engine.close();
 
-        assertNull(thrown.get(), "the listener's throw is contained, like an exception");
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun:"
-                + " java.lang.Throwable: raw"), logs);
+        assertNull(outcome.thrown(), "the listener's throw is contained, like an exception");
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "Listener threw exception in beforeRun:"
+                + " java.lang.Throwable: raw"), outcome.logs());
         assertEquals(sessionsThenCompiler(1, 1), language.closed, "the copy was given back, so close() closed it");
     }
 
@@ -766,14 +754,13 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("r"));
         language.sessionCloseFailures.put(1, raw);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Outcome<Throwable> outcome = capture(engine::close);
 
-        assertNull(thrown.get());
+        assertNull(outcome.thrown());
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
-                + "' expression language failed to close a session: raw"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
+                + "' expression language failed to close a session: raw"), outcome.logs());
     }
 
     @Test
@@ -786,13 +773,12 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
         engine.load(rulesInBoth(first, second));
         first.sessionCloseFailures.put(1, raw);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
         assertEquals(List.of("session 1", "compiler"), second.closed, "the same copy's other session");
         assertEquals(List.of("session 1", "compiler"), first.closed);
-        assertNull(thrown.get());
+        assertNull(thrown);
     }
 
     @Test
@@ -805,11 +791,10 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
         engine.load(rulesInBoth(first, second));
         second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, thrown.get());
+        RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, thrown);
         assertEquals("The 'second' expression language failed to create a session: raw", runFailure.getMessage());
         assertSame(raw, runFailure.getCause());
         assertEquals(List.of("session 1"), first.closed, "the session made for the copy before the other failed");
@@ -831,11 +816,10 @@ class CloseEverySessionTest {
         };
         RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
         List<Rule> rules = rulesInBoth(first, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the load's failure");
         RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class,
                 fatal.getSuppressed()[0]);
@@ -858,11 +842,10 @@ class CloseEverySessionTest {
         second.duringNewSession = () -> {
             throw new IllegalStateException("no session");
         };
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the run's failure");
         RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
         assertEquals("The 'second' expression language failed to create a session: no session",
@@ -883,11 +866,10 @@ class CloseEverySessionTest {
             engine.close();
             throw new IllegalStateException("no session");
         };
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the run's failure");
         RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
         assertEquals("The '" + LANGUAGE + "' expression language failed to create a session: no session",
@@ -903,11 +885,10 @@ class CloseEverySessionTest {
         language.compilerCloseFailure = fatal;
         RulesEngine<Map<String, Object>> engine = engine(language, 0);
         List<Rule> rules = rules("r");
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.validate(rules))));
+        Throwable thrown = capture(() -> engine.validate(rules)).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(0, fatal.getSuppressed().length);
         assertEquals(List.of("compiler"), language.closed);
     }
@@ -924,11 +905,10 @@ class CloseEverySessionTest {
         second.newCompilerFailure = compiling;
         RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
         List<Rule> rules = rulesInBoth(first, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.validate(rules))));
+        Throwable thrown = capture(() -> engine.validate(rules)).thrown();
 
-        assertSame(compiling, thrown.get());
+        assertSame(compiling, thrown);
         assertArrayEquals(new Throwable[] {closing}, compiling.getSuppressed());
         assertEquals(List.of("compiler"), first.closed, "the compiler created was still closed");
     }
@@ -992,11 +972,10 @@ class CloseEverySessionTest {
         second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
         List<Rule> rules = rulesInBoth(first, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("The 'second' expression language failed to create a session: raw", loadFailure.getMessage());
         assertSame(raw, loadFailure.getCause());
         assertEquals(List.of("session 1", "compiler"), first.closed);
@@ -1015,11 +994,10 @@ class CloseEverySessionTest {
         second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
         List<Rule> rules = rulesInBoth(first, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the load's failure");
         assertSame(raw, assertInstanceOf(RuleCompilationException.class, fatal.getSuppressed()[0]).getCause());
         assertEquals(List.of("session 1", "compiler"), first.closed);
@@ -1041,11 +1019,10 @@ class CloseEverySessionTest {
             engine.close();
             CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
         };
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the run's failure");
         RuleExecutionException runFailure = assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]);
         assertEquals("r", runFailure.getRuleName());
@@ -1066,11 +1043,10 @@ class CloseEverySessionTest {
         engine.load(rulesInBoth(first, second));
         first.sessionCloseFailures.put(1, fatal);
         second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the run's failure");
         assertSame(raw, assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]).getCause());
         assertEquals(List.of("session 1"), first.closed);
@@ -1091,11 +1067,10 @@ class CloseEverySessionTest {
             engine.close();
             CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
         };
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.run(new FactMap<>()))));
+        Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(1, fatal.getSuppressed().length, "the run's failure");
         assertSame(raw, assertInstanceOf(RuleExecutionException.class, fatal.getSuppressed()[0]).getCause());
         assertEquals(List.of("compiler"), language.closed);
@@ -1114,12 +1089,11 @@ class CloseEverySessionTest {
         second.newCompilerFailure = raw;
         RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
         List<Rule> rules = rulesInBoth(first, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.validate(rules))));
+        Throwable thrown = capture(() -> engine.validate(rules)).thrown();
 
         // A failure validate() reports rather than throws, so the fatal Error from closing carries nothing.
-        assertSame(fatal, thrown.get());
+        assertSame(fatal, thrown);
         assertEquals(0, fatal.getSuppressed().length);
         assertEquals(List.of("compiler"), first.closed);
     }
@@ -1134,11 +1108,10 @@ class CloseEverySessionTest {
         second.newCompilerFailure = raw;
         RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
         List<Rule> rules = rulesInBoth(first, second);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(() -> engine.load(rules))));
+        Throwable thrown = capture(() -> engine.load(rules)).thrown();
 
-        RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class, thrown.get());
+        RuleCompilationException loadFailure = assertInstanceOf(RuleCompilationException.class, thrown);
         assertEquals("The 'second' expression language failed to create a compiler: raw", loadFailure.getMessage());
         assertSame(raw, loadFailure.getCause());
         assertEquals(List.of("compiler"), first.closed, "the first language's compiler was created, so it's closed");
@@ -1155,15 +1128,14 @@ class CloseEverySessionTest {
         RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(fatal);
         AtomicReference<Error> returned = new AtomicReference<>();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> returned.set(rules.release(copy)))));
+        Outcome<Throwable> outcome = capture(() -> returned.set(rules.release(copy)));
 
-        assertNull(thrown.get(), "returned, for the run to weigh against its own failure");
+        assertNull(outcome.thrown(), "returned, for the run to weigh against its own failure");
         assertSame(fatal, returned.get());
         assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later run, so"
-                + " its sessions were closed: keeping the copy"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later"
+                + " run, so its sessions were closed: keeping the copy"), outcome.logs());
         rules.release(rules.borrow(Deadline.from(Duration.ofSeconds(10))));
         assertEquals(2, compiler.sessionsMade.get(), "the next run made a copy of its own under the limit");
     }
@@ -1181,16 +1153,15 @@ class CloseEverySessionTest {
         idle.addFailure.set(keeping);
         compiler.sessionCloseFailure = closing;
         AtomicReference<Error> returned = new AtomicReference<>();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> returned.set(rules.release(copy)))));
+        Outcome<Throwable> outcome = capture(() -> returned.set(rules.release(copy)));
 
-        assertNull(thrown.get(), "returned, for the run to weigh against its own failure");
+        assertNull(outcome.thrown(), "returned, for the run to weigh against its own failure");
         assertSame(keeping, returned.get());
         assertArrayEquals(new Throwable[] {closing}, keeping.getSuppressed());
         assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language failed to close"
-                + " a session: closing the copy"), "the session's is logged too: " + logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language"
+                + " failed to close a session: closing the copy"), "the session's is logged too: " + outcome.logs());
     }
 
     @Test
@@ -1203,15 +1174,14 @@ class CloseEverySessionTest {
         RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(new IllegalStateException("queue full"));
         AtomicReference<Error> returned = new AtomicReference<>();
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = logsOf(() -> thrown.set(thrownBy(() -> returned.set(rules.release(copy)))));
+        Outcome<Throwable> outcome = capture(() -> returned.set(rules.release(copy)));
 
-        assertNull(thrown.get());
+        assertNull(outcome.thrown());
         assertNull(returned.get());
         assertEquals(List.of("session 1"), compiler.closed);
-        assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later run, so"
-                + " its sessions were closed: queue full"), logs);
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later"
+                + " run, so its sessions were closed: queue full"), outcome.logs());
     }
 
     @Test
@@ -2029,11 +1999,10 @@ class CloseEverySessionTest {
         language.sessionCloseFailures.put(1, first);
         language.sessionCloseFailures.put(2, cached);
         language.sessionCloseFailures.put(3, cached);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
-        assertSame(first, thrown.get());
+        assertSame(first, thrown);
         assertArrayEquals(new Throwable[] {cached}, first.getSuppressed());
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
     }
@@ -2109,11 +2078,10 @@ class CloseEverySessionTest {
         language.sessionCloseFailures.put(1, cached);
         language.sessionCloseFailures.put(2, cached);
         language.sessionCloseFailures.put(3, cached);
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        logsOf(() -> thrown.set(thrownBy(engine::close)));
+        Throwable thrown = capture(engine::close).thrown();
 
-        assertSame(cached, thrown.get());
+        assertSame(cached, thrown);
         assertEquals(0, cached.getSuppressed().length);
         assertEquals(sessionsThenCompiler(1, 3), language.closed);
     }
@@ -2177,19 +2145,6 @@ class CloseEverySessionTest {
         String logs = buffer.toString(StandardCharsets.UTF_8);
         assertTrue(failed.get(), "nothing logged a line containing " + text + ": " + logs);
         return logs;
-    }
-
-    /**
-     * Returns what {@code action} throws, or {@code null} if it throws nothing. Not {@code assertThrows()}, which
-     * rethrows an {@link OutOfMemoryError} it didn't expect, and so would stop the test JVM rather than fail the test.
-     */
-    private static Throwable thrownBy(Executable action) {
-        try {
-            action.execute();
-        } catch (Throwable t) {
-            return t;
-        }
-        return null;
     }
 
     private static void await(CountDownLatch latch) {

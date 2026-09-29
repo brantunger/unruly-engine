@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
-import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -74,10 +74,7 @@ class FatalFromRunCallbackTest {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .language(new ToyExpressionLanguage()).listeners(List.of(listeners)).build();
         engine.load(List.of(Rule.builder().ruleName("r").condition("boom.x").action("put k 1").build()));
-        AtomicReference<Throwable> thrown = new AtomicReference<>();
-        logsOf(() -> thrown.set(assertThrows(Throwable.class,
-                () -> engine.run(new FactMap<>(new Fact<Object>("boom", boom))))));
-        return thrown.get();
+        return capture(Throwable.class, () -> engine.run(new FactMap<>(new Fact<Object>("boom", boom)))).thrown();
     }
 
     @Test
