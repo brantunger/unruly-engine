@@ -86,6 +86,18 @@ class CancellationTest {
     }
 
     @Test
+    @DisplayName("a run started inside one without a deadline gets its own, even from a timeout too long to count in"
+            + " nanoseconds")
+    void aHugeTimeoutInsideARunWithoutADeadline() {
+        Deadline outside = Cancellation.enter(Deadline.NONE);
+        try {
+            assertTrue(Cancellation.deadlineFrom(Duration.ofSeconds(Long.MAX_VALUE)).isSet());
+        } finally {
+            Cancellation.leave(outside);
+        }
+    }
+
+    @Test
     @DisplayName("a timeout too long for a date is shown as the latest instant rather than overflowing")
     void aHugeTimeoutDoesntOverflow() {
         Instant start = Instant.parse("2026-09-16T00:00:00Z");

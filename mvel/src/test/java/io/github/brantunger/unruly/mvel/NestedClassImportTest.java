@@ -185,6 +185,18 @@ class NestedClassImportTest {
     }
 
     @Test
+    @DisplayName("a name that isn't a class nested in the imported one is never asked of the class loader")
+    void notNestedNeverLoaded() throws IOException {
+        try (ApplicationLoader loader = new ApplicationLoader()) {
+            assertThrows(RuntimeException.class, () -> run(loader, "output.put('k', new Outer.Missing())",
+                    "app.exp.Outer"));
+
+            assertTrue(loader.loadedClasses.contains("app.exp.Outer"), loader.loadedClasses.toString());
+            assertFalse(loader.loadedClasses.contains("app.exp.Outer$Missing"), loader.loadedClasses.toString());
+        }
+    }
+
+    @Test
     @DisplayName("a nested class whose class file is missing fails when it runs, as a class that isn't there")
     void nestedClassFileMissing() {
         RuntimeException ex = assertThrows(RuntimeException.class,

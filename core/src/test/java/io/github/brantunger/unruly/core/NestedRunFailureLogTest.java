@@ -971,6 +971,33 @@ class NestedRunFailureLogTest {
     }
 
     @Test
+    @DisplayName("a second listener whose onRunError rethrows the run's fatal failure, which a nested run logged, has"
+            + " that logged")
+    void secondListenerRethrowsTheRunsNestedFatalFailure() {
+        Runnable nested = running(engine("inner-rule", doing(() -> {
+            throw new IllegalStateException("pricing cache blew up", oom);
+        }), HashMap::new));
+        RuleListener[] rethrowing = new RuleListener[2];
+        for (int i = 0; i < rethrowing.length; i++) {
+            rethrowing[i] = new RuleListener() {
+                @Override
+                public void onRunError(RunContext run, RuntimeException error) {
+                    throw error;
+                }
+            };
+        }
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(nested), HashMap::new, rethrowing);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        // The first listener's is the error run() rethrows; only the second's is logged.
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of("Listener threw exception in onRunError: " + ReportedFailure.class.getName()
+                + ": Failed to execute action for rule 'outer-rule': simulated heap exhaustion"), outcome.lines("WARN"),
+                outcome.logs());
+    }
+
+    @Test
     @DisplayName("an action that wraps a nested run's fatal Error in its own exception has that logged once, with the"
             + " Error as a note, and the Error logged once and rethrown")
     void wrappedNestedFatalLogged() {

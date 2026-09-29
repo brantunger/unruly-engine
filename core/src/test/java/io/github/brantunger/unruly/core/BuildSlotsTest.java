@@ -212,6 +212,31 @@ class BuildSlotsTest {
     }
 
     @Test
+    @DisplayName("a run on a platform thread makes its copy at once while runs on virtual threads hold every slot")
+    void platformThreadDoesntWaitForAHeldSlot() throws InterruptedException {
+        StepLanguage language = new StepLanguage();
+        // A window far longer than the test, so a run that waited for a slot would still be waiting when it's checked,
+        // rather than give up and make its copy anyway.
+        RulesEngine<Map<String, Object>> engine = unlimited(language, TimeUnit.MINUTES.toMillis(5));
+        fillTheSlots(engine);
+        AtomicReference<Object> outcome = new AtomicReference<>();
+
+        Thread run = start(false, () -> {
+            try {
+                outcome.set(engine.runWithResult(facts(() -> true)).firedRules().stream().map(Rule::getRuleName)
+                        .toList());
+            } catch (RuntimeException e) {
+                outcome.set(e);
+            }
+        });
+        run.join(TimeUnit.SECONDS.toMillis(20));
+
+        assertFalse(run.isAlive(), "the run on a platform thread waited for a slot");
+        assertEquals(List.of("stepped"), outcome.get());
+        assertEquals(PROCESSORS + 1, language.sessions().get(), "the run made a copy of its own");
+    }
+
+    @Test
     @DisplayName("a run nested on the same thread makes its copy without waiting for a slot its own thread may hold")
     void nestedRunDoesntWait() throws InterruptedException {
         StepLanguage language = new StepLanguage();
