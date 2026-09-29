@@ -465,7 +465,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Calls one run callback on every listener, logging what a listener throws, like the rule callbacks. A fatal
      * {@link Error} a listener throws is rethrown once every listener has had the callback, and logged first unless a
-     * run it started logged it already (see {@link LoggedFailures}).
+     * run it started logged it already (see {@link LoggedFailures}), or else what it wrapped the error in, when that
+     * says something of its own (see {@link #listenerFatalMessage}).
      */
     private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
         notifyRun(snapshot, callback, call, null, null);
@@ -474,7 +475,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Calls one run callback on every listener, as {@link #notifyRun(List, String, Consumer)} does, for a callback
      * that tells listeners of the run's failure. A fatal {@link Error} a listener throws carries what it's rethrown in
-     * place of as a suppressed exception (see {@link Failures#keepAlso}).
+     * place of as a suppressed exception (see {@link Failures#keepAlso}). The failure the callback tells listeners of,
+     * rethrown or wrapped, is the run's own, whatever run logged its fatal error, so nothing a listener wrapped around
+     * it is taken for news about a nested run.
      *
      * @param told    The exception the callback tells listeners of, or {@code null}; see
      *                {@link #logListenerException}
@@ -482,10 +485,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private void notifyRun(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
                            Throwable told, Throwable failing) {
-        Error fatal = notifyListeners(snapshot, callback, call, null, told);
-        if (fatal != null) {
-            if (LoggedFailures.unloggedFatal(fatal)) {
-                log.error("A listener threw {} in {}", fatal.getClass().getName(), callback);
+        ListenerFatal thrown = listenerFatal(snapshot, callback, call, null, told);
+        if (thrown != null) {
+            Error fatal = thrown.fatal();
+            // Asked before unlogged() records a fatal error it's told of for the first time.
+            boolean wrapped = !thrown.ofTold() && Failures.wrapsLoggedFatal(thrown.thrown());
+            boolean logs = thrown.ofTold() ? LoggedFailures.unloggedFatal(fatal)
+                    : LoggedFailures.unlogged(thrown.thrown());
+            if (logs) {
+                log.error(listenerFatalMessage(thrown, callback, wrapped));
             }
             Failures.keepAlso(fatal, failing);
             throw fatal;
@@ -787,7 +795,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     public void load(List<Rule> ruleList) {
         // A run a language starts while this compiles or makes copies is nested in the load, so a fatal Error it
         // logged isn't logged again here (see LoggedFailures).
-        LoggedFailures.enter();
+        LoggedFailures.enterLoad();
         try {
             loadRules(ruleList);
         } finally {
@@ -962,7 +970,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @Override
     public List<RuleCompilationException> validate(List<Rule> ruleList) {
         // As in load(): a fatal Error a run a language starts here logged isn't logged again.
-        LoggedFailures.enter();
+        LoggedFailures.enterLoad();
         try {
             return validateRules(ruleList);
         } finally {
@@ -1492,7 +1500,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Closes the rule's open {@code before*} callback with {@code onError} and the exception a stopped run throws.
+     * Closes the rule's open {@code before*} callback with {@code onError} and the exception a stopped run throws. A
+     * fatal {@link Error} a listener throws is rethrown, and isn't logged, unless the listener wrapped one logged
+     * already in an exception that says something of its own, which is logged (see {@link #logWrappedFromOnError}).
      *
      * @param snapshot The listeners the rule's callbacks went to
      * @param rule     The rule the run stopped in
@@ -1501,9 +1511,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException closedWithStop(List<RuleListener> snapshot, CompiledRule rule,
                                                   RuleExecutionException stop) {
-        Error fatal = notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), stop), null,
-                stop);
-        if (fatal != null) {
+        ListenerFatal thrown = listenerFatal(snapshot, "onError", listener -> listener.onError(rule.rule(), stop),
+                null, stop);
+        if (thrown != null) {
+            Error fatal = logWrappedFromOnError(thrown, rule);
             stop.addSuppressed(fatal);
             fatalFailure.set(stop);
             throw fatal;
@@ -1566,11 +1577,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                that run logged, and one of a {@code load()} it started
      *                                {@code Output factory threw: a nested load() failed: } and that load's failure;
      *                                neither is logged again, as that run or load logged it; nor is a fatal error that
-     *                                run logged (see {@link LoggedFailures}). A nested failure that isn't a fatal
-     *                                error, wrapped by the factory in an exception with a message of its own, reads
-     *                                {@code Output factory threw: }, that message and the nested failure as a note
-     *                                (see {@link Failures#describe}), and is logged; a fatal error wrapped so isn't
-     *                                logged again.
+     *                                run logged (see {@link LoggedFailures}). A nested failure wrapped by the factory
+     *                                in an exception with a message of its own reads {@code Output factory threw: },
+     *                                that message and the nested failure as a note (see {@link Failures#describe}),
+     *                                and is logged; a fatal error wrapped so is still rethrown.
      */
     O createOutput(Supplier<O> outputFactory) {
         O output;
@@ -1578,9 +1588,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             output = outputFactory.get();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            String msg = Failures.below(e).logged() != null
+            // Described before unlogged() records a fatal error it's told of for the first time.
+            String msg = Failures.lineOr(() -> Failures.below(e).logged() != null || Failures.wrapsLoggedFatal(e)
                     ? "Output factory threw: " + Failures.describe(e)
-                    : "Output factory threw " + Failures.describeWithClass(e);
+                    : "Output factory threw " + Failures.describeWithClass(e),
+                    "Output factory threw " + e.getClass().getName());
             if (LoggedFailures.unlogged(e)) {
                 log.error(msg);
             }
@@ -1770,17 +1782,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Calls a {@code before*} callback on every listener. If one throws a fatal {@link Error}, the condition or action
      * doesn't run: every listener gets {@link RuleListener#onError} to close the callback it received, and the error
      * is rethrown. It's logged first, unless a run the listener started logged it already (see
-     * {@link LoggedFailures}).
+     * {@link LoggedFailures}), or else what the listener wrapped it in, when that says something of its own (see
+     * {@link #listenerFatalMessage}).
      */
     private void notifyBefore(List<RuleListener> snapshot, CompiledRule rule, String callback,
                               Consumer<RuleListener> call) {
-        Error fatal = notifyListeners(snapshot, callback, call);
-        if (fatal != null) {
-            RuleExecutionException failure = new RuleExecutionException(listenerFatalMessage(fatal, callback, rule),
-                    fatal, rule.rule().getRuleName());
+        ListenerFatal thrown = listenerFatal(snapshot, callback, call);
+        if (thrown != null) {
+            Error fatal = thrown.fatal();
+            // Described before unlogged() records a fatal error it's told of for the first time.
+            String msg = listenerFatalMessage(thrown, forRule(callback, rule),
+                    Failures.wrapsLoggedFatal(thrown.thrown()));
+            RuleExecutionException failure = new RuleExecutionException(msg, fatal, rule.rule().getRuleName());
             // Already on its way out of run(), so a second fatal error from onError can't replace it, but it's kept.
             keepSecondFatal(failure, fatal,
-                    reportFailure(snapshot, rule, failure, LoggedFailures.unloggedFatal(fatal)));
+                    reportFailure(snapshot, rule, failure, LoggedFailures.unlogged(thrown.thrown())));
             fatalFailure.set(failure);
             throw fatal;
         }
@@ -1788,68 +1804,106 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Calls an {@code after*} callback on every listener, then logs the first fatal {@link Error} one threw at ERROR,
-     * unless a run the listener started logged it already (see {@link LoggedFailures}), and rethrows it. Every
+     * unless a run the listener started logged it already (see {@link LoggedFailures}), or else what the listener
+     * wrapped it in, when that says something of its own (see {@link #listenerFatalMessage}), and rethrows it. Every
      * listener already closed its callback, so none gets {@code onError}.
      */
     private void notifyAfter(List<RuleListener> snapshot, CompiledRule rule, String callback,
                              Consumer<RuleListener> call) {
-        Error fatal = notifyListeners(snapshot, callback, call);
-        if (fatal != null) {
-            if (LoggedFailures.unloggedFatal(fatal)) {
-                log.error(listenerFatalMessage(fatal, callback, rule));
+        ListenerFatal thrown = listenerFatal(snapshot, callback, call);
+        if (thrown != null) {
+            // Asked before unlogged() records a fatal error it's told of for the first time.
+            boolean wrapped = Failures.wrapsLoggedFatal(thrown.thrown());
+            if (LoggedFailures.unlogged(thrown.thrown())) {
+                log.error(listenerFatalMessage(thrown, forRule(callback, rule), wrapped));
             }
-            throw fatal;
+            throw thrown.fatal();
         }
     }
 
-    private static String listenerFatalMessage(Error fatal, String callback, CompiledRule rule) {
-        return "A listener threw " + fatal.getClass().getName() + " in " + callback + " for rule '"
-                + rule.displayName() + "'";
+    /**
+     * Logs what a listener's {@code onError} wrapped a fatal {@link Error} logged already in, when that says something
+     * of its own (see {@link Failures#wrapsLoggedFatal}), at ERROR, as {@link #listenerFatalMessage} says it. Nothing
+     * else logs it: the error itself is rethrown, or kept on the failure's own, and isn't logged there again.
+     *
+     * @param thrown The fatal error a listener threw from {@code onError}, and what it threw it in
+     * @param rule   The rule whose failure {@code onError} closed
+     * @return The fatal error
+     */
+    private static Error logWrappedFromOnError(ListenerFatal thrown, CompiledRule rule) {
+        if (Failures.wrapsLoggedFatal(thrown.thrown())) {
+            log.error(listenerFatalMessage(thrown, forRule("onError", rule), true));
+        }
+        return thrown.fatal();
+    }
+
+    private static String forRule(String callback, CompiledRule rule) {
+        return callback + " for rule '" + rule.displayName() + "'";
+    }
+
+    /**
+     * Says that a listener threw a fatal {@link Error} in a callback, and, when it wrapped one logged already in an
+     * exception with a message of its own (see {@link Failures#wrapsLoggedFatal}), what that says, with the error as a
+     * note, as {@link Failures#describe} describes it. When reading that throws, as it can when the JVM has no memory
+     * left, only the first part is said, so the caller still rethrows the error.
+     *
+     * @param thrown   The fatal error, and what the listener threw it in
+     * @param callback The callback, and the rule it was for, if any
+     * @param wrapped  Whether the listener wrapped a fatal error logged already, asked before it was recorded as
+     *                 logged, if it's news
+     * @return The message
+     */
+    private static String listenerFatalMessage(ListenerFatal thrown, String callback, boolean wrapped) {
+        String plain = "A listener threw " + thrown.fatal().getClass().getName() + " in " + callback;
+        return wrapped ? Failures.lineOr(() -> plain + ": " + Failures.describe(thrown.thrown()), plain) : plain;
+    }
+
+    /**
+     * The first fatal {@link Error} a listener threw in a callback, and what it threw it in: the error itself, or an
+     * exception that has it among its causes.
+     *
+     * @param fatal  The fatal error
+     * @param thrown What the listener threw
+     * @param ofTold {@code true} if it's the very fatal error of the exception the callback told listeners of, which
+     *               is the run's own, whatever run logged it
+     */
+    private record ListenerFatal(Error fatal, Throwable thrown, boolean ofTold) {
     }
 
     /**
      * Calls every listener in {@code snapshot}, logging what a listener throws so a faulty listener can't interrupt a
      * run. A fatal {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener
      * throws, doesn't stop the other listeners either, so each still gets the callback, and closes whatever it opened;
-     * the error is returned for the caller to rethrow. A second fatal error in the same callback is logged like an
-     * exception, and kept on the first as a suppressed exception (see {@link Failures#keepAlso}).
+     * the error is returned for the caller to rethrow, with what the listener threw it in. A second fatal error in the
+     * same callback is logged like an exception, and kept on the first as a suppressed exception (see
+     * {@link Failures#keepAlso}).
      *
-     * @return The first fatal {@link Error} a listener threw, or {@code null}
+     * @return The first fatal {@link Error} a listener threw, and what it threw it in, or {@code null}
      */
-    private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
-        return notifyListeners(snapshot, callback, call, null, null);
+    private ListenerFatal listenerFatal(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call) {
+        return listenerFatal(snapshot, callback, call, null, null);
     }
 
     /**
-     * Calls every listener, ignoring what the run already reports: a listener that rethrows the reported exception, or
-     * the fatal {@link Error} in it, has added nothing, so it doesn't count as the first fatal error, whichever
-     * listener rethrows it. What a listener wrapped it in is still logged, because its own message says something.
-     *
-     * @param reported The exception listeners were told about, whose fatal {@link Error} the run is already
-     *                 reporting, or {@code null}
-     * @return The first fatal {@link Error} a listener threw that the run isn't reporting, or {@code null}
-     */
-    private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
-                                  RuleExecutionException reported) {
-        return notifyListeners(snapshot, callback, call, reported, reported);
-    }
-
-    /**
-     * Calls every listener, as {@link #notifyListeners(List, String, Consumer, RuleExecutionException)} does, knowing
-     * what the callback tells listeners of.
+     * Calls every listener, as {@link #listenerFatal(List, String, Consumer)} does, ignoring what the run already
+     * reports: a listener that rethrows the reported exception, or the fatal {@link Error} in it, has added nothing,
+     * so it doesn't count as the first fatal error, whichever listener rethrows it. What a listener wrapped it in is
+     * still logged, because its own message says something.
      *
      * @param reported The exception listeners were told about, whose fatal {@link Error} the run is already
      *                 reporting, or {@code null}
      * @param told     The exception the callback tells listeners of, or {@code null}; see
      *                 {@link #logListenerException}
-     * @return The first fatal {@link Error} a listener threw that the run isn't reporting, or {@code null}
+     * @return The first fatal {@link Error} a listener threw that the run isn't reporting, and what it threw it in, or
+     *         {@code null}
      */
     // Rethrowing the very same instance is what makes it nothing new; an equal one would still be news.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private Error notifyListeners(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
-                                  RuleExecutionException reported, Throwable told) {
+    private ListenerFatal listenerFatal(List<RuleListener> snapshot, String callback, Consumer<RuleListener> call,
+                                        RuleExecutionException reported, Throwable told) {
         Error reportedFatal = reported == null ? null : Failures.fatalError(reported);
         Error fatal = null;
+        Throwable fatalThrown = null;
         for (RuleListener listener : snapshot) {
             try {
                 call.accept(listener);
@@ -1862,6 +1916,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     }
                 } else if (found != null && fatal == null) {
                     fatal = found;
+                    fatalThrown = e;
                 } else {
                     // A non-fatal exception, or a second fatal error in this callback, which the caller can't rethrow
                     // but finds on the first.
@@ -1870,7 +1925,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 }
             }
         }
-        return fatal;
+        return fatal == null ? null : new ListenerFatal(fatal, fatalThrown, fatal == Failures.fatalError(told));
     }
 
     /**
@@ -1950,9 +2005,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Logs a run-time failure and tells every listener through {@link RuleListener#onError}, so each
      * {@code before*} callback still gets a closing call. A failure of a {@code run()} or a {@code load()} the rule
      * started isn't logged again, as that run or load logged it, nor is a fatal {@link Error} a run logged already
-     * (see {@link LoggedFailures}), unless the rule wrapped a nested failure that isn't a fatal {@link Error} in an
-     * exception with a message of its own, which is logged, with the nested failure as a note (see
-     * {@link Failures#describe}); a fatal error wrapped so isn't logged again.
+     * (see {@link LoggedFailures}), unless the rule wrapped a nested failure, or a fatal {@link Error} logged already,
+     * in an exception with a message of its own, which is logged, with the nested failure as a note (see
+     * {@link Failures#describe}); a fatal error wrapped so is still rethrown. So is what a listener's {@code onError}
+     * wrapped such an error in (see {@link #logWrappedFromOnError}).
      * An interrupt in {@code cause} sets the thread's interrupt status again. Returns the exception for the caller to
      * throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
@@ -1981,7 +2037,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Logs a failure at ERROR, unless told not to, and tells every listener through {@link RuleListener#onError}.
+     * Logs a failure at ERROR, unless told not to, and tells every listener through {@link RuleListener#onError}. What
+     * a listener wrapped a fatal {@link Error} logged already in is logged, when it says something of its own (see
+     * {@link #logWrappedFromOnError}).
      *
      * @return The first fatal {@link Error} a listener threw from {@code onError}, or {@code null}
      */
@@ -1990,7 +2048,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (logged) {
             log.error(error.getMessage());
         }
-        return notifyListeners(snapshot, "onError", listener -> listener.onError(rule.rule(), error), error);
+        ListenerFatal thrown = listenerFatal(snapshot, "onError", listener -> listener.onError(rule.rule(), error),
+                error, error);
+        return thrown == null ? null : logWrappedFromOnError(thrown, rule);
     }
 
     /**
@@ -2020,14 +2080,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     // Not logged here: load() logs each failure as it collects it, and validate() logs nothing. A fatal error is
     // the exception: it's logged, then rethrown, whichever is compiling, unless a run the language started logged it
-    // (see LoggedFailures).
+    // and nothing wrapped around it says something of its own (see LoggedFailures).
     private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName,
                                                                ExpressionKind kind,
                                                                List<InvalidExpressionException.Issue> issues) {
         Failures.keepInterruptStatus(cause);
         Error fatal = Failures.fatalError(cause);
         if (fatal != null) {
-            if (LoggedFailures.unloggedFatal(fatal)) {
+            if (LoggedFailures.unlogged(cause)) {
                 log.error(msg);
             }
             throw fatal;

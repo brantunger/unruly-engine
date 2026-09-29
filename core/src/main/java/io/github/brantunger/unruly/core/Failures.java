@@ -292,7 +292,13 @@ public final class Failures {
      * a note, {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is
      * lost. The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
      * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
-     * written (see {@link #noteText}).
+     * written (see {@link #noteText}). A fatal {@link Error} logged already, wrapped in an exception that says
+     * something of its own (see {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
+     * {@link #describeWithClass} describes it: {@code (after a nested run() failed: ...)} or
+     * {@code (after a nested load() failed: ...)} when what the code that wrapped it started logged it, or else
+     * {@code (caused by ..., already logged)}.
+     * The note is read from what was logged when this is called, so a caller describes what it caught before it asks
+     * {@link LoggedFailures#unlogged}, which records a fatal error it's told of.
      *
      * @param e The exception to describe
      * @return A description of the exception for an error message
@@ -301,16 +307,61 @@ public final class Failures {
         Below below = below(e);
         Throwable logged = below.logged();
         if (logged == null) {
+            Error fatal = fatalError(e);
+            LoggedFailures.LoggedAt at = fatal == null ? null : LoggedFailures.loggedAt(fatal);
+            Throwable news = at == null ? null : newsAbove(e, fatal);
+            if (news != null) {
+                String note = at == LoggedFailures.LoggedAt.NOT_BELOW
+                        ? "caused by " + describeWithClass(fatal) + ", already logged"
+                        : "after " + nested(at == LoggedFailures.LoggedAt.NESTED_LOAD) + describeWithClass(fatal);
+                return escape(truncate(messageOr(news, news.getClass().getName()))) + " (" + note + ")";
+            }
             String text = escape(truncate(messageOr(e, e.getClass().getName())));
             return text + causeNote(causeChain(e), readableMessage(e));
         }
-        String nested = "a nested " + (below.loggedByLoad() ? "load()" : "run()") + " failed: ";
+        String nested = nested(below.loggedByLoad());
         Throwable news = below.news();
         if (news == null) {
             return nested + loggedText(logged);
         }
         return escape(truncate(messageOr(news, news.getClass().getName()))) + " (after " + nested + noteText(logged)
                 + ")";
+    }
+
+    /** Says what failed below a description: {@code a nested run() failed: } or {@code a nested load() failed: }. */
+    private static String nested(boolean byLoad) {
+        return "a nested " + (byLoad ? "load()" : "run()") + " failed: ";
+    }
+
+    /**
+     * Tells whether what was caught wraps a fatal {@link Error} that was logged already on this thread (see
+     * {@link LoggedFailures#loggedAt}) in an exception that says something of its own (see {@link #newsAbove}), such
+     * as {@code new IllegalStateException("audit write failed", e)} around what a nested {@code run()} threw. Nothing
+     * logged that exception's message, so the code that caught it logs it, as {@link #describe} describes it, and
+     * rethrows the error.
+     *
+     * @param thrown What was caught
+     * @return {@code true} if the caller logs it for what's wrapped around the error
+     */
+    static boolean wrapsLoggedFatal(Throwable thrown) {
+        Error fatal = fatalError(thrown);
+        return fatal != null && LoggedFailures.loggedAt(fatal) != null && newsAbove(thrown, fatal) != null;
+    }
+
+    /**
+     * Builds a line to log about a fatal {@link Error}, or a plain one if building it throws, as it can when the JVM
+     * has no memory left, so the code that logs it still rethrows the error it caught.
+     *
+     * @param line  Builds the line
+     * @param plain The plain line, built beforehand, which reads nothing a language, a listener or a rule wrote
+     * @return The line, or the plain one
+     */
+    static String lineOr(Supplier<String> line, String plain) {
+        try {
+            return line.get();
+        } catch (Throwable e) {
+            return plain;
+        }
     }
 
     /**

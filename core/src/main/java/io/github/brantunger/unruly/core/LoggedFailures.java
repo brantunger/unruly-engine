@@ -16,9 +16,10 @@ package io.github.brantunger.unruly.core;
  * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, so nothing on it says it was logged: the
  * place that logs one records it here, and the code around it finds it in the cause chain all the same. So does a
  * fatal {@link Error}, which is rethrown unchanged (see {@link Failures#fatalError}): the first place that logs one
- * records it here, and every other place on the same thread that catches the same instance leaves it out. The record
- * is for the thread, whichever engine runs there, and holds the very instances that were logged: an equal one is
- * still news.
+ * records it here, and every other place on the same thread that catches the same instance leaves it out, unless code
+ * wrapped it in an exception that says something of its own: that place logs that, with the error as a note (see
+ * {@link #loggedAt}), and rethrows the error all the same. The record is for the thread, whichever
+ * engine runs there, and holds the very instances that were logged: an equal one is still news.
  * </p>
  *
  * <p>
@@ -76,13 +77,20 @@ final class LoggedFailures {
     }
 
     /**
-     * What is in progress on one thread, the last {@value #MAX_LOGGED} fatal {@link Error}s logged while it was, in a
-     * ring created with it, before any fails, so recording an {@link OutOfMemoryError} allocates nothing, and the last
-     * {@value #MAX_LOGGED} failures nested runs and loads logged, in a ring created with the first of them.
+     * What is in progress on one thread, the last {@value #MAX_LOGGED} fatal {@link Error}s logged while it was, with
+     * how deep the run that logged each was and which of the runs it was nested in were a {@code load()} or a
+     * {@code validate()}, in rings created with it, before any fails, so recording an {@link OutOfMemoryError}
+     * allocates nothing, and the last {@value #MAX_LOGGED} failures nested runs and loads logged, in a ring created
+     * with the first of them.
      */
     private static final class Runs {
         private int depth;
+        // Bit n is set while the run in progress n deep is a load() or a validate(); one deeper than a long has bits
+        // for counts as a run.
+        private long loads;
         private final Error[] loggedFatal = new Error[MAX_LOGGED];
+        private final int[] fatalDepth = new int[MAX_LOGGED];
+        private final long[] fatalLoads = new long[MAX_LOGGED];
         private int nextFatal;
         private Logged[] logged;
         private int next;
@@ -101,18 +109,40 @@ final class LoggedFailures {
         runs.depth++;
     }
 
-    /** Uncounts what {@link #enter()} counted, forgetting what was logged once the outermost ends. */
+    /**
+     * Counts a {@code load()} or a {@code validate()} starting on this thread, as {@link #enter()} counts a run, so a
+     * fatal {@link Error} logged below it is told apart from one logged below a run (see {@link #loggedAt}), until
+     * {@link #leave()}.
+     */
+    static void enterLoad() {
+        enter();
+        Runs runs = RUNS.get();
+        runs.loads |= bit(runs.depth);
+    }
+
+    /**
+     * Uncounts what {@link #enter()} or {@link #enterLoad()} counted, forgetting what was logged once the outermost
+     * ends.
+     */
     static void leave() {
         Runs runs = RUNS.get();
+        runs.loads &= ~bit(runs.depth);
         runs.depth--;
         if (runs.depth == 0) {
             RUNS.remove();
         }
     }
 
+    /** The bit of {@link Runs#loads} for a depth, or none for one deeper than a {@code long} has bits for. */
+    private static long bit(int depth) {
+        return depth < Long.SIZE ? 1L << depth : 0L;
+    }
+
     /**
      * Tells whether what was caught still has to be logged: not when it's a nested run's or load's failure, which
-     * that run or load logged, nor when its fatal {@link Error} was logged already (see {@link #unloggedFatal}). A
+     * that run or load logged, nor when its fatal {@link Error} was logged already (see {@link #unloggedFatal}),
+     * unless an exception wrapped around that error says something of its own (see {@link Failures#wrapsLoggedFatal}):
+     * the caller logs that, with the error as a note (see {@link Failures#describe}), and still rethrows the error. A
      * fatal error it has is recorded as logged, so the caller must log it when this returns {@code true}.
      *
      * @param thrown What was caught
@@ -120,7 +150,10 @@ final class LoggedFailures {
      */
     static boolean unlogged(Throwable thrown) {
         Error fatal = Failures.fatalError(thrown);
-        return fatal != null ? unloggedFatal(fatal) : Failures.nestedRunFailure(thrown) == null;
+        if (fatal == null) {
+            return Failures.nestedRunFailure(thrown) == null;
+        }
+        return unloggedFatal(fatal) || Failures.newsAbove(thrown, fatal) != null;
     }
 
     /**
@@ -162,20 +195,62 @@ final class LoggedFailures {
             return false;
         }
         runs.loggedFatal[runs.nextFatal] = fatal;
+        runs.fatalDepth[runs.nextFatal] = runs.depth;
+        runs.fatalLoads[runs.nextFatal] = runs.loads;
         runs.nextFatal = (runs.nextFatal + 1) % MAX_LOGGED;
         return true;
     }
 
     /** Tells whether this very fatal error is among the last {@value #MAX_LOGGED} logged on the thread. */
+    private static boolean holdsFatal(Runs runs, Error fatal) {
+        return indexOf(runs, fatal) >= 0;
+    }
+
+    /** Finds where this very fatal error is among the last {@value #MAX_LOGGED} logged on the thread, or -1. */
     // The very same instance is what was logged; an equal one would still be news.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private static boolean holdsFatal(Runs runs, Error fatal) {
-        for (Error logged : runs.loggedFatal) {
-            if (logged == fatal) {
-                return true;
+    private static int indexOf(Runs runs, Error fatal) {
+        for (int i = 0; i < MAX_LOGGED; i++) {
+            if (runs.loggedFatal[i] == fatal) {
+                return i;
             }
         }
-        return false;
+        return -1;
+    }
+
+    /** Where a fatal {@link Error} that was logged already was logged, as the innermost run in progress sees it. */
+    enum LoggedAt {
+        /** Below a {@code run()} the innermost run in progress started. */
+        NESTED_RUN,
+        /** Below a {@code load()} or a {@code validate()} the innermost run in progress started. */
+        NESTED_LOAD,
+        /**
+         * By the innermost run in progress, or one around it, or a nested run that has ended at the same depth, such
+         * as one before it that logged the same {@link OutOfMemoryError} the JVM throws again and again.
+         */
+        NOT_BELOW
+    }
+
+    /**
+     * Tells where a fatal {@link Error} that was logged already on this thread was logged, for the code that wraps it
+     * in an exception of its own (see {@link Failures#describe}): below what the innermost run in progress started, a
+     * {@code run()} or a {@code load()}, named for what it started, however deep below that it was logged, or not
+     * below it. A level's own fatal error, such as the one in the failure a listener is told of, is never nested.
+     *
+     * @param fatal The fatal error
+     * @return Where that very instance was logged, or {@code null} if it wasn't, it was logged before the last
+     *         {@value #MAX_LOGGED}, or no run is in progress on this thread
+     */
+    static LoggedAt loggedAt(Error fatal) {
+        Runs runs = RUNS.get();
+        int at = runs == null ? -1 : indexOf(runs, fatal);
+        if (at < 0) {
+            return null;
+        }
+        if (runs.fatalDepth[at] <= runs.depth) {
+            return LoggedAt.NOT_BELOW;
+        }
+        return (runs.fatalLoads[at] & bit(runs.depth + 1)) != 0 ? LoggedAt.NESTED_LOAD : LoggedAt.NESTED_RUN;
     }
 
     /**

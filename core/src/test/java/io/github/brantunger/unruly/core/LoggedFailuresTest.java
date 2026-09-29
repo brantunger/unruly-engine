@@ -202,6 +202,59 @@ class LoggedFailuresTest {
         }
     }
 
+    @Test
+    @DisplayName("a fatal Error is nested only above the depth that logged it, named for what that level started")
+    void fatalRecordedWithItsDepth() {
+        InternalError byLoad = new InternalError("by a load");
+        InternalError byRun = new InternalError("by a run");
+        int loads = 5;
+        LoggedFailures.enter();
+        try {
+            for (int i = 0; i < loads; i++) {
+                LoggedFailures.enterLoad();
+            }
+            assertTrue(LoggedFailures.unloggedFatal(byLoad));
+            assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(byLoad), "its own level's");
+            LoggedFailures.enter();
+            assertTrue(LoggedFailures.unloggedFatal(byRun));
+            LoggedFailures.leave();
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(byRun), "a run the load started");
+            for (int i = 0; i < loads; i++) {
+                LoggedFailures.leave();
+            }
+            // The outermost run started a load(), whatever that load started in turn.
+            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(byLoad));
+            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(byRun));
+        } finally {
+            LoggedFailures.leave();
+        }
+        assertNull(LoggedFailures.loggedAt(byLoad), "forgotten with the outermost run");
+    }
+
+    @Test
+    @DisplayName("a load() nested deeper than a long has bits for counts as a run, and leaves the rest as they were")
+    void loadsPastTheBitsCountAsRuns() {
+        InternalError fatal = new InternalError("deep");
+        int depth = Long.SIZE + 2;
+        for (int i = 0; i < depth; i++) {
+            LoggedFailures.enterLoad();
+        }
+        try {
+            assertTrue(LoggedFailures.unloggedFatal(fatal));
+            LoggedFailures.leave();
+            LoggedFailures.leave();
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
+            for (int i = 2; i < Long.SIZE; i++) {
+                LoggedFailures.leave();
+            }
+            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(fatal));
+        } finally {
+            LoggedFailures.leave();
+            LoggedFailures.leave();
+        }
+        assertNull(LoggedFailures.loggedAt(fatal));
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"the oldest", "the newest"})
     @DisplayName("past the bound, the oldest failure recorded is logged again if it's thrown on, the newest isn't")

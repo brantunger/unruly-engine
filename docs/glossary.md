@@ -158,9 +158,10 @@ request is the simplest. See [Reusing and sharing a store](facts.md#-reusing-and
 ### Fatal error
 
 A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, found anywhere in the cause chain.
-The engine logs it and rethrows the same error from `load()`, `validate()`, `run()` or `close()`; every other `Error`
-from a rule is reported as that rule's failure. A `Throwable` that is neither an `Exception` nor an `Error` is never
-fatal: the engine treats it like an exception. See [Exceptions by method](exceptions-by-method.md).
+The engine logs it, then a [message your code wraps it in](nested-runs.md#-what-is-logged) once logged, and rethrows
+the same error from `load()`, `validate()`, `run()` or `close()`; every other `Error` from a rule is that rule's
+failure. A `Throwable` that is neither an `Exception` nor an `Error` is never fatal. See
+[Exceptions by method](exceptions-by-method.md).
 
 ### First-match engine
 
