@@ -46,12 +46,21 @@ package io.github.brantunger.unruly.core;
  * rejection was handled and a later one, the same instance, is what fails the run; the next outermost run logs it
  * again.
  * </p>
+ *
+ * <p>
+ * The record also holds the last {@value #MAX_LOGGED} exceptions the engine built around a failure, that aren't a
+ * {@link ReportedFailure}, such as the {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} of a
+ * rule whose language failed with a nested run's failure, so the code around one knows it for the engine's own words,
+ * which add nothing to a nested failure, however its text reads (see {@link #builtByEngine}). It holds them for the
+ * outermost run too, whose own code reads them, and forgets them with the rest.
+ * </p>
  */
 final class LoggedFailures {
 
     /**
-     * How many of the failures nested runs and loads logged a thread remembers, and how many of the fatal errors runs
-     * logged; see {@link #loggedByRun} and {@link #unloggedFatal}.
+     * How many of the failures nested runs and loads logged a thread remembers, how many of the fatal errors runs
+     * logged, and how many of the exceptions the engine built around a failure; see {@link #loggedByRun},
+     * {@link #unloggedFatal} and {@link #builtByEngine}.
      */
     static final int MAX_LOGGED = 32;
 
@@ -80,8 +89,9 @@ final class LoggedFailures {
      * What is in progress on one thread, the last {@value #MAX_LOGGED} fatal {@link Error}s logged while it was, with
      * how deep the run that logged each was and which of the runs it was nested in were a {@code load()} or a
      * {@code validate()}, in rings created with it, before any fails, so recording an {@link OutOfMemoryError}
-     * allocates nothing, and the last {@value #MAX_LOGGED} failures nested runs and loads logged, in a ring created
-     * with the first of them.
+     * allocates nothing, the last {@value #MAX_LOGGED} failures nested runs and loads logged, in a ring created
+     * with the first of them, and the last {@value #MAX_LOGGED} exceptions the engine built around a failure, in a
+     * ring created with the first of those.
      */
     private static final class Runs {
         private int depth;
@@ -94,6 +104,8 @@ final class LoggedFailures {
         private int nextFatal;
         private Logged[] logged;
         private int next;
+        private Throwable[] built;
+        private int nextBuilt;
     }
 
     /**
@@ -316,5 +328,54 @@ final class LoggedFailures {
             }
         }
         return null;
+    }
+
+    /**
+     * Records an exception the engine has just built around a failure, that isn't a {@link ReportedFailure}, such as
+     * the {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} of an expression that failed to
+     * compile, or the {@link IllegalArgumentException} of a language that failed to check a fact name, so the code
+     * around it takes it for adding nothing to a nested failure it holds, as a {@link ReportedFailure} adds nothing,
+     * however its text reads (see {@link #isEngineWrapper}). Its message has the nested failure's text in it, and an
+     * application's own exception with that text and words around it is news. Every caller is inside a run, a
+     * {@code load()} or a {@code validate()} on this thread; the outermost records it too, because its own code reads
+     * it. The last {@value #MAX_LOGGED} are kept, in place of the oldest, and only while the outermost run, load,
+     * validation or close that built it is in progress: one a top-level {@code load()} or {@code validate()} threw or
+     * returned, and code throws on later from inside a new run, is taken for news, as an application's exception is.
+     *
+     * @param wrapper The exception the engine built
+     * @param <T>     Its type
+     * @return {@code wrapper}, for the caller to throw or return
+     */
+    static <T extends Throwable> T builtByEngine(T wrapper) {
+        Runs runs = RUNS.get();
+        if (runs.built == null) {
+            runs.built = new Throwable[MAX_LOGGED];
+        }
+        runs.built[runs.nextBuilt] = wrapper;
+        runs.nextBuilt = (runs.nextBuilt + 1) % MAX_LOGGED;
+        return wrapper;
+    }
+
+    /**
+     * Tells whether one link of a cause chain is an exception the engine built around a failure on this thread (see
+     * {@link #builtByEngine}), as {@link Failures#below} asks of each link above a nested failure.
+     *
+     * @param link One link of a cause chain
+     * @return {@code true} if the engine recorded that very instance, and it's one of the last {@value #MAX_LOGGED};
+     *         {@code false} if not, or if no run is in progress on this thread
+     */
+    // The very same instance is what the engine built; an equal one is an application's.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    static boolean isEngineWrapper(Throwable link) {
+        Runs runs = RUNS.get();
+        if (runs == null || runs.built == null) {
+            return false;
+        }
+        for (Throwable built : runs.built) {
+            if (built == link) {
+                return true;
+            }
+        }
+        return false;
     }
 }

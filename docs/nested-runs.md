@@ -74,8 +74,13 @@ characters before it's escaped, such as
 several wrappers have one, the outermost is named. A run further out names that logged line, not the innermost failure.
 
 A wrapper that adds nothing is left out, and the nested text stands alone: one with no message, one whose message is
-its cause's `toString()`, as `new RuntimeException(cause)` makes, or one whose message already contains the nested
-failure's text. In MVEL, MVEL's own exception around an engine failure from a method the rule calls is left out as well.
+its cause's `toString()`, as `new RuntimeException(cause)` makes, or its cause's message, or the nested failure's text.
+In MVEL, MVEL's own exception around an engine failure from a method the rule calls is left out as well.
+
+A wrapper that puts words around the nested text, as `"order 42: " + e.getMessage()` does, is news: it's logged with
+the nested failure as a note, so the nested text appears twice. The engine's own wrappers, such as a rule that fails to
+compile, are left out whatever their text, but only while the call that built them is in progress: one a top-level
+`load()` threw, rethrown later from inside a run, is news.
 
 Around a nested fatal `Error`, the note is the `Error`'s class and message, such as
 `Failed to execute action for rule 'r': audit failed (after a nested run() failed: java.lang.OutOfMemoryError: ...)`,

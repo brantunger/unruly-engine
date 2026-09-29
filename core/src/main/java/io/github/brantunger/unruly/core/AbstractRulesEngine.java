@@ -899,7 +899,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  {@link LoggedFailures})
      */
     // The cause is what the language threw, as when a language can't create its compiler: the ReportedFailure around
-    // it is the engine's own wrapper for a run, and was logged when it was made, or holds a failure that was.
+    // it is the engine's own wrapper for a run, and was logged when it was made, or holds a failure that was. The
+    // exception thrown in its place is the engine's too, so the code around a nested load() takes its message, which
+    // has a nested failure's text, for adding nothing to it (see LoggedFailures).
     // Any Throwable: the rules must be closed however this ends, as a finally would, and a failure that isn't fatal is
     // kept under a fatal Error from closing.
     @SuppressWarnings("PMD.PreserveStackTrace")
@@ -907,7 +909,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             loaded.prepareCopies(copiesAtLoad);
         } catch (ReportedFailure e) {
-            RuleCompilationException failure = new RuleCompilationException(e.getMessage(), e.getCause());
+            RuleCompilationException failure = LoggedFailures.builtByEngine(
+                    new RuleCompilationException(e.getMessage(), e.getCause()));
             // Logged as the language's failure unless it held a nested run's or load's, which that one logged.
             if (Failures.nestedRunFailure(e.getCause()) == null) {
                 LoggedFailures.loggedByLoad(failure);
@@ -1385,7 +1388,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             log.error(msg);
         }
         Failures.throwIfPresent(fatal);
-        IllegalArgumentException rejected = new IllegalArgumentException(msg, failure);
+        // The engine's words around what the language threw, which may be a nested run's failure (see LoggedFailures).
+        IllegalArgumentException rejected = LoggedFailures.builtByEngine(new IllegalArgumentException(msg, failure));
         return logs ? LoggedFailures.loggedByRun(rejected) : rejected;
     }
 
@@ -2163,7 +2167,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     // Not logged here: load() logs each failure as it collects it, and validate() logs nothing. A fatal error is
     // the exception: it's logged, then rethrown, whichever is compiling, unless a run the language started logged it
-    // and nothing wrapped around it says something of its own (see LoggedFailures).
+    // and nothing wrapped around it says something of its own (see LoggedFailures). One with a cause is the engine's
+    // words around what the language threw, which may be a nested run's failure, so it's recorded as the engine's.
     private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName,
                                                                ExpressionKind kind,
                                                                List<InvalidExpressionException.Issue> issues) {
@@ -2175,7 +2180,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
             throw fatal;
         }
-        return new RuleCompilationException(msg, cause, ruleName, kind, issues);
+        RuleCompilationException failure = new RuleCompilationException(msg, cause, ruleName, kind, issues);
+        return cause == null ? failure : LoggedFailures.builtByEngine(failure);
     }
 
     /**
