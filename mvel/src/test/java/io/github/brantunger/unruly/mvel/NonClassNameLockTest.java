@@ -18,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * property chain. A parallel-capable class loader, as the JDK's application class loader is, keeps a lock object for
  * every name it is asked for, for as long as it lives, so rules whose names or literals differ left more on every
  * load. The rule list's class loader refuses a name no class can have, and, with the JDK's own class loaders, a name
- * without a class file, before the application's class loader is asked (#752).
+ * without a class file, before the application's class loader is asked (#752). MVEL doesn't ask the thread's context
+ * class loader for it after, as that is the rule list's while MVEL compiles (#807).
  */
 @DisplayName("a name MVEL tries that can't be a class leaves no lock object in the JDK's class loaders (#752)")
 class NonClassNameLockTest {
@@ -32,13 +33,12 @@ class NonClassNameLockTest {
         List<String> messages = output.lines().filter(line -> line.startsWith(NonClassNameLockScenario.MESSAGE))
                 .map(line -> line.substring(NonClassNameLockScenario.MESSAGE.length()))
                 .toList();
-        // Each property MVEL reads through a value it types as Object is still looked up once as a class nested in
-        // Object, java.lang.Object$p0 and so on, by MVEL itself with the thread's context class loader, after the
-        // rule list's refuses it: one lock object per property name, not per rule or per prefix of a chain. The counts
-        // are cumulative across shapes: f.p%d.q adds only Object$q, as the first shape already left each Object$pN.
+        // Each property MVEL reads through a value it types as Object is looked up as a class nested in Object,
+        // java.lang.Object$p0 and so on. After the rule list's class loader refuses it, MVEL asks the thread's context
+        // class loader for it, which is the rule list's own while MVEL compiles, so none is asked of the JDK's (#807).
         assertEquals(List.of("inline import +0 [], nested in Object +0", "literals +0 [], nested in Object +0",
-                "f.p%d == 1 +0 [], nested in Object +20", "f.p%d.q == 1 +0 [], nested in Object +1",
-                "f.p%d.q.r.s == 1 +0 [], nested in Object +2"), messages,
+                "f.p%d == 1 +0 [], nested in Object +0", "f.p%d.q == 1 +0 [], nested in Object +0",
+                "f.p%d.q.r.s == 1 +0 [], nested in Object +0"), messages,
                 "each case and the names it locked that have no class file; scenario output:\n" + output);
     }
 

@@ -341,9 +341,9 @@ list held from a static field. The list holds 1,500 accessors, and the oldest ar
 Dropping one frees nothing while the engine holding that compiled expression is alive: the expression still refers to
 the accessor.
 
-Class loaders stay reachable through the optimizer in two ways. The first class loader to evaluate a rule in the JVM
-becomes the parent of the optimizer's own class loader and is held for the life of the JVM. The class loader a rule
-list was loaded with is held while its accessors are in the list. Neither closing nor dropping the engine
+Class loaders stay reachable through the optimizer in two ways. The optimizer's own class loader, held for the life
+of the JVM, has as parent the context class loader of whatever set MVEL up first; the engine uses MVEL's class loader.
+A rule list's class loader is held while its accessors are in the list. Neither closing nor dropping the engine
 releases them.
 
 Most applications keep one class loader for their lifetime and never notice. One that discards

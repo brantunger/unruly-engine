@@ -49,7 +49,8 @@ final class NonClassNameLockScenario {
 
     // The names locked since, that the application class loader serves no class file for, which takes no lock. A
     // property read through a value MVEL types as Object, looked up as a class nested in Object, is counted apart:
-    // after the rule list's class loader refuses it, MVEL asks the thread's context class loader for it itself.
+    // after the rule list's class loader refuses it, MVEL asks the thread's context class loader for it itself, which
+    // is the rule list's while MVEL compiles (#807).
     private static void print(String label, Set<String> before) throws ReflectiveOperationException {
         List<String> added = new ArrayList<>();
         int nestedInObject = 0;

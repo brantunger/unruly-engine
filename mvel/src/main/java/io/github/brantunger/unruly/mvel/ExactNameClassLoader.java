@@ -80,10 +80,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * name it fully qualified where MVEL looks it up while the rule compiles, as with strong typing. A class import the
  * engine was built with still finds it, as it is loaded as a {@code Class} and never looked up by name here. Any other
  * application class loader, which may define a class it serves no class file for, is asked for every well-formed name,
- * as before. Lookups the JIT's class loader passes on aren't checked. Nor are MVEL's own: after this loader refuses a
- * name, MVEL's {@code ParseTools.createClass} asks the thread's context class loader for it, as it does for a class a
- * rule creates with {@code new} when it runs, so a property read through a value MVEL types as {@code Object}, such as
- * {@code java.lang.Object$p7} for {@code f.p7}, still leaves one lock object for each property name.
+ * as before. Lookups the JIT's class loader passes on aren't checked. After this loader refuses a name, MVEL's
+ * {@code ParseTools.createClass} asks the thread's context class loader for it, unless that is this loader, as it is
+ * while MVEL compiles a rule (see {@link MvelExpression}), so a property read through a value MVEL types as
+ * {@code Object}, such as {@code java.lang.Object$p7} for {@code f.p7}, leaves no lock object (#807). A class a rule
+ * creates with {@code new} is still asked of the running thread's context class loader when the rule runs.
  * </p>
  */
 final class ExactNameClassLoader extends ClassLoader {

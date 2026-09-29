@@ -13,6 +13,7 @@ import org.mvel2.ast.ASTNode;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.compiler.CompiledExpression;
 import org.mvel2.compiler.ExpressionCompiler;
+import org.mvel2.optimizers.OptimizerFactory;
 
 import java.io.Serializable;
 import java.nio.CharBuffer;
@@ -21,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -37,8 +39,29 @@ import java.util.regex.Pattern;
  * call or an indexed read fails inside it, most often because MVEL can't convert a fact to the method's parameter
  * type. The run still fails, and the engine reports the failure.
  * </p>
+ *
+ * <p>
+ * While MVEL compiles it, the thread's context class loader is the rule list's {@link ExactNameClassLoader}. After
+ * the rule list's class loader refuses a name, MVEL's {@code ParseTools.createClass} asks the thread's context class
+ * loader for it, unless that is the same loader. It looks a property read through a value it types as {@code Object}
+ * up as a class nested in {@code Object}, such as {@code java.lang.Object$p7} for {@code f.p7}, and one of the JDK's
+ * class loaders kept a lock object for each such name it was asked for (#807). MVEL initialises a class a rule names
+ * in full while it compiles, so the class's static initialiser sees the rule list's class loader as the context class
+ * loader: one that keeps it keeps that loader, and one that asks it for a class defined at run time, with one of the
+ * JDK's class loaders as the application's, is refused. The thread's own is restored when
+ * MVEL returns or throws, on a run's thread too when it compiles the expression again for a new session. Running the
+ * expression doesn't change it.
+ * </p>
  */
 final class MvelExpression implements CompiledCondition, CompiledAction {
+
+    static {
+        // MVEL's optimizer, as it sets up, makes a JVM-wide class loader whose parent is the thread's context class
+        // loader at that moment, and keeps it for the life of the JVM. Set up here, before any compilation sets the
+        // rule list's class loader as the context class loader, with MVEL's own class loader as the context class
+        // loader, it holds neither a rule list's nor the one the first thread to load rules happens to have.
+        withClassLoader(mvelClassLoader(), OptimizerFactory::getDefaultAccessorCompiler);
+    }
 
     private final String source;
     private final Imports imports;
@@ -72,9 +95,11 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     static MvelExpression compile(Analysis analysis) {
         // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
         // run(). The analysis pass catches more of it up front.
-        analysis.compile();
-        return new MvelExpression(analysis.source, analysis.imports,
-                MVEL.compileExpression(analysis.source, newParserContext(analysis.imports)));
+        return withClassLoader(analysis.imports.classLoader(), () -> {
+            analysis.compile();
+            return new MvelExpression(analysis.source, analysis.imports,
+                    MVEL.compileExpression(analysis.source, newParserContext(analysis.imports)));
+        });
     }
 
     @Override
@@ -116,7 +141,37 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      */
     Serializable newCompiled() {
         Serializable first = loaded.getAndSet(null);
-        return first != null ? first : MVEL.compileExpression(source, newParserContext(imports));
+        return first != null ? first
+                : withClassLoader(imports.classLoader(),
+                        () -> MVEL.compileExpression(source, newParserContext(imports)));
+    }
+
+    /**
+     * Calls MVEL with a class loader as the thread's context class loader, such as the rule list's while it compiles,
+     * so MVEL asks no other class loader for a name the rule list's refuses, and restores the thread's own once MVEL
+     * returns or throws.
+     *
+     * @param loader The class loader to set
+     * @param call   The call to MVEL
+     * @param <T>    What the call returns
+     * @return What the call returned
+     */
+    private static <T> T withClassLoader(ClassLoader loader, Supplier<T> call) {
+        Thread thread = Thread.currentThread();
+        ClassLoader previous = thread.getContextClassLoader();
+        thread.setContextClassLoader(loader);
+        try {
+            return call.get();
+        } finally {
+            thread.setContextClassLoader(previous);
+        }
+    }
+
+    // The class loader of the MVEL running the rules. PMD asks for the context class loader instead, which is the one
+    // MVEL's optimizer mustn't hold.
+    @SuppressWarnings("PMD.UseProperClassLoader")
+    private static ClassLoader mvelClassLoader() {
+        return OptimizerFactory.class.getClassLoader();
     }
 
     private Serializable compiledIn(Session session) {
