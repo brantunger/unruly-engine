@@ -20,7 +20,10 @@ failure is logged.
 ## 🧭 What counts as nested
 
 A nested run is a run started on the same thread while another run is in progress: from a condition, an action, the
-output supplier, or a listener callback up to and including `afterRun` and `onRunError`.
+output supplier, or a listener callback up to and including `afterRun` and `onRunError`. A run started before or after
+those also inherits the outer run's deadline, but its `parent()` doesn't name the outer run: it names the outer run's
+own parent, if it has one. That is a run started from a fact's `getValue()` while the outer run reads its facts, a
+language's `newSession()` while it gets its compiled copy, or a session's `close()` while it gives the copy back.
 
 That includes the `beforeRun` and `onRunError` of a run that stopped while waiting for a compiled copy, or while reading
 the engine's rules again: it never ran a rule, but a run started from its callbacks inherits its deadline, if it had
