@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.13.3](https://github.com/brantunger/unruly-engine/compare/v2.13.2...v2.13.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* log a wrapper that adds words around a nested run's failure, and leave out only the engine's own wrappers ([#830](https://github.com/brantunger/unruly-engine/issues/830)) ([1b1c07b](https://github.com/brantunger/unruly-engine/commit/1b1c07b8f6e009c0c3f5e0fc99c86748e04a943d))
+
 ## [2.13.2](https://github.com/brantunger/unruly-engine/compare/v2.13.1...v2.13.2) (2026-09-29)
 
 
