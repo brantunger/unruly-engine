@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * What a run's conditions are evaluated against. <b>Internal:</b> public only because {@link EvaluationContext} is
@@ -26,22 +27,37 @@ import java.util.Objects;
  *
  * @param facts       The run's facts, read-only
  * @param runDeadline When the run must stop, which decides whether it has to
+ * @param runScope    The values the run's languages keep, which the run's action contexts share
  */
-public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDeadline) implements EvaluationContext {
+public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDeadline, RunScope runScope)
+        implements EvaluationContext {
 
     /**
      * Wraps the facts in a read-only view, whose writes fail with a message about conditions.
      *
-     * @throws NullPointerException if {@code facts} or {@code runDeadline} is {@code null}
+     * @throws NullPointerException if {@code facts}, {@code runDeadline} or {@code runScope} is {@code null}
      */
     public EngineEvaluationContext {
         facts = ReadOnlyFacts.forConditions(Objects.requireNonNull(facts, "facts must not be null"));
         Objects.requireNonNull(runDeadline, "runDeadline must not be null");
+        Objects.requireNonNull(runScope, "runScope must not be null");
+    }
+
+    /**
+     * Creates the context for a run of its own, whose values no other context shares.
+     *
+     * @param facts       The run's facts
+     * @param runDeadline When the run must stop
+     * @throws NullPointerException if {@code facts} or {@code runDeadline} is {@code null}
+     */
+    public EngineEvaluationContext(Map<String, Object> facts, Deadline runDeadline) {
+        this(facts, runDeadline, new RunScope());
     }
 
     /**
      * Creates the context for a run that must stop at {@code deadline} on the system clock, as it is now: a step of
      * the system clock after that doesn't move when the context is cancelled. The test kit creates contexts with it.
+     * The context's run is its own, so no other context shares its values.
      *
      * @param facts    The run's facts
      * @param deadline When the run must stop, or {@code null} if it has none
@@ -70,9 +86,45 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * @return The time left
      */
     public static Duration timeLeft(EvaluationContext context) {
-        Deadline deadline = context instanceof EngineEvaluationContext evaluation ? evaluation.runDeadline
+        return runDeadlineOf(context).timeLeft();
+    }
+
+    /**
+     * Returns the value a context's run keeps under a key, as {@link EvaluationContext#runScoped} describes it.
+     * <b>Internal:</b> public only so that method's default, in another package, can reach the run's values, which
+     * only the engine's own context records have.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @param key     The key
+     * @param init    Makes the value the first time the run asks for it
+     * @param <T>     The value's type
+     * @return The value
+     * @throws NullPointerException if {@code key}, {@code init} or what {@code init} returns is {@code null}
+     */
+    public static <T> T runScoped(EvaluationContext context, Object key, Supplier<? extends T> init) {
+        return runScopeOf(context).get(key, init);
+    }
+
+    /**
+     * Returns when a context's run must stop.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @return The run's deadline
+     */
+    static Deadline runDeadlineOf(EvaluationContext context) {
+        return context instanceof EngineEvaluationContext evaluation ? evaluation.runDeadline
                 : ((EngineActionContext) context).runDeadline();
-        return deadline.timeLeft();
+    }
+
+    /**
+     * Returns the values a context's run keeps.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @return The run's values
+     */
+    static RunScope runScopeOf(EvaluationContext context) {
+        return context instanceof EngineEvaluationContext evaluation ? evaluation.runScope
+                : ((EngineActionContext) context).runScope();
     }
 
     /**

@@ -18,6 +18,8 @@ import java.util.Set;
  * Creates the contexts the engine passes to an expression language, for unit tests of a language's compiler and
  * compiled expressions. The context interfaces are sealed, so a test can't implement them. These are the engine's own
  * implementations, and behave as they do in a run: for example, writing to the facts fails with the engine's message.
+ * Each context is for a run of its own, so the values it keeps with {@link EvaluationContext#runScoped} aren't shared
+ * with another context.
  *
  * <p>
  * To check a language against everything the engine promises for its rules, extend
@@ -174,5 +176,20 @@ public final class LanguageTestContexts {
                                        @Nullable Instant deadline) {
         Objects.requireNonNull(facts, "facts must not be null");
         return new EngineActionContext(new LinkedHashMap<String, Object>(facts), output, deadline);
+    }
+
+    /**
+     * Creates the context an action runs against, in the same run as another context: so a language's test can check
+     * that its actions find what its conditions kept with {@link EvaluationContext#runScoped}.
+     *
+     * @param sameRun A context of the run, created by this class, such as with {@link #evaluation(Map)}
+     * @param output  The output object, which the action changes in place
+     * @return The context. It has the facts and deadline of {@code sameRun}, and shares its run-scoped values. Its
+     *         facts are read-only, and a write fails with the message the engine uses for an action. It equals only
+     *         itself.
+     * @throws NullPointerException if {@code sameRun} or {@code output} is {@code null}
+     */
+    public static ActionContext actionInRun(EvaluationContext sameRun, Object output) {
+        return new EngineActionContext(sameRun, output);
     }
 }

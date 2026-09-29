@@ -134,6 +134,48 @@ class LanguageTestContextsTest {
         assertEquals(action, action);
     }
 
+    @Test
+    @DisplayName("a context it creates keeps run-scoped values, for a run of its own that no other context shares")
+    void runScopedValuesPerContext() {
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of());
+        ActionContext action = LanguageTestContexts.action(Map.of(), new HashMap<>());
+
+        Object value = evaluation.runScoped("key", Object::new);
+
+        assertSame(value, evaluation.runScoped("key", Object::new));
+        assertNotSame(value, action.runScoped("key", Object::new));
+        assertSame(action.runScoped("key", Object::new), action.runScoped("key", Object::new));
+        assertNotSame(value, LanguageTestContexts.evaluation(Map.of()).runScoped("key", Object::new));
+    }
+
+    @Test
+    @DisplayName("an action context in the same run as another shares its run-scoped values, facts and deadline")
+    void actionInTheSameRun() {
+        Instant deadline = Instant.now().plusSeconds(60);
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1), deadline);
+        Object value = evaluation.runScoped("key", Object::new);
+        Map<String, Object> output = new HashMap<>();
+
+        ActionContext action = LanguageTestContexts.actionInRun(evaluation, output);
+        ActionContext next = LanguageTestContexts.actionInRun(action, output);
+        ActionContext otherRun = LanguageTestContexts.actionInRun(LanguageTestContexts.evaluation(Map.of("x", 1)),
+                output);
+
+        assertSame(value, action.runScoped("key", Object::new));
+        assertSame(value, next.runScoped("key", Object::new));
+        assertNotSame(value, otherRun.runScoped("key", Object::new));
+        assertEquals("kept by the action", action.runScoped("action key", () -> "kept by the action"));
+        assertEquals("kept by the action", evaluation.runScoped("action key", () -> "not made"));
+        assertEquals(Map.of("x", 1), action.facts());
+        assertSame(output, action.output());
+        assertEquals(deadline, action.deadline());
+        assertNull(otherRun.deadline());
+        assertNotEquals(action, next);
+        UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
+                () -> action.facts().put("y", 2));
+        assertTrue(ex.getMessage().startsWith("The facts passed to an action are read-only; 'y'"), ex.getMessage());
+    }
+
     private static void assertNullMessage(String expected, Executable creation) {
         assertEquals(expected, assertThrows(NullPointerException.class, creation).getMessage());
     }
@@ -147,6 +189,10 @@ class LanguageTestContextsTest {
                 () -> assertNullMessage("facts must not be null", () -> LanguageTestContexts.evaluation(null)),
                 () -> assertNullMessage("facts must not be null",
                         () -> LanguageTestContexts.action(null, new HashMap<>())),
+                () -> assertNullMessage("sameRun must not be null",
+                        () -> LanguageTestContexts.actionInRun(null, new HashMap<>())),
+                () -> assertNullMessage("output must not be null",
+                        () -> LanguageTestContexts.actionInRun(LanguageTestContexts.evaluation(Map.of()), null)),
                 () -> assertNullMessage("output must not be null", () -> LanguageTestContexts.action(Map.of(), null)),
                 () -> assertNullMessage("packageImports must not be null",
                         () -> LanguageTestContexts.compile(null, Set.of(), loader)),
