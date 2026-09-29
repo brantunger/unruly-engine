@@ -89,6 +89,21 @@ class ConditionAssignmentsTest {
                 ConditionAssignments.find("\u0001with (claim) { a = 1 }"));
     }
 
+    // #747: the scan searched for the comment's end after its '*', so it read /*/ as a comment that runs to the next
+    // */, or to the end, and skipped the assignment MVEL compiles after it.
+    @Test
+    @DisplayName("/*/ is a whole comment, as MVEL reads it, so what follows it is scanned")
+    void slashStarSlashIsWholeComment() {
+        assertAll(
+                () -> assertEquals(new ConditionAssignments.Write("=", 19),
+                        ConditionAssignments.find("/*/ claim.approved = true; true")),
+                () -> assertEquals(new ConditionAssignments.Write("=", 11),
+                        ConditionAssignments.find("/*/ a */ x = 1")),
+                () -> assertEquals(new ConditionAssignments.Write("=", 7), ConditionAssignments.find("/**/ x = 1")),
+                () -> assertNull(ConditionAssignments.find("/*/ true")),
+                () -> assertNull(ConditionAssignments.find("/*/ x == 1 /* y = 2 */")));
+    }
+
     @Test
     @DisplayName("an unterminated block comment or literal ends the scan without a false match")
     void unterminatedCommentOrLiteral() {

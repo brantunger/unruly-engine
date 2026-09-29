@@ -2,10 +2,13 @@ package io.github.brantunger.unruly.mvel;
 
 import org.mvel2.MVEL;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
- * The class loader MVEL compiles rules with. It asks the application's class loader for every class, but reports a
- * class file whose name only matches in a different case as a missing class, and links the code MVEL's JIT generates
- * against the MVEL running the rules.
+ * The class loader MVEL compiles rules with. It asks the application's class loader for every class, unless the name
+ * can't be one, but reports a class file whose name only matches in a different case as a missing class, and links the
+ * code MVEL's JIT generates against the MVEL running the rules.
  *
  * <p>
  * While compiling {@code applicant.creditScore}, MVEL checks whether {@code applicant} is a class. In a class directory
@@ -31,7 +34,7 @@ import org.mvel2.MVEL;
  * application's class loader if that one hasn't got it. Only a lookup that the JIT's class loader passes on to its
  * parent comes through {@link #loadClass(String, boolean)}. A lookup made with this loader itself, as MVEL's while it
  * compiles a rule or {@link Class#forName(String, boolean, ClassLoader)} with this loader, calls
- * {@link #loadClass(String)}, which asks the application's class loader for every class.
+ * {@link #loadClass(String)}, which asks the application's class loader for every class a name may be.
  * </p>
  *
  * <p>
@@ -60,6 +63,28 @@ import org.mvel2.MVEL;
  * {@code pkg.Outer.Inner.FIELD} with 81 parts before the field, is read as properties, as MVEL gives up on the chain
  * before it looks up the class.
  * </p>
+ *
+ * <p>
+ * A name looked up with this loader itself is also refused, as a {@link ClassNotFoundException}, when no class can have
+ * it (#752). MVEL looks up much that isn't a class: every prefix of a property chain such as {@code f.p7.q}, with its
+ * dots turned into {@code $}, while it compiles, and, after an {@code import pkg.*;} in the rule's text, whole
+ * statements such as {@code java.util.output.put('k', x)} when it first runs. A parallel-capable class loader, as the
+ * JDK's are, keeps a lock object for every name it is asked for, for as long as it lives, so a rule list whose rules
+ * differ in their names or literals left more on every load or first run. A name with a character that is neither a
+ * {@code .} nor one a Java identifier may have is refused with any application class loader. When the application's is
+ * one of the JDK's own (see {@link Imports#isJdkLoader}), a name it serves no class file for is refused too, as the
+ * class file lookup takes no lock (see {@link FactNames#mayBeClass}). Neither the class file of a class it loaded nor
+ * the lack of one is looked up again, for up to {@value #MAX_CACHED_CLASSES} names of each. Such a loader serves a
+ * class file for every class it loads from the class path, the module path or the JDK, but not for a class defined in
+ * it at run time, such as with {@code MethodHandles.Lookup.defineClass}: a rule can't import that class inline, nor
+ * name it fully qualified where MVEL looks it up while the rule compiles, as with strong typing. A class import the
+ * engine was built with still finds it, as it is loaded as a {@code Class} and never looked up by name here. Any other
+ * application class loader, which may define a class it serves no class file for, is asked for every well-formed name,
+ * as before. Lookups the JIT's class loader passes on aren't checked. Nor are MVEL's own: after this loader refuses a
+ * name, MVEL's {@code ParseTools.createClass} asks the thread's context class loader for it, as it does for a class a
+ * rule creates with {@code new} when it runs, so a property read through a value MVEL types as {@code Object}, such as
+ * {@code java.lang.Object$p7} for {@code f.p7}, still leaves one lock object for each property name.
+ * </p>
  */
 final class ExactNameClassLoader extends ClassLoader {
 
@@ -82,6 +107,21 @@ final class ExactNameClassLoader extends ClassLoader {
      */
     static final int MAX_NAME_PARTS = Imports.MAX_IMPORT_PARTS + 17;
 
+    /**
+     * How many names of classes the application's class loader has loaded through this one are remembered, so their
+     * class file isn't looked up again: as many as {@link FactNames} remembers names that aren't classes. Only a class
+     * that loaded is remembered, so no name a rule makes up can take a place, and once the count is reached no more
+     * are: a class it didn't remember is looked up as before. Threads adding at once may pass it by as many as they
+     * are.
+     */
+    static final int MAX_CACHED_CLASSES = FactNames.MAX_CACHED_MISSES;
+
+    /**
+     * The longest name remembered as having no class file, so that the names remembered, at most
+     * {@value #MAX_CACHED_CLASSES} of them, take no more characters than {@link FactNames} remembers.
+     */
+    static final int MAX_CACHED_MISS_LENGTH = FactNames.MAX_CACHED_MISS_CHARS / FactNames.MAX_CACHED_MISSES;
+
     // MVEL's lookup of a nested class, which turns the dots of a name into $ one at a time, and the class it is in.
     private static final String NESTED_LOOKUP_CLASS = ExceptionReads.MVEL_PACKAGE + "util.ParseTools";
     private static final String NESTED_LOOKUP_METHOD = "findInnerClass";
@@ -90,26 +130,73 @@ final class ExactNameClassLoader extends ClassLoader {
         registerAsParallelCapable();
     }
 
+    // Whether the application's class loader is one of the JDK's own, which serves the class file of every class it
+    // can load by name, so a name without one is refused before it is asked.
+    private final boolean classFileFirst;
+
+    // The names of classes the application's class loader has loaded through this one, when it is one of the JDK's
+    // own: a rule list compiles the same few classes' names again and again, and each class file lookup walks the
+    // class path.
+    private final Set<String> classes = ConcurrentHashMap.newKeySet();
+
+    // The names the application's class loader, one of the JDK's own, serves no class file for. A class defined at
+    // run time has none, so remembering one changes nothing for it. A class file that appears later, such as in a
+    // class directory or through Instrumentation.appendToSystemClassLoaderSearch, isn't found through this loader:
+    // the engine makes one for each load() or validate(), so a name stays remembered for that rule list's compiling
+    // and runs only, and the next load() starts with none.
+    private final Set<String> noClassFiles = ConcurrentHashMap.newKeySet();
+
+    private final int mostClasses;
+
     /**
-     * Creates a class loader that asks {@code parent} for every class, apart from those MVEL's own class loader has
-     * when the JVM links an accessor MVEL's JIT compiled.
+     * Creates a class loader that asks {@code parent} for every class a name may be, apart from those MVEL's own
+     * class loader has when the JVM links an accessor MVEL's JIT compiled.
      *
      * @param parent The application's class loader
      */
     ExactNameClassLoader(ClassLoader parent) {
+        this(parent, MAX_CACHED_CLASSES);
+    }
+
+    /**
+     * Creates a class loader that asks {@code parent} for every class a name may be, and remembers at most
+     * {@code mostClasses} of the classes it loads.
+     *
+     * @param parent      The application's class loader
+     * @param mostClasses How many names of classes loaded to remember
+     */
+    ExactNameClassLoader(ClassLoader parent, int mostClasses) {
+        this(parent, mostClasses, Imports.isJdkLoader(parent));
+    }
+
+    /**
+     * Creates a class loader that asks {@code parent} for every class a name may be, first for its class file if
+     * {@code classFileFirst}, and remembers at most {@code mostClasses} names of each kind.
+     *
+     * @param parent         The application's class loader
+     * @param mostClasses    How many names of classes loaded, and of names with no class file, to remember
+     * @param classFileFirst Whether to refuse a name {@code parent} serves no class file for, as for one of the JDK's
+     *                       own loaders
+     */
+    ExactNameClassLoader(ClassLoader parent, int mostClasses, boolean classFileFirst) {
         super(parent);
+        this.classFileFirst = classFileFirst;
+        this.mostClasses = mostClasses;
     }
 
     /**
      * Looks a class up in the application's class loader, unless its name is too long, or has too many parts, to be
-     * a class the engine can import.
+     * a class the engine can import, or can't be a class's name.
      *
      * @param name The class's binary name
      * @return The class
      * @throws ClassNotFoundException if the application's class loader has no class by that name, or only a class
      *                                file whose name differs in case, or, before the application's class loader is
      *                                asked, if {@code name} has more than {@value #MAX_NAME_LENGTH} characters, or
-     *                                more than {@value #MAX_NAME_PARTS} dot-separated parts and no {@code $}
+     *                                more than {@value #MAX_NAME_PARTS} dot-separated parts and no {@code $}, or a
+     *                                character that is neither a {@code .} nor one a Java identifier may have, or if
+     *                                the application's class loader is one of the JDK's own and serves no class file
+     *                                for it
      * @throws NameTooLarge           if MVEL's lookup of a nested class asks for {@code name}, which has a {@code $}
      *                                and more than {@value #MAX_NAME_PARTS} parts, counting one for the {@code $},
      *                                before the application's class loader is asked
@@ -117,8 +204,16 @@ final class ExactNameClassLoader extends ClassLoader {
     @Override
     public Class<?> loadClass(String name) throws ClassNotFoundException {
         checkSize(name);
+        if (!isBinaryName(name)
+                || classFileFirst && !classes.contains(name) && !hasClassFile(name)) {
+            throw new ClassNotFoundException(name);
+        }
         try {
-            return getParent().loadClass(name);
+            Class<?> loaded = getParent().loadClass(name);
+            if (classFileFirst && classes.size() < mostClasses) {
+                classes.add(name);
+            }
+            return loaded;
         } catch (NoClassDefFoundError e) {
             if (isWrongName(e)) {
                 throw new ClassNotFoundException(name, e);
@@ -191,6 +286,56 @@ final class ExactNameClassLoader extends ClassLoader {
         long parts = name.chars().filter(c -> c == '.').count() + 1;
         long mostParts = name.indexOf('$') >= 0 ? MAX_NAME_PARTS - 1 : MAX_NAME_PARTS;
         return name.length() > MAX_NAME_LENGTH || parts > mostParts;
+    }
+
+    /**
+     * Tells whether the application's class loader serves a class file for a name, remembering a name it serves none
+     * for, unless {@value #MAX_CACHED_CLASSES} are remembered already or the name has more than
+     * {@value #MAX_CACHED_MISS_LENGTH} characters: MVEL looks the same names up again and again while a rule list
+     * compiles, and each lookup of a class file that isn't there walks the whole class path.
+     *
+     * @param name The class's binary name
+     * @return {@code false} if the application's class loader has no class by that name
+     */
+    private boolean hasClassFile(String name) {
+        if (noClassFiles.contains(name)) {
+            return false;
+        }
+        boolean found = FactNames.mayBeClass(getParent(), name);
+        if (!found && name.length() <= MAX_CACHED_MISS_LENGTH && noClassFiles.size() < mostClasses) {
+            noClassFiles.add(name);
+        }
+        return found;
+    }
+
+    /**
+     * Returns how many names with no class file are remembered, so their class file isn't looked up again.
+     *
+     * @return The count
+     */
+    int cachedMisses() {
+        return noClassFiles.size();
+    }
+
+    /**
+     * Returns how many names of classes loaded are remembered, so their class file isn't looked up again.
+     *
+     * @return The count
+     */
+    int cachedClasses() {
+        return classes.size();
+    }
+
+    /**
+     * Tells whether a name has only characters a class's binary name can have: a {@code .}, or one a Java identifier
+     * may have, which {@code $} is. A name with any other, such as a quote, a parenthesis or a space, is a piece of a
+     * statement or a call that MVEL tries as a class, and no class compiled from Java has it.
+     *
+     * @param name The name to look up
+     * @return {@code false} if no class can have the name
+     */
+    static boolean isBinaryName(String name) {
+        return name.codePoints().allMatch(c -> c == '.' || Character.isJavaIdentifierPart(c));
     }
 
     /**

@@ -154,11 +154,11 @@ class InlineImportLimitsTest {
                 "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
     }
 
-    // The scan reads /*/ as the start of a comment, which MVEL doesn't: the load failed with "Index 150 out of bounds
-    // for length 150", with no issue.
+    // The scan read /*/ as the start of a comment that never ends, which MVEL doesn't: the load failed with "Index 150
+    // out of bounds for length 150", with no issue.
     @Test
-    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't that never ends")
-    void positionAfterCommentMvelDoesntRead() {
+    @DisplayName("the position is the import's after /*/, which MVEL reads as a whole comment")
+    void positionAfterSlashStarSlash() {
         String name = "a.".repeat(64) + "a";
 
         assertRejected(rule("true", "/*/ import " + name + ".*; x = 1;"), 1, 12, "Can't import '" + name
@@ -166,39 +166,41 @@ class InlineImportLimitsTest {
     }
 
     @Test
-    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't that ends later")
-    void positionAfterCommentMvelDoesntReadEndingLater() {
+    @DisplayName("the position is the import's after /*/, with a comment after the import")
+    void positionAfterSlashStarSlashWithCommentAfter() {
         String name = "a.".repeat(64) + "a";
 
         assertRejected(rule("true", "/*/ import " + name + ".*; x = 1; /* c */"), 1, 12, "Can't import '" + name
                 + "': it has 65 dot-separated parts, and an import may have at most 64");
     }
 
-    // Pins today's fallback: once the scan misreads /*/ as a comment that never ends, the first import in the text is
-    // taken, here the one in the string (line 1, column 13), not the import at column 158. #747 fixes the misread.
+    // #747: the scan read /*/ as a comment that never ends and found no import after the string, so the first import
+    // in the text was taken, the one in the string, at line 1, column 13.
     @Test
-    @DisplayName("after a comment MVEL doesn't read, the position is the first import in the text, even in a string")
-    void positionAfterStringAndCommentMvelDoesntRead() {
+    @DisplayName("the position is the import's after a string and /*/, not the one in the string")
+    void positionAfterStringAndSlashStarSlash() {
         String name = "a.".repeat(64) + "a";
 
-        assertRejected(rule("true", "s = 'import " + name + ".*'; /*/ import " + name + ".*; x = 1;"), 1, 13,
+        assertRejected(rule("true", "s = 'import " + name + ".*'; /*/ import " + name + ".*; x = 1;"), 1, 158,
                 "Can't import '" + name + "': it has 65 dot-separated parts, and an import may have at most 64");
     }
 
-    // Searching from where the last character was skipped found no import: NoSuchElementException.
+    // While the scan read /*/ as a comment, searching from where the last character was skipped found no import:
+    // NoSuchElementException.
     @Test
-    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't, with code after it")
-    void positionAfterCommentMvelDoesntReadWithCodeAfter() {
+    @DisplayName("the position is the import's after /*/, with code after a comment after it")
+    void positionAfterSlashStarSlashWithCodeAfter() {
         String name = "a.".repeat(64) + "a";
 
         assertRejected(rule("true", "/*/ import " + name + ".*; x = 1; /* c */ y = 2;"), 1, 12, "Can't import '"
                 + name + "': it has 65 dot-separated parts, and an import may have at most 64");
     }
 
-    // Searching from where the last character was skipped found the name in the string after the import.
+    // While the scan read /*/ as a comment, searching from where the last character was skipped found the name in the
+    // string after the import.
     @Test
-    @DisplayName("the position is the first import's when the scan reads a comment MVEL doesn't, before a string")
-    void positionAfterCommentMvelDoesntReadBeforeString() {
+    @DisplayName("the position is the import's after /*/, before a string with the same import")
+    void positionAfterSlashStarSlashBeforeString() {
         String name = "a.".repeat(64) + "a";
 
         assertRejected(rule("true", "/*/ import " + name + ".*; /* c */ s = 'import " + name + "'"), 1, 12,
