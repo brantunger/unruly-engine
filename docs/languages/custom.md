@@ -5,7 +5,7 @@ when, and on which thread. [The contract test kit](contract-kit.md) covers testi
 
 **Who it's for:** language authors.
 **You'll be able to:** implement the four interfaces, report compile errors the way the engine expects, read facts of
-any shape, keep run state in sessions, and package the language for both paths.
+any shape, keep state in sessions or for one run, and package the language for both paths.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
 [Compiled copies](../compiled-copies.md). Moving a language from 1.x?
 [Migrating a language or an engine](../migrating-to-2-implementers.md) lists what changed.
@@ -81,8 +81,7 @@ run's thread, at once, before it's used. A `load()` that fails closes the compil
 compiler once.
 
 A run holds its copy from before `checkFactName` until after its last expression, so the compiler's `close()` never
-overlaps them, and both compile methods finish before any run can see the compiler. A language no loaded rule uses
-gets no compiler, no session and no fact-name check.
+overlaps them. A language no loaded rule uses gets no compiler, no session and no fact-name check.
 
 ## 🚀 Implementing the interfaces
 
@@ -196,21 +195,19 @@ returns `ConditionResult.of(evaluate(context, session))`, a result with no detai
 `evaluate` works unchanged. For a `Boolean` it returns a shared constant, `ConditionResult.TRUE` or `FALSE`, so the
 default allocates nothing extra, and neither does `ConditionResult.of(value, null)`.
 
-Since 2.3.0, two `ConditionResult`s are equal when their values are equal and their details are equal by the
-detail's own `equals`. `toString()` prints it in the form of the call that makes it, such as `ConditionResult.TRUE`,
-`ConditionResult.FALSE` or `ConditionResult.of(true, <detail>)`, as `ActionResult` does. A test can compare two
-results with `assertEquals` when the detail has value equality, such as a `String` or a record; an array, or a class
-that doesn't override `equals`, compares by identity.
+Since 2.3.0, two `ConditionResult`s are equal when their values are equal and their details are equal by the detail's
+own `equals`, so `assertEquals` works when the detail is a `String` or a record; an array, or a class without its own
+`equals`, compares by identity. `toString()` prints the call that makes it, such as
+`ConditionResult.of(true, <detail>)`, as `ActionResult` does.
 
-The value follows `evaluate`'s rule: anything but a `Boolean` fails the rule, and so does a `null` result. Keep
+As with `evaluate`, anything but a `Boolean`, `null` included, fails the rule. Keep
 `evaluate` returning the same value. The engine never calls it, but a condition that wraps yours, or your own tests,
 may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
 
 The detail can be any object, or `null`. The application reads it as
-[`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for
-every rule it evaluates, whether or not anyone reads it, so keep it cheap to build. It's kept only with a `Boolean`
-value, since any other value fails the run. `afterEvaluate` on a listener
-doesn't receive it.
+[`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for every
+rule it evaluates, so keep it cheap to build. It's kept only with a `Boolean` value, and `afterEvaluate` doesn't receive
+it.
 
 - **Don't return the session, or hold it.** Sessions are closed when their copy is retired, and reused by later runs.
 - **Keep it usable after `close()`.** A run result may outlive later runs and `close()`, so the detail's
@@ -249,11 +246,10 @@ The `RuleCompilationException` carries the same issues; for several rules its me
 
 - **Order.** Rules compile in priority order, highest first, `null` last and equal priorities in list order, so
   `failures()` is in that order. The condition compiles before the action.
-- **What the engine rejects before asking you.** A blank condition or action
+- **What the engine rejects first.** A blank condition or action
   (`Rule 'prime-rate' has a blank condition expression`) and a language the engine doesn't have
   (`Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: [mvel]`, with no
-  expression kind) are one rule's failure, collected with the rest. A `null` rule or a duplicate name fails at once,
-  before anything compiles.
+  expression kind) fail one rule, collected with the rest. A `null` rule or a duplicate name fails at once.
 
 > [!WARNING]
 > A condition that doesn't compile hides its action's errors: the action isn't compiled, so they appear only after
@@ -296,9 +292,15 @@ that reads only maps. It throws `IllegalArgumentException` for a value it doesn'
 string or a collection, so convert the whole fact map, with one more level, not each fact.
 
 ```java
-Map<String, Object> data = FactProperties.toData(evaluation.facts(), depth + 1);
+Map<String, Object> data =
+        evaluation.runScoped(this, () -> FactProperties.toData(evaluation.facts(), depth + 1));
 // {applicant={creditScore=750}, score=750}
 ```
+
+Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the run's first condition or action to ask makes
+the map, and its other conditions and actions get the same one. Key it with the compiler, `this` in the lambdas, not
+with each expression. Nested and later runs make their own. The map misses a fact that Java code changes after it's
+made, and the engine drops it, unclosed, when the run returns.
 
 ## 📤 Actions and results
 
@@ -433,14 +435,15 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |
 | `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw. The kit's `sessionClosedWhileAnotherRuns` fails either; `sessionsClosed` and `sessionClosedOnAnotherThread` fail a throw |
-| Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, so keep a run's state in its `Session`, as the kit's `nestedRunInsideAnAction` checks |
+| Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), as the kit's `nestedRunInsideAnAction` checks |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
 `newSession()` creates a session for each [compiled copy](../glossary.md#compiled-copy) of the rules, and every
 condition and action of your language in a run gets that copy's session. Return `Session.none()` when your compiled
 expressions keep no state while they run, and a new session when they do, such as a single-threaded interpreter
 context. A rule list whose languages all return `Session.none()` needs no copies: every run shares one set of
-sessions, and no [copy limit](../compiled-copies.md#-limiting-the-copies) applies to it.
+sessions, and no [copy limit](../compiled-copies.md#-limiting-the-copies) applies to it. Values kept with
+`runScoped` need no session.
 
 > [!WARNING]
 > Only the `Session.none()` instance counts as stateless: the engine checks identity, not `equals`. A stateless
@@ -535,7 +538,7 @@ See [The contract test kit](contract-kit.md), and [Testing beyond the contract k
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A stateless session of your own** | `new MySession()` with no state still gets copies and the copy limit: only `Session.none()` itself counts | Return `Session.none()` |
+| **A stateless session of your own** | `new MySession()` still gets copies and the copy limit | Return `Session.none()` |
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
 | **A condition that doesn't compile** | Its action isn't compiled, so the action's errors appear only after the next `load()` | Expect a second failure after fixing a condition |
@@ -558,14 +561,13 @@ Yes. A copy of the rules has one session for every language the rule list uses, 
 
 ### If `newSession()` fails, do listeners hear about it?
 
-No. It happens before `beforeRun`, so the run throws a `RuleExecutionException`, logged at ERROR, and no listener is
-called. See [Thread safety](#-thread-safety). When `load()` is making copies, it throws a `RuleCompilationException`
-instead, and listeners aren't involved either.
+No. It happens before `beforeRun`; see [Thread safety](#-thread-safety). When `load()` is making copies, it throws a
+`RuleCompilationException` instead.
 
 ### Do I have to implement `warmUp`?
 
-No. By default it does nothing, and an engine built with `copiesAtLoad(n)` still makes its copies at load. Implement
-it when a session's first use is costly, such as compiling or loading classes. See
+No. By default it does nothing, and `copiesAtLoad(n)` still makes its copies. Implement it when a session's first use
+is costly, such as compiling or loading classes. See
 [Warming up a session](#warming-up-a-session).
 
 ### Do I have to implement `evaluateWithDetail`?

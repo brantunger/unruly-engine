@@ -14,7 +14,8 @@ import java.util.Map;
  *
  * @param values       The fact values the run was given, unwrapped
  * @param forListeners The view listeners are given, whose writes fail with a message about listeners
- * @param evaluation   The context every condition of the run is evaluated against
+ * @param evaluation   The context every condition of the run is evaluated against, whose values the run's action
+ *                     contexts share
  * @param deadline     When the run must stop, {@link Deadline#NONE} if it has none
  * @param runId        The run's number, which its Flight Recorder events carry
  * @param tally        What the run counts as it goes, for its Flight Recorder event
@@ -36,7 +37,7 @@ record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, En
      */
     static RunFacts of(Map<String, Object> values, Map<String, Object> forListeners, Deadline deadline, long runId,
                        RunTally tally, RuleSelection selection) {
-        return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline), deadline, runId,
-                tally, selection);
+        return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline, new RunScope()),
+                deadline, runId, tally, selection);
     }
 }

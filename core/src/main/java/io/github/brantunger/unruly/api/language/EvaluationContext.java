@@ -5,6 +5,7 @@ import org.jspecify.annotations.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * What a condition is evaluated against.
@@ -21,8 +22,8 @@ import java.util.Map;
  * {@code hashCode()} reads neither the facts nor, for an {@link ActionContext}, the output object. A run passes one
  * evaluation context to every condition, and a new action context to each action, so the two are different objects. A
  * {@link Session} serves one run at a time and later runs reuse it, and no call marks where a run starts or ends, so
- * state a run leaves in a session is still there for the next run. A map keyed on contexts must not keep them alive, as
- * a {@link java.util.WeakHashMap} doesn't.
+ * state a run leaves in a session is still there for the next run; state for one run belongs in {@link #runScoped}. A
+ * map keyed on contexts must not keep them alive, as a {@link java.util.WeakHashMap} doesn't.
  * </p>
  */
 public sealed interface EvaluationContext
@@ -87,5 +88,38 @@ public sealed interface EvaluationContext
      */
     default Duration timeLeft() {
         return io.github.brantunger.unruly.core.EngineEvaluationContext.timeLeft(this);
+    }
+
+    /**
+     * Returns the value kept under {@code key} for this run, making it with {@code init} the first time any condition
+     * or action of the run asks for it. So a language that converts the facts before it evaluates an expression, such
+     * as with {@link FactProperties#toData}, can convert them once per run rather than once per expression.
+     *
+     * <p>
+     * Every condition and action of one {@code run()} shares the values: the evaluation context and each action context
+     * of the run return the same value for a key. A nested run has values of its own, and the next run starts with
+     * none. A key the language owns, such as its compiler, keeps its values apart from another language's. The same
+     * key must always hold the same type, or the caller gets a {@link ClassCastException}.
+     * </p>
+     *
+     * <p>
+     * The value is made when it is first asked for, and isn't made again during the run, so it doesn't see a change
+     * that Java code makes to a fact later in the run. The engine keeps the values until the run returns, and then lets
+     * them go without closing them: a resource a language opens belongs in its {@link Session}. The values aren't
+     * synchronized, as a run evaluates one expression at a time. If {@code init} throws, nothing is kept, and the next
+     * call for the key calls its {@code init} again. An {@code init} can ask for other keys, but not for its own: that
+     * throws {@link IllegalStateException}, rather than recursing or making the value twice.
+     * </p>
+     *
+     * @param key  The key, compared with {@link Object#equals(Object)}
+     * @param init Makes the value the first time the run asks for {@code key}
+     * @param <T>  The value's type
+     * @return The value kept under {@code key}, never {@code null}
+     * @throws NullPointerException  if {@code key} or {@code init} is {@code null}, or {@code init} returns
+     *                               {@code null}
+     * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key
+     */
+    default <T> T runScoped(Object key, Supplier<? extends T> init) {
+        return io.github.brantunger.unruly.core.EngineEvaluationContext.runScoped(this, key, init);
     }
 }

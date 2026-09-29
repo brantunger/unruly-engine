@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
+import io.github.brantunger.unruly.api.language.EvaluationContext;
 
 import java.time.Instant;
 import java.util.Map;
@@ -18,24 +19,40 @@ import java.util.Objects;
  * @param facts       The run's facts, read-only
  * @param output      The output object the action changes
  * @param runDeadline When the run must stop, which decides whether it has to
+ * @param runScope    The values the run's languages keep, shared with the run's evaluation context
  */
-public record EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline)
+public record EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline, RunScope runScope)
         implements ActionContext {
 
     /**
      * Wraps the facts in a read-only view, whose writes fail with a message about actions.
      *
-     * @throws NullPointerException if {@code facts}, {@code output} or {@code runDeadline} is {@code null}
+     * @throws NullPointerException if {@code facts}, {@code output}, {@code runDeadline} or {@code runScope} is
+     *                              {@code null}
      */
     public EngineActionContext {
         facts = ReadOnlyFacts.forActions(Objects.requireNonNull(facts, "facts must not be null"));
         Objects.requireNonNull(output, "output must not be null");
         Objects.requireNonNull(runDeadline, "runDeadline must not be null");
+        Objects.requireNonNull(runScope, "runScope must not be null");
+    }
+
+    /**
+     * Creates the context for a run of its own, whose values no other context shares.
+     *
+     * @param facts       The run's facts
+     * @param output      The output object the action changes
+     * @param runDeadline When the run must stop
+     * @throws NullPointerException if {@code facts}, {@code output} or {@code runDeadline} is {@code null}
+     */
+    public EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline) {
+        this(facts, output, runDeadline, new RunScope());
     }
 
     /**
      * Creates the context for a run that must stop at {@code deadline} on the system clock, as it is now: a step of
      * the system clock after that doesn't move when the context is cancelled. The test kit creates contexts with it.
+     * The context's run is its own, so no other context shares its values.
      *
      * @param facts    The run's facts
      * @param output   The output object the action changes
@@ -44,6 +61,20 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
      */
     public EngineActionContext(Map<String, Object> facts, Object output, Instant deadline) {
         this(facts, output, Deadline.at(deadline));
+    }
+
+    /**
+     * Creates the context for an action of the run another context belongs to: it has that run's facts and deadline,
+     * and shares its {@link EvaluationContext#runScoped} values. The test kit creates contexts with it.
+     *
+     * @param sameRun A context of the run, which the engine or the test kit created: every context is one, as the
+     *                context interfaces are sealed
+     * @param output  The output object the action changes
+     * @throws NullPointerException if {@code sameRun} or {@code output} is {@code null}
+     */
+    public EngineActionContext(EvaluationContext sameRun, Object output) {
+        this(Objects.requireNonNull(sameRun, "sameRun must not be null").facts(), output,
+                EngineEvaluationContext.runDeadlineOf(sameRun), EngineEvaluationContext.runScopeOf(sameRun));
     }
 
     @Override

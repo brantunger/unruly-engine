@@ -54,8 +54,8 @@ an action context, the output object. A run passes the same evaluation context t
 context to each action.
 
 A [session](custom.md#-thread-safety) serves one run at a time and later runs reuse it, and no call marks where a
-run starts or ends, so state a run leaves in a session is still there for the next run. A map keyed on contexts must
-not keep them alive, as a `WeakHashMap` doesn't.
+run starts or ends, so state a run leaves in a session is still there for the next run. State for one run belongs in
+[`runScoped`](custom.md#-reading-facts). A map keyed on contexts must not keep them alive, as a `WeakHashMap` doesn't.
 
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
@@ -83,6 +83,18 @@ class MyLanguageContractTest extends ExpressionLanguageContractTest {
         assertEquals(true, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 1)), compiler.newSession()));
     }
 }
+```
+
+Each context from `evaluation(...)` or `action(...)` is a run of its own, so it shares no `runScoped` values with
+another. Since 2.13.0, `actionInRun(sameRun, output)` creates an action context in the run of `sameRun`, a context
+this class created: it has that context's facts and deadline and shares its `runScoped` values. So a test can check
+that an action finds what a condition kept:
+
+```java
+EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1));
+ActionContext action = LanguageTestContexts.actionInRun(evaluation, new HashMap<String, Object>());
+
+assertSame(evaluation.runScoped("key", Object::new), action.runScoped("key", Object::new));
 ```
 
 On the module path, the kit is the module `io.github.brantunger.unruly.test`; see [Packaging](custom.md#-packaging).
