@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.13.0](https://github.com/brantunger/unruly-engine/compare/v2.12.9...v2.13.0) (2026-09-29)
+
+
+### Features
+
+* keep a language's per-run state with EvaluationContext.runScoped, and share it in the test kit with actionInRun ([#824](https://github.com/brantunger/unruly-engine/issues/824)) ([54e70eb](https://github.com/brantunger/unruly-engine/commit/54e70eb438959fa91e0281f229bedae050d94d71))
+
 ## [2.12.9](https://github.com/brantunger/unruly-engine/compare/v2.12.8...v2.12.9) (2026-09-29)
 
 
