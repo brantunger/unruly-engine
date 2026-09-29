@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.12.6](https://github.com/brantunger/unruly-engine/compare/v2.12.5...v2.12.6) (2026-09-29)
+
+
+### Bug Fixes
+
+* skip the class-path lookup for a name the MVEL loader refuses, and bound the operator run before an assignment ([#816](https://github.com/brantunger/unruly-engine/issues/816)) ([d5e041c](https://github.com/brantunger/unruly-engine/commit/d5e041c49f1019a84c7a15232c9917b702eac2c1))
+
 ## [2.12.5](https://github.com/brantunger/unruly-engine/compare/v2.12.4...v2.12.5) (2026-09-29)
 
 
