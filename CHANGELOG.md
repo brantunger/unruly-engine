@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.12.3](https://github.com/brantunger/unruly-engine/compare/v2.12.2...v2.12.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* stop MVEL leaving a class-loading lock for every name it guesses, and catch an assignment after /*/ ([#809](https://github.com/brantunger/unruly-engine/issues/809)) ([a87d9bf](https://github.com/brantunger/unruly-engine/commit/a87d9bfdf43da8eb2fb67f83e5fda1a6cb0f323a))
+
 ## [2.12.2](https://github.com/brantunger/unruly-engine/compare/v2.12.1...v2.12.2) (2026-09-29)
 
 
