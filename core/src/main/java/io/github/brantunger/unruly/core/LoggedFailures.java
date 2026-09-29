@@ -28,9 +28,11 @@ package io.github.brantunger.unruly.core;
  * and again, and a later run must log it again, as it must an exception kept from an earlier run and thrown again.
  * Only a nested run or {@code load()} records a failure it logged, other than a fatal error: what the outermost one
  * logs goes to its caller, and no code of the engine's catches it on the way, so the outermost records nothing and
- * creates nothing to record it in. The record holds the last {@value #MAX_LOGGED} of them, so a run whose nested runs
- * fail again and again keeps no more memory. One logged before those is logged a second time if code keeps it and
- * throws it on to the code around it, as it was before the engine recorded any; the bound never leaves a failure out.
+ * creates nothing to record it in. The record holds the last {@value #MAX_LOGGED} of them, and apart from them the last
+ * {@value #MAX_LOGGED} fatal errors any run, {@code load()}, {@code validate()} or {@code close()} on the thread
+ * logged, so a run whose nested runs fail again and again keeps no more memory. One logged before those is logged a
+ * second time if code keeps it and throws it on to the code around it, as it was before the engine recorded any; the
+ * bound never leaves a failure out.
  * Nothing here logs: the caller logs when it's told the failure isn't logged yet.
  * </p>
  *
@@ -46,13 +48,16 @@ package io.github.brantunger.unruly.core;
  */
 final class LoggedFailures {
 
-    /** How many of the failures nested runs and loads logged a thread remembers; see {@link #loggedByRun}. */
+    /**
+     * How many of the failures nested runs and loads logged a thread remembers, and how many of the fatal errors runs
+     * logged; see {@link #loggedByRun} and {@link #unloggedFatal}.
+     */
     static final int MAX_LOGGED = 32;
 
     /** How deep the outermost run on a thread is, which records nothing it logs. */
     private static final int OUTERMOST = 1;
 
-    // The runs, loads and validations in progress on this thread, whatever engine they are on, and the fatal Error and
+    // The runs, loads and validations in progress on this thread, whatever engine they are on, and the fatal Errors and
     // the failures they logged. Removed when the outermost ends, so a pooled thread keeps nothing, and a failure
     // logged by one run isn't taken for logged by a later one. A plain ThreadLocal, not withInitial(), like RuleSet's
     // count of runs on a thread.
@@ -71,12 +76,14 @@ final class LoggedFailures {
     }
 
     /**
-     * What is in progress on one thread, the last fatal {@link Error} logged while it was, and the last
+     * What is in progress on one thread, the last {@value #MAX_LOGGED} fatal {@link Error}s logged while it was, in a
+     * ring created with it, before any fails, so recording an {@link OutOfMemoryError} allocates nothing, and the last
      * {@value #MAX_LOGGED} failures nested runs and loads logged, in a ring created with the first of them.
      */
     private static final class Runs {
         private int depth;
-        private Error loggedFatal;
+        private final Error[] loggedFatal = new Error[MAX_LOGGED];
+        private int nextFatal;
         private Logged[] logged;
         private int next;
     }
@@ -121,42 +128,54 @@ final class LoggedFailures {
      * a caller that logs at WARN what it doesn't throw, such as a listener's exception or a failure to close a session:
      * a nested run's or load's failure (see {@link Failures#nestedRunFailure}), or a fatal {@link Error} a run in
      * progress on this thread logged, when nothing wrapped around it says something of its own (see
-     * {@link Failures#newsAbove}). Recording a fatal error here would take the place of the one the run is throwing,
-     * which would then be logged again. Every caller in the engine is inside a run, a {@code load()}, a
-     * {@code validate()} or a {@code close()} on this thread; with none in progress, no fatal error has been logged.
+     * {@link Failures#newsAbove}). A fatal error isn't recorded here: logging one at WARN doesn't count as logging it
+     * for a place that throws it on and logs it at ERROR. Every caller in the engine is inside a run, a
+     * {@code load()}, a {@code validate()} or a {@code close()} on this thread; with none in progress, no fatal error
+     * has been logged.
      *
      * @param thrown What was caught
      * @return {@code true} if the caller leaves it out of the log
      */
-    // The very same instance is what was logged; an equal one would still be news.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     static boolean logged(Throwable thrown) {
         Error fatal = Failures.fatalError(thrown);
         if (fatal == null) {
             return Failures.nestedRunFailure(thrown) != null;
         }
         Runs runs = RUNS.get();
-        return runs != null && runs.loggedFatal == fatal && Failures.newsAbove(thrown, fatal) == null;
+        return runs != null && holdsFatal(runs, fatal) && Failures.newsAbove(thrown, fatal) == null;
     }
 
     /**
      * Tells whether a fatal {@link Error} still has to be logged, and records it as logged, so the caller must log it
      * when this returns {@code true}. It has been logged when a run in progress on this thread, of any engine, logged
-     * this very instance. Every caller is inside a run, a {@code load()} or a {@code validate()} on this thread, so
+     * this very instance, and it's one of the last {@value #MAX_LOGGED} fatal errors logged there; another logged
+     * since, such as by a nested run, doesn't make it news. One logged before those is logged again, and recorded in
+     * place of the oldest. Every caller is inside a run, a {@code load()} or a {@code validate()} on this thread, so
      * there is always one in progress.
      *
      * @param fatal The fatal error
      * @return {@code true} if the caller logs it
      */
-    // The very same instance is what was logged; an equal one would still be news.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     static boolean unloggedFatal(Error fatal) {
         Runs runs = RUNS.get();
-        if (runs.loggedFatal == fatal) {
+        if (holdsFatal(runs, fatal)) {
             return false;
         }
-        runs.loggedFatal = fatal;
+        runs.loggedFatal[runs.nextFatal] = fatal;
+        runs.nextFatal = (runs.nextFatal + 1) % MAX_LOGGED;
         return true;
+    }
+
+    /** Tells whether this very fatal error is among the last {@value #MAX_LOGGED} logged on the thread. */
+    // The very same instance is what was logged; an equal one would still be news.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static boolean holdsFatal(Runs runs, Error fatal) {
+        for (Error logged : runs.loggedFatal) {
+            if (logged == fatal) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
