@@ -146,7 +146,7 @@ public final class MyLanguage implements ExpressionLanguage {
 `MyParser` and `MyExpression` stand for your language's own parser and compiled form.
 
 **The expression.** An `Expression` has its `ruleName()`, whether it's the rule's `CONDITION` or its `ACTION`, and its
-`text()`, which is never blank.
+never-blank `text()`.
 
 **Facts and output.** `facts()` is a read-only map of fact values by name, whose values can be `null`; writing to it
 throws `UnsupportedOperationException`. Actions see the output object as `output` (`ActionContext.OUTPUT_NAME`), and the
@@ -154,8 +154,11 @@ engine already rejects a fact with that name.
 
 **Errors while running.** An exception from `evaluate`, `evaluateWithDetail` or `execute` becomes a
 `RuleExecutionException` naming the rule; a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even
-wrapped in your own exception. A condition that returns anything but a `Boolean`, including `null`, fails the rule:
-the engine coerces nothing.
+wrapped in your own exception. A condition returning anything but a `Boolean`, `null` included, fails the rule: the
+engine coerces nothing.
+
+If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
+as MVEL's adapter does: added words get the nested failure [logged twice](../nested-runs.md#-what-is-logged).
 
 **The `CompileContext`** carries what the engine was built with, all optional: the packages and classes from
 `imports(...)` with `classLoader()`, the context class loader of the `load()` or `validate()` thread; `outputType()`,
@@ -164,7 +167,7 @@ or `Object`;
 `allFactsDeclared()`. Reject a name nobody declared only when that is `true`: otherwise a run may supply undeclared
 facts.
 
-**Warnings.** For a problem that shouldn't stop a rule loading, call `warn(source, issue)` on the `CompileContext`. The
+**Warnings.** For a problem that shouldn't stop a rule loading, call the `CompileContext`'s `warn(source, issue)`. The
 engine logs `Condition for rule 'prime-rate' has a warning at line 2, column 5: deprecated` at WARN on
 `io.github.brantunger.unruly.engine`, whatever the issue's severity.
 
@@ -219,9 +222,9 @@ it.
 
 ## 🚨 Errors when rules load
 
-What your compiler throws or returns decides what the user sees from `load()`, or gets back from `validate()`, which
-compiles the same way but returns the failures and logs only a fatal error, not your warnings or the failures. Every
-row but the session one, which only `load()` reaches, applies to both:
+What your compiler throws or returns decides what `load()` throws and logs and `validate()` returns: `validate()`
+compiles the same way but logs only a fatal error, not your warnings or the failures. Every row but the session one
+applies to both:
 
 | You throw or return | The user sees | Reported |
 | --- | --- | --- |
@@ -229,7 +232,7 @@ row but the session one, which only `load()` reaches, applies to both:
 | Any other exception | `Condition for rule 'prime-rate' failed to compile: ` + its description; no issues; your exception as the cause | Per rule |
 | Anything with a `StackOverflowError` as a cause | `... failed to compile: the expression is too long or too deeply nested to compile` | Per rule |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
-| An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; the rules written in it aren't compiled |
+| An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; its rules aren't compiled |
 | An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
 | A [fatal error](../glossary.md#fatal-error), thrown or as a cause | Logged, then rethrown unchanged | At once |
 | `IllegalArgumentException` without a fatal cause from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
@@ -240,23 +243,22 @@ expression language`, and every failure is logged at ERROR. Your message is shor
 name, and any root cause's in `(caused by ...)`.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a
-message, which the engine doesn't shorten: keep it to 1,000 characters.
+message the engine doesn't shorten: keep it to 1,000 characters.
 The `RuleCompilationException` carries the same issues; for several rules its message is `2 rules failed to compile:
 <first>; <second>`, its name, kind and issues are the first failure's, and `failures()` has each rule's.
 
-- **Order.** Rules compile in priority order, highest first, `null` last and equal priorities in list order, so
-  `failures()` is in that order. The condition compiles before the action.
+- **Order.** Rules compile in priority order, highest first, `null` last and equal priorities in list order, and
+  so is `failures()`. The condition compiles before the action.
 - **What the engine rejects first.** A blank condition or action
   (`Rule 'prime-rate' has a blank condition expression`) and a language the engine doesn't have
   (`Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: [mvel]`, with no
   expression kind) fail one rule, collected with the rest. A `null` rule or a duplicate name fails at once.
 
 > [!WARNING]
-> A condition that doesn't compile hides its action's errors: the action isn't compiled, so they appear only after
-> the condition is fixed and the rules are loaded again. One load reports every broken *rule*, not every broken
-> expression.
+> A condition that doesn't compile hides its action's errors: the action isn't compiled until a `load()` with the
+> condition fixed. One load reports every broken *rule*, not every broken expression.
 
-When failures other than a rule's are among them, the message reads `2 failures while loading the rules: ...`
+With failures other than a rule's among them, the message reads `2 failures while loading the rules: ...`
 instead of `2 rules failed to compile: ...`.
 
 ## 📁 Reading facts
@@ -321,8 +323,8 @@ In an all-matches run, a later rule's properties overwrite earlier ones.
 
 ## 🔤 Fact names
 
-Override `checkFactName(String)` to reject a name your rules couldn't refer to, such as a keyword, by throwing an
-`IllegalArgumentException`; by default every name is accepted. The engine calls it:
+Override `checkFactName(String)` to reject a name your rules couldn't refer to, such as a keyword, with an
+`IllegalArgumentException`; by default every name passes. The engine calls it:
 
 - for every fact of every run, on the run's thread, after `beforeRun`, so a rejection reaches `onRunError`. `run()`
   throws your exception unchanged, logged at ERROR. Anything else becomes an `IllegalArgumentException` reading
@@ -334,7 +336,7 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 A [fatal error](../glossary.md#fatal-error), even your exception's cause, is logged with that `failed to check`
 message and rethrown, by `load()` too. Only the loaded rules' languages are asked, in first-use order, or the default
 language for an empty list. The engine rejects `null`, blank names and `output` first, and caches nothing:
-keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) can test it both ways:
+keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) tests it both ways:
 `unusableFactName()` and `usableFactNames()`.
 
 ## ⏳ Stopping a run

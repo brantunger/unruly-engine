@@ -288,9 +288,10 @@ public final class Failures {
      * {@code a nested run() failed: } or {@code a nested load() failed: } and that failure, so a failure nested many
      * runs deep isn't repeated once per level (see {@link #nestedRunFailure}). That holds while every exception
      * wrapped around it adds nothing to it (see {@link #below}). Otherwise the first exception from the top of the
-     * chain with a message of its own is described by that message, shortened and escaped, with the nested failure as
-     * a note, {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is
-     * lost. The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
+     * chain with a message of its own, one that has the nested failure's text with words around it too, is described
+     * by that message, shortened and escaped, with the nested failure as a note,
+     * {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is lost.
+     * The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
      * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
      * written (see {@link #noteText}). A fatal {@link Error} logged already, wrapped in an exception that says
      * something of its own (see {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
@@ -677,10 +678,12 @@ public final class Failures {
      *
      * <p>
      * That failure names the chain only while every link above it adds nothing to it (see {@link #isNews}): a
-     * {@link ReportedFailure}, which the engine wrote, or an exception with no message, one whose message is its
-     * cause's {@code toString()}, as {@code new RuntimeException(cause)} makes, or one whose message already has the
-     * nested failure's text. Otherwise the first link that says something of its own is the news, which nothing has
-     * logged: the code that caught the chain logs it, and describes it with the nested failure as a note (see
+     * {@link ReportedFailure} or another exception the engine built around it (see
+     * {@link LoggedFailures#builtByEngine}), which the engine wrote, or an exception with no message, one whose message
+     * is its cause's {@code toString()}, as {@code new RuntimeException(cause)} makes, or its cause's message, or one
+     * whose message is the nested failure's text. Otherwise the first link that says something of its own is the
+     * news, which nothing has logged, even when its message has the nested failure's text with words of its own around
+     * it: the code that caught the chain logs it, and describes it with the nested failure as a note (see
      * {@link #describe}).
      * </p>
      *
@@ -753,10 +756,14 @@ public final class Failures {
 
     /**
      * Tells whether one link of a cause chain, above a failure a nested run or load logged, says something that
-     * failure doesn't: it has a message of its own, one that can be read, isn't its cause's {@code toString()}, and
-     * doesn't already have the nested failure's text, as the engine writes it or as it is. A {@link ReportedFailure}
-     * never does: the engine wrote it, around the nested failure. The same test tells a fatal {@link Error} a nested
-     * run logged from something new wrapped around it (see {@link #newsAbove}).
+     * failure doesn't: it has a message of its own, one that can be read, isn't its cause's {@code toString()} or
+     * message, and isn't the nested failure's text, as the engine writes it or as it is. So an exception rethrown with
+     * its cause's message, as {@code new IllegalStateException(e.getMessage(), e)} rethrows the failure of a run whose
+     * own nested run failed, adds nothing. A message with words of its own around that text is news. A
+     * {@link ReportedFailure} never is, nor another exception the engine built around the failure, whatever its
+     * message reads (see {@link LoggedFailures#builtByEngine}): the engine wrote it, around the nested failure, and
+     * it's known by the very instance, not by its text, which an application's exception can repeat. The same test
+     * tells a fatal {@link Error} a nested run logged from something new wrapped around it (see {@link #newsAbove}).
      *
      * @param link   The link
      * @param cause  The next link, its cause
@@ -764,17 +771,13 @@ public final class Failures {
      * @return {@code true} if nothing has logged what {@code link} says
      */
     private static boolean isNews(Throwable link, Throwable cause, Throwable nested) {
-        if (link instanceof ReportedFailure) {
+        if (link instanceof ReportedFailure || LoggedFailures.isEngineWrapper(link)) {
             return false;
         }
         String message = readableMessage(link);
         return message != null && !message.equals(read(cause::toString, thrown -> null))
-                && !mentions(message, loggedText(nested)) && !mentions(message, readableMessage(nested));
-    }
-
-    /** Tells whether {@code message} has {@code text}, which a text that is missing or empty never counts as. */
-    private static boolean mentions(String message, @Nullable String text) {
-        return text != null && !text.isEmpty() && message.contains(text);
+                && !message.equals(readableMessage(cause)) && !message.equals(loggedText(nested))
+                && !message.equals(readableMessage(nested));
     }
 
     /**

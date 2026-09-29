@@ -11,9 +11,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * An exception wrapped around a nested run's failure is news when it has a message of its own, one that can be read,
- * isn't its cause's {@code toString()} and doesn't already have the nested failure's text. The chain is then no nested
- * run's failure, so it's logged, and it's described by that message with the nested failure as a note. Any other
- * wrapper adds nothing, and the chain is named by the nested failure alone, as before.
+ * isn't its cause's {@code toString()} and isn't the nested failure's text, even one with words of its own around that
+ * text. The chain is then no nested run's failure, so it's logged, and it's described by that message with the nested
+ * failure as a note. Any other wrapper adds nothing, nor does one the engine built itself, whatever its message reads,
+ * and the chain is named by the nested failure alone, as before.
  */
 @DisplayName("a wrapper around a nested run's failure with a message of its own is news, and one without adds nothing")
 class NestedFailureNewsTest {
@@ -90,22 +91,41 @@ class NestedFailureNewsTest {
             + "nothing")
     void wrappersThatAddNothing() {
         for (Throwable wrapper : List.of(new IllegalStateException((String) null, inner), new UnreadableMessage(inner),
-                new IllegalStateException(inner), new IllegalStateException("audit: inner failed", inner))) {
+                new IllegalStateException(inner), new IllegalStateException("inner failed", inner))) {
             assertEquals(NAMED, Failures.describe(wrapper), wrapper.getClass().getName());
             assertSame(inner, Failures.nestedRunFailure(wrapper));
         }
     }
 
     @Test
-    @DisplayName("a wrapper that has the nested failure's text as it is, or escaped as the engine logged it, adds "
-            + "nothing")
+    @DisplayName("a wrapper that puts words of its own before or after the nested failure's text is news")
+    void wordsAroundTheNestedText() {
+        IllegalStateException prefix = new IllegalStateException("audit: inner failed", inner);
+        IllegalStateException suffix = new IllegalStateException("inner failed (retried 3 times)", inner);
+
+        assertEquals("audit: inner failed (after " + NAMED + ")", Failures.describe(prefix));
+        assertNull(Failures.nestedRunFailure(prefix));
+        assertEquals("inner failed (retried 3 times) (after " + NAMED + ")", Failures.describe(suffix));
+        assertNull(Failures.nestedRunFailure(suffix));
+    }
+
+    @Test
+    @DisplayName("a wrapper whose message is the nested failure's text as it is, or escaped as the engine logged it, "
+            + "adds nothing, and one with words around it is news")
     void nestedTextRawOrEscaped() {
         IllegalArgumentException nested = new IllegalArgumentException("bad\nname");
 
         afterNestedRunLogged(nested, () -> {
             assertEquals("a nested run() failed: bad\\nname",
-                    Failures.describe(new IllegalStateException("audit: bad\nname", nested)));
+                    Failures.describe(new IllegalStateException("bad\nname", nested)));
             assertEquals("a nested run() failed: bad\\nname",
+                    Failures.describe(new IllegalStateException("bad\\nname", nested)));
+            // Not its cause's message: the nested failure's own, one link further down.
+            assertEquals("a nested run() failed: bad\\nname",
+                    Failures.describe(new IllegalStateException("bad\nname", new RuntimeException(nested))));
+            assertEquals("audit: bad\\nname (after a nested run() failed: bad\\nname)",
+                    Failures.describe(new IllegalStateException("audit: bad\nname", nested)));
+            assertEquals("audit: bad\\nname (after a nested run() failed: bad\\nname)",
                     Failures.describe(new IllegalStateException("audit: bad\\nname", nested)));
             return null;
         });

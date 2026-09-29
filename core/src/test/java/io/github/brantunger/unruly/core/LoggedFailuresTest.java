@@ -26,7 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * The thread's record of the failures nested runs and loads logged: made only for a nested one, forgotten when the
  * outermost run ends, and bounded, so a failure logged before the last {@value LoggedFailures#MAX_LOGGED} is logged
- * again if it's thrown on, and none is ever left out. The fatal {@link Error}s runs logged are bounded the same way.
+ * again if it's thrown on, and none is ever left out. The fatal {@link Error}s runs logged, and the exceptions the
+ * engine built around a failure, are bounded the same way.
  */
 @DisplayName("the thread's record of what nested runs logged is made only when nested, and bounded")
 class LoggedFailuresTest {
@@ -291,5 +292,37 @@ class LoggedFailuresTest {
         }
         // Nothing is left behind on the thread.
         assertNull(LoggedFailures.find(rejections.get(rejections.size() - 1)));
+    }
+
+    @Test
+    @DisplayName("an exception the engine built around a nested failure adds nothing to it whatever it says, while an "
+            + "equal one of an application's is news, and the record is forgotten with the outermost run and bounded")
+    void engineWrapperKnownByInstance() {
+        ReportedFailure inner = new ReportedFailure("inner failed", null);
+        IllegalArgumentException engines = new IllegalArgumentException("check failed: inner failed", inner);
+        IllegalArgumentException applications = new IllegalArgumentException("check failed: inner failed", inner);
+        String named = "a nested run() failed: inner failed";
+
+        assertFalse(LoggedFailures.isEngineWrapper(engines), "no run in progress");
+        LoggedFailures.enter();
+        try {
+            assertFalse(LoggedFailures.isEngineWrapper(engines), "nothing built yet");
+            assertSame(engines, LoggedFailures.builtByEngine(engines));
+            assertTrue(LoggedFailures.isEngineWrapper(engines));
+            assertEquals(named, Failures.describe(engines));
+            assertSame(inner, Failures.nestedRunFailure(engines));
+            assertFalse(LoggedFailures.isEngineWrapper(applications));
+            assertEquals("check failed: inner failed (after " + named + ")", Failures.describe(applications));
+            for (int i = 1; i < LoggedFailures.MAX_LOGGED; i++) {
+                LoggedFailures.builtByEngine(new IllegalStateException("built " + i));
+            }
+            assertTrue(LoggedFailures.isEngineWrapper(engines), "kept while fewer than the bound are built after it");
+            LoggedFailures.builtByEngine(new IllegalStateException("one more"));
+            assertFalse(LoggedFailures.isEngineWrapper(engines), "the oldest is forgotten past the bound");
+            LoggedFailures.builtByEngine(engines);
+        } finally {
+            LoggedFailures.leave();
+        }
+        assertFalse(LoggedFailures.isEngineWrapper(engines), "forgotten when the outermost run ends");
     }
 }

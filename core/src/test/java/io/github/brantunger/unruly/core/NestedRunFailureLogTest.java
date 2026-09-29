@@ -333,6 +333,55 @@ class NestedRunFailureLogTest {
         assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
     }
 
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"before", "after", "the engine's words before"})
+    @DisplayName("an action that puts words of its own around its run()'s failure's text has them logged, with the "
+            + "nested failure as a note")
+    void wrapperWordsAroundNestedText(String where) {
+        RulesEngine<Map<String, Object>> inner = failing();
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            try {
+                inner.run(new FactMap<>());
+            } catch (RuleExecutionException nested) {
+                throw new IllegalStateException(switch (where) {
+                    case "before" -> "order 42: " + nested.getMessage();
+                    case "after" -> nested.getMessage() + " (retried 3 times)";
+                    default -> "a nested run() failed: " + nested.getMessage();
+                }, nested);
+            }
+        }), HashMap::new);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        String words = switch (where) {
+            case "before" -> "order 42: " + INNER_FAILURE;
+            case "after" -> INNER_FAILURE + " (retried 3 times)";
+            default -> NESTED_FAILURE;
+        };
+        String outerFailure = "Failed to execute action for rule 'outer-rule': " + words + " (after " + NESTED_FAILURE
+                + ")";
+        RuleExecutionException failure = assertInstanceOf(RuleExecutionException.class, outcome.thrown());
+        assertEquals(outerFailure, failure.getMessage());
+        assertEquals(List.of(INNER_FAILURE, outerFailure), outcome.lines("ERROR"), outcome.logs());
+    }
+
+    @Test
+    @DisplayName("an action that rethrows its run()'s failure two runs deep with the same message adds nothing, and "
+            + "the innermost failure is logged once")
+    void sameMessageRethrownTwoRunsDeep() {
+        RulesEngine<Map<String, Object>> middle = engine("mid-rule", doing(running(failing())), HashMap::new);
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            try {
+                middle.run(new FactMap<>());
+            } catch (RuleExecutionException nested) {
+                throw new IllegalStateException(nested.getMessage(), nested);
+            }
+        }), HashMap::new);
+
+        assertFailedWith(failed(() -> engine.run(new FactMap<>())),
+                "Failed to execute action for rule 'outer-rule': " + NESTED_FAILURE);
+    }
+
     @Test
     @DisplayName("an output supplier's Error below a nested run still fails the rule once the deadline has passed")
     void factoryErrorPastTheDeadline() {
