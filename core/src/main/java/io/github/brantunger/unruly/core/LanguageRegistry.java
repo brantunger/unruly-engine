@@ -4,6 +4,15 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.net.JarURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.FileSystemNotFoundException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -25,6 +34,9 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
+    /** The resource name of {@link ExpressionLanguage}'s class file, in this library and in any copy of it. */
+    private static final String API_CLASS_FILE = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+
     /**
      * Resolves an engine's languages and its default language.
      *
@@ -39,9 +51,10 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
      *                               Anything {@link ServiceLoader} or a language throws while it is found, such as a
      *                               {@link ServiceConfigurationError}, is thrown unchanged, except that when
      *                               {@code loader} has its own copy of {@link ExpressionLanguage}, a second copy of
-     *                               this library, nothing more is found with it after the first error ServiceLoader
-     *                               reports. A language whose class has the name of one found already, a second copy
-     *                               of it, is skipped, and the one found first is kept
+     *                               this library, or isn't this library's loader and lists the class file of one
+     *                               from another location than this library's, nothing more is found with it after
+     *                               the first error ServiceLoader reports. A language whose class has the name of one
+     *                               found already, a second copy of it, is skipped, and the one found first is kept
      */
     static LanguageRegistry resolve(Map<String, ExpressionLanguage> given, String defaultName, ClassLoader loader) {
         return resolve(given, defaultName, loader == ImportResolver.LIBRARY_CLASS_LOADER
@@ -93,8 +106,6 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
 
     private static void discover(ClassLoader loader, Map<String, ExpressionLanguage> languages,
                                  Map<String, Class<?>> found) {
-        // A loader with its own copy of this library's API lists that copy's languages, and each is a second copy.
-        boolean ownCopy = hasOwnCopy(loader);
         Iterator<ServiceLoader.Provider<ExpressionLanguage>> providers =
                 ServiceLoader.load(ExpressionLanguage.class, loader).stream().iterator();
         while (true) {
@@ -105,13 +116,15 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
                 }
                 provider = providers.next();
             } catch (ServiceConfigurationError e) {
-                if (!ownCopy) {
+                // A loader with its own copy of this library's API, or that sees one, lists that copy's languages, and
+                // each is a second copy. Asked only here, so a build() without an error doesn't look.
+                if (!hasOwnCopy(loader)) {
                     throw e;
                 }
                 // The copy's languages implement the copy's ExpressionLanguage, not this one, so ServiceLoader
                 // rejects them. Nothing more is looked for with this loader: what it lists belongs to the copy, and
                 // an error ServiceLoader meets before it reads a listing comes back on every call.
-                log.debug("Stopped finding expression languages with {}: that class loader has its own copy of this"
+                log.debug("Stopped finding expression languages with {}: that class loader sees another copy of this"
                         + " library, so the languages it lists are a second copy: {}", loader, e.getMessage());
                 return;
             }
@@ -144,14 +157,71 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
     }
 
     /**
-     * Whether a class loader has its own copy of {@link ExpressionLanguage}, rather than this library's. A loader that
-     * can't say, because looking the class up fails in any way, has none.
+     * Whether a class loader has its own copy of {@link ExpressionLanguage}, rather than this library's, or sees
+     * another copy of it: it lists {@code ExpressionLanguage}'s class file from a location other than this library's.
+     * A location is the jar a class file is in, or the class file itself, and two locations are the same file however
+     * their URLs spell it, so a second loader that opens this library's own jar sees no other copy. A location that is
+     * neither a jar nor a file is compared by its URL alone. This library's own loader sees none either, even with two
+     * copies of the library on the class path, so a broken listing there still fails {@code build()}. A loader that
+     * can't say, because looking the class or its class files up fails in any way, has none, and a location whose file
+     * can't be found is taken for this library's.
      */
     private static boolean hasOwnCopy(ClassLoader loader) {
         try {
-            return loader.loadClass(ExpressionLanguage.class.getName()) != ExpressionLanguage.class;
+            if (loader.loadClass(ExpressionLanguage.class.getName()) != ExpressionLanguage.class) {
+                return true;
+            }
         } catch (ClassNotFoundException | RuntimeException | LinkageError e) {
             return false;
+        }
+        if (loader == ImportResolver.LIBRARY_CLASS_LOADER) {
+            // What this library's own loader lists is the application's, and a problem there is the application's.
+            return false;
+        }
+        // A loader that resolves this library's API but also lists another copy of it, as a plug-in host's delegating
+        // loader does, lists languages built against that copy.
+        try {
+            URL own = ImportResolver.LIBRARY_CLASS_LOADER.getResource(API_CLASS_FILE);
+            for (URL listed : Collections.list(loader.getResources(API_CLASS_FILE))) {
+                if (!listed.toExternalForm().equals(own.toExternalForm()) && !isSameFile(listed, own)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException | RuntimeException e) {
+            // Also where this library's class files can't be read as resources at all.
+            return false;
+        }
+    }
+
+    /**
+     * Whether two URLs of a class file name the same location: the same jar, or the same class file outside a jar,
+     * however each URL spells its path, such as with a {@code ..} segment, a short name, another case or a space left
+     * unencoded. URLs that name neither a jar nor a file, such as a plug-in framework's own, aren't. Two whose files
+     * can't be found or compared are taken for the same file, so that such a location doesn't hide an error.
+     */
+    private static boolean isSameFile(URL classFile, URL other) {
+        try {
+            return Files.isSameFile(location(classFile), location(other));
+        } catch (FileSystemNotFoundException e) {
+            // No file system for the URL's scheme, so the URLs are all there is to compare, and they differ.
+            return false;
+        } catch (IOException | URISyntaxException | RuntimeException e) {
+            // Taken for this library's, so that a listing problem there still fails build().
+            return true;
+        }
+    }
+
+    /** The jar a class file's URL names, or the class file itself. */
+    private static Path location(URL classFile) throws IOException, URISyntaxException {
+        URL file = "jar".equals(classFile.getProtocol())
+                ? ((JarURLConnection) classFile.openConnection()).getJarFileURL()
+                : classFile;
+        try {
+            return Path.of(file.toURI());
+        } catch (URISyntaxException e) {
+            // A URL made from a path without encoding it, as File.toURL() makes one: its path is the file's own.
+            return Path.of(new URI(file.getProtocol(), file.getAuthority(), file.getPath(), null, null));
         }
     }
 }

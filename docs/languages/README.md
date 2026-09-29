@@ -110,10 +110,15 @@ wins, and a newer build of it on the context class loader is ignored. Each skip 
 `io.github.brantunger.unruly.engine`: set that logger to DEBUG to see which copy an engine uses; see
 [Logging setup](../listeners-and-logging.md#-logging-setup).
 
-When that loader also holds its own copy of `unruly-engine-core`, `build()` stops reading it at its first
-`ServiceLoader` error, with one DEBUG line, so a listing problem there, such as a missing class, a class without a
-public no-argument constructor or a malformed services file, doesn't fail `build()`. On a loader without its own copy,
-such an error fails `build()`.
+When that loader also holds its own copy of `unruly-engine-core`, or sees another copy of it, `build()` stops reading
+it at its first `ServiceLoader` error, with one DEBUG line, so a listing problem there, such as a missing class, a class
+without a public no-argument constructor or a malformed services file, doesn't fail `build()`. A language that loader
+lists after the error isn't found. On a loader without its own copy that sees no other, such an error fails `build()`.
+
+A loader sees another copy when it lists the library's classes from another jar or directory, as a plug-in host's
+loader that asks each plug-in in turn does. A second loader over the library's own jar file is no other copy, however
+its URL spells the path, and this library's own loader never counts as seeing one, even with two copies of the library
+on the class path.
 
 From any loader, a language whose creation fails still fails `build()`, and so does a different class that claims a
 name already taken: `The expression languages ... found with ServiceLoader are both named 'mvel'`.
