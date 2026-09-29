@@ -15,21 +15,29 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceConfigurationError;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
 import static io.github.brantunger.unruly.TestLogs.logsOf;
 import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
@@ -39,8 +47,14 @@ class LanguageDiscoveryTest {
 
     private static final String SERVICES_FILE = "META-INF/services/" + ExpressionLanguage.class.getName();
 
+    /** The language a plug-in builds against its own copy of the library, which this library's loader can't see. */
+    private static final String PLUGIN_LANGUAGE = "plugin.PluginLanguage";
+
     @TempDir
     Path servicesRoot;
+
+    @TempDir
+    Path pluginRoot;
 
     /** A language that a services file can list: {@link ToyExpressionLanguage} under the given name. */
     public static class NamedLanguage implements ExpressionLanguage {
@@ -284,8 +298,8 @@ class LanguageDiscoveryTest {
                 codeOf(ExpressionLanguage.class))) {
             String logs = buildsWithMvel(loader);
 
-            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": that class loader has"
-                    + " its own copy of this library, so the languages it lists are a second copy: "
+            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": that class loader sees"
+                    + " another copy of this library, so the languages it lists are a second copy: "
                     + ExpressionLanguage.class.getName() + ": " + MvelExpressionLanguage.class.getName()
                     + " not a subtype"), logs);
         }
@@ -307,6 +321,236 @@ class LanguageDiscoveryTest {
 
             assertEquals(1, logs.split("Stopped finding expression languages", -1).length - 1, logs);
         }
+    }
+
+    /**
+     * A plug-in host's class loader: it asks each plug-in's loader in turn, for classes and for resources, so it
+     * resolves a class to the first loader's and lists the resources of all of them.
+     */
+    private static final class AskEachInTurn extends ClassLoader {
+        private final List<ClassLoader> loaders;
+
+        AskEachInTurn(ClassLoader... loaders) {
+            super("host", null);
+            this.loaders = List.of(loaders);
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            for (ClassLoader loader : loaders) {
+                try {
+                    return loader.loadClass(name);
+                } catch (ClassNotFoundException e) {
+                    // Not this plug-in's, so the next one's.
+                    continue;
+                }
+            }
+            throw new ClassNotFoundException(name);
+        }
+
+        @Override
+        protected URL findResource(String name) {
+            return loaders.stream().map(loader -> loader.getResource(name)).filter(url -> url != null).findFirst()
+                    .orElse(null);
+        }
+
+        @Override
+        protected Enumeration<URL> findResources(String name) throws IOException {
+            List<URL> all = new ArrayList<>();
+            for (ClassLoader loader : loaders) {
+                all.addAll(Collections.list(loader.getResources(name)));
+            }
+            return Collections.enumeration(all);
+        }
+    }
+
+    /**
+     * A plug-in's class loader that holds the library found at {@code library} and a language built against it, which
+     * a services file lists. The plug-in doesn't see the tests' class path.
+     */
+    private URLClassLoader plugin(Path library) throws IOException {
+        return plugin(library, library.toUri().toURL());
+    }
+
+    /**
+     * A plug-in's class loader, as {@link #plugin(Path)} makes, that opens the library at {@code library} with the URL
+     * {@code libraryUrl}.
+     */
+    private URLClassLoader plugin(Path library, URL libraryUrl) throws IOException {
+        Path classes = pluginRoot.resolve("classes");
+        assertCompiles(List.of("-cp", library.toString(), "-d", classes.toString()), List.of(source(
+                PLUGIN_LANGUAGE.replace('.', '/'), """
+                        package plugin;
+
+                        import io.github.brantunger.unruly.api.language.CompileContext;
+                        import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+                        import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+
+                        public final class PluginLanguage implements ExpressionLanguage {
+                            public String name() {
+                                return "plugin";
+                            }
+
+                            public ExpressionCompiler newCompiler(CompileContext context) {
+                                throw new UnsupportedOperationException();
+                            }
+                        }
+                        """)));
+        Path services = classes.resolve(SERVICES_FILE);
+        Files.createDirectories(services.getParent());
+        Files.writeString(services, PLUGIN_LANGUAGE);
+        return new URLClassLoader("plugin", new URL[]{libraryUrl, classes.toUri().toURL()},
+                ClassLoader.getPlatformClassLoader());
+    }
+
+    /** The URL {@link java.io.File#toURL()} makes for {@code path}: a space in it isn't encoded. */
+    @SuppressWarnings("deprecation")
+    private static URL unencodedUrl(Path path) throws IOException {
+        return path.toFile().toURL();
+    }
+
+    /** Where this library was loaded from: its jar, or its directory of classes. */
+    private static Path library() throws URISyntaxException {
+        return Path.of(codeOf(ExpressionLanguage.class).toURI());
+    }
+
+    /** A copy of this library, in another jar or directory: a plug-in's own copy of it. */
+    private Path copyOfTheLibrary() throws IOException, URISyntaxException {
+        return copyOfTheLibrary("copy");
+    }
+
+    /** A copy of this library, as {@link #copyOfTheLibrary()} makes, in the directory {@code dir}. */
+    private Path copyOfTheLibrary(String dir) throws IOException, URISyntaxException {
+        Path library = library();
+        Path copy = pluginRoot.resolve(dir).resolve(library.getFileName());
+        Files.createDirectories(copy.getParent());
+        try (Stream<Path> files = Files.walk(library)) {
+            for (Path file : (Iterable<Path>) files::iterator) {
+                Path target = copy.resolve(library.relativize(file).toString());
+                if (Files.isDirectory(file)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(file, target);
+                }
+            }
+        }
+        return copy;
+    }
+
+    @ParameterizedTest(name = "at a path with a space, left unencoded: {0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("a context class loader that resolves the library's API but sees another copy of the library is left"
+            + " at its first error, so MVEL is found")
+    void hostLoaderSeeingAnotherCopySkipped(boolean unencodedSpace) throws IOException, URISyntaxException {
+        Path copy = copyOfTheLibrary(unencodedSpace ? "a plug-in" : "copy");
+        try (URLClassLoader plugin = plugin(copy, unencodedSpace ? unencodedUrl(copy) : copy.toUri().toURL())) {
+            ClassLoader host = new AskEachInTurn(LanguageDiscoveryTest.class.getClassLoader(), plugin);
+            String logs = buildsWithMvel(host);
+
+            assertTrue(logs.contains("Stopped finding expression languages with " + host + ": that class loader sees"
+                    + " another copy of this library, so the languages it lists are a second copy: "
+                    + ExpressionLanguage.class.getName() + ": " + PLUGIN_LANGUAGE + " not a subtype"), logs);
+        }
+    }
+
+    @ParameterizedTest(name = "spelled another way: {0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("a context class loader that sees the library's own jar or directory twice fails build() at a language"
+            + " it can't use, however the second URL spells it")
+    void hostLoaderSeeingTheLibraryTwiceFails(boolean spelledAnotherWay) throws IOException, URISyntaxException {
+        // The plug-in opens the very jar the application uses, so it lists no other copy of the library.
+        Path library = library();
+        Path parent = library.getParent();
+        try (URLClassLoader plugin = plugin(spelledAnotherWay
+                ? parent.resolve("..").resolve(parent.getFileName()).resolve(library.getFileName())
+                : library)) {
+            ClassLoader host = new AskEachInTurn(LanguageDiscoveryTest.class.getClassLoader(), plugin);
+            ServiceConfigurationError error = withContextClassLoader(host,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertEquals(ExpressionLanguage.class.getName() + ": " + PLUGIN_LANGUAGE + " not a subtype",
+                    error.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged on this library's loader, even with a"
+            + " second copy of the library on the class path")
+    void notALanguageWithTwoCopiesOnTheClassPath() throws Exception {
+        // This library's loader is the tests' class path, so the class path with two copies is an application's
+        // loader of its own, which loads this library, its copy and the application.
+        Path app = application();
+        Path services = app.resolve(SERVICES_FILE);
+        Files.createDirectories(services.getParent());
+        Files.writeString(services, "app.Main");
+        URL[] classPath = {library().toUri().toURL(), copyOfTheLibrary().toUri().toURL(), codeOf(Logger.class),
+                app.toUri().toURL()};
+
+        try (URLClassLoader application = new URLClassLoader("application", classPath,
+                ClassLoader.getPlatformClassLoader())) {
+            assertEquals(ServiceConfigurationError.class.getName() + ": " + ExpressionLanguage.class.getName()
+                    + ": app.Main not a subtype", buildIn(application, application));
+        }
+    }
+
+    @Test
+    @DisplayName("a context class loader that sees the library's own jar again at a URL with a space left unencoded"
+            + " fails build() at a listed class that isn't a language")
+    void notALanguageWhereTheLibraryIsSeenAtAnUnencodedUrl() throws Exception {
+        Path library = copyOfTheLibrary("a library");
+        Path listing = pluginRoot.resolve("listing");
+        Path services = listing.resolve(SERVICES_FILE);
+        Files.createDirectories(services.getParent());
+        Files.writeString(services, "app.Main");
+        URL[] classPath = {library.toUri().toURL(), codeOf(Logger.class), application().toUri().toURL()};
+
+        try (URLClassLoader application = new URLClassLoader("application", classPath,
+                ClassLoader.getPlatformClassLoader());
+             URLClassLoader context = new URLClassLoader(
+                     new URL[]{unencodedUrl(library), listing.toUri().toURL()}, application)) {
+            assertEquals(ServiceConfigurationError.class.getName() + ": " + ExpressionLanguage.class.getName()
+                    + ": app.Main not a subtype", buildIn(application, context));
+        }
+    }
+
+    /**
+     * Compiles an application whose {@code app.Main.build()} builds an engine and says how that went: {@code built},
+     * or what it threw.
+     *
+     * @return The application's directory of classes
+     */
+    private Path application() throws URISyntaxException {
+        Path app = pluginRoot.resolve("app");
+        assertCompiles(List.of("-cp", library().toString(), "-d", app.toString()), List.of(source("app/Main", """
+                package app;
+
+                import io.github.brantunger.unruly.api.RulesEngineBuilder;
+                import java.util.HashMap;
+                import java.util.Map;
+
+                public final class Main {
+                    public static String build() {
+                        try {
+                            RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+                            return "built";
+                        } catch (Throwable t) {
+                            return t.toString();
+                        }
+                    }
+                }
+                """)));
+        return app;
+    }
+
+    /** Runs {@code app.Main.build()} of {@code application} with {@code context} as the context class loader. */
+    private static Object buildIn(ClassLoader application, ClassLoader context) {
+        return withContextClassLoader(context, () -> {
+            try {
+                return application.loadClass("app.Main").getMethod("build").invoke(null);
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+        });
     }
 
     @Test
@@ -362,6 +606,59 @@ class LanguageDiscoveryTest {
                     throw new IllegalStateException("the plug-in's loader is closed");
                 }
                 return super.loadClass(name, resolve);
+            }
+        }) {
+            ServiceConfigurationError error = withContextClassLoader(loader,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype",
+                    error.getMessage());
+        }
+    }
+
+    @ParameterizedTest(name = "after a missing location: {0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("a context class loader that lists the library's API at a URL that is neither a jar nor a file sees"
+            + " another copy, so MVEL is found")
+    void anotherCopyAtAnotherKindOfUrlSkipped(boolean afterAMissingFile) throws IOException {
+        String classFile = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+        URL missing = pluginRoot.resolve("missing").resolve(classFile).toUri().toURL();
+        URL elsewhere = URI.create("http://plugins.example/" + classFile).toURL();
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                List<URL> listed = Collections.list(super.getResources(name));
+                if (name.endsWith(".class")) {
+                    if (afterAMissingFile) {
+                        // Taken for the library's own, and the next location is still looked at.
+                        listed.add(missing);
+                    }
+                    listed.add(elsewhere);
+                }
+                return Collections.enumeration(listed);
+            }
+        }) {
+            String logs = buildsWithMvel(loader);
+
+            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": that class loader sees"
+                    + " another copy of this library, so the languages it lists are a second copy: "
+                    + ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype"),
+                    logs);
+        }
+    }
+
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged when its loader can't list class files")
+    void notALanguageWhereClassFilesCantBeListed() throws IOException {
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                if (name.endsWith(".class")) {
+                    throw new IOException("the plug-in's jar index is broken");
+                }
+                return super.getResources(name);
             }
         }) {
             ServiceConfigurationError error = withContextClassLoader(loader,
