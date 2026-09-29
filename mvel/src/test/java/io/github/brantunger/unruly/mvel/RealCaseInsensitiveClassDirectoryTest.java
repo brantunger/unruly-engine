@@ -11,26 +11,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.assertCompiles;
+import static io.github.brantunger.unruly.JavaSources.source;
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -126,41 +120,13 @@ class RealCaseInsensitiveClassDirectoryTest {
     }
 
     private static void compile(Path directory, JavaFileObject file) {
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        boolean compiled = javac.getTask(null, null, diagnostics,
-                List.of("-proc:none", "-d", directory.toString()), null, List.of(file)).call();
-        String errors = diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n"));
-        assertTrue(compiled, errors);
+        assertCompiles(List.of("-proc:none", "-d", directory.toString()), List.of(file));
     }
 
     /** A class loader over a class directory, as an application that puts one on its class path has. */
     private static URLClassLoader classDirectory(Path directory) throws MalformedURLException {
         return new URLClassLoader(new URL[]{directory.toUri().toURL()},
                 RealCaseInsensitiveClassDirectoryTest.class.getClassLoader());
-    }
-
-    private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
-        Thread thread = Thread.currentThread();
-        ClassLoader original = thread.getContextClassLoader();
-        thread.setContextClassLoader(loader);
-        try {
-            return action.get();
-        } finally {
-            thread.setContextClassLoader(original);
-        }
-    }
-
-    private static JavaFileObject source(String path, String text) {
-        return new SimpleJavaFileObject(URI.create("string:///" + path + ".java"), JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return text;
-            }
-        };
     }
 
     private static FactStore<Object> applicantFact() {

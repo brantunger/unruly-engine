@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
@@ -16,6 +17,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
@@ -50,6 +52,8 @@ import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.TestSupport.await;
+import static io.github.brantunger.unruly.TestSupport.throwIfSet;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static io.github.brantunger.unruly.core.EngineLogs.thrownBy;
@@ -139,7 +143,7 @@ class CloseEverySessionTest {
         public ExpressionCompiler newCompiler(CompileContext context) {
             throwIfSet(newCompilerFailure);
             ExpressionCompiler compiler = stub.newCompiler(context);
-            return new ExpressionCompiler() {
+            return new ForwardingExpressionCompiler(compiler) {
                 @Override
                 public CompiledCondition compileCondition(Expression source) {
                     duringCompile.run();
@@ -147,11 +151,6 @@ class CloseEverySessionTest {
                         throw new IllegalArgumentException("bad condition");
                     }
                     return compiler.compileCondition(source);
-                }
-
-                @Override
-                public CompiledAction compileAction(Expression source) {
-                    return compiler.compileAction(source);
                 }
 
                 @Override
@@ -192,21 +191,6 @@ class CloseEverySessionTest {
                 throwIfSet(sessionCloseFailures.get(number));
             }
         }
-    }
-
-    private static void throwIfSet(Throwable failure) {
-        if (failure != null) {
-            CloseEverySessionTest.<RuntimeException>sneakyThrow(failure);
-        }
-    }
-
-    /**
-     * Throws any throwable, a checked one or a {@link Throwable} that is neither an {@link Exception} nor an
-     * {@link Error} too, from code the compiler thinks throws nothing, as a language or a listener compiled apart can.
-     */
-    @SuppressWarnings("unchecked")
-    private static <T extends Throwable> void sneakyThrow(Throwable throwable) throws T {
-        throw (T) throwable;
     }
 
     private static RulesEngine<Map<String, Object>> engine(RecordingLanguage language, int copiesAtLoad) {
@@ -709,7 +693,7 @@ class CloseEverySessionTest {
     void rawThrowableFromRunStillGivesBackTheCopy() {
         Throwable raw = new Throwable("raw");
         RecordingLanguage language = new RecordingLanguage();
-        language.duringAction = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        language.duringAction = () -> TestSupport.<RuntimeException>sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = engine(language, 1);
         engine.load(rules("r"));
 
@@ -731,7 +715,7 @@ class CloseEverySessionTest {
                 .listener(new RuleListener() {
                     @Override
                     public void beforeRun(RunContext run) {
-                        CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+                        TestSupport.<RuntimeException>sneakyThrow(raw);
                     }
                 }), 1);
         engine.load(rules("r"));
@@ -790,7 +774,7 @@ class CloseEverySessionTest {
         RecordingLanguage second = new RecordingLanguage("second");
         RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
         engine.load(rulesInBoth(first, second));
-        second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        second.duringNewSession = () -> TestSupport.<RuntimeException>sneakyThrow(raw);
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
@@ -969,7 +953,7 @@ class CloseEverySessionTest {
         Throwable raw = new Throwable("raw");
         RecordingLanguage first = new RecordingLanguage();
         RecordingLanguage second = new RecordingLanguage("second");
-        second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        second.duringNewSession = () -> TestSupport.<RuntimeException>sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
         List<Rule> rules = rulesInBoth(first, second);
 
@@ -991,7 +975,7 @@ class CloseEverySessionTest {
         RecordingLanguage first = new RecordingLanguage();
         RecordingLanguage second = new RecordingLanguage("second");
         first.sessionCloseFailures.put(1, fatal);
-        second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        second.duringNewSession = () -> TestSupport.<RuntimeException>sneakyThrow(raw);
         RulesEngine<Map<String, Object>> engine = engine(first, second, 1);
         List<Rule> rules = rulesInBoth(first, second);
 
@@ -1017,7 +1001,7 @@ class CloseEverySessionTest {
         language.sessionCloseFailures.put(1, fatal);
         language.duringAction = () -> {
             engine.close();
-            CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+            TestSupport.<RuntimeException>sneakyThrow(raw);
         };
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
@@ -1042,7 +1026,7 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(first, second, 0);
         engine.load(rulesInBoth(first, second));
         first.sessionCloseFailures.put(1, fatal);
-        second.duringNewSession = () -> CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+        second.duringNewSession = () -> TestSupport.<RuntimeException>sneakyThrow(raw);
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
@@ -1065,7 +1049,7 @@ class CloseEverySessionTest {
         language.compilerCloseFailure = fatal;
         language.duringNewSession = () -> {
             engine.close();
-            CloseEverySessionTest.<RuntimeException>sneakyThrow(raw);
+            TestSupport.<RuntimeException>sneakyThrow(raw);
         };
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
@@ -1396,7 +1380,7 @@ class CloseEverySessionTest {
         idle.duringAdd = () -> {
             kept.set(true);
             waiter.interrupt();
-            await(stopped, waiterLeavesFirst ? waiterLeft : stopped);
+            awaitQuietly(stopped, waiterLeavesFirst ? waiterLeft : stopped);
         };
         RuleSet.Copy copy;
         try {
@@ -2147,20 +2131,11 @@ class CloseEverySessionTest {
         return logs;
     }
 
-    private static void await(CountDownLatch latch) {
-        try {
-            assertTrue(latch.await(10, TimeUnit.SECONDS), "timed out");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(e);
-        }
-    }
-
     /**
      * Waits for both latches, where a failure must not be thrown, as in an idle queue's {@code add()}: a wait that
      * times out, or is interrupted, is left for the test's own assertions to find.
      */
-    private static void await(CountDownLatch first, CountDownLatch second) {
+    private static void awaitQuietly(CountDownLatch first, CountDownLatch second) {
         try {
             if (first.await(10, TimeUnit.SECONDS)) {
                 second.await(10, TimeUnit.SECONDS);

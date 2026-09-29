@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("a rule list looks up whether a name is a class only once")
@@ -31,17 +31,6 @@ class SharedClassLookupTest {
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("amount", value);
         return facts;
-    }
-
-    private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
-        Thread thread = Thread.currentThread();
-        ClassLoader previous = thread.getContextClassLoader();
-        thread.setContextClassLoader(loader);
-        try {
-            return action.get();
-        } finally {
-            thread.setContextClassLoader(previous);
-        }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
@@ -42,6 +43,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.TestSupport.await;
+import static io.github.brantunger.unruly.TestSupport.sneakyThrow;
+import static io.github.brantunger.unruly.TestSupport.throwIfSet;
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static io.github.brantunger.unruly.core.EngineLogs.thrownBy;
@@ -95,7 +99,7 @@ class PlainThrowableTest {
         private void called(String callback) {
             calls.add(name + "." + callback);
             if (callback.equals(failIn)) {
-                PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
+                TestSupport.<RuntimeException>sneakyThrow(failure);
             }
         }
 
@@ -185,21 +189,6 @@ class PlainThrowableTest {
                 }
             };
         }
-    }
-
-    private static void throwIfSet(Throwable failure) {
-        if (failure != null) {
-            PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
-        }
-    }
-
-    /**
-     * Throws any throwable, a {@link Throwable} that is neither an {@link Exception} nor an {@link Error} too, from
-     * code the compiler thinks throws nothing, as a language or a listener compiled apart can.
-     */
-    @SuppressWarnings("unchecked")
-    static <T extends Throwable> void sneakyThrow(Throwable throwable) throws T {
-        throw (T) throwable;
     }
 
     static RulesEngineBuilder<Map<String, Object>> builder(ExpressionLanguage language) {
@@ -653,15 +642,6 @@ class PlainThrowableTest {
         };
         engine.load(List.of());
         return engine;
-    }
-
-    private static void await(CountDownLatch latch) {
-        try {
-            assertTrue(latch.await(10, TimeUnit.SECONDS), "timed out");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(e);
-        }
     }
 
     private static void join(Thread thread) {

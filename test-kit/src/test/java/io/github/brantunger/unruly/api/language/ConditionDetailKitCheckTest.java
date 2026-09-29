@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.TestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
@@ -118,16 +119,10 @@ class ConditionDetailKitCheckTest {
     private static ConditionPath integersOnly(Supplier<? extends Throwable> failure) {
         return (condition, evaluation, session) -> {
             if (!(evaluation.facts().get("x") instanceof Integer)) {
-                ConditionDetailKitCheckTest.<RuntimeException>sneakyThrow(failure.get());
+                TestSupport.<RuntimeException>sneakyThrow(failure.get());
             }
             return condition.evaluateWithDetail(evaluation, session);
         };
-    }
-
-    /** Throws {@code thrown} whatever its type, as a language's code can. */
-    @SuppressWarnings("unchecked")
-    private static <T extends Throwable> void sneakyThrow(Throwable thrown) throws T {
-        throw (T) thrown;
     }
 
     /**
@@ -203,7 +198,7 @@ class ConditionDetailKitCheckTest {
                         closes.add(what);
                         Throwable thrown = failure.apply(what);
                         if (thrown != null) {
-                            ConditionDetailKitCheckTest.<RuntimeException>sneakyThrow(thrown);
+                            TestSupport.<RuntimeException>sneakyThrow(thrown);
                         }
                     }
                 };

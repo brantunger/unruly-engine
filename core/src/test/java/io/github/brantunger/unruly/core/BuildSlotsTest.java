@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
+import static io.github.brantunger.unruly.TestSupport.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -162,18 +163,6 @@ class BuildSlotsTest {
         }
     }
 
-    private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        await(condition, 20, what);
-    }
-
-    private static void await(BooleanSupplier condition, int seconds, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting until " + what);
-            Thread.sleep(5);
-        }
-    }
-
     /** Whether every run has parked, either at the gate or waiting for a slot: both park with a timeout. */
     private boolean allParked() {
         return threads.stream().allMatch(thread -> thread.getState() == Thread.State.TIMED_WAITING);
@@ -182,7 +171,7 @@ class BuildSlotsTest {
     /** Fills every build slot with a run waiting at the gate. */
     private void fillTheSlots(RulesEngine<Map<String, Object>> engine) throws InterruptedException {
         startGated(PROCESSORS, true, engine);
-        await(() -> gate.inProgress.get() == PROCESSORS && allParked(), "a run holds every slot, at the gate");
+        await(() -> gate.inProgress.get() == PROCESSORS && allParked(), 20, "a run holds every slot, at the gate");
     }
 
     @Test
@@ -194,7 +183,7 @@ class BuildSlotsTest {
         startGated(PROCESSORS + EXTRA_RUNS, true, engine);
         // The runs above the slots wait for one; the gate opens well inside the five seconds they give the slots to
         // come back before making a copy without one.
-        await(() -> gate.inProgress.get() == PROCESSORS && allParked(),
+        await(() -> gate.inProgress.get() == PROCESSORS && allParked(), 20,
                 PROCESSORS + " runs are in their first run and " + EXTRA_RUNS + " wait for a slot");
         assertEquals(PROCESSORS, language.sessions().get(), "one copy for each slot");
         gate.open.countDown();
@@ -217,7 +206,7 @@ class BuildSlotsTest {
         RulesEngine<Map<String, Object>> engine = unlimited(language);
 
         startGated(PROCESSORS + EXTRA_RUNS, false, engine);
-        await(() -> gate.inProgress.get() == PROCESSORS + EXTRA_RUNS, "every run is in progress at once");
+        await(() -> gate.inProgress.get() == PROCESSORS + EXTRA_RUNS, 20, "every run is in progress at once");
 
         assertEquals(PROCESSORS + EXTRA_RUNS, language.sessions().get());
     }
@@ -228,7 +217,7 @@ class BuildSlotsTest {
         StepLanguage language = new StepLanguage();
         RulesEngine<Map<String, Object>> engine = unlimited(language);
         startGated(PROCESSORS - 1, true, engine);
-        await(() -> gate.inProgress.get() == PROCESSORS - 1 && allParked(), "a run holds all slots but one");
+        await(() -> gate.inProgress.get() == PROCESSORS - 1 && allParked(), 20, "a run holds all slots but one");
         CountDownLatch nestedDone = new CountDownLatch(1);
 
         // This run takes the last slot, and its condition runs the engine again on the same thread.
@@ -314,7 +303,7 @@ class BuildSlotsTest {
                 outcome.set(e);
             }
         });
-        await(() -> run.getState() == Thread.State.TIMED_WAITING || !run.isAlive(), "the run waits for a slot");
+        await(() -> run.getState() == Thread.State.TIMED_WAITING || !run.isAlive(), 20, "the run waits for a slot");
         gate.open.countDown();
         run.join(TimeUnit.SECONDS.toMillis(10));
 
@@ -335,7 +324,7 @@ class BuildSlotsTest {
                 failure.set(e);
             }
         });
-        await(() -> run.getState() == Thread.State.TIMED_WAITING, "the run waits for a slot");
+        await(() -> run.getState() == Thread.State.TIMED_WAITING, 20, "the run waits for a slot");
         run.interrupt();
         run.join(TimeUnit.SECONDS.toMillis(10));
 

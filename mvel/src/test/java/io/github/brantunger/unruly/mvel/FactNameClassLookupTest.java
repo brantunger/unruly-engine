@@ -13,8 +13,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("fact names are checked against imported classes with the rule list's class loader")
@@ -26,17 +26,6 @@ class FactNameClassLookupTest {
 
     private static Rule rule(String condition) {
         return Rule.builder().ruleName("r").condition(condition).action("output.put('hit', true)").build();
-    }
-
-    private static <T> T withContextClassLoader(ClassLoader loader, Supplier<T> action) {
-        Thread thread = Thread.currentThread();
-        ClassLoader previous = thread.getContextClassLoader();
-        thread.setContextClassLoader(loader);
-        try {
-            return action.get();
-        } finally {
-            thread.setContextClassLoader(previous);
-        }
     }
 
     /** Runs {@code run()} on a new thread whose context class loader is {@code loader}. */

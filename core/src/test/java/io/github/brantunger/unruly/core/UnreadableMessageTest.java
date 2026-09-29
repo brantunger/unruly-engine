@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
@@ -506,7 +507,7 @@ class UnreadableMessageTest {
 
         @Override
         public String getMessage() {
-            PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
+            TestSupport.<RuntimeException>sneakyThrow(failure);
             return null;
         }
 
@@ -597,7 +598,7 @@ class UnreadableMessageTest {
             public void close() {
                 closed.add(name);
                 if (failure != null) {
-                    PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
+                    TestSupport.<RuntimeException>sneakyThrow(failure);
                 }
             }
         });

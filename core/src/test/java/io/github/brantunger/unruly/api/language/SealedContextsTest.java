@@ -1,25 +1,19 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.JavaSources.Compilation;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import java.lang.reflect.Modifier;
-import java.net.URI;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
-import java.util.stream.Collectors;
 
+import static io.github.brantunger.unruly.JavaSources.compile;
+import static io.github.brantunger.unruly.JavaSources.source;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("only the engine implements the contexts it passes to a language")
@@ -74,25 +68,11 @@ class SealedContextsTest {
                 + "import java.util.Map;\n"
                 + "import java.util.Set;\n"
                 + declaration + "\n";
-        JavaFileObject file = new SimpleJavaFileObject(URI.create("string:///com/example/lang/TestContext.java"),
-                JavaFileObject.Kind.SOURCE) {
-            @Override
-            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                return source;
-            }
-        };
-        JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-
-        boolean compiled = javac.getTask(null, null, diagnostics,
+        Compilation compilation = compile(
                 List.of("-proc:none", "-classpath", System.getProperty("java.class.path"), "-d", classes.toString()),
-                null, List.of(file)).call();
+                List.of(source("com/example/lang/TestContext", source)));
 
-        String errors = diagnostics.getDiagnostics().stream()
-                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                .map(diagnostic -> diagnostic.getMessage(Locale.ROOT))
-                .collect(Collectors.joining("\n"));
-        assertFalse(compiled, "the test double compiled");
-        assertTrue(errors.contains("sealed"), errors);
+        assertFalse(compilation.compiled(), "the test double compiled");
+        assertTrue(compilation.errors().contains("sealed"), compilation.errors());
     }
 }

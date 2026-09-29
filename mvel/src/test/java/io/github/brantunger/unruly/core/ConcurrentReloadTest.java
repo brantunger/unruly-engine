@@ -19,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static io.github.brantunger.unruly.TestSupport.asMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("concurrent reloads never leave one list's rules with another list's fact-name checks")
@@ -43,12 +44,6 @@ class ConcurrentReloadTest {
             List.of(Rule.builder().ruleName("a").language("strict").condition("c").action("a").build());
     private static final List<Rule> LIST_B =
             List.of(Rule.builder().ruleName("b").condition("true").action("output.put('src', 'B')").build());
-
-    /** The output object, which every engine here builds with {@code HashMap::new}. */
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object output) {
-        return (Map<String, Object>) output;
-    }
 
     // Probabilistic before the fix, which wrote the rules and the checks separately: the writes of two reloads could
     // interleave, pairing the rules of one list with the checks of the other until the next reload.

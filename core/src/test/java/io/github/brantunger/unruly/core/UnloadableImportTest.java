@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.util.HashMap;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("an import of a class that exists but can't be loaded fails build(), instead of importing it as a package")
@@ -53,17 +54,6 @@ class UnloadableImportTest {
         }
     };
 
-    private static void withContextClassLoader(Runnable action) {
-        Thread thread = Thread.currentThread();
-        ClassLoader original = thread.getContextClassLoader();
-        thread.setContextClassLoader(LOADER);
-        try {
-            action.run();
-        } finally {
-            thread.setContextClassLoader(original);
-        }
-    }
-
     private static RulesEngineBuilder<Map<String, Object>> importing(String name) {
         return RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .language(new ToyExpressionLanguage()).imports(name);
@@ -79,7 +69,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing(name);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         assertEquals("Can't import '" + name + "': the class exists but can't be loaded: " + error, ex.getMessage());
         assertEquals(error, assertInstanceOf(LinkageError.class, ex.getCause()).toString());
@@ -90,7 +80,7 @@ class UnloadableImportTest {
     void wrongNameIsAPackage() {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.a");
 
-        assertDoesNotThrow(() -> withContextClassLoader(builder::build));
+        assertDoesNotThrow(() -> withContextClassLoader(LOADER, builder::build));
     }
 
     @Test
@@ -99,7 +89,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.q");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         assertEquals("Can't import 'p.q': the class exists but can't be loaded: "
                 + "java.lang.IncompatibleClassChangeError: p/q (wrong name: p/Q)", ex.getMessage());
@@ -111,7 +101,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.X\nforged");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         assertEquals("Can't import 'p.X\\nforged': the class exists but can't be loaded: "
                 + "java.lang.NoClassDefFoundError: dependency/Missing", ex.getMessage());
@@ -123,7 +113,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.D");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         assertEquals("Can't import 'p.D': the class exists but can't be loaded: "
                 + "java.lang.NoClassDefFoundError: p/Base\\nFORGED LOG LINE\\u202e", ex.getMessage());
@@ -135,7 +125,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.E");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         String text = PREFIX + LONG_TEXT;
         assertEquals("Can't import 'p.E': the class exists but can't be loaded: " + text.substring(0, 1000)
@@ -148,7 +138,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.F");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         assertEquals("Can't import 'p.F': the class exists but can't be loaded: " + PREFIX
                 + BREAKS_AT_LIMIT.substring(0, 1000 - PREFIX.length() - 5) + "\\n".repeat(5)
@@ -161,7 +151,7 @@ class UnloadableImportTest {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.G");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> withContextClassLoader(builder::build));
+                () -> withContextClassLoader(LOADER, builder::build));
 
         assertEquals("Can't import 'p.G': the class exists but can't be loaded: java.lang.NoClassDefFoundError"
                 + " (caused by java.lang.ClassNotFoundException: p.Base)", ex.getMessage());

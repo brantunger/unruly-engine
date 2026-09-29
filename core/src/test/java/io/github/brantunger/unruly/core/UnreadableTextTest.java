@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class UnreadableTextTest {
         }
 
         private String fail() {
-            PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
+            TestSupport.<RuntimeException>sneakyThrow(failure);
             return null;
         }
 
@@ -105,7 +106,7 @@ class UnreadableTextTest {
 
         @Override
         public String getMessage() {
-            PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
+            TestSupport.<RuntimeException>sneakyThrow(failure);
             return null;
         }
     }
@@ -123,7 +124,7 @@ class UnreadableTextTest {
 
         @Override
         public List<Issue> issues() {
-            PlainThrowableTest.<RuntimeException>sneakyThrow(failure);
+            TestSupport.<RuntimeException>sneakyThrow(failure);
             return List.of();
         }
     }

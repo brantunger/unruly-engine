@@ -1,11 +1,9 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 
@@ -32,17 +30,7 @@ final class GatedRuns {
         @Override
         public ExpressionCompiler newCompiler(CompileContext context) {
             ExpressionCompiler toy = new ToyExpressionLanguage().newCompiler(context);
-            return new ExpressionCompiler() {
-                @Override
-                public CompiledCondition compileCondition(Expression expression) {
-                    return toy.compileCondition(expression);
-                }
-
-                @Override
-                public CompiledAction compileAction(Expression expression) {
-                    return toy.compileAction(expression);
-                }
-
+            return new ForwardingExpressionCompiler(toy) {
                 @Override
                 public Session newSession() {
                     return new Session() {

@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.brantunger.unruly.TestSupport.asMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("an action can't write to the facts, and is told why")
@@ -33,12 +34,6 @@ class ActionFactsWriteTest {
                         asMap(action.output()).put("x", action.facts().get("x"));
                         return ActionResult.done();
                     });
-
-    /** The output object, which every engine here builds with {@code HashMap::new}. */
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object output) {
-        return (Map<String, Object>) output;
-    }
 
     private static Rule rule(String name, int priority, String action) {
         return Rule.builder().ruleName(name).language("writer").priority(priority).condition("c").action(action)

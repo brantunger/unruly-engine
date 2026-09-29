@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
@@ -805,12 +806,6 @@ class ContractKitChecksTest {
         };
     }
 
-    /** Throws {@code thrown} whatever its type, as a language's code can, though close() declares nothing. */
-    @SuppressWarnings("unchecked")
-    private static <T extends Throwable> void sneakyThrow(Throwable thrown) throws T {
-        throw (T) thrown;
-    }
-
     /**
      * Wraps a language so that each of its compilers throws what {@code failure} supplies when it's closed, whatever
      * its type.
@@ -825,7 +820,7 @@ class ContractKitChecksTest {
                     @Override
                     public void close() {
                         compiler.close();
-                        ContractKitChecksTest.<RuntimeException>sneakyThrow(failure.get());
+                        TestSupport.<RuntimeException>sneakyThrow(failure.get());
                     }
                 };
             }
