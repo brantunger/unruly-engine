@@ -6,7 +6,6 @@ import org.jspecify.annotations.Nullable;
 import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.RecordComponent;
 import java.security.CodeSource;
@@ -19,7 +18,6 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -403,13 +401,7 @@ public final class FactProperties {
         List<Method> methods = new ArrayList<>(List.of(type.getMethods()));
         methods.sort(Comparator.comparing(Method::getName));
         for (Method method : methods) {
-            // Declared by Object or Enum, so getClass() and getDeclaringClass() are never properties.
-            if (method.getDeclaringClass() == Object.class || method.getDeclaringClass() == Enum.class
-                    || Modifier.isStatic(method.getModifiers()) || method.getParameterCount() != 0
-                    || method.getReturnType() == void.class) {
-                continue;
-            }
-            String property = propertyName(method);
+            String property = Accessors.property(method);
             if (property != null) {
                 getters.putIfAbsent(property, method);
             }
@@ -418,40 +410,12 @@ public final class FactProperties {
         return Collections.unmodifiableMap(accessors);
     }
 
-    /** The property a getter reads, or {@code null} if the method isn't one. */
-    private static @Nullable String propertyName(Method method) {
-        String name = method.getName();
-        if (name.startsWith("get") && name.length() > 3) {
-            return decapitalize(name.substring(3));
-        }
-        // Only an isX() returning boolean or Boolean is a getter: isNotAProperty() returning a String isn't one. A
-        // list's isEmpty() does qualify, so a list read directly has a property named empty; what keeps a list from
-        // contributing one to a conversion is that convert() turns a collection into a list, and that
-        // isPlatformValue() leaves the platform's classes alone, not this.
-        boolean returnsBoolean = method.getReturnType() == boolean.class || method.getReturnType() == Boolean.class;
-        if (returnsBoolean && name.startsWith("is") && name.length() > 2) {
-            return decapitalize(name.substring(2));
-        }
-        return null;
-    }
-
-    private static String decapitalize(String name) {
-        if (name.length() > 1 && Character.isUpperCase(name.charAt(1))) {
-            // As java.beans does: URL stays URL, so getURL() is the property URL.
-            return name;
-        }
-        return name.substring(0, 1).toLowerCase(Locale.ROOT) + name.substring(1);
-    }
-
     private static @Nullable Object invoke(Method accessor, Object target, String property) {
         try {
             return accessor.invoke(target);
         } catch (IllegalAccessException e) {
             throw new IllegalStateException("A " + target.getClass().getName() + " has a property '" + property
-                    + "', but its accessor on " + accessor.getDeclaringClass().getName() + " can't be reached from"
-                    + " here, and no public supertype declares it. Declare the accessor on a public type, or on a"
-                    + " public interface the type implements; on the module path, also export that type's package,"
-                    + " or open it to io.github.brantunger.unruly.core for a type that isn't public.", e);
+                    + "', but its accessor on " + Accessors.unreachable("accessor", accessor), e);
         } catch (InvocationTargetException e) {
             // Always wrapped, never rethrown as it came: IllegalArgumentException is how this class says a fact has
             // no such property, so a getter that validates its state must not be mistaken for a misspelled rule.
