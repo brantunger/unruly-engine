@@ -104,6 +104,7 @@ release keeps compiling and working.
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.*;
 
+// MyParser and MyExpression stand for your language's own parser and compiled form.
 public final class MyLanguage implements ExpressionLanguage {
 
     @Override
@@ -142,8 +143,6 @@ public final class MyLanguage implements ExpressionLanguage {
     }
 }
 ```
-
-`MyParser` and `MyExpression` stand for your language's own parser and compiled form.
 
 **The expression.** An `Expression` has its `ruleName()`, whether it's the rule's `CONDITION` or its `ACTION`, and its
 never-blank `text()`.
@@ -185,13 +184,12 @@ return new CompiledCondition() {
 
     @Override
     public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session) {
-        MyTrace trace = parsed.evaluateTraced(evaluation.facts());   // the value and what decided it, in one pass
+        // MyTrace stands for your language's own record of an evaluation: the value and what decided it, in one pass
+        MyTrace trace = parsed.evaluateTraced(evaluation.facts());
         return ConditionResult.of(trace.value(), trace.toString());  // a Boolean, and the detail
     }
 };
 ```
-
-`MyTrace` stands for your language's own record of an evaluation.
 
 The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never calls `evaluate` itself. The default
 returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
@@ -203,9 +201,8 @@ own `equals`, so `assertEquals` works when the detail is a `String` or a record;
 `equals`, compares by identity. `toString()` prints the call that makes it, such as
 `ConditionResult.of(true, <detail>)`, as `ActionResult` does.
 
-As with `evaluate`, anything but a `Boolean`, `null` included, fails the rule. Keep
-`evaluate` returning the same value. The engine never calls it, but a condition that wraps yours, or your own tests,
-may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
+Keep `evaluate` returning the same value. The engine never calls it, but a condition that wraps yours, or your own
+tests, may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
 
 The detail can be any object, or `null`. The application reads it as
 [`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for every
@@ -545,7 +542,8 @@ See [The contract test kit](contract-kit.md), and [Testing beyond the contract k
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
 | **A condition that doesn't compile** | Its action isn't compiled, so the action's errors appear only after the next `load()` | Expect a second failure after fixing a condition |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
-| **`isCancelled()` from a worker thread** | It reads that thread's interrupt status, so the run thread's interrupt is missed | Poll it on the run's thread |
+| **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN | Evaluate, or at least poll `isCancelled()`, on the run's thread |
+| **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so setting an `int` or `float` property of a bean output fails the rule | Tell users to set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
 | **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](#-thread-safety) fail it |
 
@@ -568,13 +566,11 @@ No. It happens before `beforeRun`; see [Thread safety](#-thread-safety). When `l
 
 ### Do I have to implement `warmUp`?
 
-No. By default it does nothing, and `copiesAtLoad(n)` still makes its copies. Implement it when a session's first use
-is costly, such as compiling or loading classes. See
+No. By default it does nothing, and `copiesAtLoad(n)` still makes its copies. See
 [Warming up a session](#warming-up-a-session).
 
 ### Do I have to implement `evaluateWithDetail`?
 
-No. By default it calls your `evaluate` and gives no detail, so `RuleEvaluation.detail()` is `null` for your rules.
-MVEL doesn't implement it either. If you do, `evaluate` must still return the same value, as the kit checks. See
-[Explaining a condition's result](#explaining-a-conditions-result).
+No. By default it calls your `evaluate`, and `RuleEvaluation.detail()` is `null` for your rules. If you do,
+`evaluate` must still return the same value. See [Explaining a condition's result](#explaining-a-conditions-result).
 

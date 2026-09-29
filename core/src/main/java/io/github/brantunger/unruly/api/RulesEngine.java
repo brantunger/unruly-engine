@@ -148,8 +148,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         supplied. Also if a language's check of a fact name fails with any other exception, which becomes the
      *         cause.
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
-     *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
-     *         an engine invariant has broken rather than that the call was wrong
+     *         run, while borrowing a copy of the rules, found the same rule list closed each time it read the
+     *         engine's rules again, many times in a row, which means an engine invariant has broken rather than that
+     *         the call was wrong (a reload in between starts the count again, so reloads alone never cause this)
      * @throws NullPointerException if {@code facts} is {@code null}
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, wherever it
      *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
@@ -197,8 +198,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
-     *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
-     *         an engine invariant has broken rather than that the call was wrong
+     *         run, while borrowing a copy of the rules, found the same rule list closed each time it read the
+     *         engine's rules again, many times in a row, which means an engine invariant has broken rather than that
+     *         the call was wrong (a reload in between starts the count again, so reloads alone never cause this)
      * @throws NullPointerException if {@code facts} is {@code null}
      */
     default RunResult<O> runWithResult(FactStore<?> facts) {
@@ -225,8 +227,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@link InterruptedException} cause if its thread is interrupted, which keeps the interrupt status set
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
-     *         engine's rule list was closed over and over while the run was borrowing a copy of it, which means
-     *         an engine invariant has broken rather than that the call was wrong
+     *         run, while borrowing a copy of the rules, found the same rule list closed each time it read the
+     *         engine's rules again, many times in a row, which means an engine invariant has broken rather than that
+     *         the call was wrong (a reload in between starts the count again, so reloads alone never cause this)
      * @throws NullPointerException if an argument is {@code null}
      */
     RunResult<O> runWithResult(FactStore<?> facts, RunOptions options);
