@@ -40,7 +40,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: unbalanced braces ( ... )]\n[Near : {... x ....}]\n"
                 + "[Line: 3, Column: 7]");
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile at line 3, column 7: unbalanced braces ( ... )", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 3, 7, "unbalanced braces ( ... )")), ex.issues());
@@ -50,7 +50,7 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("a message without MVEL's markers is used as it is, with no position")
     void plainMessage() {
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(withMessage("something else"));
+        InvalidExpressionException ex = MvelCompileErrors.compileError(withMessage("something else"));
 
         assertEquals("failed to compile: something else", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "something else")), ex.issues());
@@ -62,7 +62,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: null]\n[Line: 1, Column: 1]");
         mvel.initCause(new ExceptionInInitializerError(new RuntimeException("plain init failure")));
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile at line 1, column 1: null (caused by java.lang.RuntimeException: plain init "
                 + "failure)", ex.getMessage());
@@ -78,7 +78,7 @@ class MvelCompileErrorTest {
         mvel.initCause(new IllegalStateException("bad state"));
 
         assertEquals("failed to compile: null (caused by java.lang.IllegalStateException: bad state)",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -88,7 +88,7 @@ class MvelCompileErrorTest {
         mvel.initCause(new ExceptionInInitializerError(new IllegalStateException()));
 
         assertEquals("failed to compile: null (caused by java.lang.IllegalStateException)",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -105,13 +105,13 @@ class MvelCompileErrorTest {
 
         assertEquals("failed to compile: null (caused by " + root.getClass().getName()
                         + ": (message unavailable: java.lang.IllegalStateException))",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
     @DisplayName("a missing description with no cause has no note")
     void missingDescriptionWithoutCause() {
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(withMessage("[Error: null]"));
+        InvalidExpressionException ex = MvelCompileErrors.compileError(withMessage("[Error: null]"));
 
         assertEquals("failed to compile: null", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "null")), ex.issues());
@@ -123,7 +123,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: could not access field]");
         mvel.initCause(new IllegalStateException("bad state"));
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile: could not access field", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "could not access field")), ex.issues());
@@ -139,7 +139,7 @@ class MvelCompileErrorTest {
             }
         };
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile: (message unavailable: java.lang.IllegalStateException)", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "(message unavailable: java.lang.IllegalStateException)")),
@@ -161,7 +161,7 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("one error MVEL lists is its description alone, a line break in it escaped")
     void oneListedError() {
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(
+        InvalidExpressionException ex = MvelCompileErrors.compileError(
                 listing(error(1, 5, "could not resolve class: Nosuch\n - (9,9) not an error")));
 
         String description = "could not resolve class: Nosuch\\n - (9,9) not an error";
@@ -172,7 +172,7 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("several errors MVEL lists are each with their line and column, on one line")
     void severalListedErrors() {
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(
+        InvalidExpressionException ex = MvelCompileErrors.compileError(
                 listing(error(1, 5, "a\r\nb"), error(2, 3, "c" + (char) 0x85 + "d" + (char) 0x2028 + "e"
                         + (char) 0x2029 + "f\tg")));
 
@@ -206,7 +206,7 @@ class MvelCompileErrorTest {
         mvel.initCause(new UnreadableStackTrace(throwing));
 
         assertEquals("failed to compile: null (caused by " + UnreadableStackTrace.class.getName() + ")",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     /** An assert's error whose stack trace's top frame is {@code null}. */
@@ -227,7 +227,7 @@ class MvelCompileErrorTest {
         mvel.initCause(new NullTopFrame());
 
         assertEquals("failed to compile: null (caused by " + NullTopFrame.class.getName() + ")",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -239,7 +239,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: null]\n[Line: 1, Column: 5]");
         mvel.initCause(assertion);
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile at line 1, column 5: not a statement, or badly formed structure",
                 ex.getMessage());
@@ -254,7 +254,7 @@ class MvelCompileErrorTest {
         mvel.initCause(new AssertionError());
 
         assertEquals("failed to compile: null (caused by java.lang.AssertionError)",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -268,7 +268,7 @@ class MvelCompileErrorTest {
         mvel.initCause(assertion);
 
         assertEquals("failed to compile: null (caused by java.lang.AssertionError)",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -278,7 +278,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: " + description + "]\n[Near : {... X ....}]\n     ^\n"
                 + "[Line: 1, Column: 8]");
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         String escaped = "class not found: X\\u2028Y\\u2029Z\\u0085W";
         assertEquals("failed to compile at line 1, column 8: " + escaped, ex.getMessage());
@@ -288,7 +288,7 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("a message without MVEL's markers is escaped too")
     void plainMessageEscaped() {
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(withMessage("first\nsecond"));
+        InvalidExpressionException ex = MvelCompileErrors.compileError(withMessage("first\nsecond"));
 
         assertEquals("failed to compile: first\\nsecond", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 0, 0, "first\\nsecond")), ex.issues());
@@ -304,7 +304,7 @@ class MvelCompileErrorTest {
         mvel.initCause(assertion);
 
         assertEquals("failed to compile: not a statement, or badly formed structure",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     private static IndexOutOfBoundsException outOfBounds(String... frameClasses) {
@@ -320,20 +320,20 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("an IndexOutOfBoundsException MVEL's code threw is MVEL's")
     void outOfBoundsFromMvel() {
-        assertTrue(MvelExpressionCompiler.thrownInMvel(outOfBounds("org.mvel2.optimizers.AbstractOptimizer")));
+        assertTrue(MvelCompileErrors.thrownInMvel(outOfBounds("org.mvel2.optimizers.AbstractOptimizer")));
     }
 
     @Test
     @DisplayName("one the JDK's bounds check threw for MVEL is MVEL's: the JDK's frames are skipped")
     void outOfBoundsFromTheJdkForMvel() {
-        assertTrue(MvelExpressionCompiler.thrownInMvel(outOfBounds("jdk.internal.util.Preconditions$1",
+        assertTrue(MvelCompileErrors.thrownInMvel(outOfBounds("jdk.internal.util.Preconditions$1",
                 "java.lang.String", "sun.x.Y", "com.sun.x.Y", "org.mvel2.compiler.AbstractParser")));
     }
 
     @Test
     @DisplayName("one the application's code threw, even through the JDK, isn't MVEL's")
     void outOfBoundsFromOtherCode() {
-        assertFalse(MvelExpressionCompiler.thrownInMvel(outOfBounds("java.lang.ClassLoader", "com.example.Loader",
+        assertFalse(MvelCompileErrors.thrownInMvel(outOfBounds("java.lang.ClassLoader", "com.example.Loader",
                 "org.mvel2.util.ParseTools")));
     }
 
@@ -341,19 +341,19 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("one from a package whose name only starts as MVEL's does isn't MVEL's")
     void outOfBoundsFromALookAlikePackage() {
-        assertFalse(MvelExpressionCompiler.thrownInMvel(outOfBounds("org.mvel2extra.Parser")));
+        assertFalse(MvelCompileErrors.thrownInMvel(outOfBounds("org.mvel2extra.Parser")));
     }
 
     @Test
     @DisplayName("one without a stack trace, as HotSpot throws a frequent one, came out of MVEL all the same")
     void outOfBoundsWithoutStackTrace() {
-        assertTrue(MvelExpressionCompiler.thrownInMvel(outOfBounds()));
+        assertTrue(MvelCompileErrors.thrownInMvel(outOfBounds()));
     }
 
     @Test
     @DisplayName("one with only the JDK's frames came out of MVEL all the same")
     void outOfBoundsWithOnlyJdkFrames() {
-        assertTrue(MvelExpressionCompiler.thrownInMvel(outOfBounds("java.lang.String")));
+        assertTrue(MvelCompileErrors.thrownInMvel(outOfBounds("java.lang.String")));
     }
 
     @Test
@@ -366,7 +366,7 @@ class MvelCompileErrorTest {
             }
         };
 
-        assertTrue(MvelExpressionCompiler.thrownInMvel(unreadable));
+        assertTrue(MvelCompileErrors.thrownInMvel(unreadable));
     }
 
     @Test
@@ -375,7 +375,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: unknown class or illegal statement: "
                 + ParserContext.class.getName() + "@1a2b3c]\n[Near : {... ....}]\n[Line: 1, Column: 6]");
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile at line 1, column 6: unknown class or illegal statement", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 6, "unknown class or illegal statement")), ex.issues());
@@ -389,7 +389,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: unknown class or illegal statement: " + named + "]");
 
         assertEquals("failed to compile: unknown class or illegal statement",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @ParameterizedTest(name = "an array type MVEL names after an unknown class, {0}, is kept")
@@ -398,7 +398,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: unknown class or illegal statement: " + named + "]");
 
         assertEquals("failed to compile: unknown class or illegal statement: " + named,
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -408,7 +408,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: " + description + "]\n[Near : {... import a.B; ....}]\n"
                 + "     ^\n[Line: 1, Column: 8]");
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         String escaped = "class not found: import a.B;\\n[Error: x]\\n]\\n[Near : {... y ....}]';\\nz = 1";
         assertEquals("failed to compile at line 1, column 8: " + escaped, ex.getMessage());
@@ -420,7 +420,7 @@ class MvelCompileErrorTest {
     void emptyDescriptionBeforeTheExcerpt() {
         CompileException mvel = withMessage("[Error: ]\n[Near : {... x ....}]\n[Line: 1, Column: 2]");
 
-        assertEquals(List.of(new Issue(Severity.ERROR, 1, 2, "")), MvelExpressionCompiler.compileError(mvel).issues());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 2, "")), MvelCompileErrors.compileError(mvel).issues());
     }
 
     @Test
@@ -428,7 +428,7 @@ class MvelCompileErrorTest {
     void excerptWithoutTheStart() {
         CompileException mvel = withMessage("x]\n[Near : {... x ....}]\n[Error: y]\n[Line: 1, Column: 2]");
 
-        assertEquals(List.of(new Issue(Severity.ERROR, 1, 2, "y")), MvelExpressionCompiler.compileError(mvel).issues());
+        assertEquals(List.of(new Issue(Severity.ERROR, 1, 2, "y")), MvelCompileErrors.compileError(mvel).issues());
     }
 
     // #661: an unanchored pattern read the description out of the middle of a line.
@@ -436,7 +436,7 @@ class MvelCompileErrorTest {
     @DisplayName("a message without MVEL's excerpt or a line of its own that starts [Error: is used whole")
     void errorMarkerInsideALine() {
         assertEquals("failed to compile: x [Error: a] y",
-                MvelExpressionCompiler.compileError(withMessage("x [Error: a] y")).getMessage());
+                MvelCompileErrors.compileError(withMessage("x [Error: a] y")).getMessage());
     }
 
     // #651: the description was "null (caused by java.lang.ArrayIndexOutOfBoundsException)".
@@ -448,7 +448,7 @@ class MvelCompileErrorTest {
         fastThrown.setStackTrace(new StackTraceElement[0]);
         mvel.initCause(fastThrown);
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         assertEquals("failed to compile at line 1, column 11: malformed expression", ex.getMessage());
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 11, "malformed expression")), ex.issues());
@@ -463,7 +463,7 @@ class MvelCompileErrorTest {
         mvel.initCause(outOfBounds("com.example.Loader", "org.mvel2.util.ParseTools"));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 3, "Index 2 out of bounds for length 2")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     @Test
@@ -474,7 +474,7 @@ class MvelCompileErrorTest {
         mvel.initCause(outOfBounds("org.mvel2.compiler.AbstractParser"));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 13, "unexpected end of statement")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     // #652: MVEL's description was as long as the expression it quotes.
@@ -484,7 +484,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: " + "\n".repeat(1_500) + "]\n[Near : {... x ....}]\n"
                 + "[Line: 1, Column: 1]");
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         // 1,000 characters, less the 39 of "failed to compile at line 1, column 1: " and the 26 of the count, holds 467
         // line breaks escaped as 2 each.
@@ -496,7 +496,7 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("one error MVEL lists is shortened before it's escaped")
     void longListedErrorShortened() {
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(
+        InvalidExpressionException ex = MvelCompileErrors.compileError(
                 listing(error(1, 5, "could not resolve class: " + "\n".repeat(1_000))));
 
         String description = "could not resolve class: " + "\\n".repeat(455) + "... (545 more characters)";
@@ -511,7 +511,7 @@ class MvelCompileErrorTest {
             errors[i] = error(1, i, "could not resolve class: N" + i);
         }
 
-        String description = MvelExpressionCompiler.compileError(listing(errors)).issues().get(0).message();
+        String description = MvelCompileErrors.compileError(listing(errors)).issues().get(0).message();
 
         assertTrue(description.startsWith("(1,0) could not resolve class: N0; (1,1) could not resolve class: N1; "),
                 description);
@@ -525,7 +525,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: null]\n[Line: 1, Column: 1]");
         mvel.initCause(new ExceptionInInitializerError(new IllegalStateException("L".repeat(5_000))));
 
-        InvalidExpressionException ex = MvelExpressionCompiler.compileError(mvel);
+        InvalidExpressionException ex = MvelCompileErrors.compileError(mvel);
 
         String description = "null (caused by java.lang.IllegalStateException: " + "L".repeat(885)
                 + "... (4115 more characters))";
@@ -570,7 +570,7 @@ class MvelCompileErrorTest {
                 + "[Line: 1, Column: 28]");
 
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 28, "not a statement")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     @Test
@@ -582,7 +582,7 @@ class MvelCompileErrorTest {
         outer.initCause(new IllegalStateException(inner));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "was expecting type: java.lang.Boolean")),
-                MvelExpressionCompiler.compileError(outer).issues());
+                MvelCompileErrors.compileError(outer).issues());
     }
 
     private static NullPointerException nullPointer(String... frameClasses) {
@@ -602,7 +602,7 @@ class MvelCompileErrorTest {
         mvel.initCause(nullPointer("org.mvel2.util.CompilerTools"));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "not a statement, or badly formed structure")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     @Test
@@ -611,7 +611,7 @@ class MvelCompileErrorTest {
         CompileException mvel = withMessage("[Error: from the application]");
         mvel.initCause(nullPointer("com.example.Loader"));
 
-        assertEquals("failed to compile: from the application", MvelExpressionCompiler.compileError(mvel).getMessage());
+        assertEquals("failed to compile: from the application", MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -621,7 +621,7 @@ class MvelCompileErrorTest {
         mvel.initCause(nullPointer("java.util.Objects", "com.example.Loader", "org.mvel2.util.ParseTools"));
 
         assertEquals("failed to compile: null (caused by java.lang.NullPointerException)",
-                MvelExpressionCompiler.compileError(mvel).getMessage());
+                MvelCompileErrors.compileError(mvel).getMessage());
     }
 
     @Test
@@ -631,7 +631,7 @@ class MvelCompileErrorTest {
         mvel.initCause(nullPointer("java.util.Objects", "org.mvel2.util.CompilerTools"));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "not a statement, or badly formed structure")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     @ParameterizedTest(name = "one without MVEL''s frames (only the JDK''s: {0}), as HotSpot throws a frequent one, "
@@ -642,7 +642,7 @@ class MvelCompileErrorTest {
         mvel.initCause(jdkFrames ? nullPointer("java.util.Objects") : nullPointer());
 
         assertEquals(List.of(new Issue(Severity.ERROR, 2, 1, "not a statement, or badly formed structure")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     private static RuntimeException thrownFrom(RuntimeException e, String frameClass) {
@@ -653,7 +653,7 @@ class MvelCompileErrorTest {
     @Test
     @DisplayName("a plain RuntimeException MVEL threw with no cause rejects a declaration")
     void plainRuntimeExceptionFromMvel() {
-        assertTrue(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("not an identifier: 1x"),
+        assertTrue(MvelCompileErrors.rejectedPlainly(thrownFrom(new RuntimeException("not an identifier: 1x"),
                 "org.mvel2.util.ParseTools")));
     }
 
@@ -664,27 +664,27 @@ class MvelCompileErrorTest {
         RuntimeException e = new RuntimeException("illegal use of reserved word: in");
         e.setStackTrace(new StackTraceElement[0]);
 
-        assertTrue(MvelExpressionCompiler.rejectedPlainly(e));
+        assertTrue(MvelCompileErrors.rejectedPlainly(e));
     }
 
     @Test
     @DisplayName("one MVEL threw around another failure doesn't: that failure is reported as is")
     void plainRuntimeExceptionWithACause() {
-        assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("class not found: Widget",
+        assertFalse(MvelCompileErrors.rejectedPlainly(thrownFrom(new RuntimeException("class not found: Widget",
                 new IllegalStateException("from the application's class loader")), "org.mvel2.util.ParseTools")));
     }
 
     @Test
     @DisplayName("one from other code MVEL called doesn't")
     void plainRuntimeExceptionFromOtherCode() {
-        assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new RuntimeException("from the loader"),
+        assertFalse(MvelCompileErrors.rejectedPlainly(thrownFrom(new RuntimeException("from the loader"),
                 "com.example.Loader")));
     }
 
     @Test
     @DisplayName("a subclass of RuntimeException MVEL threw doesn't")
     void runtimeExceptionSubclassFromMvel() {
-        assertFalse(MvelExpressionCompiler.rejectedPlainly(thrownFrom(new IllegalStateException("bad state"),
+        assertFalse(MvelCompileErrors.rejectedPlainly(thrownFrom(new IllegalStateException("bad state"),
                 "org.mvel2.util.ParseTools")));
     }
 
@@ -763,7 +763,7 @@ class MvelCompileErrorTest {
         CompileException mvel = endOfStatement(outOfBoundsIn("org.mvel2.ast.ImportNode", "<init>"));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 20, "unexpected end of statement")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 
     @Test
@@ -772,6 +772,6 @@ class MvelCompileErrorTest {
         CompileException mvel = endOfStatement(outOfBoundsIn("com.example.ImportNode", "getPackageImport"));
 
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 20, "unexpected end of statement")),
-                MvelExpressionCompiler.compileError(mvel).issues());
+                MvelCompileErrors.compileError(mvel).issues());
     }
 }

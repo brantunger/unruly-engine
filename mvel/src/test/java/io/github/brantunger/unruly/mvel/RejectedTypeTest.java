@@ -57,7 +57,7 @@ class RejectedTypeTest {
     void typeNamedOnlyWhenMvelStoppedAfterIt(String text, int start, int end, int cursor, String expected) {
         char[] expr = text.toCharArray();
 
-        String named = MvelExpression.Analysis.typeNamed(node(expr, start, end), expr, cursor);
+        String named = MvelAnalysis.typeNamed(node(expr, start, end), expr, cursor);
 
         assertEquals(expected.isEmpty() ? null : expected, named);
     }
@@ -68,7 +68,7 @@ class RejectedTypeTest {
     void reservedWordNamesNothing(String token) {
         char[] expr = (token + " z = 1").toCharArray();
 
-        assertNull(MvelExpression.Analysis.typeNamed(node(expr, 0, token.length()), expr, token.length() + 4));
+        assertNull(MvelAnalysis.typeNamed(node(expr, 0, token.length()), expr, token.length() + 4));
     }
 
     @ParameterizedTest(name = "the node ''{0}'' holds no reserved word, though a class MVEL knows, so it names itself")
@@ -76,7 +76,7 @@ class RejectedTypeTest {
     void wordsMvelKnowsAsClassesAreNotReserved(String token) {
         char[] expr = (token + " z = 1").toCharArray();
 
-        assertEquals(token, MvelExpression.Analysis.typeNamed(node(expr, 0, token.length()), expr, token.length() + 4));
+        assertEquals(token, MvelAnalysis.typeNamed(node(expr, 0, token.length()), expr, token.length() + 4));
     }
 
     @ParameterizedTest(name = "the node ''{0}'' has a word only a type''s own name can''t be in a package, so it names "
@@ -86,7 +86,7 @@ class RejectedTypeTest {
     void wordsOnlyATypeCantBeNameAPackage(String token) {
         char[] expr = (token + " z = 1").toCharArray();
 
-        assertEquals(token, MvelExpression.Analysis.typeNamed(node(expr, 0, token.length()), expr, token.length() + 4));
+        assertEquals(token, MvelAnalysis.typeNamed(node(expr, 0, token.length()), expr, token.length() + 4));
     }
 
     @Test
@@ -94,13 +94,13 @@ class RejectedTypeTest {
     void noBreakSpaceAfterTheType() {
         char[] expr = ("Zzz" + (char) 0xa0 + "z = 1").toCharArray();
 
-        assertEquals("Zzz", MvelExpression.Analysis.typeNamed(node(expr, 0, 3), expr, 6));
+        assertEquals("Zzz", MvelAnalysis.typeNamed(node(expr, 0, 3), expr, 6));
     }
 
     @Test
     @DisplayName("no node names nothing")
     void noNode() {
-        assertNull(MvelExpression.Analysis.typeNamed(null, "Zzz z = 1".toCharArray(), 6));
+        assertNull(MvelAnalysis.typeNamed(null, "Zzz z = 1".toCharArray(), 6));
     }
 
     @Test
@@ -109,13 +109,13 @@ class RejectedTypeTest {
         char[] expr = "Zzz z = 1".toCharArray();
         ASTNode literal = new LiteralNode(5, new ParserContext());
 
-        assertNull(MvelExpression.Analysis.typeNamed(literal, expr, 6));
+        assertNull(MvelAnalysis.typeNamed(literal, expr, 6));
     }
 
     @Test
     @DisplayName("an analysis that passes rejects no type")
     void passingAnalysisRejectsNoType() {
-        MvelExpression.Analysis analysis = new MvelExpression.Analysis("x = 1", IMPORTS);
+        MvelAnalysis analysis = new MvelAnalysis("x = 1", IMPORTS);
 
         analysis.compile();
 
@@ -125,7 +125,7 @@ class RejectedTypeTest {
     @Test
     @DisplayName("an analysis that rejects a declaration of an unknown type reads the type")
     void rejectingAnalysisReadsTheType() {
-        MvelExpression.Analysis analysis = new MvelExpression.Analysis("java.math.BigDecimall total = 0", IMPORTS);
+        MvelAnalysis analysis = new MvelAnalysis("java.math.BigDecimall total = 0", IMPORTS);
 
         assertThrows(CompileException.class, analysis::compile);
         assertEquals("java.math.BigDecimall", analysis.rejectedType());
@@ -138,7 +138,7 @@ class RejectedTypeTest {
                 + ParserContext.class.getName() + "@1a2b]\n[Near : {... A B = 1 ....}]\n[Line: 1, Column: 6]");
 
         assertEquals(List.of(new Issue(Severity.ERROR, 1, 6, "unknown class or illegal statement: A\\u202eB")),
-                MvelExpressionCompiler.compileError(mvel, "A" + (char) 0x202e + "B").issues());
+                MvelCompileErrors.compileError(mvel, "A" + (char) 0x202e + "B").issues());
     }
 
     @Test
@@ -146,7 +146,7 @@ class RejectedTypeTest {
     void longTypeShortened() {
         CompileException mvel = withMessage("[Error: unknown class or illegal statement: 5]");
 
-        String description = MvelExpressionCompiler.compileError(mvel, "Z".repeat(1_200)).issues().get(0).message();
+        String description = MvelCompileErrors.compileError(mvel, "Z".repeat(1_200)).issues().get(0).message();
 
         assertEquals("unknown class or illegal statement: " + "Z".repeat(920) + "... (280 more characters)",
                 description);
@@ -158,7 +158,7 @@ class RejectedTypeTest {
         CompileException mvel = withMessage("[Error: unknown class or illegal statement: Foo[]]");
 
         assertEquals("failed to compile: unknown class or illegal statement: Foo[]",
-                MvelExpressionCompiler.compileError(mvel, "Foo[]").getMessage());
+                MvelCompileErrors.compileError(mvel, "Foo[]").getMessage());
     }
 
     @Test
@@ -167,6 +167,6 @@ class RejectedTypeTest {
         CompileException mvel = withMessage("[Error: unexpected token: Zzz]");
 
         assertEquals("failed to compile: unexpected token: Zzz",
-                MvelExpressionCompiler.compileError(mvel, "Zzz").getMessage());
+                MvelCompileErrors.compileError(mvel, "Zzz").getMessage());
     }
 }
