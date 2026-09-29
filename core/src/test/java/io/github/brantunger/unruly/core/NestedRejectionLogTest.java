@@ -252,6 +252,25 @@ class NestedRejectionLogTest {
         assertInstanceOf(RuleCompilationException.class, thrown.getCause());
     }
 
+    @Test
+    @DisplayName("an action whose run()'s output supplier wraps a failed load() in its own exception names the run()")
+    void actionNestedFactoryWrappingALoadFailure() {
+        RulesEngine<Map<String, Object>> other = unloaded();
+        RulesEngine<Map<String, Object>> nested = engine("inner-rule", new StubExpressionLanguage(), () -> {
+            try {
+                loadDuplicates(other);
+            } catch (RuleCompilationException e) {
+                throw new IllegalStateException("could not reload", e);
+            }
+            return new HashMap<>();
+        });
+        RulesEngine<Map<String, Object>> engine = outer(() -> nested.run(new FactMap<>()));
+        String factory = "Output factory threw: could not reload (after " + NESTED_LOAD + DUPLICATE + ")";
+
+        assertFailed(failed(() -> engine.run(new FactMap<>())), OUTER_ACTION + NESTED_RUN + factory, DUPLICATE,
+                factory);
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"one rule", "two rules"})
     @DisplayName("an action whose load() fails to compile names that failure, all of it, logged once per rule")

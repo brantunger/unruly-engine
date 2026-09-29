@@ -16,6 +16,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.AbstractQueue;
@@ -137,6 +138,37 @@ class RuleSetTest {
                 closed.add(0);
             }
         };
+    }
+
+    /** A compiler of rules that keep no state between runs: every session it creates is {@link Session#none()}. */
+    private static ExpressionCompiler statelessCompiler() {
+        return new ExpressionCompiler() {
+            @Override
+            public CompiledCondition compileCondition(Expression expression) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public CompiledAction compileAction(Expression expression) {
+                throw new AssertionError("not compiled");
+            }
+
+            @Override
+            public Session newSession() {
+                return Session.none();
+            }
+        };
+    }
+
+    /**
+     * Reads this thread's count of the runs in progress on it, which only RuleSet keeps.
+     *
+     * @return The count, or {@code null} if the thread keeps none
+     */
+    private static int[] runsCountedOnThisThread() throws ReflectiveOperationException {
+        Field runs = RuleSet.class.getDeclaredField("RUNS_ON_THREAD");
+        runs.setAccessible(true);
+        return (int[]) ((ThreadLocal<?>) runs.get(null)).get();
     }
 
     /**
@@ -528,6 +560,24 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("a thread's count of runs is removed when its outermost run gives its copy back, so a pooled thread"
+            + " keeps nothing")
+    void theOutermostRunLeavesNoCountOnTheThread() throws Exception {
+        RuleSet rules = new RuleSet(List.of(RULE),
+                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.none(),
+                new CopyPermits(RuleSet.UNLIMITED));
+
+        RuleSet.Copy copy = rules.borrow(deadline());
+        try {
+            assertArrayEquals(new int[] {1}, runsCountedOnThisThread(), "the run is counted while it holds its copy");
+        } finally {
+            rules.release(copy);
+        }
+
+        assertNull(runsCountedOnThisThread(), "the thread still keeps a count, of no run");
+    }
+
+    @Test
     @DisplayName("a copy given back is counted as returned, and its permit is released")
     void copiesGivenBackAreCountedAndReleased() {
         CopyPermits permits = new CopyPermits(1);
@@ -625,11 +675,39 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("a run that saw a copy come back gives up once a later window passes with none")
+    void givingUpOnceCopiesStopComingBack() throws InterruptedException, TimeoutException {
+        Semaphore permits = new Semaphore(0);
+        AtomicLong calls = new AtomicLong();
+        // One copy comes back, to another run, during the first window, and none after it. A deadline far past the
+        // windows, so a run that kept waiting fails the test at it instead of holding it.
+        LongSupplier returned = () -> calls.getAndIncrement() == 0 ? 0L : 1L;
+
+        assertFalse(RuleSet.awaitPermit(permits, returned, 10, deadline()),
+                "nothing came back in the second window, so the run makes an extra copy");
+    }
+
+    @Test
     @DisplayName("a run that finds a free copy takes it without waiting at all")
     void takingAFreeCopy() throws InterruptedException, TimeoutException {
         Semaphore permits = new Semaphore(1);
 
         assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
+        assertEquals(0, permits.availablePermits());
+    }
+
+    @Test
+    @DisplayName("a run on an interrupted thread that finds a free copy takes it, rather than failing as interrupted")
+    void anInterruptedRunTakesAFreeCopy() throws InterruptedException, TimeoutException {
+        Semaphore permits = new Semaphore(1);
+
+        // Cleared whatever happens, so the tests after this one on the thread aren't interrupted as well.
+        Thread.currentThread().interrupt();
+        try {
+            assertTrue(RuleSet.awaitPermit(permits, () -> 0L, 10, Deadline.NONE));
+        } finally {
+            Thread.interrupted();
+        }
         assertEquals(0, permits.availablePermits());
     }
 
@@ -727,6 +805,46 @@ class RuleSetTest {
             }
         } finally {
             holder.giveBack();
+        }
+    }
+
+    @Test
+    @DisplayName("the first run of a rule list that needs no copies gives back the permit it took")
+    void aStatelessFirstRunGivesItsPermitBack() throws InterruptedException, TimeoutException {
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("n", statelessCompiler()), CopyLimit.of(1), permits, 1);
+
+        RuleSet.Copy copy = rules.borrow(deadline());
+        try {
+            assertEquals(RuleSet.Kind.SHARED, copy.kind(), "the first copy showed the rules need none");
+        } finally {
+            rules.release(copy);
+        }
+
+        assertEquals(1, permits.available().availablePermits(), "the engine's only permit is free again");
+    }
+
+    @Test
+    @DisplayName("a copy made at load that shows the rules need none is shared at once, so the first run takes no"
+            + " permit")
+    void aStatelessCopyMadeAtLoadIsShared() throws InterruptedException, TimeoutException {
+        CopyPermits permits = new CopyPermits(1);
+        // A window far longer than the test, so a first run that waited for the permit held would stop at its
+        // deadline rather than give up and learn from an extra copy.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("n", statelessCompiler()), CopyLimit.of(1), permits,
+                TimeUnit.MINUTES.toMillis(5));
+        rules.prepareCopies(1);
+        // The engine's only permit, held as a run of the rules a reload replaced holds it.
+        assertTrue(permits.available().tryAcquire());
+        try {
+            RuleSet.Copy copy = rules.borrow(deadline());
+            try {
+                assertEquals(RuleSet.Kind.SHARED, copy.kind(), "the copy made at load showed the rules need none");
+            } finally {
+                rules.release(copy);
+            }
+        } finally {
+            permits.available().release();
         }
     }
 
@@ -863,6 +981,40 @@ class RuleSetTest {
         assertEquals(limit, made.get(), "the runs that waited made no copy of their own");
         assertEachCopyClosedOnceThenTheCompiler(limit, closed);
         assertEquals(0, rules.waiters(), "no run is still counted as waiting");
+    }
+
+    @Test
+    @DisplayName("a run whose permit comes back without a copy takes one given back while it still counts as waiting,"
+            + " on a retired rule set, rather than making one")
+    void aRunTakesTheCopyGivenBackAsItGetsItsPermit() throws InterruptedException {
+        AtomicInteger made = new AtomicInteger();
+        HookedQueue idle = new HookedQueue(() -> { });
+        CopyPermits permits = new CopyPermits(2);
+        // A window far longer than the test, so the run that waits never gives up and makes an extra copy.
+        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", made, new CopyOnWriteArrayList<>())),
+                CopyLimit.of(2), permits, TimeUnit.MINUTES.toMillis(5), idle);
+        // One permit taken with no copy, so giving it back wakes the waiting run with no copy kept for it.
+        assertTrue(permits.available().tryAcquire());
+        Holder holder = holdOneCopy(rules);
+        VirtualRun waiter = startVirtualRun(rules);
+        awaitWaiters(rules, 1);
+        assertNull(rules.retire());
+        // The copy held is given back as the run that got the permit looks for an idle one, while it still counts as
+        // waiting, so the retired rule set keeps the copy for it.
+        idle.beforePoll.set(() -> {
+            try {
+                holder.giveBack();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        permits.available().release();
+        RuleSet.Copy copy = waiter.copy();
+        waiter.giveBack();
+
+        assertEquals(Map.of("a", new NumberedSession("a", 1)), copy.sessions(), "the run took the copy given back");
+        assertEquals(1, made.get(), "sessions created: only the held copy's");
     }
 
     @Test

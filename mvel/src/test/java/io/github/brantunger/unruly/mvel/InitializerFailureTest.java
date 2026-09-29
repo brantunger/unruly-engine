@@ -14,6 +14,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -42,6 +46,25 @@ class InitializerFailureTest {
 
     /** The class named {@link #LONG_SIMPLE_NAME}, defined by {@link #defineLongNamedFailure}. */
     private static Class<?> longNamedClass;
+
+    /** A Hangul filler: a letter that shows as nothing, which Java keeps in a name and the engine escapes. */
+    private static final String FILLER = String.valueOf((char) 0x3164);
+
+    /**
+     * The package of an exception class whose name escapes to more than a note has room for, as each Hangul filler
+     * escapes to six characters. The fillers are spread over the package and the class so that no directory or file
+     * name javac writes is longer than the 255 bytes a file system allows in one, in UTF-8, where each is three.
+     */
+    private static final String WIDE_PACKAGE = "wide" + FILLER.repeat(80) + ".wide" + FILLER.repeat(80);
+
+    /** The simple name of that exception class. */
+    private static final String WIDE_SIMPLE_NAME = "Wide" + FILLER.repeat(40);
+
+    /** The name of that exception class. */
+    private static final String WIDE_NAME = WIDE_PACKAGE + "." + WIDE_SIMPLE_NAME;
+
+    /** A new exception of the class named {@link #WIDE_NAME}, defined by {@link #defineWideNamedFailure}. */
+    private static Constructor<?> wideNamedConstructor;
 
     public static class PlainInit {
         public static int x = 1;
@@ -251,6 +274,26 @@ class InitializerFailureTest {
         }
     }
 
+    public static class WideClassNameInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw wideNamedFailure("init failed");
+            }
+        }
+    }
+
+    public static class WideClassNameNoMessageInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                throw wideNamedFailure(null);
+            }
+        }
+    }
+
     public static class LongClassNameNoMessageInit {
         public static int x = 1;
 
@@ -273,6 +316,35 @@ class InitializerFailureTest {
                         + "    public " + LONG_SIMPLE_NAME + "(String message) { super(message); }\n}\n")));
         longNamedClass = MethodHandles.lookup().defineClass(Files.readAllBytes(dir.resolve(pkg.replace('.', '/'))
                 .resolve(LONG_SIMPLE_NAME + ".class")));
+    }
+
+    /**
+     * Compiles the exception class named {@link #WIDE_NAME}, and loads it in a class loader of its own whose parent is
+     * this test's, once for the JVM.
+     */
+    @BeforeAll
+    static void defineWideNamedFailure(@TempDir Path dir) throws Exception {
+        assertCompiles(List.of("-proc:none", "-d", dir.toString()), List.of(source(WIDE_SIMPLE_NAME,
+                "package " + WIDE_PACKAGE + ";\npublic class " + WIDE_SIMPLE_NAME + " extends RuntimeException {\n"
+                        + "    public " + WIDE_SIMPLE_NAME + "(String message) { super(message); }\n}\n")));
+        Path classFile = dir.resolve(WIDE_NAME.replace('.', '/') + ".class");
+        for (Path name : dir.relativize(classFile)) {
+            assertTrue(name.toString().getBytes(StandardCharsets.UTF_8).length <= 255,
+                    "a directory or file name longer than Linux and macOS allow: " + name);
+        }
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {dir.toUri().toURL()},
+                InitializerFailureTest.class.getClassLoader())) {
+            wideNamedConstructor = Class.forName(WIDE_NAME, true, loader).getConstructor(String.class);
+        }
+    }
+
+    /** A new exception of the class named {@link #WIDE_NAME}, for an initializer to throw. */
+    private static RuntimeException wideNamedFailure(String message) {
+        try {
+            return (RuntimeException) wideNamedConstructor.newInstance(message);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** A new exception of the class named {@link #LONG_SIMPLE_NAME}, for an initializer to throw. */
@@ -459,5 +531,34 @@ class InitializerFailureTest {
 
         assertEquals(PREFIX + "null (caused by " + name.substring(0, 200) + "... (49 more characters))",
                 loadFailure(LongClassNameNoMessageInit.class).getMessage());
+    }
+
+    // #780: no class name in the tests escaped to more than the note's room, so neither fitting it to the room nor
+    // the room it leaves a message was checked.
+    @Test
+    @DisplayName("a root cause's class name that escapes to more than a note has room for is shortened to fit")
+    void wideRootCauseClassNameWithoutAMessageFits() throws InterruptedException {
+        String description = loadFailure(WideClassNameNoMessageInit.class).issues().get(0).message();
+
+        assertEquals("null (caused by " + wideNameShown(160) + ")", description);
+        assertTrue(description.length() <= FactNames.MAX_DESCRIPTION_LENGTH, description.length() + " characters");
+    }
+
+    @Test
+    @DisplayName("a root cause's class name that escapes to more than a note has room for leaves room for its message")
+    void wideRootCauseClassNameLeavesRoomForTheMessage() throws InterruptedException {
+        String description = loadFailure(WideClassNameInit.class).issues().get(0).message();
+
+        assertEquals("null (caused by " + wideNameShown(158) + ": init failed)", description);
+        assertTrue(description.length() <= FactNames.MAX_DESCRIPTION_LENGTH, description.length() + " characters");
+    }
+
+    /**
+     * The name of the class named {@link #WIDE_NAME} as a note shows it: its first {@code shown} characters, each
+     * Hangul filler escaped, and a count of the rest.
+     */
+    private static String wideNameShown(int shown) {
+        return WIDE_NAME.substring(0, shown).replace(FILLER, "\\u3164") + "... (" + (WIDE_NAME.length() - shown)
+                + " more characters)";
     }
 }

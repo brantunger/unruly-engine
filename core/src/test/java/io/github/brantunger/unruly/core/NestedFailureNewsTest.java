@@ -70,6 +70,17 @@ class NestedFailureNewsTest {
     }
 
     @Test
+    @DisplayName("a nested engine failure is noted by its message alone, which already names a root cause without a"
+            + " message")
+    void engineFailureNotedByItsMessage() {
+        ReportedFailure nested = new ReportedFailure("Failed to execute action for rule 'inner': "
+                + "java.lang.IllegalStateException", new IllegalStateException());
+
+        assertEquals("audit failed (after a nested run() failed: " + nested.getMessage() + ")",
+                Failures.describe(new IllegalStateException("audit failed", nested)));
+    }
+
+    @Test
     @DisplayName("a wrapper whose cause's toString() throws still has a message of its own")
     void causeWhoseTextCantBeRead() {
         IllegalStateException wrapper = new IllegalStateException("fallback", new UnreadableMessage(inner));
