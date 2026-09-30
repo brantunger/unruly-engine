@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.15.0](https://github.com/brantunger/unruly-engine/compare/v2.14.0...v2.15.0) (2026-09-30)
+
+
+### Features
+
+* the contract kit repeats a failed run through one copy, warms the compiler it closes, and tries a condition's write on a bean ([#872](https://github.com/brantunger/unruly-engine/issues/872)) ([9630bd1](https://github.com/brantunger/unruly-engine/commit/9630bd15bebd3098881d17bbfda608f187d650f1))
+
 ## [2.14.0](https://github.com/brantunger/unruly-engine/compare/v2.13.7...v2.14.0) (2026-09-30)
 
 
