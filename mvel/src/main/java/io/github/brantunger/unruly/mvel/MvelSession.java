@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.language.Session;
 
-import java.io.Serializable;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -14,15 +13,15 @@ import java.util.Map;
  */
 final class MvelSession implements Session {
 
-    private final Map<MvelExpression, Serializable> expressions = new IdentityHashMap<>();
+    private final Map<MvelExpression, MvelExpression.Copy> expressions = new IdentityHashMap<>();
 
     /**
      * Returns this session's compiled form of an expression, compiling it the first time.
      *
      * @param expression The expression
-     * @return MVEL's compiled expression, which only this session runs
+     * @return MVEL's compiled expression and the configuration it was compiled with, which only this session runs
      */
-    Serializable compiled(MvelExpression expression) {
+    MvelExpression.Copy compiled(MvelExpression expression) {
         return expressions.computeIfAbsent(expression, MvelExpression::newCompiled);
     }
 }

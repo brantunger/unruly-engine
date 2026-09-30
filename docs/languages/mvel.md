@@ -1,7 +1,7 @@
 # ⚡ MVEL
 
 MVEL is the engine's default expression language: a rule is written in MVEL when its `language` is unset or
-`"mvel"`. MVEL looks like Java, with some extra operators and looser typing; see
+`"mvel"`. MVEL looks like Java, with extra operators and looser typing; see
 [MVEL gotchas](mvel-gotchas.md).
 
 [← Documentation index](../README.md)
@@ -57,7 +57,7 @@ or by assigning a property. An assignment such as `output.approved = true` isn't
 setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
 each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
 
-The value the action evaluates to is ignored, so `output.approved = true; 42` is fine. Assigning to `output` itself,
+The action's value is ignored, so `output.approved = true; 42` is fine. Assigning to `output` itself,
 as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
 
 So does setting a property the output has no setter or public field for, such as a record's component, on an output
@@ -75,7 +75,7 @@ A condition may also run several statements, branch or loop, as long as nothing 
 
 ## 📥 Classes and imports
 
-Without an import, MVEL resolves these class names on their own, as well as the primitive type names `boolean`
+Without an import, MVEL resolves these class names, and the primitive type names `boolean`
 `byte` `char` `double` `float` `int` `long` `short`:
 
 | Built-in class names |
@@ -112,8 +112,7 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 - So is a string over 1,000 characters or 64 dot-separated parts, before any lookup.
 - So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
 - A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted.
-- An imported class's name can't be a [fact name](#fact-names-mvel-rejects), such as `Date` with
-  `imports("java.util")`.
+- An imported class's name can't be a [fact name](#fact-names-mvel-rejects).
 - `build()` loads a single-class import such as `"java.time.LocalDate"` with its thread's context class loader;
   a valid name it can't load as a class is imported as a package.
 - `load()` looks up classes in imported packages with its thread's context class loader, and `run()` checks fact
@@ -136,7 +135,7 @@ Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming th
 
 ## 📁 Facts in MVEL
 
-A rule refers to a fact by its name, as a variable. This section adds MVEL's details to [Facts](../facts.md).
+A rule refers to a fact by its name, as a variable; see also [Facts](../facts.md).
 `applicant.creditScore` reads a public getter, a record accessor or a public field. A
 misspelled property, or a private field with no getter, fails the run with
 `could not access: creditScor; in class: com.example.Applicant`.
@@ -153,7 +152,7 @@ A name must be a Java identifier. `my-fact` would read as `my - fact`, so it, `2
 'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java identifier
 ```
 
-These identifiers are rejected too: MVEL reads them as something else before looking at the facts:
+MVEL reads these as something else before looking at the facts, so they're rejected too:
 
 | Kind | Names |
 | --- | --- |
@@ -192,14 +191,14 @@ a `RuleExecutionException` whose message has one of these, the second when the r
 unable to resolve token: unable to resolve variable 'x'
 ```
 
-Check with `isdef` before using a fact that may be left out, and for `null` before reading its property:
+Check with `isdef` for a fact that may be left out, and for `null` before reading its property:
 
 ```java
 .condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
 ```
 
-A `Map` fact works the same way. A key that isn't in the map is an error, not `null`, on purpose: a missing key is
-usually a misspelled rule.
+A `Map` fact works the same way: a missing key is an error, not `null`, on purpose, as it's usually a misspelled
+rule.
 
 | Condition, for an `order` map with no `missing` key | Result |
 | --- | --- |
@@ -211,7 +210,7 @@ usually a misspelled rule.
 ## 🦺 Strong typing
 
 MVEL can compile rules against the facts an engine declares, so a misspelled property or an unknown fact fails
-`load()` with its line and column rather than a run. Turn it on with MVEL's one option:
+`load()` with its line and column, not a run. Turn it on with MVEL's one option:
 
 ```java
 RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -222,9 +221,9 @@ RulesEngineBuilder.firstMatch(LoanDecision::new)
         .build();
 ```
 
-A misspelled name then fails `load()`, such as `.condition("applicant.creditScor >= 750")` with
-`RuleCompilationException: unqualified type ... creditScor`. Strong typing only works when MVEL can check everything,
-so with it on, `load()` fails, saying why, unless all of these hold:
+`.condition("applicant.creditScor >= 750")` then fails `load()` with
+`RuleCompilationException: unqualified type ... creditScor`. With strong typing on, `load()` fails, saying why,
+unless all of these hold, so MVEL can check everything:
 
 | Needed | Why |
 | --- | --- |
@@ -247,8 +246,8 @@ doesn't catch a condition that isn't a boolean; the engine checks that for every
   | `def bonus(score) { score / 100 }` | Not possible: write the expression inline |
 
 - Any other option for `mvel`, or a value other than `true` or `false`, fails `load()` once MVEL compiles the rule list
-  (a rule written in MVEL, including one that names no language when MVEL is the default, or an empty rule list with
-  MVEL as the default), so a typo can't leave strong typing silently off.
+  (any MVEL rule, named or by default, or an empty list with MVEL as the default), so a typo can't leave strong
+  typing silently off.
 
 ## 🚨 Errors when rules load
 
@@ -294,9 +293,15 @@ its class instead, such as Math.max(a, b).` See
 **An over-long or late `import pkg.*;`** fails; see [Classes and imports](#-classes-and-imports).
 
 **A call through a class named with its package with something glued to it**, such as `java.lang.Math.abs(1)x`,
-sends MVEL's analysis round in a loop. `load()` reports `MVEL's analysis went round in a loop, ...` at line and column
-0, usually in milliseconds, but about 90 seconds for a 4,000-character argument, 13 minutes with brackets nested 50
-deep in it. `m.a.a...` with 93 or more `.a` in as many levels of needless parentheses is wrongly reported too.
+fails `load()` with `MVEL's analysis went round in a loop, ...` at line and column 0, usually in milliseconds, but
+about 90 seconds for a 4,000-character argument, 13 minutes with brackets nested 50 deep in it. `m.a.a...` with 93
+or more `.a` in as many levels of needless parentheses is wrongly reported too.
+
+**A call after a package-qualified class and a non-ASCII space**, such as `java.lang.String.class`, then U+00A0, then
+`(2)`, passes `load()`, but a run reaching it fails the rule after 10,000 + 20 × the expression's length class-loader
+requests (about 20 ms at 100 characters, 4.5 s at 100,000), even past the deadline, with
+`MVEL went round in a loop while running the expression, ...`. Package-qualified calls nested hundreds deep, in a
+copy's first run, and `def` recursion past 10,000 deep, importing a package, on a huge stack, are misreported too.
 
 **A condition that doesn't compile hides its action's errors** until the next `load()`; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
@@ -308,19 +313,19 @@ position.
 
 ## 📑 Compiled copies
 
-This is why MVEL needs [compiled copies](../compiled-copies.md), and what they cost.
+Why MVEL needs [compiled copies](../compiled-copies.md), and their cost.
 
 MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact name
-to a different class, as when `applicant` is an interface with several implementations, or a `Map` in one run and a
-record in another, MVEL replaces that accessor without synchronization. Two threads sharing the expression could then
-fail intermittently with a `RuleExecutionException` caused by a `ClassCastException`. So concurrent runs never share
-a compiled expression: each copy holds its own in its session.
+to a different class, as with several implementations of an interface, or a `Map` in one run and a record in another,
+MVEL replaces that accessor without synchronization. Two threads sharing the expression could fail intermittently
+with a `RuleExecutionException` caused by a `ClassCastException`. So concurrent runs never share a compiled expression:
+each copy holds its own in its session.
 
 A copy is built lazily:
 
 - A session compiles an expression again the **first time that copy runs it**, so a copy pays only for the rules it
   reaches.
-- The first session to run an expression takes the form `load()` compiled, so that work isn't wasted.
+- The first session to run an expression takes the form `load()` compiled.
 - As it runs, MVEL generates accessor classes for that session alone.
 
 A copy an engine makes when the rules load, with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load), is
@@ -333,15 +338,14 @@ keeps making them, by starting a run of the same engine on another thread under 
 CPU and metaspace.
 
 A session's expressions belong to one run at a time, so they're safe with any MVEL optimizer, and the engine leaves
-MVEL's global optimizer setting alone: its default JIT optimizer stays on, for other libraries too, unless you pass
-`-Dmvel2.disable.jit=true`. Earlier versions switched the whole JVM to the slower reflective optimizer as the engine
-class loaded, unless started with `-Dunruly.mvel.jit=true` (`AbstractRulesEngine.JIT_PROPERTY`,
-removed in 2.0).
+MVEL's global optimizer setting alone: its default JIT optimizer stays on unless you pass
+`-Dmvel2.disable.jit=true`. Before 2.0, the engine switched the JVM to the slower reflective optimizer as its
+class loaded, unless started with `-Dunruly.mvel.jit=true` (`AbstractRulesEngine.JIT_PROPERTY`).
 
 ### The dynamic optimizer and class loaders
 
-MVEL's dynamic optimizer registers an accessor the first time an expression is evaluated, in a static list of up to
-1,500, dropping the oldest as newer ones arrive. Dropping one frees nothing while the engine holding that compiled
+MVEL's dynamic optimizer registers an accessor the first time an expression runs, in a static list of up to
+1,500, dropping the oldest as newer ones arrive. Dropping one frees nothing while the engine holding that
 expression is alive: the expression still refers to the accessor.
 
 Class loaders stay reachable through the optimizer in two ways. The optimizer's own class loader, held for the JVM's
@@ -349,12 +353,12 @@ life, has as parent the context class loader of whatever set MVEL up first; the 
 A rule list's loader is held while its accessors are in the list. Neither closing nor dropping the engine
 releases them.
 
-Most applications keep one class loader for life and never notice. One that discards loaders, on a WAR redeploy, a
-plugin or tenant reload, or in a test harness isolating each case, keeps one per cycle, with its classes and metaspace.
+An application that discards class loaders, on a WAR redeploy, a plugin or tenant reload, or a test harness
+isolating each case, keeps one per cycle, with its classes and metaspace.
 
 `-Dmvel2.disable.jit=true` switches the dynamic optimizer off, and the loaders are collected. MVEL reads it once, as
 its optimizer factory initializes, so it belongs on the JVM's command line, and costs reflective accessors instead of
-JIT ones everywhere in that JVM, other MVEL users included.
+JIT ones JVM-wide, other MVEL users included.
 A GraalVM native image needs it too, or its first condition fails; see
 [MVEL's JIT must be off](../native-image.md#-mvels-jit-must-be-off).
 
@@ -382,7 +386,7 @@ message as it wraps the exception, so what `getMessage()` threw becomes the caus
 On JDK 21 to 23, MVEL rules run from many virtual threads can **deadlock**: MVEL's property cache is guarded by one
 JVM-wide monitor, and a virtual thread waiting on a monitor keeps the platform thread carrying it. Once every carrier
 is held, no run completes again. The engine's default limit on virtual threads (one copy per two processors) makes that
-less likely, but doesn't prevent it:
+rarer but doesn't prevent it:
 
 - each engine has its own limit, so several engines' limits add up;
 - a run that waited five seconds without a copy coming back takes an extra copy on its own thread;
@@ -392,7 +396,7 @@ less likely, but doesn't prevent it:
 
 So on JDK 21 to 23:
 
-- use JDK 24 or later if you can, where a virtual thread waiting on a monitor releases its carrier (JEP 491). It
+- use JDK 24 or later, where a virtual thread waiting on a monitor releases its carrier (JEP 491). It
   still keeps its carrier while the JVM looks up a class, which MVEL does whenever it compiles an
   expression, including each time a run makes a new compiled copy (see
   [Making copies at load](../compiled-copies.md#making-copies-at-load));
