@@ -48,6 +48,16 @@ apiCheck {
     testKitLinkage = layout.settingsDirectory.file('config/japicmp/test-kit-linkage.txt')
 }
 
+// StackEndSweepTest overflows its thread's stack thousands of times, at every depth near the end. HotSpot throws a
+// StackOverflowError once a Java frame has less stack left than its shadow zone, the room it keeps for the JVM's own
+// code and native code below that frame; code there that needs more runs through the guard pages, and the JVM dies
+// with nothing to catch. The zone is 20 pages on every 64-bit platform except Windows on x64, where it is 8, and there
+// the test JVM died in CI with STATUS_STACK_OVERFLOW (0xC00000FD). 20 pages gives Windows the room the others have.
+// The sweep measures from where the stack ends, so it still reaches the same last depths.
+tasks.named('test', Test) {
+    jvmArgs '-XX:StackShadowPages=20'
+}
+
 // The Javadoc documents the API only. core's public classes exist for the API package and the test kit, not users.
 tasks.named('javadoc', Javadoc) {
     exclude 'io/github/brantunger/unruly/core/**'

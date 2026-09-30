@@ -156,9 +156,9 @@ file is under `docs/` or ends in `.md`, and none is under a `src/` directory. Th
 pull requests only. When it fails, the build and `native-image` run anyway, and a push never skips them.
 
 A new push to a pull request cancels the run it supersedes. A run on `main` is never cancelled once it has started:
-the next push to `main` waits for it, so a run that starts isn't cut off before its cache save and its coverage
-upload. It isn't a queue, though: GitHub keeps one waiting run per branch, so a later push to `main` replaces a
-waiting one, whose commit gets a cancelled run and no build.
+the next push to `main` waits for it, so a run isn't cut off before its cache save and coverage upload. It isn't a
+queue: GitHub keeps one waiting run per branch, so a later push to `main` replaces a waiting one, whose commit gets
+a cancelled run and no build.
 
 `docs-and-hygiene` only warns for now, except its last step, which fails the job and `ci-result`: another failed step
 shows as an annotation, and the job stays green. A page written before the style guide may have findings in lines you
@@ -186,9 +186,9 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 
 What the jobs leave behind:
 
-- **Artifacts:** each build job's JUnit XML, always, in `jacoco-report-jdk21-<os>` with the coverage or in
-  `test-results-jdk25-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` and `dependency-verification-report-*`
-  only when a job fails.
+- **Artifacts:** each build job's JUnit XML and test JVM crash logs, always, in `jacoco-report-jdk21-<os>`, with
+  the coverage, or `test-results-jdk25-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` and
+  `dependency-verification-report-*` only when a job fails.
 - **Codecov** gets one upload per run, from the Linux JDK 21 job, with OIDC. Fork and Dependabot runs skip it:
   they get no OIDC token.
 - **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests and the release

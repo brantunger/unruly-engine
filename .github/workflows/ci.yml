@@ -162,11 +162,16 @@ jobs:
         if: always() && matrix.java-version == '21'
         with:
           name: jacoco-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
+          # A test JVM that crashes writes hs_err_pid*.log to its module's directory, where Gradle runs it.
           path: |
             build/reports/jacoco/
             core/build/test-results/test/
             mvel/build/test-results/test/
             test-kit/build/test-results/test/
+            core/hs_err_pid*.log
+            mvel/hs_err_pid*.log
+            test-kit/hs_err_pid*.log
+            **/replay_pid*.log
 
       # The JDK 25 leg runs only the tests, so it has no coverage, but its test results show what ran and failed.
       - name: Upload Test Results
@@ -174,10 +179,15 @@ jobs:
         if: always() && matrix.java-version != '21'
         with:
           name: test-results-jdk${{ matrix.java-version }}-${{ matrix.os }}
+          # A test JVM that crashes writes hs_err_pid*.log to its module's directory, where Gradle runs it.
           path: |
             core/build/test-results/test/
             mvel/build/test-results/test/
             test-kit/build/test-results/test/
+            core/hs_err_pid*.log
+            mvel/hs_err_pid*.log
+            test-kit/hs_err_pid*.log
+            **/replay_pid*.log
 
       # Codecov gets one report per run, from Linux, and a failed upload fails the job. The upload authenticates
       # with the job's OIDC token, which GitHub doesn't issue to a pull request from a fork or to any run Dependabot
