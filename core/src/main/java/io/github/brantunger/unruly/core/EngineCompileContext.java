@@ -158,7 +158,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(issue, "issue must not be null");
         if (warningsLogged) {
             log.warn("{} has a warning{}: {}", Failures.expression(source.kind(), source.ruleName()),
-                    Failures.position(issue), Failures.escape(Failures.truncate(issue.message())));
+                    Failures.position(issue), Failures.clip(issue.message()));
         }
     }
 }

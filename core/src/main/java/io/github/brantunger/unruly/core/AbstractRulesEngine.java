@@ -1895,15 +1895,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             output = outputFactory.get();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            // Described before unlogged() records a fatal error it's told of for the first time.
+            // Described before reportCalledCodeFailure() asks unlogged(), which records a fatal error it's told of
+            // for the first time.
             String msg = Failures.lineOr(() -> Failures.below(e).logged() != null || Failures.wrapsLoggedFatal(e)
                     ? "Output factory threw: " + Failures.describe(e)
                     : "Output factory threw " + Failures.describeWithClass(e),
                     "Output factory threw " + e.getClass().getName());
-            if (LoggedFailures.unlogged(e)) {
-                log.error(msg);
-            }
-            Failures.throwIfPresent(Failures.fatalError(e));
+            reportCalledCodeFailure(msg, e);
             throw new ReportedFailure(msg, e);
         }
         if (output == null) {
@@ -1912,6 +1910,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw new ReportedFailure(msg, null);
         }
         return output;
+    }
+
+    /**
+     * Logs the failure of code the engine calls but doesn't own, such as a language's session or the output factory,
+     * unless a nested run or load already logged it (see {@link LoggedFailures}), and rethrows a fatal {@link Error}
+     * found in its cause chain unchanged. The caller keeps the interrupt status first (see
+     * {@link Failures#keepInterruptStatus}), then builds the message, as describing the failure reads what was logged
+     * before this records it, and throws a {@link ReportedFailure} with that message itself once this returns.
+     *
+     * @param msg What failed
+     * @param e   What the called code threw
+     */
+    static void reportCalledCodeFailure(String msg, Throwable e) {
+        if (LoggedFailures.unlogged(e)) {
+            log.error(msg);
+        }
+        Failures.throwIfPresent(Failures.fatalError(e));
     }
 
     private ConditionResult parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
@@ -2407,7 +2422,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String what = failures.stream().allMatch(failure -> failure.getRuleName() != null)
                 ? " rules failed to compile: "
                 : " failures while loading the rules: ";
-        // Bounded, as a rule table loaded after a breaking change can fail thousands of rules at once.
+        // Bounded, as a rule table loaded after a breaking change can fail thousands of rules at once. Whole failures
+        // are left out, not characters, so this doesn't go through Failures.truncate: each message is built from
+        // parts shortened and escaped one at a time, so a single message isn't capped at MAX_DESCRIPTION_LENGTH, and
+        // a cut could fall inside an escape.
         StringBuilder listed = new StringBuilder(failures.get(0).getMessage());
         int count = 1;
         while (count < failures.size()
@@ -2493,8 +2511,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             compiled = compilation.apply(source);
         } catch (InvalidExpressionException e) {
             // A language's own subclass may have a getMessage() or an issues() that throws.
-            String reason = Failures.escape(Failures.truncate(
-                    Failures.messageOr(e, "was rejected by its expression language")));
+            String reason = Failures.clip(Failures.messageOr(e, "was rejected by its expression language"));
             throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(),
                     Failures.issuesOf(e));
         } catch (Throwable e) {
