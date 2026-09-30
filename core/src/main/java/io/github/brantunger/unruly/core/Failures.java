@@ -495,7 +495,7 @@ public final class Failures {
      * @param e The exception
      * @return Its message, or {@code null} if it has none or it can't be read
      */
-    private static String readableMessage(Throwable e) {
+    static String readableMessage(Throwable e) {
         return read(e::getMessage, thrown -> null);
     }
 
@@ -963,7 +963,7 @@ public final class Failures {
      * throws (see {@link #causeOf}), or after {@value #MAX_CAUSE_CHAIN_LENGTH} links: a {@code getCause()} of its own
      * that returns a new exception every time would otherwise make a chain that never ends.
      */
-    private static List<Throwable> causeChain(Throwable e) {
+    static List<Throwable> causeChain(Throwable e) {
         List<Throwable> chain = new ArrayList<>();
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable t = e; t != null && chain.size() < MAX_CAUSE_CHAIN_LENGTH && seen.add(t); t = causeOf(t)) {

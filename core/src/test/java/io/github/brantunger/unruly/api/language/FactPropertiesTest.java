@@ -3,6 +3,8 @@ package io.github.brantunger.unruly.api.language;
 import io.github.brantunger.unruly.hidden.HiddenFacts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.lang.reflect.Proxy;
@@ -13,8 +15,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.AbstractCollection;
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -163,13 +170,16 @@ class FactPropertiesTest {
         }
     }
 
-    /** A lazily loaded map whose backend fails, so its lookups and its iteration throw. */
+    /**
+     * A lazily loaded map whose backend fails, so its lookups and its iteration throw, a checked exception too,
+     * which the map doesn't declare.
+     */
     static final class FailingMap extends AbstractMap<String, Object> {
 
-        private final RuntimeException failure;
+        private final Exception failure;
         private final boolean failsOnContainsKey;
 
-        FailingMap(RuntimeException failure, boolean failsOnContainsKey) {
+        FailingMap(Exception failure, boolean failsOnContainsKey) {
             this.failure = failure;
             this.failsOnContainsKey = failsOnContainsKey;
         }
@@ -177,9 +187,213 @@ class FactPropertiesTest {
         @Override
         public boolean containsKey(Object key) {
             if (failsOnContainsKey) {
-                throw failure;
+                throw undeclared(failure);
             }
             return true;
+        }
+
+        @Override
+        public Object get(Object key) {
+            throw undeclared(failure);
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            throw undeclared(failure);
+        }
+    }
+
+    /**
+     * Throws any exception without declaring it, as code compiled from another JVM language can throw a checked one.
+     *
+     * @param failure What to throw
+     * @param <E>     What the compiler takes it for
+     * @return Nothing: it always throws, so a caller can write {@code throw undeclared(failure)}
+     * @throws E {@code failure}, whatever it is
+     */
+    @SuppressWarnings("unchecked")
+    static <E extends Exception> RuntimeException undeclared(Exception failure) throws E {
+        throw (E) failure;
+    }
+
+    /** A map key whose {@code toString()} throws. */
+    static final class BadKey {
+
+        @Override
+        public String toString() {
+            throw new IllegalArgumentException("no name");
+        }
+    }
+
+    /**
+     * A lazily loaded collection over a cursor, read only through {@code forEach}: its iterator isn't there. Its own
+     * calls may throw, a checked exception too: its {@code size()}, or its {@code forEach} before the first line or
+     * after it.
+     */
+    static final class Cursor extends AbstractCollection<Object> {
+
+        private final Exception failure;
+        private final String failsOn;
+
+        Cursor(Exception failure, String failsOn) {
+            this.failure = failure;
+            this.failsOn = failsOn;
+        }
+
+        @Override
+        public int size() {
+            if ("size".equals(failsOn)) {
+                throw undeclared(failure);
+            }
+            return 2;
+        }
+
+        @Override
+        public void forEach(Consumer<? super Object> action) {
+            if ("forEach".equals(failsOn)) {
+                throw undeclared(failure);
+            }
+            action.accept("line 1");
+            if ("forEach after a line".equals(failsOn)) {
+                throw undeclared(failure);
+            }
+            action.accept("line 2");
+        }
+
+        @Override
+        public Iterator<Object> iterator() {
+            throw new UnsupportedOperationException("a cursor is read with forEach");
+        }
+    }
+
+    /** A collection whose {@code forEach} runs in parallel, on the common pool's threads as well as the caller's. */
+    static final class ParallelLines extends AbstractCollection<Object> {
+
+        private final List<Object> lines;
+
+        ParallelLines(List<Object> lines) {
+            this.lines = lines;
+        }
+
+        @Override
+        public void forEach(Consumer<? super Object> action) {
+            lines.parallelStream().forEach(action);
+        }
+
+        @Override
+        public Iterator<Object> iterator() {
+            return lines.iterator();
+        }
+
+        @Override
+        public int size() {
+            return lines.size();
+        }
+    }
+
+    /** A collection whose {@code forEach} wraps whatever the action throws in an exception of its own. */
+    static final class Wrapping extends AbstractCollection<Object> {
+
+        private final List<Object> lines;
+
+        Wrapping(List<Object> lines) {
+            this.lines = lines;
+        }
+
+        @Override
+        public void forEach(Consumer<? super Object> action) {
+            try {
+                lines.forEach(action);
+            } catch (RuntimeException e) {
+                throw new IllegalStateException("iteration failed", e);
+            }
+        }
+
+        @Override
+        public Iterator<Object> iterator() {
+            return lines.iterator();
+        }
+
+        @Override
+        public int size() {
+            return lines.size();
+        }
+    }
+
+    /** An exception whose causes never end: each is a new one. */
+    static final class EndlessCause extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        EndlessCause() {
+            super("cursor lost");
+        }
+
+        @Override
+        public synchronized Throwable getCause() {
+            return new EndlessCause();
+        }
+    }
+
+    /** An exception whose {@code getCause()} throws: an unchecked exception, a checked one undeclared, or an error. */
+    static final class UnreadableCause extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private final transient Throwable thrown;
+
+        UnreadableCause(Throwable thrown) {
+            super("cursor lost");
+            this.thrown = thrown;
+        }
+
+        @Override
+        public synchronized Throwable getCause() {
+            if (thrown instanceof Error error) {
+                throw error;
+            }
+            throw undeclared((Exception) thrown);
+        }
+    }
+
+    /** A bean whose getter runs out of memory. */
+    public static final class Exhausted {
+
+        private final OutOfMemoryError error;
+
+        Exhausted(OutOfMemoryError error) {
+            this.error = error;
+        }
+
+        public int getMemory() {
+            throw error;
+        }
+    }
+
+    /** A bean that tells whether the thread reading it holds a lock. */
+    public static final class LockProbe {
+
+        private final Object lock;
+
+        LockProbe(Object lock) {
+            this.lock = lock;
+        }
+
+        public boolean isLocked() {
+            return Thread.holdsLock(lock);
+        }
+    }
+
+    /** A map that has the key, and computes its value from a source that fails. */
+    static final class LazyMap extends AbstractMap<String, Object> {
+
+        private final RuntimeException failure;
+
+        LazyMap(RuntimeException failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public boolean containsKey(Object key) {
+            return "total".equals(key);
         }
 
         @Override
@@ -189,16 +403,17 @@ class FactPropertiesTest {
 
         @Override
         public Set<Entry<String, Object>> entrySet() {
-            throw failure;
+            return Set.of();
         }
     }
 
-    /** A map key whose {@code toString()} throws. */
-    static final class BadKey {
+    /** An exception whose {@code getMessage()} throws, as one built from a field that is {@code null} does. */
+    static final class UnreadableMessage extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
 
         @Override
-        public String toString() {
-            throw new IllegalArgumentException("no name");
+        public String getMessage() {
+            throw new NullPointerException("no detail");
         }
     }
 
@@ -692,6 +907,218 @@ class FactPropertiesTest {
                 () -> FactProperties.toData(Map.of("broken", new Broken()), 2));
         assertTrue(nested.getMessage().contains("Reading 'boom'"), nested.getMessage());
         assertEquals("boom", nested.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("what an accessor threw is named in the message after a colon, so the reason isn't only in the trace")
+    void anAccessorsMessageIsKept() {
+        IllegalStateException getter = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new Broken(), "boom"));
+        assertEquals("Reading 'boom' on a " + Broken.class.getName() + " failed: boom", getter.getMessage());
+
+        IllegalStateException converted = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new Broken(), 1));
+        assertEquals("Reading 'boom' on a " + Broken.class.getName() + " failed: boom", converted.getMessage());
+
+        IllegalArgumentException backendDown = new IllegalArgumentException("backend down");
+        IllegalStateException onGet = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(backendDown, false), "score"));
+        assertEquals("Reading 'score' on a " + FailingMap.class.getName() + " failed: backend down",
+                onGet.getMessage());
+        IllegalStateException onContainsKey = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(backendDown, true), "score"));
+        assertEquals("Reading 'score' on a " + FailingMap.class.getName() + " failed: backend down",
+                onContainsKey.getMessage());
+        IllegalStateException onEntries = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new FailingMap(backendDown, false), 1));
+        assertEquals("Reading the entries of a " + FailingMap.class.getName() + " failed: backend down",
+                onEntries.getMessage());
+    }
+
+    @Test
+    @DisplayName("what an accessor threw is kept whole, for the engine to shorten, and left out when it has none")
+    void anAccessorsMessageIsKeptWholeOrLeftOut() {
+        String what = "Reading 'score' on a " + FailingMap.class.getName() + " failed";
+        IllegalStateException longMessage = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(new IllegalStateException("x".repeat(1_100)), false),
+                        "score"));
+        assertEquals(what + ": " + "x".repeat(1_100), longMessage.getMessage());
+
+        IllegalStateException noMessage = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(new IllegalStateException(), false), "score"));
+        assertEquals(what, noMessage.getMessage());
+
+        UnreadableMessage unreadable = new UnreadableMessage();
+        IllegalStateException unreadableMessage = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(unreadable, false), "score"));
+        assertEquals(what, unreadableMessage.getMessage());
+        assertSame(unreadable, unreadableMessage.getCause());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"size", "forEach", "forEach after a line"})
+    @DisplayName("what a collection's own calls throw in toData is wrapped, never mistaken for a bad argument")
+    void aCollectionThatThrowsWhileConverting(String failsOn) {
+        IllegalArgumentException closed = new IllegalArgumentException("cursor is closed");
+        Cursor lines = new Cursor(closed, failsOn);
+
+        IllegalStateException inRecord = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new Carrier(lines), 2));
+        assertSame(closed, inRecord.getCause());
+        assertEquals("Reading the elements of a " + Cursor.class.getName() + " failed: cursor is closed",
+                inRecord.getMessage());
+
+        IllegalStateException inMap = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(Map.of("lines", lines), 2));
+        assertSame(closed, inMap.getCause());
+    }
+
+    @Test
+    @DisplayName("a collection is read through its forEach, so one that overrides only forEach is read the way it says")
+    void aCollectionIsReadThroughItsForEach() {
+        Map<String, Object> data = FactProperties.toData(new Carrier(new Cursor(null, "nothing")), 2);
+
+        assertEquals(List.of("line 1", "line 2"), data.get("value"));
+    }
+
+    @Test
+    @DisplayName("a synchronized collection is converted under its lock, as its forEach holds it")
+    void aSynchronizedCollectionIsConvertedUnderItsLock() {
+        List<Object> probes = new ArrayList<>();
+        List<Object> synchronizedProbes = Collections.synchronizedList(probes);
+        probes.add(new LockProbe(synchronizedProbes));
+
+        Map<String, Object> data = FactProperties.toData(new Carrier(synchronizedProbes), 3);
+
+        assertEquals(List.of(Map.of("locked", true)), data.get("value"));
+    }
+
+    @Test
+    @DisplayName("an element's own failure in toData is wrapped by the read that failed, not again by its collection")
+    void aCollectionsElementThatThrows() {
+        IllegalStateException nested = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new Carrier(List.of(new Broken())), 3));
+
+        assertEquals("Reading 'boom' on a " + Broken.class.getName() + " failed: boom", nested.getMessage());
+        assertEquals("boom", nested.getCause().getMessage());
+        assertNull(nested.getCause().getCause());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"a failing collection", "a failing map"})
+    @DisplayName("a collection or a map inside a collection that fails is wrapped once, by the one that failed")
+    void aFailingContainerInsideACollection(String inside) {
+        IllegalArgumentException closed = new IllegalArgumentException("cursor is closed");
+        boolean collection = "a failing collection".equals(inside);
+        Object failing = collection ? new Cursor(closed, "forEach") : new FailingMap(closed, false);
+
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new Carrier(List.of(List.of(failing))), 4));
+
+        assertSame(closed, wrapped.getCause());
+        assertEquals("Reading the " + (collection ? "elements" : "entries") + " of a " + failing.getClass().getName()
+                + " failed: cursor is closed", wrapped.getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"in parallel", "wrapping what it's given"})
+    @DisplayName("an element's failure out of a forEach that runs in parallel, or wraps it, is still the element's")
+    void anElementsFailureThroughAnotherForEach(String how) {
+        List<Object> broken = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            broken.add(new Broken());
+        }
+        Collection<Object> elements = "in parallel".equals(how) ? new ParallelLines(broken) : new Wrapping(broken);
+
+        IllegalStateException nested = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new Carrier(elements), 3));
+
+        assertEquals("Reading 'boom' on a " + Broken.class.getName() + " failed: boom", nested.getMessage());
+        assertEquals("boom", nested.getCause().getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"endless", "unchecked", "checked", "an error"})
+    @DisplayName("a forEach failure whose causes never end, or whose getCause() throws, is the collection's own")
+    void aForEachFailureWithCausesThatCantBeRead(String causes) {
+        IllegalStateException failure = switch (causes) {
+            case "endless" -> new EndlessCause();
+            case "unchecked" -> new UnreadableCause(new IllegalStateException("no cause"));
+            case "checked" -> new UnreadableCause(new IOException("no cause"));
+            default -> new UnreadableCause(new StackOverflowError("no cause"));
+        };
+
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(new Carrier(new Cursor(failure, "forEach")), 2));
+
+        assertSame(failure, wrapped.getCause());
+        assertEquals("Reading the elements of a " + Cursor.class.getName() + " failed: cursor lost",
+                wrapped.getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"map containsKey", "map get", "map entries", "collection size", "collection forEach"})
+    @DisplayName("a checked exception a map or a collection throws without declaring it is wrapped too")
+    void anUndeclaredCheckedException(String where) {
+        IOException disk = new IOException("disk gone");
+
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class, () -> {
+            switch (where) {
+                case "map containsKey" -> FactProperties.read(new FailingMap(disk, true), "score");
+                case "map get" -> FactProperties.read(new FailingMap(disk, false), "score");
+                case "map entries" -> FactProperties.toData(new FailingMap(disk, false), 1);
+                case "collection size" -> FactProperties.toData(new Carrier(new Cursor(disk, "size")), 2);
+                default -> FactProperties.toData(new Carrier(new Cursor(disk, "forEach")), 2);
+            }
+        });
+
+        assertSame(disk, wrapped.getCause());
+        assertTrue(wrapped.getMessage().endsWith(" failed: disk gone"), wrapped.getMessage());
+    }
+
+    @Test
+    @DisplayName("a fatal error an accessor throws keeps its message, which names what ran out")
+    void aFatalErrorKeepsItsMessage() {
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new Exhausted(new OutOfMemoryError("Metaspace")), "memory"));
+        assertEquals("Reading 'memory' on a " + Exhausted.class.getName() + " failed: Metaspace", wrapped.getMessage());
+        assertInstanceOf(OutOfMemoryError.class, wrapped.getCause());
+
+        IllegalStateException unreadable = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new Exhausted(new OutOfMemoryError() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public String getMessage() {
+                        throw new IllegalStateException("no message");
+                    }
+                }), "memory"));
+        assertEquals("Reading 'memory' on a " + Exhausted.class.getName() + " failed", unreadable.getMessage());
+
+        // Wrapped in an exception with no words of its own, it's read as any other cause is.
+        IllegalStateException wrappedError = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new FailingMap(new IllegalStateException(new OutOfMemoryError("Metaspace")),
+                        false), "score"));
+        assertEquals("Reading 'score' on a " + FailingMap.class.getName() + " failed: java.lang.OutOfMemoryError: "
+                + "Metaspace", wrappedError.getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"NullPointerException", "ClassCastException"})
+    @DisplayName("a map whose get() fails for a key its containsKey() found fails its own way, not as a missing key")
+    void aMapWhoseGetFailsForAKeyItHas(String thrown) {
+        RuntimeException failure = "NullPointerException".equals(thrown)
+                ? new NullPointerException("price source is null")
+                : new ClassCastException("price source is a String");
+
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class,
+                () -> FactProperties.read(new LazyMap(failure), "total"));
+
+        assertSame(failure, wrapped.getCause());
+        assertEquals("Reading 'total' on a " + LazyMap.class.getName() + " failed: " + failure.getMessage(),
+                wrapped.getMessage());
+        // A key it doesn't have is still missing.
+        assertThrows(IllegalArgumentException.class, () -> FactProperties.read(new LazyMap(failure), "count"));
     }
 
     @Test
