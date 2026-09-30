@@ -18,8 +18,9 @@ import java.util.Set;
  * Creates the contexts the engine passes to an expression language, for unit tests of a language's compiler and
  * compiled expressions. The context interfaces are sealed, so a test can't implement them. These are the engine's own
  * implementations, and behave as they do in a run: for example, writing to the facts fails with the engine's message.
- * Each context is for a run of its own, so the values it keeps with {@link EvaluationContext#runScoped} aren't shared
- * with another context.
+ * Each context from {@code evaluation} or {@code action} is for a run of its own, so the values it keeps with
+ * {@link EvaluationContext#runScoped} aren't shared with another context; {@link #actionInRun} creates one in the run
+ * of another context, and shares its values.
  *
  * <p>
  * To check a language against everything the engine promises for its rules, extend

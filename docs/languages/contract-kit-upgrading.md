@@ -10,6 +10,38 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.14
+
+In 2.15.0 five checks got stricter and none was added, so a language that passed the 2.14 kit may now fail. Each new
+failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `conditionAssignmentRejected` | Fails a condition that assigns to a fact on its first run only | From the second run on, the condition changes the fact |
+| `conditionWritesRejected` | Fails a condition that writes a property or declares a variable on its first run only | From the second run on, the caller's fact changes, or a later expression reads a value no action set |
+| `conditionWritesRejected`, once `propertyAssignment()` returns a condition | Rejects a condition's write to a map fact, but calls a bean's setter | The caller's bean changes |
+| `outputNotReplaceable` | Fails an action that replaces the output on its first run only | From the second run on, the action replaces the output, and nothing throws |
+| `missingPropertyFailsTheRun`, unless `missingFactProperty()` returns `null` | Fails a condition that reads a missing property on its first run only | From the second run on, the property reads as `null`, and the rule silently doesn't fire |
+| `compilerClosed`, unless `configure` sets `copiesAtLoad(1)` or more | Has a compiler whose `close()` throws only once `warmUp` has run | The engine only logs it at WARN, and the compiler has usually leaked what it holds |
+| `compilerClosed`, unless `configure` sets `copiesAtLoad(1)` or more | Has a `warmUp` that throws only for the compiler a reload makes, while the replaced rules' compiler is still open | A reload fails in any engine that makes copies at load; the check fails with `RuleCompilationException: The 'my' expression language failed to warm up a session: ` + what `warmUp` threw |
+
+The four checks that repeat a run keep one copy of the rules, as `conditionDetail` does. When `load()` succeeds and
+the run fails, they run the rule again, which must throw a `RuleExecutionException` naming the rule and its
+`CONDITION`, or its `ACTION` in `outputNotReplaceable`.
+
+A second run that doesn't throw fails the check with `... failed the first run but not the second`. Any other
+`RuntimeException` fails it with `... failed the second run differently, not with a RuleExecutionException naming
+rule r and its condition: ...`, or `action`, carrying what the run threw as the cause.
+
+`compilerClosed` now sets `copiesAtLoad(1)` after `configure`, so the compiler has warmed up a session before it's
+closed. The 2.12 row below, "when `configure` sets `copiesAtLoad(1)` or more", no longer applies. A language whose
+`newSession()` returns `Session.none()` still has nothing warmed up: the engine calls `warmUp` only for other sessions.
+
+A subclass written for the 2.14 kit still compiles, and no hook was added. `conditionWritesRejected` also runs your
+`propertyAssignment()` condition against `ExpressionLanguageContractTest.WritableApplicant`, a new public JavaBean with
+`getCreditScore()` and `setCreditScore(int)`, and requires its score unchanged. The condition must also write a bean's
+property, as MVEL's `applicant.creditScore = 1` does. If your `configure` declares `applicant`, keep it `Object`.
+
 ## 🔼 Upgrading from 2.13
 
 In 2.14.0 `nestedRunInsideACondition`, `nestedRunFailsInsideACondition` and `nestedRunFailsInsideAnAction` were
