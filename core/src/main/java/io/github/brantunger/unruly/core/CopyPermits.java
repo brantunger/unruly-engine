@@ -149,6 +149,7 @@ final class CopyPermits {
     void giveBack() {
         givenBack.incrementAndGet();
         semaphore.release();
+        Faults.at(Faults.Step.PERMIT_RELEASED);
     }
 
     /**
@@ -215,5 +216,6 @@ final class CopyPermits {
     void giveBackSlot() {
         slotsGivenBack.incrementAndGet();
         slots.release();
+        Faults.at(Faults.Step.SLOT_RELEASED);
     }
 }

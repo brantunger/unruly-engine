@@ -116,6 +116,7 @@ final class LoggedFailures {
      * {@link #leave()}.
      */
     static void enter() {
+        Faults.at(Faults.Step.RUN_COUNTED);
         Runs runs = RUNS.get();
         if (runs == null) {
             runs = new Runs();
@@ -146,6 +147,7 @@ final class LoggedFailures {
         if (runs.depth == 0) {
             RUNS.remove();
         }
+        Faults.at(Faults.Step.RUN_UNCOUNTED);
     }
 
     /** The bit of {@link Runs#loads} for a depth, or none for one deeper than a {@code long} has bits for. */

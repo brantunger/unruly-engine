@@ -72,25 +72,37 @@ final class Cancellation {
     }
 
     /**
+     * Returns the deadline runs started on this thread now inherit: the one to put back with {@link #leave(Deadline)}
+     * once a run started now ends. A caller reads it before it calls {@link #enter(Deadline)}, so it can put it back
+     * even when setting the run's own fails part way, as a thread-local's map can once it has stored the entry.
+     *
+     * @return The deadline of the run this thread is in, or {@code null} if it's in none, or in none with a deadline
+     */
+    static Deadline current() {
+        return RUN_DEADLINE.get();
+    }
+
+    /**
      * Makes {@code deadline} the one runs started on this thread from now on inherit, until {@link #leave(Deadline)}.
      *
+     * The caller reads the deadline to put back with {@link #current()} first.
+     *
      * @param deadline The deadline of the run that is starting, {@link Deadline#NONE} if it has none
-     * @return The deadline to put back when the run ends
      */
-    static Deadline enter(Deadline deadline) {
-        Deadline outer = RUN_DEADLINE.get();
+    static void enter(Deadline deadline) {
         restore(deadline);
-        return outer;
+        Faults.at(Faults.Step.DEADLINE_SET);
     }
 
     /**
      * Puts back the deadline that applied before a run started, leaving no entry behind on a thread that is no longer
      * running anything with a deadline.
      *
-     * @param outer What {@link #enter(Deadline)} returned
+     * @param outer What {@link #current()} returned before {@link #enter(Deadline)}
      */
     static void leave(Deadline outer) {
         restore(outer);
+        Faults.at(Faults.Step.DEADLINE_PUT_BACK);
     }
 
     private static void restore(Deadline deadline) {

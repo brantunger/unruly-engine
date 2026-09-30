@@ -73,6 +73,7 @@ public class RunBenchmark {
     private static final String FIRST_MATCH = "firstMatch";
     private static final String MAP = "map";
     private static final String LOGGING = "logging";
+    private static final String KEPT = "kept";
 
     // The parameters, the engine, the facts and ruleList() are package-private so RunBenchmarkWorkloadTest can
     // assert what one run evaluates and fires. JMH sets a parameter by reflection, so it reaches either one.
@@ -175,6 +176,62 @@ public class RunBenchmark {
     @Benchmark
     public Map<String, Object> run() {
         return engine.run(newFacts());
+    }
+
+    /**
+     * One {@code run()} of an engine that has no rules: what every run pays before its first rule, such as reading the
+     * facts, borrowing a copy of the rules and giving it back, opening the run's scope, and checking at its start that
+     * the stack has room for all of that. A change to that fixed cost is lost in {@link RunBenchmark#run()}'s rules,
+     * so compare this one before and after it. With {@code copies=shared} the language keeps nothing between runs, so
+     * every run shares one set of sessions and holds no permit; with {@code copies=kept} it's MVEL, under
+     * {@code maxCopies(1)}, so each run borrows the kept copy with the engine's permit and gives both back.
+     */
+    @State(Scope.Benchmark)
+    @BenchmarkMode(Mode.AverageTime)
+    @OutputTimeUnit(TimeUnit.NANOSECONDS)
+    @Fork(1)
+    @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+    @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+    public static class Empty {
+
+        /** Creates the benchmark. */
+        public Empty() {
+            // Nothing to set up: loadNoRules() builds the engine.
+        }
+
+        @Param({"shared", KEPT})
+        private String copies;
+
+        private RulesEngine<Map<String, Object>> engine;
+
+        /** Builds an engine and loads an empty rule list, once for the whole trial. */
+        @Setup(Level.Trial)
+        public void loadNoRules() {
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(HashMap::new);
+            if (KEPT.equals(copies)) {
+                builder.language(new MvelExpressionLanguage()).defaultLanguage(MVEL).maxCopies(1);
+            } else {
+                builder.language(new NoopLanguage());
+            }
+            engine = builder.build();
+            engine.load(List.of());
+        }
+
+        /** Closes the engine. */
+        @TearDown(Level.Trial)
+        public void closeTheEngine() {
+            engine.close();
+        }
+
+        /**
+         * One run with a fresh, empty fact store.
+         *
+         * @return The output, so that nothing in the run can be optimised away
+         */
+        @Benchmark
+        public Map<String, Object> run() {
+            return engine.run(new FactMap<>());
+        }
     }
 
     /** Compiling a rule list, which every {@code load()} and every reload pays. */

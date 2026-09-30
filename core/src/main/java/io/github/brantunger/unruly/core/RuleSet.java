@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
  * One loaded rule list: the rules as {@code load()} compiled them, the compilers of the languages they use, and
@@ -105,6 +106,11 @@ final class RuleSet {
     private static final int RETIRED = 1 << 30;
     // The copies retire() closes if it fails to make room for those it takes: none. Shared, and nothing adds to it.
     private static final Queue<Map<String, Session>> NO_COPIES = new ConcurrentLinkedQueue<>();
+    // The bits of partsDone: retire() has closed the copies it took, and the copies still idle once no run used the
+    // rule set have been closed.
+    private static final int COPIES_TAKEN_CLOSED = 1;
+    private static final int IDLE_CLOSED = 2;
+    private static final int BOTH_PARTS = COPIES_TAKEN_CLOSED | IDLE_CLOSED;
     // How long a run waits without one copy being given back before it decides they aren't coming back. Long
     // enough that only a rule slower than this, or a run waiting for another thread's run, reaches it.
     static final long STALL_WINDOW_MILLIS = 5000;
@@ -114,6 +120,9 @@ final class RuleSet {
     // A plain ThreadLocal, not withInitial(): a lambda in a static initializer has to be bootstrapped while the
     // class is being initialized, which deadlocks when several threads load this class at once.
     private static final ThreadLocal<int[]> RUNS_ON_THREAD = new ThreadLocal<>();
+    // Claims retire() for one caller at a time: see retiring.
+    private static final AtomicIntegerFieldUpdater<RuleSet> RETIRING =
+            AtomicIntegerFieldUpdater.newUpdater(RuleSet.class, "retiring");
 
     private final List<CompiledRule> compiledRules;
     private final Map<String, ExpressionCompiler> compilers;
@@ -135,13 +144,34 @@ final class RuleSet {
     // idle copy, whether it got a permit or stalled, or when it is interrupted or passes its deadline. A retired rule
     // set keeps a copy given back for them rather than closing it and leaving them to make another, one for each.
     private final AtomicInteger waiting = new AtomicInteger();
-    // Whether retire() has been called, so that a second call does nothing. Set before retire() takes the idle copies,
-    // and RETIRED after it has taken them, so a copy kept after the rule set was retired is never among them.
-    private final AtomicBoolean retiring = new AtomicBoolean();
+    // 1 while a retire() call is under way, and for good once one has done all its work, so that another call does
+    // nothing. Set before retire() takes the idle copies, and RETIRED after it has taken them, so a copy kept after the
+    // rule set was retired is never among them. Set back to 0, with a plain write that makes no call, once a call that
+    // failed part way, as one that runs out of stack can, has done all it could, so a later call finishes the work.
+    // Claimed through RETIRING, which PMD doesn't see.
+    @SuppressWarnings("PMD.UnusedPrivateField")
+    private volatile int retiring;
+    // What retire() has done, for a later call to go on from where one that failed stopped. Only the call holding the
+    // claim above reads or writes them, and the claim's volatile writes publish them to the next.
+    // The idle copies retire() took before it marked the rule set retired, until each is closed, and the one it has
+    // just taken from the idle queue, until it's among them: each is reachable from here from the moment it's taken.
+    private Queue<Map<String, Session>> retiredCopies = NO_COPIES;
+    private Map<String, Session> copyTaken;
+    // Whether retire() has marked the rule set retired, and whether no run was using it then, so retire() closes it.
+    private boolean marked;
+    private boolean unused;
+    // Whether retire() has done all its work, so the engine needn't call it again.
+    private volatile boolean retireDone;
     // The two parts that must finish before the compilers close: retire() closing the copies that were idle when it
-    // retired the rule set, and closing the copies still idle once no run uses it (closeUnused). Whichever finishes
-    // second closes them.
-    private final AtomicInteger pendingParts = new AtomicInteger(2);
+    // retired the rule set, and closing the copies still idle once no run uses it (closeUnused). Each sets its bit,
+    // which setting again changes nothing, and whichever finds both set closes the compilers still open, one at a time
+    // from a queue, so a part that is done again after failing part way closes only the ones still open.
+    private final AtomicInteger partsDone = new AtomicInteger();
+    private final Queue<Map.Entry<String, ExpressionCompiler>> openCompilers;
+    // The next rule set in the engine's list of those still to retire, while this one is in it, and the load() or
+    // close() that has claimed it for retiring, if one has: that call's number, or 0. The engine's lock guards both.
+    RuleSet nextUnretired;
+    long retiringClaim;
 
     /** What {@link #release(Copy)} does with a copy when the run that borrowed it gives it back. */
     enum Kind {
@@ -185,9 +215,19 @@ final class RuleSet {
      *
      * @param sessions The sessions of the languages the rules use, by language name
      * @param kind     What happens to it when it's given back
-     * @param held     What the run holds with it, given back with it
+     * @param loan     What the run holds with it, given back with it, once, and the count of runs in progress on the
+     *                 thread that borrowed it, which giving it back lowers without a call that could fail first
      */
-    record Copy(Map<String, Session> sessions, Kind kind, Held held) {
+    record Copy(Map<String, Session> sessions, Kind kind, Loan loan) {
+
+        /**
+         * Returns what the run still holds with the copy: nothing once it has given it back.
+         *
+         * @return The permit or build slot it holds, or {@link Held#NOTHING}
+         */
+        Held held() {
+            return loan.held;
+        }
 
         /**
          * Returns whether the copy is kept for a later run.
@@ -196,6 +236,28 @@ final class RuleSet {
          */
         boolean kept() {
             return kind == Kind.KEPT;
+        }
+    }
+
+    /**
+     * What one borrow holds before it lends its copy: the thread's count of runs in progress, the permit or build slot
+     * it took, and the sessions it took or made. Each is recorded as it's taken, with no call in between, and a
+     * permit or slot is forgotten only once it has been given back, so a borrow that fails anywhere, even in a handler
+     * that was giving them back, as a {@link StackOverflowError} near the end of the stack can make it, gives back and
+     * closes what is still recorded here, from the frame that borrowed. The copy lent keeps it, so giving the copy
+     * back gives back what it holds once only, and a give-back that failed can be tried again (see
+     * {@link #giveBackLeft(Copy)}).
+     */
+    static final class Loan {
+        private final int[] runs;
+        private Held held = Held.NOTHING;
+        // Taken from the idle queue or made, and neither lent nor closed yet.
+        private Map<String, Session> sessions;
+
+        // The thread's own count, not a copy of it: the copy lent with this loan lowers it when it's given back.
+        @SuppressWarnings({"PMD.ArrayIsStoredDirectly", "PMD.UseVarargs"})
+        Loan(int[] runs) {
+            this.runs = runs;
         }
     }
 
@@ -268,6 +330,7 @@ final class RuleSet {
         this.permits = permits;
         this.stallWindow = stallWindowMillis;
         this.idle = idle;
+        this.openCompilers = new ConcurrentLinkedQueue<>(this.compilers.entrySet());
     }
 
     /**
@@ -362,10 +425,12 @@ final class RuleSet {
     // Any Throwable: a failed borrow must leave however it ends, as a finally would, and a failure that isn't fatal is
     // kept under a fatal Error from closing. A stopped wait is the exception: the run leaves once it's reported it.
     Copy borrow(Deadline deadline) throws InterruptedException, TimeoutException {
-        // Found or made before anything is held, so that failing to make it leaves nothing to give back.
+        // Found or made before anything is held, as the loan is, so that failing to make either leaves nothing to give
+        // back.
         int[] runs = runsOnThread();
         // A run already in progress on this thread, whatever engine or rule list it uses, makes this one nested.
         boolean nested = runs[0] > 0;
+        Loan loan = new Loan(runs);
         if (!enter()) {
             forgetIfIdle(runs[0]);
             return null;
@@ -375,19 +440,25 @@ final class RuleSet {
         // leaves the thread's count in place rather than removing it from under this run.
         runs[0]++;
         try {
-            return lend(deadline, nested);
+            return lend(deadline, nested, loan);
         } catch (InterruptedException e) {
             // Uncounted first, as after any failed borrow, but not left: a fatal Error from closing the rules as the
             // run leaves would otherwise be thrown before the run could report that it stopped. Nothing here
             // allocates, so nothing can fail before the caller takes over, which leaves once it has reported the stop.
-            endRunOnThread();
-            Thread.currentThread().interrupt();
+            // A wait that stops holds nothing to give back.
+            runs[0]--;
+            try {
+                forgetIfIdle(runs[0]);
+            } finally {
+                Thread.currentThread().interrupt();
+            }
             throw e;
         } catch (TimeoutException e) {
-            endRunOnThread();
+            runs[0]--;
+            forgetIfIdle(runs[0]);
             throw e;
         } catch (Throwable t) {
-            Failures.throwIfPresent(failedBorrow(t));
+            Failures.throwIfPresent(failedBorrow(t, loan));
             throw t;
         }
     }
@@ -404,14 +475,45 @@ final class RuleSet {
         return leave();
     }
 
-    // Uncounts a run whose borrow failed, and leaves the rule set, returning the fatal Error to throw in place of
-    // failure, if closing the rule set as it leaves threw one (see Failures.fatalInsteadOf). Uncounted first, which
-    // allocates nothing and can't fail, so the run never stays counted. The interrupt status is set again next, if an
-    // interrupt caused the failure, so that closing the rules as the run leaves sees it.
-    private Error failedBorrow(Throwable failure) {
-        endRunOnThread();
-        Failures.keepInterruptStatus(failure);
-        return Failures.fatalInsteadOf(failure, leave());
+    // Uncounts a run whose borrow failed, gives back and closes what the loan still holds, and leaves the rule set,
+    // returning the fatal Error to throw in place of failure, if closing threw one (see Failures.fatalInsteadOf).
+    // Uncounted first, with no call, so the run never stays counted. The interrupt status is set again before anything
+    // is closed, if an interrupt caused the failure, so that closing sees it. Each step is in a finally of the one
+    // before, so one that fails, as one that runs out of stack does, doesn't keep the next from running.
+    private Error failedBorrow(Throwable failure, Loan loan) {
+        int[] runs = loan.runs;
+        runs[0]--;
+        Error fatal = null;
+        try {
+            forgetIfIdle(runs[0]);
+        } finally {
+            try {
+                giveBack(loan);
+            } finally {
+                try {
+                    Failures.keepInterruptStatus(failure);
+                } finally {
+                    try {
+                        fatal = closeTaken(loan);
+                    } finally {
+                        fatal = Failures.first(fatal, leave());
+                    }
+                }
+            }
+        }
+        return Failures.fatalInsteadOf(failure, fatal);
+    }
+
+    // Closes the sessions a failed borrow took or made and neither lent nor closed, forgetting them first so they are
+    // never closed twice. Returns the first fatal Error from closing them.
+    @SuppressWarnings("PMD.NullAssignment")
+    private static Error closeTaken(Loan loan) {
+        Map<String, Session> sessions = loan.sessions;
+        if (sessions == null) {
+            return null;
+        }
+        loan.sessions = null;
+        return Closing.sessions(sessions);
     }
 
     /**
@@ -497,12 +599,21 @@ final class RuleSet {
             // A shared copy needs nothing: its sessions belong to every run, and are Session.none(), which has
             // nothing to close.
         } finally {
-            // Uncounted first, which allocates nothing and can't fail, so the run is uncounted however giving the copy
-            // back ends, and a run that closing the rules starts on this thread isn't nested in it, as after a failed
-            // borrow.
-            endRunOnThread();
-            giveBack(borrowed.held());
-            fatal = Failures.first(fatal, leave());
+            // Uncounted first, with no call, so the run is uncounted however giving the copy back ends, and a run that
+            // closing the rules starts on this thread isn't nested in it, as after a failed borrow. Each step after it
+            // is in a finally of the one before, so one that fails, as one that runs out of stack does, doesn't keep
+            // the run from leaving.
+            int[] runs = borrowed.loan.runs;
+            runs[0]--;
+            try {
+                forgetIfIdle(runs[0]);
+            } finally {
+                try {
+                    giveBack(borrowed.loan);
+                } finally {
+                    fatal = Failures.first(fatal, leave());
+                }
+            }
         }
         return fatal;
     }
@@ -551,14 +662,6 @@ final class RuleSet {
         return runs;
     }
 
-    // Uncounts a run that borrow() counted on this thread. Its count is there until then, so reading it allocates
-    // nothing, and can't fail.
-    private static void endRunOnThread() {
-        int[] runs = RUNS_ON_THREAD.get();
-        runs[0]--;
-        forgetIfIdle(runs[0]);
-    }
-
     // Removes this thread's count once no run is in progress on it: when the outermost run ends, and after a borrow
     // that got no copy, or found the rule set closed, on a thread that isn't running anything, so a pooled thread
     // keeps nothing.
@@ -576,111 +679,188 @@ final class RuleSet {
      * are waiting for one, and than the limit if there is one, and the last run to leave closes the copies still idle,
      * so a fatal {@link Error} from closing a copy kept for a waiting run reaches a run, never this method. The
      * compilers are closed once both this method has closed the copies it took and no run is using the rule set, by
-     * whichever of the two finishes second, which gets their fatal {@link Error}. Calling it again does nothing more. A
-     * fatal {@link Error} from closing one copy doesn't stop the others being closed, nor the compilers after them.
+     * whichever of the two finishes second, which gets their fatal {@link Error}. A call made while another is still
+     * retiring the rule set does nothing, and so does a call after one that did all its work. A call that fails part
+     * way, as one that runs out of stack can, does what it still can, and the next call goes on from where it stopped,
+     * never repeating what it did: see {@link #retiredForGood()}. A fatal {@link Error} from closing one copy doesn't
+     * stop the others being closed, nor the compilers after them.
      *
      * @return The first fatal {@link Error} closing threw, for the caller to throw, or {@code null} if none did
      */
     Error retire() {
-        if (!retiring.compareAndSet(false, true)) {
+        if (!RETIRING.compareAndSet(this, 0, 1)) {
             return null;
         }
-        Queue<Map<String, Session>> wereIdle = NO_COPIES;
-        boolean unused;
+        Error fatal;
+        try {
+            try {
+                // Taken before the rule set is marked retired: a copy given back until then is kept as on a rule set
+                // in use, so it's among them or still idle for closeUnused() to close, and one kept for a waiting run
+                // after it never is. A call that goes on from one that failed before marking takes them again, with
+                // any that one took and couldn't close.
+                if (!marked) {
+                    takeIdleCopies();
+                }
+            } finally {
+                // Also if taking the idle copies throws, so copies given back are no longer kept for later runs, and
+                // the compilers are still closed. In one step with the count of runs, so that either no run uses the
+                // rule set and this method closes it now, or the last run to leave does: never both, and never this
+                // method once a run has kept a copy for a waiting run. Recorded with no call after the step, so a
+                // later call never marks it twice.
+                try {
+                    if (!marked) {
+                        Faults.at(Faults.Step.RETIRE_MARKED);
+                        unused = users.getAndUpdate(count -> count == 0 ? CLOSED : count | RETIRED) == 0;
+                        marked = true;
+                    }
+                } finally {
+                    fatal = closeRetired();
+                }
+            }
+            retireDone = true;
+        } finally {
+            // Only once everything this call could do is done, closing the copies it took too, so a later call can't
+            // close the compilers while this one is still closing a copy.
+            if (!retireDone) {
+                retiring = 0;
+            }
+        }
+        return fatal;
+    }
+
+    // Takes the idle copies, after any an earlier call took and couldn't close, into a queue made with room for them
+    // all before the first is taken, and held by retiredCopies from then on; no more are taken than it has room for,
+    // so setting one aside allocates nothing. Each copy is held by copyTaken from the moment it leaves the idle
+    // queue until it's set aside, so a failure at any step leaves every copy taken where closeRetired() closes it.
+    // One given back meanwhile past those stays idle.
+    @SuppressWarnings("PMD.NullAssignment")
+    private void takeIdleCopies() {
+        int left = idle.size();
+        Queue<Map<String, Session>> taken = new ArrayDeque<>(retiredCopies.size() + left);
+        taken.addAll(retiredCopies);
+        retiredCopies = taken;
+        for (; left > 0; left--) {
+            copyTaken = idle.poll();
+            if (copyTaken == null) {
+                break;
+            }
+            Faults.at(Faults.Step.COPY_TAKEN);
+            taken.add(copyTaken);
+            copyTaken = null;
+        }
+    }
+
+    // Closes the copies retire() took, which it does even when marking the rule set failed, as a retired rule set's
+    // idle copies are closed; and once it's marked, and every copy it took is closed, its part of what the compilers
+    // wait for, and the rule set if no run was using it. If closing the copies fails, as it can when it runs out of
+    // stack, the compilers wait: a later call closes the copies left, and then the rest, so no compiler is closed
+    // before a session of it. Each step is one that a later call can do again without doing anything twice. Returns the
+    // first fatal Error closing threw.
+    @SuppressWarnings("PMD.NullAssignment")
+    private Error closeRetired() {
         Error fatal = null;
         try {
-            // Taken before the rule set is marked retired: a copy given back until then is kept as on a rule set in
-            // use, so it's among them or still idle for closeUnused() to close, and one kept for a waiting run after
-            // it never is. Room is made for them before the first is taken, and no more are taken than it holds, so
-            // setting one aside never allocates, and can't fail and lose it: one given back meanwhile past those stays
-            // idle as well.
-            int left = idle.size();
-            wereIdle = new ArrayDeque<>(left);
-            for (; left > 0; left--) {
-                Map<String, Session> sessions = idle.poll();
-                if (sessions == null) {
-                    break;
-                }
-                wereIdle.add(sessions);
+            Map<String, Session> taken = copyTaken;
+            if (taken != null) {
+                copyTaken = null;
+                fatal = Closing.sessions(taken);
             }
         } finally {
-            // Also if taking the idle copies throws, so copies given back are no longer kept for later runs, and the
-            // compilers are still closed. In one step with the count of runs, so that either no run uses the rule set
-            // and this method closes it now, or the last run to leave does: never both, and never this method once a
-            // run has kept a copy for a waiting run.
-            unused = users.getAndUpdate(count -> count == 0 ? CLOSED : count | RETIRED) == 0;
             try {
-                fatal = closeAll(wereIdle);
+                fatal = Failures.first(fatal, closeAll(retiredCopies));
             } finally {
-                try {
-                    // Nothing more, unless closing one of them threw: then the rest.
-                    fatal = Failures.first(fatal, closeAll(wereIdle));
-                } finally {
-                    try {
-                        fatal = Failures.first(fatal, partDone());
-                    } finally {
-                        if (unused) {
-                            fatal = Failures.first(fatal, closeUnused());
-                        }
-                    }
+                // Nothing more, unless closing one of them threw: then the rest.
+                fatal = Failures.first(fatal, closeAll(retiredCopies));
+            }
+        }
+        if (marked) {
+            try {
+                Faults.at(Faults.Step.RETIRED_COPIES_CLOSED);
+                fatal = Failures.first(fatal, partDone(COPIES_TAKEN_CLOSED));
+            } finally {
+                if (unused) {
+                    fatal = Failures.first(fatal, closeUnused());
                 }
             }
         }
         return fatal;
     }
 
-    private Copy lend(Deadline deadline, boolean nested) throws InterruptedException, TimeoutException {
+    /**
+     * Returns whether {@link #retire()} has done all its work, so it needs calling no more. Until then a call that
+     * failed part way, as one that runs out of stack can, left work that a later call does.
+     *
+     * @return {@code true} once a call to {@link #retire()} has done all its work and returned; a call that returned
+     *         at once, because another was still retiring the rule set, hasn't
+     */
+    boolean retiredForGood() {
+        return retireDone;
+    }
+
+    // Whether retire() has marked the rule set retired.
+    private boolean isRetired() {
+        return (users.get() & RETIRED) != 0;
+    }
+
+    private Copy lend(Deadline deadline, boolean nested, Loan loan) throws InterruptedException, TimeoutException {
         Map<String, Session> shared = sharedSessions;
         if (shared != null) {
-            return new Copy(shared, Kind.SHARED, Held.NOTHING);
+            return new Copy(shared, Kind.SHARED, loan);
         }
         if (!copyLimit.appliesToCurrentThread()) {
             // A thread pool's size bounds the copies its runs make, and virtual threads have nothing but the build
             // slots. A nested run never waits for one: its own thread may hold the slot it would wait for.
             return copyLimit.limits() || !Thread.currentThread().isVirtual() || nested
-                    ? keptCopy(Held.NOTHING, null, Source.IDLE_OR_NEW) : slottedCopy(deadline);
+                    ? keptCopy(loan, Source.IDLE_OR_NEW) : slottedCopy(deadline, loan);
         }
-        // A run that finds a permit free doesn't wait, so it isn't counted as waiting.
+        // A run that finds a permit free doesn't wait, so it isn't counted as waiting. The permit is recorded before
+        // anything else is called, so the borrow gives it back however it fails from here on.
         if (permits.tryTake()) {
-            return keptCopy(Held.PERMIT, null, Source.IDLE_OR_NEW);
+            loan.held = Held.PERMIT;
+            return keptCopy(loan, Source.IDLE_OR_NEW);
         }
         // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of these
         // rules has learned whether they need copies at all. An extra copy can learn it too, and then nothing
         // overflowed.
         if (nested) {
             // A nested run on this thread never waits: the copy it would wait for may be the one its own thread holds.
-            return copy(newSessions(), Kind.EXTRA, Held.NOTHING);
+            loan.sessions = newSessions();
+            return copy(loan, Kind.EXTRA);
         }
         // Counted while it waits, and until it has looked for an idle copy, so a copy given back meanwhile is kept for
         // it, even once the rule set is retired; uncounted before it makes a copy of its own, so that copies given back
         // while it makes one aren't kept for it. Uncounted once however the wait ends, and the permit given back if
         // looking fails, so a failure leaves neither behind. A run that stalls looks too: the copy kept for it may be
         // idle while a run on another rule set holds the permit given back with it.
-        boolean permit = false;
         boolean looked = false;
-        Map<String, Session> found;
         waiting.incrementAndGet();
         try {
-            permit = permits.awaitPermit(stallWindow, deadline);
-            found = idle.poll();
+            if (permits.awaitPermit(stallWindow, deadline)) {
+                loan.held = Held.PERMIT;
+            }
+            loan.sessions = idle.poll();
             looked = true;
         } finally {
-            waiting.decrementAndGet();
-            if (permit && !looked) {
-                giveBack(Held.PERMIT);
+            try {
+                waiting.decrementAndGet();
+            } finally {
+                if (!looked) {
+                    giveBack(loan);
+                }
             }
         }
-        if (permit) {
-            return keptCopy(Held.PERMIT, found, Source.IDLE_OR_NEW);
+        if (loan.held == Held.PERMIT) {
+            return keptCopy(loan, Source.IDLE_OR_NEW);
         }
         // Stalled: an idle copy is lent, holding no permit, before an extra one is made. The copy already existed, so
         // nothing overflowed. On a rule set in use it's lent as extra, and closed when it's given back: a run holding a
         // permit may make a kept copy meanwhile, and keeping both would leave more idle copies than the limit for as
         // long as the rule set serves. A retired rule set kept it for a waiting run, and keeps it again only for one.
-        if (found != null) {
-            return copy(found, isRetired() ? Kind.KEPT : Kind.EXTRA, Held.NOTHING);
+        if (loan.sessions != null) {
+            return copy(loan, isRetired() ? Kind.KEPT : Kind.EXTRA);
         }
-        return extraCopy(newSessions());
+        loan.sessions = newSessions();
+        return extraCopy(loan);
     }
 
     /**
@@ -693,114 +873,122 @@ final class RuleSet {
      * a slot doesn't wake a waiting run: runs arriving meanwhile take it.
      *
      * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
+     * @param loan     What the borrow holds, which records the slot and the copy's sessions as it takes them
      * @return The copy
      * @throws InterruptedException if the thread is interrupted while it waits for a slot
      */
-    private Copy slottedCopy(Deadline deadline) throws InterruptedException {
-        Map<String, Session> sessions = idle.poll();
-        if (sessions == null) {
+    private Copy slottedCopy(Deadline deadline, Loan loan) throws InterruptedException {
+        loan.sessions = idle.poll();
+        if (loan.sessions == null) {
             // A run that gives up waiting still makes its copy: an engine without a limit never fails a run for want
             // of one. Counted until it has looked for a copy again, so a copy given back while it waited is kept for
             // it, even once the rule set is retired, and the slot given back if looking fails, as lend() gives back a
             // permit, so a failure leaves neither behind. A copy found then needs no slot either: it has run before.
-            Held held = Held.NOTHING;
             boolean looked = false;
             waiting.incrementAndGet();
             try {
-                held = permits.awaitSlot(stallWindow, deadline) ? Held.SLOT : Held.NOTHING;
-                sessions = idle.poll();
+                if (permits.awaitSlot(stallWindow, deadline)) {
+                    loan.held = Held.SLOT;
+                }
+                loan.sessions = idle.poll();
                 looked = true;
             } finally {
-                waiting.decrementAndGet();
-                if (!looked || sessions != null) {
-                    giveBack(held);
+                try {
+                    waiting.decrementAndGet();
+                } finally {
+                    if (!looked || loan.sessions != null) {
+                        giveBack(loan);
+                    }
                 }
             }
-            if (sessions == null) {
-                return keptCopy(held, null, Source.NEW);
+            if (loan.sessions == null) {
+                return keptCopy(loan, Source.NEW);
             }
         }
-        return copy(sessions, Kind.KEPT, Held.NOTHING);
+        return copy(loan, Kind.KEPT);
     }
 
     /**
-     * Takes an idle copy, or makes one, that the run keeps until it gives it back.
+     * Takes an idle copy, or makes one, that the run keeps until it gives it back, unless the run has taken one
+     * already.
      *
-     * @param held   What the run took for this copy, given back if no copy can be made
-     * @param found  An idle copy the run has already taken, or {@code null} to take or make one now
-     * @param source Where the copy comes from when {@code found} is {@code null}
+     * @param loan   What the borrow holds: what the run took for this copy, given back if no copy can be made, and an
+     *               idle copy the run has already taken, if it has
+     * @param source Where the copy comes from when the run hasn't taken one
      * @return The copy
      */
-    private Copy keptCopy(Held held, Map<String, Session> found, Source source) {
-        Map<String, Session> sessions;
-        boolean taken = false;
-        try {
-            if (found != null) {
-                sessions = found;
-            } else {
-                sessions = source == Source.NEW ? newSessions() : take();
-            }
-            taken = true;
-        } finally {
-            if (!taken) {
-                giveBack(held);
+    private Copy keptCopy(Loan loan, Source source) {
+        if (loan.sessions == null) {
+            boolean taken = false;
+            try {
+                loan.sessions = source == Source.NEW ? newSessions() : take();
+                taken = true;
+            } finally {
+                if (!taken) {
+                    giveBack(loan);
+                }
             }
         }
-        return copy(sessions, Kind.KEPT, held);
+        return copy(loan, Kind.KEPT);
     }
 
     /**
-     * Lends the given sessions as a copy. The first copy decides whether the rules need copies at all: when no
-     * language keeps state between runs, its sessions become the ones every run shares, and the run gives back at once
-     * what it took for the copy. If lending fails, as when the copy can't be allocated, its sessions are closed and
-     * what the run took for it is given back, so a failed borrow holds nothing; a fatal {@link Error} from closing
+     * Lends the sessions the run took or made as a copy. The first copy decides whether the rules need copies at all:
+     * when no language keeps state between runs, its sessions become the ones every run shares, and the run gives back
+     * at once what it took for the copy. If lending fails, as when the copy can't be allocated, its sessions are closed
+     * and what the run took for it is given back, so a failed borrow holds nothing; a fatal {@link Error} from closing
      * them is thrown in place of a failure that isn't fatal.
      *
-     * @param sessions The copy's sessions, which only this run holds
-     * @param kind     What happens to the copy when it's given back, unless its sessions are shared
-     * @param held     What the run took for this copy
+     * @param loan What the borrow holds: the copy's sessions, which only this run holds, and what it took for them
+     * @param kind What happens to the copy when it's given back, unless its sessions are shared
      * @return The copy
      */
-    private Copy copy(Map<String, Session> sessions, Kind kind, Held held) {
-        return copy(sessions, kind, held, Warning.NONE);
+    private Copy copy(Loan loan, Kind kind) {
+        return copy(loan, kind, Warning.NONE);
     }
 
     /**
-     * Lends the given sessions as an extra copy that holds nothing, as {@link #copy(Map, Kind, Held)} does, and warns,
-     * once, that the run made an extra copy after waiting for a kept one, unless its sessions are shared.
+     * Lends the sessions the run made as an extra copy that holds nothing, as {@link #copy(Loan, Kind)} does, and
+     * warns, once, that the run made an extra copy after waiting for a kept one, unless its sessions are shared.
      *
-     * @param sessions The copy's sessions, which only this run holds
+     * @param loan What the borrow holds: the copy's sessions, which only this run holds
      * @return The copy
      */
-    private Copy extraCopy(Map<String, Session> sessions) {
-        return copy(sessions, Kind.EXTRA, Held.NOTHING, Warning.OVERFLOW);
+    private Copy extraCopy(Loan loan) {
+        return copy(loan, Kind.EXTRA, Warning.OVERFLOW);
     }
 
     // Any Throwable: the sessions, and what the run took for them, must be given up however lending ends, as a finally
     // would, and a failure that isn't fatal is kept under a fatal Error from closing. Warning is inside the try for the
-    // same reason.
-    private Copy copy(Map<String, Session> sessions, Kind kind, Held held, Warning warning) {
+    // same reason. Sessions closed here are forgotten, so the failed borrow doesn't close them again.
+    private Copy copy(Loan loan, Kind kind, Warning warning) {
+        Faults.at(Faults.Step.COPY_LENT);
+        Map<String, Session> sessions = loan.sessions;
         Copy copy;
         try {
             if (statelessSessions(sessions)) {
-                copy = new Copy(sessions, Kind.SHARED, Held.NOTHING);
+                copy = new Copy(sessions, Kind.SHARED, loan);
             } else {
                 if (warning == Warning.OVERFLOW) {
                     warnAboutOverflow();
                 }
-                copy = new Copy(sessions, kind, held);
+                copy = new Copy(sessions, kind, loan);
             }
         } catch (Throwable t) {
-            // Given back first, as it can't fail, so that closing the sessions can't lose it for good.
-            giveBack(held);
-            Failures.throwIfPresent(Failures.fatalInsteadOf(t, Closing.sessions(sessions)));
+            // Given back first, so that closing the sessions can't lose it for good, and the sessions closed even if
+            // giving it back fails: the borrow then gives it back itself.
+            try {
+                giveBack(loan);
+            } finally {
+                Failures.throwIfPresent(Failures.fatalInsteadOf(t, closeTaken(loan)));
+            }
             throw t;
         }
         if (copy.kind() == Kind.SHARED) {
             // Nothing in the rules changes while they run, so one set of sessions serves every run at once. Given back
             // only once nothing can fail, so that a failure never gives back the same thing twice.
             sharedSessions = sessions;
-            giveBack(held);
+            giveBack(loan);
         }
         return copy;
     }
@@ -839,34 +1027,41 @@ final class RuleSet {
         return null;
     }
 
-    // Whether retire() has marked the rule set retired.
-    private boolean isRetired() {
-        return (users.get() & RETIRED) != 0;
-    }
-
     // Closes the copies still idle, once no run uses the retired rule set, and then the compilers, unless retire() is
     // still closing the copies that were idle when it retired the rule set: then retire() closes them once it has.
-    // Called once, by whichever of retire() and the last run to leave closed the rule set. Returns the first fatal
-    // Error from closing them.
+    // Called by whichever of retire() and the last run to leave closed the rule set, and again by a later retire() if
+    // that one failed part way. Returns the first fatal Error from closing them.
     private Error closeUnused() {
         Error fatal = null;
         try {
             fatal = closeAll(idle);
         } finally {
-            fatal = Failures.first(fatal, partDone());
+            fatal = Failures.first(fatal, partDone(IDLE_CLOSED));
         }
         return fatal;
     }
 
     // Marks one of the two parts done that the compilers wait for, retire()'s closing or the last run leaving, and
-    // closes the compilers if it was the second. Returns the first fatal Error from closing them.
-    private Error partDone() {
-        return pendingParts.decrementAndGet() == 0 ? Closing.compilers(compilers) : null;
+    // closes the compilers still open if both are. Marking a part again changes nothing, and closes only the
+    // compilers a call that failed part way left open. Returns the first fatal Error from closing them.
+    private Error partDone(int part) {
+        return partsDone.accumulateAndGet(part, (done, more) -> done | more) == BOTH_PARTS ? closeCompilers() : null;
+    }
+
+    // Closes the compilers still open, each taken from the queue as it's closed, so none is closed twice.
+    private Error closeCompilers() {
+        Error fatal = null;
+        for (Map.Entry<String, ExpressionCompiler> compiler = openCompilers.poll(); compiler != null;
+                compiler = openCompilers.poll()) {
+            fatal = Failures.first(fatal, Closing.compiler(compiler.getKey(), compiler.getValue()));
+        }
+        return fatal;
     }
 
     // Closes every copy in the queue, even after one throws a fatal Error, and returns the first such error. A copy is
     // taken from the queue as it's closed, so if closing one throws, the rest are still there to close.
     private static Error closeAll(Queue<Map<String, Session>> copies) {
+        Faults.at(Faults.Step.COPIES_CLOSING);
         Error fatal = null;
         for (Map<String, Session> sessions = copies.poll(); sessions != null; sessions = copies.poll()) {
             fatal = Failures.first(fatal, Closing.sessions(sessions));
@@ -874,13 +1069,40 @@ final class RuleSet {
         return fatal;
     }
 
-    // Gives back what a run held with its copy, which tells a run that is waiting that they are still coming back.
+    // Gives back the permit or build slot a run held with its copy, which tells a run that is waiting that they are
+    // still coming back. Never called with nothing to give back.
     private void giveBack(Held held) {
         if (held == Held.PERMIT) {
             permits.giveBack();
-        } else if (held == Held.SLOT) {
+        } else {
             permits.giveBackSlot();
         }
+    }
+
+    // Gives back what a borrow or its copy holds, once. It first makes sure the stack has room for the whole
+    // give-back, which fails, as the stack running out does, before anything is given back, and leaves it with the
+    // loan for the failed borrow, or the run, to give back from further up. The loan forgets it before the give-back
+    // starts, so it's never given back twice, even when giving back fails once the permit is back, as waking a
+    // waiting run can: then it's lost rather than doubled, which the check ahead makes as unlikely as it can.
+    private void giveBack(Loan loan) {
+        Held held = loan.held;
+        if (held != Held.NOTHING) {
+            StackHeadroom.checkGiveBack();
+            Faults.at(Faults.Step.GIVING_BACK);
+            loan.held = Held.NOTHING;
+            giveBack(held);
+        }
+    }
+
+    /**
+     * Gives back what a copy still holds because giving it back failed in {@link #release(Copy)} before anything was
+     * given back, as it can when the stack runs out. The run calls it once it has given the copy back, so the permit
+     * or build slot isn't lost for good; it does nothing when the copy holds nothing.
+     *
+     * @param copy The copy the run gave back
+     */
+    void giveBackLeft(Copy copy) {
+        giveBack(copy.loan);
     }
 
     private Map<String, Session> take() {

@@ -19,6 +19,7 @@ import java.util.Map;
 final class Closing {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final String ITS_COMPILER = "its compiler";
 
     private Closing() {
     }
@@ -40,26 +41,42 @@ final class Closing {
      * @return The first fatal {@link Error} a compiler threw, or {@code null} if none did
      */
     static Error compilers(Map<String, ExpressionCompiler> compilers) {
-        return closeAll(compilers, "its compiler");
+        return closeAll(compilers, ITS_COMPILER);
+    }
+
+    /**
+     * Closes one compiler of a rule list, for a caller that closes them one at a time.
+     *
+     * @param language The name of the compiler's language
+     * @param compiler The compiler
+     * @return The fatal {@link Error} it threw, or {@code null} if it threw none
+     */
+    static Error compiler(String language, ExpressionCompiler compiler) {
+        return close(language, compiler, ITS_COMPILER);
+    }
+
+    private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
+        Error fatal = null;
+        for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
+            fatal = Failures.first(fatal, close(resource.getKey(), resource.getValue(), what));
+        }
+        return fatal;
     }
 
     // Any Throwable: one that stopped the loop would leave the rest open, and callers that close more after this, such
     // as the compilers after the sessions, would never reach them. Every caller is inside a run, a load(), a
     // validate() or a close(), so what a run a close() starts logged is known.
-    private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
-        Error fatal = null;
-        for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
-            try {
-                resource.getValue().close();
-            } catch (Throwable e) {
-                Failures.keepInterruptStatus(e);
-                if (!LoggedFailures.logged(e)) {
-                    log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(resource.getKey()),
-                            what, Failures.describe(e));
-                }
-                fatal = Failures.first(fatal, Failures.fatalError(e));
+    private static Error close(String language, AutoCloseable resource, String what) {
+        try {
+            resource.close();
+            return null;
+        } catch (Throwable e) {
+            Failures.keepInterruptStatus(e);
+            if (!LoggedFailures.logged(e)) {
+                log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(language), what,
+                        Failures.describe(e));
             }
+            return Failures.fatalError(e);
         }
-        return fatal;
     }
 }

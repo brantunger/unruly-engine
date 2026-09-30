@@ -11,11 +11,15 @@ match and how deep the first match sits. Those are counts, not timings, so they 
 ## 🏃 Running them
 
 ```bash
-# Everything: 72 run configurations, 6 load configurations and 4 escaping inputs, each in its own JVM.
+# Everything: 72 run configurations, 2 runs with no rules, 6 load configurations and 4 escaping inputs, each in its
+# own JVM.
 ./gradlew :benchmarks:jmh
 
 # One slice, quickly, with allocation figures
 ./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.run -f 1 -wi 2 -i 3 -p rules=100 -prof gc"
+
+# What a run costs before its first rule
+./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.Empty -f 5"
 
 # Compiling rule lists
 ./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.Load"
@@ -52,6 +56,12 @@ of the applicant's properties, so the `record` and `map` values differ where it 
 
 `listener=logging` registers a `LoggingRuleListener`. The benchmarks log through slf4j-simple at its default INFO
 level, so it measures the listener with DEBUG off, the usual setting.
+
+`RunBenchmark.Empty` is one `run()` of an engine with no rules: what every run pays before its first rule, such as
+borrowing a copy of the rules and giving it back, and checking at its start that the stack has room for that. A change
+to that fixed cost disappears into `RunBenchmark.run`'s rules, so measure it here. With `copies=shared` every run shares
+one set of sessions and holds no permit; with `copies=kept` each run borrows the one kept MVEL copy under
+`maxCopies(1)`, with the engine's permit, and gives both back.
 
 `RunBenchmark.Load` measures `load()`, which compiles the whole rule list — the cost every reload pays.
 

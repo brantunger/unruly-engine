@@ -67,7 +67,7 @@ stateDiagram-v2
     Loaded --> Loaded: load() swaps in new rules, or fails and keeps the old ones
     Built --> Closed: close()
     Loaded --> Closed: close() returns at once
-    Closed --> Closed: close() again does nothing
+    Closed --> Closed: close() again does nothing, or finishes a failed retire
     note right of Built
         run() throws IllegalStateException
         "load() must be called before run()"
@@ -126,21 +126,19 @@ deadline has passed, stops there instead, with a message saying the rules were c
 
 A `load()` that found the engine still open isn't stopped by `close()`. If it fails, it throws what it would on an open
 engine, such as `RuleCompilationException`. If it succeeds, its rules are either dropped with the same
-`IllegalStateException` or, if it swapped them in just before `close()`, closed with the rest, so a closed engine never
-serves them.
+`IllegalStateException` or, if it swapped them in just before `close()`, closed with the rest: never served.
 
 Each run's sessions are closed as it returns, or kept for a run still waiting for a copy of the same rules. Any copies
 still kept, then the languages' compilers, are closed after the last run leaves. A failure to close a session or a
 compiler is logged at WARN, unless a [nested run](nested-runs.md#-what-is-logged) logged it, and doesn't fail the run,
-`load()` or `close()` that closes them, unless it's a [fatal error](glossary.md#fatal-error); see
-[A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
+`load()` or `close()` that closes them, unless it's a [fatal error](glossary.md#fatal-error).
 
 `RulesEngine` is `AutoCloseable`, so an engine built for a short task can go in a try-with-resources block. Closing an
-engine twice does nothing the second time.
+engine twice does nothing the second time, unless the first stopped part way.
 
 A [fatal error](glossary.md#fatal-error) from closing sessions or compilers is rethrown once everything else is closed,
-by the `close()`, `load()` or `validate()` call, or the run, that closes them. Who throws it, and what it replaces, is
-in [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
+by the `close()`, `load()` or `validate()` call, or the run, that closes them. Who throws it, what it replaces, and
+what stops closing part way is in [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
 
 ### Draining before you close
 
@@ -190,7 +188,7 @@ For the load itself:
 - If the new list fails to compile, or a language fails to create or warm up a session for a copy at load, nothing
   is swapped, the old rules stay in place, and the sessions and compilers the failed load created are closed.
 - A [fatal error while closing](error-handling.md#-a-fatal-error-while-closing) the replaced rules is thrown after the
-  swap: the new rules serve.
+  swap: the new rules serve. Otherwise, a failure that stopped retiring part way is logged at WARN and retried later.
 - When two threads call `load()` at once, both compile the list they were given, and the one that finishes last wins:
   the last to swap in its rules, after making any copies at load.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
