@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.14.0](https://github.com/brantunger/unruly-engine/compare/v2.13.7...v2.14.0) (2026-09-30)
+
+
+### Features
+
+* the contract kit checks per-thread state through nested runs that start in a condition or fail ([#867](https://github.com/brantunger/unruly-engine/issues/867)) ([eb32694](https://github.com/brantunger/unruly-engine/commit/eb326943fdaaeed492622532eea6811e1447e34a))
+
 ## [2.13.7](https://github.com/brantunger/unruly-engine/compare/v2.13.6...v2.13.7) (2026-09-30)
 
 
