@@ -16,6 +16,7 @@ import java.util.function.Function;
 
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.withSessions;
+import static io.github.brantunger.unruly.api.language.ToyConjunctionsContractTest.conjunctions;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -259,10 +260,10 @@ class ContractKitClosesEnginesTest {
     @Test
     @DisplayName("every check closes what the toy language created, whether it passes or fails (#534)")
     void everyCheckClosesTheToysEngine() {
-        assertEveryCheckCloses(counts -> new ToyExpressionLanguageContractTest() {
+        assertEveryCheckCloses(counts -> new ToyConjunctionsContractTest() {
             @Override
             protected ExpressionLanguage language() {
-                return counting(new ToyExpressionLanguage(), counts);
+                return counting(conjunctions(new ToyExpressionLanguage()), counts);
             }
         });
     }
@@ -273,10 +274,10 @@ class ContractKitClosesEnginesTest {
     void everyCheckClosesALateRejectingLanguagesEngine() {
         // Every check runs: whole numbers are compared by value, which fails that check against the toy, and a fact
         // name is refused, so neither check is skipped.
-        assertEveryCheckCloses(counts -> new ToyExpressionLanguageContractTest() {
+        assertEveryCheckCloses(counts -> new ToyConjunctionsContractTest() {
             @Override
             protected ExpressionLanguage language() {
-                return counting(lateRejecting(new ToyExpressionLanguage()), counts);
+                return counting(lateRejecting(conjunctions(new ToyExpressionLanguage())), counts);
             }
 
             @Override

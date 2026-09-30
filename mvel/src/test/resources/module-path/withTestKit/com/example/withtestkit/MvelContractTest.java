@@ -55,7 +55,7 @@ class MvelContractTest extends ExpressionLanguageContractTest {
         return name + " = " + value;
     }
 
-    // Main counts a skipped check as one that didn't pass, so the check this hook skips by default runs here.
+    // Main counts a skipped check as one that didn't pass, so the checks this hook skips by default run here.
     @Override
     protected String declareVariableThenFail(String name, int value) {
         return name + " = " + value + "; Integer.parseInt('not a number')";
@@ -81,7 +81,7 @@ class MvelContractTest extends ExpressionLanguageContractTest {
         return "empty";
     }
 
-    // Main counts a skipped check as one that didn't pass, so the check this hook skips by default runs here.
+    // Main counts a skipped check as one that didn't pass, so the checks this hook skips by default run here.
     @Override
     protected Collection<String> usableFactNames() {
         return List.of("credit_score2");
@@ -97,9 +97,15 @@ class MvelContractTest extends ExpressionLanguageContractTest {
         return factProperty(fact, property, value);
     }
 
-    // Main counts a skipped check as one that didn't pass, so the check this hook skips by default runs here.
+    // Main counts a skipped check as one that didn't pass, so the checks this hook skips by default run here.
     @Override
     protected String putFactProperty(String key, String fact, String property) {
         return "output.put('" + key + "', " + fact + "." + property + ")";
+    }
+
+    // Likewise the checks this hook skips by default.
+    @Override
+    protected String bothConditions(String condition, String other) {
+        return condition + " && " + other;
     }
 }

@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.withSessions;
+import static io.github.brantunger.unruly.api.language.ToyConjunctionsContractTest.conjunctions;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -125,7 +126,7 @@ class ContractKitConfigureTest {
 
     /** A contract test for {@code language} whose engines, and the context it compiles with, have the option. */
     private static ExpressionLanguageContractTest configured(ExpressionLanguage language) {
-        return new ToyExpressionLanguageContractTest() {
+        return new ToyConjunctionsContractTest() {
             @Override
             protected ExpressionLanguage language() {
                 return language;
@@ -145,7 +146,7 @@ class ContractKitConfigureTest {
 
     /** A contract test for {@code language} whose engines declare the checks' facts, and whose context declares x. */
     private static ExpressionLanguageContractTest declaring(ExpressionLanguage language) {
-        return new ToyExpressionLanguageContractTest() {
+        return new ToyConjunctionsContractTest() {
             @Override
             protected ExpressionLanguage language() {
                 return language;
@@ -190,7 +191,7 @@ class ContractKitConfigureTest {
             List<CompileContext> contexts = new CopyOnWriteArrayList<>();
             boolean skipped = false;
             try {
-                runCheck(configured(watchingContexts(new ToyExpressionLanguage(), compilers, contexts)),
+                runCheck(configured(watchingContexts(conjunctions(new ToyExpressionLanguage()), compilers, contexts)),
                         check.getName());
             } catch (TestAbortedException e) {
                 skipped = true;
@@ -205,7 +206,7 @@ class ContractKitConfigureTest {
             }
         }
 
-        assertEquals(23, checks.size(), "the kit's checks");
+        assertEquals(26, checks.size(), "the kit's checks");
         assertEquals(List.of(), unconfigured, "checks that compiled without configure() or compileContext()");
         assertEquals(List.of(), createdNothing, "checks that ran and created no compiler");
     }
@@ -214,10 +215,10 @@ class ContractKitConfigureTest {
     @DisplayName("a language that compiles only against declared facts fails the kit's checks, and passes them once"
             + " its contract test declares the facts")
     void typedLanguagePassesOnceConfigured() {
-        ExpressionLanguageContractTest unconfigured = new ToyExpressionLanguageContractTest() {
+        ExpressionLanguageContractTest unconfigured = new ToyConjunctionsContractTest() {
             @Override
             protected ExpressionLanguage language() {
-                return typed(new ToyExpressionLanguage());
+                return typed(conjunctions(new ToyExpressionLanguage()));
             }
         };
 
@@ -227,7 +228,7 @@ class ContractKitConfigureTest {
         assertTrue(failedUnconfigured.stream().anyMatch(failed -> failed.startsWith("evaluateAgreesWithDetail: ")
                 && failed.contains("fact 'x' has no declared type")), () -> String.join("\n", failedUnconfigured));
 
-        assertEquals(List.of(), failedChecks(declaring(typed(new ToyExpressionLanguage()))));
+        assertEquals(List.of(), failedChecks(declaring(typed(conjunctions(new ToyExpressionLanguage())))));
     }
 
     @Test

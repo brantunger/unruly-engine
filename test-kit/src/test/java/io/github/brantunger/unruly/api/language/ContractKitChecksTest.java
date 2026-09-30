@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -949,6 +950,15 @@ class ContractKitChecksTest {
      * it, so the action writes to that run's output.
      */
     private static ExpressionLanguage threadLocalOutput(ExpressionLanguage language) {
+        return threadLocalOutput(language, false);
+    }
+
+    /**
+     * Wraps a language as {@link #threadLocalOutput(ExpressionLanguage)} does. If {@code restores}, the action puts
+     * back the output it replaced when it returns, but not in a {@code finally}: a run started while the operand is
+     * read then leaves nothing behind, unless its own action fails, which leaves its output there.
+     */
+    private static ExpressionLanguage threadLocalOutput(ExpressionLanguage language, boolean restores) {
         ThreadLocal<Map<String, Object>> output = new ThreadLocal<>();
         return new ForwardingExpressionLanguage(language) {
             @Override
@@ -967,15 +977,159 @@ class ContractKitChecksTest {
                         return (actionContext, session) -> {
                             @SuppressWarnings("unchecked")
                             Map<String, Object> target = (Map<String, Object>) actionContext.output();
+                            Map<String, Object> replaced = output.get();
                             output.set(target);
                             Object value = operand.evaluate(actionContext, session);
                             output.get().put(tokens[1], value);
+                            if (restores) {
+                                // Skipped when reading the operand threw.
+                                output.set(replaced);
+                            }
                             return ActionResult.done();
                         };
                     }
                 };
             }
         };
+    }
+
+    /** How a language that keeps a condition's context in a {@link ThreadLocal} puts back what it replaced. */
+    private enum Restores {
+        /** It never puts it back. */
+        NEVER,
+        /** It puts back the context it replaced when the condition returns, but not in a {@code finally}. */
+        OUTSIDE_FINALLY,
+        /** It removes the context in a {@code finally}, rather than putting back the one it replaced. */
+        REMOVES_IN_FINALLY
+    }
+
+    /**
+     * Wraps a language so that a condition {@code LEFT and RIGHT} keeps the context it evaluates in a
+     * {@link ThreadLocal}, and looks it up again for each side, as an adapter over a runtime whose context is bound to
+     * the thread might. It's true when both sides are, and reads the right side only if the left is true. A run
+     * started on the same thread while the left side is read, by a getter, replaces the context, so the right side
+     * reads that run's facts, or, once that run has removed it, none at all.
+     */
+    private static ExpressionLanguage threadLocalConditions(ExpressionLanguage language, Restores restores) {
+        ThreadLocal<EvaluationContext> current = new ThreadLocal<>();
+        return ToyConjunctionsContractTest.conjunctions(language, (left, right) -> (evaluation, session) -> {
+            EvaluationContext replaced = current.get();
+            current.set(evaluation);
+            try {
+                boolean result = Boolean.TRUE.equals(left.evaluate(current.get(), session))
+                        && Boolean.TRUE.equals(right.evaluate(current.get(), session));
+                if (restores == Restores.OUTSIDE_FINALLY) {
+                    // Skipped when a side threw.
+                    current.set(replaced);
+                }
+                return result;
+            } finally {
+                if (restores == Restores.REMOVES_IN_FINALLY) {
+                    current.remove();
+                }
+            }
+        });
+    }
+
+    /**
+     * Wraps a language so that what one of its conditions throws is handled by {@code onFailure}, which returns the
+     * condition's value instead, or throws something else, as a language that hides or rewraps failures would.
+     */
+    private static ExpressionLanguage handlingConditionFailures(ExpressionLanguage language,
+                                                                Function<RuntimeException, Object> onFailure) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            try {
+                                return condition.evaluate(evaluation, session);
+                            } catch (RuntimeException e) {
+                                return onFailure.apply(e);
+                            }
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /** The message of the last of an exception's causes, which a language that rewraps a failure may keep alone. */
+    private static String rootMessage(Throwable thrown) {
+        Throwable root = thrown;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getMessage();
+    }
+
+    /**
+     * Wraps a language so that a condition evaluated while another of its conditions is being evaluated on the same
+     * thread fails, as an interpreter that isn't re-entrant does: a run started inside a condition then fails before
+     * it reads anything.
+     */
+    private static ExpressionLanguage nonReentrant(ExpressionLanguage language) {
+        ThreadLocal<Boolean> busy = ThreadLocal.withInitial(() -> false);
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            if (busy.get()) {
+                                throw new IllegalStateException("the interpreter is already running on this thread");
+                            }
+                            busy.set(true);
+                            try {
+                                return condition.evaluate(evaluation, session);
+                            } finally {
+                                busy.set(false);
+                            }
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /** Wraps a language so that it records each thread one of its conditions is evaluated on. */
+    private static ExpressionLanguage recordingThreads(ExpressionLanguage language, Set<Thread> threads) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            threads.add(Thread.currentThread());
+                            return condition.evaluate(evaluation, session);
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Runs one of the kit's checks, by name, on a contract test for {@code language} whose conditions require both of
+     * two with {@code and}.
+     */
+    private static void runConjunctionsCheck(ExpressionLanguage language, String check) throws Throwable {
+        runCheck(new ToyConjunctionsContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        }, check);
     }
 
     @Test
@@ -1833,6 +1987,303 @@ class ContractKitChecksTest {
     void runFailedBeforeNestingNotWrapped() {
         assertThrows(RuleExecutionException.class,
                 () -> runCheck(throwingActions(new ToyExpressionLanguage()), "nestedRunInsideAnAction"));
+    }
+
+    @Test
+    @DisplayName("a language whose conditions keep what they evaluate in per-thread state, and never put it back, fails"
+            + " the checks that start a run inside a condition (#843)")
+    void conditionStateNeverRestoredFails() {
+        ExpressionLanguage language = threadLocalConditions(new ToyExpressionLanguage(), Restores.NEVER);
+
+        AssertionFailedError nested = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunInsideACondition"));
+        assertEquals("the run around the run started inside its condition ==> expected: <{seen=1}> but was: <null>",
+                nested.getMessage());
+        AssertionFailedError failed = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunFailsInsideACondition"));
+        assertEquals("the run around the run that failed inside its condition ==> expected: <{seen=1}> but was:"
+                + " <null>", failed.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose conditions put back the per-thread state they replaced, but not in a finally, fails"
+            + " only the check whose nested run fails inside a condition (#843)")
+    void conditionStateRestoredOutsideFinallyFails() {
+        ExpressionLanguage language = threadLocalConditions(new ToyExpressionLanguage(), Restores.OUTSIDE_FINALLY);
+
+        assertDoesNotThrow(() -> runConjunctionsCheck(language, "nestedRunInsideACondition"));
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunFailsInsideACondition"));
+        assertEquals("the run around the run that failed inside its condition ==> expected: <{seen=1}> but was:"
+                + " <null>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose conditions remove their per-thread state in a finally fails the checks that start a"
+            + " run inside a condition, saying the nested run may have removed the state, whether or not it failed"
+            + " (#843)")
+    void conditionStateRemovedReported() {
+        ExpressionLanguage language = threadLocalConditions(new ToyExpressionLanguage(), Restores.REMOVES_IN_FINALLY);
+
+        AssertionFailedError ended = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunInsideACondition"));
+        assertTrue(ended.getMessage().startsWith("the run failed after a run started inside its condition ended, so"
+                + " the nested run may have replaced or removed state the condition kept for its own run: "),
+                ended.getMessage());
+        assertInstanceOf(RuleExecutionException.class, ended.getCause());
+        assertEquals(0, ended.getSuppressed().length);
+
+        AssertionFailedError failed = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunFailsInsideACondition"));
+        assertTrue(failed.getMessage().startsWith("the run failed after a run started inside its condition failed, as"
+                + " the check meant it to, which is attached, so the failed run may have replaced or removed state the"
+                + " condition kept for its own run: "), failed.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failed.getCause());
+        assertEquals(1, failed.getSuppressed().length);
+        assertInstanceOf(RuleExecutionException.class, failed.getSuppressed()[0]);
+    }
+
+    @Test
+    @DisplayName("a language whose actions put back the per-thread state they replaced, but not in a finally, fails"
+            + " only the check whose nested run fails inside an action (#843)")
+    void actionStateRestoredOutsideFinallyFails() {
+        ExpressionLanguage language = threadLocalOutput(new ToyExpressionLanguage(), true);
+
+        assertDoesNotThrow(() -> runCheck(language, "nestedRunInsideAnAction"));
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "nestedRunFailsInsideAnAction"));
+        assertEquals("the run around the run that failed inside its action ==> expected: <{seen=7}> but was: <{}>",
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that keeps a run's state on the stack or in its sessions passes the checks that start a"
+            + " run inside a condition, and make a nested run fail (#843)")
+    void ownRunStatePassesNestedRunChecks() {
+        ExpressionLanguage withSessions = withSessions(new ToyExpressionLanguage(), () -> new Session() {
+        });
+        for (String check : List.of("nestedRunInsideACondition", "nestedRunFailsInsideACondition",
+                "nestedRunFailsInsideAnAction")) {
+            assertDoesNotThrow(() -> runCheck(new ToyConjunctionsContractTest(), check), check);
+            assertDoesNotThrow(() -> runConjunctionsCheck(ToyConjunctionsContractTest.conjunctions(withSessions),
+                    check), check);
+        }
+    }
+
+    @Test
+    @DisplayName("the nested-run checks run on a thread of their own, so per-thread state a language leaves there can't"
+            + " reach a later check (#843)")
+    void nestedRunChecksRunOnTheirOwnThread() {
+        Set<Thread> threads = ConcurrentHashMap.newKeySet();
+        ExpressionLanguage language = recordingThreads(
+                ToyConjunctionsContractTest.conjunctions(new ToyExpressionLanguage()), threads);
+
+        List<Thread> earlier = new ArrayList<>();
+        for (String check : List.of("nestedRunInsideAnAction", "nestedRunInsideACondition",
+                "nestedRunFailsInsideACondition", "nestedRunFailsInsideAnAction")) {
+            threads.clear();
+            assertDoesNotThrow(() -> runConjunctionsCheck(language, check), check);
+            // The run around and the one nested in it evaluate conditions, and on one thread.
+            assertEquals(1, threads.size(), check + " evaluated its conditions on " + threads);
+            Thread thread = threads.iterator().next();
+            assertNotSame(Thread.currentThread(), thread, check + " ran on the test's thread");
+            assertTrue(earlier.stream().noneMatch(used -> used == thread), check + " reused an earlier check's thread");
+            earlier.add(thread);
+        }
+    }
+
+    @Test
+    @DisplayName("a contract test whose bothConditions() returns null skips the checks that start a run inside a"
+            + " condition, and one whose putFactProperty() returns null the check whose nested run fails inside an"
+            + " action (#843)")
+    void noBothConditionsSkipped() {
+        for (String check : List.of("nestedRunInsideACondition", "nestedRunFailsInsideACondition")) {
+            TestAbortedException skipped = assertThrows(TestAbortedException.class,
+                    () -> runCheck(new ToyExpressionLanguage(), check), check);
+            assertEquals("Assumption failed: the language's conditions can't require both of two conditions",
+                    skipped.getMessage());
+        }
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String putFactProperty(String key, String fact, String property) {
+                return null;
+            }
+        };
+        TestAbortedException skipped = assertThrows(TestAbortedException.class,
+                () -> runCheck(test, "nestedRunFailsInsideAnAction"));
+        assertEquals("Assumption failed: the language's actions can't read a fact's property", skipped.getMessage());
+    }
+
+    @Test
+    @DisplayName("the check whose nested run fails inside a condition is skipped for a language whose nested run never"
+            + " reads the getter that makes it fail, as one that evaluates the right side first (#843)")
+    void rightSideFirstSkipped() {
+        ExpressionLanguageContractTest test = new ToyConjunctionsContractTest() {
+            @Override
+            protected String bothConditions(String condition, String other) {
+                return other + " and " + condition;
+            }
+        };
+
+        assertDoesNotThrow(() -> runCheck(test, "nestedRunInsideACondition"));
+        TestAbortedException skipped = assertThrows(TestAbortedException.class,
+                () -> runCheck(test, "nestedRunFailsInsideACondition"));
+        assertEquals("Assumption failed: the run started inside the condition never read its own nest.value, whose"
+                + " getter makes it fail, as a language that reads the right side of a condition first may not",
+                skipped.getMessage());
+    }
+
+    @Test
+    @DisplayName("the checks that start a run inside a condition, or make a nested run fail, fail an expression that"
+            + " never reads the fact's property (#843)")
+    void expressionThatNeverReadsTheGetterFails() {
+        ExpressionLanguageContractTest conditions = new ToyConjunctionsContractTest() {
+            @Override
+            protected String bothConditions(String condition, String other) {
+                return other;
+            }
+        };
+        for (String check : List.of("nestedRunInsideACondition", "nestedRunFailsInsideACondition")) {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(conditions, check),
+                    check);
+            assertTrue(failure.getMessage().startsWith("the condition didn't read nest.value, so no run was started"
+                    + " inside it"), failure.getMessage());
+        }
+        ExpressionLanguageContractTest actions = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String putFactProperty(String key, String fact, String property) {
+                return "put " + key + " 7";
+            }
+        };
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(actions, "nestedRunFailsInsideAnAction"));
+        assertTrue(failure.getMessage().startsWith("the action didn't read nest.value, so no run was started inside"
+                + " it"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the check whose nested run fails inside a condition fails a language whose nested run reads the"
+            + " getter that throws and doesn't fail (#843)")
+    void nestedRunThatDoesNotFailFails() {
+        ExpressionLanguage language = handlingConditionFailures(
+                ToyConjunctionsContractTest.conjunctions(new ToyExpressionLanguage()), e -> false);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunFailsInsideACondition"));
+
+        assertEquals("the run started inside the condition didn't fail, though a getter its rule read threw: it"
+                + " returned {inner=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the check whose nested run fails inside a condition fails a language whose nested run fails for"
+            + " another reason than the getter that throws (#843)")
+    void nestedRunFailingForAnotherReasonFails() {
+        ExpressionLanguage language = handlingConditionFailures(
+                ToyConjunctionsContractTest.conjunctions(new ToyExpressionLanguage()), e -> {
+                    throw new IllegalStateException("the condition failed, for a reason it doesn't say");
+                });
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunFailsInsideACondition"));
+
+        assertTrue(failure.getMessage().startsWith("the run started inside the condition failed, but its failure"
+                + " doesn't carry what its nest.value threw, as a cause, a suppressed exception or by its message: "),
+                failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("the check whose nested run fails inside a condition fails, rather than skips, a language whose nested"
+            + " run fails before it reads the getter that throws, as an interpreter that isn't re-entrant does (#843)")
+    void nestedRunFailingBeforeTheGetterFails() {
+        ExpressionLanguage language = nonReentrant(
+                ToyConjunctionsContractTest.conjunctions(new ToyExpressionLanguage()));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runConjunctionsCheck(language, "nestedRunFailsInsideACondition"));
+
+        assertTrue(failure.getMessage().startsWith("the run started inside the condition failed for another reason"
+                + " than its nest.value, which throws: "), failure.getMessage());
+        assertTrue(failure.getMessage().contains("the interpreter is already running on this thread"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the check whose nested run fails inside a condition says both runs failed when the nested run failed"
+            + " for another reason than the getter that throws (#843)")
+    void unplannedNestedFailureReportedAsASecondFailure() {
+        // The toy fails a condition that reads a name that is neither a variable nor a fact.
+        ExpressionLanguageContractTest test = new ToyConjunctionsContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return nonReentrant(ToyConjunctionsContractTest.conjunctions(new ToyExpressionLanguage()));
+            }
+
+            @Override
+            protected String bothConditions(String condition, String other) {
+                return condition + " and y == 1";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "nestedRunFailsInsideACondition"));
+
+        assertTrue(failure.getMessage().startsWith("the run failed after a run started inside its condition failed"
+                + " too, which is attached: "), failure.getMessage());
+        assertEquals(1, failure.getSuppressed().length);
+        assertInstanceOf(RuleExecutionException.class, failure.getSuppressed()[0]);
+    }
+
+    @Test
+    @DisplayName("the checks whose nested run fails accept the planned failure however a language carries it: as a"
+            + " cause, as a suppressed exception, or by its message alone (#843)")
+    void plannedFailureCarriedAnyWayPasses() {
+        List<Function<RuntimeException, Object>> rewraps = List.of(
+                e -> {
+                    throw new IllegalStateException("the condition failed", e);
+                },
+                e -> {
+                    IllegalStateException rewrapped = new IllegalStateException("the condition failed");
+                    rewrapped.addSuppressed(e);
+                    throw rewrapped;
+                },
+                e -> {
+                    throw new IllegalStateException(rootMessage(e));
+                });
+        for (Function<RuntimeException, Object> rewrap : rewraps) {
+            assertDoesNotThrow(() -> runConjunctionsCheck(handlingConditionFailures(
+                    ToyConjunctionsContractTest.conjunctions(new ToyExpressionLanguage()), rewrap),
+                    "nestedRunFailsInsideACondition"));
+        }
+    }
+
+    @Test
+    @DisplayName("the check that starts a run inside a condition says the run around it failed, with the nested run's"
+            + " failure attached, and reports a run that fails before starting one as the engine reported it (#843)")
+    void runAroundTheNestedRunInsideAConditionFailedReported() {
+        // The toy fails a condition that reads a name that is neither a variable nor a fact.
+        ExpressionLanguageContractTest after = new ToyConjunctionsContractTest() {
+            @Override
+            protected String bothConditions(String condition, String other) {
+                return condition + " and y == 1";
+            }
+        };
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(after, "nestedRunInsideACondition"));
+        assertTrue(failure.getMessage().startsWith("the run failed after a run started inside its condition failed"
+                + " too, which is attached: "), failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+        assertEquals(1, failure.getSuppressed().length);
+        assertInstanceOf(RuleExecutionException.class, failure.getSuppressed()[0]);
+
+        ExpressionLanguageContractTest before = new ToyConjunctionsContractTest() {
+            @Override
+            protected String bothConditions(String condition, String other) {
+                return "y == 1 and " + condition;
+            }
+        };
+        assertThrows(RuleExecutionException.class, () -> runCheck(before, "nestedRunInsideACondition"));
     }
 
     @Test

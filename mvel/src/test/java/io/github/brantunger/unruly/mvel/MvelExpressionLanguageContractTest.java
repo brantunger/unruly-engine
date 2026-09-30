@@ -100,4 +100,9 @@ class MvelExpressionLanguageContractTest extends ExpressionLanguageContractTest 
     protected String putFactProperty(String key, String fact, String property) {
         return "output.put('" + key + "', " + fact + "." + property + ")";
     }
+
+    @Override
+    protected String bothConditions(String condition, String other) {
+        return condition + " && " + other;
+    }
 }

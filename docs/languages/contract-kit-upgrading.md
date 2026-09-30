@@ -10,6 +10,34 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.13
+
+In 2.14.0 `nestedRunInsideACondition`, `nestedRunFailsInsideACondition` and `nestedRunFailsInsideAnAction` were
+added, so a language that passed the 2.13 kit may now fail. Each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `nestedRunInsideACondition`, once `bothConditions()` returns a condition | Keeps what a condition works on in per-thread state, such as a `ThreadLocal`, and looks it up again after a read that may start a nested run | The condition reads the nested run's facts, and its rule silently doesn't fire |
+| `nestedRunFailsInsideACondition`, once `bothConditions()` returns a condition | Puts back a condition's per-thread state when the condition returns, but not in a `finally` | After a nested run fails, the condition that started it reads the failed run's facts |
+| `nestedRunFailsInsideAnAction`, once `putFactProperty()` returns an action | Puts back an action's per-thread state when the action returns, but not in a `finally` | After a nested run fails, the action that started it writes to the failed run's output, and nothing throws |
+| `nestedRunFailsInsideACondition` and `nestedRunFailsInsideAnAction` | Swallows what a getter threw, or rethrows something that carries it neither as a cause, nor as a suppressed exception, nor by its message | A run that should fail doesn't, or its failure hides what caused it |
+
+A subclass written for the 2.13 kit still compiles. The new hook returns `null` by default, which leaves the two
+condition checks off. Override it to turn them on:
+
+- `bothConditions(condition, other)`: a condition that is true when both are, evaluating `condition` first. For
+  MVEL, `condition + " && " + other`. If your `configure` declares facts, declare `nest` too; see
+  [A language that needs declared facts](contract-kit.md#a-language-that-needs-declared-facts-imports-or-options).
+
+`nestedRunFailsInsideACondition` is also skipped when its nested run neither fails nor reads the `nest.value` that
+makes it fail. That happens in a language that evaluates the right side of a condition first, even one that overrides
+`bothConditions()`: the nested run stops at `x == 1`, which is false there, so a launcher sees one aborted check.
+`nestedRunFailsInsideAnAction`'s nested run always reads it, since its action runs.
+
+Skipped, the two condition checks count as aborted, as `nestedRunInsideAnAction` does, so a launcher that expects
+every check found to succeed sees two more aborted checks, three if `putFactProperty()` also returns `null`: override
+the hooks, or count aborted checks as passing.
+
 ## 🔼 Upgrading from 2.11
 
 In 2.12.0 `actionVariablesStayLocal`, `compilerClosed` and `conditionDetail` got stricter, and

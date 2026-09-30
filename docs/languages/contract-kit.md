@@ -91,7 +91,7 @@ unless your main code is a named module: then see
 [A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven).
 
 `ExpressionLanguageContractTest` checks the promises [Writing an expression language](custom.md) describes for any
-language. Extend it and supply expressions in your language, one method for each hook. Its twenty-three checks:
+language. Extend it and supply expressions in your language, one method for each hook. Its twenty-six checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -118,10 +118,13 @@ language. Extend it and supply expressions in your language, one method for each
 | `evaluateAgreesWithDetail` | `factEquals` | No | For `x` = 1, 2, `1L`, `2L`, `(short) 1` and `BigDecimal.ONE`, a compiled condition's `evaluate` returns the value `evaluateWithDetail` reports, or both throw |
 | `concurrentRuns` | `factEquals`, `putFact`, `copyThroughVariable` | No; a `null` from `copyThroughVariable()` leaves the action variables out | 8 threads, 200 runs each, all see their own facts and action variables, and `newSession()` never returns one session twice, unless it's `Session.none()` |
 | `nestedRunInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null` | A run that a getter starts inside an action, on the same thread, and the outer run each give their own output |
+| `nestedRunInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null` | A run that a getter starts inside a condition, on the same thread, and the outer run each give their own output |
+| `nestedRunFailsInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still fires its rule |
+| `nestedRunFailsInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still gets the action's value |
 
-Only the ten `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
+Only the eleven `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
 `unusableFactName`, `missingFactProperty`, `copyThroughVariable`, `putFactProperty`, `propertyAssignment`,
-`conditionDeclaration` and `declareVariableThenFail`.
+`conditionDeclaration`, `declareVariableThenFail` and `bothConditions`.
 
 - `comparesWholeNumbersByValue()` skips its check by returning `false`, and `usableFactNames()` by returning an empty
   collection.
@@ -133,6 +136,11 @@ Only the ten `@Nullable` hooks may return `null`: `assignment`, `declareVariable
 `putVariable(key, variable)` and `variableEquals(variable, value)` default to `putFact` and `factEquals`. Override
 them if your variables have a namespace of their own, such as SpEL's `#y`: otherwise the variable checks read a fact
 named `y`, which isn't there, and pass whatever your language does with its variables.
+
+`bothConditions(condition, other)` must evaluate `condition` first, as MVEL's `condition + " && " + other` does: the
+condition checks read `nest.value`, which starts the nested run, then `x`, which finds any state that run left on the
+thread. A language that evaluates the right side first isn't checked. The nested-run checks run on a thread of their
+own, so per-thread state left there can't reach later checks.
 
 `usableFactNamesAccepted` runs each name `usableFactNames()` returns through `factEquals` and `putFact`. Return the
 names your `checkFactName` might wrongly reject, such as `credit_score2`.
