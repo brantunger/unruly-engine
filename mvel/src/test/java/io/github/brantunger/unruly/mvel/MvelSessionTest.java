@@ -6,7 +6,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.MVEL;
 
-import java.io.Serializable;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,7 +29,7 @@ class MvelSessionTest {
     @DisplayName("a session compiles an expression once, and another session gets a different compiled copy")
     void oneCompiledCopyPerSession() {
         MvelSession session = new MvelSession();
-        Serializable compiled = session.compiled(expression);
+        MvelExpression.Copy compiled = session.compiled(expression);
 
         assertSame(compiled, session.compiled(expression));
         assertNotSame(compiled, new MvelSession().compiled(expression));
@@ -39,12 +38,12 @@ class MvelSessionTest {
     @Test
     @DisplayName("each new compiled copy runs: the first is the one compiled when the rules loaded")
     void newCompiledCopiesRun() {
-        Serializable first = expression.newCompiled();
-        Serializable second = expression.newCompiled();
+        MvelExpression.Copy first = expression.newCompiled();
+        MvelExpression.Copy second = expression.newCompiled();
 
         assertNotSame(first, second);
-        assertEquals(2, MVEL.executeExpression(first, Map.of("x", 1)));
-        assertEquals(3, MVEL.executeExpression(second, Map.of("x", 2)));
+        assertEquals(2, MVEL.executeExpression(first.expression(), Map.of("x", 1)));
+        assertEquals(3, MVEL.executeExpression(second.expression(), Map.of("x", 2)));
     }
 
     @Test

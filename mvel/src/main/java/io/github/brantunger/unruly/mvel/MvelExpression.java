@@ -7,10 +7,12 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Session;
 import org.mvel2.MVEL;
+import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
 import org.mvel2.optimizers.OptimizerFactory;
 
 import java.io.Serializable;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -21,6 +23,14 @@ import java.util.function.Supplier;
  * MVEL caches an accessor in a compiled expression the first time it runs, and replaces it without synchronization
  * when a later run binds the same name to a different kind of object, so MVEL's compiled form isn't shared: each
  * {@link MvelSession} runs its own, from {@link #newCompiled()}.
+ * </p>
+ *
+ * <p>
+ * MVEL builds what reads each value as the expression first runs, and goes round in a loop that never ends as it
+ * builds it for some expressions, such as a call after a class named with its package and a non-ASCII space (#857).
+ * So each run may ask the copy's parser configuration for its class loader, as MVEL does on every round of that loop,
+ * only as many times as {@link #classLoaderCallsPerRun} allows the expression, and the rule fails with an
+ * {@link Imports.RunLoop} once it has asked more.
  * </p>
  *
  * <p>
@@ -54,13 +64,27 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
 
     private final String source;
     private final Imports imports;
-    // MVEL's compiled expression from when the rule list loaded, which no run has used, until a session takes it.
-    private final AtomicReference<Serializable> loaded;
+    // How many times each run of a compiled copy may ask for the class loader: classLoaderCallsPerRun, but for tests.
+    private final long callsPerRun;
+    // The compiled copy from when the rule list loaded, which no run has used, until a session takes it.
+    private final AtomicReference<Copy> loaded;
 
-    private MvelExpression(String source, Imports imports, Serializable loaded) {
+    private MvelExpression(String source, Imports imports, long callsPerRun, Copy loaded) {
         this.source = source;
         this.imports = imports;
+        this.callsPerRun = callsPerRun;
         this.loaded = new AtomicReference<>(loaded);
+    }
+
+    /**
+     * One session's compiled copy of an expression, and the parser configuration MVEL's compiled expression keeps,
+     * which MVEL asks for its class loader as the expression runs.
+     *
+     * @param expression    MVEL's compiled expression
+     * @param configuration The configuration it was compiled with, whose calls for the class loader are limited for
+     *                      each run
+     */
+    record Copy(Serializable expression, ParserConfiguration configuration) {
     }
 
     /**
@@ -75,6 +99,20 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     /**
+     * Compiles an expression whose runs may each ask for the class loader only so many times, in place of what
+     * {@link #classLoaderCallsPerRun} allows it. Only for tests: the engine compiles with
+     * {@link #compile(MvelAnalysis)}.
+     *
+     * @param source      The expression's source text
+     * @param imports     The imports to compile it with
+     * @param callsPerRun How many times each run of a compiled copy may ask
+     * @return The compiled expression
+     */
+    static MvelExpression compile(String source, Imports imports, long callsPerRun) {
+        return compile(new MvelAnalysis(source, imports), callsPerRun);
+    }
+
+    /**
      * Compiles an expression after MVEL's analysis pass over it.
      *
      * @param analysis The analysis pass, which hasn't run yet, of the expression to compile. When it rejects the
@@ -82,12 +120,52 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * @return The compiled expression
      */
     static MvelExpression compile(MvelAnalysis analysis) {
+        return compile(analysis, classLoaderCallsPerRun(analysis.sourceText().length()));
+    }
+
+    /**
+     * Returns how many times each run of an expression may ask its parser configuration for the class loader: as many
+     * as MVEL's analysis of it may (see {@link MvelAnalysis#classLoaderCallLimit}).
+     *
+     * <p>
+     * MVEL asks as it builds what reads a value: in a copy's first run, again after 50 runs, and once a value's type
+     * changes. The first run of a copy also compiles each argument that is a chain of properties, asking about twice
+     * for each of its parts: 10,200 times for {@code s.equals(m.a.a...)} with 5,100 parts, 10,211 characters, and
+     * 10,001 times for 1,000 of {@code s.equals(m.a.a.a.a.a)} joined by {@code ||}, 24,996 characters, with a package
+     * imported. Later runs asked up to 5,792 times for 60 calls with 90-part chains, 11,696 characters, as MVEL built
+     * them anew. So a run of such flat chains asked at most about once for each character, and the limit allows 20
+     * times as many and 10,000 more. Calls nested in one another through a class named with its package cost far
+     * more as a copy first builds them, about half the square of how deep they are: {@code a.B.f(} nested 340 deep
+     * around {@code x}, 2,381 characters, and {@code java.lang.Math.abs(} nested 450 deep in a {@code foreach} over
+     * 60 values, 9,039 characters, each ask more than the limit allows, so a run of such an expression fails as if
+     * MVEL went round in a loop (#861). Without such arguments a run asked at most 6 times, with 201 packages
+     * imported, however many rounds the expression's own loops went. A function that calls itself, with a package
+     * imported and a class loader that isn't one of the JDK's own, asks about once more for each call still under
+     * way, as MVEL builds what reads a value in each before any is built: 205 times 200 calls deep. Only a thread with
+     * a very large stack gets deep enough to pass the limit: a run on a thread of the JVM's default stack size ran out
+     * of stack at 500 deep.
+     * </p>
+     *
+     * <p>
+     * MVEL asks on every round of the loop that never ends (#857), about once every 1.8 microseconds, keeping more
+     * memory each round until the run ends, so the limit ends such a run in about 20 milliseconds for an expression
+     * of 100 characters, 50 for 1,000, 375 for 10,000 and 4.5 seconds for 100,000.
+     * </p>
+     *
+     * @param length The expression's length
+     * @return How many times each run may ask
+     */
+    static long classLoaderCallsPerRun(int length) {
+        return MvelAnalysis.classLoaderCallLimit(length);
+    }
+
+    private static MvelExpression compile(MvelAnalysis analysis, long callsPerRun) {
         // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
         // run(). The analysis pass catches more of it up front.
         return withClassLoader(analysis.compiledImports().classLoader(), () -> {
             analysis.compile();
-            return new MvelExpression(analysis.sourceText(), analysis.compiledImports(),
-                    MVEL.compileExpression(analysis.sourceText(), newParserContext(analysis.compiledImports())));
+            return new MvelExpression(analysis.sourceText(), analysis.compiledImports(), callsPerRun,
+                    newCopy(analysis.sourceText(), analysis.compiledImports(), callsPerRun));
         });
     }
 
@@ -96,7 +174,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         // MVEL's WARNING for a failed method call or indexed read can quote a fact unescaped; the engine escapes it.
         boolean outermost = MvelWarningFilter.enter();
         try {
-            return MVEL.executeExpression(compiledIn(session), (Object) null, context.facts());
+            return run(session, context.facts());
         } catch (RuntimeException e) {
             // What the rule's Java code threw, so a failure has the same cause before and after MVEL's JIT.
             throw CalledCodeFailures.<RuntimeException>unwrapped(e);
@@ -111,8 +189,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         // output in place.
         boolean outermost = MvelWarningFilter.enter();
         try {
-            MVEL.executeExpression(compiledIn(session), (Object) null,
-                    new ActionVariables(context.facts(), context.output()));
+            run(session, new ActionVariables(context.facts(), context.output()));
         } catch (RuntimeException e) {
             throw CalledCodeFailures.<RuntimeException>unwrapped(e);
         } finally {
@@ -126,13 +203,26 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * the first time, then a new compilation. The expression already compiled with these imports, so MVEL's analysis
      * pass isn't repeated. Sessions on several threads can call it at once.
      *
-     * @return A compiled expression that no other session runs
+     * @return A compiled copy that no other session runs
      */
-    Serializable newCompiled() {
-        Serializable first = loaded.getAndSet(null);
+    Copy newCompiled() {
+        Copy first = loaded.getAndSet(null);
         return first != null ? first
-                : withClassLoader(imports.classLoader(),
-                        () -> MVEL.compileExpression(source, newParserContext(imports)));
+                : withClassLoader(imports.classLoader(), () -> newCopy(source, imports, callsPerRun));
+    }
+
+    /**
+     * Compiles a copy of an expression, whose runs may each ask the configuration it was compiled with for the class
+     * loader only so many times (see {@link Imports#newRunConfiguration}).
+     *
+     * @param source      The expression's source text
+     * @param imports     The imports to compile it with
+     * @param callsPerRun How many times each run may ask
+     * @return The compiled copy
+     */
+    static Copy newCopy(String source, Imports imports, long callsPerRun) {
+        ParserConfiguration configuration = imports.newRunConfiguration(callsPerRun);
+        return new Copy(MVEL.compileExpression(source, newParserContext(imports, configuration)), configuration);
     }
 
     /**
@@ -163,8 +253,42 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         return OptimizerFactory.class.getClassLoader();
     }
 
-    private Serializable compiledIn(Session session) {
-        return mvelSession(session).compiled(this);
+    /**
+     * Runs the session's compiled copy of this expression, with a run of it started (see {@link Imports#startRun}).
+     * When MVEL went round in a loop in the run, the rule fails with the {@link Imports.RunLoop}, whatever MVEL threw:
+     * it may wrap it in an exception of its own, as it does for what is thrown while it compiles part of the
+     * expression as the expression runs, and end the run with that, or another failure. What MVEL threw in its place
+     * is kept as suppressed, unless it holds the loop as its cause, or is a {@link VirtualMachineError}, such as an
+     * {@link OutOfMemoryError}, which is thrown as it is, with nothing allocated for it. MVEL never ended a run
+     * normally once it had thrown one, in 46 expressions stopped after each number of calls up to 30.
+     *
+     * @param session   The run's session
+     * @param variables The names the expression reads, and their values
+     * @return What the expression returned
+     * @throws Imports.RunLoop if MVEL went round in a loop in the run
+     */
+    // What MVEL throws, an Error or a checked exception it throws unchecked too, is thrown again as it is, unless the
+    // run went round in a loop. Identity tells whether MVEL let the loop's own Error out.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private Object run(Session session, Map<String, ?> variables) {
+        Copy copy = mvelSession(session).compiled(this);
+        Imports.startRun(copy.configuration());
+        try {
+            return MVEL.executeExpression(copy.expression(), (Object) null, variables);
+        } catch (VirtualMachineError e) {
+            // Fatal: as it is, with nothing allocated for it.
+            throw e;
+        } catch (Throwable e) {
+            Imports.RunLoop loop = Imports.runLoop(copy.configuration());
+            if (loop == null || loop == e) {
+                throw e;
+            }
+            // A wrapper of the loop itself would make a chain that loops back to it.
+            if (!ExceptionReads.causeChain(e).contains(loop)) {
+                loop.addSuppressed(e);
+            }
+            throw loop;
+        }
     }
 
     /**
@@ -191,7 +315,11 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * {@link Imports#newConfiguration()}.
      */
     static ParserContext newParserContext(Imports imports) {
-        ParserContext context = new ParserContext(imports.newConfiguration());
+        return newParserContext(imports, imports.newConfiguration());
+    }
+
+    private static ParserContext newParserContext(Imports imports, ParserConfiguration configuration) {
+        ParserContext context = new ParserContext(configuration);
         if (imports.stronglyTyped()) {
             // Applied here, not only where the rule list loads, because a session compiles the expression again for
             // its own copy: without this, only the first copy would be the one that was type-checked.
