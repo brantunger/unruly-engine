@@ -23,6 +23,11 @@ final class MvelAnalysis extends ExpressionCompiler {
 
     private static final long serialVersionUID = 1L;
 
+    // How many times MVEL's analysis may ask for the class loader: a fixed allowance, and more for each character of
+    // the expression (see classLoaderCallLimit).
+    private static final long CLASS_LOADER_CALLS = 10_000;
+    private static final long CLASS_LOADER_CALLS_PER_CHARACTER = 20;
+
     // An identifier, as Java reads one.
     private static final String IDENTIFIER = "\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*";
     // What MVEL read after the type of a declaration it rejects, up to where it stopped: the variable's name, and
@@ -60,22 +65,73 @@ final class MvelAnalysis extends ExpressionCompiler {
         this.source = source;
         this.imports = imports;
         setVerifyOnly(true);
+        Imports.limitClassLoaderCalls(pCtx.getParserConfiguration(), classLoaderCallLimit(source.length()));
     }
 
     /**
      * Runs the analysis pass. When MVEL rejects the expression, the type it rejected is read first, for
      * {@link #rejectedType()}.
      *
+     * <p>
+     * MVEL's analysis never ends for some expressions, such as {@code java.lang.Math.abs(1)x}, a call through a class
+     * named with its package with something glued to it, and never checks for an interrupt (#840). On every round it
+     * asks the parser configuration for its class loader, so the pass is stopped once it has asked more times than
+     * {@link #classLoaderCallLimit} allows for the expression, and the expression is rejected.
+     * </p>
+     *
      * @return What MVEL compiled, which is only checked
+     * @throws CompileException if MVEL rejects the expression, or its analysis went round in a loop: then the cause
+     *                          is an {@link Imports.AnalysisLoop}
      */
     @Override
     public CompiledExpression compile() {
+        CompiledExpression compiled;
         try {
-            return super.compile();
+            compiled = super.compile();
         } catch (CompileException e) {
+            throwIfLooped();
             rejected = typeNamed(lastNode, expr, e.getCursor());
             throw e;
+        } catch (RuntimeException e) {
+            // MVEL throws some failures as they are, not as a CompileException, and one may follow a loop MVEL caught.
+            throwIfLooped();
+            throw e;
         }
+        throwIfLooped();
+        return compiled;
+    }
+
+    /**
+     * Rejects the expression if MVEL's analysis asked for the class loader as many times as the limit allows, whether
+     * the pass ended or MVEL caught what was thrown to end it.
+     *
+     * @throws CompileException if the analysis went round in a loop, with the {@link Imports.AnalysisLoop} as its cause
+     */
+    private void throwIfLooped() {
+        Imports.AnalysisLoop loop = Imports.analysisLoop(pCtx.getParserConfiguration());
+        if (loop != null) {
+            throw new CompileException(loop.getMessage(), expr, 0, loop);
+        }
+    }
+
+    /**
+     * Returns how many times MVEL's analysis of an expression may ask for the class loader: a fixed allowance of
+     * {@value #CLASS_LOADER_CALLS}, and {@value #CLASS_LOADER_CALLS_PER_CHARACTER} more for each character. MVEL asks
+     * about once for each part of a chain of properties and calls, at most about once for each character of an
+     * expression it analyses to its end, and once on each round of the loop that never ends.
+     *
+     * <p>
+     * MVEL analyses what is inside brackets again for each level of them, so a long chain of names that aren't
+     * classes, wrapped in many levels of brackets that aren't needed, asks about as many times as the levels and the
+     * chain's parts multiplied, and is rejected once that passes the limit: {@code m.a.a...} with 93 or more
+     * {@code .a}, inside as many levels of parentheses (#840).
+     * </p>
+     *
+     * @param length The expression's length
+     * @return How many times MVEL may ask
+     */
+    static long classLoaderCallLimit(int length) {
+        return CLASS_LOADER_CALLS + CLASS_LOADER_CALLS_PER_CHARACTER * length;
     }
 
     /**

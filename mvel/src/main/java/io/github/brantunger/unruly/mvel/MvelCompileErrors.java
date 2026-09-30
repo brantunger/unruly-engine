@@ -55,6 +55,9 @@ final class MvelCompileErrors {
     private static final String BADLY_FORMED = "not a statement, or badly formed structure";
     // What an expression MVEL's parser reads out of bounds for, such as b., ? or ( ), is reported as.
     private static final String MALFORMED_EXPRESSION = "malformed expression";
+    // The engine's description of an expression MVEL's analysis went round in a loop over (see analysisLoop).
+    private static final String ANALYSIS_LOOP = "MVEL's analysis went round in a loop, as it does for a call through a "
+            + "class named with its package with something glued to it, such as java.lang.Math.abs(1)x";
     // What an import of a whole package whose last '.' MVEL can't read, at index 32,768 or later of the expression, is
     // reported as. MVEL keeps that index in a short, so it wraps, and MVEL reads the name out of bounds.
     private static final String PACKAGE_IMPORT_TOO_FAR = "the '.' before the '*' of an import of a whole package must "
@@ -272,6 +275,29 @@ final class MvelCompileErrors {
      */
     static InvalidExpressionException malformed(RuntimeException e) {
         return positionless(MALFORMED_EXPRESSION, e);
+    }
+
+    /**
+     * Tells whether compiling failed because MVEL's analysis went round in a loop, going by the
+     * {@link Imports.AnalysisLoop} that stopped it, anywhere in the cause chain (see {@link MvelAnalysis#compile()}).
+     *
+     * @param e What compiling threw
+     * @return {@code true} if MVEL's analysis went round in a loop
+     */
+    static boolean looped(CompileException e) {
+        return ExceptionReads.causeChain(e).stream().anyMatch(Imports.AnalysisLoop.class::isInstance);
+    }
+
+    /**
+     * Reports an expression MVEL's analysis went round in a loop over (see {@link #looped}), as {@code failed to
+     * compile: MVEL's analysis went round in a loop, as it does for ...} (see {@link #positionless}): MVEL gives no
+     * place for it.
+     *
+     * @param e What compiling threw
+     * @return The exception to throw
+     */
+    static InvalidExpressionException analysisLoop(CompileException e) {
+        return positionless(ANALYSIS_LOOP, e);
     }
 
     /**

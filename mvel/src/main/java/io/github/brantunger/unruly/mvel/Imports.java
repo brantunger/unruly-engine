@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.jspecify.annotations.Nullable;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.util.MethodStub;
@@ -155,6 +156,13 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         // How many packages are imported once the rule list's imports are registered, or -1 until then. An inline
         // `import pkg.*;` in the expression adds another, where a name that isn't a class elsewhere may be one.
         private int sharedPackageCount = -1;
+        // How many more times MVEL may ask for the class loader, or -1 for any number (see limitClassLoaderCalls). Not
+        // transient: a copy read back would otherwise have 0 left.
+        private long classLoaderCallsLeft = -1;
+        // What was thrown once none were left, or null.
+        private transient AnalysisLoop loop;
+        // Whether the configuration is looking a name up among the imports, whose calls don't count (see hasImport).
+        private transient boolean lookingUp;
 
         SharedLookupConfiguration(Set<String> notClasses, boolean classFileFirst) {
             this.notClasses = notClasses;
@@ -163,6 +171,36 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
 
         void startSharing() {
             sharedPackageCount = packageCount();
+        }
+
+        /**
+         * Returns the class loader, as MVEL's configuration does, once for each time MVEL asks for it, up to the limit
+         * set with {@link #limitClassLoaderCalls}. MVEL asks on every round of the loop in its analysis that never ends
+         * (#840). Once none are left, every call throws the same {@link AnalysisLoop}: MVEL catches every
+         * {@link Exception} where it asks in that loop, and some {@link Throwable}s elsewhere, so it is thrown again
+         * until it gets out. The calls made while a name is looked up among the imports (see {@link #hasImport})
+         * don't count, and never throw: they are made once for each imported package and each name, not on each round
+         * of the loop, and MVEL's lookup would catch what was thrown and remember a class's name, for every expression
+         * of the rule list, as a name that isn't one.
+         *
+         * @return The class loader
+         * @throws AnalysisLoop if MVEL asked more times than the limit allows
+         */
+        @Override
+        public ClassLoader getClassLoader() {
+            if (lookingUp) {
+                return super.getClassLoader();
+            }
+            if (classLoaderCallsLeft == 0) {
+                if (loop == null) {
+                    loop = new AnalysisLoop();
+                }
+                throw loop;
+            }
+            if (classLoaderCallsLeft > 0) {
+                classLoaderCallsLeft--;
+            }
+            return super.getClassLoader();
         }
 
         /**
@@ -208,6 +246,15 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          */
         @Override
         public boolean hasImport(String name) {
+            lookingUp = true;
+            try {
+                return lookUp(name);
+            } finally {
+                lookingUp = false;
+            }
+        }
+
+        private boolean lookUp(String name) {
             // A class imported inline by this expression is in its own imports, whatever other expressions found.
             if (imports.containsKey(name) || importNested(name)) {
                 return true;
@@ -353,6 +400,44 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         private int packageCount() {
             Set<String> packageImports = getPackageImports();
             return packageImports != null ? packageImports.size() : 0;
+        }
+    }
+
+    /**
+     * Limits how many times MVEL may ask a configuration {@link #newConfiguration()} created for its class loader, for
+     * MVEL's analysis pass over one expression, which is the only one to use the configuration: MVEL asks on every
+     * round of a loop in its analysis that never ends, and never checks for an interrupt (#840). Once the limit is
+     * reached, the configuration throws an {@link AnalysisLoop}.
+     *
+     * @param configuration A configuration {@link #newConfiguration()} created
+     * @param calls         How many times MVEL may ask
+     */
+    static void limitClassLoaderCalls(ParserConfiguration configuration, long calls) {
+        ((SharedLookupConfiguration) configuration).classLoaderCallsLeft = calls;
+    }
+
+    /**
+     * Returns what a configuration threw once MVEL had asked it for its class loader as many times as its limit
+     * allows (see {@link #limitClassLoaderCalls}).
+     *
+     * @param configuration A configuration {@link #newConfiguration()} created
+     * @return What it threw, or {@code null} if MVEL stayed within the limit
+     */
+    static @Nullable AnalysisLoop analysisLoop(ParserConfiguration configuration) {
+        return ((SharedLookupConfiguration) configuration).loop;
+    }
+
+    /**
+     * What a configuration throws once MVEL's analysis pass has asked it for its class loader more times than its
+     * limit allows (see {@link #limitClassLoaderCalls}), as it does on every round of a loop that never ends (#840).
+     * It is an {@link Error}, as MVEL catches every {@link Exception} where it asks in that loop, and goes round again.
+     */
+    static final class AnalysisLoop extends Error {
+
+        private static final long serialVersionUID = 1L;
+
+        AnalysisLoop() {
+            super("MVEL's analysis asked for the class loader more times than the expression allows");
         }
     }
 
