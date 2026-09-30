@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.api.language.MessageText;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
@@ -649,7 +650,7 @@ final class MvelCompileErrors {
         // never shorter than it is raw, so only one shorter raw than its count is escaped to measure it.
         int count = FactNames.leftOut(rootMessage.length()).length();
         int least = ": ".length() + (rootMessage.length() < count
-                ? Math.min(FactNames.escape(rootMessage).length(), count) : count);
+                ? Math.min(MessageText.escape(rootMessage).length(), count) : count);
         String named = " (caused by " + FactNames.quoteWithin(className, room - " (caused by )".length() - least);
         return named + ": " + FactNames.escapeWithin(rootMessage, room - named.length() - ": )".length()) + ")";
     }

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.MessageText;
 import org.mvel2.compiler.AbstractParser;
 
 import java.util.HashSet;
@@ -49,21 +50,14 @@ final class FactNames {
      */
     static final int MAX_CACHED_MISS_LENGTH = MAX_CACHED_MISS_CHARS / 16;
 
-    // The longest part of a fact name a message shows, as in the engine's messages.
+    // The longest part of a name a message shows, as MessageText.quote shows it: quoteWithin shows no more of a name.
     private static final int MAX_NAME_LENGTH = 200;
 
     /**
-     * The longest part of a description a message shows, as in the engine's messages, and so the longest message about
-     * an expression MVEL rejected that the engine reports without shortening it again.
+     * The longest text {@code MessageText.truncate} keeps, which is also the longest message about an expression the
+     * engine reports without shortening it again, and so the longest message about an expression MVEL rejected.
      */
     static final int MAX_DESCRIPTION_LENGTH = 1_000;
-
-    // The default-ignorable code points that aren't format characters, as in the engine's escaping: the first and
-    // last code point of each range, in order.
-    private static final int[] OTHER_DEFAULT_IGNORABLE = {
-        0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
-        0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
-    };
 
     private static final Set<String> RESERVED = reservedWords();
 
@@ -117,38 +111,18 @@ final class FactNames {
      */
     void check(String name) {
         if (!isIdentifier(name)) {
-            throw new IllegalArgumentException("'" + quote(name) + "' is not a valid fact name: "
+            throw new IllegalArgumentException("'" + MessageText.quote(name) + "' is not a valid fact name: "
                     + "rules can only refer to a fact named with a Java identifier");
         }
         if (RESERVED.contains(name) || importedClassNames.contains(name) || isPackageClass(name)) {
-            throw new IllegalArgumentException("'" + quote(name) + "' cannot be used as a fact name: "
+            throw new IllegalArgumentException("'" + MessageText.quote(name) + "' cannot be used as a fact name: "
                     + "MVEL reads it as a keyword or class name, so rules would never see the fact");
         }
     }
 
     /**
-     * Shortens a fact name to {@value #MAX_NAME_LENGTH} characters (UTF-16 units), then escapes it, for a message, as
-     * the engine's {@code core.Failures.quote} does, which the {@code mvel} package may not use; each escaped unit
-     * shows as 2 or 6 characters. {@code FactNamesQuoteTest} and {@code QuoteCopiesTest} run the same cases on both, so
-     * the two can't drift apart. Fact names can come from request data, and the engine logs these messages, so a line
-     * break in a name mustn't start a log line. Only a name that isn't an identifier can contain one. Format
-     * characters, such as bidi controls and zero-width characters, and the other characters a viewer shows as nothing,
-     * such as the Hangul fillers and variation selectors, which an identifier can contain too, are escaped as well, and
-     * so is a lone surrogate, which a logger's encoder would write as {@code ?}. A name is never shortened inside a
-     * surrogate pair. MVEL's messages about its options show the option's name and value this way too.
-     */
-    static String quote(String name) {
-        int shown = shownOf(name);
-        String quoted = escape(name.substring(0, shown));
-        if (shown < name.length()) {
-            return quoted + "... (" + (name.length() - shown) + " more characters)";
-        }
-        return quoted;
-    }
-
-    /**
-     * Tells how many of a name's characters {@link #quote} shows: at most {@value #MAX_NAME_LENGTH}, and never half a
-     * surrogate pair.
+     * Tells how many of a name's characters {@link MessageText#quote} shows: at most {@value #MAX_NAME_LENGTH}, and
+     * never half a surrogate pair.
      *
      * @param name The name
      * @return How many of its first characters are shown
@@ -162,34 +136,14 @@ final class FactNames {
     }
 
     /**
-     * Shortens text to at most {@value #MAX_DESCRIPTION_LENGTH} characters (UTF-16 units), saying how many were left
-     * out, as the engine's {@code core.Failures.truncate} does, which the {@code mvel} package may not use;
-     * {@code TruncateCopiesTest} runs the same cases on both. A surrogate pair the limit falls inside is left out
-     * whole, so the text never ends in half a character. The text isn't escaped: it's shortened before it's escaped,
-     * as the engine does, so the count of what was left out counts the text's own characters. MVEL's issues are
-     * shortened by {@link #escapeWithin} instead, which leaves room for the rest of their message.
-     *
-     * @param text The text
-     * @return The text, shortened if it was longer
-     */
-    static String truncate(String text) {
-        if (text.length() <= MAX_DESCRIPTION_LENGTH) {
-            return text;
-        }
-        int kept = Character.isHighSurrogate(text.charAt(MAX_DESCRIPTION_LENGTH - 1))
-                ? MAX_DESCRIPTION_LENGTH - 1 : MAX_DESCRIPTION_LENGTH;
-        return text.substring(0, kept) + leftOut(text.length() - kept);
-    }
-
-    /**
-     * Escapes text as {@link #escape} does, shortened first, if its escaped form is longer than {@code room}
-     * characters, to as many of its first characters as fit in {@code room} with {@code ... (N more characters)}
-     * after them, as the engine's {@code core.Failures.truncate} writes it. N counts the text's own characters left
-     * out, not escaped ones, and the text is cut between code points, so never inside a surrogate pair or an escape.
-     * A message about an expression MVEL rejected is its description and a fixed part, such as {@code failed to
-     * compile at line 1, column 8: }, so given the room the fixed part leaves in {@value #MAX_DESCRIPTION_LENGTH}
-     * characters, the message is shortened once, here, and the engine, which shortens a message longer than that,
-     * reports it whole. A room too small for the count alone gets the count alone.
+     * Escapes text as {@link MessageText#escape} does, shortened first, if its escaped form is longer than
+     * {@code room} characters, to as many of its first characters as fit in {@code room} with
+     * {@code ... (N more characters)} after them, as {@link MessageText#truncate} writes it. N counts the text's own
+     * characters left out, not escaped ones, and the text is cut between code points, so never inside a surrogate pair
+     * or an escape. A message about an expression MVEL rejected is its description and a fixed part, such as
+     * {@code failed to compile at line 1, column 8: }, so given the room the fixed part leaves in
+     * {@value #MAX_DESCRIPTION_LENGTH} characters, the message is shortened once, here, and the engine, which shortens
+     * a message longer than that, reports it whole. A room too small for the count alone gets the count alone.
      *
      * @param text The text, not escaped
      * @param room The most characters the escaped text may take, the count included
@@ -216,28 +170,28 @@ final class FactNames {
         int end = 0;
         while (end < most && shown <= room) {
             int next = end + Character.charCount(text.codePointAt(end));
-            shown += escape(text.substring(end, next)).length();
+            shown += MessageText.escape(text.substring(end, next)).length();
             if (shown + leftOut(text.length() - next).length() <= room) {
                 kept = next;
             }
             end = next;
         }
-        return end == text.length() && shown <= room ? escape(text)
-                : escape(text.substring(0, kept)) + leftOut(text.length() - kept);
+        return end == text.length() && shown <= room ? MessageText.escape(text)
+                : MessageText.escape(text.substring(0, kept)) + leftOut(text.length() - kept);
     }
 
     /**
-     * Quotes a name as {@link #quote} does, or, if that is longer than {@code room} characters, escapes it within the
-     * room as {@link #escapeWithin} does, for a name that is part of a message about an expression MVEL rejected, such
-     * as a class or an import, so the name can't make the message too long. Either way it shows no more of the name
-     * than {@link #quote} does.
+     * Quotes a name as {@link MessageText#quote} does, or, if that is longer than {@code room} characters, escapes it
+     * within the room as {@link #escapeWithin} does, for a name that is part of a message about an expression MVEL
+     * rejected, such as a class or an import, so the name can't make the message too long. Either way it shows no more
+     * of the name than {@link MessageText#quote} does.
      *
      * @param name The name
      * @param room The most characters the quoted name may take, the count of what was left out included
      * @return The name, quoted
      */
     static String quoteWithin(String name, int room) {
-        String quoted = quote(name);
+        String quoted = MessageText.quote(name);
         return quoted.length() <= room ? quoted : escapeWithin(name, shownOf(name), room);
     }
 
@@ -249,77 +203,6 @@ final class FactNames {
      */
     static String leftOut(int count) {
         return "... (" + count + " more characters)";
-    }
-
-    /**
-     * Escapes text for a message, as the engine's {@code core.Failures.escape} does, without shortening it: line
-     * breaks, tabs and other control characters, the Unicode line and paragraph separators, format and other
-     * default-ignorable characters, and lone surrogates; one outside the Basic Multilingual Plane as its two UTF-16
-     * units. A backslash isn't escaped, so escaping text again, as the engine does the whole message it reports,
-     * changes nothing.
-     *
-     * @param text The text
-     * @return The text, escaped
-     */
-    static String escape(String text) {
-        StringBuilder escaped = new StringBuilder(text.length());
-        int c;
-        for (int i = 0; i < text.length(); i += Character.charCount(c)) {
-            c = text.codePointAt(i);
-            switch (c) {
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    int type = Character.getType(c);
-                    // The loop reads code points, so only a lone surrogate has the type SURROGATE.
-                    if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)) {
-                        for (char unit : Character.toChars(c)) {
-                            appendEscape(escaped, unit);
-                        }
-                    } else {
-                        escaped.appendCodePoint(c);
-                    }
-                }
-            }
-        }
-        return escaped.toString();
-    }
-
-    /**
-     * Tells whether a code point is a default-ignorable one that isn't a format character, as the engine's
-     * {@code core.Failures.isOtherDefaultIgnorable} does.
-     *
-     * @param c The code point
-     * @return {@code true} if a viewer shows it as nothing
-     */
-    private static boolean isOtherDefaultIgnorable(int c) {
-        // The ranges are in order, so a code point below the next one, as ASCII is below the first, is none of them.
-        for (int i = 0; i < OTHER_DEFAULT_IGNORABLE.length; i += 2) {
-            if (c < OTHER_DEFAULT_IGNORABLE[i]) {
-                return false;
-            }
-            if (c <= OTHER_DEFAULT_IGNORABLE[i + 1]) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Appends one UTF-16 unit as a backslash, {@code u} and four lowercase hex digits, as the engine's
-     * {@code core.Failures.appendEscape} does, without parsing a format for every character.
-     *
-     * @param quoted What to append to
-     * @param unit   The unit
-     */
-    static void appendEscape(StringBuilder quoted, char unit) {
-        quoted.append("\\u");
-        for (int shift = 12; shift >= 0; shift -= 4) {
-            quoted.append(Character.forDigit((unit >> shift) & 0xF, 16));
-        }
     }
 
     private boolean isPackageClass(String name) {

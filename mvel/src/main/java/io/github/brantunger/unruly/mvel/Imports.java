@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.MessageText;
 import org.jspecify.annotations.Nullable;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.compiler.AbstractParser;
@@ -566,7 +567,7 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * @param after What the message says after the name, from its closing quote on
          */
         ImportTooLarge(String name, String after) {
-            super(START + FactNames.quote(name) + after);
+            super(START + MessageText.quote(name) + after);
             this.name = name;
             this.after = after;
         }

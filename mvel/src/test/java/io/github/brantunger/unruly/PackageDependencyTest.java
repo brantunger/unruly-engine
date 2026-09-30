@@ -48,10 +48,10 @@ class PackageDependencyTest {
     /**
      * The library packages each package's code may use. {@code api.exception} stands alone, and {@code api.language}
      * uses it for the kinds and issues of expressions, and {@code core} only to seal its contexts to the engine's
-     * records and to share how accessors are reached, so the SPI ships with the engine in
-     * unruly-engine-core. {@code mvel} uses only the SPI packages, and {@code core} finds languages with ServiceLoader
-     * rather than using {@code mvel}, so the MVEL language is its own artifact. {@code test}, the test kit, uses the
-     * API and creates the engine's context records.
+     * records, to share how accessors are reached and to shorten and escape text as the engine does, so the SPI ships
+     * with the engine in unruly-engine-core. {@code mvel} uses only the SPI packages, and {@code core} finds languages
+     * with ServiceLoader rather than using {@code mvel}, so the MVEL language is its own artifact. {@code test}, the
+     * test kit, uses the API and creates the engine's context records.
      */
     private static final Map<String, Set<String>> ALLOWED = Map.of(
             "api", Set.of("api.exception", "api.language", "core"),
@@ -68,10 +68,11 @@ class PackageDependencyTest {
             // text the way the engine does.
             new Dependency("api", "core"), List.of("api/BeansAndMapsWriter.java", "api/LoggingRuleListener.java",
                     "api/Names.java", "api/RulesEngineBuilder.java", "api/RunContext.java"),
-            // Each context interface permits the engine's record, and FactProperties shares how accessors are reached.
+            // Each context interface permits the engine's record, FactProperties shares how accessors are reached, and
+            // MessageText shortens and escapes text the way the engine does.
             new Dependency("api.language", "core"), List.of("api/language/ActionContext.java",
                     "api/language/CompileContext.java", "api/language/EvaluationContext.java",
-                    "api/language/FactProperties.java"),
+                    "api/language/FactProperties.java", "api/language/MessageText.java"),
             // The test kit creates the engine's context records for a language's unit tests.
             new Dependency("test", "core"), List.of("test/LanguageTestContexts.java"));
 
