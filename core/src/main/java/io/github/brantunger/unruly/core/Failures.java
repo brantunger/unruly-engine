@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
@@ -315,9 +316,9 @@ public final class Failures {
                 String note = at == LoggedFailures.LoggedAt.NOT_BELOW
                         ? "caused by " + describeWithClass(fatal) + ", already logged"
                         : "after " + nested(at == LoggedFailures.LoggedAt.NESTED_LOAD) + describeWithClass(fatal);
-                return escape(truncate(messageOr(news, news.getClass().getName()))) + " (" + note + ")";
+                return clip(messageOr(news, news.getClass().getName())) + " (" + note + ")";
             }
-            String text = escape(truncate(messageOr(e, e.getClass().getName())));
+            String text = clip(messageOr(e, e.getClass().getName()));
             return text + causeNote(causeChain(e), readableMessage(e));
         }
         String nested = nested(below.loggedByLoad());
@@ -325,8 +326,7 @@ public final class Failures {
         if (news == null) {
             return nested + loggedText(logged);
         }
-        return escape(truncate(messageOr(news, news.getClass().getName()))) + " (after " + nested + noteText(logged)
-                + ")";
+        return clip(messageOr(news, news.getClass().getName())) + " (after " + nested + noteText(logged) + ")";
     }
 
     /** Says what failed below a description: {@code a nested run() failed: } or {@code a nested load() failed: }. */
@@ -377,11 +377,11 @@ public final class Failures {
     private static String noteText(Throwable logged) {
         String message = messageOr(logged, logged.getClass().getName());
         if (logged instanceof ReportedFailure) {
-            return escape(truncate(message));
+            return clip(message);
         }
         // Shortened before it's escaped, as a whole, so a cut never falls inside an escape.
         String note = rawCauseNote(causeChain(logged), readableMessage(logged));
-        return escape(truncate(escape(message).contains(escape(note)) ? message : message + note));
+        return clip(escape(message).contains(escape(note)) ? message : message + note);
     }
 
     /**
@@ -398,7 +398,7 @@ public final class Failures {
         if (logged instanceof ReportedFailure) {
             return messageOf(logged);
         }
-        String text = escape(truncate(messageOr(logged, logged.getClass().getName())));
+        String text = clip(messageOr(logged, logged.getClass().getName()));
         String note = causeNote(causeChain(logged), readableMessage(logged));
         return text.contains(note) ? text : text + note;
     }
@@ -468,7 +468,7 @@ public final class Failures {
      */
     static String describeWithClass(Throwable e) {
         String readable = read(e::toString, thrown -> null);
-        String text = escape(truncate(readable != null ? readable : textOf(e)));
+        String text = clip(readable != null ? readable : textOf(e));
         String note = causeNote(causeChain(e), readable);
         return text.contains(note) ? text : text + note;
     }
@@ -577,18 +577,41 @@ public final class Failures {
     }
 
     /**
-     * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, saying how many were left out. A
-     * surrogate pair the limit falls inside is left out whole, so the message never ends in half a character.
-     * {@code mvel.FactNames} keeps a copy of this, for MVEL's issues.
+     * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, as {@link #shorten(String, int)}
+     * does. {@code mvel.FactNames} keeps a copy of this, for MVEL's issues.
      *
      * @param text The message
      * @return The message, shortened if it was longer
      */
     static String truncate(String text) {
-        if (text.length() <= MAX_DESCRIPTION_LENGTH) {
+        return shorten(text, MAX_DESCRIPTION_LENGTH);
+    }
+
+    /**
+     * Makes text the engine didn't write safe to put in a message: shortened as {@link #truncate} shortens it, then
+     * {@link #escape escaped}, so a cut never falls inside an escape.
+     *
+     * @param text The text
+     * @return The text, shortened if it was longer, then escaped
+     */
+    static String clip(String text) {
+        return escape(truncate(text));
+    }
+
+    /**
+     * Shortens text to at most {@code limit} characters, saying how many were left out: the one rule {@link #truncate}
+     * and {@link #shorten(String)} share. A surrogate pair the limit falls inside is left out whole, so the text never
+     * ends in half a character.
+     *
+     * @param text  The text
+     * @param limit How many characters to keep
+     * @return The text, shortened if it was longer
+     */
+    static String shorten(String text, int limit) {
+        if (text.length() <= limit) {
             return text;
         }
-        int kept = keptLength(text, MAX_DESCRIPTION_LENGTH);
+        int kept = keptLength(text, limit);
         return text.substring(0, kept) + "... (" + (text.length() - kept) + " more characters)";
     }
 
@@ -821,11 +844,7 @@ public final class Failures {
      * @return The name, shortened if it was longer
      */
     static String shorten(String name) {
-        if (name.length() <= MAX_NAME_LENGTH) {
-            return name;
-        }
-        int kept = keptLength(name, MAX_NAME_LENGTH);
-        return name.substring(0, kept) + "... (" + (name.length() - kept) + " more characters)";
+        return shorten(name, MAX_NAME_LENGTH);
     }
 
     /**
@@ -840,8 +859,21 @@ public final class Failures {
      *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
      */
     public static String quoteAll(Collection<? extends @Nullable String> names) {
-        return escape(truncate(names.stream().map(name -> name == null ? "null" : shorten(name))
-                .collect(Collectors.joining(", ", "[", "]"))));
+        return clip(names.stream().map(name -> name == null ? "null" : shorten(name))
+                .collect(Collectors.joining(", ", "[", "]")));
+    }
+
+    /**
+     * Makes a list of names safe to put in a message, each name shortened as {@link #quote} does and put between
+     * single quotes, the names separated by {@code ", "}, such as {@code 'eu', 'retail'}; the list is then shortened
+     * and escaped as {@link #quoteAll} shortens and escapes it.
+     *
+     * @param names The names
+     * @return The list, its names shortened to {@value #MAX_NAME_LENGTH} characters and it to
+     *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
+     */
+    static String quoteJoined(Stream<String> names) {
+        return clip(names.map(name -> "'" + shorten(name) + "'").collect(Collectors.joining(", ")));
     }
 
     /**

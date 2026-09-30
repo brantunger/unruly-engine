@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /**
  * An engine that fires the one rule whose condition is true, and fails the run when more than one is: DMN's unique
@@ -68,9 +67,7 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
                 // otherwise put every name in one log line. It's escaped after the cut, so the cut can't split an
                 // escape.
                 throw failedRun(matched.size() + " rules matched, but a unique-match engine allows one: "
-                        + Failures.escape(Failures.truncate(matched.stream()
-                                .map(rule -> "'" + Failures.shorten(rule.rule().getRuleName()) + "'")
-                                .collect(Collectors.joining(", ")))));
+                        + Failures.quoteJoined(matched.stream().map(rule -> rule.rule().getRuleName())));
             }
 
             CompiledRule resolvedRule = matched.get(0);

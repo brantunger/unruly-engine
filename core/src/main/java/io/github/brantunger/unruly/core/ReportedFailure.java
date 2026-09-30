@@ -67,11 +67,12 @@ final class ReportedFailure extends RuleExecutionException {
      * @param cause   Why, or {@code null}
      */
     ReportedFailure(String message, Throwable cause) {
-        this(message, cause, false, null);
+        this(message, cause, null, null, false, null);
     }
 
-    private ReportedFailure(String message, Throwable cause, boolean stopped, Deadline passed) {
-        super(message, cause);
+    private ReportedFailure(String message, Throwable cause, String ruleName, ExpressionKind kind, boolean stopped,
+                            Deadline passed) {
+        super(message, cause, ruleName, kind);
         this.stopped = stopped;
         this.interrupted = stopped && passed == null;
         this.passed = passed;
@@ -92,7 +93,7 @@ final class ReportedFailure extends RuleExecutionException {
      * @return The exception, which belongs to no rule
      */
     static ReportedFailure stop(String message, Exception cause, Deadline deadline) {
-        return new ReportedFailure(message, cause, true, deadline);
+        return new ReportedFailure(message, cause, null, null, true, deadline);
     }
 
     /**
@@ -128,16 +129,7 @@ final class ReportedFailure extends RuleExecutionException {
      * @param kind     Whether its condition or its action failed
      */
     ReportedFailure(String message, Throwable cause, String ruleName, ExpressionKind kind) {
-        super(message, cause, ruleName, kind);
-        this.stopped = false;
-        this.interrupted = false;
-        this.passed = null;
-        Failures.Below below = Failures.below(cause);
-        this.innermostBelow = below.innermost();
-        this.firstError = below.error();
-        this.belowRecorded = true;
-        this.loggedBelow = below.news() == null ? below.logged() : this;
-        this.loggedBelowByLoad = below.news() == null && below.loggedByLoad();
+        this(message, cause, ruleName, kind, false, null);
     }
 
     /**
