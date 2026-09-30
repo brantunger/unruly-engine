@@ -120,14 +120,15 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * {@code ImportLimitCopiesTest} runs the same names through both, so the two can't drift apart.
      *
      * @param name The package's name
-     * @throws ImportTooLarge if {@code name} has more than 1,000 characters or more than 64 dot-separated parts
+     * @throws ImportTooLarge if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more than
+     *                        {@value #MAX_IMPORT_PARTS} dot-separated parts
      */
     static void checkSize(String name) {
         if (name.length() > MAX_IMPORT_LENGTH) {
             throw new ImportTooLarge(name, "': it has " + name.length() + " characters, and an import may have at "
                     + "most " + MAX_IMPORT_LENGTH);
         }
-        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        long parts = RuleText.dottedParts(name);
         if (parts > MAX_IMPORT_PARTS) {
             throw new ImportTooLarge(name, "': it has " + parts + " dot-separated parts, and an import may have at "
                     + "most " + MAX_IMPORT_PARTS);
@@ -322,8 +323,8 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * twice, then rejects the expression if it isn't a class.
          *
          * @param packageName The package's name, as the expression writes it
-         * @throws ImportTooLarge if the name has more than 1,000 characters or more than 64 dot-separated parts,
-         *                        before it is looked up
+         * @throws ImportTooLarge if the name has more than {@value Imports#MAX_IMPORT_LENGTH} characters or more than
+         *                        {@value Imports#MAX_IMPORT_PARTS} dot-separated parts, before it is looked up
          */
         @Override
         public void addPackageImport(String packageName) {

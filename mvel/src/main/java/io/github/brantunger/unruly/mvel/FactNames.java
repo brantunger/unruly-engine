@@ -486,11 +486,7 @@ final class FactNames {
      */
     private static Set<String> reservedWords() {
         Set<String> words = new HashSet<>(AbstractParser.LITERALS.keySet());
-        for (String operator : AbstractParser.OPERATORS.keySet()) {
-            if (Character.isJavaIdentifierStart(operator.charAt(0))) {
-                words.add(operator);
-            }
-        }
+        words.addAll(RuleText.wordOperators());
         words.add("this");
         return Set.copyOf(words);
     }

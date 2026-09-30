@@ -170,13 +170,14 @@ final class ConditionAssignments {
     /**
      * A keyword used as a member name, as in {@code claim.with} or {@code claim.?with}, is just a property. MVEL
      * allows whitespace, including a line break, between the dot and the name, and counts every character up to a space
-     * as whitespace, a control character such as U+0001 too; what Java counts as whitespace is skipped as well.
+     * as whitespace, a control character such as U+0001 too; what Java counts as whitespace is skipped as well (see
+     * {@link RuleText#isWhitespace(char)}).
      */
     private static @Nullable String writeKeyword(String text, int start, int end) {
         String word = text.substring(start, end);
         int before = start - 1;
         // Bounded by the start of the text, where charAt reads U+0000, which is up to a space too.
-        while (before >= 0 && (text.charAt(before) <= ' ' || Character.isWhitespace(text.charAt(before)))) {
+        while (before >= 0 && RuleText.isWhitespace(text.charAt(before))) {
             before--;
         }
         boolean member = charAt(text, before) == '.'

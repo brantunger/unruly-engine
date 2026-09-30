@@ -48,7 +48,7 @@ final class MvelCompileErrors {
     private static final String CLASS_CALLED_LIKE_METHOD = "a class can't be called like a method: use new";
     private static final char NEW_LINE = '\n';
     // The keyword of an import, then what MVEL skips as whitespace before the name: every character up to a space.
-    private static final String IMPORT_KEYWORD = "import[\\x00-\\x20]*";
+    private static final String IMPORT_KEYWORD = "import" + RuleText.MVEL_WHITESPACE + "*";
     // MVEL's description of an error whose message is missing, such as a class's failed static initializer.
     private static final String MISSING_DESCRIPTION = "null";
     // What MVEL says of a malformed statement such as b = = 1 when an assert inside MVEL doesn't stop it first.
