@@ -98,9 +98,9 @@ language. Extend it and supply expressions in your language, one method for each
 | `conditionReadsFacts` | `factEquals`, `putFact` | No | Fires for `x` = 1, not for 2 |
 | `conditionReadsWholeNumbers` | `factEquals`, `putFact` | `comparesWholeNumbersByValue()` returns `false` | Fires for `x` = 1 given a `Long`, a `Short` or a `BigDecimal` fact, not for `2L` |
 | `conditionMustBeBoolean` | `factValue`, `putFact` | No | `true` fires; `null`, `"true"` and `1` fail the rule |
-| `conditionAssignmentRejected` | `assignment`, `putFact` | `assignment()` returns `null` | `load()` or `run()` throws an `UnrulyException` naming the rule and `CONDITION` |
-| `conditionWritesRejected` | `propertyAssignment`, `conditionDeclaration`, `putFact` | Both return `null`; each part is skipped by its own `null` | A condition that sets a property of the map fact `applicant`, and one that declares the variable `z`, each make `load()` or `run()` throw an `UnrulyException` naming the rule and `CONDITION`, and the map is unchanged |
-| `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or `run()` throws an `UnrulyException` |
+| `conditionAssignmentRejected` | `assignment`, `putFact` | `assignment()` returns `null` | `load()` or two `run()`s throw, naming the rule and `CONDITION` |
+| `conditionWritesRejected` | `propertyAssignment`, `conditionDeclaration`, `putFact` | Both return `null`; each part is skipped by its own `null` | A condition that sets a property of `applicant`, a map and a `WritableApplicant`, and one that declares `z`, each make `load()` or two `run()`s throw, naming the rule and `CONDITION`, and `applicant` is unchanged |
+| `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or two `run()`s throw, the second naming the rule and `ACTION` |
 | `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact`, `putVariable`, `variableEquals` | `declareVariable()` returns `null` | A later rule still sees the fact's value, the run that declares `y` while `y` is a fact doesn't throw, and no later rule, nor a later run's condition or action, sees the declared variable |
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
@@ -108,9 +108,9 @@ language. Extend it and supply expressions in your language, one method for each
 | `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be blank or `output`, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
-| `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or `run()` |
+| `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, the second naming the rule and `CONDITION` |
 | `copiesAtLoad` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, two runs on two threads each see their own facts, and `x` = 2 fires nothing |
-| `compilerClosed` | `factEquals`, `putFact` | No | Each compiler is closed exactly once, after a reload and after `close()`, and its `close()` throws nothing |
+| `compilerClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(1)`, each compiler is closed exactly once, after a reload and after `close()`, and its `close()` throws nothing |
 | `sessionsClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, `newSession()` never returns one instance twice, unless it's `Session.none()`, and no session's `close()` throws anything |
 | `sessionClosedWhileAnotherRuns` | `factEquals`, `putFact` | No | A nested run's extra copy is closed during the outer run, both give the right output, and no session's `close()` throws anything |
 | `sessionClosedOnAnotherThread` | `factEquals`, `putFact` | No | A session a worker thread's run made closes without throwing when the test thread closes the engine |
@@ -128,8 +128,8 @@ Only the eleven `@Nullable` hooks may return `null`: `assignment`, `declareVaria
 
 - `comparesWholeNumbersByValue()` skips its check by returning `false`, and `usableFactNames()` by returning an empty
   collection.
-- Since 2.3.0, a language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`,
-  rather than a syntax error standing in for one.
+- A language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`, not a syntax
+  error.
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
 - `language()` is called for each check and for each engine a check builds, so return a new instance.
 
@@ -147,10 +147,13 @@ names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
-closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`.
+closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, and
+`compilerClosed` adds `copiesAtLoad(1)`.
+
 `sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
-`maxCopies(1)`, so that a run nested in another gets an extra copy. `conditionDetail`, `failedActionVariablesStayLocal`
-and the later-run parts of `actionVariablesStayLocal` add the same two, so each later run gets the copy, and the
+`maxCopies(1)`, so a run nested in another gets an extra copy. `conditionDetail`, `failedActionVariablesStayLocal`,
+the later-run parts of `actionVariablesStayLocal`, `conditionAssignmentRejected`, `conditionWritesRejected`,
+`outputNotReplaceable` and `missingPropertyFailsTheRun` add the same two, so each later run gets the copy, and the
 sessions, the run before it used.
 
 `compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks, `sessionsClosed`,
@@ -174,11 +177,10 @@ engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, 
 `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too: it has no
 session to close, though both checks still compare output.
 
-In `sessionClosedWhileAnotherRuns`, a listener starts a run nested in
-the check's run. With `maxCopies(1)`, the check's run holds the only kept copy, so the nested run gets an
-[extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run still has a rule to
-run. For any other language, the check fails if no session was closed during its run, if a `close()` threw, or if
-either run failed or gave the wrong output.
+In `sessionClosedWhileAnotherRuns`, a listener starts a nested run. The check's run holds the only kept copy, so the
+nested run gets an [extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run
+still has a rule to run. For any other language, the check fails if no session was closed during its run, if a
+`close()` threw, or if either run failed or gave the wrong output.
 
 `conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
 catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
@@ -186,11 +188,12 @@ there, but a detail whose text changes after another run or after `close()` fail
 session's state. A language that gives no detail passes it with nothing to check.
 
 `conditionAssignmentRejected` and `conditionWritesRejected` accept a rejection at either step, as
-`outputNotReplaceable` does: `load()` may reject the condition when it compiles, or the condition may fail when it
-runs, for example, for an assignment, by writing to the read-only `facts()`, or by evaluating to the assigned value,
-which isn't a boolean. A condition that assigns and evaluates to `true` or `false` without throwing fails the check.
+`outputNotReplaceable` does: `load()` may reject the condition, or `run()` may fail it, for example by writing to the
+read-only `facts()`, or by evaluating to the assigned value, not a boolean. A condition that assigns and evaluates to
+`true` or `false` without throwing fails the check. A failed run must fail again, with a `RuleExecutionException`
+naming the rule and `CONDITION`, or `ACTION`.
 
-`conditionWritesRejected` also fails if the property write changed the map, even when the condition was rejected.
+`conditionWritesRejected` also fails if the property write changed `applicant`, even when the condition was rejected.
 The variable it declares, `z`, isn't a fact: don't declare it in `configure`.
 
 `evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
@@ -202,15 +205,14 @@ In the table, "both throw" means an exception or a non-fatal `Error`, such as `S
 fatal one, a `VirtualMachineError` other than `StackOverflowError`, is thrown on unchanged. Anything else a
 `close()` throws passes: `compilerClosed` and the three session checks own that.
 
-`evaluateAgreesWithDetail` tries whole numbers of four types, because an `evaluate` that compares by type and an
-`evaluateWithDetail` that compares by value agree for an `Integer` fact and disagree for a `Long`, `Short` or
-`BigDecimal` one.
+`evaluateAgreesWithDetail` tries four number types: an `evaluate` that compares by type and an `evaluateWithDetail`
+that compares by value agree only for an `Integer`.
 
 ### A language that needs declared facts, imports or options
 
 Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
 the same. The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is
-also a `Boolean`, a `String` and `null`, and `applicant` a record, a bean and a map, so declare both as `Object`: a
+also a `Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a
 fact that isn't its declared type fails the run before your language evaluates anything. Declare `nest` as `Object`
 too, or as `ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
 

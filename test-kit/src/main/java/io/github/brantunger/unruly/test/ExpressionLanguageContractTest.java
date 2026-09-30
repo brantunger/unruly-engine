@@ -35,6 +35,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -184,9 +185,10 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Returns a condition that writes a property of a fact, which the language must reject when it loads or runs the
-     * rule, as {@code applicant.creditScore = 1} would be in MVEL. {@code conditionWritesRejected} runs it against a
-     * {@link Map} fact, which must be unchanged afterwards: a language that fails the rule only after the write has
-     * still changed the caller's fact. By default, {@code null}.
+     * rule. {@code conditionWritesRejected} runs the same condition against a {@link Map} fact and a
+     * {@link WritableApplicant} bean fact. The condition must also write a bean's property, as MVEL's
+     * {@code applicant.creditScore = 1} does. Each fact must be unchanged afterwards: a language that fails the rule
+     * only after the write has still changed the caller's fact. By default, {@code null}.
      *
      * @param fact     The fact's name
      * @param property The property to write
@@ -422,8 +424,8 @@ public abstract class ExpressionLanguageContractTest {
      * The facts the checks' expressions refer to are {@code x}, {@code y}, {@code applicant} and {@code nest}, and the
      * names {@link #usableFactNames()} returns. The checks supply {@code x} as a {@code Boolean}, a {@code String},
      * {@code null}, an {@code Integer}, a {@code Long}, a {@code Short} and a {@code BigDecimal}, {@code y} as an
-     * {@code Integer}, {@code applicant} as an {@link Applicant}, an {@link ApplicantBean} and a {@link Map},
-     * {@code nest} as a {@link Nesting}, and each of the names {@link #usableFactNames()} and
+     * {@code Integer}, {@code applicant} as an {@link Applicant}, an {@link ApplicantBean}, a {@link WritableApplicant}
+     * and a {@link Map}, {@code nest} as a {@link Nesting}, and each of the names {@link #usableFactNames()} and
      * {@link #unusableFactName()} return as the {@code Integer} 1. So a language that declares them declares {@code x}
      * and {@code applicant} as {@link Object}, and {@code nest} as {@link Object} or {@link Nesting}: the engine fails
      * a run whose fact isn't an instance of its declared type with an {@link IllegalArgumentException}, before the
@@ -454,14 +456,18 @@ public abstract class ExpressionLanguageContractTest {
      * </ul>
      *
      * <p>
-     * The two checks that need copies made when the rules load set {@code copiesAtLoad(2)} after this, and the two
-     * that need a run to make its own copy, {@code sessionClosedWhileAnotherRuns} and
-     * {@code sessionClosedOnAnotherThread}, set {@code copiesAtLoad(0)}, so a {@code copiesAtLoad} set here doesn't
-     * change them. {@code sessionClosedWhileAnotherRuns} also sets {@code maxCopies(1)} after this, so that a run
-     * nested in another gets an extra copy, and a limit set here doesn't change it either; {@code concurrentRuns}
-     * sets none, so a limit set here caps the copies, and the sessions, its runs get. The checks that look at what a
-     * run leaves for a later one, {@code actionVariablesStayLocal} in its parts with a later run,
-     * {@code failedActionVariablesStayLocal} and {@code conditionDetail}, set {@code maxCopies(1)} and
+     * The two checks that need copies made when the rules load, {@code copiesAtLoad} and {@code sessionsClosed}, set
+     * {@code copiesAtLoad(2)} after this. {@code compilerClosed} sets {@code copiesAtLoad(1)}, so that each compiler
+     * has made a session when the rules load before it's closed; the engine warms up each session that isn't
+     * {@code Session.none()}, which has nothing to warm up. The two that need a run to make its own copy,
+     * {@code sessionClosedWhileAnotherRuns} and {@code sessionClosedOnAnotherThread}, set {@code copiesAtLoad(0)}, so
+     * a {@code copiesAtLoad} set here doesn't change them. {@code sessionClosedWhileAnotherRuns} also sets
+     * {@code maxCopies(1)} after this, so that a run nested in another gets an extra copy, and a limit set here doesn't
+     * change it either; {@code concurrentRuns} sets none, so a limit set here caps the copies, and the sessions, its
+     * runs get. The checks that look at what a run leaves for a later one, {@code actionVariablesStayLocal} in its
+     * parts with a later run, {@code failedActionVariablesStayLocal} and {@code conditionDetail}, and those that run a
+     * rejected rule a second time, {@code conditionAssignmentRejected}, {@code conditionWritesRejected},
+     * {@code outputNotReplaceable} and {@code missingPropertyFailsTheRun}, set {@code maxCopies(1)} and
      * {@code copiesAtLoad(0)} after this, so that each run gets the one copy, and its sessions, that the run before it
      * used: with two copies made when the rules load, a later run would get the other one. Listeners that don't
      * change the output may be added: the engine only logs what a listener throws, unless it's a fatal
@@ -530,6 +536,57 @@ public abstract class ExpressionLanguageContractTest {
          */
         public int getCreditScore() {
             return creditScore;
+        }
+    }
+
+    /**
+     * An applicant as a JavaBean with a setter, so a language's tests can run a rule against a fact whose property a
+     * condition could write. {@code conditionWritesRejected} requires its credit score unchanged after a condition that
+     * writes it. It's public, with a public setter, so that a language that calls a bean's setter, by reflection or
+     * however else, can reach it: one it couldn't reach would fail the write, and pass the check, for that reason. It
+     * has no {@code equals} or {@code hashCode}: the check looks at the one instance it gave the run.
+     */
+    public static final class WritableApplicant {
+
+        // Volatile, so that the check sees a write a language made on another thread.
+        private volatile int creditScore;
+
+        /**
+         * Creates the applicant.
+         *
+         * @param creditScore The applicant's credit score, the property the contract test writes
+         */
+        public WritableApplicant(int creditScore) {
+            this.creditScore = creditScore;
+        }
+
+        /**
+         * Returns the applicant's credit score.
+         *
+         * @return The credit score
+         */
+        public int getCreditScore() {
+            return creditScore;
+        }
+
+        /**
+         * Sets the applicant's credit score, which no condition may do.
+         *
+         * @param creditScore The credit score
+         */
+        public void setCreditScore(int creditScore) {
+            this.creditScore = creditScore;
+        }
+
+        /**
+         * Returns the applicant as {@code WritableApplicant[creditScore=750]}, so that a failure that names the fact
+         * says what it held.
+         *
+         * @return The applicant's description
+         */
+        @Override
+        public String toString() {
+            return "WritableApplicant[creditScore=" + creditScore + "]";
         }
     }
 
@@ -621,8 +678,8 @@ public abstract class ExpressionLanguageContractTest {
     /**
      * Builds an engine that keeps one copy of the rules and makes none when they load, set after {@link #configure}
      * so that it can't change them: the first run makes the copy, and every later run gets it, and its sessions, back.
-     * For a check that looks at what one run leaves for the next: with two copies made when the rules load, the next
-     * run would get the other copy, whose sessions never saw the run before.
+     * For a check that looks at what one run leaves for the next, or that runs a rejected rule again: with two copies
+     * made when the rules load, the next run would get the other copy, whose sessions never saw the run before.
      */
     private RulesEngine<Map<String, Object>> oneCopyEngine(ExpressionLanguage language) {
         return builder(language).maxCopies(1).copiesAtLoad(0).build();
@@ -686,8 +743,9 @@ public abstract class ExpressionLanguageContractTest {
      * naming the rule and its condition, as {@code conditionAssignmentRejected} checks for one that assigns to a fact:
      * a condition can't change the facts or declare variables. Each part is skipped when its hook,
      * {@link #propertyAssignment} or {@link #conditionDeclaration}, returns {@code null}, and the check when both do.
-     * The property is written to a {@link Map} fact, which must be unchanged afterwards: a language that fails the rule
-     * only after the write has still changed the caller's fact.
+     * The property is written to a {@link Map} fact and to a {@link WritableApplicant}, which must each be unchanged
+     * afterwards: a language that fails the rule only after the write has still changed the caller's fact. A rule that
+     * fails when it runs is run a second time, which must fail too.
      */
     @Test
     @DisplayName("a condition that writes a fact's property or declares a variable is rejected by load or run, naming"
@@ -704,6 +762,11 @@ public abstract class ExpressionLanguageContractTest {
             assertConditionRejected(write, new FactMap<>(new Fact<>("x", 1), new Fact<>(APPLICANT, applicant)),
                     "writes a fact's property", () -> assertEquals(Map.of(CREDIT_SCORE, 750), applicant,
                             "a condition that writes a fact's property changed it"));
+            // A language that refuses to write a map may still call a bean's setter.
+            WritableApplicant bean = new WritableApplicant(750);
+            assertConditionRejected(write, new FactMap<>(new Fact<>("x", 1), new Fact<>(APPLICANT, bean)),
+                    "writes a bean fact's property", () -> assertEquals(750, bean.getCreditScore(),
+                            "a condition that writes a bean fact's property changed it"));
         }
         if (declare != null) {
             assertConditionRejected(declare, new FactMap<>(new Fact<>("x", 1)), "declares a variable", () -> {
@@ -713,7 +776,9 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Checks that a condition is rejected by load or run: loads it in a rule {@code r} and runs the rule with
-     * {@code facts}, and requires an {@link UnrulyException} that names the rule and its condition. Then checks
+     * {@code facts}, and requires an {@link UnrulyException} that names the rule and its condition. When the run
+     * failed, runs the rule once more with the same facts, on the same copy of the rules, and requires the same: a
+     * language that checks a compiled condition only on its first evaluation lets every later run through. Then checks
      * {@code afterwards}, before the engine is closed, so that what closing it throws can't hide a failure.
      *
      * @param condition  The condition
@@ -723,12 +788,15 @@ public abstract class ExpressionLanguageContractTest {
      */
     private void assertConditionRejected(String condition, FactStore<Object> facts, String what, Runnable afterwards)
             throws Exception {
-        closing(engine(), engine -> {
+        // One copy of the rules, so that the second run gets the compiled condition, and the session, the first used.
+        closing(oneCopyEngine(language()), engine -> {
             // A language may reject the condition when compiling or when running: by refusing it, by failing to
             // write to the read-only facts, or by evaluating to something that isn't a boolean. So loading is inside
             // the check.
+            AtomicBoolean loaded = new AtomicBoolean();
             UnrulyException ex = assertThrows(UnrulyException.class, () -> {
                 engine.load(List.of(rule("r", 1, condition, putFact(SEEN, "x"))));
+                loaded.set(true);
                 engine.run(facts);
             }, "a condition that " + what + " was neither rejected by load nor failed by run");
 
@@ -742,8 +810,46 @@ public abstract class ExpressionLanguageContractTest {
                 fail("a condition that " + what + " failed with an UnrulyException that is neither a"
                         + " RuleCompilationException nor a RuleExecutionException: " + ex);
             }
+            assertRunFailsAgain(engine, loaded.get(), facts, ExpressionKind.CONDITION, "a condition that " + what);
             afterwards.run();
         });
+    }
+
+    /**
+     * Checks that a run of rule {@code r} that failed fails again: when the rules loaded, so that the run failed
+     * rather than load, runs the rule once more with the same facts, on the same copy of the rules, and requires a
+     * {@link RuleExecutionException} that names the rule and the {@code kind} of expression that failed. A language
+     * that checks a compiled expression only on its first evaluation lets every later run through. Does nothing when
+     * load failed.
+     *
+     * @param engine The engine the first run failed on, which keeps one copy of the rules
+     * @param loaded Whether the rules loaded, so that the first failure came from the run
+     * @param facts  The facts the first run failed with
+     * @param kind   The kind of expression the second run must fail in
+     * @param what   What failed, which the failure's message says
+     */
+    private static void assertRunFailsAgain(RulesEngine<Map<String, Object>> engine, boolean loaded,
+            FactStore<?> facts, ExpressionKind kind, String what) {
+        if (!loaded) {
+            return;
+        }
+        try {
+            engine.run(facts);
+        } catch (RuleExecutionException again) {
+            if (!"r".equals(again.getRuleName()) || again.getExpressionKind() != kind) {
+                throw failedDifferently(what, kind, again);
+            }
+            return;
+        } catch (RuntimeException again) {
+            throw failedDifferently(what, kind, again);
+        }
+        fail(what + " failed the first run but not the second");
+    }
+
+    /** The failure of {@link #assertRunFailsAgain} when the second run threw {@code again}, which it's given. */
+    private static AssertionFailedError failedDifferently(String what, ExpressionKind kind, RuntimeException again) {
+        return new AssertionFailedError(what + " failed the second run differently, not with a RuleExecutionException"
+                + " naming rule r and its " + kind.name().toLowerCase(Locale.ROOT) + ": " + describe(again), again);
     }
 
     @Test
@@ -751,11 +857,19 @@ public abstract class ExpressionLanguageContractTest {
     void outputNotReplaceable() throws Exception {
         String reassign = reassignOutput();
         assumeTrue(reassign != null, "the language's actions can't assign the output");
-        // A language may reject the assignment when compiling or when running, so loading is inside the check.
-        closing(engine(), engine -> assertThrows(UnrulyException.class, () -> {
-            engine.load(List.of(rule("r", 1, alwaysTrue(), reassign)));
-            engine.run(new FactMap<>(new Fact<>("x", 1)));
-        }));
+        // A language may reject the assignment when compiling or when running, so loading is inside the check. One
+        // copy of the rules, so that a second run gets the compiled action, and the session, the first used.
+        closing(oneCopyEngine(language()), engine -> {
+            AtomicBoolean loaded = new AtomicBoolean();
+            assertThrows(UnrulyException.class, () -> {
+                engine.load(List.of(rule("r", 1, alwaysTrue(), reassign)));
+                loaded.set(true);
+                engine.run(new FactMap<>(new Fact<>("x", 1)));
+            });
+            // A language that checks a compiled action only on its first run lets every later one replace the output.
+            assertRunFailsAgain(engine, loaded.get(), new FactMap<>(new Fact<>("x", 1)), ExpressionKind.ACTION,
+                    "an action that replaces the output");
+        });
     }
 
     @Test
@@ -982,10 +1096,19 @@ public abstract class ExpressionLanguageContractTest {
         // Only the record: a missing key of a map is a different question, and languages answer it differently on
         // purpose. JsonLogic, JEXL and SpEL read a missing key as null or empty, which is what their users expect,
         // and a faithful adapter for one of them shouldn't fail a contract written around a record's components.
-        closing(engine(), engine -> assertThrows(UnrulyException.class, () -> {
-            engine.load(List.of(misspelled));
-            engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))));
-        }, "a misspelled property of a record fact didn't fail"));
+        //
+        // A run that failed is repeated, on the one copy of the rules the first run used: a language that checks a
+        // compiled condition only on its first evaluation reads the property as null from the second run on.
+        closing(oneCopyEngine(language()), engine -> {
+            AtomicBoolean loaded = new AtomicBoolean();
+            assertThrows(UnrulyException.class, () -> {
+                engine.load(List.of(misspelled));
+                loaded.set(true);
+                engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))));
+            }, "a misspelled property of a record fact didn't fail");
+            assertRunFailsAgain(engine, loaded.get(), new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))),
+                    ExpressionKind.CONDITION, "a misspelled property of a record fact");
+        });
     }
 
     @Test
@@ -1018,9 +1141,12 @@ public abstract class ExpressionLanguageContractTest {
         ExpressionLanguage language = language();
         List<AtomicInteger> closes = new CopyOnWriteArrayList<>();
         List<Throwable> closeFailures = new CopyOnWriteArrayList<>();
-        // Closed after the check as well, so a failed check still closes the engine. A third close does nothing.
+        // Closed after the check as well, so a failed check still closes the engine. A third close does nothing. One
+        // copy made when the rules load, set after configure(), so that each compiler has warmed up a session before
+        // it's closed, unless its sessions are Session.none(), which the engine doesn't warm up: a compiler whose
+        // close() fails only after a warm-up would pass otherwise.
         try {
-            closing(engine(countingCloses(language, closes, closeFailures)), engine -> {
+            closing(builder(countingCloses(language, closes, closeFailures)).copiesAtLoad(1).build(), engine -> {
                 engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
                 assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
                 engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));

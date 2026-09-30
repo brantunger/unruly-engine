@@ -1,8 +1,12 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.TestSupport;
+import io.github.brantunger.unruly.api.FactMap;
+import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
@@ -13,11 +17,13 @@ import org.opentest4j.TestAbortedException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -41,6 +48,13 @@ class ContractKitChecksTest {
 
     /** What the kit writes for an object of the language's whose {@code toString()} throws, after its class name. */
     static final String UNAVAILABLE = " (message unavailable: java.lang.IllegalStateException)";
+
+    /** The checks that repeat a failed run, and what each says failed. */
+    private static final Map<String, String> REPEATED = Map.of(
+            "conditionAssignmentRejected", "a condition that assigns to a fact",
+            "conditionWritesRejected", "a condition that writes a fact's property",
+            "missingPropertyFailsTheRun", "a misspelled property of a record fact",
+            "outputNotReplaceable", "an action that replaces the output");
 
     /** An exception whose {@code getMessage()} throws, and so its {@code toString()}: a message that can't be read. */
     static final class Unreadable extends RuntimeException {
@@ -705,6 +719,192 @@ class ContractKitChecksTest {
                             }
                             return true;
                         };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that a condition {@code FACT.PROPERTY = VALUE} fails the rule when the fact is a map, and
+     * otherwise calls the fact's setter for the property and is then true, or, if {@code thenFail}, throws: a language
+     * that rejects a condition's write to a map fact, and lets it through to a bean's setter.
+     */
+    private static ExpressionLanguage writesThroughSetters(ExpressionLanguage language, boolean thenFail) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 3 || !"=".equals(tokens[1]) || !tokens[0].contains(".")) {
+                            return compiler.compileCondition(expression);
+                        }
+                        String[] path = tokens[0].split("\\.");
+                        String setter = "set" + Character.toUpperCase(path[1].charAt(0)) + path[1].substring(1);
+                        return (evaluation, session) -> {
+                            Object fact = evaluation.facts().get(path[0]);
+                            if (fact instanceof Map) {
+                                throw new IllegalStateException("a condition can't write a map fact");
+                            }
+                            fact.getClass().getMethod(setter, int.class).invoke(fact, Integer.valueOf(tokens[2]));
+                            if (thenFail) {
+                                throw new IllegalStateException("a condition can't write a fact");
+                            }
+                            return true;
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that each expression it would reject fails only the first time it's evaluated, as in a
+     * language that checks a compiled expression lazily and then remembers it did: a condition that assigns or writes,
+     * such as {@code x = 2}, fails its first evaluation and is then true, a condition that reads the missing
+     * {@code creditScor} fails its first and is then false, and an action that assigns the output fails its first run
+     * and then does nothing.
+     */
+    private static ExpressionLanguage checksFirstRunOnly(ExpressionLanguage language) {
+        return checksFirstRunOnly(language, () -> {
+            AtomicBoolean checked = new AtomicBoolean();
+            return session -> checked.compareAndSet(false, true);
+        });
+    }
+
+    /**
+     * Wraps a language as {@link #checksFirstRunOnly(ExpressionLanguage)} does, but keeps what it checked in the
+     * session, which is new for each copy of the rules, rather than in the compiled expression: an expression it would
+     * reject fails only its first evaluation with each session.
+     */
+    private static ExpressionLanguage checksFirstRunOfEachSessionOnly(ExpressionLanguage language) {
+        return withSessions(checksFirstRunOnly(language, () -> {
+            Object expression = new Object();
+            return session -> ((CheckingSession) session).checked.add(expression);
+        }), CheckingSession::new);
+    }
+
+    /** A session that keeps the expressions it has checked, for {@link #checksFirstRunOfEachSessionOnly}. */
+    private static final class CheckingSession implements Session {
+
+        private final Set<Object> checked = ConcurrentHashMap.newKeySet();
+    }
+
+    /**
+     * Wraps a language so that each expression it would reject fails the first time {@code firstEvaluation}'s test
+     * says it's evaluated, and behaves as {@link #checksFirstRunOnly(ExpressionLanguage)} describes after.
+     */
+    private static ExpressionLanguage checksFirstRunOnly(ExpressionLanguage language,
+            Supplier<Predicate<Session>> firstEvaluation) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        String text = expression.text();
+                        if (text.contains(".creditScor ")) {
+                            return failsFirstOnly("the fact has no property creditScor", false,
+                                    firstEvaluation.get());
+                        }
+                        if (text.contains(" = ") && !text.startsWith("let ")) {
+                            return failsFirstOnly("a condition can't write a fact", true, firstEvaluation.get());
+                        }
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        if (!expression.text().startsWith("output =")) {
+                            return compiler.compileAction(expression);
+                        }
+                        Predicate<Session> first = firstEvaluation.get();
+                        return (actionContext, session) -> {
+                            if (first.test(session)) {
+                                throw new IllegalStateException("an action can't replace the output");
+                            }
+                            return ActionResult.done();
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * A condition that throws {@code failure} when {@code first} says it's evaluated for the first time, and
+     * evaluates to {@code later} otherwise.
+     */
+    private static CompiledCondition failsFirstOnly(String failure, boolean later, Predicate<Session> first) {
+        return (evaluation, session) -> {
+            if (first.test(session)) {
+                throw new IllegalStateException(failure);
+            }
+            return later;
+        };
+    }
+
+    /**
+     * Wraps a language so that each expression it would reject fails its first evaluation, and a later run of its
+     * rule fails elsewhere in the rule: a condition that assigns, writes or reads the missing {@code creditScor} is
+     * then true, its compiler's {@code compileAction} returns an action that always fails, whatever the expression,
+     * and the other conditions fail from their second evaluation on, so that the rule of an action that assigns the
+     * output then fails in its condition.
+     */
+    private static ExpressionLanguage failsElsewhereAfterTheFirstRun(ExpressionLanguage language) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        AtomicBoolean evaluated = new AtomicBoolean();
+                        String text = expression.text();
+                        if (text.contains(".creditScor ") || text.contains(" = ") && !text.startsWith("let ")) {
+                            return failsFirstOnly("the condition fails its first run", true,
+                                    session -> evaluated.compareAndSet(false, true));
+                        }
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            if (!evaluated.compareAndSet(false, true)) {
+                                throw new IllegalStateException("the condition fails from its second run on");
+                            }
+                            return condition.evaluate(evaluation, session);
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return (actionContext, session) -> {
+                            throw new IllegalStateException("the action fails");
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that its compilers accept each fact name the first time they check it, and reject it with
+     * an exception that isn't an {@link IllegalArgumentException} after, which a run reports as an
+     * {@code IllegalArgumentException} before it runs a rule.
+     */
+    private static ExpressionLanguage rejectsFactNamesAfterTheFirstRun(ExpressionLanguage language) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                Set<String> checked = ConcurrentHashMap.newKeySet();
+                return new ForwardingExpressionCompiler(language.newCompiler(context)) {
+                    @Override
+                    public void checkFactName(String name) {
+                        if (!checked.add(name)) {
+                            throw new IllegalStateException("the fact name was checked before: " + name);
+                        }
                     }
                 };
             }
@@ -2508,6 +2708,187 @@ class ContractKitChecksTest {
         assertEquals("a compiler's close() threw java.lang.IllegalStateException: close() fails after warmUp(), which"
                 + " the engine only logs at WARN", failure.getMessage());
         assertEquals(List.of("compilerClosed"), failedChecks(test));
+    }
+
+    @Test
+    @DisplayName("a language whose compiler's close() throws once it has warmed up a session fails the compiler check"
+            + " when configure() makes no copies when the rules load (#847)")
+    void compilerCloseFailingOnceWarmedUpFailsUnconfigured() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(closeFailsOnceWarmedUp(new ToyExpressionLanguage()), "compilerClosed"));
+
+        assertEquals("a compiler's close() threw java.lang.IllegalStateException: close() fails after warmUp(), which"
+                + " the engine only logs at WARN", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose compiler's warmUp() throws fails the compiler check when the rules load, since the"
+            + " check warms up a session whatever configure() sets (#847)")
+    void warmUpFailureFailsCompilerCheck() {
+        ExpressionLanguage stateful = withSessions(new ToyExpressionLanguage(), () -> new Session() {
+        });
+        ExpressionLanguage language = new ForwardingExpressionLanguage(stateful) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(stateful.newCompiler(context)) {
+                    @Override
+                    public void warmUp(Session session) {
+                        throw new IllegalStateException("the runtime failed to start");
+                    }
+                };
+            }
+        };
+
+        RuleCompilationException failure = assertThrows(RuleCompilationException.class,
+                () -> runCheck(language, "compilerClosed"));
+
+        assertEquals("The 'toy' expression language failed to warm up a session: the runtime failed to start",
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose conditions it would reject fail only their first evaluation fails the checks that"
+            + " reject a condition, and no other check (#847)")
+    void conditionRejectedOnFirstRunOnlyFails() {
+        ExpressionLanguage language = checksFirstRunOnly(new ToyExpressionLanguage());
+
+        AssertionFailedError assignment = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionAssignmentRejected"));
+        assertEquals("a condition that assigns to a fact failed the first run but not the second",
+                assignment.getMessage());
+        AssertionFailedError write = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionWritesRejected"));
+        assertEquals("a condition that writes a fact's property failed the first run but not the second",
+                write.getMessage());
+        AssertionFailedError missing = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "missingPropertyFailsTheRun"));
+        assertEquals("a misspelled property of a record fact failed the first run but not the second",
+                missing.getMessage());
+
+        assertEquals(Set.of("conditionAssignmentRejected", "conditionWritesRejected", "missingPropertyFailsTheRun",
+                "outputNotReplaceable"), Set.copyOf(failedChecks(new ToyExpressionLanguageContractTest() {
+                    @Override
+                    protected ExpressionLanguage language() {
+                        return language;
+                    }
+                })));
+    }
+
+    @Test
+    @DisplayName("a language whose action that replaces the output fails only its first run fails the output check"
+            + " (#847)")
+    void outputReplacedAfterTheFirstRunFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(checksFirstRunOnly(new ToyExpressionLanguage()), "outputNotReplaceable"));
+
+        assertEquals("an action that replaces the output failed the first run but not the second",
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose session remembers the expressions it rejected once fails the checks that repeat a"
+            + " failed run, even when configure() makes two copies when the rules load (#847)")
+    void rejectedOnFirstRunOfEachSessionOnlyFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return checksFirstRunOfEachSessionOnly(new ToyExpressionLanguage());
+            }
+
+            // A second run on the other copy would get a session that never saw the first run.
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.copiesAtLoad(2);
+            }
+        };
+
+        REPEATED.forEach((check, what) -> {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(test, check),
+                    check);
+            assertEquals(what + " failed the first run but not the second", failure.getMessage());
+        });
+    }
+
+    @Test
+    @DisplayName("a language whose rule fails its second run somewhere other than where it failed its first fails the"
+            + " checks that repeat a failed run, with what the second run threw (#847)")
+    void failsDifferentlyOnTheSecondRunFails() {
+        ExpressionLanguage language = failsElsewhereAfterTheFirstRun(new ToyExpressionLanguage());
+
+        REPEATED.forEach((check, what) -> {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(language, check), check);
+            String kind = "outputNotReplaceable".equals(check) ? "action" : "condition";
+            assertTrue(failure.getMessage().startsWith(what + " failed the second run differently, not with a"
+                    + " RuleExecutionException naming rule r and its " + kind + ": "), failure.getMessage());
+            RuleExecutionException again = assertInstanceOf(RuleExecutionException.class, failure.getCause(), check);
+            assertEquals("r", again.getRuleName(), check);
+            assertNotEquals(ExpressionKind.valueOf(kind.toUpperCase(Locale.ROOT)), again.getExpressionKind(), check);
+        });
+    }
+
+    @Test
+    @DisplayName("a language whose second run fails with an exception that isn't a RuleExecutionException fails the"
+            + " checks that repeat a failed run, with what the second run threw (#847)")
+    void secondRunFailsOutsideTheRulesFails() {
+        ExpressionLanguage language = rejectsFactNamesAfterTheFirstRun(checksFirstRunOnly(new ToyExpressionLanguage()));
+
+        REPEATED.forEach((check, what) -> {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(language, check), check);
+            assertTrue(failure.getMessage().startsWith(what + " failed the second run differently, not with a"
+                    + " RuleExecutionException naming rule r and its "), failure.getMessage());
+            assertInstanceOf(IllegalArgumentException.class, failure.getCause(), check);
+        });
+    }
+
+    @Test
+    @DisplayName("a second run that fails with a RuleExecutionException naming another rule, or none, fails the"
+            + " repeat, with what it threw (#847)")
+    void secondRunFailsNamingAnotherRuleFails() throws Exception {
+        // The engine names the rule that failed, which is always r in the checks, so the check's helper is called
+        // with an engine whose run fails as the engine never would.
+        Method repeat = ExpressionLanguageContractTest.class.getDeclaredMethod("assertRunFailsAgain",
+                RulesEngine.class, boolean.class, FactStore.class, ExpressionKind.class, String.class);
+        repeat.setAccessible(true);
+        for (String ruleName : Arrays.asList("q", null)) {
+            RuleExecutionException again = new RuleExecutionException("the rule failed", null, ruleName,
+                    ExpressionKind.CONDITION);
+            RulesEngine<?> engine = (RulesEngine<?>) Proxy.newProxyInstance(RulesEngine.class.getClassLoader(),
+                    new Class<?>[] {RulesEngine.class}, (proxy, method, args) -> {
+                        throw again;
+                    });
+
+            InvocationTargetException thrown = assertThrows(InvocationTargetException.class, () -> repeat.invoke(
+                    null, engine, true, new FactMap<>(), ExpressionKind.CONDITION, "a condition that assigns"));
+
+            AssertionFailedError failure = assertInstanceOf(AssertionFailedError.class, thrown.getCause());
+            assertEquals("a condition that assigns failed the second run differently, not with a"
+                    + " RuleExecutionException naming rule r and its condition: " + again, failure.getMessage());
+            assertSame(again, failure.getCause());
+        }
+    }
+
+    @Test
+    @DisplayName("a language whose condition rejects a write to a map fact, but calls a bean fact's setter, fails the"
+            + " condition-write check (#847)")
+    void beanWritingConditionFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(writesThroughSetters(new ToyExpressionLanguage(), false), "conditionWritesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("a condition that writes a bean fact's property was neither"
+                + " rejected by load nor failed by run"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose condition calls a bean fact's setter before it fails the rule fails the"
+            + " condition-write check, since the fact has changed (#847)")
+    void beanWrittenBeforeTheFailureFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(writesThroughSetters(new ToyExpressionLanguage(), true), "conditionWritesRejected"));
+
+        assertEquals("a condition that writes a bean fact's property changed it ==> expected: <750> but was: <1>",
+                failure.getMessage());
     }
 
     @Test
