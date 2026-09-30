@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.13.4](https://github.com/brantunger/unruly-engine/compare/v2.13.3...v2.13.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* keep copy permits, counts and the thread's deadline when the stack or memory runs out in run() or load()'s own set-up or clean-up ([#855](https://github.com/brantunger/unruly-engine/issues/855)) ([fd9ff88](https://github.com/brantunger/unruly-engine/commit/fd9ff889616863e0c74468a1e51475fbcd457666))
+
 ## [2.13.3](https://github.com/brantunger/unruly-engine/compare/v2.13.2...v2.13.3) (2026-09-29)
 
 
