@@ -68,12 +68,12 @@ sequenceDiagram
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
 | `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns. Don't throw | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
 
-Who closes a session depends on its copy. An extra copy: its run, when it ends. A kept copy in use when the rules are
-retired: its run, or, while runs wait on those rules, a later run. An idle copy: the `load()` or `close()` caller that
-retires the rules.
+Who closes a session depends on its copy. An extra copy: its run. A kept copy in use when the rules are
+retired: its run, or, while runs wait on those rules, a later run. An idle copy: the `load()` or `close()` that retires
+the rules, or a later one if that stopped part way.
 
-A copy shared by every run holds only `Session.none()`, the session of a language that keeps no state (see
-[Thread safety](#-thread-safety)), whose `close()` does nothing.
+A copy shared by every run holds only `Session.none()`, the session of a language that keeps no state, whose
+`close()` does nothing.
 
 Two failures close things early. A session made for a copy that another language then fails to make is closed on the
 run's thread, at once, before it's used. A `load()` that fails closes the compilers it created at once, on the

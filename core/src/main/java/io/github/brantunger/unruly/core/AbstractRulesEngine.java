@@ -69,6 +69,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static final Logger log = LoggerFactory.getLogger(LOGGER_NAME);
 
     private static final String CLOSED_MESSAGE = "The engine is closed";
+    // What load() logs when rules the engine no longer uses couldn't all be retired, once it has swapped its own in.
+    private static final String RETIRE_AGAIN = "Rules this engine no longer uses couldn't all be retired, so the next"
+            + " load() or close() tries again: {}";
     // Where a cancelled run stopped, as its message says: before a rule's condition or action, or while one ran.
     private static final String BEFORE_RULE = "before";
     private static final String DURING_RULE = "during";
@@ -94,6 +97,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private volatile RuleSet ruleSet;
     private volatile boolean closed;
     private final Object lifecycle = new Object();
+    // The rule sets still to retire, linked through RuleSet.nextUnretired, so adding one allocates nothing: each one a
+    // reload replaced, close() detached or a failed load() couldn't swap in, from before the engine lets go of it
+    // until it's retired for good. A load() or close() claims the ones no other call has claimed
+    // (RuleSet.retiringClaim) and retires them; one whose retiring fails part way, as it can when it runs out of stack,
+    // stays for the next load() or close(). So none is only in a call's locals at any point, and none is retired by
+    // two calls at once. Guarded by lifecycle.
+    private RuleSet unretired;
+    // The number of the last load() or close() that claimed rule sets to retire, so each claims with its own. Guarded
+    // by lifecycle.
+    private long lastClaim;
     // How many compiled copies of the rules runs hold at once, and which runs that applies to.
     private final CopyLimit copyLimit;
     // The permits for copyLimit, which every rule list this engine loads shares, so a reload can't raise the limit on
@@ -230,6 +243,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public final RunResult<O> runWithResult(FactStore<?> facts, RunOptions options) {
+        // Before the run counts, borrows or sets anything, so a caller near the end of its stack overflows here, with
+        // nothing to give back (see StackHeadroom).
+        StackHeadroom.check();
         Objects.requireNonNull(options, "options must not be null");
         Duration timeout = options.timeout();
         return runRules(facts, timeout == null ? runTimeout : timeout, options.tags());
@@ -294,9 +310,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // newSession() while the copy is made or from a session's close() while it's given back stops no later than
         // this one, as a run started from a rule or a listener does.
         Deadline deadline = Cancellation.deadlineFrom(timeout);
-        Deadline enclosingDeadline = Cancellation.enter(deadline);
-        LoggedFailures.enter();
+        // Read before the run's own deadline is set, and put back however the run ends: even when setting that
+        // deadline fails once it has stored it, or counting the run fails, as an OutOfMemoryError can make it.
+        Deadline enclosingDeadline = Cancellation.current();
+        boolean counted = false;
+        RuleSet.Copy copy = null;
         try {
+            Cancellation.enter(deadline);
+            LoggedFailures.enter();
+            counted = true;
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
             // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
             RuleSelection selection = new RuleSelection(
@@ -306,7 +328,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // Checked before the run waits for a copy, which facts the engine will reject needn't do.
             RuntimeException rejected = factRejection(values);
             RunFacts runFacts = RunFacts.of(values, listenerFacts, deadline, runId, parent, tally, selection);
-            RuleSet.Copy copy = null;
             if (rejected == null) {
                 copy = borrow(rules, runFacts);
                 int read = 1;
@@ -340,8 +361,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 result = runWithCopy(rules, copy, runFacts, rejected, body);
             } catch (Throwable t) {
-                keepInterruptOfStop(tally);
-                Failures.throwIfPresent(Failures.fatalInsteadOf(t, copy == null ? null : rules.release(copy)));
+                // Given back even if setting the interrupt status again fails, as it can when it runs out of stack.
+                try {
+                    keepInterruptOfStop(tally);
+                } finally {
+                    Failures.throwIfPresent(Failures.fatalInsteadOf(t, copy == null ? null : rules.release(copy)));
+                }
                 throw t;
             }
             Failures.throwIfPresent(rules.release(copy));
@@ -354,12 +379,34 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             outcome = tally.hasStopped() ? RunEvent.STOPPED : RunEvent.FAILED;
             throw e;
         } finally {
-            LoggedFailures.leave();
-            Cancellation.leave(enclosingDeadline);
-            // Again on the way out, as a language's close() may have cleared it too.
-            keepInterruptOfStop(tally);
-            if (event != null) {
-                event.commit(engineId, runId, parentRunId, matchPolicy(), tally, rules.checksum(), outcome);
+            // Each step in a finally of the one before, so one that fails, as one that runs out of stack does, doesn't
+            // keep the next from running.
+            try {
+                if (counted) {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                try {
+                    // A permit or build slot that giving the copy back failed to give back, before it had given back
+                    // anything, is given back from here, so the engine's limit isn't lowered for good.
+                    if (copy != null) {
+                        rules.giveBackLeft(copy);
+                    }
+                } finally {
+                    try {
+                        Cancellation.leave(enclosingDeadline);
+                    } finally {
+                        try {
+                            // Again on the way out, as a language's close() may have cleared it too.
+                            keepInterruptOfStop(tally);
+                        } finally {
+                            if (event != null) {
+                                event.commit(engineId, runId, parentRunId, matchPolicy(), tally, rules.checksum(),
+                                        outcome);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -374,6 +421,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param tally The run's tally, which records whether an interrupt stopped the run
      */
     private static void keepInterruptOfStop(RunTally tally) {
+        Faults.at(Faults.Step.INTERRUPT_KEPT);
         if (tally.wasInterrupted()) {
             Thread.currentThread().interrupt();
         }
@@ -392,8 +440,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, RunFacts facts, RuntimeException rejected,
                                      RunBody<O> body) {
         EngineRunContext run = newRun(rules, facts);
-        Deadline outerDeadline = enterRun(run, facts.deadline());
+        // Read before the scope is opened, and the scope opened inside the try, so it's closed even if opening it
+        // fails part way, as it can when it runs out of stack.
+        Deadline outerDeadline = Cancellation.current();
         try {
+            enterRun(run, facts.deadline());
             RunResult<O> result;
             try {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
@@ -439,33 +490,40 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * started from one of its callbacks takes as its parent, and {@code deadline} the one such a run inherits. A fatal
      * failure a rule of an earlier run left recorded is cleared, so a run started from {@code onRunError} of a run a
      * fatal {@link Error} left isn't told of that run's rule. {@link #runInScope} has set the run's deadline already;
-     * it's set again here, and put back by {@link #leaveRun}, with the run's context.
+     * it's set again here, and put back by {@link #leaveRun}, with the run's context. The caller reads the deadline to
+     * put back with {@link Cancellation#current()} first, and calls this inside the {@code try} whose {@code finally}
+     * calls {@link #leaveRun}, so a scope opened part way is closed too.
      *
      * @param run      The run that is starting
      * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
-     * @return The deadline to give {@link #leaveRun} when the run ends
      */
-    private Deadline enterRun(EngineRunContext run, Deadline deadline) {
+    private void enterRun(EngineRunContext run, Deadline deadline) {
         currentRun.set(run);
-        Deadline outerDeadline = Cancellation.enter(deadline);
+        Cancellation.enter(deadline);
         fatalFailure.remove();
-        return outerDeadline;
     }
 
     /**
      * Closes the scope {@link #enterRun} opened: clears what a rule of the run recorded as its fatal failure, puts
-     * back the deadline, and makes {@code parent} the thread's current run again.
+     * back the deadline, and makes {@code parent} the thread's current run again. Each step is in a {@code finally} of
+     * the one before, so one that fails, as one that runs out of stack does, doesn't keep the next from running.
      *
      * @param parent        The run this one was started from, or {@code null}
-     * @param outerDeadline What {@link #enterRun} returned
+     * @param outerDeadline What {@link Cancellation#current()} returned before {@link #enterRun} was called
      */
     private void leaveRun(RunContext parent, Deadline outerDeadline) {
-        fatalFailure.remove();
-        Cancellation.leave(outerDeadline);
-        if (parent == null) {
-            currentRun.remove();
-        } else {
-            currentRun.set(parent);
+        try {
+            fatalFailure.remove();
+        } finally {
+            try {
+                Cancellation.leave(outerDeadline);
+            } finally {
+                if (parent == null) {
+                    currentRun.remove();
+                } else {
+                    currentRun.set(parent);
+                }
+            }
         }
     }
 
@@ -676,12 +734,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // The deadline passed, or none did when an interrupt stopped the run.
             failure = stoppedWaiting(rules, facts, msg, stop, interrupted ? null : deadline);
         } catch (Throwable t) {
-            keepInterruptOfStop(facts.tally());
-            Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.leaveAfterStop()));
+            // The run leaves even if setting the interrupt status again fails, as it can when it runs out of stack.
+            try {
+                keepInterruptOfStop(facts.tally());
+            } finally {
+                Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.leaveAfterStop()));
+            }
             throw t;
         }
-        keepInterruptOfStop(facts.tally());
-        Failures.throwIfPresent(Failures.fatalInsteadOf(failure, rules.leaveAfterStop()));
+        try {
+            keepInterruptOfStop(facts.tally());
+        } finally {
+            Failures.throwIfPresent(Failures.fatalInsteadOf(failure, rules.leaveAfterStop()));
+        }
         return failure;
     }
 
@@ -734,8 +799,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
         // from any other callback of a run that stopped.
         EngineRunContext run = newRun(rules, facts);
-        Deadline outerDeadline = enterRun(run, facts.deadline());
+        Deadline outerDeadline = Cancellation.current();
         try {
+            enterRun(run, facts.deadline());
             try {
                 notifyRun("beforeRun", listener -> listener.beforeRun(run));
             } catch (Error e) {
@@ -809,7 +875,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * exception, or which is logged at WARN if the error can't carry one, as the JVM's own {@link OutOfMemoryError}
      * can't; unless that failure is itself a fatal error, which came first and is thrown instead, carrying the one
      * from closing. A reload throws it after swapping its rules in, when it closes the rule list they replaced: the
-     * new rules stay loaded, and runs use them.
+     * new rules stay loaded, and runs use them. Anything else that fails once the new rules are swapped in, as
+     * retiring the rule list they replaced can when it runs out of stack, is logged at WARN rather than thrown, since
+     * the load has succeeded, and that rule list is retired again by the next {@code load()} or {@code close()}, as is
+     * a rule list that failed to load and couldn't be retired. A {@code load()} that swaps its rules in retires those
+     * rule lists too, after the one it replaced, and throws a fatal {@link Error} closing any of them throws.
      * </p>
      *
      * @param ruleList The List of {@link Rule} objects to compile.
@@ -820,6 +890,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public void load(List<Rule> ruleList) {
+        // Before the load counts or compiles anything, as in run().
+        StackHeadroom.check();
         // A run a language starts while this compiles or makes copies is nested in the load, so a fatal Error it
         // logged isn't logged again here (see LoggedFailures).
         LoggedFailures.enterLoad();
@@ -835,7 +907,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param ruleList The rules
      */
-    // The rule set closes the compilers, or this method does if the rule list fails to load.
+    // The rule set closes the compilers, or this method does if the rule list fails to load. Any Throwable once the
+    // rule set exists: it must be retired however making its copies ends, as a finally would, and a failure that
+    // isn't fatal is kept under a fatal Error from closing; and once it's swapped in, only a fatal Error is thrown.
     private void loadRules(List<Rule> ruleList) {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
         // Checked here so a closed engine rejects any list, and again under the lock, for a close() that runs while
@@ -862,14 +936,30 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
             throw t;
         }
-        prepareCopies(loaded);
-        RuleSet replaced = null;
+        // From here on the rule set owns the compilers, so a failure retires it, which closes the copies made so far,
+        // the one that failed too, and then the compilers, once: even when the call to make them is what fails.
+        try {
+            prepareCopies(loaded);
+        } catch (Throwable t) {
+            retireBefore(loaded, t);
+            throw t;
+        }
+        long claim;
         boolean closedMeanwhile;
         synchronized (lifecycle) {
+            lastClaim++;
+            claim = lastClaim;
             closedMeanwhile = closed;
             if (!closedMeanwhile) {
-                replaced = ruleSet;
+                // The rules replaced join the rules still to retire before they're replaced, so they're never only
+                // in a local, and this call claims them, with any left by earlier calls that no other has claimed.
+                RuleSet replaced = ruleSet;
+                if (replaced != null) {
+                    replaced.nextUnretired = unretired;
+                    unretired = replaced;
+                }
                 ruleSet = loaded;
+                claimToRetire(claim);
             }
         }
         // Retired after the lock, as close() retires its rules: a language slow to close its compilers mustn't hold
@@ -879,15 +969,24 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             retireBefore(loaded, failure);
             throw failure;
         }
-        if (replaced != null) {
-            Failures.throwIfPresent(replaced.retire());
+        // The new rules are in, and runs use them, so the load has succeeded: only a fatal Error is thrown now. What
+        // couldn't be retired is retired again by the next load() or close().
+        Throwable failed;
+        try {
+            failed = retireClaimed(claim);
+        } catch (Throwable t) {
+            // Any Throwable, as retiring each rule set catches: retiring them failed before it began.
+            failed = t;
+        }
+        Failures.throwIfPresent(Failures.fatalError(failed));
+        if (failed != null) {
+            log.warn(RETIRE_AGAIN, Failures.describe(failed));
         }
     }
 
     /**
-     * Makes the copies of the rules the engine was built to make at load. From here on the rule set owns the
-     * compilers, so a failure retires it, which closes the copies made so far, the one that failed too, and then the
-     * compilers, once.
+     * Makes the copies of the rules the engine was built to make at load. The caller retires the rule set if this
+     * fails, which closes the copies made so far, the one that failed too, and then the compilers, once.
      *
      * @param loaded The rule set, which no run can see yet
      * @throws RuleCompilationException if a language can't create or warm up a session: already logged, as
@@ -900,10 +999,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // it is the engine's own wrapper for a run, and was logged when it was made, or holds a failure that was. The
     // exception thrown in its place is the engine's too, so the code around a nested load() takes its message, which
     // has a nested failure's text, for adding nothing to it (see LoggedFailures).
-    // Any Throwable: the rules must be closed however this ends, as a finally would, and a failure that isn't fatal is
-    // kept under a fatal Error from closing.
     @SuppressWarnings("PMD.PreserveStackTrace")
     private void prepareCopies(RuleSet loaded) {
+        Faults.at(Faults.Step.COPIES_PREPARED);
         try {
             loaded.prepareCopies(copiesAtLoad);
         } catch (ReportedFailure e) {
@@ -913,11 +1011,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             if (Failures.nestedRunFailure(e.getCause()) == null) {
                 LoggedFailures.loggedByLoad(failure);
             }
-            retireBefore(loaded, failure);
             throw failure;
-        } catch (Throwable t) {
-            retireBefore(loaded, t);
-            throw t;
         }
     }
 
@@ -925,13 +1019,138 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Retires a rule set that {@code load()} won't swap in, before the caller throws {@code failure}: closes its
      * copies, and then its compilers. A fatal {@link Error} from closing them is thrown here instead, carrying
      * {@code failure} as suppressed, or logging it at WARN if the error can't carry one, unless {@code failure} is a
-     * fatal error itself, which came first, and carries the one from closing (see {@link Failures#fatalInsteadOf}).
+     * fatal error itself, which came first, and carries the one from closing (see {@link Failures#fatalInsteadOf}). A
+     * rule set that retiring fails to mark retired, as it can when it runs out of stack, is kept for the next
+     * {@code load()} or {@code close()} to retire.
      *
      * @param loaded  The rule set, which no run can see
      * @param failure What the caller throws next
      */
-    private static void retireBefore(RuleSet loaded, Throwable failure) {
-        Failures.throwIfPresent(Failures.fatalInsteadOf(failure, loaded.retire()));
+    private void retireBefore(RuleSet loaded, Throwable failure) {
+        long claim;
+        synchronized (lifecycle) {
+            lastClaim++;
+            claim = lastClaim;
+            loaded.nextUnretired = unretired;
+            loaded.retiringClaim = claim;
+            unretired = loaded;
+        }
+        Throwable failed = retireClaimed(claim);
+        Error fatal = Failures.fatalError(failed);
+        Failures.throwIfPresent(Failures.fatalInsteadOf(failure, fatal));
+        if (fatal == null) {
+            // The load's own failure goes with it, as it would under a fatal Error.
+            Failures.keepAlso(failed, failure);
+            rethrowUnchecked(failed);
+        }
+    }
+
+    // Claims the rule sets still to retire that no other call has claimed, for the call holding the claim to retire.
+    // Called holding lifecycle.
+    private void claimToRetire(long claim) {
+        for (RuleSet rules = unretired; rules != null; rules = rules.nextUnretired) {
+            if (rules.retiringClaim == 0) {
+                rules.retiringClaim = claim;
+            }
+        }
+    }
+
+    /**
+     * Retires the rule sets still to retire that the caller claimed, the one it replaced or detached first, each even
+     * after retiring one before it threw (see {@link RuleSet#retire()}). Each stays among the rule sets still to
+     * retire until it's retired for good, and the claim on it is given up after each attempt, so one whose retiring
+     * fails part way is left for the next {@code load()} or {@code close()}; the claims are given up however this
+     * ends, even when calling it fails, as it can when the stack runs out, so none is claimed for good.
+     *
+     * @param claim The number the caller claimed them with
+     * @return The first fatal {@link Error} retiring them threw or returned, carrying the others, or else the last
+     *         failure retiring them threw, carrying those before it, or {@code null} if they were all retired
+     */
+    // Each claim this call still holds is given up, with no call in the loop.
+    private Throwable retireClaimed(long claim) {
+        try {
+            return retireEachClaimed(claim);
+        } finally {
+            synchronized (lifecycle) {
+                for (RuleSet rules = unretired; rules != null; rules = rules.nextUnretired) {
+                    if (rules.retiringClaim == claim) {
+                        rules.retiringClaim = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    private Throwable retireEachClaimed(long claim) {
+        Faults.at(Faults.Step.CLAIMED_RETIRING);
+        Error fatal = null;
+        Throwable failure = null;
+        for (RuleSet rules = claimed(claim); rules != null; rules = claimed(claim)) {
+            try {
+                fatal = Failures.first(fatal, rules.retire());
+            } catch (Throwable t) {
+                // Any Throwable: the rest are retired all the same, and what it was is reported once they are.
+                Error thrownFatal = Failures.fatalError(t);
+                if (thrownFatal == null) {
+                    Failures.keepAlso(t, failure);
+                    failure = t;
+                } else {
+                    fatal = Failures.first(fatal, thrownFatal);
+                }
+            } finally {
+                settle(rules);
+            }
+        }
+        Failures.keepAlso(fatal, failure);
+        return fatal != null ? fatal : failure;
+    }
+
+    // The first rule set still to retire that the claim holds, or null if it holds none any more.
+    private RuleSet claimed(long claim) {
+        synchronized (lifecycle) {
+            RuleSet rules = unretired;
+            while (rules != null && rules.retiringClaim != claim) {
+                rules = rules.nextUnretired;
+            }
+            return rules;
+        }
+    }
+
+    // Gives up the claim on a rule set once retiring it has been tried, and takes every rule set retired for good out
+    // of the rule sets still to retire.
+    @SuppressWarnings("PMD.NullAssignment")
+    private void settle(RuleSet tried) {
+        synchronized (lifecycle) {
+            tried.retiringClaim = 0;
+            // Unlinked in place, so the list is whole, and in order, at every step, even if one fails part way.
+            RuleSet previous = null;
+            RuleSet rules = unretired;
+            while (rules != null) {
+                RuleSet next = rules.nextUnretired;
+                Faults.at(Faults.Step.SETTLING);
+                if (rules.retiredForGood()) {
+                    if (previous == null) {
+                        unretired = next;
+                    } else {
+                        previous.nextUnretired = next;
+                    }
+                    rules.nextUnretired = null;
+                } else {
+                    previous = rules;
+                }
+                rules = next;
+            }
+        }
+    }
+
+    // Throws what retiring threw, if anything, as it is, whatever its type: retire() declares nothing, so it is
+    // unchecked, or a checked exception a language's code threw undeclared, which the caller would have had thrown as
+    // it is too. Not Failures.throwIfPresent, which throws a fatal Error it's given.
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void rethrowUnchecked(Throwable failure) throws T {
+        if (failure != null) {
+            throw (T) failure;
+        }
     }
 
     /**
@@ -946,44 +1165,54 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * fails, it throws what it would on an open engine, such as {@link RuleCompilationException}. If it succeeds,
      * either it swapped its rules in first, and this method retires them like any others, or it finds the engine
      * closed, retires its rules rather than swapping them in, and throws {@link IllegalStateException}. Closing it
-     * again does nothing.
+     * again does nothing, unless retiring a rule list failed part way, as it can when it runs out of stack: then
+     * closing it again finishes retiring it. So does a {@code close()} after a {@code load()} whose retiring of a
+     * rule list failed part way, and it throws a fatal {@link Error} closing that rule list throws.
      *
      * <p>
      * A fatal {@link Error} a language throws while closing a session or a compiler is rethrown once every copy that
      * was idle when this method closed the rules, and the compilers if no run is using the rules by then (holding a
      * copy, waiting for one, or not yet returned), has been closed: the first, if there are several, carrying the
-     * others as suppressed exceptions. The engine is closed all the same, so closing it again does nothing. A copy
-     * given back while this method is still taking the idle copies, before it has marked the rules closed, counts as
-     * one of them: this method closes it too if no run is using the rules by then, and the last run to leave does
-     * otherwise. A copy a run still holds is closed when the run gives it back, or, when it's kept for a run still
-     * waiting for a copy, by that run or the last run to leave, and a fatal error from that reaches the run that closes
-     * it, never this method. The compilers are closed once both this method has closed the idle copies and the last run
-     * has left, by whichever finishes second, which gets their fatal error: so when a run leaves while this method is
-     * still closing, this method closes the compilers and throws their error.
+     * others as suppressed exceptions. The engine is closed all the same, and the rule list is retired, so closing it
+     * again does nothing more than it would otherwise. A copy given back while this method is still taking the idle
+     * copies, before it has marked the rules closed, counts as one of them: this method closes it too if no run is
+     * using the rules by then, and the last run to leave does otherwise. A copy a run still holds is closed when the
+     * run gives it back, or, when it's kept for a run still waiting for a copy, by that run or the last run to leave,
+     * and a fatal error from that reaches the run that closes it, never this method. The compilers are closed once both
+     * this method has closed the idle copies and the last run has left, by whichever finishes second, which gets their
+     * fatal error: so when a run leaves while this method is still closing, this method closes the compilers and throws
+     * their error.
      * </p>
      */
     // A closed engine has no rule set.
     @SuppressWarnings("PMD.NullAssignment")
     @Override
     public void close() {
-        RuleSet replaced;
-        synchronized (lifecycle) {
-            if (closed) {
-                return;
+        // Before the engine is marked closed, so a close() that overflows here leaves it open, to close again.
+        StackHeadroom.check();
+        // As in load(): a run a language's close() starts is nested in this one, so what it logged isn't logged again
+        // (see LoggedFailures). Counted before the rules are taken from the engine, so failing to count it leaves the
+        // engine as it was.
+        LoggedFailures.enter();
+        try {
+            long claim;
+            synchronized (lifecycle) {
+                lastClaim++;
+                claim = lastClaim;
+                // The rules join the rules still to retire before the engine lets go of them, as in load(), and this
+                // call claims them, with any left by earlier calls that no other has claimed.
+                RuleSet detached = ruleSet;
+                if (detached != null) {
+                    detached.nextUnretired = unretired;
+                    unretired = detached;
+                }
+                ruleSet = null;
+                closed = true;
+                claimToRetire(claim);
             }
-            closed = true;
-            replaced = ruleSet;
-            ruleSet = null;
-        }
-        if (replaced != null) {
-            // As in load(): a run a language's close() starts is nested in this one, so what it logged isn't logged
-            // again (see LoggedFailures).
-            LoggedFailures.enter();
-            try {
-                Failures.throwIfPresent(replaced.retire());
-            } finally {
-                LoggedFailures.leave();
-            }
+            rethrowUnchecked(retireClaimed(claim));
+        } finally {
+            LoggedFailures.leave();
         }
     }
 
@@ -999,6 +1228,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public List<RuleCompilationException> validate(List<Rule> ruleList) {
+        // Before the validation counts or compiles anything, as in run().
+        StackHeadroom.check();
         // As in load(): a fatal Error a run a language starts here logged isn't logged again.
         LoggedFailures.enterLoad();
         try {

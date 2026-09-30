@@ -128,7 +128,8 @@ nothing, because `close()` has a default, but the interface changed in other way
 | Resources released by garbage collection | Release them in `Session.close()` or `ExpressionCompiler.close()` |
 | An engine you discard in a test | `close()` it, or use try-with-resources; `load()`, `validate()`, `run()`, `runWithResult()` and `rules()` then throw `IllegalStateException` |
 
-Closing an engine that is already closed does nothing. A rule list whose languages all return `Session.none()` needs
+Closing an engine that is already closed does nothing, unless the first `close()`
+[stopped part way](exceptions-by-method.md). A rule list whose languages all return `Session.none()` needs
 no copies at all, so no [copy limit](migrating-to-2.md#-compiled-copies-are-limited-on-virtual-threads) applies to it.
 `ExpressionCompiler.warmUp(Session)` is new and optional: it lets a language compile when a session is created rather
 than on its first run. See [Warming up a session](languages/custom.md#warming-up-a-session).

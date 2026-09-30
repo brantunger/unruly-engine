@@ -14,6 +14,13 @@ class CancellationTest {
     private static final Deadline SOON = Deadline.from(Duration.ofSeconds(60));
     private static final Deadline LATER = Deadline.from(Duration.ofSeconds(120));
 
+    /** Enters a run's deadline as the engine does, returning the one to put back. */
+    private static Deadline enter(Deadline deadline) {
+        Deadline outer = Cancellation.current();
+        Cancellation.enter(deadline);
+        return outer;
+    }
+
     @Test
     @DisplayName("the earlier of two deadlines wins, and a missing one never does")
     void earliest() {
@@ -36,12 +43,12 @@ class CancellationTest {
     }
 
     private static void enterTwiceAndLeave() {
-        Deadline outside = Cancellation.enter(LATER);
+        Deadline outside = enter(LATER);
         assertNull(outside);
         assertSame(LATER, Cancellation.deadlineFrom(null));
         assertSame(LATER, Cancellation.deadlineFrom(Duration.ofDays(1)), "a longer timeout doesn't extend it");
 
-        Deadline outer = Cancellation.enter(SOON);
+        Deadline outer = enter(SOON);
         assertSame(LATER, outer);
         assertSame(SOON, Cancellation.deadlineFrom(null));
         Cancellation.leave(outer);
@@ -55,7 +62,7 @@ class CancellationTest {
     @DisplayName("a run started inside one already past its deadline shares that deadline, however long its own")
     void aPassedOuterDeadlineIsShared() {
         Deadline passed = Deadline.from(Duration.ZERO);
-        Deadline outside = Cancellation.enter(passed);
+        Deadline outside = enter(passed);
         try {
             assertSame(passed, Cancellation.deadlineFrom(Duration.ofSeconds(Long.MAX_VALUE)));
             assertSame(passed, Cancellation.deadlineFrom(Duration.ofSeconds(1)));
@@ -64,7 +71,7 @@ class CancellationTest {
             Cancellation.leave(outside);
         }
         Deadline later = Deadline.from(Duration.ofSeconds(60));
-        outside = Cancellation.enter(later);
+        outside = enter(later);
         try {
             Deadline own = Cancellation.deadlineFrom(Duration.ofSeconds(1));
             assertNotSame(later, own, "a shorter timeout of its own comes first");
@@ -77,7 +84,7 @@ class CancellationTest {
     @Test
     @DisplayName("a run without a deadline, started on a thread running nothing, leaves nothing behind")
     void enteringNoDeadline() {
-        assertNull(Cancellation.enter(Deadline.NONE));
+        assertNull(enter(Deadline.NONE));
         try {
             assertFalse(Cancellation.deadlineFrom(null).isSet());
         } finally {
@@ -89,7 +96,7 @@ class CancellationTest {
     @DisplayName("a run started inside one without a deadline gets its own, even from a timeout too long to count in"
             + " nanoseconds")
     void aHugeTimeoutInsideARunWithoutADeadline() {
-        Deadline outside = Cancellation.enter(Deadline.NONE);
+        Deadline outside = enter(Deadline.NONE);
         try {
             assertTrue(Cancellation.deadlineFrom(Duration.ofSeconds(Long.MAX_VALUE)).isSet());
         } finally {

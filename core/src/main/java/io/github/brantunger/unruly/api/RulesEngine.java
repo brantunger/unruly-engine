@@ -73,8 +73,15 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               swapped in: they stay loaded, and runs use them. The reload closes the idle copies
      *                               of the rules it replaced, and closes their compilers too, throwing their error, if
      *                               the last run using those rules left before it had finished closing the idle copies,
-     *                               as {@link #close()} does. A {@link Throwable} that is neither an {@link Exception}
-     *                               nor an {@link Error} is never fatal: it's handled like an exception from the same
+     *                               as {@link #close()} does. Once the new rules are swapped in, only a fatal error is
+     *                               thrown: anything else that stops closing old rules part way, as running out of
+     *                               stack in the engine's own steps can, is kept on that error as a suppressed
+     *                               exception, or logged at WARN if nothing was fatal, and the next {@code load()} or
+     *                               {@code close()} goes on closing those rules, throwing a fatal error from closing
+     *                               them as its own. A load that failed before the swap throws such a failure from
+     *                               closing its own rules in place of its own failure. A
+     *                               {@link Throwable} that is neither an {@link Exception} nor an {@link Error} is
+     *                               never fatal: it's handled like an exception from the same
      *                               place, reported as a {@code RuleCompilationException} while compiling or making
      *                               copies, and logged at WARN while closing.
      */
@@ -256,22 +263,24 @@ public interface RulesEngine<O> extends AutoCloseable {
      * {@code load()} that found the engine open before this method closed it isn't stopped. If it fails, it throws what
      * it would on an open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules
      * in first, and this method closes them like any others, or it finds the engine closed, closes its rules rather
-     * than swapping them in, and throws {@link IllegalStateException}. Closing an engine that is already closed does
-     * nothing.
+     * than swapping them in, and throws {@link IllegalStateException}. A failure that stops this method closing rules
+     * part way, as running out of stack in the engine's own steps can, is thrown, fatal or not, and the engine is
+     * closed all the same. Closing an engine that is already closed does nothing, unless an earlier call, or a
+     * {@code load()}, stopped part way that way: then it goes on closing those rules.
      *
      * <p>
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which
      * is rethrown unchanged once every session that was idle when this method closed the rules, and the compilers if no
      * run is using the rules by then (holding a copy, waiting for one, or not yet returned), has been closed: the
      * first, if there are several, carrying the others as suppressed exceptions. The engine is closed all the same, so
-     * closing it again does nothing. A copy given back while this method is still taking the idle copies, before it has
-     * marked the rules closed, counts as one of them: this method closes it too if no run is using the rules by then,
-     * and the last run to leave does otherwise. A copy a run still holds is closed when the run gives it back, or, when
-     * it's kept for a run still waiting for a copy, by that run or the last run to leave, and a fatal error from that
-     * reaches the run that closes it, never this method. The compilers are closed once both this method has closed the
-     * idle sessions and the last run has left, by whichever finishes second, which gets their fatal error: so when a
-     * run leaves while this method is still closing, this method closes the compilers and throws their error. By
-     * default, this method does nothing.
+     * closing it again does nothing more, unless closing the rules failed part way (see above). A copy given back while
+     * this method is still taking the idle copies, before it has marked the rules closed, counts as one of them: this
+     * method closes it too if no run is using the rules by then, and the last run to leave does otherwise. A copy a run
+     * still holds is closed when the run gives it back, or, when it's kept for a run still waiting for a copy, by that
+     * run or the last run to leave, and a fatal error from that reaches the run that closes it, never this method. The
+     * compilers are closed once both this method has closed the idle sessions and the last run has left, by whichever
+     * finishes second, which gets their fatal error: so when a run leaves while this method is still closing, this
+     * method closes the compilers and throws their error. By default, this method does nothing.
      * </p>
      */
     @Override

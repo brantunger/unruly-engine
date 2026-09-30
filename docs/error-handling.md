@@ -87,10 +87,8 @@ surface when a rule is evaluated. Another language decides what it catches when 
 
 ## ⏳ Stopping a run
 
-A run stops once its thread is interrupted or it passes its timeout: before each condition and action, when one returns,
-once the output writer has set an action's properties, while it waits for a compiled copy, or while it reads the
-engine's rules again after a reload or `close()` closed the list it had read; an interrupt also stops it while it waits
-for a build slot.
+A run stops once its thread is interrupted or it passes its timeout, at the points the
+[table below](#-what-happens-on-each-failure) lists.
 [Stopping a run](stopping-runs.md) covers timeouts, what they can't stop and what listeners see;
 [Nested runs](nested-runs.md) covers runs started inside a run.
 
@@ -122,7 +120,8 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; it and the reported exception keep the first other one a listener threw in `getSuppressed()`, and that one keeps any later ones that don't already carry it | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure: <class>: <message>` at WARN, unless a nested run logged it, with the [root-cause note](exceptions-by-method.md) when it applies; when it wrapped a fatal error a [nested run](nested-runs.md#-what-is-logged) logged, its wrapper at ERROR instead |
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
 | A fatal error from `onRunError` | That error, in place of what the run failed with, which it keeps in `getSuppressed()` | Every listener gets `onRunError` | ERROR |
-| A fatal error from closing the copy the run gives back, or, when it's the last run to leave retired rules (even after a failed borrow), the copies still kept, and the rules' compilers if `load()` or `close()` finished closing first (see [A fatal error while closing](#-a-fatal-error-while-closing)) | The error itself, even when the run succeeded; a run failure that isn't fatal goes in its `getSuppressed()`, or is logged at WARN if the error can't keep one. A fatal run failure is thrown instead, and keeps this one in its `getSuppressed()` | Nothing more: listeners already got `afterRun` or `onRunError`, even a run stopped while it waited for a copy or a build slot, which reports the stop before the error. A language that failed to create a session reaches no listener | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| A fatal error from closing copies, sessions or compilers as the run leaves; see [A fatal error while closing](#-a-fatal-error-while-closing) | The error itself, even when the run succeeded, in place of a run failure that isn't fatal | Nothing more: listeners already got `afterRun` or `onRunError`, if the run reached them | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| The thread has too little stack left; see [Exceptions by method](exceptions-by-method.md) | `StackOverflowError`, before the run takes anything | Nothing | Not logged |
 | `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](exceptions-by-method.md) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 
 > [!NOTE]
@@ -164,6 +163,11 @@ The call that closes throws it:
 - A `load()` that replaced the rules (after the swap; see
   [Reloading rules while running](thread-safety.md#-reloading-rules-while-running)), failed, or found the engine closed.
 
+After its swap, `load()` retires the rules it replaced, then any an earlier call left half retired. It throws only a
+fatal error from them, carrying the others. If nothing was fatal, a failure that stopped the retiring part way, as
+running out of stack in the engine's own steps can, is logged at WARN, and the next `load()` or `close()` tries again.
+`close()` throws either, and a second `close()` finishes the job.
+
 A run throws it too, even when its rules ran without failing: from closing an extra copy it gives back, a copy that
 couldn't be kept, a copy of retired rules that no waiting run needs, or the sessions of a copy only partly made.
 
@@ -174,7 +178,7 @@ closes any copy still kept. So a fatal error from a copy kept for a waiting run 
 
 The compilers are closed once, after `load()` or `close()` has closed the idle copies and the last run has left.
 Whichever of the two finishes second closes them and throws their fatal error: the last run, or `load()` or `close()`
-when that run left before they finished closing.
+when that run left before they finished closing, or a later `load()` or `close()`, if retiring stopped part way.
 
 A stopped wait for a copy, or for a build slot to make one, is reported first: its WARN line, `beforeRun`, then
 `onRunError`. The fatal error carries the stop's `RuleExecutionException`; an interrupted thread stays interrupted.

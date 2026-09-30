@@ -321,7 +321,17 @@ class RuleSetTest {
      * got, so a test can tell one copy from another.
      */
     private record VirtualRun(Thread thread, CountDownLatch borrowed, CountDownLatch askedBack,
-                              AtomicReference<RuleSet.Copy> held, AtomicReference<Throwable> failure) {
+                              AtomicReference<RuleSet.Copy> held, AtomicReference<RuleSet.Held> heldWith,
+                              AtomicReference<Throwable> failure) {
+
+        /**
+         * Waits for the borrow to end and returns what the run held with its copy when it got it, which it may have
+         * given back since.
+         */
+        RuleSet.Held heldWhenBorrowed() throws InterruptedException {
+            copy();
+            return heldWith.get();
+        }
 
         /** Waits for the borrow to end and returns the copy it took, failing the test if it took none. */
         RuleSet.Copy copy() throws InterruptedException {
@@ -354,6 +364,7 @@ class RuleSetTest {
         CountDownLatch borrowed = new CountDownLatch(1);
         CountDownLatch askedBack = new CountDownLatch(1);
         AtomicReference<RuleSet.Copy> held = new AtomicReference<>();
+        AtomicReference<RuleSet.Held> heldWith = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         // Whatever goes wrong on the thread is kept for the test to report, as in holdOneCopy, and the copy is given
         // back whatever happens after it was taken. A virtual thread is always a daemon.
@@ -365,6 +376,7 @@ class RuleSetTest {
                     failure.set(new AssertionError("the rule set to borrow from is closed"));
                     return;
                 }
+                heldWith.set(copy.held());
                 held.set(copy);
             } catch (Exception | Error e) {
                 failure.set(e);
@@ -380,7 +392,7 @@ class RuleSetTest {
                 rules.release(copy);
             }
         });
-        return new VirtualRun(thread, borrowed, askedBack, held, failure);
+        return new VirtualRun(thread, borrowed, askedBack, held, heldWith, failure);
     }
 
     /** Waits until {@code count} runs are waiting for a permit or a build slot of {@code rules}. */
@@ -974,7 +986,7 @@ class RuleSetTest {
             holder.giveBack();
         }
         for (VirtualRun run : waiting) {
-            assertEquals(RuleSet.Held.PERMIT, run.copy().held(), "the run took a kept copy with a permit");
+            assertEquals(RuleSet.Held.PERMIT, run.heldWhenBorrowed(), "the run took a kept copy with a permit");
             run.giveBack();
         }
 
@@ -1386,7 +1398,7 @@ class RuleSetTest {
         List<Integer> closedWhileWaiting = List.copyOf(closed);
         permitted.giveBack();
         for (VirtualRun run : waiting) {
-            assertEquals(RuleSet.Held.PERMIT, run.copy().held(), "the run took a kept copy with a permit");
+            assertEquals(RuleSet.Held.PERMIT, run.heldWhenBorrowed(), "the run took a kept copy with a permit");
             run.giveBack();
         }
 
