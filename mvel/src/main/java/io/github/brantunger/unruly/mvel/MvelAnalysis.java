@@ -26,7 +26,8 @@ final class MvelAnalysis extends ExpressionCompiler {
     // An identifier, as Java reads one.
     private static final String IDENTIFIER = "\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*";
     // What MVEL read after the type of a declaration it rejects, up to where it stopped: the variable's name, and
-    // the = after it if there is one. A no-break space counts as whitespace.
+    // the = after it if there is one. A no-break space counts as whitespace. This reads MVEL's error, not the rule's
+    // text as MVEL lexes it, so it follows neither of RuleText's rules: \s is U+0009 to U+000D and a space.
     private static final Pattern DECLARED_NAME = Pattern.compile("[\\s\\u00a0]+" + IDENTIFIER + "[\\s\\u00a0]*=?");
     // A type's name: an identifier, or several joined with dots, and any number of [], such as java.util.Map[].
     private static final Pattern TYPE_NAME = Pattern.compile(IDENTIFIER + "(\\." + IDENTIFIER + ")*(\\[])*");
@@ -151,11 +152,7 @@ final class MvelAnalysis extends ExpressionCompiler {
                 words.add(word);
             }
         });
-        for (String operator : AbstractParser.OPERATORS.keySet()) {
-            if (Character.isJavaIdentifierStart(operator.charAt(0))) {
-                words.add(operator);
-            }
-        }
+        words.addAll(RuleText.wordOperators());
         return Set.copyOf(words);
     }
 }

@@ -58,10 +58,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * gives up on the chain after any other exception, which every caller of it catches and reads as "not a class", so a
  * chain costs lookups that grow with n. The first name with a {@code $} it tries is refused, as turning the last dot
  * into a {@code $} leaves the count as it is. A name too long alone doesn't make that loop any longer, so it is always
- * a {@link ClassNotFoundException}. Every rule that loaded without the bound and names no class of more than 80
- * parts still loads, and runs the same. A member read through a class of more than 80 parts, such as
- * {@code pkg.Outer.Inner.FIELD} with 81 parts before the field, is read as properties, as MVEL gives up on the chain
- * before it looks up the class.
+ * a {@link ClassNotFoundException}. Every rule that loaded without the bound and names no class of more than
+ * {@value #MAX_DOLLAR_NAME_PARTS} parts still loads, and runs the same. A member read through a class of more than
+ * {@value #MAX_DOLLAR_NAME_PARTS} parts, such as {@code pkg.Outer.Inner.FIELD} with {@value #MAX_NAME_PARTS} parts
+ * before the field, is read as properties, as MVEL gives up on the chain before it looks up the class.
  * </p>
  *
  * <p>
@@ -107,6 +107,12 @@ final class ExactNameClassLoader extends ClassLoader {
      * MVEL looks up as a class first.
      */
     static final int MAX_NAME_PARTS = Imports.MAX_IMPORT_PARTS + 17;
+
+    /**
+     * The most dot-separated parts a name with a {@code $} looked up with this loader may have: one fewer than
+     * {@link #MAX_NAME_PARTS}, as the {@code $} counts as a part.
+     */
+    static final int MAX_DOLLAR_NAME_PARTS = MAX_NAME_PARTS - 1;
 
     /**
      * How many names of classes the application's class loader has loaded through this one are remembered, so their
@@ -254,12 +260,12 @@ final class ExactNameClassLoader extends ClassLoader {
         if (!refuses(name)) {
             return;
         }
-        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        long parts = RuleText.dottedParts(name);
         if (name.indexOf('$') >= 0) {
-            if (parts > MAX_NAME_PARTS - 1) {
+            if (parts > MAX_DOLLAR_NAME_PARTS) {
                 String refusal = "Can't look up '" + FactNames.quote(name) + "': it has " + parts
                         + " dot-separated parts and a '$', and a class name with a '$' may have at most "
-                        + (MAX_NAME_PARTS - 1);
+                        + MAX_DOLLAR_NAME_PARTS;
                 if (inNestedLookup()) {
                     throw new NameTooLarge(refusal);
                 }
@@ -284,8 +290,8 @@ final class ExactNameClassLoader extends ClassLoader {
      * @return {@code true} if the name is refused
      */
     static boolean refuses(String name) {
-        long parts = name.chars().filter(c -> c == '.').count() + 1;
-        long mostParts = name.indexOf('$') >= 0 ? MAX_NAME_PARTS - 1 : MAX_NAME_PARTS;
+        long parts = RuleText.dottedParts(name);
+        long mostParts = name.indexOf('$') >= 0 ? MAX_DOLLAR_NAME_PARTS : MAX_NAME_PARTS;
         return name.length() > MAX_NAME_LENGTH || parts > mostParts;
     }
 
