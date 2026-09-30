@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.13.5](https://github.com/brantunger/unruly-engine/compare/v2.13.4...v2.13.5) (2026-09-30)
+
+
+### Bug Fixes
+
+* stop MVEL's analysis when it goes round in a loop, so load() and validate() return for a call with something glued to it ([#859](https://github.com/brantunger/unruly-engine/issues/859)) ([bf40847](https://github.com/brantunger/unruly-engine/commit/bf40847b7b8bcf56e703f849208521216de4e26e))
+
 ## [2.13.4](https://github.com/brantunger/unruly-engine/compare/v2.13.3...v2.13.4) (2026-09-30)
 
 
