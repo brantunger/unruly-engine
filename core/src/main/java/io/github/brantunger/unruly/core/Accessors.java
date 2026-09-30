@@ -14,10 +14,11 @@ import java.util.Set;
 
 /**
  * What a bean property is, and how to call its getter or setter from the engine's module: which public methods are
- * getters and setters, the property a getter reads, the setter a property is written with, and a way to call a public
- * method of an application's class. Reading facts and writing the output use the same rules, so a class the engine
- * can read it can also write. <b>Internal:</b> this class may change in any release. It's public only so that
- * {@code api.language.FactProperties} and the default {@code api.OutputWriter}, in other packages, share it.
+ * getters and setters, the property a getter reads, the setter a property is written with, a way to call a public
+ * method of an application's class, and the exception that says reading a fact's property failed. Reading facts and
+ * writing the output use the same rules, so a class the engine can read it can also write. <b>Internal:</b> this class
+ * may change in any release. It's public only so that {@code api.language.FactProperties} and the default
+ * {@code api.OutputWriter}, in other packages, share it.
  */
 public final class Accessors {
 
@@ -100,6 +101,91 @@ public final class Accessors {
                 + " it. Declare the " + kind + " on a public type, or on a public interface the type implements; on"
                 + " the module path, also export that type's package, or open it to io.github.brantunger.unruly.core"
                 + " for a type that isn't public.";
+    }
+
+    /**
+     * Makes the exception that says a fact's accessor threw: a getter, or a map's or a collection's own call. Its
+     * message is {@code what} followed by what the accessor threw, after a colon, such as
+     * {@code Reading 'price' on a com.example.Item failed: price service down}, so the reason reaches the log and the
+     * rule's failure without a stack trace. What the accessor threw is left out when it has no message or reading the
+     * message throws. The message isn't shortened or escaped here, so a caller that reads it directly gets it whole:
+     * the engine shortens and escapes the whole text when it logs it or fails a rule with it, as it does any message
+     * it didn't write.
+     *
+     * <p>
+     * What the accessor threw is left out too when the engine has already logged it and names it in the rule's
+     * failure, as {@code a nested run() failed: } and its text, which would otherwise repeat it: a nested run's
+     * failure, whether or not a run is in progress on this thread, or a fatal {@link Error} a run nested in the one in
+     * progress on this thread logged, in either case with nothing of its own around it, such as
+     * {@code new RuntimeException(e)}. A caller that reads the message directly finds it as the cause. While a run, a
+     * {@code load()} or a {@code validate()} is in progress on this thread, the exception around such a failure is
+     * recorded as one the engine built, so the failure is logged once, by the nested run, and the rule around it
+     * reads {@code a nested run() failed: } and that failure (see {@link LoggedFailures}). Nothing else is recorded,
+     * so a run's other read failures never push it out of the record. A fatal error the run in progress, or one
+     * around it, logged earlier and that is thrown again here, keeps its message, so the rule's failure names this
+     * read.
+     * </p>
+     *
+     * @param what  What failed, such as {@code Reading 'price' on a com.example.Item failed}
+     * @param cause What the accessor threw
+     * @return The exception to throw, caused by {@code cause}
+     */
+    public static IllegalStateException readFailed(String what, Throwable cause) {
+        // Out of stack or memory, nothing more than the error's own message is read, so this can't fail again for that.
+        if (cause instanceof VirtualMachineError error) {
+            return loggedBelow(error) ? LoggedFailures.builtByEngine(new IllegalStateException(what, cause))
+                    : new IllegalStateException(withMessage(what, messageOf(error)), cause);
+        }
+        Error fatal = Failures.fatalError(cause);
+        boolean nested = fatal != null
+                ? loggedBelow(fatal) && Failures.newsAbove(cause, fatal) == null
+                : Failures.nestedRunFailure(cause) != null;
+        if (nested) {
+            return LoggedFailures.builtByEngineIfInProgress(new IllegalStateException(what, cause));
+        }
+        return new IllegalStateException(withMessage(what, Failures.readableMessage(cause)), cause);
+    }
+
+    /**
+     * Tells whether a run nested in the one in progress on this thread logged a fatal error, rather than that run or
+     * one around it, which logged it earlier and may see the same instance thrown again, as the JVM throws the
+     * {@link OutOfMemoryError} it keeps ready.
+     */
+    private static boolean loggedBelow(Error fatal) {
+        LoggedFailures.LoggedAt at = LoggedFailures.loggedAt(fatal);
+        return at == LoggedFailures.LoggedAt.NESTED_RUN || at == LoggedFailures.LoggedAt.NESTED_LOAD;
+    }
+
+    private static String withMessage(String what, @Nullable String message) {
+        return message == null ? what : what + ": " + message;
+    }
+
+    // Anything getMessage() throws only makes the message unavailable, as Failures.read makes it, without a lambda.
+    private static @Nullable String messageOf(VirtualMachineError fatal) {
+        try {
+            return fatal.getMessage();
+        } catch (Throwable thrown) {
+            return null;
+        }
+    }
+
+    /**
+     * Finds an exception of a type among what was thrown and its causes, reading the causes as the engine reads them:
+     * no further than {@code Failures.MAX_CAUSE_CHAIN_LENGTH} links, and stopping at a {@code getCause()} that throws,
+     * whatever it throws, or that leads back to a link already read.
+     *
+     * @param thrown What was thrown
+     * @param type   The type to find
+     * @param <T>    That type
+     * @return The first exception of that type, from the top, or {@code null} if there is none
+     */
+    public static <T extends Throwable> @Nullable T inCauses(Throwable thrown, Class<T> type) {
+        for (Throwable link : Failures.causeChain(thrown)) {
+            if (type.isInstance(link)) {
+                return type.cast(link);
+            }
+        }
+        return null;
     }
 
     /**

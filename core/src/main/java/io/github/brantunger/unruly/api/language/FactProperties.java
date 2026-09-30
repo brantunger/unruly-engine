@@ -116,12 +116,25 @@ public final class FactProperties {
      *                                  evaluating it to {@code false} or to undefined hides it
      * @throws IllegalStateException    if the property exists but can't be read, because nothing public declares its
      *                                  accessor and its package isn't open to this module; or if the accessor
-     *                                  threw, with what it threw as the cause. What a getter throws is always
-     *                                  wrapped, so that one throwing {@link IllegalArgumentException} isn't read
-     *                                  as a missing property. A map's own {@code containsKey} and {@code get} are
-     *                                  its accessors, and an unchecked exception from them is wrapped too, except
-     *                                  a {@link ClassCastException} or {@link NullPointerException}, which means
-     *                                  the map refuses the key, so the fact has no such property
+     *                                  threw, with what it threw as the cause. The message, such as
+     *                                  {@code Reading 'price' on a com.example.Item failed: price service down},
+     *                                  ends with a colon and the message of what the accessor threw, whole, however
+     *                                  long, for the engine to shorten when it logs it. That is left out when what
+     *                                  it threw has no message or reading it throws, and when it's a failure the
+     *                                  engine has already logged and names in the rule's failure as
+     *                                  {@code a nested run() failed: }: a nested run's failure, whichever thread
+     *                                  the read is on, or a fatal {@link Error} a run nested in the one in progress
+     *                                  on this thread logged, in either case with nothing of its own around it.
+     *                                  The cause still holds it. What a getter throws is always wrapped, so that
+     *                                  one throwing {@link IllegalArgumentException} isn't read as a missing
+     *                                  property. A map's own {@code containsKey} and {@code get} are its accessors,
+     *                                  and an exception from them is wrapped too, with one exception: a
+     *                                  {@link ClassCastException} or {@link NullPointerException} from
+     *                                  {@code containsKey} is taken for the map refusing a key of that type, as a
+     *                                  sorted map refuses a string key, and reported as no such property, though
+     *                                  a map that fails that way for a reason of its own reads the same. Once
+     *                                  {@code containsKey} has found the key, whatever {@code get} throws is the
+     *                                  map's own failure
      */
     public static @Nullable Object read(Object target, String property) {
         Objects.requireNonNull(target, "target must not be null");
@@ -129,18 +142,25 @@ public final class FactProperties {
         if (target instanceof Map<?, ?> map) {
             // A sorted or otherwise restricted map can refuse a key of the wrong type outright, which is the same
             // answer as not having it: rules name properties with strings. Anything else the map throws is its own
-            // failure, wrapped as a getter's is; the missing key is reported after the try, so that isn't wrapped.
+            // failure, wrapped as a getter's is, and so is anything get() throws for a key the map said it has; the
+            // missing key is reported outside the tries, so that isn't wrapped. Exception, not RuntimeException: a
+            // map can throw a checked exception it doesn't declare.
+            boolean present;
             try {
-                if (map.containsKey(property)) {
-                    return map.get(property);
-                }
+                present = map.containsKey(property);
             } catch (ClassCastException | NullPointerException e) {
                 throw new IllegalArgumentException(noSuchProperty(target, property), e);
-            } catch (RuntimeException e) {
-                throw new IllegalStateException("Reading '" + property + "' on a " + target.getClass().getName()
-                        + " failed", e);
+            } catch (Exception e) {
+                throw readFailed(target, property, e);
             }
-            throw new IllegalArgumentException(noSuchProperty(target, property));
+            if (!present) {
+                throw new IllegalArgumentException(noSuchProperty(target, property));
+            }
+            try {
+                return map.get(property);
+            } catch (Exception e) {
+                throw readFailed(target, property, e);
+            }
         }
         Method accessor = ACCESSORS.get(target.getClass()).get(property);
         if (accessor == null) {
@@ -209,9 +229,12 @@ public final class FactProperties {
      * @throws IllegalArgumentException if {@code depth} is outside {@code 1} to {@value #MAX_DEPTH}, or
      *                                  {@code target} is a value this doesn't take apart, such as a {@link String},
      *                                  a number or a collection
-     * @throws IllegalStateException    if an accessor can't be called, with what it threw as the cause. A map's
-     *                                  iteration and its keys' {@code toString()} count as accessors, so what they
-     *                                  throw is wrapped too
+     * @throws IllegalStateException    if an accessor can't be called, with what it threw as the cause, and its
+     *                                  message after a colon as {@link #read} appends it. A map's iteration and its
+     *                                  keys' {@code toString()}, and a collection's {@code size()} and
+     *                                  {@code forEach}, count as accessors, so what they throw is wrapped too, as
+     *                                  {@code Reading the entries of a ... failed} or
+     *                                  {@code Reading the elements of a ... failed}
      */
     public static Map<String, @Nullable Object> toData(Object target, int depth) {
         Objects.requireNonNull(target, "target must not be null");
@@ -261,9 +284,10 @@ public final class FactProperties {
     private static Map<String, @Nullable Object> entriesOf(Map<?, ?> map, int depth, Set<Object> path) {
         Map<String, @Nullable Object> converted = new LinkedHashMap<>();
         Iterator<? extends Map.Entry<?, ?>> entries;
+        // Exception, not RuntimeException, here and below: a map can throw a checked exception it doesn't declare.
         try {
             entries = map.entrySet().iterator();
-        } catch (RuntimeException e) {
+        } catch (Exception e) {
             throw entriesFailed(map, e);
         }
         while (true) {
@@ -278,21 +302,60 @@ public final class FactProperties {
                 Map.Entry<?, ?> entry = entries.next();
                 key = String.valueOf(entry.getKey());
                 value = entry.getValue();
-            } catch (RuntimeException e) {
+            } catch (Exception e) {
                 throw entriesFailed(map, e);
             }
             converted.put(key, convert(value, depth - 1, path));
         }
     }
 
-    private static IllegalStateException entriesFailed(Map<?, ?> map, RuntimeException cause) {
-        return new IllegalStateException("Reading the entries of a " + map.getClass().getName() + " failed", cause);
+    private static IllegalStateException entriesFailed(Map<?, ?> map, Exception cause) {
+        return Accessors.readFailed("Reading the entries of a " + map.getClass().getName() + " failed", cause);
     }
 
+    // Through forEach, not an iterator: a synchronized collection holds its lock for the whole of it, and a collection
+    // may override forEach alone. An element's conversion can't be moved out of the collection's call, as a map
+    // entry's is, so its failure leaves forEach inside an ElementFailed, and only what the collection itself throws
+    // is wrapped: a nested element's failure isn't wrapped a second time. Exception, not RuntimeException: a
+    // collection can throw a checked exception it doesn't declare.
     private static List<@Nullable Object> elementsOf(Collection<?> collection, int depth, Set<Object> path) {
-        List<@Nullable Object> converted = new ArrayList<>(collection.size());
-        collection.forEach(element -> converted.add(convert(element, depth - 1, path)));
+        List<@Nullable Object> converted;
+        try {
+            converted = new ArrayList<>(collection.size());
+        } catch (Exception e) {
+            throw elementsFailed(collection, e);
+        }
+        try {
+            collection.forEach(element -> {
+                try {
+                    converted.add(convert(element, depth - 1, path));
+                } catch (RuntimeException e) {
+                    throw new ElementFailed(e);
+                }
+            });
+        } catch (Exception e) {
+            throw elementOrCollectionFailure(collection, e);
+        }
         return converted;
+    }
+
+    /**
+     * Tells what a collection's {@code forEach} threw: an element's own failure, which is thrown on as it came, or the
+     * collection's, which is wrapped. The element's is found in the {@link ElementFailed} itself, or in one a
+     * collection wrapped in an exception of its own.
+     *
+     * @param collection The collection
+     * @param thrown     What its {@code forEach} threw
+     * @return The element's failure, or the collection's wrapped
+     */
+    private static RuntimeException elementOrCollectionFailure(Collection<?> collection, Exception thrown) {
+        ElementFailed carried = Accessors.inCauses(thrown, ElementFailed.class);
+        return carried != null ? carried.failure : elementsFailed(collection, thrown);
+    }
+
+    private static IllegalStateException elementsFailed(Collection<?> collection, Exception cause) {
+        return Accessors.readFailed("Reading the elements of a " + collection.getClass().getName() + " failed",
+                cause);
     }
 
     private static List<@Nullable Object> arrayElementsOf(Object array, int depth, Set<Object> path) {
@@ -419,9 +482,15 @@ public final class FactProperties {
         } catch (InvocationTargetException e) {
             // Always wrapped, never rethrown as it came: IllegalArgumentException is how this class says a fact has
             // no such property, so a getter that validates its state must not be mistaken for a misspelled rule.
-            throw new IllegalStateException("Reading '" + property + "' on a " + target.getClass().getName()
-                    + " failed", e.getCause());
+            throw readFailed(target, property, e.getCause());
         }
+    }
+
+    // Unlike noSuchProperty's, this message carries what the accessor threw, which may quote a fact's value; the
+    // engine escapes it when it logs it, as it does every message it didn't write.
+    private static IllegalStateException readFailed(Object target, String property, Throwable cause) {
+        return Accessors.readFailed("Reading '" + property + "' on a " + target.getClass().getName() + " failed",
+                cause);
     }
 
     // The property name comes from the rule's text, and the message carries no fact value, so there is nothing here
@@ -429,5 +498,20 @@ public final class FactProperties {
     private static String noSuchProperty(Object target, String property) {
         return "A " + target.getClass().getName() + " has no property '" + property
                 + "'. A fact's properties are a record's components, a bean's getters, or a map's keys.";
+    }
+
+    /**
+     * Carries an element's own failure out of a collection's {@code forEach}, so it isn't taken for the collection's.
+     */
+    private static final class ElementFailed extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        private final RuntimeException failure;
+
+        // No stack trace: it's never seen, only unwrapped.
+        private ElementFailed(RuntimeException failure) {
+            super(null, failure, false, false);
+            this.failure = failure;
+        }
     }
 }

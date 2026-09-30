@@ -53,9 +53,11 @@ package io.github.brantunger.unruly.core;
  * <p>
  * The record also holds the last {@value #MAX_LOGGED} exceptions the engine built around a failure, that aren't a
  * {@link ReportedFailure}, such as the {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} of a
- * rule whose language failed with a nested run's failure, so the code around one knows it for the engine's own words,
- * which add nothing to a nested failure, however its text reads (see {@link #builtByEngine}). It holds them for the
- * outermost run too, whose own code reads them, and forgets them with the rest.
+ * rule whose language failed with a nested run's failure, or the {@link IllegalStateException} of
+ * {@link io.github.brantunger.unruly.api.language.FactProperties} around a nested run's failure that a fact's accessor
+ * threw, so the code around one knows it for the engine's own words, which add nothing to a nested failure, however
+ * its text reads (see {@link #builtByEngine}). It holds them for the outermost run too, whose own code reads them, and
+ * forgets them with the rest.
  * </p>
  */
 final class LoggedFailures {
@@ -359,6 +361,20 @@ final class LoggedFailures {
         runs.built[runs.nextBuilt] = wrapper;
         runs.nextBuilt = (runs.nextBuilt + 1) % MAX_LOGGED;
         return wrapper;
+    }
+
+    /**
+     * Records an exception the engine has just built around a failure as {@link #builtByEngine} does, when a run, a
+     * {@code load()} or a {@code validate()} is in progress on this thread, for a caller that may be outside one:
+     * {@link io.github.brantunger.unruly.api.language.FactProperties} is public, and a language or a test calls it
+     * wherever it likes. Outside one, nothing around the exception could read the record, so it's only returned.
+     *
+     * @param wrapper The exception the engine built
+     * @param <T>     Its type
+     * @return {@code wrapper}, for the caller to throw or return
+     */
+    static <T extends Throwable> T builtByEngineIfInProgress(T wrapper) {
+        return RUNS.get() == null ? wrapper : builtByEngine(wrapper);
     }
 
     /**
