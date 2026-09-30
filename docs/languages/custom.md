@@ -153,8 +153,8 @@ engine already rejects a fact with that name.
 
 **Errors while running.** An exception from `evaluate`, `evaluateWithDetail` or `execute` becomes a
 `RuleExecutionException` naming the rule; a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even
-wrapped in your own exception. A condition returning anything but a `Boolean`, `null` included, fails the rule: the
-engine coerces nothing.
+wrapped in your own exception. Keep caught exceptions as causes. A condition returning anything but a `Boolean`,
+`null` included, fails the rule: the engine coerces nothing.
 
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
 as MVEL's adapter does: added words get the nested failure [logged twice](../nested-runs.md#-what-is-logged).
@@ -172,8 +172,8 @@ engine logs `Condition for rule 'prime-rate' has a warning at line 2, column 5: 
 
 ### Explaining a condition's result
 
-Since 2.2.0, a condition can say why it came out as it did. Override `evaluateWithDetail` and return the value together
-with a detail, from one evaluation:
+Since 2.2.0, a condition can say why it came out as it did. Override `evaluateWithDetail` and return the value with a
+detail, from one evaluation:
 
 ```java
 return new CompiledCondition() {
@@ -191,7 +191,7 @@ return new CompiledCondition() {
 };
 ```
 
-The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never calls `evaluate` itself. The default
+The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never `evaluate` itself. The default
 returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
 `evaluate` works unchanged. For a `Boolean` it returns a shared constant, `ConditionResult.TRUE` or `FALSE`, so the
 default allocates nothing extra, and neither does `ConditionResult.of(value, null)`.
@@ -201,8 +201,8 @@ own `equals`, so `assertEquals` works when the detail is a `String` or a record;
 `equals`, compares by identity. `toString()` prints the call that makes it, such as
 `ConditionResult.of(true, <detail>)`, as `ActionResult` does.
 
-Keep `evaluate` returning the same value. The engine never calls it, but a condition that wraps yours, or your own
-tests, may. The kit's `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
+Keep `evaluate` returning the same value: a condition that wraps yours, or your own tests, may call it. The kit's
+`evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
 
 The detail can be any object, or `null`. The application reads it as
 [`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for every
@@ -432,26 +432,25 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 | `warmUp` | Called on the `load()` thread, one session at a time, after every compile call and before any run sees the compiler |
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
-| A `Session` | Used by one run at a time, possibly on different threads one after another. So `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |
+| A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |
 | `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw. The kit's `sessionClosedWhileAnotherRuns` fails either; `sessionsClosed` and `sessionClosedOnAnotherThread` fail a throw |
-| Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), as the kit's `nestedRunInsideAnAction` checks |
+| Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, which may fail, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), or restore it in a `finally`, as the kit's [nested-run checks](contract-kit.md#-testing-with-the-contract-kit) require |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
 `newSession()` creates a session for each [compiled copy](../glossary.md#compiled-copy) of the rules, and every
 condition and action of your language in a run gets that copy's session. Return `Session.none()` when your compiled
 expressions keep no state while they run, and a new session when they do, such as a single-threaded interpreter
-context. A rule list whose languages all return `Session.none()` needs no copies: every run shares one set of
-sessions, and no [copy limit](../compiled-copies.md#-limiting-the-copies) applies to it. Values kept with
-`runScoped` need no session.
+context. A rule list whose languages all return `Session.none()` needs no copies: its runs share one set of sessions,
+with no [copy limit](../compiled-copies.md#-limiting-the-copies). Values kept with `runScoped` need no session.
 
 > [!WARNING]
 > Only the `Session.none()` instance counts as stateless: the engine checks identity, not `equals`. A stateless
-> `new MySession()` silently turns on copies and the copy limit for every rule list that uses your language.
+> `new MySession()` silently turns on copies and the copy limit for every rule list using your language.
 
 A `newSession()` that throws, even a `Throwable` that is neither an `Exception` nor an `Error`, or returns `null` fails
 the run that needed the session with a `RuleExecutionException`, logged at ERROR, and closes the sessions other
-languages already made for that copy; it happens before `beforeRun`, so no listener is told. A fatal error from closing
-them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one; see
+languages already made for that copy; it all happens before `beforeRun`, so no listener is told. A fatal error from
+closing them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one; see
 [A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
 A `close()` that throws is logged at WARN, unless a [nested run](../nested-runs.md#-what-is-logged) logged it, and the
@@ -463,7 +462,7 @@ See [A fatal error while closing](../error-handling.md#-a-fatal-error-while-clos
 
 An engine built with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) makes its copies during
 `load()`, and passes each new session to `warmUp(Session)` before any run uses it. Override it to do there what your
-session would otherwise do on its first runs, such as compiling expressions into it. By default it does nothing, and
+session would otherwise do on its first runs, such as compiling expressions. By default it does nothing, and
 the copies are still made. MVEL compiles every condition and action into the session.
 
 - **When:** on the `load()` thread, one session after another, after every expression has compiled.
@@ -482,7 +481,7 @@ fatal error, that one came first and is thrown, with the one from closing, logge
 
 A language in its own jar needs only `unruly-engine-core`, the engine without MVEL. An engine built without
 `language(...)` finds a language when its jar declares it as a service, and the class needs a public no-argument
-constructor. Declare it both ways, to support both paths:
+constructor. Declare it both ways:
 
 - **Class path:** a file `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` that contains
   the class name, such as `com.example.lang.MyLanguage`.

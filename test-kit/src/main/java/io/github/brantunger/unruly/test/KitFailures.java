@@ -134,24 +134,40 @@ final class KitFailures {
     }
 
     /**
-     * Describes a failed run of {@code nestedRunInsideAnAction} whose action had started a run inside itself: a
-     * language that keeps a run's state per thread may find it replaced, or removed, by the nested run.
+     * Describes a failed run of one of the nested-run checks, whose condition or action had started a run inside
+     * itself: a language that keeps a run's state per thread may find it replaced, or removed, by the nested run.
      *
-     * @param failure       What the run threw
-     * @param nestedFailure What the run started inside its action threw, attached to the check's failure, or
-     *                      {@code null}
+     * <p>
+     * A nested run that failed other than as the check made it fail is a second defect, and the failure says both
+     * runs failed. One that failed as the check made it is what the check is about: the failure says the failed run
+     * may have left the state behind, as a nested run that ended does.
+     * </p>
+     *
+     * @param failure               What the run threw
+     * @param where                 Where the nested run started, {@code "condition"} or {@code "action"}
+     * @param nestedFailure         What the run started inside its condition or action threw, attached to the
+     *                              check's failure, or {@code null}
+     * @param nestedFailedAsPlanned Whether the nested run failed as the check made it fail
      * @return The check's failure, with the engine's message: the exception's class is the engine's internal one
      */
-    static AssertionFailedError runAroundNestedFailed(RuleExecutionException failure,
-                                                      @Nullable RuntimeException nestedFailure) {
-        if (nestedFailure != null) {
-            AssertionFailedError both = new AssertionFailedError("the run failed after a run started inside its action"
-                    + " failed too, which is attached: " + failure.getMessage(), failure);
+    static AssertionFailedError runAroundNestedFailed(RuleExecutionException failure, String where,
+                                                      @Nullable RuntimeException nestedFailure,
+                                                      boolean nestedFailedAsPlanned) {
+        if (nestedFailure != null && !nestedFailedAsPlanned) {
+            AssertionFailedError both = new AssertionFailedError("the run failed after a run started inside its "
+                    + where + " failed too, which is attached: " + failure.getMessage(), failure);
             both.addSuppressed(nestedFailure);
             return both;
         }
-        return new AssertionFailedError("the run failed after a run started inside its action ended, so the nested"
-                + " run may have replaced or removed state the action kept for its own run: " + failure.getMessage(),
-                failure);
+        String nested = nestedFailure != null
+                ? " failed, as the check meant it to, which is attached, so the failed run"
+                : " ended, so the nested run";
+        AssertionFailedError around = new AssertionFailedError("the run failed after a run started inside its " + where
+                + nested + " may have replaced or removed state the " + where + " kept for its own run: "
+                + failure.getMessage(), failure);
+        if (nestedFailure != null) {
+            around.addSuppressed(nestedFailure);
+        }
+        return around;
     }
 }

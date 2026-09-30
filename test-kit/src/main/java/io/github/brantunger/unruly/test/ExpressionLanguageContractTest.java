@@ -26,19 +26,27 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
 import java.math.BigDecimal;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -101,6 +109,20 @@ public abstract class ExpressionLanguageContractTest {
 
     /** The rule the variable checks declare their variable in. */
     private static final String DECLARES = "declares";
+
+    /** The fact whose getter starts a nested run, and the property of it the nested-run checks read. */
+    private static final String NEST = "nest";
+    private static final String NEST_VALUE = "value";
+
+    /**
+     * What the getter of a {@link Nesting} made to fail puts in its message, so that the checks recognize the failure
+     * a language rethrows with that message, rather than with the exception as a cause.
+     */
+    private static final String PLANNED_FAILURE = "[unruly contract kit: planned nested-run failure]";
+
+    /** The nested-run checks' rules: the one whose expression starts a nested run, and the one that run fires. */
+    private static final String OUTER = "outer";
+    private static final String INNER = "inner";
 
     /** Creates the test. JUnit creates an instance of the extending class for each check. */
     protected ExpressionLanguageContractTest() {
@@ -359,16 +381,34 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Returns an action that puts one property of a fact, read through its getter, into the output map under a key.
-     * {@code nestedRunInsideAnAction} runs it against a {@link Nesting} fact, whose getter starts a run nested inside
-     * the action, on the action's own thread. By default, {@code null}.
+     * {@code nestedRunInsideAnAction} and {@code nestedRunFailsInsideAnAction} run it against a {@link Nesting} fact,
+     * whose getter starts a run nested inside the action, on the action's own thread. By default, {@code null}.
      *
      * @param key      The key to put the value under
      * @param fact     The fact's name
      * @param property The property to read
      * @return The action, or {@code null} if the language's actions can't read a fact's property, which skips the
-     *         check
+     *         checks
      */
     protected @Nullable String putFactProperty(String key, String fact, String property) {
+        return null;
+    }
+
+    /**
+     * Returns a condition that is true when both conditions are, and evaluates {@code condition} before
+     * {@code other}, as {@code condition && other} does in MVEL. {@code nestedRunInsideACondition} and
+     * {@code nestedRunFailsInsideACondition} join {@link #factProperty factProperty("nest", "value", 7)}, whose getter
+     * starts a run nested inside the condition, with {@link #factEquals factEquals("x", 1)}, so that the second read
+     * is the one that finds any state the nested run left on the thread. A language that evaluates the right side
+     * first isn't checked by them: the first passes it, and the second is skipped when the nested run, stopping at
+     * the right side, never reads the getter that makes it fail. By default, {@code null}.
+     *
+     * @param condition The condition evaluated first
+     * @param other     The condition evaluated second
+     * @return The condition, or {@code null} if the language's conditions can't require both of two conditions, which
+     *         skips the checks
+     */
+    protected @Nullable String bothConditions(String condition, String other) {
         return null;
     }
 
@@ -494,31 +534,55 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * The fact {@code nestedRunInsideAnAction} runs its action against: its {@code value} property starts a run nested
-     * inside the run that reads it, on the same thread, as a getter an action reads, or a function it calls, does when
-     * it runs rules. Only that check creates one. It's public, with a public getter, so that a language can read the
-     * property, by reflection or however else it reads a JavaBean's. It keeps what the nested run returned, or the
-     * exception it threw.
+     * The fact the nested-run checks run their rules against: its {@code value} property starts a run nested inside
+     * the run that reads it, on the same thread, as a getter a condition or an action reads, or a function it calls,
+     * does when it runs rules. Only {@code nestedRunInsideAnAction}, {@code nestedRunInsideACondition},
+     * {@code nestedRunFailsInsideACondition} and {@code nestedRunFailsInsideAnAction} create one. It's public, with a
+     * public getter, so that a language can read the property, by reflection or however else it reads a JavaBean's.
+     * It keeps what the nested run returned, or the exception it threw.
      */
     public static final class Nesting {
 
         private final Supplier<@Nullable Map<String, Object>> nestedRun;
+        private final boolean fails;
         private boolean started;
         private @Nullable Map<String, Object> nestedOutput;
         private @Nullable RuntimeException nestedFailure;
+        private final List<IllegalStateException> thrown = new ArrayList<>();
 
         Nesting(Supplier<@Nullable Map<String, Object>> nestedRun) {
+            this(nestedRun, false);
+        }
+
+        private Nesting(Supplier<@Nullable Map<String, Object>> nestedRun, boolean fails) {
             this.nestedRun = nestedRun;
+            this.fails = fails;
+        }
+
+        /**
+         * The fact a nested run reads to fail: its getter records that it was read, throws, and starts nothing. What it
+         * throws carries {@link #PLANNED_FAILURE} in its message, and it keeps every instance it throws.
+         */
+        static Nesting failing() {
+            return new Nesting(() -> null, true);
         }
 
         /**
          * Starts the nested run, and returns 7 whether the run returned or threw an exception; an {@link Error} it
-         * threw is thrown on.
+         * threw is thrown on. The one a check gives the nested run itself, so that the nested run fails, throws an
+         * {@link IllegalStateException} instead, and starts nothing. The check looks for it among the causes and
+         * suppressed exceptions of the nested run's failure, or for its message there.
          *
          * @return 7
          */
         public int getValue() {
             started = true;
+            if (fails) {
+                IllegalStateException failure = new IllegalStateException(
+                        "nest.value fails the run that reads it, as the check means it to " + PLANNED_FAILURE);
+                thrown.add(failure);
+                throw failure;
+            }
             try {
                 nestedOutput = nestedRun.get();
             } catch (RuntimeException e) {
@@ -1084,13 +1148,7 @@ public abstract class ExpressionLanguageContractTest {
         // on the worker, and closing the engine closes its sessions, on this thread.
         sessions.closing(builder(sessions.watching(language())).copiesAtLoad(0).build(), engine -> {
             engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
-            ExecutorService worker = Executors.newSingleThreadExecutor();
-            try {
-                Future<Map<String, Object>> run = worker.submit(() -> engine.run(new FactMap<>(new Fact<>("x", 1))));
-                assertSameOutput(Map.of(SEEN, 1), run.get(30, TimeUnit.SECONDS));
-            } finally {
-                stop(worker);
-            }
+            assertSameOutput(Map.of(SEEN, 1), onItsOwnThread(() -> engine.run(new FactMap<>(new Fact<>("x", 1)))));
         });
 
         sessions.assertNoneThrewOnClose();
@@ -1311,30 +1369,239 @@ public abstract class ExpressionLanguageContractTest {
     @Test
     @DisplayName("a run started inside an action, on its thread, leaves the action writing to its own run's output")
     void nestedRunInsideAnAction() throws Exception {
-        String action = putFactProperty(SEEN, "nest", "value");
+        String action = putFactProperty(SEEN, NEST, NEST_VALUE);
         assumeTrue(action != null, "the language's actions can't read a fact's property");
         closing(engine(), engine -> {
-            engine.load(List.of(rule("outer", 2, factEquals("x", 1), action),
-                    rule("inner", 1, factEquals("x", 2), putFact("inner", "x"))));
+            engine.load(List.of(rule(OUTER, 2, factEquals("x", 1), action),
+                    rule(INNER, 1, factEquals("x", 2), putFact(INNER, "x"))));
             Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 2))));
 
-            Map<String, Object> output;
-            try {
-                output = engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>("nest", nest)));
-            } catch (RuleExecutionException e) {
-                if (!nest.started) {
-                    throw e;
-                }
-                throw runAroundNestedFailed(e, nest.nestedFailure);
-            }
+            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "action", null));
             assertTrue(nest.started, "the action didn't read nest.value, so no run was started inside it");
             RuntimeException failure = nest.nestedFailure;
             if (failure != null) {
                 throw new AssertionFailedError("the run started inside the action failed: " + message(failure),
                         failure);
             }
-            assertSameOutput(Map.of("inner", 2), nest.nestedOutput, "the run started inside the action");
+            assertSameOutput(Map.of(INNER, 2), nest.nestedOutput, "the run started inside the action");
             assertSameOutput(Map.of(SEEN, 7), output, "the run around it");
         });
+    }
+
+    /**
+     * Starts a run from inside a condition, on the condition's own thread, as {@code nestedRunInsideAnAction} does
+     * from inside an action: the condition, {@link #bothConditions}, reads the {@code value} of a {@link Nesting}
+     * fact, whose getter runs the same engine again, and then reads {@code x}. A language that keeps what a condition
+     * works on in per-thread state, such as a {@link ThreadLocal} or a static, and looks it up again after the first
+     * read, reads the nested run's {@code x} there: the outer rule doesn't fire, and nothing fails.
+     */
+    @Test
+    @DisplayName("a run started inside a condition, on its thread, leaves the condition reading its own run's facts")
+    void nestedRunInsideACondition() throws Exception {
+        String condition = bothConditions(factProperty(NEST, NEST_VALUE, 7), factEquals("x", 1));
+        assumeTrue(condition != null, "the language's conditions can't require both of two conditions");
+        closing(engine(), engine -> {
+            engine.load(List.of(rule(OUTER, 2, condition, putFact(SEEN, "x")),
+                    rule(INNER, 1, factEquals("x", 2), putFact(INNER, "x"))));
+            // The nested run evaluates the outer rule's condition too, so it gets a nest of its own that runs nothing.
+            Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 2),
+                    new Fact<>(NEST, new Nesting(() -> null)))));
+
+            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "condition", null));
+            assertTrue(nest.started, "the condition didn't read nest.value, so no run was started inside it");
+            RuntimeException failure = nest.nestedFailure;
+            if (failure != null) {
+                throw new AssertionFailedError("the run started inside the condition failed: " + message(failure),
+                        failure);
+            }
+            assertSameOutput(Map.of(INNER, 2), nest.nestedOutput, "the run started inside the condition");
+            assertSameOutput(Map.of(SEEN, 1), output, "the run around the run started inside its condition");
+        });
+    }
+
+    /**
+     * Starts a run from inside a condition, as {@code nestedRunInsideACondition} does, and makes that run fail: its
+     * own {@code nest.value} throws. A language that puts back the per-thread state its condition replaced when the
+     * condition returns, but not in a {@code finally}, leaves the failed run's state on the thread, and the condition
+     * that started it, which the failure didn't reach, reads the failed run's {@code x}: the outer rule doesn't fire,
+     * and nothing fails but the nested run. The check is skipped when the nested run neither fails nor reads the
+     * getter that throws, as with a language that evaluates the right side of {@link #bothConditions} first, and it
+     * fails when the nested run reads it and doesn't fail, or fails for another reason. A language that reads every
+     * fact's properties before it sets any state fails the nested run first, and isn't checked by it.
+     */
+    @Test
+    @DisplayName("a run that fails inside a condition, on its thread, leaves the condition reading its own run's facts")
+    void nestedRunFailsInsideACondition() throws Exception {
+        String condition = bothConditions(factProperty(NEST, NEST_VALUE, 7), factEquals("x", 1));
+        assumeTrue(condition != null, "the language's conditions can't require both of two conditions");
+        closing(engine(), engine -> {
+            engine.load(List.of(rule(OUTER, 2, condition, putFact(SEEN, "x")),
+                    rule(INNER, 1, factEquals("x", 2), putFact(INNER, "x"))));
+            Nesting failing = Nesting.failing();
+            Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 2),
+                    new Fact<>(NEST, failing))));
+
+            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "condition", failing));
+            assertNestedRunFailed(nest, failing, "condition");
+            assertSameOutput(Map.of(SEEN, 1), output, "the run around the run that failed inside its condition");
+        });
+    }
+
+    /**
+     * Starts a run from inside an action, as {@code nestedRunInsideAnAction} does, and makes that run fail: its own
+     * action reads a {@code nest.value} that throws. A language that puts back the per-thread state its action
+     * replaced when the action returns, but not in a {@code finally}, leaves the failed run's state on the thread, and
+     * the action that started it, which the failure didn't reach, writes to the failed run's output: the value is
+     * missing from its own run's output, and nothing fails but the nested run. As in
+     * {@code nestedRunFailsInsideACondition}, the check is skipped when the nested run neither fails nor reads the
+     * getter that throws, and fails when it reads it and doesn't fail, or fails for another reason.
+     */
+    @Test
+    @DisplayName("a run that fails inside an action, on its thread, leaves the action writing to its own run's output")
+    void nestedRunFailsInsideAnAction() throws Exception {
+        String action = putFactProperty(SEEN, NEST, NEST_VALUE);
+        assumeTrue(action != null, "the language's actions can't read a fact's property");
+        closing(engine(), engine -> {
+            engine.load(List.of(rule(OUTER, 2, factEquals("x", 1), action),
+                    rule(INNER, 1, factEquals("x", 2), putFact(INNER, "x"))));
+            // x is 1, so that the nested run's own outer action reads its nest.value, and fails.
+            Nesting failing = Nesting.failing();
+            Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 1),
+                    new Fact<>(NEST, failing))));
+
+            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "action", failing));
+            assertNestedRunFailed(nest, failing, "action");
+            assertSameOutput(Map.of(SEEN, 7), output, "the run around the run that failed inside its action");
+        });
+    }
+
+    /**
+     * Runs a check's run on a thread of its own, which ends with it, and waits for it for up to 30 seconds. The
+     * nested-run checks use it so that per-thread state a language leaves behind when it fails the check can't fail a
+     * later check on JUnit's thread; the run nested in the check's run starts on that thread too, so what the check
+     * checks is unchanged. {@code sessionClosedOnAnotherThread} uses it to make a session on a thread other than the
+     * one that closes it. What the run throws is thrown here as it was; a run still going after 30 seconds fails the
+     * check, and a wait that is interrupted leaves the thread interrupted.
+     */
+    // stop() shuts the thread down, and what the run threw is thrown as it was, not wrapped.
+    @SuppressWarnings({"PMD.CloseResource", "PMD.PreserveStackTrace"})
+    private static <T> T onItsOwnThread(Callable<T> run) throws Exception {
+        ExecutorService thread = Executors.newSingleThreadExecutor();
+        try {
+            return thread.submit(run).get(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
+        } catch (TimeoutException e) {
+            throw new AssertionFailedError("the run didn't return within 30 seconds", e);
+        } catch (ExecutionException e) {
+            Throwable thrown = e.getCause();
+            if (thrown instanceof Error error) {
+                throw error;
+            }
+            throw (Exception) thrown;
+        } finally {
+            stop(thread);
+        }
+    }
+
+    /**
+     * Runs the rules with {@code x} 1 and {@code nest}, and reports a failed run by what happened in it: a run that
+     * failed before its expression started the nested run is reported as the engine reported it.
+     *
+     * @param where   Where the nested run starts, {@code "condition"} or {@code "action"}, which the failure says
+     * @param failing The {@link Nesting} the check makes the nested run fail with, or {@code null}: a nested failure
+     *                that is the one it planned isn't a second defect
+     */
+    private static Map<String, Object> runAround(RulesEngine<Map<String, Object>> engine, Nesting nest, String where,
+                                                 @Nullable Nesting failing) {
+        try {
+            return engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>(NEST, nest)));
+        } catch (RuleExecutionException e) {
+            if (!nest.started) {
+                throw e;
+            }
+            RuntimeException nestedFailure = nest.nestedFailure;
+            throw runAroundNestedFailed(e, where, nestedFailure,
+                    failing != null && nestedFailure != null && failedAsPlanned(nestedFailure, failing));
+        }
+    }
+
+    /**
+     * Checks that {@code nest} started its nested run, and that the run failed because it read {@code failing}, as
+     * {@link #failedAsPlanned} decides. The check is skipped when the nested run neither failed nor read
+     * {@code failing}, since it can't be made to fail then; a nested run that read it and didn't fail, or failed for
+     * another reason, proves nothing about what a failed one leaves, and fails the check.
+     *
+     * @param where Where the nested run starts, {@code "condition"} or {@code "action"}, which the failure says
+     */
+    private static void assertNestedRunFailed(Nesting nest, Nesting failing, String where) {
+        assertTrue(nest.started, "the " + where + " didn't read nest.value, so no run was started inside it");
+        RuntimeException failure = nest.nestedFailure;
+        String nested = "the run started inside the " + where;
+        if (failure == null) {
+            assumeTrue(failing.started, nested + " never read its own nest.value, whose getter makes it fail, as a"
+                    + " language that reads the right side of a condition first may not");
+            throw new AssertionFailedError(nested + " didn't fail, though a getter its rule read threw: it returned "
+                    + describe(nest.nestedOutput));
+        }
+        if (!failedAsPlanned(failure, failing)) {
+            throw new AssertionFailedError(nested + (failing.started
+                    ? " failed, but its failure doesn't carry what its nest.value threw, as a cause, a suppressed"
+                    + " exception or by its message: "
+                    : " failed for another reason than its nest.value, which throws: ") + describe(failure), failure);
+        }
+    }
+
+    /**
+     * Whether a nested run's failure is the one {@code failing} made: a {@link RuleExecutionException} that carries,
+     * among its causes and suppressed exceptions and theirs, one of the exceptions the getter of {@code failing}
+     * threw, or an exception whose message contains {@link #PLANNED_FAILURE}, as one a language rethrows with that
+     * message does. The walk is bounded, in case exceptions name each other.
+     */
+    // By identity: the instances the getter threw are what the failure must carry.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static boolean failedAsPlanned(RuntimeException failure, Nesting failing) {
+        if (!(failure instanceof RuleExecutionException)) {
+            return false;
+        }
+        Deque<Throwable> toVisit = new ArrayDeque<>();
+        toVisit.add(failure);
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        while (!toVisit.isEmpty() && visited.size() < 100) {
+            Throwable next = toVisit.pop();
+            if (!visited.add(next)) {
+                continue;
+            }
+            if (failing.thrown.stream().anyMatch(thrown -> thrown == next) || carriesPlannedFailure(next)) {
+                return true;
+            }
+            toVisit.addAll(linked(next));
+        }
+        return false;
+    }
+
+    /** An exception's cause and suppressed exceptions; none, for one whose own methods throw when they're read. */
+    private static List<Throwable> linked(Throwable thrown) {
+        try {
+            List<Throwable> linked = new ArrayList<>(Arrays.asList(thrown.getSuppressed()));
+            Throwable cause = thrown.getCause();
+            if (cause != null) {
+                linked.add(0, cause);
+            }
+            return linked;
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /** Whether an exception's message contains {@link #PLANNED_FAILURE}; one that can't be read doesn't. */
+    private static boolean carriesPlannedFailure(Throwable thrown) {
+        try {
+            String message = thrown.getMessage();
+            return message != null && message.contains(PLANNED_FAILURE);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 }
