@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.19.0](https://github.com/brantunger/unruly-engine/compare/v2.18.1...v2.19.0) (2026-10-01)
+
+
+### Features
+
+* per-language imports passed to one language as written ([#899](https://github.com/brantunger/unruly-engine/issues/899)) ([a4b974c](https://github.com/brantunger/unruly-engine/commit/a4b974c57d47b66ad54d064b981303f73adf84f0))
+
 ## [2.18.1](https://github.com/brantunger/unruly-engine/compare/v2.18.0...v2.18.1) (2026-10-01)
 
 
