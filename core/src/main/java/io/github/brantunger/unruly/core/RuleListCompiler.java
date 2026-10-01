@@ -43,6 +43,8 @@ final class RuleListCompiler {
     // those facts.
     private final Map<String, Class<?>> declaredFacts;
     private final boolean allFactsDeclared;
+    // Each language's own imports, by language name, as written.
+    private final Map<String, List<String>> languageImports;
 
     /**
      * Creates the compiler of an engine's rule lists.
@@ -55,10 +57,12 @@ final class RuleListCompiler {
      * @param options          Each language's options, by language name
      * @param declaredFacts    The declared type of each fact, by name
      * @param allFactsDeclared Whether a run may supply only the declared facts
+     * @param languageImports  Each language's own imports, by language name
      */
     RuleListCompiler(Logger log, LanguageRegistry languages, Set<String> packageImports, Set<Class<?>> classImports,
                      Class<?> outputType, Map<String, Map<String, String>> options,
-                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
+                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+                     Map<String, List<String>> languageImports) {
         // Initialized here, when the engine is built, so load() and validate() never run a class's initializer: they
         // may be called deep in a run's stack, from an action (see StackHeadroom).
         Mode.values();
@@ -70,6 +74,7 @@ final class RuleListCompiler {
         this.options = options;
         this.declaredFacts = declaredFacts;
         this.allFactsDeclared = allFactsDeclared;
+        this.languageImports = languageImports;
     }
 
     /** Whether a rule list is compiled for {@code load()} or for {@code validate()}. */
@@ -155,10 +160,11 @@ final class RuleListCompiler {
         private Compilation(Mode mode) {
             this.logged = mode.logged();
             ClassLoader loader = ImportResolver.contextClassLoader();
-            // Each language gets its own options.
+            // Each language gets its own options and its own imports.
             compilers = new LanguageCompilers(languages.languages(), (name, language) -> newCompiler(name, language,
                     new EngineCompileContext(packageImports, classImports, loader, outputType,
-                            options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared, logged)));
+                            options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared, logged,
+                            languageImports.getOrDefault(name, List.of()))));
         }
 
         /**

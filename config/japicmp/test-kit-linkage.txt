@@ -20,4 +20,5 @@
 io.github.brantunger.unruly.core.EngineActionContext#EngineActionContext(io.github.brantunger.unruly.api.language.EvaluationContext,java.lang.Object)
 io.github.brantunger.unruly.core.EngineActionContext#EngineActionContext(java.util.Map,java.lang.Object,java.time.Instant)
 io.github.brantunger.unruly.core.EngineCompileContext#EngineCompileContext(java.util.Set,java.util.Set,java.lang.ClassLoader,java.lang.Class,java.util.Map,java.util.Map,boolean)
+io.github.brantunger.unruly.core.EngineCompileContext#EngineCompileContext(java.util.Set,java.util.Set,java.lang.ClassLoader,java.lang.Class,java.util.Map,java.util.Map,boolean,boolean,java.util.List)
 io.github.brantunger.unruly.core.EngineEvaluationContext#EngineEvaluationContext(java.util.Map,java.time.Instant)

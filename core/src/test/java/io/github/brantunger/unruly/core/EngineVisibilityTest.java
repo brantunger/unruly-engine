@@ -47,12 +47,12 @@ class EngineVisibilityTest {
                 Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), List.of(),
                 CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false);
+                Map.of(), false, Map.of());
         EngineConfiguration<Object> limited = new EngineConfiguration<>(
                 Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), List.of(),
                 CopyLimit.of(2), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false);
+                Map.of(), false, Map.of());
 
         assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
         assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));

@@ -132,14 +132,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      * @param configuration The builder's settings
-     * @throws IllegalStateException    if the languages or the default language can't be resolved, or options are given
-     *                                  for a language the engine doesn't have, as
+     * @throws IllegalStateException    if the languages or the default language can't be resolved, or options or
+     *                                  imports are given for a language the engine doesn't have, as
      *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
-     * @throws IllegalArgumentException if an import has more than 1,000 characters or more than 64 dot-separated
-     *                                  parts, checked before it is looked up; if it is neither a loadable class nor a
-     *                                  valid package name; or if it names a class that exists but can't be loaded,
-     *                                  with the linkage error's text cut to at most 1,000 characters, with a note of
-     *                                  how many were left out, then escaped, and a root cause it hides named
+     * @throws IllegalArgumentException if a language's own import has more than 1,000 characters; if an import has
+     *                                  more than 1,000 characters or more than 64 dot-separated parts, checked
+     *                                  before it is looked up; if it is neither a loadable class nor a valid package
+     *                                  name; or if it names a class that exists but can't be loaded, with the linkage
+     *                                  error's text cut to at most 1,000 characters, with a note of how many were left
+     *                                  out, then escaped, and a root cause it hides named
      * @throws NullPointerException     if {@code outputFactory} is {@code null}, checked after the settings
      */
     AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
@@ -147,12 +148,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 configuration.defaultLanguage(), ImportResolver.contextClassLoader());
         // Checked once the languages are known, so an option for a language that isn't found isn't silently ignored.
         for (String language : configuration.options().keySet()) {
-            if (!languages.languages().containsKey(language)) {
-                throw new IllegalStateException("Options are given for the expression language '"
-                        + Failures.quote(language) + "', which isn't one of the engine's expression languages: "
-                        + Failures.quoteAll(new TreeSet<>(languages.languages().keySet())));
-            }
+            checkLanguageKnown(languages, language, "Options");
         }
+        // A language's own imports aren't looked up, so only their length is checked.
+        configuration.languageImports().forEach((language, names) -> {
+            checkLanguageKnown(languages, language, "Imports");
+            names.forEach(ImportResolver::checkLength);
+        });
         Set<String> packages = new LinkedHashSet<>();
         Set<Class<?>> classes = new LinkedHashSet<>();
         for (String name : configuration.imports()) {
@@ -175,8 +177,24 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.factIntake = new FactIntake(log, declaredFacts, allFactsDeclared);
         this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
                 Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
-                declaredFacts, allFactsDeclared);
+                declaredFacts, allFactsDeclared, configuration.languageImports());
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+    }
+
+    /**
+     * Fails unless a language that options or imports are given for is one of the engine's languages.
+     *
+     * @param languages The engine's languages
+     * @param language  The name the setting was given for
+     * @param setting   What was given for it, {@code Options} or {@code Imports}, which starts the message
+     * @throws IllegalStateException if the engine has no language named {@code language}
+     */
+    private static void checkLanguageKnown(LanguageRegistry languages, String language, String setting) {
+        if (!languages.languages().containsKey(language)) {
+            throw new IllegalStateException(setting + " are given for the expression language '"
+                    + Failures.quote(language) + "', which isn't one of the engine's expression languages: "
+                    + Failures.quoteAll(new TreeSet<>(languages.languages().keySet())));
+        }
     }
 
     /**

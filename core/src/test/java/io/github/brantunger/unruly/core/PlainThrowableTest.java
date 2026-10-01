@@ -625,7 +625,7 @@ class PlainThrowableTest {
         EngineConfiguration<String> configuration = new EngineConfiguration<>(
                 Map.of(StubExpressionLanguage.LANGUAGE_NAME, new StubExpressionLanguage()),
                 null, List.of(), List.of(listener), CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class,
-                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false, Map.of());
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {

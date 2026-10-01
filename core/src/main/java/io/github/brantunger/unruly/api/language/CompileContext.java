@@ -2,14 +2,15 @@ package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * What every compilation of a rule list is given: the imports the engine was built with, from
  * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#imports(String...)}, the class loader to look classes up
- * with, the type of the output object, this language's options, and a way to report warnings. A language uses what it
- * needs and ignores the rest.
+ * with, the type of the output object, this language's options and its own imports, and a way to report warnings. A
+ * language uses what it needs and ignores the rest.
  *
  * <p>
  * <b>Implemented by the engine</b>, which passes it to a language. It's sealed, so a language can't implement it; a
@@ -88,6 +89,29 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * @return The values by option name, empty if this language was given none; unmodifiable
      */
     Map<String, String> options();
+
+    /**
+     * Returns the imports given for this language only, with
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#languageImports(String, String...)}, as written and in
+     * order, duplicates included. The engine doesn't resolve or check them, beyond their length, and the engine's other
+     * languages don't see them. What one means, such as a module, a file or a namespace, is up to the language, which
+     * can reject one it can't use by throwing from {@link ExpressionLanguage#newCompiler(CompileContext)}. The engine
+     * creates a language's compiler when a rule list given to {@code load()} or {@code validate()} has a rule in that
+     * language, and creates the default language's compiler for a list with no rules too. A throw from
+     * {@code newCompiler} then fails that rule list: {@code load()} throws, and {@code validate()} returns, a
+     * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} with the throw as its cause. A
+     * language no such rule list uses never has its imports checked.
+     *
+     * <p>
+     * Unlike {@link #packageImports()} and {@link #classImports()}, which hold the engine's Java imports for every
+     * language, these suit a language whose imports aren't Java classes or packages.
+     * </p>
+     *
+     * @return The imports, empty if this language was given none; unmodifiable
+     */
+    default List<String> languageImports() {
+        return io.github.brantunger.unruly.core.EngineCompileContext.languageImports(this);
+    }
 
     /**
      * Reports a problem that doesn't stop an expression compiling, such as use of a deprecated function. The engine

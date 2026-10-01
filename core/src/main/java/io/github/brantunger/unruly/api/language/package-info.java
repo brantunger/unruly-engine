@@ -38,7 +38,8 @@
  *   {@link io.github.brantunger.unruly.api.language.Session}. A method added to one of these is a {@code default}
  *   method, so a language written against an earlier 2.x release keeps compiling and working.</li>
  *   <li>The engine implements {@link io.github.brantunger.unruly.api.language.CompileContext} (the imports, the class
- *   loader, the output type, the declared facts, this language's options and a way to report warnings),
+ *   loader, the output type, the declared facts, this language's options and its own imports, and a way to report
+ *   warnings),
  *   {@link io.github.brantunger.unruly.api.language.EvaluationContext} (the facts, and whether the run must stop) and
  *   {@link io.github.brantunger.unruly.api.language.ActionContext} (the same, plus the output object). They're sealed
  *   to the engine's own implementations, so a language can't implement them, and they can gain any method.</li>

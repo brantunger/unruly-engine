@@ -77,7 +77,7 @@ class ClosedRulesRetryTest {
         EngineConfiguration<String> configuration = new EngineConfiguration<>(
                 Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), listeners, CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
-                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false, Map.of());
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {

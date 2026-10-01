@@ -16,6 +16,7 @@ import org.junit.jupiter.api.function.Executable;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -242,6 +243,45 @@ class LanguageTestContextsTest {
                         Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactName, false)),
                 () -> assertNullMessage("type must not be null", () -> LanguageTestContexts.compile(
                         Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactType, false)));
+    }
+
+    @Test
+    @DisplayName("a compile context keeps a copy of the language's own imports, as written, in order, duplicates kept")
+    void compileWithLanguageImports() {
+        ClassLoader loader = getClass().getClassLoader();
+        List<String> names = new ArrayList<>(List.of("lodash/fp", "./rules/util.js", "@acme/pricing", "lodash/fp"));
+
+        CompileContext context = LanguageTestContexts.compile(Set.of("java.util"), Set.of(), loader, Object.class,
+                Map.of(), Map.of(), false, names);
+        names.clear();
+
+        assertEquals(List.of("lodash/fp", "./rules/util.js", "@acme/pricing", "lodash/fp"), context.languageImports());
+        assertEquals(Set.of("java.util"), context.packageImports());
+        assertThrows(UnsupportedOperationException.class, () -> context.languageImports().add("os"));
+        assertEquals(List.of(), LanguageTestContexts.compile().languageImports());
+        assertEquals(List.of(), LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(),
+                Map.of(), false).languageImports());
+    }
+
+    @Test
+    @DisplayName("a null language import, or one of more than 1,000 characters, is rejected as an engine rejects it")
+    void languageImportsChecked() {
+        ClassLoader loader = getClass().getClassLoader();
+        String longest = "m".repeat(1000);
+
+        assertAll(
+                () -> assertNullMessage("languageImports must not be null", () -> LanguageTestContexts.compile(
+                        Set.of(), Set.of(), loader, Object.class, Map.of(), Map.of(), false, null)),
+                () -> assertNullMessage("languageImports must not contain null", () -> LanguageTestContexts.compile(
+                        Set.of(), Set.of(), loader, Object.class, Map.of(), Map.of(), false,
+                        Arrays.asList("lodash", null))),
+                () -> assertEquals("Can't import '" + "m".repeat(200) + "... (801 more characters)': it has 1001 "
+                        + "characters, and an import may have at most 1000",
+                        assertThrows(IllegalArgumentException.class, () -> LanguageTestContexts.compile(Set.of(),
+                                Set.of(), loader, Object.class, Map.of(), Map.of(), false, List.of(longest + "/")))
+                                .getMessage()),
+                () -> assertEquals(List.of(longest), LanguageTestContexts.compile(Set.of(), Set.of(), loader,
+                        Object.class, Map.of(), Map.of(), false, List.of(longest)).languageImports()));
     }
 
     @Test

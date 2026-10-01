@@ -38,7 +38,7 @@ class EngineConfigurationTest {
                                                              Map<String, Map<String, String>> options,
                                                              Map<String, Class<?>> declaredFacts) {
         return new EngineConfiguration<>(languages, null, imports, listeners, copyLimit, 0, null, clock, outputType,
-                outputWriter, options, declaredFacts, false);
+                outputWriter, options, declaredFacts, false, Map.of());
     }
 
     private static Map<String, Map<String, String>> options(String language, Map<String, String> values) {
@@ -211,5 +211,54 @@ class EngineConfigurationTest {
                         () -> configuration.options().get("toy").clear()),
                 () -> assertThrows(UnsupportedOperationException.class,
                         () -> configuration.declaredFacts().clear()));
+    }
+
+    private static EngineConfiguration<Object> withLanguageImports(Map<String, List<String>> languageImports) {
+        return new EngineConfiguration<>(LANGUAGES, null, List.of(), List.of(), LIMIT, 0, null, CLOCK, Object.class,
+                WRITER, Map.of(), Map.of(), false, languageImports);
+    }
+
+    private static Map<String, List<String>> languageImports(String language, List<String> names) {
+        Map<String, List<String>> languageImports = new HashMap<>();
+        languageImports.put(language, names);
+        return languageImports;
+    }
+
+    static Stream<Arguments> languageImportNulls() {
+        return Stream.of(
+                Arguments.of("a null languageImports", "languageImports must not be null",
+                        (Executable) () -> withLanguageImports(null)),
+                Arguments.of("a null language name in the language imports", "languageImports must not contain null",
+                        (Executable) () -> withLanguageImports(languageImports(null, List.of("lodash")))),
+                Arguments.of("a null language's imports", "languageImports must not contain null",
+                        (Executable) () -> withLanguageImports(languageImports("toy", null))),
+                Arguments.of("a null language import", "languageImports must not contain null",
+                        (Executable) () -> withLanguageImports(languageImports("toy",
+                                Collections.singletonList(null)))));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("languageImportNulls")
+    @DisplayName("a null in the language imports is named in the message")
+    void namesTheNullLanguageImport(String description, String message, Executable creation) {
+        assertEquals(message, assertThrows(NullPointerException.class, creation).getMessage());
+    }
+
+    @Test
+    @DisplayName("the language imports are unmodifiable copies, kept as written")
+    void languageImportsCopied() {
+        List<String> names = new ArrayList<>(List.of("lodash/fp", "lodash/fp"));
+        Map<String, List<String>> languageImports = languageImports("toy", names);
+
+        EngineConfiguration<Object> configuration = withLanguageImports(languageImports);
+        names.add("@acme/pricing");
+        languageImports.put("other", List.of());
+
+        assertEquals(Map.of("toy", List.of("lodash/fp", "lodash/fp")), configuration.languageImports());
+        assertAll(
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> configuration.languageImports().clear()),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> configuration.languageImports().get("toy").clear()));
     }
 }

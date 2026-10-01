@@ -428,7 +428,7 @@ class LanguageSessionsTest {
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<String> configuration = new EngineConfiguration<>(Map.of(), null, List.of(), List.of(),
                 CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false);
+                Map.of(), false, Map.of());
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {
