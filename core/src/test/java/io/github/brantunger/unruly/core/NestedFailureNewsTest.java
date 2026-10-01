@@ -70,6 +70,37 @@ class NestedFailureNewsTest {
     }
 
     @Test
+    @DisplayName("a long message of a wrapper's own is shortened as any other is, ahead of the nested failure's note")
+    void wrapperMessageShortened() {
+        IllegalStateException wrapper = new IllegalStateException("x".repeat(1_500), inner);
+
+        assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after " + NAMED + ")",
+                Failures.describe(wrapper));
+    }
+
+    @Test
+    @DisplayName("a long message of a wrapper's own around a fatal Error a nested run logged is shortened as any other"
+            + " is")
+    void wrapperMessageAroundALoggedErrorShortened() {
+        OutOfMemoryError oom = new OutOfMemoryError("nested oom");
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                assertTrue(LoggedFailures.unloggedFatal(oom));
+            } finally {
+                LoggedFailures.leave();
+            }
+
+            assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after a nested run()"
+                    + " failed: java.lang.OutOfMemoryError: nested oom)",
+                    Failures.describe(new IllegalStateException("x".repeat(1_500), oom)));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
     @DisplayName("a nested engine failure is noted by its message alone, which already names a root cause without a"
             + " message")
     void engineFailureNotedByItsMessage() {

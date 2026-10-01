@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,10 +25,11 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * A run started while the outer run doesn't hold its copy of the rules, while it reads its facts, while a language
  * makes a session for its copy, or while a session is closed as the copy is given back, stops no later than the outer
- * run's deadline, as a run started from a rule or a listener does (#772).
+ * run's deadline, as a run started from a rule or a listener does (#772). So does each of two runs a rule starts one
+ * after the other.
  */
-@DisplayName("a run started while another run reads its facts, or gets or gives back its copy, shares that run's"
-        + " deadline")
+@DisplayName("a run started while another run reads its facts, or gets or gives back its copy, or each of two runs a"
+        + " rule starts one after the other, shares that run's deadline")
 class EarlyNestedRunDeadlineTest {
 
     /** Far enough off that no run in these tests gets near it. */
@@ -137,6 +139,38 @@ class EarlyNestedRunDeadlineTest {
 
             assertNotNull(outerDeadline.get(), "the outer run had no deadline");
             assertEquals(outerDeadline.get(), innerDeadline.get(), "the deadline of the run getValue() started");
+        }
+    }
+
+    /**
+     * Catches {@code runInScope} putting back nothing in place of the deadline it found when the run started. The inner
+     * engine has no timeout of its own, so its run's deadline is the outer run's, and {@code leaveRun} puts that back
+     * either way: only the {@code finally} of {@code runInScope} can lose it, and then the second run the rule starts
+     * finds no deadline. Once the outer run has ended, the thread has none either.
+     */
+    @Test
+    @DisplayName("each of two runs a rule starts one after the other stops at the outer run's deadline")
+    void eachOfTwoRunsStartedFromARuleSharesTheDeadline() {
+        List<Instant> innerDeadlines = new ArrayList<>();
+        try (RulesEngine<Map<String, Object>> inner = innerEngine();
+             RulesEngine<Map<String, Object>> outer = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                     .language(new StubExpressionLanguage().action((action, session) -> {
+                         outerDeadline.set(action.deadline());
+                         for (int i = 0; i < 2; i++) {
+                             innerDeadline.set(null);
+                             inner.run(new FactMap<>());
+                             innerDeadlines.add(innerDeadline.get());
+                         }
+                         return ActionResult.done();
+                     })).runTimeout(OUTER_TIMEOUT).build()) {
+            outer.load(List.of(Rule.builder().ruleName("outer").condition("c").action("a").build()));
+
+            outer.run(new FactMap<>());
+
+            assertNotNull(outerDeadline.get(), "the outer run had no deadline");
+            assertEquals(List.of(outerDeadline.get(), outerDeadline.get()), innerDeadlines,
+                    "the deadlines of the two runs the rule started");
+            assertNull(Cancellation.current(), "the deadline left on the thread");
         }
     }
 }

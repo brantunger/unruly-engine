@@ -173,4 +173,32 @@ class FatalErrorLogTest {
         assertLoggedThenRethrown(oom, "A listener threw java.lang.OutOfMemoryError in afterExecute for rule 'r'",
                 () -> engine.run(new FactMap<>()));
     }
+
+    @Test
+    @DisplayName("the failure of the rule an OutOfMemoryError left the run from isn't kept on the thread once the run"
+            + " has ended")
+    void ruleFailureNotKeptAfterTheRun() {
+        OutOfMemoryError oom = new OutOfMemoryError("listener oom");
+        AtomicReference<RuntimeException> runError = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
+            @Override
+            public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
+                throw oom;
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                runError.set(error);
+            }
+        });
+
+        assertLoggedThenRethrown(oom, "A listener threw java.lang.OutOfMemoryError in beforeEvaluate for rule 'r'",
+                () -> engine.run(new FactMap<>()));
+
+        // onRunError was told of the rule, so the run did record the rule's failure.
+        RuleExecutionException told = assertInstanceOf(RuleExecutionException.class, runError.get(),
+                "what onRunError was told");
+        assertEquals("r", told.getRuleName());
+        assertNull(((AbstractRulesEngine<?>) engine).recordedFatalFailure(), "the failure left on the thread");
+    }
 }

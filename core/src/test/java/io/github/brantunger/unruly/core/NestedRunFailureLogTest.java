@@ -1020,6 +1020,27 @@ class NestedRunFailureLogTest {
         assertEquals(2, onRunError.get(), "onRunError calls");
     }
 
+    @Test
+    @DisplayName("an action that wraps a nested run's fatal Error in its own exception with a long message has that"
+            + " message logged shortened, with the Error as a note")
+    void wrappedNestedFatalLongMessageShortened() {
+        Runnable nested = running(throwingOom());
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            try {
+                nested.run();
+            } catch (OutOfMemoryError e) {
+                throw new IllegalStateException("x".repeat(5_000), e);
+            }
+        }), HashMap::new);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of(INNER_FATAL, "Failed to execute action for rule 'outer-rule': "
+                + "x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (4000 more characters)" + AFTER_NESTED_FATAL),
+                outcome.lines("ERROR"), outcome.logs());
+    }
+
     // A fatal Error a nested run logged, wrapped in an exception of its own
 
     /** Runs {@code nested}, and wraps the fatal {@link Error} it throws in an exception with a message of its own. */
