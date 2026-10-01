@@ -73,13 +73,12 @@ text can show more than its limit, and the `(N more characters)` count is the `c
 | A list of names: the rules a unique-match engine matched, a rule's or a run's tags, or the engine's languages | Each name shortened to 200 characters, the list to 1,000, then escaped |
 | What the output supplier threw, a listener's exception logged at WARN, or the fatal error in `The run failed with` | Its class, then `: <message>` if it has one, or, since 2.6.1, ` (message unavailable: <class>)` naming what reading the message threw if its `getMessage()` or `toString()` throws, such as `Output factory threw java.lang.IllegalStateException: boom` or `The run failed with java.lang.OutOfMemoryError: Java heap space` |
 | An exception in the chain with no message, or an unreadable one | A note on the root cause at the end of a message the engine throws, or logs at WARN or ERROR, that copies an exception's text, except an `InvalidExpressionException`, a language's warning or a nested run's failure the engine wrapped. For MVEL's own compile error, see [Errors when rules load](languages/mvel.md#-errors-when-rules-load). A root cause with no message gives `... (caused by java.io.IOException)`; one with a message gives `... (caused by java.io.IOException: disk full)`, unless the part of the first exception's text that the message shows already has it; one whose `getMessage()` throws gives `... (caused by com.example.UnreadableException: (message unavailable: java.lang.IllegalStateException))`. There's no note when the exception has no cause, or when every exception in the chain has a readable message. The chain ends where it loops or a `getCause()` throws |
-| A failed [nested](nested-runs.md#-what-is-logged) `run()` or `load()`, a rejected fact included | `a nested run() failed: <innermost failure>` or `a nested load() failed: ...`, not logged again unless wrapped with its own message |
+| A failed [nested](nested-runs.md#-what-is-logged) `run()` or `load()`, a rejected fact included, or a waited-for `run()` on another thread | `a nested run() failed: <innermost failure>` or `a nested load() failed: ...`, not logged again unless wrapped with its own message |
 | A `RuleExecutionException` a language or your code throws itself | Logged like any other exception |
 
-The underlying exception is kept unchanged, except in
-[one MVEL case](languages/mvel-gotchas.md#-calling-java-code): when the language or your code threw it, it's in
-`getCause()` as written. An expression the language rejected, such
-as a condition with an assignment or an MVEL syntax error, has an `InvalidExpressionException` as its cause.
+Your code's or the language's exception is `getCause()`, unchanged, unless its `getMessage()` throws in MVEL: at
+[run time](languages/mvel-gotchas.md#-calling-java-code) or for a `NoClassDefFoundError` in `load()`. An expression
+the language rejected, such as an MVEL syntax error, has an `InvalidExpressionException` as its cause.
 
 `load()` compiles every rule before it throws, so one `RuleCompilationException` reports every rule that
 failed. `failures()` has each rule's own exception. The message counts them all, then lists them while they fit in

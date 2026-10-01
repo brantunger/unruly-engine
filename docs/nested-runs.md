@@ -65,10 +65,15 @@ The thread remembers 32 failures, and 32 fatal `Error`s, until its outermost run
 ends; then, or past 32, one thrown on may be logged again.
 
 A run on another thread, such as one an action hands to an executor and waits for, isn't nested: it logs its failure on
-its own thread. A rule's failure, which `run()` throws as a `RuleExecutionException`, isn't logged again. What `run()`
-throws as is, a fatal `Error` or an `IllegalArgumentException` for rejected facts, for example, is logged again as the
-waiting rule's failure:
-`Failed to execute action for rule 'outer-rule': java.lang.InternalError: inner fatal`.
+its own thread. A rule's failure, which `run()` throws as a `RuleExecutionException`, isn't logged again. The waiting
+rule's message still reads `a nested run() failed: <innermost failure>`: the engine recognizes a failure `run()`
+threw, whichever thread threw it.
+
+What `run()` throws as is, a fatal `Error` or an `IllegalArgumentException` for rejected facts, for example, is logged
+again as the waiting rule's failure. When the action lets the `ExecutionException` from `Future.get()` through, the line
+quotes that exception's message, which is the error's `toString()`:
+`Failed to execute action for rule 'outer-rule': java.lang.InternalError: inner fatal`. When the action rethrows the
+error itself, the line has no class name: `Failed to execute action for rule 'outer-rule': inner fatal`.
 
 An exception of your own with a message of its own, wrapped around a nested failure, is news, so it's logged: at ERROR
 for a rule's failure, the output supplier's, a language's or a rule that fails to compile in `load()`, and at WARN for
