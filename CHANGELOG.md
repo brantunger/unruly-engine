@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.17.0](https://github.com/brantunger/unruly-engine/compare/v2.16.1...v2.17.0) (2026-10-01)
+
+
+### Features
+
+* the contract kit checks that a language's shared state stays out of later runs, and lets action variables last the run ([#887](https://github.com/brantunger/unruly-engine/issues/887)) ([2428179](https://github.com/brantunger/unruly-engine/commit/2428179fc81e82cb80c80a15faeca4710d774ebf))
+
 ## [2.16.1](https://github.com/brantunger/unruly-engine/compare/v2.16.0...v2.16.1) (2026-10-01)
 
 
