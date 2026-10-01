@@ -41,13 +41,17 @@ expression without an engine. They're the engine's own contexts: writing to thei
 `evaluation(facts, deadline)` gives a real `isCancelled()` and `timeLeft()`. They read the system clock once, when
 the context is made, then time `deadline` as a run does, so one built from `Instant.now()` passes when you expect.
 
+For a language that reads [its own imports](custom.md#-implementing-the-interfaces), a `compile(...)` overload added
+in 2.19.0 also takes them: the list your compiler gets from `languageImports()`. The other overloads give none.
+
 A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
 `facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
 such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
 `type must not be null`. A fact's value may be `null`.
 
 The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared with a
-blank name or as `output`, and a package import over the [size limits](mvel.md#-classes-and-imports).
+blank name or as `output`, a package import over the [size limits](mvel.md#-classes-and-imports), and a language
+import over 1,000 characters.
 
 As in a run, each evaluation or action context equals only itself, and its `hashCode()` never reads the facts or, for
 an action context, the output object. A run passes the same evaluation context to every condition, and a new action

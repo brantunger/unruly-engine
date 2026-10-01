@@ -33,6 +33,7 @@ import java.util.Objects;
  *                        fact may have a blank name or be named {@code output}
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
+ * @param languageImports Each language's own imports, by language name, as written and in order, not resolved
  * @param <O>             The type of the output object
  */
 public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, String defaultLanguage,
@@ -40,14 +41,17 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
                                      int copiesAtLoad, Duration runTimeout, Clock clock,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
                                      Map<String, Map<String, String>> options,
-                                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
+                                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+                                     Map<String, List<String>> languageImports) {
 
     // The message for a null language name, language's options, option name or option value.
     private static final String NULL_OPTION = "options must not contain null";
+    // The message for a null language name, language's imports or import.
+    private static final String NULL_LANGUAGE_IMPORT = "languageImports must not contain null";
 
     /**
-     * Keeps unmodifiable copies of the languages, lists, options and declarations, so later changes to the builder
-     * don't change an engine. A declared type is checked as
+     * Keeps unmodifiable copies of the languages, lists, options, declarations and language imports, so later changes
+     * to the builder don't change an engine. A declared type is checked as
      * {@link EngineCompileContext#checkDeclaration(String, Class)} checks it, and kept as it was declared.
      *
      * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
@@ -64,6 +68,7 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
         Objects.requireNonNull(outputWriter, "outputWriter must not be null");
         Objects.requireNonNull(options, "options must not be null");
         Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
+        Objects.requireNonNull(languageImports, "languageImports must not be null");
         languages.forEach((name, language) -> {
             Objects.requireNonNull(name, "languages must not contain null");
             Objects.requireNonNull(language, "languages must not contain null");
@@ -82,6 +87,13 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
                 Objects.requireNonNull(value, NULL_OPTION);
             });
         });
+        languageImports.forEach((language, names) -> {
+            Objects.requireNonNull(language, NULL_LANGUAGE_IMPORT);
+            Objects.requireNonNull(names, NULL_LANGUAGE_IMPORT);
+            for (String name : names) {
+                Objects.requireNonNull(name, NULL_LANGUAGE_IMPORT);
+            }
+        });
         languages = Map.copyOf(languages);
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
@@ -91,5 +103,8 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
         // checkDeclaration names a null fact name or type itself.
         declaredFacts.forEach(EngineCompileContext::checkDeclaration);
         declaredFacts = Map.copyOf(declaredFacts);
+        Map<String, List<String>> copiedImports = new LinkedHashMap<>();
+        languageImports.forEach((language, names) -> copiedImports.put(language, List.copyOf(names)));
+        languageImports = Collections.unmodifiableMap(copiedImports);
     }
 }

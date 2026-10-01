@@ -73,14 +73,26 @@ final class ImportResolver {
      *                                  than {@value #MAX_IMPORT_PARTS} dot-separated parts
      */
     static void checkSize(String name) {
-        if (name.length() > MAX_IMPORT_LENGTH) {
-            throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + name.length()
-                    + " characters, and an import may have at most " + MAX_IMPORT_LENGTH);
-        }
+        checkLength(name);
         long parts = name.chars().filter(c -> c == '.').count() + 1;
         if (parts > MAX_IMPORT_PARTS) {
             throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + parts
                     + " dot-separated parts, and an import may have at most " + MAX_IMPORT_PARTS);
+        }
+    }
+
+    /**
+     * Rejects an import string too long to pass on: the part of {@link #checkSize(String)} that applies to a
+     * language's own imports too, from {@code RulesEngineBuilder.languageImports}, which no class loader sees, so their
+     * parts aren't limited.
+     *
+     * @param name An import string
+     * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters
+     */
+    static void checkLength(String name) {
+        if (name.length() > MAX_IMPORT_LENGTH) {
+            throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + name.length()
+                    + " characters, and an import may have at most " + MAX_IMPORT_LENGTH);
         }
     }
 

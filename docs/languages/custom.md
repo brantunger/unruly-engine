@@ -159,12 +159,15 @@ wrapped in your own exception. Keep caught exceptions as causes. A condition ret
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
 as MVEL's adapter does: added words get the nested failure [logged twice](../nested-runs.md#-what-is-logged).
 
-**The `CompileContext`** carries what the engine was built with, all optional: the packages and classes from
-`imports(...)` with `classLoader()`, the context class loader of the `load()` or `validate()` thread; `outputType()`,
-or `Object`;
-`options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, primitives as wrappers, with
+**The `CompileContext`** carries what the engine was built with, all optional: the Java packages and classes from
+`imports(...)` with `classLoader()`, the `load()` or `validate()` thread's context class loader; `outputType()`, or
+`Object`; `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, primitives as wrappers, with
 `allFactsDeclared()`. Reject a name nobody declared only when that is `true`: otherwise a run may supply undeclared
 facts.
+
+**Your own imports.** Since 2.19.0, `languageImports()` lists those given with `.languageImports("my", ...)`: as
+written, in order, unmodifiable, and empty if none. They're yours alone, unchecked but for length; to reject one,
+throw from `newCompiler`, which fails [only a rule list using your language](README.md#-choosing-a-language-per-rule).
 
 **Warnings.** For a problem that shouldn't stop a rule loading, call the `CompileContext`'s `warn(source, issue)`. The
 engine logs `Condition for rule 'prime-rate' has a warning at line 2, column 5: deprecated` at WARN on
@@ -193,12 +196,12 @@ return new CompiledCondition() {
 
 The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never `evaluate` itself. The default
 returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
-`evaluate` works unchanged. For a `Boolean` it returns a shared constant, `ConditionResult.TRUE` or `FALSE`, so the
-default allocates nothing extra, and neither does `ConditionResult.of(value, null)`.
+`evaluate` works unchanged. For a `Boolean` it returns the shared `ConditionResult.TRUE` or `FALSE`, so neither
+it nor `ConditionResult.of(value, null)` allocates.
 
-Since 2.3.0, two `ConditionResult`s are equal when their values are equal and their details are equal by the detail's
-own `equals`, so `assertEquals` works when the detail is a `String` or a record; an array, or a class without its own
-`equals`, compares by identity. `toString()` prints the call that makes it, such as
+Since 2.3.0, two `ConditionResult`s are equal when their values and details are, by the detail's own `equals`, so
+`assertEquals` works when the detail is a `String` or a record; an array, or a class without its own `equals`,
+compares by identity. `toString()` prints the call that makes it, such as
 `ConditionResult.of(true, <detail>)`, as `ActionResult` does.
 
 Keep `evaluate` returning the same value: a condition that wraps yours, or your own tests, may call it. The kit's
@@ -456,8 +459,7 @@ with no [copy limit](../compiled-copies.md#-limiting-the-copies). Values kept wi
 A `newSession()` that throws, even a `Throwable` that is neither an `Exception` nor an `Error`, or returns `null` fails
 the run that needed the session with a `RuleExecutionException`, logged at ERROR, and closes the sessions other
 languages already made for that copy; it all happens before `beforeRun`, so no listener is told. A fatal error from
-closing them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one; see
-[A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
+closing them is thrown instead, with the `RuleExecutionException` in its `getSuppressed()` unless it can't keep one.
 
 A `close()` that throws is logged at WARN, unless a [nested run](../nested-runs.md#-what-is-logged) logged it, and the
 rest are still closed. Only a fatal error is rethrown, once every idle session of the rule list is closed, and its
@@ -476,9 +478,6 @@ the copies are still made. MVEL compiles every condition and action into the ses
 - **If it throws:** `load()` fails with a `RuleCompilationException` naming your language, logged at ERROR; the rules
   loaded before stay loaded, and the failed load's sessions and compilers are closed. A fatal error is logged and
   rethrown unchanged.
-
-For a fatal error from closing a failed load's sessions and compilers, see
-[A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
 ## 📦 Packaging
 
@@ -532,8 +531,7 @@ read and write them by reflection. Only MVEL has been tested in an image; see [N
 
 ## 🧪 Testing with the contract kit
 
-See [The contract test kit](contract-kit.md), and [Testing beyond the contract kit](beyond-the-contract-kit.md) for
-`LanguageTestContexts` and the Surefire setting a named module needs.
+See [The contract test kit](contract-kit.md) and [Testing beyond the contract kit](beyond-the-contract-kit.md).
 
 ## 🚧 Gotchas
 

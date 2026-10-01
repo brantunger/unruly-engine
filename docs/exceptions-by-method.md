@@ -17,7 +17,7 @@ without parsing the message.
 | `language()` | `IllegalArgumentException` | The language's name is `null` or blank, or a language with the same name was added already |
 | | `NullPointerException` | The language is `null` |
 | `defaultLanguage()` | `NullPointerException` | The name is `null` |
-| `imports()` / `listener()` / `listeners()` | `NullPointerException` | The argument or an element is `null`. Nothing is added. |
+| `imports()` / `languageImports()` / `listener()` / `listeners()` | `NullPointerException` | An argument or an element is `null`. Nothing is added. |
 | `maxCopies()` | `IllegalArgumentException` | The limit on compiled copies is less than 1 |
 | `copiesAtLoad()` | `IllegalArgumentException` | The number of copies is negative: `copiesAtLoad must not be negative, but was -1` |
 | `runTimeout()` | `IllegalArgumentException` | The timeout is zero or negative |
@@ -25,11 +25,11 @@ without parsing the message.
 | `outputType()` / `outputWriter()` / `option()` | `NullPointerException` | An argument is `null` |
 | `fact()` / `facts()` | `IllegalArgumentException` | A name is `output` or blank. Nothing is added. |
 | | `NullPointerException` | A name, type or map is `null`. Nothing is added. |
-| `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language, or a language given an option, isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or shares its name with a different class; a second copy is [skipped](languages/README.md#-how-the-engine-picks-a-language) |
-| | `IllegalArgumentException` | An import is [over 1,000 characters or 64 dot-separated parts](languages/mvel.md#-classes-and-imports), is neither a loadable class nor a valid package name, or names an existing class that can't load, such as one missing its superclass; or `copiesAtLoad(n)` is more than `maxCopies(...)`: `copiesAtLoad(3) is more than maxCopies(2): no more copies than that are used at once` |
+| `build()` | `IllegalStateException` | The engine has no expression language; it has several and no default language; the default language, or a language given an option or `languageImports(...)`, isn't one of its languages; or a language found with `ServiceLoader` has a `null` or blank name, or shares its name with a different class; a second copy is [skipped](languages/README.md#-how-the-engine-picks-a-language) |
+| | `IllegalArgumentException` | An import is [over 1,000 characters or 64 dot-separated parts](languages/mvel.md#-classes-and-imports), is neither a loadable class nor a valid package name, or names an existing class that can't load, such as one missing its superclass; a `languageImports(...)` import is over 1,000 characters; or `copiesAtLoad(n)` is more than `maxCopies(...)`: `copiesAtLoad(3) is more than maxCopies(2): no more copies than that are used at once` |
 | | `Error` (rethrown) | Thrown unchanged, such as `ServiceConfigurationError`, when `ServiceLoader` can't create a language |
 | `Rule.RuleBuilder.build()` | `IllegalStateException` | The name is `null` or blank, or the condition or action is `null`. The message names the field, such as `ruleName must not be null`. Also a tag that is `null` or blank, and a `validTo` that isn't after `validFrom`, including an equal one: `validTo must be after validFrom, but validFrom is ... and validTo is ...` |
-| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition its language rejects (in MVEL, an assignment or `import_static`); an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have or `strongTyping` on when it [can't apply](languages/mvel.md#-strong-typing), or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to; or, once every rule has compiled, an engine built with [`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load) makes its copies and an expression language throws while creating or warming up a session, or returns `null` instead of a session, which is reported on its own, naming the language |
+| `load(rules)` | `RuleCompilationException` | A rule in the list is `null`; two rules share a name; a condition or action is blank; a condition its language rejects (in MVEL, an assignment or `import_static`); an expression has a syntax error its language detects; a rule names an expression language the engine doesn't have; an expression language throws while creating its compiler, for example MVEL given an option it doesn't have, `strongTyping` on when it [can't apply](languages/mvel.md#-strong-typing) or any `languageImports(...)`, or returns `null` instead of a compiler or a compiled expression; a [declared fact](facts.md#-declaring-facts) has a name the rules' languages can't refer to; or, once every rule has compiled, an engine built with [`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load) makes its copies and an expression language throws while creating or warming up a session, or returns `null` instead of a session, which is reported on its own, naming the language |
 | | `IllegalStateException` | The engine is closed. It's checked before any rule is compiled, so a broken list throws this too, unless `load()` was already compiling when `close()` ran; see [Closing](thread-safety.md#closing) |
 | | `NullPointerException` | The list itself is `null` |
 | | `Error` (rethrown) | A `VirtualMachineError` other than `StackOverflowError`, such as an `OutOfMemoryError`, is thrown while compiling, or while making the copies of `copiesAtLoad(n)`. It's logged with the rule's name, or the language's when the language fails to create its compiler or a copy's session, or to warm one up, then rethrown unchanged, even when the language wraps or suppresses it in an exception. Every other `Error` — including a `NoClassDefFoundError` for a class a rule uses whose dependency is missing from the class path — is reported as a `RuleCompilationException` naming the rule, the language or the declared fact, with the error in its cause chain, or in that of one of its `failures()` (MVEL reads a `NoClassDefFoundError`'s message itself, so when its `getMessage()` throws, what that throws takes the error's place), and so is a `Throwable` that is neither an `Exception` nor an `Error`. A fatal error from closing the sessions or compilers of the failed load's rules, the idle copies of the rules a reload replaced and, if no run uses them, their compilers, or of rules a closed engine dropped is logged at WARN and rethrown once everything is closed, in place of a failure of the load's own that isn't fatal. After a reload, the new rules are in and serve; it also retries old rules an earlier call left half retired. If nothing was fatal, a failure that stopped the retiring part way, such as a `StackOverflowError`, is logged at WARN, and the next `load()` or `close()` tries again. A failed load throws such a failure instead of its own. See [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing). |
@@ -88,15 +88,15 @@ about 1,000 characters, always the first one whole:
 2 rules failed to compile: Condition for rule 'r1' failed to compile at line 1, column 6: Malformed expression; Action for rule 'r2' ...
 ```
 
-When more failed than fit, the message ends with `; and N more (see failures())`, N being how many it left out;
-`failures()` has them all. A language that can't create its compiler, and a declared fact name the languages
-reject, are listed with them, with no rule name; the message then counts `failures while loading the rules` instead of
-rules. A `null` rule or a duplicate name is thrown at once, before anything is compiled.
+When more failed than fit, the message ends with `; and N more (see failures())`, N being how many it left out. A
+language that can't create its compiler, and a declared fact name the languages reject, are listed with them, with no
+rule name; the message then counts `failures while loading the rules` instead of rules. A `null` rule or a duplicate
+name is thrown at once, before anything is compiled.
 
 `getExpressionKind()` on either exception says whether the rule's condition or its action failed. `issues()` on a
 `RuleCompilationException` says where the language found each problem, with a line and column when it knows them.
 
-To act on the failing rule without parsing the message, for example to disable it or count failures per rule, call
-`getRuleName()` on the `RuleCompilationException` or `RuleExecutionException`. It returns the name exactly as the
-rule has it, or `null` for failures that aren't about one rule, such as a failing output supplier, an expression
-language that can't create its compiler or a session, or a stopped run.
+To act on the failing rule without parsing the message, call `getRuleName()` on the `RuleCompilationException` or
+`RuleExecutionException`. It returns the name exactly as the rule has it, or `null` for failures that aren't about one
+rule, such as a failing output supplier, an expression language that can't create its compiler or a session, or a
+stopped run.

@@ -219,7 +219,7 @@ class FactCheckBeforeCopyTest {
                     throw rejection;
                 })),
                 null, List.of(), List.of(recording), CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class,
-                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
+                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false, Map.of());
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {

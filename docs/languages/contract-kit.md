@@ -175,8 +175,8 @@ shares one copy, calls `newSession()` once and warms nothing up. A `null` from `
 engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, and at the first run in
 `conditionDetail`, `concurrentRuns`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
 
-`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too, with no
-session to close, though both still compare output.
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too, but still
+compare output.
 
 In `sessionClosedWhileAnotherRuns`, a listener starts a nested run. The check's run holds the only kept copy, so the
 nested run gets an [extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run
@@ -211,10 +211,13 @@ that compares by value agree only for an `Integer`.
 ### A language that needs declared facts, imports or options
 
 Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
-the same. The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is
-also a `Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a
-fact that isn't its declared type fails the run before your language evaluates anything. Declare `nest` as `Object`
-too, or as `ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
+the same. For `languageImports(...)`, use the
+[`compile(...)` overload](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine) that takes them.
+
+The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is also a
+`Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a fact of
+another type fails the run before your language sees it. Declare `nest` as `Object` too, or as
+`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
 
 ```java
 @Override
@@ -239,7 +242,7 @@ after the second.
 ### Upgrading the kit
 
 A newer kit can fail a language that passed an older one. [Upgrading the contract test kit](contract-kit-upgrading.md)
-lists, for each version, the checks that were added or got stricter and the defect each new failure means.
+lists, for each version, the checks added or made stricter, and the defect each new failure means.
 
 ### Beyond the kit
 

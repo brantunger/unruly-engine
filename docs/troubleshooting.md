@@ -1,7 +1,6 @@
 # 🩺 Troubleshooting
 
-Symptoms, their usual causes, and the page that explains each one. This page states no rules of its own: every
-answer links to the guide that owns it.
+Symptoms, their usual causes, and the page that explains each one. Every answer links to the guide that owns it.
 
 **Who it's for:** everyone.
 **You'll be able to:** find out why a rule didn't fire, read an exception from `build()`, `load()` or `run()`, and
@@ -103,7 +102,7 @@ the rule's `isEnabled()`, `getValidFrom()`, `getValidTo()` and `getTags()` with 
 ## 🔧 An exception from build()
 
 Most of these are `IllegalStateException` from `build()`. The two that start with `Two expression languages` and
-`An expression language's name` are `IllegalArgumentException` from `language(...)`, and those about imports are
+`An expression language's name` are `IllegalArgumentException` from `language(...)`, and the last two are
 `IllegalArgumentException` from `build()`.
 
 | Message starts with | Cause | Fix |
@@ -112,16 +111,16 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 | `The engine has several expression languages, ` | Two or more languages, and no default | Name one with `defaultLanguage(...)`; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `The default language '` | `defaultLanguage(...)` names a language the engine doesn't have | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `Options are given for the expression language '` | `option(...)` names a language the engine doesn't have | [Exceptions by method](exceptions-by-method.md) |
+| `Imports are given for the expression language '` | `languageImports(...)` names a language the engine doesn't have | [Imports](languages/README.md#-choosing-a-language-per-rule) |
 | `Two expression languages are named '` | `language(...)` was given two languages with the same name | [Exceptions by method](exceptions-by-method.md) |
 | `An expression language's name must not be null or blank` | `language(...)` was given a language whose `name()` is `null` or blank | [Exceptions by method](exceptions-by-method.md) |
 | `The expression language ... found with ServiceLoader has a null or blank name` | A language jar on the class path has no name | [Exceptions by method](exceptions-by-method.md) |
 | `The expression languages ... found with ServiceLoader are both named '` | Two language jars on the class path use the same name | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
-| `'...' is neither a class nor a valid package name` | An import such as `"java.util."` | [Classes and imports](languages/mvel.md#-classes-and-imports) |
-| `Can't import '...'` | The import is over 1,000 characters or 64 dot-separated parts, or names a class missing a dependency | [Classes and imports](languages/mvel.md#-classes-and-imports) |
+| `'...' is neither a class nor a valid package name` | An import such as `"java.util."`, or a module, such as `lodash/fp`, meant for `languageImports(...)` | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
+| `Can't import '...'` | An import is over 1,000 characters, or 64 dot-separated parts for `imports(...)`, or names a class missing a dependency | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
 
 A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted by `build()` and `load()`. In MVEL,
-a rule that uses a class from it fails at `run()` as if the import were missing: `could not resolve class` for a class
-it creates, `unresolvable property or identifier` for one it calls; see
+a rule that uses a class from it fails at `run()` as if the import were missing; see
 [Classes and imports](languages/mvel.md#-classes-and-imports).
 
 ## 🚨 An exception from load()
@@ -141,7 +140,7 @@ language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 | `is written in '...', which isn't one of the engine's expression languages` | The rule's `language` names one the engine doesn't have; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `failed to compile` | A syntax error. In MVEL, `unknown class or illegal statement` is usually a missing import; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load) |
 | `contains an assignment ('`, `uses import_static` | In MVEL, a condition that assigns or declares, reported `at line L, column C`; see [Conditions can't assign](writing-rules.md#conditions-cant-assign) |
-| `expression language failed to create a compiler` | In MVEL, an option that doesn't exist, or `strongTyping` when it can't apply; see [Strong typing](languages/mvel.md#-strong-typing) |
+| `expression language failed to create a compiler` | In MVEL, an unknown option, `strongTyping` when it can't apply, or any `languageImports(...)`; see [Strong typing](languages/mvel.md#-strong-typing) |
 | `Declared fact '...' can't be used` | A declared fact has a name the rules' languages reject; see [Declaring facts](facts.md#-declaring-facts) and [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
 
 > [!NOTE]
@@ -182,7 +181,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `run() passed its deadline` | The run passed its timeout; see [Stopping a run](stopping-runs.md) |
 | `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT is on: start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](native-image.md#-mvels-jit-must-be-off) |
 | `RuleExecutionException` | `MissingReflectionRegistrationError` as the cause | In a native image, a class or method the rule uses isn't registered for reflection; see [Registering your classes](native-image.md#-registering-your-classes) |
-| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, after about 50 runs in quick succession | That class isn't reachable from the context class loader of the thread that called `load()`; see [Class loaders](thread-safety.md#-class-loaders) |
+| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, after about 50 runs in quick succession | That class isn't reachable from the `load()` thread's context class loader; see [Class loaders](thread-safety.md#-class-loaders) |
 | `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](exceptions-by-method.md). On the module path, see [Installation](../README.md#-installation) |
 
 A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
@@ -209,7 +208,7 @@ optimizer takes over the rule's accessors; see
 [The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders). It has two shapes:
 
 - On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
-  isn't reachable from the context class loader of the thread that called `load()`; see
+  isn't reachable from the `load()` thread's context class loader; see
   [Class loaders](thread-safety.md#-class-loaders).
 - On the module path, an `IllegalAccessError` naming your package: it needs an export without a `to` clause; see
   [Installation](../README.md#-installation).

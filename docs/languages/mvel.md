@@ -111,10 +111,11 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
   `IllegalArgumentException` from `build()`.
 - So is a string over 1,000 characters or 64 dot-separated parts, before any lookup.
 - So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
-- A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted.
+- A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
+- [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.
 - An imported class's name can't be a [fact name](#fact-names-mvel-rejects).
-- `build()` loads a single-class import such as `"java.time.LocalDate"` with its thread's context class loader;
-  a valid name it can't load as a class is imported as a package.
+- `build()` loads a single-class import with its thread's context class loader; a valid name it can't load is
+  imported as a package.
 - `load()` looks up classes in imported packages with its thread's context class loader, and `run()` checks fact
   names against it, on any thread.
 - A thread without a context class loader uses this library's loader.

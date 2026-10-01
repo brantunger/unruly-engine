@@ -10,6 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -106,6 +107,37 @@ public final class LanguageTestContexts {
                                          Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
         return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options, declaredFacts,
                 allFactsDeclared);
+    }
+
+    /**
+     * Creates a compile context with the language's own imports, as the engine's builder was given them with
+     * {@code RulesEngineBuilder.languageImports(...)}, so a language's tests can check what it makes of them.
+     *
+     * @param packageImports   The imported packages, such as {@code java.util}; copied
+     * @param classImports     The classes imported one by one; copied
+     * @param classLoader      The class loader to look up classes in the imported packages with
+     * @param outputType       The type of the output object, as the engine's builder was told; {@code Object.class}
+     *                         when it wasn't
+     * @param options          The language's options, as the engine's builder was given them; copied
+     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
+     * @param allFactsDeclared Whether a run may supply only the declared facts, as
+     *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
+     * @param languageImports  The language's own imports, such as {@code lodash/fp}, as written and in order; copied
+     * @return The context. Its {@link CompileContext#languageImports()} are {@code languageImports}, duplicates
+     *         included. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
+     * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
+     *                                  or of the declarations, is {@code null}
+     * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
+     *                                  dot-separated parts, a language import has more than 1,000 characters, or a
+     *                                  fact is declared with a blank name or the name {@code output}, which an engine
+     *                                  rejects too
+     */
+    public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
+                                         ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
+                                         Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+                                         List<String> languageImports) {
+        return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options, declaredFacts,
+                allFactsDeclared, true, languageImports);
     }
 
     /**

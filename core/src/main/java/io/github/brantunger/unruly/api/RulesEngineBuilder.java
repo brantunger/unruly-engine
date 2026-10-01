@@ -64,6 +64,10 @@ public final class RulesEngineBuilder<O> {
 
     // The smallest limit on compiled copies: one run at a time.
     private static final int MIN_COPIES = 1;
+    // The messages for a null language, null names, and a null among them.
+    private static final String NULL_LANGUAGE = "language must not be null";
+    private static final String NULL_NAMES = "names must not be null";
+    private static final String NULL_NAME = "names must not contain null";
 
     /** Creates an engine with one match policy from the output supplier and the builder's settings. */
     @FunctionalInterface
@@ -89,6 +93,7 @@ public final class RulesEngineBuilder<O> {
     private Class<? super O> outputClass = Object.class;
     private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
     private final Map<String, Map<String, String>> languageOptions = new LinkedHashMap<>();
+    private final Map<String, List<String>> languageImportNames = new LinkedHashMap<>();
 
     private RulesEngineBuilder(Supplier<O> outputFactory, EngineFactory<O> engineFactory) {
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
@@ -172,7 +177,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException     if {@code language} is {@code null}
      */
     public RulesEngineBuilder<O> language(ExpressionLanguage language) {
-        Objects.requireNonNull(language, "language must not be null");
+        Objects.requireNonNull(language, NULL_LANGUAGE);
         String name = language.name();
         LanguageNames.Problem problem = LanguageNames.check(name, languageMap);
         if (problem == LanguageNames.Problem.NULL_OR_BLANK) {
@@ -204,7 +209,8 @@ public final class RulesEngineBuilder<O> {
      * Adds imports that every language compiles rules with, so rule expressions can refer to classes by their simple
      * names. Each string is a fully qualified package name ({@code "java.util"}) or class name
      * ({@code "java.time.LocalDate"}, or {@code "java.util.Map.Entry"} for a nested class). A language without imports
-     * ignores them.
+     * ignores them. Imports that aren't Java classes or packages, such as a JavaScript module, are given to their
+     * language alone, with {@link #languageImports(String, String...)}.
      *
      * <p>
      * Whether a string names a class is decided by {@link #build()}, with the building thread's context class loader,
@@ -223,7 +229,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code names} or any element is {@code null}; nothing is added
      */
     public RulesEngineBuilder<O> imports(String... names) {
-        Objects.requireNonNull(names, "names must not be null");
+        Objects.requireNonNull(names, NULL_NAMES);
         return imports(Arrays.asList(names));
     }
 
@@ -235,11 +241,63 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code names} or any element is {@code null}; nothing is added
      */
     public RulesEngineBuilder<O> imports(Collection<String> names) {
-        Objects.requireNonNull(names, "names must not be null");
+        Objects.requireNonNull(names, NULL_NAMES);
         for (String name : names) {
-            Objects.requireNonNull(name, "names must not contain null");
+            Objects.requireNonNull(name, NULL_NAME);
         }
         importNames.addAll(names);
+        return this;
+    }
+
+    /**
+     * Adds imports for one expression language only, which it reads from
+     * {@link io.github.brantunger.unruly.api.language.CompileContext#languageImports()} when rules are loaded: as
+     * written, in order, duplicates included. The engine doesn't resolve them, and its other languages don't see them.
+     * What an import means, such as a module, a file or a namespace, is up to the language, which can reject one it
+     * can't use by throwing from
+     * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#newCompiler newCompiler}. The engine creates a
+     * language's compiler when a rule list given to {@link RulesEngine#load(List)} or
+     * {@link RulesEngine#validate(List)} has a rule in that language, and creates the default language's compiler for a
+     * list with no rules too. A throw from {@code newCompiler} then fails that rule list: {@code load()} throws, and
+     * {@code validate()} returns, a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} with the
+     * throw as its cause. A language no such rule list uses never has its imports checked.
+     * Adding imports for the same language again adds them after the others.
+     *
+     * <p>
+     * An import may have at most 1,000 characters, which {@link #build()} checks. {@link #build()} also fails if
+     * {@code language} isn't one of the engine's languages, as it does for
+     * {@link #option(String, String, String) option(...)}. A call with no names still records the language, so
+     * {@link #build()} fails for it all the same.
+     * </p>
+     *
+     * @param language The name of one of the engine's languages
+     * @param names    The imports, as the language writes them, such as {@code "lodash/fp"}
+     * @return This builder
+     * @throws NullPointerException if {@code language}, {@code names} or any element is {@code null}; nothing is
+     *                              added
+     */
+    public RulesEngineBuilder<O> languageImports(String language, String... names) {
+        Objects.requireNonNull(language, NULL_LANGUAGE);
+        Objects.requireNonNull(names, NULL_NAMES);
+        return languageImports(language, Arrays.asList(names));
+    }
+
+    /**
+     * Adds imports for one expression language only, as {@link #languageImports(String, String...)} does.
+     *
+     * @param language The name of one of the engine's languages
+     * @param names    The imports, as the language writes them
+     * @return This builder
+     * @throws NullPointerException if {@code language}, {@code names} or any element is {@code null}; nothing is
+     *                              added
+     */
+    public RulesEngineBuilder<O> languageImports(String language, Collection<String> names) {
+        Objects.requireNonNull(language, NULL_LANGUAGE);
+        Objects.requireNonNull(names, NULL_NAMES);
+        for (String name : names) {
+            Objects.requireNonNull(name, NULL_NAME);
+        }
+        languageImportNames.computeIfAbsent(language, name -> new ArrayList<>()).addAll(names);
         return this;
     }
 
@@ -313,7 +371,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if an argument is {@code null}
      */
     public RulesEngineBuilder<O> option(String language, String key, String value) {
-        Objects.requireNonNull(language, "language must not be null");
+        Objects.requireNonNull(language, NULL_LANGUAGE);
         Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(value, "value must not be null");
         languageOptions.computeIfAbsent(language, name -> new LinkedHashMap<>()).put(key, value);
@@ -585,18 +643,20 @@ public final class RulesEngineBuilder<O> {
      *
      * @return A new engine
      * @throws IllegalStateException    if the engine has no expression language; if it has several and no
-     *                                  {@link #defaultLanguage(String) default language}; if the default language, or
-     *                                  a language given an {@link #option(String, String, String) option}, isn't one
-     *                                  of its languages; or if a language found with
+     *                                  {@link #defaultLanguage(String) default language}; if the default language, a
+     *                                  language given an {@link #option(String, String, String) option}, or one given
+     *                                  {@link #languageImports(String, String...) imports}, isn't one of its
+     *                                  languages; or if a language found with
      *                                  {@link java.util.ServiceLoader} has a {@code null} or blank name, or two found
      *                                  languages have the same name. Anything {@code ServiceLoader} or a language
      *                                  throws while it's found, such as a {@link java.util.ServiceConfigurationError},
      *                                  is thrown unchanged.
-     * @throws IllegalArgumentException if an import has more than 1,000 characters or more than 64 dot-separated
-     *                                  parts, checked before it is looked up; if it is neither a loadable class nor a
-     *                                  valid package name; if it names a class that exists but can't be loaded, for
-     *                                  example because a class it depends on is missing; or if
-     *                                  {@link #copiesAtLoad(int)} is more than {@link #maxCopies(int)}
+     * @throws IllegalArgumentException if a language's own import has more than 1,000 characters; if an import has
+     *                                  more than 1,000 characters or more than 64 dot-separated parts, checked before
+     *                                  it is looked up; if it is neither a loadable class nor a valid package name; if
+     *                                  it names a class that exists but can't be loaded, for example because a class
+     *                                  it depends on is missing; or if {@link #copiesAtLoad(int)} is more than
+     *                                  {@link #maxCopies(int)}
      */
     public RulesEngine<O> build() {
         CopyLimit limit = copies != null ? copies : CopyLimit.forVirtualThreads();
@@ -606,7 +666,7 @@ public final class RulesEngineBuilder<O> {
         }
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageMap, defaultLanguageName,
                 importNames, listenerList, limit, loadCopies, timeout, runClock,
-                outputClass, writer, languageOptions, factTypes, allFactsDeclared);
+                outputClass, writer, languageOptions, factTypes, allFactsDeclared, languageImportNames);
         return engineFactory.create(outputFactory, configuration);
     }
 }

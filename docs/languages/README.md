@@ -63,6 +63,22 @@ expression languages: [mvel]`. That is one rule's failure, reported together wit
 own. An option for a language the engine doesn't have fails `build()` with `Options are given for the expression
 language 'cel', which isn't one of the engine's expression languages: [mvel]`.
 
+**Imports** come in two kinds. `imports("java.util")` gives every language of the engine Java packages and classes,
+resolved at `build()`, for the languages that use them, such as MVEL. Since 2.19.0,
+`.languageImports("js", "lodash/fp", "./rules/util.js")` gives one language imports of its own, such as modules, files
+or namespaces, which no other language sees. Calling it again for the same language adds to them.
+
+The language gets them as written, in order, duplicates kept. The engine doesn't resolve or check what they mean. A
+language can reject one it can't use by throwing from `newCompiler`, failing the rule list: `load()` throws, and
+`validate()` returns, a `RuleCompilationException` with the throw as its cause. MVEL rejects any, with `MVEL takes
+no language imports; give Java imports with imports(...)`.
+
+The engine creates a language's compiler only for a rule list with a rule in that language, and the default
+language's for a list with no rules, so a language no such list uses never has its imports checked.
+
+A language the engine doesn't have, even with no imports, fails `build()` with `Imports are given for the expression
+language ...`, and so does an import over 1,000 characters, with `Can't import ...`.
+
 **Fact names** are checked by every language the loaded rules use: `run()` rejects a name one of them can't refer to,
 and `load()` rejects a [declared fact](../facts.md#-declaring-facts) with such a name. A language no loaded rule uses
 isn't asked, and an empty rule list is checked against the default language. See [Naming
@@ -213,7 +229,8 @@ root README's [Security](../../README.md#-security) section covers the engine as
 | --- | --- | --- |
 | **`language(new MyLanguage())` alone** | `ServiceLoader` isn't used, so MVEL is gone: rules without a language are compiled by `MyLanguage`, and rules naming `mvel` fail `load()` | Add `new MvelExpressionLanguage()` too |
 | **`.language("MVEL")` on a rule** | Names are case-sensitive, so `load()` rejects the rule as written in a language the engine doesn't have | Use the name `name()` returns: `"mvel"` |
-| **A typo in `option(...)`'s language** | `build()` fails with `Options are given for the expression language ...`, and no engine is built | Name a language the engine has. MVEL checks its own option keys at `load()` |
+| **A typo in `option(...)`'s or `languageImports(...)`'s language** | `build()` fails with `Options are given for the expression language ...` or `Imports are given for ...`, and no engine is built | Name a language the engine has. MVEL checks its own option keys at `load()` |
+| **A module name in `imports(...)`** | `build()` rejects `lodash/fp` as neither a class nor a package, and takes `lodash` for a Java package that every language gets | Give it to its language with `languageImports(...)` |
 | **A language jar whose constructor throws** | `ServiceLoader` runs on every `build()`, so every engine built without `language(...)` fails with that error | Remove or fix the jar, or give the engine its languages with `language(...)` |
 | **A shaded jar that kept one service file** | `build()` fails with `The engine has no expression language ...` | Merge the service files |
 

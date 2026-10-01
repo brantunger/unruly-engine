@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -25,25 +26,31 @@ import java.util.Set;
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param warningsLogged   Whether {@link #warn(Expression, InvalidExpressionException.Issue)} logs: it does when the
  *                         rules are loaded, and not when they are only validated
+ * @param languageImportNames This language's own imports, as written and in order, which a language reads with
+ *                            {@link CompileContext#languageImports()}. Not named {@code languageImports}, so that
+ *                            method stays the interface's default, which reads them with
+ *                            {@link #languageImports(CompileContext)}
  */
 public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                    Class<?> outputType, Map<String, String> options,
                                    Map<String, Class<?>> declaredFacts,
-                                   boolean allFactsDeclared, boolean warningsLogged) implements CompileContext {
+                                   boolean allFactsDeclared, boolean warningsLogged,
+                                   List<String> languageImportNames) implements CompileContext {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
     /**
      * Keeps unmodifiable copies of the imports, options and declarations, so the context can't change after it's
      * created. A declared primitive type is kept as its wrapper, as {@link #declaredType(String, Class)} says, so a
-     * language sees the same declarations from the test kit as from an engine. A package import is checked for size as
-     * the engine's {@code build()} checks it, so a language's tests can't hand it one no engine would.
+     * language sees the same declarations from the test kit as from an engine. Package imports and language
+     * imports are checked for size as the engine's {@code build()} checks them, so a language's tests can't be handed
+     * one no engine would accept.
      *
-     * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
-     *                                  is {@code null}
+     * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
+     *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, or a fact is declared with a blank name or the name
-     *                                  {@code output}
+     *                                  dot-separated parts, a language import has more than 1,000 characters, or a
+     *                                  fact is declared with a blank name or the name {@code output}
      */
     public EngineCompileContext {
         Objects.requireNonNull(packageImports, "packageImports must not be null");
@@ -52,6 +59,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(outputType, "outputType must not be null");
         Objects.requireNonNull(options, "options must not be null");
         Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
+        Objects.requireNonNull(languageImportNames, "languageImports must not be null");
         for (String packageName : packageImports) {
             Objects.requireNonNull(packageName, "packageImports must not contain null");
             ImportResolver.checkSize(packageName);
@@ -63,6 +71,10 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
             Objects.requireNonNull(name, "options must not contain null");
             Objects.requireNonNull(value, "options must not contain null");
         });
+        for (String name : languageImportNames) {
+            Objects.requireNonNull(name, "languageImports must not contain null");
+            ImportResolver.checkLength(name);
+        }
         packageImports = Set.copyOf(packageImports);
         classImports = Set.copyOf(classImports);
         options = Map.copyOf(options);
@@ -70,6 +82,20 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Map<String, Class<?>> declared = new LinkedHashMap<>();
         declaredFacts.forEach((name, type) -> declared.put(name, declaredType(name, type)));
         declaredFacts = Map.copyOf(declared);
+        languageImportNames = List.copyOf(languageImportNames);
+    }
+
+    /**
+     * Returns the imports a context's language was given for itself, as {@link CompileContext#languageImports()}
+     * describes them.
+     *
+     * @param context A compile context, which the engine implements
+     * @return The language's imports, as written and in order; unmodifiable
+     * @throws NullPointerException if {@code context} is {@code null}
+     */
+    public static List<String> languageImports(CompileContext context) {
+        Objects.requireNonNull(context, "context must not be null");
+        return ((EngineCompileContext) context).languageImportNames();
     }
 
     /**
@@ -127,7 +153,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     }
 
     /**
-     * Creates a context whose warnings are logged, as when the rules are loaded.
+     * Creates a context whose warnings are logged, as when the rules are loaded, for a language with no imports of
+     * its own.
      *
      * @param packageImports   Package names, imported with all their classes
      * @param classImports     Classes imported one by one
@@ -145,7 +172,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                 Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,
                                 boolean allFactsDeclared) {
-        this(packageImports, classImports, classLoader, outputType, options, declaredFacts, allFactsDeclared, true);
+        this(packageImports, classImports, classLoader, outputType, options, declaredFacts, allFactsDeclared, true,
+                List.of());
     }
 
     /**
