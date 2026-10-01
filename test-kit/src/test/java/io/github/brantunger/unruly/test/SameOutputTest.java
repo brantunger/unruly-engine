@@ -118,6 +118,14 @@ class SameOutputTest {
     }
 
     @Test
+    @DisplayName("maps whose keys print the same but aren't the same get a hidden-difference note")
+    void mismatchOfKeysThatPrintTheSame() {
+        String mismatch = SameOutput.mismatch(new HashMap<>(Map.of(1, "a")), new HashMap<>(Map.of("1", "a")));
+
+        assertTrue(mismatch.startsWith("expected: <{1=a}> but was: <{1=a}>, and expected {1=a} ("), mismatch);
+    }
+
+    @Test
     @DisplayName("an output that isn't the same fails with both values, and the run it came from")
     void assertSameOutput() {
         assertDoesNotThrow(() -> SameOutput.assertSameOutput(Map.of("a", 1), Map.of("a", 1L)));
@@ -132,5 +140,15 @@ class SameOutputTest {
                 () -> SameOutput.assertSameOutput(1, "1", "the second run"));
         assertEquals("the second run ==> expected: <1> but was: <1>, and expected 1 (java.lang.Integer) but was 1"
                 + " (java.lang.String)", named.getMessage());
+    }
+
+    @Test
+    @DisplayName("an expected list longer than the output fails as an assertion that shows both")
+    void expectedListLonger() {
+        assertFalse(SameOutput.sameValue(List.of(1, 2), List.of(1)));
+
+        AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                () -> SameOutput.assertSameOutput(List.of(1, 2), List.of(1)));
+        assertEquals("expected: <[1, 2]> but was: <[1]>", thrown.getMessage());
     }
 }

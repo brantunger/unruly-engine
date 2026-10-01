@@ -256,6 +256,27 @@ class LoggedFailuresTest {
         assertNull(LoggedFailures.loggedAt(fatal));
     }
 
+    @Test
+    @DisplayName("a run nested at the depth of a load() that has ended is a run, not a load()")
+    void runAfterALoadAtTheSameDepth() {
+        InternalError fatal = new InternalError("by a run after a load");
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enterLoad();
+            LoggedFailures.leave();
+            LoggedFailures.enter();
+            try {
+                assertTrue(LoggedFailures.unloggedFatal(fatal));
+            } finally {
+                LoggedFailures.leave();
+            }
+
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"the oldest", "the newest"})
     @DisplayName("past the bound, the oldest failure recorded is logged again if it's thrown on, the newest isn't")

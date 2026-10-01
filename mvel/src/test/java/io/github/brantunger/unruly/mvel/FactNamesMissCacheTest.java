@@ -3,8 +3,11 @@ package io.github.brantunger.unruly.mvel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.SplittableRandom;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,5 +68,49 @@ class FactNamesMissCacheTest {
 
         names.check("x".repeat(FactNames.MAX_CACHED_MISS_LENGTH));
         assertEquals(2, names.cachedMisses(), "a name of the longest cached length is");
+    }
+
+    // #849: the counts the other tests read stayed right whichever name an eviction took, and whether or not it left
+    // the set of misses.
+    @Test
+    @DisplayName("a full cache evicts the name its random numbers pick, and an evicted name is looked up again")
+    void evictsThePickedName() {
+        long seed = 849;
+        RecordingClassLoader loader = new RecordingClassLoader();
+        FactNames names = new FactNames(new Imports(Set.of("java.util"), Set.of(), loader), new SplittableRandom(seed));
+        // The slots as the cache keeps them, picked from with the same random numbers, so the test knows which names
+        // each eviction takes: the last name moves into the slot of the name evicted.
+        List<String> slots = new ArrayList<>();
+        Set<String> cached = new HashSet<>();
+        SplittableRandom picks = new SplittableRandom(seed);
+        int count = FactNames.MAX_CACHED_MISSES + 256;
+        List<String> expected = new ArrayList<>();
+        List<String> lookedUp = new ArrayList<>();
+        // Every name once, to fill the cache and evict 256 of them, then every name again.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < count; i++) {
+                String name = "name" + i;
+                if (!cached.contains(name)) {
+                    expected.add(name);
+                    if (slots.size() == FactNames.MAX_CACHED_MISSES) {
+                        int victim = picks.nextInt(slots.size());
+                        cached.remove(slots.get(victim));
+                        slots.set(victim, slots.get(slots.size() - 1));
+                        slots.remove(slots.size() - 1);
+                    }
+                    slots.add(name);
+                    cached.add(name);
+                }
+                int before = loader.resources.size();
+                names.check(name);
+                if (loader.resources.size() > before) {
+                    lookedUp.add(name);
+                }
+            }
+        }
+
+        assertEquals(expected, lookedUp, "the names looked up: each the first time, then each evicted since");
+        assertEquals(slots.size(), names.cachedMisses());
+        assertEquals(slots.stream().mapToInt(String::length).sum(), names.cachedMissChars());
     }
 }

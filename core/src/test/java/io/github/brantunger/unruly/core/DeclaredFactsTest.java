@@ -40,10 +40,15 @@ class DeclaredFactsTest {
 
     private static RulesEngine<Map<String, Object>> engine(
             java.util.function.UnaryOperator<RulesEngineBuilder<Map<String, Object>>> configuration) {
+        return engine(RULE, configuration);
+    }
+
+    private static RulesEngine<Map<String, Object>> engine(Rule rule,
+            java.util.function.UnaryOperator<RulesEngineBuilder<Map<String, Object>>> configuration) {
         RulesEngine<Map<String, Object>> engine =
                 configuration.apply(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                         .language(new ToyExpressionLanguage())).build();
-        engine.load(List.of(RULE));
+        engine.load(List.of(rule));
         return engine;
     }
 
@@ -258,6 +263,22 @@ class DeclaredFactsTest {
         assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
                 thrown.getMessage());
         assertThrows(IllegalArgumentException.class, () -> builder.facts(Map.of("output", String.class)));
+    }
+
+    @Test
+    @DisplayName("a fact whose name differs from output only in case is declared and supplied like any other")
+    void outputInAnotherCaseIsAFact() {
+        RulesEngine<Map<String, Object>> engine = engine(Rule.builder().ruleName("r").condition("true")
+                .action("put declared OUTPUT; put supplied Output").build(),
+                builder -> builder.fact("OUTPUT", String.class));
+        FactStore<Object> store = new FactMap<>(new Fact<>("OUTPUT", "x"));
+        store.setValue("Output", 1);
+
+        assertEquals(Map.of("declared", "x", "supplied", 1), engine.run(store));
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(new FactMap<>(new Fact<>("OUTPUT", 1))));
+        assertEquals("Fact 'OUTPUT' was declared as java.lang.String, but the run supplied a java.lang.Integer",
+                thrown.getMessage());
     }
 
     @ParameterizedTest(name = "\"{0}\"")

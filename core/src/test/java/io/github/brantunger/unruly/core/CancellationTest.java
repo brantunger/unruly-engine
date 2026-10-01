@@ -139,6 +139,18 @@ class CancellationTest {
     }
 
     @Test
+    @DisplayName("an interrupt is why a run stops, and the thread's interrupt status stays set for its caller")
+    void interruptIsTheReasonAndStaysSet() {
+        Thread.currentThread().interrupt();
+        try {
+            assertEquals(Cancellation.Reason.INTERRUPTED, Cancellation.reason(Deadline.NONE));
+            assertTrue(Thread.currentThread().isInterrupted(), "the status stays set");
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     @DisplayName("the exception a run past its deadline is caused by shows the deadline's instant")
     void timedOutShowsTheInstant() {
         assertEquals("The run's deadline of 2001-02-03T04:05:06Z has passed",
