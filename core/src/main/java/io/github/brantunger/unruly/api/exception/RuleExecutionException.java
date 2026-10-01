@@ -18,11 +18,11 @@ import org.jspecify.annotations.Nullable;
  *   <li>the run was interrupted, or passed its deadline, while it waited for a compiled copy of the rules, or while
  *   it read them again after a reload, or a close of the engine, closed the list it had read;</li>
  *   <li>the run was stopped between rules, or when a condition or action returned, or threw something with no
- *   {@link Error} anywhere in its cause chain, once the run had to stop, because its thread was interrupted or it
- *   passed its deadline; the cause is then an {@link InterruptedException} or a
- *   {@link java.util.concurrent.TimeoutException}. One that threw something with an {@link Error} in its cause
- *   chain is that rule's own failure instead, so both {@link #getRuleName()} and {@link #getExpressionKind()} are
- *   set and the cause is what the expression threw;</li>
+ *   {@link Error} anywhere in its cause chain, nor one suppressed on it at any depth, once the run had to stop, because
+ *   its thread was interrupted or it passed its deadline; the cause is then an {@link InterruptedException} or a
+ *   {@link java.util.concurrent.TimeoutException}. One that threw something with an {@link Error} in its cause chain,
+ *   or suppressed on it at any depth, is that rule's own failure instead, so both {@link #getRuleName()} and
+ *   {@link #getExpressionKind()} are set and the cause is what the expression threw;</li>
  *   <li>more than one rule matched on a unique-match engine, which the message names;</li>
  *   <li>the output supplier threw or returned {@code null};</li>
  *   <li>a language threw or returned {@code null} when it created a session for the run;</li>

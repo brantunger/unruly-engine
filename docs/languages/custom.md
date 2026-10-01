@@ -231,8 +231,8 @@ applies to both:
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; its rules aren't compiled |
 | An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
-| A [fatal error](../glossary.md#fatal-error), thrown or as a cause | Logged, then rethrown unchanged | At once |
-| `IllegalArgumentException` without a fatal cause from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
+| A [fatal error](../glossary.md#fatal-error), thrown, as a cause or suppressed | Logged, then rethrown unchanged | At once |
+| `IllegalArgumentException` without a [fatal error](../glossary.md#fatal-error) from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine shortens and escapes your message, and a
@@ -335,10 +335,10 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 - for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has compiled or failed, by the
   compilers created; with none, they wait for the next `load()`. A rejection fails it.
 
-A [fatal error](../glossary.md#fatal-error), even your exception's cause, is logged with that `failed to check`
-message and rethrown, by `load()` too. Only the loaded rules' languages are asked, in first-use order, or the default
-language for an empty list. The engine rejects `null`, blank names and `output` first, and caches nothing:
-keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) tests it both ways:
+A [fatal error](../glossary.md#fatal-error), even your exception's cause or suppressed on it, is logged with that
+`failed to check` message and rethrown, by `load()` too. Only the loaded rules' languages are asked, in first-use order,
+or the default language for an empty list. The engine rejects `null`, blank names and `output` first, and caches
+nothing: keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) tests it both ways:
 `unusableFactName()` and `usableFactNames()`.
 
 ## ⏳ Stopping a run
@@ -372,8 +372,8 @@ public CompiledAction compileAction(Expression expression) {
 `isCancelled()` is `true` while the calling thread is interrupted, or once the deadline has passed.
 
 Returning then is enough: the engine checks again when the expression returns, and stops the run whatever it
-returned. Throwing once the run is cancelled stops it the same way, unless an `Error` is in its cause chain; see
-[What stops a run](../stopping-runs.md#-what-stops-a-run).
+returned. Throwing once the run is cancelled stops it the same way, unless what it throws
+[fails the rule](../stopping-runs.md#-what-stops-a-run).
 
 Since 2.9.0, `timeLeft()` is the time left before the run's deadline, as the engine measures it, and
 `Duration.ZERO` once past: time your own calls with it. `deadline()` is a wall-clock `Instant` for showing, `null`

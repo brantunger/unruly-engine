@@ -95,8 +95,12 @@ compile, are left out whatever their text, but only while the call that built th
 
 Around a nested fatal `Error`, the note is the `Error`'s class and message, such as
 `Failed to execute action for rule 'r': audit failed (after a nested run() failed: java.lang.OutOfMemoryError: ...)`,
-and the call still rethrows the `Error` itself. One logged already, but not below the code that wrapped it, such as by
-an earlier nested run, gets `(caused by java.lang.OutOfMemoryError: ..., already logged)` instead.
+or `(after a nested load() failed: ...)` for a nested `load()`, and the call still rethrows the `Error` itself.
+
+A fatal `Error` logged already, but not below the code that wrapped it, such as by an earlier nested run, gets
+`(caused by java.lang.OutOfMemoryError: ..., already logged)` instead when it's in the cause chain, or
+`(with suppressed java.lang.OutOfMemoryError: ..., already logged)` when it's found among the suppressed
+exceptions or what they lead to.
 
 A listener's first fatal `Error` in a callback, `onError` included, logs such a wrapper at ERROR, as
 `A listener threw <class> in <callback>: ...`; wrapping the failure a listener was told of adds nothing. From `onError`

@@ -97,10 +97,10 @@ public interface ExpressionCompiler extends AutoCloseable {
      *
      * @param name The fact's name
      * @throws IllegalArgumentException if rules can't refer to a fact with this name; {@code run()} throws it as is,
-     *         unless a fatal {@link Error} is among its causes. Anything else this method throws is logged and thrown
-     *         from {@code run()} as an {@code IllegalArgumentException} naming the fact and the language, except a
-     *         fatal {@code Error}, thrown or among the causes of what this method throws, which is rethrown
-     *         unchanged.
+     *         unless a fatal {@link Error} is among its causes or their suppressed exceptions. Anything else this
+     *         method throws is logged and thrown from {@code run()} as an {@code IllegalArgumentException} naming the
+     *         fact and the language, except a fatal {@code Error}, thrown, among the causes of what this method throws
+     *         or suppressed on one of them, which is rethrown unchanged.
      */
     default void checkFactName(String name) {
         // Every name is accepted.

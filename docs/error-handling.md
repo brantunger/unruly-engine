@@ -109,7 +109,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fact name the engine or a language rejects, or a fact that doesn't match its [declaration](facts.md#-declaring-facts) | `IllegalArgumentException` | `onRunError` with that `IllegalArgumentException` | ERROR |
 | A language fails to create a session for the run | `RuleExecutionException`, no rule | Nothing, not even `beforeRun`: the run fails before it starts | ERROR |
 | The run is stopped between rules | `RuleExecutionException`, no rule, with an `InterruptedException` or `TimeoutException` cause | `onRunError`; the rule it would have gone on to gets nothing | WARN |
-| The run is stopped when a condition or action returns, the output writer has set an action's properties, or any of them throws anything with no `Error` in its cause chain | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
+| The run is stopped when a condition or action returns, the output writer has set an action's properties, or any of them throws with no `Error` in its cause chain or suppressed there | The same as between rules | `onError` with the stop, then `onRunError` | WARN |
 | The run is stopped while it waits for a compiled copy | The same as between rules | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | The run is interrupted while it waits for a build slot; a deadline never stops this wait | `RuleExecutionException`, no rule, with an `InterruptedException` cause | `beforeRun` only when the wait ends, then `onRunError` | WARN |
 | The run is stopped while it reads the engine's rules again, after a reload or `close()` closed the list it had read | The same as between rules | `beforeRun`, then `onRunError` | WARN |
@@ -145,17 +145,20 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 
 ## 💥 A fatal error while closing
 
-Closing a rule list's sessions and compilers is never cut short. When one of them throws a fatal error, such as an
+Closing a rule list's sessions and compilers is never cut short. When one of them throws a fatal error, such as
 `OutOfMemoryError`, the engine still closes every idle session of that list, then its compilers if no run is still
-using it by then, and only then rethrows the error. If several are fatal, the first is rethrown and keeps the others,
+using it by then, and only then rethrows it. If several are fatal, the first is rethrown and keeps the others,
 except one that already carries it, in its `getSuppressed()`. Each fatal error from closing is logged at WARN unless a
 nested run did.
 
 A failure of the call's own that isn't fatal loses to a fatal error from closing, which keeps it in
-`getSuppressed()`, or logs it at WARN if it can't keep one (see below). That's a failed `load()`'s own failure (a
+`getSuppressed()`, or logs it at WARN if it can't keep one. That's a failed `load()`'s own failure (a
 `RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), or a run's failure
 when that run is the one that closes. A fatal failure of the call's own came first, so it's thrown instead, and keeps
 the one from closing, still logged at WARN, in its `getSuppressed()`.
+
+A fatal error only among the call's failure's suppressed exceptions is thrown, carrying the closing one; the failure
+is logged at WARN.
 
 The call that closes throws it:
 
@@ -212,8 +215,9 @@ try {
 - **Tell a stop from a failure by its cause.** A stopped run's exception names no rule and has an
   `InterruptedException` or `TimeoutException` cause.
 - **A bug near the deadline is usually reported as a stop.** Why what the rule returned was wrong, or what it threw
-  with no `Error` in its cause chain, is only in `getSuppressed()`. A throw with an `Error` in its chain stays that
-  rule's failure instead; see [What stops a run](stopping-runs.md#-what-stops-a-run).
+  with no `Error` in its cause chain or suppressed there, is only in `getSuppressed()`. A throw with an `Error` there
+  stays that rule's failure instead; see
+  [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before, unless it's a

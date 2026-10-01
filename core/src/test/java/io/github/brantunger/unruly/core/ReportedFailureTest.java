@@ -202,4 +202,26 @@ class ReportedFailureTest {
         assertSame(between, Failures.errorInChain(old));
         assertSame(above, Failures.errorInChain(above));
     }
+
+    @Test
+    @DisplayName("records by identity the suppressed exceptions the engine added, and a copy read back records none")
+    void recordsWhatTheEngineSuppressed() throws Exception {
+        ReportedFailure failure = failure("failed", null);
+        IllegalStateException outside = new IllegalStateException("outside");
+        IllegalStateException first = new IllegalStateException("first");
+        IllegalStateException second = new IllegalStateException("second");
+        failure.addSuppressed(outside);
+
+        assertFalse(failure.suppressedByEngine(outside));
+
+        failure.addSuppressedByEngine(first);
+        failure.addSuppressedByEngine(second);
+
+        assertTrue(failure.suppressedByEngine(first));
+        assertTrue(failure.suppressedByEngine(second));
+        assertFalse(failure.suppressedByEngine(outside));
+        assertEquals(List.of(outside, first, second), List.of(failure.getSuppressed()));
+        ReportedFailure copy = roundTrip(failure);
+        assertFalse(copy.suppressedByEngine(copy.getSuppressed()[1]));
+    }
 }

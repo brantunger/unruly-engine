@@ -493,7 +493,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 // A backstop: every place the run calls a rule, a listener, a language or the output reports a
                 // Throwable that is neither an Exception nor an Error as a failure of its own, so none should get
                 // here. One that does is handled the same way: it fails the run like an exception, closing every
-                // listener's run, and a fatal Error among its causes is then rethrown unchanged.
+                // listener's run, and a fatal Error among its causes, or suppressed on them, is then rethrown
+                // unchanged.
                 Failures.keepInterruptStatus(t);
                 String msg = "The run failed with " + Failures.describeWithClass(t);
                 log.error(msg);
@@ -1379,7 +1380,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the run must stop
      */
     private void checkNotCancelled(CompiledRule rule, Deadline deadline) {
-        RuleExecutionException stop = cancellation(rule, BEFORE_RULE, deadline, null);
+        ReportedFailure stop = cancellation(rule, BEFORE_RULE, deadline, null);
         if (stop != null) {
             throw stop;
         }
@@ -1396,8 +1397,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 that run logged the stop, and it isn't logged again
      * @return The exception, or {@code null}
      */
-    private RuleExecutionException cancellation(CompiledRule rule, String stage, Deadline deadline,
-                                                Throwable thrown) {
+    private ReportedFailure cancellation(CompiledRule rule, String stage, Deadline deadline, Throwable thrown) {
         // isInterrupted(), not interrupted(): the status stays set, so an executor shutting down still sees it.
         Cancellation.Reason reason = Cancellation.reason(deadline);
         if (reason == Cancellation.Reason.INTERRUPTED) {
@@ -1440,7 +1440,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @param thrown   What the expression threw
      * @param failed   Reports the rule's failure, when the run wasn't cancelled or {@code thrown} has an
-     *                 {@link Error} anywhere in its cause chain
+     *                 {@link Error} anywhere in its cause chain, or one suppressed on it at any depth (see
+     *                 {@link Failures#errorInChain})
      * @return The exception to throw
      */
     private RuleExecutionException stoppedOrFailed(CompiledRule rule, Deadline deadline, Throwable thrown,
@@ -1448,12 +1449,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and an
         // Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
-        RuleExecutionException stop = Failures.errorInChain(thrown) == null
+        ReportedFailure stop = Failures.errorInChain(thrown) == null
                 ? cancellation(rule, DURING_RULE, deadline, thrown) : null;
         if (stop == null) {
             return failed.get();
         }
-        stop.addSuppressed(thrown);
+        stop.addSuppressedByEngine(thrown);
         return closedWithStop(rule, stop);
     }
 
@@ -1469,10 +1470,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the run was cancelled
      */
     private void stopIfCancelled(CompiledRule rule, ExpressionKind kind, Deadline deadline, String wrongResult) {
-        RuleExecutionException stop = cancellation(rule, DURING_RULE, deadline, null);
+        ReportedFailure stop = cancellation(rule, DURING_RULE, deadline, null);
         if (stop != null) {
             if (wrongResult != null) {
-                stop.addSuppressed(new RuleExecutionException(wrongResult, null, rule.rule().getRuleName(), kind));
+                stop.addSuppressedByEngine(new RuleExecutionException(wrongResult, null, rule.rule().getRuleName(),
+                        kind));
             }
             throw closedWithStop(rule, stop);
         }
@@ -1487,11 +1489,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param stop The exception the run stops with
      * @return {@code stop}, to throw
      */
-    private RuleExecutionException closedWithStop(CompiledRule rule, RuleExecutionException stop) {
+    private RuleExecutionException closedWithStop(CompiledRule rule, ReportedFailure stop) {
         ListenerFatal thrown = listenerFatal("onError", listener -> listener.onError(rule.rule(), stop), null, stop);
         if (thrown != null) {
             Error fatal = logWrappedFromOnError(thrown, rule);
-            stop.addSuppressed(fatal);
+            stop.addSuppressedByEngine(fatal);
             fatalFailure.set(stop);
             throw fatal;
         }
@@ -1510,7 +1512,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                 has logged the stop already, so it isn't logged a second time.
      * @return The exception to throw, which belongs to no rule
      */
-    private RuleExecutionException cancelled(String msg, Exception cause, Deadline deadline, Throwable thrown) {
+    private ReportedFailure cancelled(String msg, Exception cause, Deadline deadline, Throwable thrown) {
         if (!Failures.nestedRunStopped(thrown, deadline)) {
             log.warn(msg);
         }
@@ -1545,17 +1547,17 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
      *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
-     *                                when it is the cause of what the factory throws; any other {@link Error}, and a
-     *                                {@link Throwable} that is neither an exception nor an error, is wrapped like an
-     *                                exception. A failure of a {@code run()} the factory started reads
-     *                                {@code Output factory threw: a nested run() failed: } and the innermost failure
-     *                                that run logged, and one of a {@code load()} it started
+     *                                when it is the cause of what the factory throws or suppressed on it; any other
+     *                                {@link Error}, and a {@link Throwable} that is neither an exception nor an error,
+     *                                is wrapped like an exception. A failure of a {@code run()} the factory started
+     *                                reads {@code Output factory threw: a nested run() failed: } and the innermost
+     *                                failure that run logged, and one of a {@code load()} it started
      *                                {@code Output factory threw: a nested load() failed: } and that load's failure;
      *                                neither is logged again, as that run or load logged it; nor is a fatal error that
      *                                run logged (see {@link LoggedFailures}). A nested failure wrapped by the factory
      *                                in an exception with a message of its own reads {@code Output factory threw: },
-     *                                that message and the nested failure as a note (see {@link Failures#describe}),
-     *                                and is logged; a fatal error wrapped so is still rethrown.
+     *                                that message and the nested failure as a note (see {@link Failures#describe}), and
+     *                                is logged; a fatal error wrapped so is still rethrown.
      */
     O createOutput() {
         O output;
@@ -1583,9 +1585,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Logs the failure of code the engine calls but doesn't own, such as a language's session or the output factory,
      * unless a nested run or load already logged it (see {@link LoggedFailures}), and rethrows a fatal {@link Error}
-     * found in its cause chain unchanged. The caller keeps the interrupt status first (see
-     * {@link Failures#keepInterruptStatus}), then builds the message, as describing the failure reads what was logged
-     * before this records it, and throws a {@link ReportedFailure} with that message itself once this returns.
+     * found in its cause chain, or suppressed on it, unchanged (see {@link Failures#fatalError}). The caller keeps the
+     * interrupt status first (see {@link Failures#keepInterruptStatus}), then builds the message, as describing the
+     * failure reads what was logged before this records it, and throws a {@link ReportedFailure} with that message
+     * itself once this returns.
      *
      * @param msg What failed
      * @param e   What the called code threw
@@ -1845,10 +1848,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Calls every listener, logging what a listener throws so a faulty listener can't interrupt a run. A fatal
-     * {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener
-     * throws, doesn't stop the other listeners either, so each still gets the callback, and closes whatever it opened;
-     * the error is returned for the caller to rethrow, with what the listener threw it in. A second fatal error in the
-     * same callback is logged like an exception, and kept on the first as a suppressed exception (see
+     * {@link Error} (see {@link Failures#fatalError}), thrown or found among the causes of what a listener throws, or
+     * suppressed on them, doesn't stop the other listeners either, so each still gets the callback, and closes whatever
+     * it opened; the error is returned for the caller to rethrow, with what the listener threw it in. A second fatal
+     * error in the same callback is logged like an exception, and kept on the first as a suppressed exception (see
      * {@link Failures#keepAlso}).
      *
      * @return The first fatal {@link Error} a listener threw, and what it threw it in, or {@code null}
@@ -1963,7 +1966,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private static void keepSecondFatal(RuleExecutionException reported, Error rethrown, Error fromListener) {
         if (fromListener != null) {
-            reported.addSuppressed(fromListener);
+            if (reported instanceof ReportedFailure failure) {
+                failure.addSuppressedByEngine(fromListener);
+            } else {
+                // Caused by the first fatal error, which is found before anything suppressed on it.
+                reported.addSuppressed(fromListener);
+            }
             Failures.keepAlso(rethrown, fromListener);
             // Says which one onRunError can see: the loop has already logged any later fatal error.
             if (!LoggedFailures.logged(fromListener)) {
@@ -1988,7 +1996,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
     private RuleExecutionException failure(CompiledRule rule, ExpressionKind kind, String msg, Throwable cause) {
-        RuleExecutionException error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
+        ReportedFailure error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
         Failures.keepInterruptStatus(cause);
         // A failed run() started by this rule has already logged its failure, or the fatal error it rethrew.
         Error listenerFatal = reportFailure(rule, error, LoggedFailures.unlogged(cause));
@@ -1996,7 +2004,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Error fatal = Failures.fatalError(cause);
         if (fatal == null && listenerFatal != null) {
             // Not among the causes, so onRunError can still find it on the failure.
-            error.addSuppressed(listenerFatal);
+            error.addSuppressedByEngine(listenerFatal);
             fatal = listenerFatal;
         } else if (listenerFatal != null) {
             keepSecondFatal(error, fatal, listenerFatal);

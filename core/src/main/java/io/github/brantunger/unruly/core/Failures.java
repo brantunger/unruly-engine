@@ -16,6 +16,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -41,10 +42,11 @@ public final class Failures {
     static final int MAX_CAUSE_CHAIN_LENGTH = 100;
 
     /**
-     * How many exceptions, through causes and suppressed exceptions, the engine reads to learn whether one already
-     * reaches another; see {@link #reaches}.
+     * How many different exceptions, through causes and suppressed exceptions, the engine reads to learn whether one
+     * already reaches another (see {@link #reaches}), or to find a fatal {@link Error} or any {@link Error} suppressed
+     * in what was caught (see {@link #fatalError} and {@link #errorInChain}); one past that many isn't found.
      */
-    static final int MAX_EXCEPTIONS_READ = 1_000;
+    static final int MAX_EXCEPTIONS_READ = 10_000;
 
     /**
      * The {@code Default_Ignorable_Code_Point} characters of Unicode's {@code DerivedCoreProperties.txt} (the same in
@@ -93,15 +95,48 @@ public final class Failures {
 
     /**
      * Finds the fatal {@link Error} (see {@link #isFatal}) in what was caught: the throwable itself, or one of its
-     * causes. An error from Java code a rule calls, such as a method, a getter or a lambda held in a fact, reaches the
-     * engine inside MVEL's own exception, so checking only the outer exception let an {@link OutOfMemoryError} be
-     * absorbed into a {@link RuleExecutionException}.
+     * causes, or failing that one suppressed on any of them, or among the causes and suppressed exceptions of those. An
+     * error from Java code a rule calls, such as a method, a getter or a lambda held in a fact, reaches the engine
+     * inside MVEL's own exception, so checking only the outer exception let an {@link OutOfMemoryError} be absorbed
+     * into a {@link RuleExecutionException}; and a {@code try}-with-resources whose {@code close()} hits one while its
+     * body throws leaves it suppressed on the body's exception, so checking only the cause chain let it be absorbed
+     * too.
+     *
+     * <p>
+     * A suppressed exception the engine itself added to a failure it reported isn't read (see
+     * {@link ReportedFailure#addSuppressedByEngine}): the engine keeps there a fatal error a listener threw, beside the
+     * one it rethrows, and finding that one again would take it for the failure's own. Every other suppressed exception
+     * is read, one that code outside the engine added to a failure the engine reported too, as a
+     * {@code try}-with-resources around a nested run whose {@code close()} fails adds one. The suppressed exceptions
+     * are read as {@link Reach} reads them: the direct suppressed exceptions of every link, from the top, before what
+     * any of them leads to. At most {@value #MAX_EXCEPTIONS_READ} exceptions are read, so a fatal error past that many
+     * is missed.
+     * </p>
      *
      * @param thrown What was caught, or {@code null}
-     * @return The first fatal error in {@code thrown}'s cause chain, or {@code null} if there is none
+     * @return The first fatal error in {@code thrown}'s cause chain, or else the first found among the suppressed
+     *         exceptions of its links and what they lead to, in the order {@link Reach} reads them, or {@code null} if
+     *         there is none among the exceptions read
      */
     static Error fatalError(Throwable thrown) {
-        for (Throwable t : causeChain(thrown)) {
+        return fatalErrorIn(causeChain(thrown));
+    }
+
+    /**
+     * Finds the fatal {@link Error} in a cause chain read once, as {@link #fatalError} finds it in what was caught,
+     * for a caller that goes on to ask where in that same chain it is.
+     *
+     * @param chain An exception and its causes (see {@link #causeChain})
+     * @return The fatal error {@link #fatalError} returns for it, or {@code null}
+     */
+    private static Error fatalErrorIn(List<Throwable> chain) {
+        Error fatal = fatalIn(chain);
+        return fatal != null ? fatal : (Error) suppressedMatching(chain, Failures::isFatal);
+    }
+
+    /** Finds the first fatal {@link Error} in a cause chain itself, or {@code null} if there is none. */
+    private static Error fatalIn(List<Throwable> chain) {
+        for (Throwable t : chain) {
             if (isFatal(t)) {
                 return (Error) t;
             }
@@ -110,11 +145,186 @@ public final class Failures {
     }
 
     /**
-     * Finds the {@link Error} of any kind in what was caught: the throwable itself, or one of its causes. This is
-     * what a cancelled run asks before it reports a stop, because an error from Java code a rule calls, such as a
-     * method, a getter or a lambda held in a fact, reaches the engine wrapped in the expression language's own
-     * exception, and a run past its deadline or interrupted would otherwise report it as a stop that names no rule
-     * rather than as that rule's failure.
+     * Finds an exception that matches among the suppressed exceptions of a cause chain, and what they lead to, read as
+     * {@link Reach} reads them. A suppressed exception the engine itself added to a failure it reported isn't read
+     * (see {@link ReportedFailure#addSuppressedByEngine}). A chain with no suppressed exceptions allocates nothing.
+     *
+     * @param chain A cause chain, none of whose links matches, which counts as read
+     * @param match What to look for
+     * @return The first exception found, or {@code null} if there is none, or if it's past the
+     *         {@value #MAX_EXCEPTIONS_READ} exceptions read
+     */
+    private static Throwable suppressedMatching(List<Throwable> chain, Predicate<Throwable> match) {
+        Throwable[][] suppressed = null;
+        for (int i = 0; i < chain.size(); i++) {
+            Throwable[] ofLink = chain.get(i).getSuppressed();
+            if (ofLink.length > 0) {
+                if (suppressed == null) {
+                    suppressed = new Throwable[chain.size()][];
+                }
+                suppressed[i] = ofLink;
+            }
+        }
+        return suppressed == null ? null : new Reach(false, match).beside(suppressed, chain);
+    }
+
+    /**
+     * A walk through exceptions, their causes and their suppressed exceptions, as {@link #reaches} and
+     * {@link #suppressedMatching} make it. Reading an exception counts it and checks it. For each exception the walk
+     * goes into, it reads the exception's cause chain first, each link in order; then it reads the direct suppressed
+     * exceptions of each link of that chain, from the top link down, each in order, before it goes into any of them;
+     * then it goes into each of those in the same order, the same way, depth first. A cause is read as
+     * {@link #causeOf} reads it, so a {@code getCause()} that throws ends that chain; so does a link read already.
+     * {@code getSuppressed()} is final, and read once for each exception. Each exception is read once, and at most
+     * {@value #MAX_EXCEPTIONS_READ} different ones are, the links a walk starts beside included, so a graph with loops
+     * of its own, a {@code getCause()} that returns a new exception every time, or a great many suppressed exceptions
+     * end it too; one past that many is never found. It ends as soon as an exception matches or that many are read.
+     * Besides the set of what it read, the walk holds a list of the suppressed exceptions it read for each exception
+     * it's going into, each exception in one list at most, so no more than that many exceptions; the copy
+     * {@code getSuppressed()} returned for each link of the chain it starts beside, for as long as it walks; and,
+     * deeper, one more such copy at a time, only while it reads it.
+     */
+    private static final class Reach {
+        private final Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        // The exceptions read and still to go into, a list for each that was gone into, the next on top.
+        private final Deque<Deeper> deeper = new ArrayDeque<>();
+        // Whether a suppressed exception the engine added to a failure it reported is read too.
+        private final boolean engineAddedToo;
+        private final Predicate<Throwable> match;
+        private Throwable found;
+        private boolean stopped;
+
+        Reach(boolean engineAddedToo, Predicate<Throwable> match) {
+            this.engineAddedToo = engineAddedToo;
+            this.match = match;
+        }
+
+        /**
+         * Walks beside a cause chain read already, from the suppressed exceptions of its links.
+         *
+         * @param chain      The chain
+         * @param suppressed The suppressed exceptions of each link, or {@code null} for a link with none
+         * @return The first exception that matches, or {@code null} if there is none
+         */
+        Throwable beside(Throwable[][] suppressed, List<Throwable> chain) {
+            seen.addAll(chain);
+            List<Throwable> tested = List.of();
+            for (int i = 0; i < chain.size(); i++) {
+                if (suppressed[i] != null) {
+                    tested = readSuppressed(chain.get(i), suppressed[i], tested);
+                }
+            }
+            return walk(tested);
+        }
+
+        /**
+         * Walks from an exception: reads it, then goes into it.
+         *
+         * @return The first exception that matches, {@code t} itself included, or {@code null} if there is none
+         */
+        Throwable from(Throwable t) {
+            return read(t) ? walk(goInto(t)) : found;
+        }
+
+        /** Counts and checks an exception; {@code true} if it was read for the first time, and didn't match. */
+        private boolean read(Throwable t) {
+            if (seen.size() >= MAX_EXCEPTIONS_READ) {
+                stopped = true;
+                return false;
+            }
+            if (!seen.add(t)) {
+                return false;
+            }
+            if (match.test(t)) {
+                found = t;
+                stopped = true;
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Goes into an exception read already: reads its causes, then the direct suppressed exceptions of it and of
+         * each cause.
+         *
+         * @return The suppressed exceptions read, to go into next, which may be none
+         */
+        private List<Throwable> goInto(Throwable t) {
+            Throwable cause = causeOf(t);
+            if (cause == null) {
+                return readSuppressed(t, t.getSuppressed(), List.of());
+            }
+            List<Throwable> chain = new ArrayList<>();
+            chain.add(t);
+            for (Throwable link = cause; link != null && read(link); link = causeOf(link)) {
+                chain.add(link);
+            }
+            List<Throwable> tested = List.of();
+            for (int i = 0; i < chain.size() && !stopped; i++) {
+                tested = readSuppressed(chain.get(i), chain.get(i).getSuppressed(), tested);
+            }
+            return tested;
+        }
+
+        /** Reads the direct suppressed exceptions of {@code owner}, adding those read for the first time to a list. */
+        private List<Throwable> readSuppressed(Throwable owner, Throwable[] suppressed, List<Throwable> tested) {
+            List<Throwable> result = tested;
+            for (int i = 0; i < suppressed.length && !stopped; i++) {
+                if ((engineAddedToo || !addedByEngine(owner, suppressed[i])) && read(suppressed[i])) {
+                    if (result.isEmpty()) {
+                        result = new ArrayList<>();
+                    }
+                    result.add(suppressed[i]);
+                }
+            }
+            return result;
+        }
+
+        private static boolean addedByEngine(Throwable owner, Throwable suppressed) {
+            return owner instanceof ReportedFailure failure && failure.suppressedByEngine(suppressed);
+        }
+
+        /** Goes into what's been read, depth first, until an exception matches or the limit is reached. */
+        private Throwable walk(List<Throwable> tested) {
+            push(tested);
+            while (!stopped && !deeper.isEmpty()) {
+                Deeper next = deeper.peek();
+                if (next.index == next.exceptions.size()) {
+                    deeper.pop();
+                } else {
+                    Throwable t = next.exceptions.get(next.index);
+                    next.index++;
+                    push(goInto(t));
+                }
+            }
+            return found;
+        }
+
+        private void push(List<Throwable> tested) {
+            if (!tested.isEmpty() && !stopped) {
+                deeper.push(new Deeper(tested));
+            }
+        }
+    }
+
+    /** Exceptions a {@link Reach} has read and goes into in turn, and how many it has gone into. */
+    private static final class Deeper {
+        private final List<Throwable> exceptions;
+        private int index;
+
+        Deeper(List<Throwable> exceptions) {
+            this.exceptions = exceptions;
+        }
+    }
+
+    /**
+     * Finds the {@link Error} of any kind in what was caught: the throwable itself, or one of its causes, or failing
+     * that one suppressed on any of them, at any depth, read as {@link #fatalError} reads them. This is what a
+     * cancelled run asks before it reports a stop, because an error from Java code a rule calls, such as a method, a
+     * getter or a lambda held in a fact, reaches the engine wrapped in the expression language's own exception, or
+     * suppressed on an exception of its own, as a {@code try}-with-resources whose {@code close()} fails leaves it, and
+     * a run past its deadline or interrupted would otherwise report it as a stop that names no rule rather than as that
+     * rule's failure.
      *
      * <p>
      * Unlike {@link #fatalError}, which looks for the first error the engine must not absorb (see {@link #isFatal})
@@ -128,11 +338,20 @@ public final class Failures {
      * run adds a link and only {@value #MAX_CAUSE_CHAIN_LENGTH} links are read (see {@link #below}).
      * </p>
      *
+     * <p>
+     * At most {@value #MAX_EXCEPTIONS_READ} exceptions are read, as {@link Reach} reads them, so an error suppressed
+     * past that many is missed.
+     * </p>
+     *
      * @param thrown What was caught, or {@code null}
-     * @return The first error in {@code thrown}'s cause chain, or {@code null} if there is none
+     * @return The first error in {@code thrown}'s cause chain, or else the first found among the suppressed exceptions
+     *         of its links and what they lead to, in the order {@link Reach} reads them, or {@code null} if there is
+     *         none among the exceptions read
      */
     static Error errorInChain(Throwable thrown) {
-        return below(thrown).error();
+        List<Throwable> chain = causeChain(thrown);
+        Error error = below(chain).error();
+        return error != null ? error : (Error) suppressedMatching(chain, Error.class::isInstance);
     }
 
     static void throwIfPresent(Error fatal) {
@@ -187,9 +406,8 @@ public final class Failures {
 
     /**
      * Tells whether {@code target} is {@code from} itself, or can be reached from it through causes and suppressed
-     * exceptions. A cause is read as {@link #causeOf} reads it, so a {@code getCause()} that throws ends that path;
-     * {@code getSuppressed()} is final. Each exception is read once, and at most {@value #MAX_EXCEPTIONS_READ} are,
-     * so a graph with loops of its own, or a {@code getCause()} that returns a new exception every time, ends too.
+     * exceptions, those the engine added included, read as {@link Reach} reads them: one past the
+     * {@value #MAX_EXCEPTIONS_READ} exceptions it reads isn't found.
      *
      * @param from   Where to start
      * @param target What to look for
@@ -198,25 +416,7 @@ public final class Failures {
     // The very same instance: an equal one is another failure.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
     private static boolean reaches(Throwable from, Throwable target) {
-        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        Deque<Throwable> unread = new ArrayDeque<>();
-        unread.push(from);
-        while (!unread.isEmpty() && seen.size() < MAX_EXCEPTIONS_READ) {
-            Throwable t = unread.pop();
-            if (t == target) {
-                return true;
-            }
-            if (seen.add(t)) {
-                Throwable cause = causeOf(t);
-                if (cause != null) {
-                    unread.push(cause);
-                }
-                for (Throwable suppressed : t.getSuppressed()) {
-                    unread.push(suppressed);
-                }
-            }
-        }
-        return false;
+        return new Reach(true, t -> t == target).from(from) != null;
     }
 
     // The very same instance: an equal one is another failure.
@@ -233,10 +433,11 @@ public final class Failures {
     /**
      * Chooses what the caller throws when closing what a failure left behind threw a fatal {@link Error}: a fatal
      * error beats any other failure, and of two fatal errors the first wins. So {@code closeFatal} replaces
-     * {@code failure} only when neither {@code failure} nor any of its causes is fatal (see {@link #fatalError}), and
-     * then carries it as a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal
-     * error that loses was logged when it was caught, and {@code failure}, which the caller throws, carries it as a
-     * suppressed exception (see {@link #keepAlso}).
+     * {@code failure} only when {@code failure} holds no fatal error (see {@link #fatalError}), and then carries it as
+     * a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal error that loses
+     * was logged when it was caught, and the caller throws {@code failure}, which carries it as a suppressed exception
+     * (see {@link #keepAlso}), when its own fatal error is in its cause chain; when that error is only suppressed on
+     * it, the caller throws that error itself, carrying {@code closeFatal}, rather than an exception that carries two.
      *
      * <p>
      * A {@code failure} caused by an interrupt sets the thread's interrupt status again when it's replaced (see
@@ -248,16 +449,28 @@ public final class Failures {
      * @param failure    What was being thrown when the closing began
      * @param closeFatal The fatal error closing threw, or {@code null} if it threw none
      * @return {@code closeFatal}, with {@code failure} added to its suppressed exceptions, or logged if it can't carry
-     *         one, if the caller throws it in place of {@code failure}; otherwise {@code null}, and the caller throws
+     *         one, if the caller throws it in place of {@code failure}; the fatal error suppressed on {@code failure},
+     *         carrying {@code closeFatal}, if the caller throws that; otherwise {@code null}, and the caller throws
      *         {@code failure}, with {@code closeFatal}, if there is one, added to its suppressed exceptions
      */
     static Error fatalInsteadOf(Throwable failure, Error closeFatal) {
         if (closeFatal == null) {
             return null;
         }
-        if (fatalError(failure) != null) {
-            keepAlso(failure, closeFatal);
-            return null;
+        List<Throwable> chain = causeChain(failure);
+        Error fatal = fatalErrorIn(chain);
+        if (fatal != null) {
+            if (fatalIn(chain) != null) {
+                keepAlso(failure, closeFatal);
+                return null;
+            }
+            // Only suppressed on the failure: that error is thrown, not an exception that carries two. The failure
+            // reaches it, so it can't be kept on it, and is logged instead.
+            keepInterruptStatus(failure);
+            keepAlso(fatal, closeFatal);
+            log.warn("A failure was replaced by the fatal error {} suppressed on it: {}", describeWithClass(fatal),
+                    describeWithClass(failure));
+            return fatal;
         }
         keepInterruptStatus(failure);
         closeFatal.addSuppressed(failure);
@@ -299,7 +512,9 @@ public final class Failures {
      * something of its own (see {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
      * {@link #describeWithClass} describes it: {@code (after a nested run() failed: ...)} or
      * {@code (after a nested load() failed: ...)} when what the code that wrapped it started logged it, or else
-     * {@code (caused by ..., already logged)}.
+     * {@code (caused by ..., already logged)} when the error is in the cause chain, or
+     * {@code (with suppressed ..., already logged)} when it's found among the suppressed exceptions of the chain's
+     * links or what they lead to (see {@link #fatalError}).
      * The note is read from what was logged when this is called, so a caller describes what it caught before it asks
      * {@link LoggedFailures#unlogged}, which records a fatal error it's told of.
      *
@@ -307,20 +522,24 @@ public final class Failures {
      * @return A description of the exception for an error message
      */
     static String describe(Throwable e) {
-        Below below = below(e);
+        // Read once, so where the fatal error is and what's around it are told from the same chain.
+        List<Throwable> chain = causeChain(e);
+        Below below = below(chain);
         Throwable logged = below.logged();
         if (logged == null) {
-            Error fatal = fatalError(e);
+            Error fatal = fatalErrorIn(chain);
             LoggedFailures.LoggedAt at = fatal == null ? null : LoggedFailures.loggedAt(fatal);
-            Throwable news = at == null ? null : newsAbove(e, fatal);
+            Throwable news = at == null ? null : newsAbove(chain, fatal);
             if (news != null) {
+                // The error found is in the chain itself whenever the chain holds one, and suppressed on it otherwise.
+                String how = fatalIn(chain) != null ? "caused by " : "with suppressed ";
                 String note = at == LoggedFailures.LoggedAt.NOT_BELOW
-                        ? "caused by " + describeWithClass(fatal) + ", already logged"
+                        ? how + describeWithClass(fatal) + ", already logged"
                         : "after " + nested(at == LoggedFailures.LoggedAt.NESTED_LOAD) + describeWithClass(fatal);
                 return clip(messageOr(news, news.getClass().getName())) + " (" + note + ")";
             }
             String text = clip(messageOr(e, e.getClass().getName()));
-            return text + causeNote(causeChain(e), readableMessage(e));
+            return text + causeNote(chain, readableMessage(e));
         }
         String nested = nested(below.loggedByLoad());
         Throwable news = below.news();
@@ -721,7 +940,16 @@ public final class Failures {
      *         its own, each {@code null} if the chain has none
      */
     static Below below(Throwable e) {
-        List<Throwable> chain = causeChain(e);
+        return below(causeChain(e));
+    }
+
+    /**
+     * Reads a cause chain as {@link #below(Throwable)} reads an exception's.
+     *
+     * @param chain An exception and its causes (see {@link #causeChain})
+     * @return What the chain holds of the engine's own failures
+     */
+    private static Below below(List<Throwable> chain) {
         ReportedFailure innermost = null;
         int innermostAt = -1;
         Error error = null;
@@ -811,21 +1039,43 @@ public final class Failures {
 
     /**
      * Finds what, wrapped around a fatal {@link Error} in what was caught, says something of its own (see
-     * {@link #isNews}), which nothing logged when a nested run logged the error.
+     * {@link #isNews}), which nothing logged when a nested run logged the error. A fatal error suppressed on a link
+     * (see {@link #fatalError}), rather than in the cause chain, is taken for below every link, so the last link, such
+     * as the body's exception a {@code try}-with-resources threw, is news when it says something of its own too. One
+     * found in neither, as a {@code getCause()} that gives a different chain each time it's read leaves it, is taken
+     * for the last link.
      *
      * @param thrown What was caught
-     * @param fatal  The fatal error among its causes (see {@link #fatalError})
+     * @param fatal  The fatal error among its causes, or suppressed on one of them (see {@link #fatalError})
+     * @return The first link from the top above {@code fatal} with a message of its own, or {@code null} if there is
+     *         none
+     */
+    static Throwable newsAbove(Throwable thrown, Error fatal) {
+        return newsAbove(causeChain(thrown), fatal);
+    }
+
+    /**
+     * Finds what says something of its own around a fatal {@link Error} in a cause chain read once, as
+     * {@link #newsAbove(Throwable, Error)} finds it in what was caught.
+     *
+     * @param chain An exception and its causes (see {@link #causeChain}), which isn't changed
+     * @param fatal The fatal error in the chain, or suppressed on a link of it
      * @return The first link from the top above {@code fatal} with a message of its own, or {@code null} if there is
      *         none
      */
     // The very same instance: an equal one is another error.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    static Throwable newsAbove(Throwable thrown, Error fatal) {
-        List<Throwable> chain = causeChain(thrown);
+    private static Throwable newsAbove(List<Throwable> chain, Error fatal) {
         int fatalAt = 0;
         // Bounded by the chain, which a getCause() of its own may not give the same way twice.
         while (fatalAt < chain.size() - 1 && chain.get(fatalAt) != fatal) {
             fatalAt++;
+        }
+        if (chain.get(fatalAt) != fatal && suppressedMatching(chain, t -> t == fatal) != null) {
+            // Suppressed on a link, so below every link.
+            List<Throwable> links = new ArrayList<>(chain);
+            links.add(fatal);
+            return firstNews(links, chain.size(), fatal);
         }
         return firstNews(chain, fatalAt, fatal);
     }

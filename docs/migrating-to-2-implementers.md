@@ -209,7 +209,7 @@ expression and returns still works, and the engine stops the run as soon as the 
 | --- | --- |
 | It can't stop inside an expression, as MVEL can't | Nothing |
 | It loops or calls out, and can check | Return when `context.isCancelled()` is `true`, or use `context.timeLeft()` (from 2.9.0; before, `context.deadline()`) to bound a call of your own |
-| It throws once the run is cancelled | Nothing: that stops the run, unless an `Error` is anywhere in the cause chain of what it threw, even wrapped in your own exception; then it is still that rule's failure |
+| It throws once the run is cancelled | Nothing: that stops the run, unless an `Error` is anywhere in the cause chain of what it threw, even wrapped in your own exception, or suppressed on it or a cause; then it is still that rule's failure |
 | Its runtime clears the thread's interrupt when it cancels, as JEXL's `cancellable(true)` does | When an interrupt caused the cancel, either call `Thread.currentThread().interrupt()` before you throw or return, or throw with an `InterruptedException` in the cause chain. When your adapter cancelled it for the run's deadline, restore nothing |
 
 Do neither and, unless the deadline has passed too, the engine sees no interrupt: a throw is reported as that rule's

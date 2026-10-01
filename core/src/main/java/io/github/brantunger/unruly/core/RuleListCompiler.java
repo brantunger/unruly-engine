@@ -289,8 +289,8 @@ final class RuleListCompiler {
     /**
      * Makes the exception for a rejected rule list or a failure to compile, for the caller to log and throw. An
      * interrupt in {@code cause} sets the thread's interrupt status again. A fatal {@link Error} in {@code cause}'s
-     * cause chain (see {@link Failures#fatalError}) is logged at ERROR here instead, unless a run the language started
-     * logged it, and rethrown.
+     * cause chain, or suppressed on it (see {@link Failures#fatalError}), is logged at ERROR here instead, unless a
+     * run the language started logged it, and rethrown.
      *
      * @param msg      What failed, naming the rule or the language
      * @param cause    What the expression language threw, or {@code null}

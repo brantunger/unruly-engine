@@ -1140,8 +1140,8 @@ final class RuleSet {
      * ERROR first, unless it's the failure of a {@code run()} or a {@code load()} the language started, which that
      * run or load logged, or a fatal error that run logged, unless the language wrapped it in an exception with a
      * message of its own (see {@link LoggedFailures}). A fatal {@link Error}, thrown or found among the causes of what
-     * the language throws, is then rethrown unchanged. No listener is told: no callback has been sent for the run
-     * yet.
+     * the language throws or suppressed on them (see {@link Failures#fatalError}), is then rethrown unchanged. No
+     * listener is told: no callback has been sent for the run yet.
      */
     private static Session newSession(String language, ExpressionCompiler compiler) {
         String failed = "The '" + Failures.quote(language) + "' expression language ";
