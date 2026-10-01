@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.20.0](https://github.com/brantunger/unruly-engine/compare/v2.19.0...v2.20.0) (2026-10-01)
+
+
+### Features
+
+* runScopedClosing keeps a value for one run and closes it when the run ends ([#902](https://github.com/brantunger/unruly-engine/issues/902)) ([47fe3ab](https://github.com/brantunger/unruly-engine/commit/47fe3aba02e1846cb12814161c1469ea4af35333))
+
 ## [2.19.0](https://github.com/brantunger/unruly-engine/compare/v2.18.1...v2.19.0) (2026-10-01)
 
 
