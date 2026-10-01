@@ -277,7 +277,7 @@ final class RuleListCompiler {
     private List<RuleCompilationException> declaredNameFailures(Map<String, ExpressionCompiler> checks) {
         List<RuleCompilationException> failures = new ArrayList<>();
         for (String name : declaredFacts.keySet()) {
-            IllegalArgumentException rejected = AbstractRulesEngine.factNameRejection(name, checks, false);
+            IllegalArgumentException rejected = FactIntake.factNameRejection(log, name, checks, false);
             if (rejected != null) {
                 failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
                         + Failures.describe(rejected), rejected, null));
