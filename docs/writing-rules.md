@@ -106,8 +106,8 @@ without side effects. In MVEL, these are rejected by `load()`:
 
 ### Actions change the output
 
-- **Local variables stay local.** A variable an action declares is visible only inside that action. Other rules still
-  see the original facts.
+- **Local variables stay local.** A variable an action declares is visible only inside that action, as in MVEL, or
+  until the run ends in a language that documents it; never in another run. Other rules still see the original facts.
 - **Change `output`; don't replace it.** An action changes the output object in place, or returns properties for the
   engine to set on it. It can't put another object in its place. In MVEL, see
   [Mostly in actions](languages/mvel.md#mostly-in-actions).

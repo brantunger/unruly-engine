@@ -437,6 +437,7 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 | A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |
 | `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw. The kit's `sessionClosedWhileAnotherRuns` fails either; `sessionsClosed` and `sessionClosedOnAnotherThread` fail a throw |
 | Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, which may fail, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), or restore it in a `finally`, as the kit's [nested-run checks](contract-kit.md#-testing-with-the-contract-kit) require |
+| Built-in objects and globals the runs share | An action's change there mustn't reach a later run: refuse it at load, fail it before it changes anything, or keep it to the run, as `sharedStateStaysLocal` checks |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
 `newSession()` creates a session for each [compiled copy](../glossary.md#compiled-copy) of the rules, and every
@@ -473,11 +474,8 @@ the copies are still made. MVEL compiles every condition and action into the ses
   loaded before stay loaded, and the failed load's sessions and compilers are closed. A fatal error is logged and
   rethrown unchanged.
 
-A fatal error from closing a failed load's sessions and compilers wins over the load's own failure (a
-`RuleCompilationException`, or the `IllegalStateException` of an engine closed while it compiled), which it keeps in
-`getSuppressed()` unless it can't keep one; see
-[A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing). If the load itself failed with a
-fatal error, that one came first and is thrown, with the one from closing, logged at WARN, in its `getSuppressed()`.
+For a fatal error from closing a failed load's sessions and compilers, see
+[A fatal error while closing](../error-handling.md#-a-fatal-error-while-closing).
 
 ## 📦 Packaging
 

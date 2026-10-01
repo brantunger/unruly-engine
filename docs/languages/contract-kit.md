@@ -85,13 +85,12 @@ without versions. Unlike Maven, Gradle raises a lower version written on one of 
 
 The kit is built with JUnit Jupiter 6, and brings `unruly-engine-core` and `junit-jupiter-api`. A Gradle build still
 needs the rest: a JUnit test engine to run the checks, the JUnit Platform launcher to start it, and
-`useJUnitPlatform()`, because a Gradle `Test` task runs JUnit 4 unless it is told otherwise, and without that setting
-the checks never run. With Maven and Surefire 3.5.4, Surefire supplies the test engine, so the block above is enough,
-unless your main code is a named module: then see
-[A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven).
+`useJUnitPlatform()`, because without it a Gradle `Test` task runs JUnit 4, and the checks never run. With Maven
+and Surefire 3.5.4, Surefire supplies the test engine, so the block above is enough, unless your main code is a named
+module: then see [A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven).
 
 `ExpressionLanguageContractTest` checks the promises [Writing an expression language](custom.md) describes for any
-language. Extend it and supply expressions in your language, one method for each hook. Its twenty-six checks:
+language. Extend it and supply expressions in your language, one method for each hook. Its twenty-seven checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -101,7 +100,8 @@ language. Extend it and supply expressions in your language, one method for each
 | `conditionAssignmentRejected` | `assignment`, `putFact` | `assignment()` returns `null` | `load()` or two `run()`s throw, naming the rule and `CONDITION` |
 | `conditionWritesRejected` | `propertyAssignment`, `conditionDeclaration`, `putFact` | Both return `null`; each part is skipped by its own `null` | A condition that sets a property of `applicant`, a map and a `WritableApplicant`, and one that declares `z`, each make `load()` or two `run()`s throw, naming the rule and `CONDITION`, and `applicant` is unchanged |
 | `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or two `run()`s throw, the second naming the rule and `ACTION` |
-| `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact`, `putVariable`, `variableEquals` | `declareVariable()` returns `null` | A later rule still sees the fact's value, the run that declares `y` while `y` is a fact doesn't throw, and no later rule, nor a later run's condition or action, sees the declared variable |
+| `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact`, `putVariable`, `variableEquals`, `actionVariablesLastTheRun` | `declareVariable()` returns `null` | A later rule still sees the fact's value, the run that declares `y` while `y` is a fact doesn't throw, no later run's condition or action sees the declared variable, and a later rule in the same run doesn't, or must if `actionVariablesLastTheRun()` returns `true` |
+| `sharedStateStaysLocal` | `factEquals`, `changeSharedState`, `sharedStateEquals`, `putFact` | `changeSharedState()` returns `null` | `load()` refuses the changing action, or `sharedStateEquals` is false before the change and in a later run, even when the action fails |
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
 | `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
@@ -122,12 +122,14 @@ language. Extend it and supply expressions in your language, one method for each
 | `nestedRunFailsInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still fires its rule |
 | `nestedRunFailsInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still gets the action's value |
 
-Only the eleven `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
+Only the thirteen `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
 `unusableFactName`, `missingFactProperty`, `copyThroughVariable`, `putFactProperty`, `propertyAssignment`,
-`conditionDeclaration`, `declareVariableThenFail` and `bothConditions`.
+`conditionDeclaration`, `declareVariableThenFail`, `bothConditions`, `changeSharedState` and `sharedStateEquals`.
 
 - `comparesWholeNumbersByValue()` skips its check by returning `false`, and `usableFactNames()` by returning an empty
   collection.
+- `sharedStateEquals()` must be false, not throw, until an action changes the state, and not `null` once
+  `changeSharedState()` isn't.
 - A language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`, not a syntax
   error.
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
@@ -142,8 +144,7 @@ condition checks read `nest.value`, which starts the nested run, then `x`, which
 thread. A language that evaluates the right side first isn't checked. The nested-run checks run on a thread of their
 own, so per-thread state left there can't reach later checks.
 
-`usableFactNamesAccepted` runs each name `usableFactNames()` returns through `factEquals` and `putFact`. Return the
-names your `checkFactName` might wrongly reject, such as `credit_score2`.
+For `usableFactNamesAccepted`, return the names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
@@ -152,12 +153,12 @@ closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `
 
 `sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
 `maxCopies(1)`, so a run nested in another gets an extra copy. `conditionDetail`, `failedActionVariablesStayLocal`,
-the later-run parts of `actionVariablesStayLocal`, `conditionAssignmentRejected`, `conditionWritesRejected`,
-`outputNotReplaceable` and `missingPropertyFailsTheRun` add the same two, so each later run gets the copy, and the
-sessions, the run before it used.
+`sharedStateStaysLocal`, the later-run parts of `actionVariablesStayLocal`, `conditionAssignmentRejected`,
+`conditionWritesRejected`, `outputNotReplaceable` and `missingPropertyFailsTheRun` add the same two, so each later run
+gets the copy, and the sessions, the run before it used.
 
-`compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks, `sessionsClosed`,
-`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`, wrap your language to watch its compiler or
+`compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks (`sessionsClosed`,
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`) wrap your language to watch its compiler or
 sessions. The wrappers forward `warmUp`, so copies made at load warm up as they do without the kit.
 
 `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
@@ -174,8 +175,8 @@ shares one copy, calls `newSession()` once and warms nothing up. A `null` from `
 engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, and at the first run in
 `conditionDetail`, `concurrentRuns`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
 
-`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too: it has no
-session to close, though both checks still compare output.
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too, with no
+session to close, though both still compare output.
 
 In `sessionClosedWhileAnotherRuns`, a listener starts a nested run. The check's run holds the only kept copy, so the
 nested run gets an [extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run
@@ -193,8 +194,7 @@ read-only `facts()`, or by evaluating to the assigned value, not a boolean. A co
 `true` or `false` without throwing fails the check. A failed run must fail again, with a `RuleExecutionException`
 naming the rule and `CONDITION`, or `ACTION`.
 
-`conditionWritesRejected` also fails if the property write changed `applicant`, even when the condition was rejected.
-The variable it declares, `z`, isn't a fact: don't declare it in `configure`.
+The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
 
 `evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
 evaluates it in a session of its own. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
@@ -251,4 +251,4 @@ without an engine with `LanguageTestContexts`, and the setting a named module ne
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
 | **A named main module, with Maven** | `LanguageTestContexts` and `evaluateAgreesWithDetail` throw `IllegalAccessError`, because the kit is on the class path | Add `--add-exports` to Surefire's `argLine`; see [A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven) |
-| **An older kit or third-party language declared first, with Maven** | Unless the POM imports the BOM or declares `unruly-engine-core` itself, Maven takes core's version from the first of them, so a newer `unruly-engine` runs on the older core | Import `unruly-engine-bom` whenever anything brings in `unruly-engine-core`, and drop the modules' versions; without a BOM, declare `unruly-engine` first, keep the versions equal, or pin `unruly-engine-core`. See [Testing with the contract kit](#-testing-with-the-contract-kit) |
+| **An older kit or third-party language declared first, with Maven** | Maven may take core's version from it, so a newer `unruly-engine` runs on the older core | Import `unruly-engine-bom`; see [Testing with the contract kit](#-testing-with-the-contract-kit) |

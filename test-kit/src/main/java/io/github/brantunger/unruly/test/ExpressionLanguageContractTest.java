@@ -111,6 +111,12 @@ public abstract class ExpressionLanguageContractTest {
     /** The rule the variable checks declare their variable in. */
     private static final String DECLARES = "declares";
 
+    /** The rule that reads what an earlier rule, or an earlier run, may have left behind. */
+    private static final String READS = "reads";
+
+    /** The rule {@code sharedStateStaysLocal} changes the language's shared state in. */
+    private static final String CHANGES = "changes";
+
     /** The fact whose getter starts a nested run, and the property of it the nested-run checks read. */
     private static final String NEST = "nest";
     private static final String NEST_VALUE = "value";
@@ -293,6 +299,22 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Whether a variable an action declares lasts until the end of the run, so that a later rule's action in the same
+     * run reads it, as in a language that keeps each run's variables with
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#runScoped}. By default, {@code false}: a
+     * variable stays local to the action that declares it. Returning {@code true} turns one part of
+     * {@code actionVariablesStayLocal} around: a later rule in the same run must read the variable, so the check fails
+     * when {@code load()} refuses that rule, when it fails the run, or when it reads anything but the variable's value.
+     * The rest of the check is unchanged: the variable still mustn't change the facts later actions see, and no later
+     * run may read it.
+     *
+     * @return Whether an action's variables last the run
+     */
+    protected boolean actionVariablesLastTheRun() {
+        return false;
+    }
+
+    /**
      * Returns an action that assigns a new object to the output.
      *
      * @return The action, or {@code null} if the language's actions can't assign anything, as for a language that
@@ -415,6 +437,40 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Returns an action that changes state the language keeps outside a run's variables and shares between runs, such
+     * as a property of a built-in object, as {@code Math.discount = 50} is in JavaScript, or a global, setting what
+     * {@code name} refers to to {@code value}. {@code sharedStateStaysLocal} checks that a later run doesn't see the
+     * change: the language may refuse the action when it loads the rule, fail it when it runs before it changes
+     * anything, or keep the change to the run. An action that fails after the change is checked as one that succeeds.
+     * By default, {@code null}.
+     *
+     * @param name  The name of the state to change
+     * @param value The value to set it to
+     * @return The action, or {@code null} if the language's actions can reach no state shared between runs, which
+     *         skips the check
+     */
+    protected @Nullable String changeSharedState(String name, int value) {
+        return null;
+    }
+
+    /**
+     * Returns a condition that is true when the shared state {@link #changeSharedState} changes holds {@code value},
+     * and false, without failing, while it doesn't. {@code sharedStateStaysLocal} evaluates it in a run before any
+     * action changes the state, in the run whose action makes the change, before that action runs, and in a later
+     * run. The check fails when it fails any of those runs, or is true in the run before the change. It must read the
+     * state the action writes: a condition that is never true passes the check whatever the language shares. By
+     * default, {@code null}.
+     *
+     * @param name  The name of the state to read
+     * @param value The value to compare it with
+     * @return The condition, or {@code null} if {@link #changeSharedState} returns {@code null} too: with that hook
+     *         overridden, the check fails on a {@code null} here rather than skip
+     */
+    protected @Nullable String sharedStateEquals(String name, int value) {
+        return null;
+    }
+
+    /**
      * Configures each engine the checks build, for a language that needs what the builder carries to compile its
      * expressions: declared facts, imports or options of its own. By default, nothing. It's called once for each
      * engine, after the kit has started an {@code allMatches} engine whose output is a {@link HashMap}, and added the
@@ -465,15 +521,15 @@ public abstract class ExpressionLanguageContractTest {
      * {@code maxCopies(1)} after this, so that a run nested in another gets an extra copy, and a limit set here doesn't
      * change it either; {@code concurrentRuns} sets none, so a limit set here caps the copies, and the sessions, its
      * runs get. The checks that look at what a run leaves for a later one, {@code actionVariablesStayLocal} in its
-     * parts with a later run, {@code failedActionVariablesStayLocal} and {@code conditionDetail}, and those that run a
-     * rejected rule a second time, {@code conditionAssignmentRejected}, {@code conditionWritesRejected},
-     * {@code outputNotReplaceable} and {@code missingPropertyFailsTheRun}, set {@code maxCopies(1)} and
-     * {@code copiesAtLoad(0)} after this, so that each run gets the one copy, and its sessions, that the run before it
-     * used: with two copies made when the rules load, a later run would get the other one. Listeners that don't
-     * change the output may be added: the engine only logs what a listener throws, unless it's a fatal
-     * {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks compare.
-     * {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead: a
-     * language that overrides both keeps them consistent.
+     * parts with a later run, {@code failedActionVariablesStayLocal}, {@code sharedStateStaysLocal} and
+     * {@code conditionDetail}, and those that run a rejected rule a second time, {@code conditionAssignmentRejected},
+     * {@code conditionWritesRejected}, {@code outputNotReplaceable} and {@code missingPropertyFailsTheRun}, set
+     * {@code maxCopies(1)} and {@code copiesAtLoad(0)} after this, so that each run gets the one copy, and its
+     * sessions, that the run before it used: with two copies made when the rules load, a later run would get the other
+     * one. Listeners that don't change the output may be added: the engine only logs what a listener throws, unless
+     * it's a fatal {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks
+     * compare. {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead:
+     * a language that overrides both keeps them consistent.
      * </p>
      *
      * @param builder The builder of an engine a check is about to build
@@ -873,15 +929,15 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a variable an action declares doesn't change the facts later actions see, and no later rule or run"
-            + " reads it")
+    @DisplayName("a variable an action declares doesn't change the facts later actions see, and no later run reads it,"
+            + " nor a later rule unless the language's variables last the run")
     void actionVariablesStayLocal() throws Exception {
         String declare = declareVariable("x", 2);
         assumeTrue(declare != null, "the language's actions have no variables");
         closing(engine(), engine -> {
             engine.load(List.of(
                     rule(DECLARES, 2, alwaysTrue(), declare),
-                    rule("reads", 1, alwaysTrue(), putFact(SEEN, "x"))));
+                    rule(READS, 1, alwaysTrue(), putFact(SEEN, "x"))));
 
             assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
             assertSameOutput(Map.of(SEEN, 3), engine.run(new FactMap<>(new Fact<>("x", 3))));
@@ -890,15 +946,21 @@ public abstract class ExpressionLanguageContractTest {
         // A variable that isn't a fact: a language that keeps it in the session, and reads the facts first, passes
         // the check above, and still hands it to every later rule and run. Reading it may fail the load or the run,
         // or read as null, as a JsonLogic-style language reads a name it doesn't know; anything but its value passes.
-        // One copy of the rules, so that the later run gets the session the earlier one used.
+        // A language whose variables last the run must instead hand it to the later rule in the same run, and only
+        // to that one. One copy of the rules, so that the later run gets the session the earlier one used.
         String declareOther = Objects.requireNonNull(declareVariable("y", 2),
                 "declareVariable() returned null for 'y', but not for 'x'");
+        boolean lastTheRun = actionVariablesLastTheRun();
         closing(oneCopyEngine(language()), engine -> {
             try {
                 engine.load(List.of(
                         rule(DECLARES, 2, factEquals("x", 1), declareOther),
-                        rule("reads", 1, alwaysTrue(), putVariable(SEEN, "y"))));
+                        rule(READS, 1, alwaysTrue(), putVariable(SEEN, "y"))));
             } catch (UnrulyException e) {
+                if (lastTheRun) {
+                    throw new AssertionFailedError("actionVariablesLastTheRun() returns true, but load() refused the"
+                            + " rule that reads the variable 'y' an earlier rule's action declares: " + describe(e), e);
+                }
                 // The language refuses a name that isn't a fact when it compiles the rule.
                 return;
             }
@@ -907,10 +969,19 @@ public abstract class ExpressionLanguageContractTest {
                 try {
                     output = engine.run(new FactMap<>(new Fact<>("x", x)));
                 } catch (UnrulyException e) {
+                    if (lastTheRun && x == 1) {
+                        throw new AssertionFailedError("actionVariablesLastTheRun() returns true, but the run in which"
+                                + " a later rule reads the variable 'y' an action declared failed: " + describe(e), e);
+                    }
                     // The rule that reads it failed: the variable isn't there.
                     continue;
                 }
-                if (output != null && sameValue(2, output.get(SEEN))) {
+                if (lastTheRun && x == 1) {
+                    if (output == null || !sameValue(2, output.get(SEEN))) {
+                        fail("actionVariablesLastTheRun() returns true, but a later rule in the same run didn't read"
+                                + " the variable 'y' an action declared: " + output);
+                    }
+                } else if (output != null && sameValue(2, output.get(SEEN))) {
                     fail(x == 1
                             ? "a later rule read the variable 'y' an action declared: " + output
                             : "a later run read the variable 'y' an action declared in an earlier one, although the"
@@ -962,7 +1033,7 @@ public abstract class ExpressionLanguageContractTest {
             try {
                 engine.load(List.of(
                         rule(DECLARES, 2, factEquals("x", 1), declare),
-                        rule("reads", 1, alwaysTrue(), putVariable(SEEN, "y"))));
+                        rule(READS, 1, alwaysTrue(), putVariable(SEEN, "y"))));
             } catch (UnrulyException e) {
                 // The language refuses a name that isn't a fact when it compiles the rule.
                 return;
@@ -982,6 +1053,95 @@ public abstract class ExpressionLanguageContractTest {
                 fail("a later run read the variable 'y' that a failed action declared: " + output);
             }
         });
+    }
+
+    /**
+     * Changes state the language shares between runs, such as a built-in object or a global, in one run, and checks
+     * that a later run doesn't see the change: a language whose runs share a runtime that isn't sealed leaves it for
+     * every later run, and a rule fires there although nothing in its run set what it reads. The language may refuse
+     * the change when it loads the rule, or keep it from later runs: by failing the action before it changes anything,
+     * as a sealed runtime does, or by keeping the change to its run. An action that fails after the change is checked
+     * as one that succeeds. A run before the change, in which the rule that makes it doesn't fire, checks first that
+     * {@link #sharedStateEquals} is false while nothing has changed the state. Skipped when {@link #changeSharedState}
+     * returns {@code null}.
+     */
+    @Test
+    @DisplayName("what an action changes in state the language shares between runs, such as a built-in object or a"
+            + " global, isn't seen by a later run")
+    void sharedStateStaysLocal() throws Exception {
+        String change = changeSharedState("leak", 1);
+        assumeTrue(change != null, "the language's actions can reach no state shared between runs");
+        String equals = Objects.requireNonNull(sharedStateEquals("leak", 1),
+                "sharedStateEquals() returned null, but changeSharedState() didn't");
+        // One copy of the rules, so that the later run gets the sessions, and whatever runtime they hold, that the
+        // earlier one used.
+        closing(oneCopyEngine(language()), engine -> {
+            try {
+                engine.load(List.of(
+                        rule(CHANGES, 2, factEquals("x", 1), change),
+                        rule(READS, 1, equals, putFact(SEEN, "x"))));
+            } catch (RuleCompilationException e) {
+                if (names(CHANGES, ExpressionKind.ACTION, e.getRuleName(), e.getExpressionKind())) {
+                    // The language refuses the change when it compiles the rule.
+                    return;
+                }
+                failIfTheReadFailed("load() refused the rule that reads it", e.getRuleName(), e.getExpressionKind(),
+                        e);
+                throw e;
+            }
+            // A run in which the rule that changes the state doesn't fire: the condition that reads it must be false.
+            Map<String, Object> before;
+            try {
+                before = engine.run(new FactMap<>(new Fact<>("x", 0)));
+            } catch (RuleExecutionException e) {
+                failIfTheReadFailed("the run before any change failed", e.getRuleName(), e.getExpressionKind(), e);
+                throw e;
+            }
+            if (before != null && before.containsKey(SEEN)) {
+                fail("sharedStateEquals() was true before any action changed the language's shared state, or an"
+                        + " earlier engine left it changed: " + before);
+            }
+            try {
+                engine.run(new FactMap<>(new Fact<>("x", 1)));
+            } catch (RuleExecutionException e) {
+                // An action that fails may have changed the state before it failed, so the later run still looks.
+                if (!names(CHANGES, ExpressionKind.ACTION, e.getRuleName(), e.getExpressionKind())) {
+                    failIfTheReadFailed("the run that changes it failed", e.getRuleName(), e.getExpressionKind(),
+                            e);
+                    throw e;
+                }
+            }
+            Map<String, Object> output;
+            try {
+                output = engine.run(new FactMap<>(new Fact<>("x", 2)));
+            } catch (RuleExecutionException e) {
+                failIfTheReadFailed("the later run failed", e.getRuleName(), e.getExpressionKind(), e);
+                throw e;
+            }
+            if (output != null) {
+                fail("a later run's condition saw what an earlier run's action changed in the language's shared"
+                        + " state: " + output);
+            }
+        });
+    }
+
+    /** Whether a failure names the rule and the kind of expression given first. */
+    private static boolean names(String rule, ExpressionKind kind, @Nullable String failedRule,
+                                 @Nullable ExpressionKind failedKind) {
+        return rule.equals(failedRule) && kind == failedKind;
+    }
+
+    /**
+     * Fails {@code sharedStateStaysLocal} when what failed is the condition from {@link #sharedStateEquals}, which must
+     * be false, not fail, while the state doesn't hold its value. Anything else that failed, the check didn't expect,
+     * and its caller rethrows.
+     */
+    private static void failIfTheReadFailed(String what, @Nullable String failedRule,
+                                            @Nullable ExpressionKind failedKind, UnrulyException e) {
+        if (names(READS, ExpressionKind.CONDITION, failedRule, failedKind)) {
+            throw new AssertionFailedError("sharedStateEquals() must be false, not fail, while the shared state doesn't"
+                    + " hold its value, but " + what + ", naming its condition: " + describe(e), e);
+        }
     }
 
     @Test
