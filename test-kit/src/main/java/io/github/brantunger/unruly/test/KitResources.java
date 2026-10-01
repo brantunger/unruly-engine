@@ -75,7 +75,16 @@ final class KitResources {
      * Closes a session or a compiler, ignoring what its {@code close()} throws that the engine only logs. A fatal
      * {@link Error} (see {@link KitFailures#isFatal}) is thrown on.
      *
-     * @param resource The session or compiler
+     * <p>
+     * {@code evaluateAgreesWithDetail} also wraps the end of each of its runs in one: a {@code close()} that calls
+     * {@link LanguageTestContexts#endRun}, as the engine ends a run. So a value the language kept for the run with
+     * {@code runScopedClosing}, whose {@code close()} throws what the engine only logs, doesn't fail the check, and
+     * one that throws a fatal error fails it with that error, as the engine throws it from {@code run()}. Only what
+     * {@code endRun} throws is looked at, not what it carries: a fatal error suppressed on another value's failure is
+     * ignored, where the engine would throw it.
+     * </p>
+     *
+     * @param resource The session or compiler, or the end of a run
      * @param <T>      Its type
      */
     record ClosedQuietly<T extends AutoCloseable>(T resource) implements AutoCloseable {
@@ -88,7 +97,7 @@ final class KitResources {
                 resource.close();
             } catch (Throwable e) {
                 // Logged by the engine, not thrown. Whether it throws is the session and compiler checks' question,
-                // not this one's.
+                // not this one's; a run's values have no check of their own.
                 KitFailures.rethrowIfFatal(e);
             }
         }

@@ -1,8 +1,7 @@
 # 🚨 Error handling
 
-The engine throws its own exceptions for rule problems and standard JDK exceptions for misuse of the API.
-[Exceptions by method](exceptions-by-method.md) lists what each method throws, and when. Starting from a symptom or a
-message? [Troubleshooting](troubleshooting.md) maps each one to the section that explains it.
+The engine throws its own exceptions for rule problems and standard JDK exceptions for misuse of the API. Starting
+from a symptom or a message? [Troubleshooting](troubleshooting.md) maps each one to the section that explains it.
 
 [← Documentation index](README.md)
 
@@ -60,8 +59,8 @@ reports it as the cause of a `RuleCompilationException`.
 
 ## 📋 Exceptions by method
 
-[Exceptions by method](exceptions-by-method.md) lists what each method throws, and when, and what the engine does with
-the text of an exception.
+[Exceptions by method](exceptions-by-method.md) lists what each method throws, and when, and how the engine treats
+exception text.
 
 ## 🔍 Caught when loading or only when running?
 
@@ -120,7 +119,8 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from `onError`, closing a failure that is fatal itself | The failure's own error; it and the reported exception keep the first other one a listener threw in `getSuppressed()`, and that one keeps any later ones that don't already carry it | Every listener gets `onError`, then `onRunError` | The failure's own ERROR line, then `Listener threw exception in onError, kept on the failure: <class>: <message>` at WARN, unless a nested run logged it, with the [root-cause note](exceptions-by-method.md) when it applies; when it wrapped a fatal error a [nested run](nested-runs.md#-what-is-logged) logged, its wrapper at ERROR instead |
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
 | A fatal error from `onRunError` | That error, in place of what the run failed with, which it keeps in `getSuppressed()` | Every listener gets `onRunError` | ERROR |
-| A fatal error from closing copies, sessions or compilers as the run leaves; see [A fatal error while closing](#-a-fatal-error-while-closing) | The error itself, even when the run succeeded, in place of a run failure that isn't fatal | Nothing more: listeners already got `afterRun` or `onRunError`, if the run reached them | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| A fatal error from closing copies, sessions, compilers or [`runScopedClosing`](languages/custom.md#-reading-facts) values as the run leaves; see [A fatal error while closing](#-a-fatal-error-while-closing) | The error itself, even when the run succeeded, in place of a run failure that isn't fatal; a fatal run failure wins | Nothing more: listeners already got `afterRun` or `onRunError`, if the run reached them | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
+| A `runScopedClosing` value's `close()` throws anything but a fatal error | Nothing: the run's outcome stands | Nothing more | WARN, unless a nested run logged it |
 | The thread has too little stack left; see [Exceptions by method](exceptions-by-method.md) | `StackOverflowError`, before the run takes anything | Nothing | Not logged |
 | `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](exceptions-by-method.md) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 
@@ -171,8 +171,10 @@ fatal error from them, carrying the others. If nothing was fatal, a failure that
 running out of stack in the engine's own steps can, is logged at WARN, and the next `load()` or `close()` tries again.
 `close()` throws either, and a second `close()` finishes the job.
 
-A run throws it too, even when its rules ran without failing: from closing an extra copy it gives back, a copy that
-couldn't be kept, a copy of retired rules that no waiting run needs, or the sessions of a copy only partly made.
+A run throws it too, even when its rules ran without failing: from closing its `runScopedClosing` values, an extra
+copy it gives back, a copy that couldn't be kept, a copy of retired rules that no waiting run needs, or the sessions
+of a copy only partly made. The engine's own clean-up failing with something that isn't fatal, as running out of
+stack can, is thrown the same way.
 
 `load()` and `close()` close only the copies that were idle when they retired the rules. A copy given back later is
 kept only while a run is waiting for one, and the last run to leave, even one whose borrow failed or was stopped,
@@ -215,24 +217,21 @@ try {
 - **Tell a stop from a failure by its cause.** A stopped run's exception names no rule and has an
   `InterruptedException` or `TimeoutException` cause.
 - **A bug near the deadline is usually reported as a stop.** Why what the rule returned was wrong, or what it threw
-  with no `Error` in its cause chain or suppressed there, is only in `getSuppressed()`. A throw with an `Error` there
-  stays that rule's failure instead; see
+  with no `Error` in its cause chain or suppressed there, is only in `getSuppressed()`; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).
 - **All-matches runs aren't atomic.** Actions that ran before the failing one keep their changes to the output object
   and to any facts they modified. Discard the output object when `run()` throws.
 - **A failed reload is safe.** If `load()` throws, the engine keeps the rules it had before, unless it's a
   [fatal error from closing](#-a-fatal-error-while-closing) the replaced rules, after the swap.
 - **Failures are already logged.** The engine logs each one at ERROR before throwing, except a run stopped by an
-  interrupt or a deadline, and a fatal error from closing sessions or compilers, which are logged at WARN; see
+  interrupt or a deadline, and a failure to close, which are logged at WARN; see
   [Logging setup](listeners-and-logging.md#-logging-setup). The message can contain fact values, copied from the
   exception a rule caused, such as `For input string: "123-45-6789"`. With sensitive facts, turn off the
   `io.github.brantunger.unruly` logger and log a redacted form yourself.
 - **Listeners hear about it first.** When a condition or action fails, `onError` and then `onRunError` receive the
-  same exception before `run()` throws it. A failing output supplier and a rejected fact name don't reach `onError`,
-  because no rule is involved, but they do reach `onRunError`. An expression language that fails to create a session
-  fails the run before `beforeRun`, so no listener hears about it. The same goes for a fact store's `asMap()` or a
-  fact's `getValue()` that throws, which isn't logged either; see
-  [Implementing FactStore](facts.md#-implementing-factstore).
+  same exception before `run()` throws it; [the table](#-what-happens-on-each-failure) shows the failures
+  that skip `onError` or every listener. A fact store's `asMap()` or a fact's `getValue()` that throws reaches no
+  listener and isn't logged; see [Implementing FactStore](facts.md#-implementing-factstore).
 - **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or expression language throws an
   exception caused by an `InterruptedException`, the engine sets the interrupt status again; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).

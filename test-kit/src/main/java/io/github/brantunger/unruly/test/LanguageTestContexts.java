@@ -21,7 +21,8 @@ import java.util.Set;
  * implementations, and behave as they do in a run: for example, writing to the facts fails with the engine's message.
  * Each context from {@code evaluation} or {@code action} is for a run of its own, so the values it keeps with
  * {@link EvaluationContext#runScoped} aren't shared with another context; {@link #actionInRun} creates one in the run
- * of another context, and shares its values.
+ * of another context, and shares its values. No run ends by itself, so {@link #endRun} closes the values a context
+ * keeps with {@link EvaluationContext#runScopedClosing}, as the end of a run does.
  *
  * <p>
  * To check a language against everything the engine promises for its rules, extend
@@ -224,5 +225,27 @@ public final class LanguageTestContexts {
      */
     public static ActionContext actionInRun(EvaluationContext sameRun, Object output) {
         return new EngineActionContext(sameRun, output);
+    }
+
+    /**
+     * Ends the run of a context, as the engine ends a run: closes the values the run keeps with
+     * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, so a language's test can
+     * check that it releases what it opened for the run. Every value is closed, whatever the others throw, and from
+     * then on asking for one with {@code runScopedClosing}, through any context of the run, throws
+     * {@link IllegalStateException}, as it does once a run has ended. Calling it again does nothing.
+     *
+     * <p>
+     * It differs from a run in one way: a run logs what a {@code close()} throws at WARN, and throws only a fatal
+     * {@link Error}, but this throws whatever was thrown, so the test sees it.
+     * </p>
+     *
+     * @param context A context of the run, created by this class, such as with {@link #evaluation(Map)}
+     * @throws NullPointerException if {@code context} is {@code null}
+     * @throws Exception            the first {@link Throwable} a value's {@code close()} threw, as it is, with what
+     *                              the others threw suppressed on it, each once, leaving out any that it already
+     *                              carries or that carries it
+     */
+    public static void endRun(EvaluationContext context) throws Exception {
+        EngineEvaluationContext.endRun(context);
     }
 }

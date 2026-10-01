@@ -197,7 +197,8 @@ naming the rule and `CONDITION`, or `ACTION`.
 The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
 
 `evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
-evaluates it in a session of its own. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
+evaluates it in a session of its own, ending each fact's run with `LanguageTestContexts.endRun` before the session
+closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
 that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
 language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
 
@@ -246,8 +247,8 @@ lists, for each version, the checks added or made stricter, and the defect each 
 
 ### Beyond the kit
 
-[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, testing a compiler
-without an engine with `LanguageTestContexts`, and the setting a named module needs with Maven.
+[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, `LanguageTestContexts`,
+and a named module with Maven.
 
 ## 🚧 Gotchas
 

@@ -59,7 +59,8 @@ context to each action.
 
 A [session](custom.md#-thread-safety) serves one run at a time and later runs reuse it, and no call marks where a
 run starts or ends, so state a run leaves in a session is still there for the next run. State for one run belongs in
-[`runScoped`](custom.md#-reading-facts). A map keyed on contexts must not keep them alive, as a `WeakHashMap` doesn't.
+[`runScoped`](custom.md#-reading-facts), or `runScopedClosing` for a resource. A map keyed on contexts must not keep
+them alive, as a `WeakHashMap` doesn't.
 
 ```java
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
@@ -99,6 +100,20 @@ EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1));
 ActionContext action = LanguageTestContexts.actionInRun(evaluation, new HashMap<String, Object>());
 
 assertSame(evaluation.runScoped("key", Object::new), action.runScoped("key", Object::new));
+```
+
+No engine runs in these tests, so nothing closes a context's `runScopedClosing` values for you. Since 2.20.0,
+`endRun(context)` closes them as a run's end would, newest first, but rethrows the first failure, so your test sees
+a `close()` that throws. Each other failure is in its `getSuppressed()` once, unless it already carries the first or
+the first carries it. A second call does nothing. After it, `runScopedClosing` throws `IllegalStateException`
+through any context of that run, as after a real run.
+
+```java
+EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1));
+MyInterpreter interpreter = evaluation.runScopedClosing(MyInterpreter.class, MyInterpreter::new);
+
+LanguageTestContexts.endRun(evaluation);
+assertTrue(interpreter.isClosed());   // isClosed() stands for your runtime's own check
 ```
 
 On the module path, the kit is the module `io.github.brantunger.unruly.test`; see [Packaging](custom.md#-packaging).

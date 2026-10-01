@@ -397,9 +397,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 }
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
-            // outlive its rule lists, so a permit that isn't returned would lower its limit for good. A fatal Error
-            // from closing the rules as it's given back replaces a failure of the run that isn't fatal. A run whose
-            // facts were rejected holds no copy, and gives nothing back.
+            // outlive its rule lists, so a permit that isn't returned would lower its limit for good. Before that, once
+            // every listener has been told how the run ended, the values its languages kept to be closed are closed.
+            // A fatal Error from closing them, or the rules as the copy is given back, replaces a failure of the run
+            // that isn't fatal, and never the other way round. A run whose facts were rejected holds no copy, and
+            // gives nothing back.
             RunResult<O> result;
             try {
                 result = runWithCopy(rules, copy, runFacts, rejected, body);
@@ -408,11 +410,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 try {
                     keepInterruptOfStop(tally);
                 } finally {
-                    Failures.throwIfPresent(Failures.fatalInsteadOf(t, copy == null ? null : rules.release(copy)));
+                    Failures.rethrowUnchecked(failedRunEnding(t, endRun(rules, copy, runFacts)));
                 }
                 throw t;
             }
-            Failures.throwIfPresent(rules.release(copy));
+            Failures.rethrowUnchecked(endRun(rules, copy, runFacts));
             outcome = RunEvent.COMPLETED;
             return result;
         } catch (RuntimeException e) {
@@ -455,11 +457,113 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Ends a run once every listener has been told how it ended: closes the values its languages kept with
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#runScopedClosing}, then gives back its copy of
+     * the rules. It throws nothing: what closing the values or giving back the copy throws, as logging what a
+     * {@code close()} threw can when it runs out of stack, is returned for the run to throw, and the copy is given back
+     * whatever closing the values threw. The values are handed over first, so none can be made once the run is ending.
+     * Each step's failure is only stored where it's caught, which can't fail again; they are combined last.
+     *
+     * @param rules The rule set the run borrowed its copy from
+     * @param copy  The run's copy, or {@code null} if its facts were rejected and it holds none
+     * @param facts The run's facts, whose evaluation context holds the run's values
+     * @return What the run throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error} closing
+     *         the values or the rules threw, or else the first other throwable that escaped them, as logging one can,
+     *         either carrying the rest as suppressed exceptions (see {@link Failures#fatalFirst}). Nothing else a
+     *         {@code close()} throws is returned: it was logged. If combining them fails, as it can when it runs out
+     *         of memory, the first {@link VirtualMachineError} other than a {@link StackOverflowError} met is
+     *         returned alone, or else what combining threw.
+     */
+    // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
+    private static Throwable endRun(RuleSet rules, RuleSet.Copy copy, RunFacts facts) {
+        // The first fatal error the JVM threw, a VirtualMachineError but a StackOverflowError, while the run ended,
+        // kept with instanceof checks and assignments only, for the last resort below.
+        Throwable fatal = null;
+        Throwable taking = null;
+        List<AutoCloseable> values = List.of();
+        try {
+            values = facts.evaluation().runScope().end();
+            Faults.at(Faults.Step.RUN_VALUES_CLOSING);
+        } catch (Throwable t) {
+            // The values handed over are closed all the same.
+            taking = t;
+        }
+        if (taking instanceof VirtualMachineError && !(taking instanceof StackOverflowError)) {
+            fatal = taking;
+        }
+        Throwable closing;
+        try {
+            closing = Closing.runValues(values);
+        } catch (Throwable t) {
+            closing = t;
+        }
+        if (fatal == null && closing instanceof VirtualMachineError && !(closing instanceof StackOverflowError)) {
+            fatal = closing;
+        }
+        Throwable releasing = null;
+        try {
+            if (copy != null) {
+                releasing = rules.release(copy);
+            }
+        } catch (Throwable t) {
+            releasing = t;
+        }
+        if (fatal == null && releasing instanceof VirtualMachineError && !(releasing instanceof StackOverflowError)) {
+            fatal = releasing;
+        }
+        try {
+            Faults.at(Faults.Step.RUN_ENDING_COMBINED);
+            Throwable ending = Failures.fatalFirst(Failures.fatalFirst(taking, closing), releasing);
+            // The fatal error itself, not a throwable that carries it, as a run that fails with one throws it.
+            Error carried = Failures.fatalError(ending);
+            if (carried != null) {
+                Failures.keepAlso(carried, ending);
+                return carried;
+            }
+            return ending;
+        } catch (Throwable t) {
+            // The last resort, which can't fail again: the fatal error the JVM threw, if any, and else what combining
+            // threw, the rest being lost.
+            return fatal != null ? fatal : t;
+        }
+    }
+
+    /**
+     * Chooses what a run that failed throws once it has ended: what it failed with, or what ending it threw (see
+     * {@link #endRun}). A fatal {@link Error} is never dropped for a failure that isn't fatal: a fatal error from
+     * ending the run replaces a failure that isn't fatal, as {@link Failures#fatalInsteadOf} decides, and a fatal
+     * failure of the run is thrown in place of anything else ending it threw. Of two that aren't fatal, what ending
+     * threw is thrown, as what giving back the copy threw was before the run's values were closed with it. Either
+     * way what is thrown carries the other as a suppressed exception (see {@link Failures#keepAlso}).
+     *
+     * @param failure What the run failed with
+     * @param ending  What {@link #endRun} returned, or {@code null}
+     * @return What the run throws in place of {@code failure}, or {@code null} if it throws {@code failure}
+     */
+    private static Throwable failedRunEnding(Throwable failure, Throwable ending) {
+        if (ending == null) {
+            return null;
+        }
+        // endRun returns a fatal error itself, never one that carries it.
+        Error fatal = Failures.fatalError(ending);
+        if (fatal != null) {
+            return Failures.fatalInsteadOf(failure, fatal);
+        }
+        if (Failures.fatalError(failure) != null) {
+            Failures.keepAlso(failure, ending);
+            return null;
+        }
+        Failures.keepInterruptStatus(failure);
+        Failures.keepAlso(ending, failure);
+        return ending;
+    }
+
+    /**
      * Sets the thread's interrupt status again if an interrupt stopped the run, which a listener told of the stop, or
-     * a language's {@code close()}, may have cleared. Called before the run gives back its copy or leaves the rules,
-     * so the closing that starts sees it set, and again as {@code run()} returns, so the caller sees it. It isn't set
-     * again between one {@code close()} and the next: a language whose {@code close()} clears it hides it from the
-     * sessions and compilers closed after it.
+     * a language's {@code close()}, may have cleared. Called before the run closes the values its languages kept for
+     * it and gives back its copy or leaves the rules, so the closing that starts sees it set, and again as
+     * {@code run()} returns, so the caller sees it. It isn't set again between one {@code close()} and the next: a
+     * language whose {@code close()} clears it hides it from the values, sessions and compilers closed after it.
      *
      * @param tally The run's tally, which records whether an interrupt stopped the run
      */
@@ -1097,7 +1201,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (fatal == null) {
             // The load's own failure goes with it, as it would under a fatal Error.
             Failures.keepAlso(failed, failure);
-            rethrowUnchecked(failed);
+            Failures.rethrowUnchecked(failed);
         }
     }
 
@@ -1199,16 +1303,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
-    // Throws what retiring threw, if anything, as it is, whatever its type: retire() declares nothing, so it is
-    // unchecked, or a checked exception a language's code threw undeclared, which the caller would have had thrown as
-    // it is too. Not Failures.throwIfPresent, which throws a fatal Error it's given.
-    @SuppressWarnings("unchecked")
-    private static <T extends Throwable> void rethrowUnchecked(Throwable failure) throws T {
-        if (failure != null) {
-            throw (T) failure;
-        }
-    }
-
     /**
      * Closes the engine. The rule list is closed once no run is using it: a run holding a copy finishes, and so does
      * one waiting for a copy, because {@link RuleSet#borrow(Deadline)} counts the run before it waits, and a rule list
@@ -1266,7 +1360,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 closed = true;
                 claimToRetire(claim);
             }
-            rethrowUnchecked(retireClaimed(claim));
+            Failures.rethrowUnchecked(retireClaimed(claim));
         } finally {
             LoggedFailures.leave();
         }

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -177,6 +178,108 @@ class LanguageTestContextsTest {
         assertTrue(ex.getMessage().startsWith("The facts passed to an action are read-only; 'y'"), ex.getMessage());
     }
 
+    /** A value a test keeps for a run, which records its close() and then throws what it was given, if anything. */
+    private record Closeable(String name, List<String> closed, Throwable failure) implements AutoCloseable {
+
+        Closeable(String name, List<String> closed) {
+            this(name, closed, null);
+        }
+
+        @Override
+        public void close() {
+            closed.add(name);
+            if (failure != null) {
+                LanguageTestContextsTest.<RuntimeException>sneakyThrow(failure);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable thrown) throws T {
+        throw (T) thrown;
+    }
+
+    @Test
+    @DisplayName("ending a run closes its closing values in reverse order, once, and then refuses new ones")
+    void endRunClosesTheRunsValues() throws Exception {
+        List<String> closed = new ArrayList<>();
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of());
+        ActionContext action = LanguageTestContexts.actionInRun(evaluation, new HashMap<>());
+        Object plain = evaluation.runScoped("plain", () -> new Closeable("plain", closed));
+        Closeable first = evaluation.runScopedClosing("first", () -> new Closeable("first", closed));
+        action.runScopedClosing("second", () -> new Closeable("second", closed));
+
+        LanguageTestContexts.endRun(action);
+        LanguageTestContexts.endRun(evaluation);
+
+        assertEquals(List.of("second", "first"), closed);
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> evaluation.runScopedClosing("first", () -> first));
+        assertEquals("runScopedClosing was called for a key (java.lang.String) after the run ended, when its value"
+                + " would never be closed", ex.getMessage());
+        assertSame(plain, action.runScoped("plain", Object::new));
+        LanguageTestContexts.endRun(LanguageTestContexts.evaluation(Map.of()));
+    }
+
+    @Test
+    @DisplayName("ending a run closes every value, and throws what the first close() threw, with the others suppressed")
+    void endRunThrowsTheFirstFailure() {
+        List<String> closed = new ArrayList<>();
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of());
+        IOException made = new IOException("made first, closed last");
+        IllegalStateException last = new IllegalStateException("made last, closed first");
+        evaluation.runScopedClosing("a", () -> new Closeable("a", closed, made));
+        evaluation.runScopedClosing("b", () -> new Closeable("b", closed));
+        evaluation.runScopedClosing("c", () -> new Closeable("c", closed, last));
+
+        Exception thrown = assertThrows(Exception.class, () -> LanguageTestContexts.endRun(evaluation));
+
+        assertSame(last, thrown);
+        assertArrayEquals(new Throwable[] {made}, thrown.getSuppressed());
+        assertEquals(List.of("c", "b", "a"), closed);
+    }
+
+    @Test
+    @DisplayName("ending a run throws what close() threw as it is, an Error or a plain Throwable, and only once")
+    void endRunThrowsAnyThrowableAsItIs() {
+        List<String> closed = new ArrayList<>();
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of());
+        OutOfMemoryError error = new OutOfMemoryError("thrown by both");
+        evaluation.runScopedClosing("a", () -> new Closeable("a", closed, error));
+        evaluation.runScopedClosing("b", () -> new Closeable("b", closed, error));
+        Throwable plain = new Throwable("neither an Exception nor an Error");
+        EvaluationContext other = LanguageTestContexts.evaluation(Map.of());
+        other.runScopedClosing("a", () -> new Closeable("plain", closed, plain));
+
+        Throwable thrownError = assertThrows(Throwable.class, () -> LanguageTestContexts.endRun(evaluation));
+        Throwable thrownPlain = assertThrows(Throwable.class, () -> LanguageTestContexts.endRun(other));
+
+        assertSame(error, thrownError);
+        assertEquals(0, error.getSuppressed().length);
+        assertSame(plain, thrownPlain);
+        assertEquals(List.of("b", "a", "plain"), closed);
+    }
+
+    @Test
+    @DisplayName("ending a run keeps each failure on the first once, and none that would make a loop of causes")
+    void endRunKeepsEachFailureOnce() {
+        List<String> closed = new ArrayList<>();
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of());
+        IllegalStateException first = new IllegalStateException("closed first");
+        IllegalStateException wrapping = new IllegalStateException("wraps the first", first);
+        IllegalStateException other = new IllegalStateException("another");
+        evaluation.runScopedClosing("a", () -> new Closeable("a", closed, other));
+        evaluation.runScopedClosing("b", () -> new Closeable("b", closed, other));
+        evaluation.runScopedClosing("c", () -> new Closeable("c", closed, wrapping));
+        evaluation.runScopedClosing("d", () -> new Closeable("d", closed, first));
+
+        Exception thrown = assertThrows(Exception.class, () -> LanguageTestContexts.endRun(evaluation));
+
+        assertSame(first, thrown);
+        assertArrayEquals(new Throwable[] {other}, first.getSuppressed());
+        assertEquals(List.of("d", "c", "b", "a"), closed);
+    }
+
     private static void assertNullMessage(String expected, Executable creation) {
         assertEquals(expected, assertThrows(NullPointerException.class, creation).getMessage());
     }
@@ -195,6 +298,7 @@ class LanguageTestContextsTest {
                 () -> assertNullMessage("output must not be null",
                         () -> LanguageTestContexts.actionInRun(LanguageTestContexts.evaluation(Map.of()), null)),
                 () -> assertNullMessage("output must not be null", () -> LanguageTestContexts.action(Map.of(), null)),
+                () -> assertNullMessage("context must not be null", () -> LanguageTestContexts.endRun(null)),
                 () -> assertNullMessage("packageImports must not be null",
                         () -> LanguageTestContexts.compile(null, Set.of(), loader)),
                 () -> assertNullMessage("classImports must not be null",
