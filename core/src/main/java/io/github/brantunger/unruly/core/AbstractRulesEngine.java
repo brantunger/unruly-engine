@@ -8,9 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +18,6 @@ import java.util.TreeSet;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 import io.github.brantunger.unruly.api.FactReference;
@@ -35,24 +32,18 @@ import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
-import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ConditionResult;
-import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
-import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
 /**
- * What every engine shares, whatever its match policy: loading and compiling rules, borrowing a compiled copy for
- * each run, evaluating conditions and running actions, listener callbacks, cancellation and failure reporting. A
- * subclass supplies the match policy in {@link #runRules(FactStore, Duration, Set)} and names it in
- * {@link #matchPolicy()}.
+ * What every engine shares, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles,
+ * borrowing a compiled copy for each run, evaluating conditions and running actions, listener callbacks, cancellation
+ * and failure reporting. A subclass supplies the match policy in {@link #runRules(FactStore, Duration, Set)} and names
+ * it in {@link #matchPolicy()}.
  *
  * <p>
  * The engine changes no global setting of any language: a session is used by one run at a time, so a language keeps
@@ -83,11 +74,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // engine's current set is closed, so the bound is far above one. Past it, the invariant a run relies on has
     // broken, and a run that spun instead would leave no evidence.
     private static final int RULE_READS_PER_RUN = 64;
-    // The engine's languages and its default language, fixed when it's built.
-    private final LanguageRegistry languages;
-    // The imported packages and classes, resolved when the engine is built and passed to every compilation.
-    private final Set<String> packageImports;
-    private final Set<Class<?>> classImports;
+    // Compiles the rule lists load() and validate() are given, with the engine's languages, imports and options.
+    private final RuleListCompiler compiler;
     // Fixed when the engine is built, so every callback of a run goes to the same listeners.
     private final List<RuleListener> listeners;
     // Volatile so a load() call on one thread is seen by run() on others. The rule set holds the rules and the
@@ -121,8 +109,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Duration runTimeout;
     // The clock a run reads when it starts, to decide which rules are within their validity window.
     private final Clock clock;
-    // The output type languages are told about, and what sets the properties actions return.
-    private final Class<?> outputType;
+    // What sets the properties actions return.
     private final OutputWriter<? super O> outputWriter;
     // The declared type of each fact, by name, a primitive type as it was declared, and whether a run may supply only
     // those facts.
@@ -131,8 +118,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
     // engines, which then convert nothing.
     private final Map<String, Class<?>> primitiveFacts;
-    // Each language's options, by language name.
-    private final Map<String, Map<String, String>> options;
     // Numbers the engines of this JVM, so a Flight Recorder event tells one engine's runs from another's.
     private static final AtomicLong ENGINE_IDS = new AtomicLong();
     private final long engineId = ENGINE_IDS.incrementAndGet();
@@ -161,8 +146,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  how many were left out, then escaped, and a root cause it hides named
      */
     AbstractRulesEngine(EngineConfiguration<O> configuration) {
-        this.languages = LanguageRegistry.resolve(configuration.languages(), configuration.defaultLanguage(),
-                ImportResolver.contextClassLoader());
+        LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
+                configuration.defaultLanguage(), ImportResolver.contextClassLoader());
         // Checked once the languages are known, so an option for a language that isn't found isn't silently ignored.
         for (String language : configuration.options().keySet()) {
             if (!languages.languages().containsKey(language)) {
@@ -181,15 +166,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 packages.add(name);
             }
         }
-        this.packageImports = Collections.unmodifiableSet(packages);
-        this.classImports = Collections.unmodifiableSet(classes);
         this.listeners = configuration.listeners();
         this.copyLimit = configuration.copyLimit();
         this.copyPermits = new CopyPermits(copyLimit.maxCopies());
         this.copiesAtLoad = configuration.copiesAtLoad();
         this.runTimeout = configuration.runTimeout();
         this.clock = configuration.clock();
-        this.outputType = configuration.outputType();
         this.outputWriter = configuration.outputWriter();
         this.declaredFacts = configuration.declaredFacts();
         this.allFactsDeclared = configuration.allFactsDeclared();
@@ -201,7 +183,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             }
         });
         this.primitiveFacts = Map.copyOf(primitives);
-        this.options = configuration.options();
+        this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
+                Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
+                declaredFacts, allFactsDeclared);
     }
 
     /**
@@ -919,18 +903,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         // A null rule or a duplicate name stops the load before anything is compiled: duplicate names would make
         // error messages, exceptions and listener logs ambiguous.
-        List<RuleCompilationException> listProblems = listProblems(ruleList, true);
+        List<RuleCompilationException> listProblems = compiler.listProblems(ruleList, RuleListCompiler.Mode.LOAD);
         if (!listProblems.isEmpty()) {
             RuleCompilationException first = listProblems.get(0);
             log.error(first.getMessage());
             throw LoggedFailures.loggedByLoad(first);
         }
-        Compilation compilation = new Compilation(true);
+        RuleListCompiler.Compilation compilation = compiler.compilation(RuleListCompiler.Mode.LOAD);
         RuleSet loaded;
         try {
             compilation.compile(ruleList);
-            throwIfAnyFailed(compilation.failures);
-            loaded = new RuleSet(compilation.compiled, compilation.used, copyLimit, copyPermits, stallWindowMillis);
+            compilation.throwIfAnyFailed();
+            loaded = new RuleSet(compilation.compiledRules(), compilation.usedCompilers(), copyLimit, copyPermits,
+                    stallWindowMillis);
         } catch (Throwable t) {
             // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.
             Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
@@ -1252,8 +1237,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (closed) {
             throw new IllegalStateException(CLOSED_MESSAGE);
         }
-        List<RuleCompilationException> problems = listProblems(ruleList, false);
-        Compilation compilation = new Compilation(false);
+        List<RuleCompilationException> problems = compiler.listProblems(ruleList, RuleListCompiler.Mode.VALIDATE);
+        RuleListCompiler.Compilation compilation = compiler.compilation(RuleListCompiler.Mode.VALIDATE);
         try {
             compilation.compile(ruleList.stream().filter(Objects::nonNull).toList());
         } catch (Throwable t) {
@@ -1261,122 +1246,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw t;
         }
         Failures.throwIfPresent(compilation.closeCompilers());
-        problems.addAll(compilation.failures);
+        problems.addAll(compilation.foundFailures());
         return Collections.unmodifiableList(problems);
-    }
-
-    /**
-     * Finds what makes a rule list unusable before any rule is compiled: a {@code null} entry, and a name a rule
-     * shares with an earlier one.
-     *
-     * @param ruleList  The list to check
-     * @param firstOnly Whether to stop at the first problem, which is all {@code load()} reports
-     * @return One failure for each such entry, in list order; none when the list is usable
-     */
-    private static List<RuleCompilationException> listProblems(List<Rule> ruleList, boolean firstOnly) {
-        List<RuleCompilationException> problems = new ArrayList<>();
-        Set<String> ruleNames = new HashSet<>();
-        for (int i = 0; i < ruleList.size(); i++) {
-            Rule rule = ruleList.get(i);
-            if (rule == null) {
-                problems.add(compilationFailure("Rule at index " + i + " of the rule list is null", null, null));
-            } else if (!ruleNames.add(rule.getRuleName())) {
-                problems.add(compilationFailure("Duplicate rule name '" + Failures.quote(rule.getRuleName()) + "'",
-                        null, rule.getRuleName()));
-            }
-            if (firstOnly && !problems.isEmpty()) {
-                return problems;
-            }
-        }
-        return problems;
-    }
-
-    /**
-     * One compilation of a rule list, for {@code load()} or {@code validate()}: compiles every rule with the languages'
-     * compilers, checks the declared fact names, and collects every failure rather than throwing the first.
-     */
-    private final class Compilation {
-
-        private final boolean logged;
-        private final LanguageCompilers compilers;
-        private final List<CompiledRule> compiled = new ArrayList<>();
-        private final List<RuleCompilationException> failures = new ArrayList<>();
-        private Map<String, ExpressionCompiler> used = Map.of();
-
-        /**
-         * Prepares a compilation with a compiler registry for the engine's languages.
-         *
-         * @param logged Whether each failure, and each warning a language reports, is logged: {@code load()} logs,
-         *               {@code validate()} doesn't. A failure a {@code run()} or a {@code load()} the language
-         *               started reported isn't logged either way: that run or load logged it.
-         */
-        Compilation(boolean logged) {
-            this.logged = logged;
-            ClassLoader loader = ImportResolver.contextClassLoader();
-            // Each language gets its own options.
-            compilers = new LanguageCompilers(languages.languages(), (name, language) -> newCompiler(name, language,
-                    new EngineCompileContext(packageImports, classImports, loader, outputType,
-                            options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared, logged)));
-        }
-
-        /**
-         * Compiles the rules in priority order, then checks the declared fact names. The list has no {@code null}
-         * entry.
-         *
-         * @param ruleList The rules
-         */
-        void compile(List<Rule> ruleList) {
-            List<Rule> sorted = ruleList.stream()
-                    .sorted(Comparator.comparing(
-                            Rule::getPriority,
-                            Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                    .toList();
-            for (Rule rule : sorted) {
-                String language = languageOf(rule);
-                // A language that can't create its compiler is reported once, for the first rule that needed it. The
-                // rules written in it can't be compiled, and asking the language again would only repeat the failure.
-                if (compilers.failed(language)) {
-                    continue;
-                }
-                try {
-                    compiled.add(compileRule(rule, compilers.forLanguage(language), compilers));
-                } catch (RuleCompilationException e) {
-                    failed(e);
-                }
-            }
-            // The compilers every fact is checked with: the ones the rules used, or the default language's for an empty
-            // list. When rules failed, only the compilers already created check the declared names.
-            if (failures.isEmpty()) {
-                try {
-                    used = compilers.used(languages.defaultLanguage());
-                } catch (RuleCompilationException e) {
-                    failed(e);
-                    used = compilers.created();
-                }
-            } else {
-                used = compilers.created();
-            }
-            declaredNameFailures(used).forEach(this::failed);
-        }
-
-        // A failed run() or load() a language started while compiling or checking a name has already logged its
-        // failure. One logged here is recorded, so a run or load around this one's doesn't log it again.
-        private void failed(RuleCompilationException failure) {
-            if (logged && Failures.nestedRunFailure(failure) == null) {
-                log.error(failure.getMessage());
-                LoggedFailures.loggedByLoad(failure);
-            }
-            failures.add(failure);
-        }
-
-        /**
-         * Closes the compilers created, when the rule list isn't kept.
-         *
-         * @return The first fatal {@link Error} a compiler threw, for the caller to throw, or {@code null} if none did
-         */
-        Error closeCompilers() {
-            return Closing.compilers(compilers.created());
-        }
     }
 
     /**
@@ -1532,25 +1403,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Checks every declared fact name with the languages of a rule list being loaded, which are the ones its runs check
-     * names with, and returns a failure for each name a language rejects or fails to check.
-     *
-     * @param checks The compilers to check the names with, by language name
-     * @return One failure for each declared name that can't be used; none when every name passes
-     */
-    private List<RuleCompilationException> declaredNameFailures(Map<String, ExpressionCompiler> checks) {
-        List<RuleCompilationException> failures = new ArrayList<>();
-        for (String name : declaredFacts.keySet()) {
-            IllegalArgumentException rejected = factNameRejection(name, checks, false);
-            if (rejected != null) {
-                failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
-                        + Failures.describe(rejected), rejected, null));
-            }
-        }
-        return failures;
-    }
-
-    /**
      * Checks a fact name with the language of each rule in use. A language rejects a name with an
      * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
      * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
@@ -1564,8 +1416,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param logged Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own message
      * @return The exception a language rejected the name with, or {@code null} if every language accepts it
      */
-    private static IllegalArgumentException factNameRejection(String name, Map<String, ExpressionCompiler> checks,
-                                                              boolean logged) {
+    static IllegalArgumentException factNameRejection(String name, Map<String, ExpressionCompiler> checks,
+                                                      boolean logged) {
         for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
             IllegalArgumentException rejected = factNameRejection(name, check.getKey(), check.getValue(), logged);
             if (rejected != null) {
@@ -2353,179 +2205,5 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         ListenerFatal thrown = listenerFatal("onError", listener -> listener.onError(rule.rule(), error), error, error);
         return thrown == null ? null : logWrappedFromOnError(thrown, rule);
-    }
-
-    /**
-     * Logs a rejected rule list or a failure to compile at ERROR, as the engine logs every failure it throws. An
-     * interrupt in {@code cause} sets the thread's interrupt status again. Then rethrows the fatal {@link Error} in
-     * {@code cause}'s cause chain, if there is one (see {@link Failures#fatalError}), or returns the exception for the
-     * caller to throw.
-     *
-     * @param msg      What failed, naming the rule or the language
-     * @param cause    What the expression language threw, or {@code null}
-     * @param ruleName The name of the rule that failed, or {@code null} if the failure isn't about one rule
-     * @return The exception to throw, caused by {@code cause}
-     */
-    private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName) {
-        return compilationFailure(msg, cause, ruleName, null, List.of());
-    }
-
-    /**
-     * Logs a failure of a rule's condition or action, as {@link #compilationFailure(String, Throwable, String)} does.
-     *
-     * @param msg      What failed, naming the rule
-     * @param cause    What the expression language threw, or {@code null}
-     * @param ruleName The name of the rule that failed, or {@code null} if it has none
-     * @param kind     Whether the condition or the action failed
-     * @param issues   Where and what the language found wrong
-     * @return The exception to throw, caused by {@code cause}
-     */
-    // Not logged here: load() logs each failure as it collects it, and validate() logs nothing. A fatal error is
-    // the exception: it's logged, then rethrown, whichever is compiling, unless a run the language started logged it
-    // and nothing wrapped around it says something of its own (see LoggedFailures). One with a cause is the engine's
-    // words around what the language threw, which may be a nested run's failure, so it's recorded as the engine's.
-    private static RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName,
-                                                               ExpressionKind kind,
-                                                               List<InvalidExpressionException.Issue> issues) {
-        Failures.keepInterruptStatus(cause);
-        Error fatal = Failures.fatalError(cause);
-        if (fatal != null) {
-            if (LoggedFailures.unlogged(cause)) {
-                log.error(msg);
-            }
-            throw fatal;
-        }
-        RuleCompilationException failure = new RuleCompilationException(msg, cause, ruleName, kind, issues);
-        return cause == null ? failure : LoggedFailures.builtByEngine(failure);
-    }
-
-    /**
-     * Throws the one failure there is, or one exception for several, whose message lists as many as fit. The
-     * message counts rules when every failure is a rule's, and failures otherwise: a language that couldn't create its
-     * compiler and a rejected declared fact name have no rule. It lists the first failure whole, and each next one
-     * while the list stays within {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts the rest, which
-     * the exception's {@code failures()} still has. Every failure was logged when it happened, so the one exception
-     * for several is recorded as logged, and a run or load around a nested {@code load()} doesn't log it again (see
-     * {@link LoggedFailures}).
-     *
-     * @param failures The failures, in the order they were found
-     * @throws RuleCompilationException if there are any
-     */
-    private static void throwIfAnyFailed(List<RuleCompilationException> failures) {
-        if (failures.isEmpty()) {
-            return;
-        }
-        throw failures.size() == 1 ? failures.get(0) : LoggedFailures.loggedByLoad(combined(failures));
-    }
-
-    private static RuleCompilationException combined(List<RuleCompilationException> failures) {
-        String what = failures.stream().allMatch(failure -> failure.getRuleName() != null)
-                ? " rules failed to compile: "
-                : " failures while loading the rules: ";
-        // Bounded, as a rule table loaded after a breaking change can fail thousands of rules at once. Whole failures
-        // are left out, not characters, so this doesn't go through Failures.truncate: each message is built from
-        // parts shortened and escaped one at a time, so a single message isn't capped at MAX_DESCRIPTION_LENGTH, and
-        // a cut could fall inside an escape.
-        StringBuilder listed = new StringBuilder(failures.get(0).getMessage());
-        int count = 1;
-        while (count < failures.size()
-                && listed.length() + 2 + failures.get(count).getMessage().length() <= Failures.MAX_DESCRIPTION_LENGTH) {
-            listed.append("; ").append(failures.get(count).getMessage());
-            count++;
-        }
-        if (count < failures.size()) {
-            listed.append("; and ").append(failures.size() - count).append(" more (see failures())");
-        }
-        return new RuleCompilationException(failures.size() + what + listed, failures);
-    }
-
-    private String languageOf(Rule rule) {
-        return rule.getLanguage() != null ? rule.getLanguage() : languages.defaultLanguage();
-    }
-
-    /**
-     * Creates a language's compiler for one rule list. A language that throws or returns {@code null} fails the rule
-     * list, like an expression that doesn't compile.
-     *
-     * @param name     The language's name
-     * @param language The language
-     * @param context  The imports and class loader the rule list is compiled with
-     * @return The compiler
-     * @throws RuleCompilationException if the language throws or returns {@code null}
-     */
-    private static ExpressionCompiler newCompiler(String name, ExpressionLanguage language, CompileContext context) {
-        ExpressionCompiler compiler;
-        try {
-            compiler = language.newCompiler(context);
-        } catch (Throwable e) {
-            throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to create a "
-                    + "compiler: " + Failures.describe(e), e, null);
-        }
-        if (compiler == null) {
-            throw compilationFailure("The '" + Failures.quote(name) + "' expression language returned no compiler",
-                    null, null);
-        }
-        return compiler;
-    }
-
-    private CompiledRule compileRule(Rule rule, ExpressionCompiler compiler, LanguageCompilers compilers) {
-        String ruleName = rule.getRuleName();
-        String displayName = Failures.quote(ruleName);
-        if (rule.getCondition().isBlank()) {
-            throw compilationFailure("Rule '" + displayName + "' has a blank condition expression", null,
-                    ruleName, ExpressionKind.CONDITION, List.of());
-        }
-        if (rule.getAction().isBlank()) {
-            throw compilationFailure("Rule '" + displayName + "' has a blank action expression", null,
-                    ruleName, ExpressionKind.ACTION, List.of());
-        }
-        String language = languageOf(rule);
-        if (compiler == null) {
-            throw compilationFailure("Rule '" + displayName + "' is written in '" + Failures.quote(language)
-                    + "', which isn't one of the engine's expression languages: "
-                    + Failures.quoteAll(compilers.languageNames()), null, ruleName);
-        }
-        CompiledCondition compiledCondition = compile(
-                new Expression(ruleName, ExpressionKind.CONDITION, rule.getCondition()), compiler::compileCondition);
-        CompiledAction compiledAction = compile(
-                new Expression(ruleName, ExpressionKind.ACTION, rule.getAction()), compiler::compileAction);
-        return new CompiledRule(rule, displayName, language, compiledCondition, compiledAction);
-    }
-
-    /**
-     * Compiles one condition or action. An expression the language rejects is reported with the language's reason and
-     * issues, or with none if its exception can't give them (see {@link Failures#issuesOf}); anything else the
-     * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A fatal
-     * {@link Error}, also one the language wraps in its own exception, is logged like any failure and then rethrown.
-     *
-     * @param source      The expression to compile
-     * @param compilation Compiles it with the rule's language
-     * @param <T>         The type of compiled expression
-     * @return The compiled expression
-     * @throws RuleCompilationException if the expression doesn't compile, or the language returns {@code null}
-     */
-    private static <T> T compile(Expression source, Function<Expression, T> compilation) {
-        String expression = Failures.expression(source.kind(), source.ruleName());
-        T compiled;
-        try {
-            compiled = compilation.apply(source);
-        } catch (InvalidExpressionException e) {
-            // A language's own subclass may have a getMessage() or an issues() that throws.
-            String reason = Failures.clip(Failures.messageOr(e, "was rejected by its expression language"));
-            throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(),
-                    Failures.issuesOf(e));
-        } catch (Throwable e) {
-            // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
-            String reason = Failures.rootCause(e) instanceof StackOverflowError
-                    ? "the expression is too long or too deeply nested to compile"
-                    : Failures.describe(e);
-            throw compilationFailure(expression + " failed to compile: " + reason, e, source.ruleName(), source.kind(),
-                    List.of());
-        }
-        if (compiled == null) {
-            throw compilationFailure(expression + " wasn't compiled: its expression language returned null", null,
-                    source.ruleName(), source.kind(), List.of());
-        }
-        return compiled;
     }
 }
