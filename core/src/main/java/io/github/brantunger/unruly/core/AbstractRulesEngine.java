@@ -8,7 +8,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +19,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
@@ -37,7 +35,6 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
-import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 
 /**
  * What every engine shares, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles,
@@ -111,13 +108,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Clock clock;
     // What sets the properties actions return.
     private final OutputWriter<? super O> outputWriter;
-    // The declared type of each fact, by name, a primitive type as it was declared, and whether a run may supply only
-    // those facts.
-    private final Map<String, Class<?>> declaredFacts;
-    private final boolean allFactsDeclared;
-    // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
-    // engines, which then convert nothing.
-    private final Map<String, Class<?>> primitiveFacts;
+    // Collects and checks the facts each run is given.
+    private final FactIntake factIntake;
     // Numbers the engines of this JVM, so a Flight Recorder event tells one engine's runs from another's.
     private static final AtomicLong ENGINE_IDS = new AtomicLong();
     private final long engineId = ENGINE_IDS.incrementAndGet();
@@ -173,16 +165,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.runTimeout = configuration.runTimeout();
         this.clock = configuration.clock();
         this.outputWriter = configuration.outputWriter();
-        this.declaredFacts = configuration.declaredFacts();
-        this.allFactsDeclared = configuration.allFactsDeclared();
-        Map<String, Class<?>> primitives = new HashMap<>();
-        declaredFacts.forEach((name, type) -> {
-            // void is primitive, but nothing widens to it, and no value is a Void.
-            if (type.isPrimitive() && type != void.class) {
-                primitives.put(name, type);
-            }
-        });
-        this.primitiveFacts = Map.copyOf(primitives);
+        Map<String, Class<?>> declaredFacts = configuration.declaredFacts();
+        boolean allFactsDeclared = configuration.allFactsDeclared();
+        this.factIntake = new FactIntake(log, declaredFacts, allFactsDeclared);
         this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
                 Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
                 declaredFacts, allFactsDeclared);
@@ -307,10 +292,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
             RuleSelection selection = new RuleSelection(
                     Objects.requireNonNull(clock.instant(), "the engine's clock returned a null instant"), tags);
-            Map<String, Object> values = factValues(facts);
+            Map<String, Object> values = factIntake.factValues(facts);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
             // Checked before the run waits for a copy, which facts the engine will reject needn't do.
-            RuntimeException rejected = factRejection(values);
+            RuntimeException rejected = factIntake.factRejection(values);
             RunFacts runFacts = RunFacts.of(values, listenerFacts, deadline, runId, parent, tally, selection);
             if (rejected == null) {
                 copy = borrow(rules, runFacts);
@@ -437,7 +422,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     throw rejected;
                 }
                 // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name.
-                checkFactNames(facts.values(), rules.factChecks());
+                factIntake.checkFactNames(facts.values(), rules.factChecks());
                 // Every run that returns passes here, a nested one too, so the result carries the run's tags and
                 // start before afterRun or the caller sees it.
                 result = body.run(rules, copy, facts).withRun(run);
@@ -1248,230 +1233,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Failures.throwIfPresent(compilation.closeCompilers());
         problems.addAll(compilation.foundFailures());
         return Collections.unmodifiableList(problems);
-    }
-
-    /**
-     * Collects the fact values a run was given, without checking their names, so the run's listeners can be given the
-     * facts before the names are checked. A fact declared with a primitive type whose value is a boxed primitive that
-     * Java widens to that type, such as an {@link Integer} for a {@code long}, is widened here, so listeners and
-     * languages see only the declared type; its value in the store isn't changed. Any other value is kept as it is,
-     * for {@link #checkDeclaredType(String, Object)} to judge.
-     *
-     * @param facts The key/value fact store
-     * @return A map of fact names to their values, which may hold a {@code null} name a custom store allowed
-     */
-    private Map<String, Object> factValues(FactStore<?> facts) {
-        Map<String, Object> entryMap = new HashMap<>();
-        for (Map.Entry<String, ? extends FactReference<?>> entry : facts.asMap().entrySet()) {
-            // A null reference is bound as null, like a Fact holding null. Skipping it left the name
-            // unresolvable, so `x == null` failed instead of matching.
-            FactReference<?> fact = entry.getValue();
-            entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
-        }
-        if (primitiveFacts.isEmpty()) {
-            return entryMap;
-        }
-        primitiveFacts.forEach((name, type) -> {
-            // A null value, or a fact the run left out, stays as it is.
-            Object value = entryMap.get(name);
-            if (value != null) {
-                entryMap.put(name, Widening.widen(value, type));
-            }
-        });
-        return entryMap;
-    }
-
-    /**
-     * Checks a run's facts as the engine itself does, before the run borrows a copy of the rules, and returns what the
-     * check threw, for the run to fail with once its listeners have heard of it: every name is not {@code null}, not
-     * blank and not the output's name, every value is an instance of the type its fact was declared with or of its
-     * wrapper, and, when the engine requires declared facts, the run supplied every declared fact and nothing else.
-     * The languages check the names later, with {@link #checkFactNames}.
-     *
-     * @param values The fact values by name
-     * @return The {@link IllegalArgumentException} the check threw, or {@code null} if the facts passed
-     */
-    private RuntimeException factRejection(Map<String, Object> values) {
-        try {
-            for (Map.Entry<String, Object> fact : values.entrySet()) {
-                checkName(fact.getKey());
-                checkDeclaredType(fact.getKey(), fact.getValue());
-            }
-            checkNothingWasLeftOut(values);
-            return null;
-        } catch (RuntimeException e) {
-            return e;
-        }
-    }
-
-    /**
-     * Checks that a fact name is not {@code null}, not blank and not the output's name.
-     *
-     * @param name The fact's name
-     * @throws IllegalArgumentException if it is
-     */
-    private static void checkName(String name) {
-        FactNames.Problem problem = FactNames.check(name);
-        if (problem != null) {
-            throw rejectedFact(switch (problem) {
-                case NULL -> "fact name must not be null";
-                case BLANK -> "fact name must not be blank";
-                // Actions bind the output object to this name, silently hiding a fact of the same name.
-                case OUTPUT -> "'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot"
-                        + " be used as a fact name";
-            });
-        }
-    }
-
-    /**
-     * Checks every fact name of a run with the language of each loaded rule, once the engine's own checks have passed
-     * (see {@link #factRejection}).
-     *
-     * @param values The fact values by name
-     * @param checks The compilers of the rule list the run uses, which check each name, by language name
-     * @throws IllegalArgumentException if a language can't refer to a fact's name, or its check of the name throws
-     *                                  anything else
-     */
-    private static void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
-        for (String name : values.keySet()) {
-            IllegalArgumentException rejected = factNameRejection(name, checks, true);
-            if (rejected != null) {
-                throw rejected;
-            }
-        }
-    }
-
-    /**
-     * Logs the failure of a run whose facts the engine rejects, and records it as logged, so the code around a nested
-     * run that rejects its facts doesn't log it again (see {@link LoggedFailures}).
-     *
-     * @param msg Why the facts were rejected
-     * @return The exception to throw
-     */
-    private static IllegalArgumentException rejectedFact(String msg) {
-        log.error(msg);
-        return LoggedFailures.loggedByRun(new IllegalArgumentException(msg));
-    }
-
-    /**
-     * Checks one fact's value against the type it was declared with, or the type's wrapper if it's primitive: a value
-     * that Java widens to a primitive type was widened when the facts were collected. A {@code null} value passes:
-     * nothing about it contradicts the declaration, and a language can't tell it from an absent fact either.
-     *
-     * @param name  The fact's name
-     * @param value The fact's value, which may be {@code null}
-     * @throws IllegalArgumentException if the fact was declared and its value isn't an instance of that type, or of its
-     *                                  wrapper; for a primitive type and a number, a character or a boolean, the
-     *                                  message says why the value wasn't widened
-     */
-    private void checkDeclaredType(String name, Object value) {
-        Class<?> declared = declaredFacts.get(name);
-        if (declared == null || value == null || Widening.wrap(declared).isInstance(value)) {
-            return;
-        }
-        String msg = "Fact '%s' was declared as %s, but the run supplied a %s%s"
-                .formatted(Failures.quote(name), declared.getName(), value.getClass().getName(),
-                        primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
-                                ? " (" + Widening.ONLY_WIDENED + ")" : "");
-        throw rejectedFact(msg);
-    }
-
-    /**
-     * Checks that a run supplied every declared fact and nothing else, when the engine was built with
-     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#requireDeclaredFacts()}. Without it, a run may supply
-     * whatever it likes, and a declared fact only says what its type is when it's there.
-     *
-     * @param values The fact values by name
-     * @throws IllegalArgumentException if a declared fact is missing, or a fact nobody declared was supplied
-     */
-    private void checkNothingWasLeftOut(Map<String, Object> values) {
-        if (!allFactsDeclared) {
-            return;
-        }
-        for (String name : values.keySet()) {
-            if (!declaredFacts.containsKey(name)) {
-                throw rejectedFact("Fact '%s' wasn't declared, and this engine was built with requireDeclaredFacts()"
-                        .formatted(Failures.quote(name)));
-            }
-        }
-        for (String name : declaredFacts.keySet()) {
-            if (!values.containsKey(name)) {
-                throw rejectedFact(("Fact '%s' was declared, but the run didn't supply it, and this engine was built "
-                        + "with requireDeclaredFacts()").formatted(Failures.quote(name)));
-            }
-        }
-    }
-
-    /**
-     * Checks a fact name with the language of each rule in use. A language rejects a name with an
-     * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
-     * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
-     * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, a
-     * rejection included, which is logged and rethrown. A failure of a {@code run()} or a {@code load()} the check
-     * started, and a fatal error that run logged, isn't logged a second time, and a rejection this logs is recorded as
-     * logged, so the code around a nested run doesn't log it again (see {@link LoggedFailures}).
-     *
-     * @param name   The fact's name
-     * @param checks The compilers to check it with, by language name
-     * @param logged Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own message
-     * @return The exception a language rejected the name with, or {@code null} if every language accepts it
-     */
-    static IllegalArgumentException factNameRejection(String name, Map<String, ExpressionCompiler> checks,
-                                                      boolean logged) {
-        for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
-            IllegalArgumentException rejected = factNameRejection(name, check.getKey(), check.getValue(), logged);
-            if (rejected != null) {
-                return rejected;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Checks a fact name with one language, as {@link #factNameRejection(String, Map, boolean)} describes.
-     *
-     * @param name     The fact's name
-     * @param language The language's name
-     * @param compiler The compiler to check it with
-     * @param logged   Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own
-     *                 message
-     * @return The exception the language rejected the name with, or {@code null} if it accepts it
-     */
-    private static IllegalArgumentException factNameRejection(String name, String language,
-                                                              ExpressionCompiler compiler, boolean logged) {
-        Throwable failure;
-        try {
-            compiler.checkFactName(name);
-            return null;
-        } catch (IllegalArgumentException e) {
-            if (Failures.fatalError(e) == null) {
-                // The language wrote this message and it names the fact, so it's escaped before it's logged. The
-                // exception is returned as it came, so a caller still reads exactly what the language said. A failed
-                // run() or load() the check started has already logged its failure; the language's own instance is
-                // what's recorded as logged here.
-                if (logged && Failures.nestedRunFailure(e) == null) {
-                    log.error(Failures.describe(e));
-                    LoggedFailures.loggedByRun(e);
-                }
-                return e;
-            }
-            // A rejection that carries a fatal Error is handled like anything else that does.
-            failure = e;
-        } catch (Throwable e) {
-            failure = e;
-        }
-        Failures.keepInterruptStatus(failure);
-        String msg = "The '%s' expression language failed to check fact name '%s': %s"
-                .formatted(Failures.quote(language), Failures.quote(name), Failures.describe(failure));
-        Error fatal = Failures.fatalError(failure);
-        boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(failure);
-        if (logs) {
-            log.error(msg);
-        }
-        Failures.throwIfPresent(fatal);
-        // The engine's words around what the language threw, which may be a nested run's failure (see LoggedFailures).
-        IllegalArgumentException rejected = LoggedFailures.builtByEngine(new IllegalArgumentException(msg, failure));
-        return logs ? LoggedFailures.loggedByRun(rejected) : rejected;
     }
 
     /**
