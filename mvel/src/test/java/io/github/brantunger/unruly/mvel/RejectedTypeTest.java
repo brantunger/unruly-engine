@@ -113,6 +113,17 @@ class RejectedTypeTest {
     }
 
     @Test
+    @DisplayName("a node of a subclass of ASTNode names nothing, even one whose text is a type's name MVEL stopped"
+            + " after")
+    void nodeOfASubclass() {
+        char[] expr = "Zzz z = 1".toCharArray();
+        ASTNode subclass = new ASTNode(expr, 0, 3, 0, new ParserContext()) {
+        };
+
+        assertNull(MvelAnalysis.typeNamed(subclass, expr, 6));
+    }
+
+    @Test
     @DisplayName("an analysis that passes rejects no type")
     void passingAnalysisRejectsNoType() {
         MvelAnalysis analysis = new MvelAnalysis("x = 1", IMPORTS);

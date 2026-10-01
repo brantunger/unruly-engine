@@ -23,6 +23,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -440,16 +444,7 @@ class LanguageDiscoveryTest {
         Path library = library();
         Path copy = pluginRoot.resolve(dir).resolve(library.getFileName());
         Files.createDirectories(copy.getParent());
-        try (Stream<Path> files = Files.walk(library)) {
-            for (Path file : (Iterable<Path>) files::iterator) {
-                Path target = copy.resolve(library.relativize(file).toString());
-                if (Files.isDirectory(file)) {
-                    Files.createDirectories(target);
-                } else {
-                    Files.copy(file, target);
-                }
-            }
-        }
+        copyTree(library, copy);
         return copy;
     }
 
@@ -542,6 +537,70 @@ class LanguageDiscoveryTest {
                 ClassLoader.getPlatformClassLoader());
              URLClassLoader context = new URLClassLoader(
                      new URL[]{unencodedUrl(library), listing.toUri().toURL()}, application)) {
+            assertEquals(ServiceConfigurationError.class.getName() + ": " + ExpressionLanguage.class.getName()
+                    + ": app.Main not a subtype", buildIn(application, context));
+        }
+    }
+
+    /**
+     * Opens a URL of the scheme {@code x-plugin} as the {@code file:} URL with the same path: a scheme no file system
+     * serves, as a plug-in framework's own URLs are.
+     */
+    private static final URLStreamHandler PLUGIN_URLS = new URLStreamHandler() {
+        @Override
+        protected URLConnection openConnection(URL url) throws IOException {
+            return URI.create("file" + url.toExternalForm().substring("x-plugin".length())).toURL().openConnection();
+        }
+    };
+
+    /** A copy of this library as a directory of classes, whether it was loaded from a jar or a directory. */
+    private Path libraryClasses() throws IOException, URISyntaxException {
+        Path library = library();
+        Path classes = pluginRoot.resolve("classes");
+        if (Files.isDirectory(library)) {
+            copyTree(library, classes);
+        } else {
+            try (FileSystem jar = FileSystems.newFileSystem(library)) {
+                copyTree(jar.getPath("/"), classes);
+            }
+        }
+        return classes;
+    }
+
+    /** Copies the directory {@code from}, and everything in it, to {@code to}. */
+    private static void copyTree(Path from, Path to) throws IOException {
+        try (Stream<Path> files = Files.walk(from)) {
+            for (Path file : (Iterable<Path>) files::iterator) {
+                Path target = to.resolve(from.relativize(file).toString());
+                if (Files.isDirectory(file)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(file, target);
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a context class loader that lists the library's API at the library's own URL fails build() at a"
+            + " listed class that isn't a language, even where that URL is neither a jar nor a file")
+    void notALanguageWhereTheLibraryIsAtAnotherKindOfUrl() throws Exception {
+        // The application loads the library from a URL no file system serves, so the context class loader, which
+        // asks the application's loader, lists the library's API at that same URL, and at no other.
+        URL library = URL.of(URI.create("x-plugin" + libraryClasses().toUri().toString().substring("file".length())),
+                PLUGIN_URLS);
+        Path listing = pluginRoot.resolve("listing");
+        Path services = listing.resolve(SERVICES_FILE);
+        Files.createDirectories(services.getParent());
+        Files.writeString(services, "app.Main");
+        URL[] classPath = {library, codeOf(Logger.class), application().toUri().toURL()};
+
+        try (URLClassLoader application = new URLClassLoader("application", classPath,
+                ClassLoader.getPlatformClassLoader());
+             URLClassLoader context = new URLClassLoader(new URL[]{listing.toUri().toURL()}, application)) {
+            String classFile = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+            assertEquals(List.of(library + classFile),
+                    Collections.list(context.getResources(classFile)).stream().map(URL::toExternalForm).toList());
             assertEquals(ServiceConfigurationError.class.getName() + ": " + ExpressionLanguage.class.getName()
                     + ": app.Main not a subtype", buildIn(application, context));
         }
@@ -842,6 +901,53 @@ class LanguageDiscoveryTest {
             public Enumeration<URL> getResources(String name) throws IOException {
                 if (name.endsWith(".class")) {
                     throw new IOException("the plug-in's jar index is broken");
+                }
+                return super.getResources(name);
+            }
+        }) {
+            ServiceConfigurationError error = withContextClassLoader(loader,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype",
+                    error.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged when its loader lists the library's API"
+            + " in a jar that can't be found, which is taken for the library's own")
+    void notALanguageWhereTheApiIsListedInAMissingJar() throws IOException {
+        String classFile = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+        URL missing = URI.create("jar:" + pluginRoot.resolve("missing.jar").toUri() + "!/" + classFile).toURL();
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                List<URL> listed = Collections.list(super.getResources(name));
+                if (name.equals(classFile)) {
+                    listed.add(missing);
+                }
+                return Collections.enumeration(listed);
+            }
+        }) {
+            ServiceConfigurationError error = withContextClassLoader(loader,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype",
+                    error.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged when listing its loader's class files"
+            + " throws a RuntimeException")
+    void notALanguageWhereListingClassFilesThrows() throws IOException {
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                if (name.endsWith(".class")) {
+                    throw new IllegalStateException("the plug-in's loader is closed");
                 }
                 return super.getResources(name);
             }
