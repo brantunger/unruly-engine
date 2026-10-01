@@ -11,7 +11,8 @@
  *   {@link io.github.brantunger.unruly.api.language.CompiledCondition} or a
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction}, and throw
  *   {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException} for one you reject, such as a
- *   condition that assigns to a fact.</li>
+ *   condition that assigns to a fact. {@link io.github.brantunger.unruly.api.language.MessageText} shortens and
+ *   escapes text you didn't write for a message, as the engine does.</li>
  *   <li>Keep what changes while expressions run in a {@link io.github.brantunger.unruly.api.language.Session}, one
  *   for each compiled copy of the rules, or return
  *   {@link io.github.brantunger.unruly.api.language.Session#none()} when nothing does.</li>

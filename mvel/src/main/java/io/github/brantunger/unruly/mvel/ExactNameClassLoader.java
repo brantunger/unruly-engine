@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.MessageText;
 import org.mvel2.MVEL;
 
 import java.util.Set;
@@ -263,7 +264,7 @@ final class ExactNameClassLoader extends ClassLoader {
         long parts = RuleText.dottedParts(name);
         if (name.indexOf('$') >= 0) {
             if (parts > MAX_DOLLAR_NAME_PARTS) {
-                String refusal = "Can't look up '" + FactNames.quote(name) + "': it has " + parts
+                String refusal = "Can't look up '" + MessageText.quote(name) + "': it has " + parts
                         + " dot-separated parts and a '$', and a class name with a '$' may have at most "
                         + MAX_DOLLAR_NAME_PARTS;
                 if (inNestedLookup()) {
@@ -272,11 +273,11 @@ final class ExactNameClassLoader extends ClassLoader {
                 throw new ClassNotFoundException(refusal);
             }
         } else if (parts > MAX_NAME_PARTS) {
-            throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + parts
+            throw new ClassNotFoundException("Can't look up '" + MessageText.quote(name) + "': it has " + parts
                     + " dot-separated parts, and a class name may have at most " + MAX_NAME_PARTS);
         }
         // Refused, and not for its parts, so for its length.
-        throw new ClassNotFoundException("Can't look up '" + FactNames.quote(name) + "': it has " + name.length()
+        throw new ClassNotFoundException("Can't look up '" + MessageText.quote(name) + "': it has " + name.length()
                 + " characters, and a class name may have at most " + MAX_NAME_LENGTH);
     }
 

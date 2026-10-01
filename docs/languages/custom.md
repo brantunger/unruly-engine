@@ -235,12 +235,16 @@ applies to both:
 | `IllegalArgumentException` without a fatal cause from `checkFactName` for a declared fact | `Declared fact 'empty' can't be used: ` + your message; no rule name | Last, after the rules' failures |
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
-expression language`, and every failure is logged at ERROR. Your message is shortened and escaped as
-[Exceptions by method](../exceptions-by-method.md) describes. Any other exception with no message shows its class
-name, and any root cause's in `(caused by ...)`.
+expression language`, and every failure is logged at ERROR. The engine shortens and escapes your message, and a
+warning's issue, as [Exceptions by method](../exceptions-by-method.md) describes. Any other exception with no message
+shows its class name, and any root cause's in `(caused by ...)`.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a
-message the engine doesn't shorten: keep it to 1,000 characters.
+message. Leave a message the engine shortens raw: the engine escapes it itself, and shortening escaped text can cut
+an escape in half. A warning's issue is one. Text the engine shows as it came, such as the issues you throw, is yours
+to make safe: since 2.16.0, `io.github.brantunger.unruly.api.language.MessageText` has `quote(name)` for a name and
+`escape(truncate(text))` for other text.
+
 The `RuleCompilationException` carries the same issues; for several rules its message is `2 rules failed to compile:
 <first>; <second>`, its name, kind and issues are the first failure's, and `failures()` has each rule's.
 
@@ -255,8 +259,7 @@ The `RuleCompilationException` carries the same issues; for several rules its me
 > A condition that doesn't compile hides its action's errors: the action isn't compiled until a `load()` with the
 > condition fixed. One load reports every broken *rule*, not every broken expression.
 
-With failures other than a rule's among them, the message reads `2 failures while loading the rules: ...`
-instead of `2 rules failed to compile: ...`.
+With failures other than a rule's among them, the message reads `2 failures while loading the rules: ...`.
 
 ## 📁 Reading facts
 
@@ -324,11 +327,10 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 `IllegalArgumentException`; by default every name passes. The engine calls it:
 
 - for every fact of every run, on the run's thread, after `beforeRun`, so a rejection reaches `onRunError`. `run()`
-  throws your exception unchanged, logged at ERROR. Anything else becomes an `IllegalArgumentException` reading
-  `The 'my' expression language failed to check fact name 'x': ...`;
+  throws your exception as it came and logs it shortened and escaped at ERROR: leave a name in it raw. Anything else
+  becomes an `IllegalArgumentException` reading `The 'my' expression language failed to check fact name 'x': ...`;
 - for each [declared fact](../facts.md#-declaring-facts) at `load()`, once every rule has compiled or failed, by the
-  compilers created; with none, they wait for the next `load()`. A rejection fails it with
-  `Declared fact 'empty' can't be used: ` and your message.
+  compilers created; with none, they wait for the next `load()`. A rejection fails it.
 
 A [fatal error](../glossary.md#fatal-error), even your exception's cause, is logged with that `failed to check`
 message and rethrown, by `load()` too. Only the loaded rules' languages are asked, in first-use order, or the default
@@ -539,7 +541,7 @@ See [The contract test kit](contract-kit.md), and [Testing beyond the contract k
 | **A stateless session of your own** | `new MySession()` still gets copies and the copy limit | Return `Session.none()` |
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
-| **A condition that doesn't compile** | Its action isn't compiled, so the action's errors appear only after the next `load()` | Expect a second failure after fixing a condition |
+| **A condition that doesn't compile** | Its action's errors appear only after the next `load()` | Expect a second failure after fixing it |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so setting an `int` or `float` property of a bean output fails the rule | Tell users to set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
@@ -550,8 +552,8 @@ See [The contract test kit](contract-kit.md), and [Testing beyond the contract k
 
 ### When is `newCompiler` called, and can I do expensive setup there?
 
-During `load()`, at the first rule in your language, or for an empty rule list if you're the default; never at
-`build()`. Once per `load()`, so per-list setup belongs there. See [Lifecycle at a glance](#-lifecycle-at-a-glance).
+Once per `load()`, at the first rule in your language, never at `build()`, so per-list setup belongs there. See
+[Lifecycle at a glance](#-lifecycle-at-a-glance).
 
 ### Are sessions created for runs that never reach my rules?
 
@@ -560,13 +562,7 @@ Yes. A copy of the rules has one session for every language the rule list uses, 
 
 ### If `newSession()` fails, do listeners hear about it?
 
-No. It happens before `beforeRun`; see [Thread safety](#-thread-safety). When `load()` is making copies, it throws a
-`RuleCompilationException` instead.
-
-### Do I have to implement `warmUp`?
-
-No. By default it does nothing, and `copiesAtLoad(n)` still makes its copies. See
-[Warming up a session](#warming-up-a-session).
+No. It happens before `beforeRun`; see [Thread safety](#-thread-safety).
 
 ### Do I have to implement `evaluateWithDetail`?
 

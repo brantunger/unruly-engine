@@ -25,8 +25,9 @@ import java.util.stream.Stream;
  * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf} and
  * {@link #keepAlso} log, and under the engine's logger name, {@code io.github.brantunger.unruly.engine}, as every
  * failure is logged.
- * <b>Internal:</b> this class may change in any release. It's public only so that the {@code api} package can escape
- * text the way the engine does, rather than keeping a copy of the escaping that could drift.
+ * <b>Internal:</b> this class may change in any release, and isn't part of the API. It's public only so that the
+ * {@code api} package ({@code Names}, {@code LoggingRuleListener} and {@code language.MessageText}) and the benchmarks
+ * can use it: they shorten and escape text the way the engine does, rather than keeping a copy that could drift.
  */
 public final class Failures {
 
@@ -578,12 +579,12 @@ public final class Failures {
 
     /**
      * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, as {@link #shorten(String, int)}
-     * does. {@code mvel.FactNames} keeps a copy of this, for MVEL's issues.
+     * does. {@code api.language.MessageText} publishes this.
      *
      * @param text The message
      * @return The message, shortened if it was longer
      */
-    static String truncate(String text) {
+    public static String truncate(String text) {
         return shorten(text, MAX_DESCRIPTION_LENGTH);
     }
 
@@ -617,7 +618,7 @@ public final class Failures {
 
     /**
      * How many characters of text longer than {@code limit} to keep: {@code limit}, or one fewer when the last of them
-     * is a high surrogate. {@code mvel.FactNames.quote} and {@code mvel.FactNames.truncate} keep copies of this.
+     * is a high surrogate. {@code mvel.FactNames.shownOf} keeps a copy of this, for {@code quoteWithin}.
      */
     private static int keptLength(String text, int limit) {
         return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;
@@ -828,7 +829,7 @@ public final class Failures {
      * Makes a fact, rule or language name safe to put in a message the engine logs: shortened to
      * {@value #MAX_NAME_LENGTH} characters (UTF-16 units), then {@link #escape escaped}; each escaped unit shows as 2
      * or 6 characters. The name keeps one fewer where the limit falls inside a surrogate pair, which is left out whole.
-     * {@code mvel.FactNames} keeps a copy of this, because the {@code mvel} package may not use this one.
+     * {@code api.language.MessageText} publishes this.
      *
      * @param name The name
      * @return The name, shortened if it was longer, then escaped
@@ -934,7 +935,6 @@ public final class Failures {
     /**
      * Tells whether a code point is one of Unicode's {@code Default_Ignorable_Code_Point} characters that isn't a
      * format character, which {@code Character} has no test for: the ranges of {@link #OTHER_DEFAULT_IGNORABLE}.
-     * {@code mvel.FactNames} keeps a copy of this.
      *
      * @param c The code point
      * @return {@code true} if a viewer shows it as nothing
@@ -955,7 +955,6 @@ public final class Failures {
     /**
      * Appends one UTF-16 unit as a backslash, {@code u} and four lowercase hex digits, as
      * {@code String.format("\\u%04x", unit)} would, without parsing a format for every character.
-     * {@code mvel.FactNames} keeps a copy of this.
      *
      * @param escaped What to append to
      * @param unit    The unit
