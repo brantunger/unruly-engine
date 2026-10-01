@@ -110,10 +110,24 @@ wins, and a newer build of it on the context class loader is ignored. Each skip 
 `io.github.brantunger.unruly.engine`: set that logger to DEBUG to see which copy an engine uses; see
 [Logging setup](../listeners-and-logging.md#-logging-setup).
 
-When that loader also holds its own copy of `unruly-engine-core`, or sees another copy of it, `build()` stops reading
-it at its first `ServiceLoader` error, with one DEBUG line, so a listing problem there, such as a missing class, a class
-without a public no-argument constructor or a malformed services file, doesn't fail `build()`. A language that loader
-lists after the error isn't found. On a loader without its own copy that sees no other, such an error fails `build()`.
+When that loader also holds its own copy of `unruly-engine-core`, or sees another copy of it, `build()` skips up to 100
+`ServiceLoader` errors there and keeps reading, so a listing problem, such as a missing class, a class without a public
+no-argument constructor or a malformed services file, doesn't fail `build()`, and a language listed after it is still
+found. On a loader without its own copy that sees no other, such an error fails `build()`.
+
+The 101st error stops reading that loader. Each skip and the stop are one DEBUG line each on
+`io.github.brantunger.unruly.engine`.
+
+`ServiceLoader` stops reading a services file at a line with a syntax error, so every name in that file is lost. The
+names above the bad line are lost even when a later services file lists them, because `ServiceLoader` has already
+counted them as seen. A valid file read before the broken one is unaffected.
+
+> [!WARNING]
+> Releases up to 2.16.0 that read such a loader stopped at its first error, and found nothing it listed after it. Now
+> a host whose engine found one language may find two, and `build()` without `defaultLanguage(...)` fails with `The
+> engine has several expression languages`: name the default. A later language that can't be created, has a `null` or
+> blank name, takes a name already used, or whose class fails with a `LinkageError` now fails `build()` too, as on any
+> loader.
 
 A loader sees another copy when it lists the library's classes from another jar or directory, as a plug-in host's
 loader that asks each plug-in in turn does. A second loader over the library's own jar file is no other copy, however

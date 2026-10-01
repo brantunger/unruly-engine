@@ -17,6 +17,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -32,6 +33,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.ServiceConfigurationError;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
@@ -88,6 +90,14 @@ class LanguageDiscoveryTest {
         /** Creates it. */
         public AlsoFound() {
             super("found");
+        }
+    }
+
+    /** A language named {@code listed}. */
+    public static final class Listed extends NamedLanguage {
+        /** Creates it. */
+        public Listed() {
+            super("listed");
         }
     }
 
@@ -290,7 +300,7 @@ class LanguageDiscoveryTest {
     }
 
     @Test
-    @DisplayName("a context class loader with its own copy of the library is left at its first error, so MVEL is found"
+    @DisplayName("a context class loader with its own copy of the library has its errors skipped, so MVEL is found"
             + " once")
     void secondCopySkipped() throws IOException {
         try (URLClassLoader loader = new ChildFirst(LanguageDiscoveryTest.class.getClassLoader(),
@@ -298,8 +308,8 @@ class LanguageDiscoveryTest {
                 codeOf(ExpressionLanguage.class))) {
             String logs = buildsWithMvel(loader);
 
-            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": that class loader sees"
-                    + " another copy of this library, so the languages it lists are a second copy: "
+            assertTrue(logs.contains("Skipped an error finding expression languages with " + loader + ": that class"
+                    + " loader sees another copy of this library, so the error may belong to that copy: "
                     + ExpressionLanguage.class.getName() + ": " + MvelExpressionLanguage.class.getName()
                     + " not a subtype"), logs);
         }
@@ -316,10 +326,16 @@ class LanguageDiscoveryTest {
                 throw new IOException("the plug-in's jar index is broken");
             }
         }) {
-            // ServiceLoader reports the same error on every call, so going on to the next listing never ends.
+            // ServiceLoader reports the same error on every call, so only the most errors skipped ends the search.
             String logs = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> buildsWithMvel(loader));
 
             assertEquals(1, logs.split("Stopped finding expression languages", -1).length - 1, logs);
+            assertEquals(LanguageRegistry.MAX_ERRORS_SKIPPED,
+                    logs.split("Skipped an error finding expression languages", -1).length - 1, logs);
+            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": ServiceLoader reported"
+                    + " more than " + LanguageRegistry.MAX_ERRORS_SKIPPED + " errors: "
+                    + ExpressionLanguage.class.getName() + ": Error locating configuration files: "
+                    + IOException.class.getName() + ": the plug-in's jar index is broken"), logs);
         }
     }
 
@@ -439,17 +455,35 @@ class LanguageDiscoveryTest {
 
     @ParameterizedTest(name = "at a path with a space, left unencoded: {0}")
     @ValueSource(booleans = {false, true})
-    @DisplayName("a context class loader that resolves the library's API but sees another copy of the library is left"
-            + " at its first error, so MVEL is found")
+    @DisplayName("a context class loader that resolves the library's API but sees another copy of the library has its"
+            + " errors skipped, so MVEL is found")
     void hostLoaderSeeingAnotherCopySkipped(boolean unencodedSpace) throws IOException, URISyntaxException {
         Path copy = copyOfTheLibrary(unencodedSpace ? "a plug-in" : "copy");
         try (URLClassLoader plugin = plugin(copy, unencodedSpace ? unencodedUrl(copy) : copy.toUri().toURL())) {
             ClassLoader host = new AskEachInTurn(LanguageDiscoveryTest.class.getClassLoader(), plugin);
             String logs = buildsWithMvel(host);
 
-            assertTrue(logs.contains("Stopped finding expression languages with " + host + ": that class loader sees"
-                    + " another copy of this library, so the languages it lists are a second copy: "
+            assertTrue(logs.contains("Skipped an error finding expression languages with " + host + ": that class"
+                    + " loader sees another copy of this library, so the error may belong to that copy: "
                     + ExpressionLanguage.class.getName() + ": " + PLUGIN_LANGUAGE + " not a subtype"), logs);
+        }
+    }
+
+    @ParameterizedTest(name = "the other copy listed first: {0}")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("a language that a context class loader seeing another copy of the library lists is found, whether"
+            + " it's listed before or after the other copy's language")
+    void languageListedWithAnotherCopyFound(boolean otherCopyFirst) throws IOException, URISyntaxException {
+        try (URLClassLoader plugin = plugin(copyOfTheLibrary());
+             URLClassLoader toyPlugin = listing(Found.class)) {
+            ClassLoader host = otherCopyFirst
+                    ? new AskEachInTurn(LanguageDiscoveryTest.class.getClassLoader(), plugin, toyPlugin)
+                    : new AskEachInTurn(LanguageDiscoveryTest.class.getClassLoader(), toyPlugin, plugin);
+            RulesEngine<Map<String, Object>> engine = withContextClassLoader(host,
+                    () -> builder().defaultLanguage("found").build());
+            engine.load(List.of(rule("toy", null, "true", "put k 1")));
+
+            assertEquals(Map.of("k", 1), engine.run(new FactMap<>()));
         }
     }
 
@@ -641,10 +675,161 @@ class LanguageDiscoveryTest {
         }) {
             String logs = buildsWithMvel(loader);
 
-            assertTrue(logs.contains("Stopped finding expression languages with " + loader + ": that class loader sees"
-                    + " another copy of this library, so the languages it lists are a second copy: "
+            assertTrue(logs.contains("Skipped an error finding expression languages with " + loader + ": that class"
+                    + " loader sees another copy of this library, so the error may belong to that copy: "
                     + ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype"),
                     logs);
+        }
+    }
+
+    /** A services file in the directory {@code dir} that lists the classes {@code names}. */
+    private URL servicesFile(String dir, String... names) throws IOException {
+        Path file = pluginRoot.resolve(dir).resolve(SERVICES_FILE);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, String.join("\n", names));
+        return file.toUri().toURL();
+    }
+
+    /** A services file in the directory {@code dir} that doesn't exist, so it can't be read. */
+    private URL missingServicesFile(String dir) throws IOException {
+        return pluginRoot.resolve(dir).resolve(SERVICES_FILE).toUri().toURL();
+    }
+
+    /**
+     * A class loader that sees the library and lists the services files {@code servicesFiles} alone, in order. It also
+     * lists {@link ExpressionLanguage}'s class file at a URL that is neither a jar nor a file, so it sees another copy
+     * of the library.
+     */
+    private static URLClassLoader seesAnotherCopy(URL... servicesFiles) throws IOException {
+        String classFile = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+        URL elsewhere = URI.create("http://plugins.example/" + classFile).toURL();
+        return new URLClassLoader(new URL[0], LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                if (name.equals(SERVICES_FILE)) {
+                    return Collections.enumeration(List.of(servicesFiles));
+                }
+                List<URL> listed = Collections.list(super.getResources(name));
+                if (name.equals(classFile)) {
+                    listed.add(elsewhere);
+                }
+                return Collections.enumeration(listed);
+            }
+        };
+    }
+
+    /** Finds the languages {@code loader} lists, after this library's, and returns them with the logs. */
+    private static Map.Entry<LanguageRegistry, String> discover(ClassLoader loader) {
+        AtomicReference<LanguageRegistry> registry = new AtomicReference<>();
+        String logs = logsOf(() -> registry.set(LanguageRegistry.resolve(Map.of(), "mvel",
+                List.of(ImportResolver.LIBRARY_CLASS_LOADER, loader))));
+        return Map.entry(registry.get(), logs);
+    }
+
+    @ParameterizedTest(name = "errors past the most skipped: {0}")
+    @ValueSource(ints = {0, 1})
+    @DisplayName("a context class loader that sees another copy of the library has at most MAX_ERRORS_SKIPPED errors"
+            + " skipped, so a language listed after that many is found, and one listed after more isn't")
+    void errorsSkippedAtMost(int pastTheMost) throws IOException {
+        // Each missing class is one error.
+        int skipped = LanguageRegistry.MAX_ERRORS_SKIPPED;
+        int errors = skipped + pastTheMost;
+        String[] names = new String[errors + 1];
+        for (int i = 0; i < errors; i++) {
+            names[i] = "plugin.Missing" + i;
+        }
+        names[errors] = Found.class.getName();
+        try (URLClassLoader loader = seesAnotherCopy(servicesFile("listing", names))) {
+            Map.Entry<LanguageRegistry, String> found = discover(loader);
+            String logs = found.getValue();
+
+            assertEquals(errors <= skipped, found.getKey().languages().containsKey("found"), logs);
+            assertEquals(Math.min(errors, skipped),
+                    logs.split("Skipped an error finding expression languages", -1).length - 1);
+            assertEquals(errors > skipped, logs.contains("Stopped finding expression languages with " + loader
+                    + ": ServiceLoader reported more than " + skipped + " errors: " + ExpressionLanguage.class.getName()
+                    + ": Provider plugin.Missing" + skipped + " not found"), logs);
+        }
+    }
+
+    @Test
+    @DisplayName("two services files in a row that can't be read are both skipped, each named, so a language listed"
+            + " after them is found")
+    void unreadableServicesFilesInARowSkipped() throws IOException {
+        // ServiceLoader's message names no file for either, but the IOException it wraps does, and so does the log.
+        try (URLClassLoader loader = seesAnotherCopy(missingServicesFile("first"), missingServicesFile("second"),
+                servicesFile("listing", Found.class.getName()))) {
+            Map.Entry<LanguageRegistry, String> found = discover(loader);
+            String logs = found.getValue();
+
+            assertTrue(found.getKey().languages().containsKey("found"), logs);
+            assertEquals(2, logs.split("Skipped an error finding expression languages", -1).length - 1, logs);
+            assertFalse(logs.contains("Stopped finding expression languages"), logs);
+            for (String dir : List.of("first", "second")) {
+                assertTrue(logs.contains(Path.of(dir, SERVICES_FILE).toString()), logs);
+            }
+            assertTrue(logs.contains(ExpressionLanguage.class.getName() + ": Error accessing configuration file: "
+                    + FileNotFoundException.class.getName() + ": "), logs);
+        }
+    }
+
+    @Test
+    @DisplayName("a broken services file that a class loader and its parent both list is skipped twice, so a language"
+            + " listed after it is found")
+    void sameServicesFileTwiceSkipped() throws IOException {
+        // Each loader lists the same directory, so the same error comes twice in a row.
+        servicesFile("broken", "plugin.Bad Name");
+        URL broken = pluginRoot.resolve("broken").toUri().toURL();
+        String classFile = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+        URL elsewhere = URI.create("http://plugins.example/" + classFile).toURL();
+        try (URLClassLoader parent = new URLClassLoader(new URL[]{broken},
+                LanguageDiscoveryTest.class.getClassLoader());
+             URLClassLoader loader = new URLClassLoader(new URL[]{broken, servicesListing(Found.class.getName())},
+                     parent) {
+                 @Override
+                 public Enumeration<URL> getResources(String name) throws IOException {
+                     List<URL> listed = Collections.list(super.getResources(name));
+                     if (name.equals(classFile)) {
+                         listed.add(elsewhere);
+                     }
+                     return Collections.enumeration(listed);
+                 }
+             }) {
+            Map.Entry<LanguageRegistry, String> found = discover(loader);
+            String logs = found.getValue();
+
+            assertTrue(found.getKey().languages().containsKey("found"), logs);
+            assertEquals(2, logs.split("Illegal configuration-file syntax", -1).length - 1, logs);
+            assertFalse(logs.contains("Stopped finding expression languages"), logs);
+        }
+    }
+
+    @Test
+    @DisplayName("the same error again after a language was found is skipped too, so a language listed after it is"
+            + " found")
+    void sameErrorAfterALanguageSkipped() throws IOException {
+        URL missing = missingServicesFile("missing");
+        try (URLClassLoader loader = seesAnotherCopy(missing, servicesFile("first", Found.class.getName()), missing,
+                servicesFile("second", Listed.class.getName()))) {
+            Map.Entry<LanguageRegistry, String> found = discover(loader);
+            String logs = found.getValue();
+
+            assertEquals(Set.of("mvel", "found", "listed"), found.getKey().languages().keySet(), logs);
+            assertEquals(2, logs.split("Skipped an error finding expression languages", -1).length - 1, logs);
+        }
+    }
+
+    @Test
+    @DisplayName("a language that can't be created fails build() with ServiceLoader's error, unchanged, after an error"
+            + " skipped on a context class loader that sees another copy of the library")
+    void languageCantBeCreatedAfterASkippedError() throws IOException {
+        try (URLClassLoader loader = seesAnotherCopy(servicesFile("listing", "plugin.Missing",
+                CantBeCreated.class.getName()))) {
+            ServiceConfigurationError error = withContextClassLoader(loader,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertInstanceOf(IllegalStateException.class, error.getCause());
+            assertEquals("no licence for this language", error.getCause().getMessage());
         }
     }
 

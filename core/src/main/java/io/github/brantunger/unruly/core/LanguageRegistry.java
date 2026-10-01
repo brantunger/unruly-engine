@@ -38,6 +38,16 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
     private static final String API_CLASS_FILE = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
 
     /**
+     * The most errors that finding languages with a class loader that sees another copy of this library skips. A host
+     * lists a few languages, so only a broken loader reaches it, such as one whose services files can't be looked up,
+     * for which ServiceLoader reports the same error on every call. On every build(), such a loader costs one more
+     * lookup than this, each failing with an IOException that ServiceLoader wraps in a ServiceConfigurationError, so
+     * twice as many exceptions as lookups, and a DEBUG line per lookup: one "Skipped" line per error skipped and one
+     * "Stopped" line.
+     */
+    static final int MAX_ERRORS_SKIPPED = 100;
+
+    /**
      * Resolves an engine's languages and its default language.
      *
      * @param given       The languages given to the builder, by the name the builder checked, or none
@@ -52,9 +62,13 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
      *                               {@link ServiceConfigurationError}, is thrown unchanged, except that when
      *                               {@code loader} has its own copy of {@link ExpressionLanguage}, a second copy of
      *                               this library, or isn't this library's loader and lists the class file of one
-     *                               from another location than this library's, nothing more is found with it after
-     *                               the first error ServiceLoader reports. A language whose class has the name of one
-     *                               found already, a second copy of it, is skipped, and the one found first is kept
+     *                               from another location than this library's, each error ServiceLoader reports is
+     *                               skipped and the providers it reads after the error are still found, such as those
+     *                               of a later services file, until ServiceLoader has reported more than
+     *                               {@value #MAX_ERRORS_SKIPPED} errors.
+     *                               Anything thrown by a provider read after a skipped error, or by a language it
+     *                               creates, is thrown unchanged. A language whose class has the name of one found
+     *                               already, a second copy of it, is skipped, and the one found first is kept
      */
     static LanguageRegistry resolve(Map<String, ExpressionLanguage> given, String defaultName, ClassLoader loader) {
         return resolve(given, defaultName, loader == ImportResolver.LIBRARY_CLASS_LOADER
@@ -108,6 +122,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
                                  Map<String, Class<?>> found) {
         Iterator<ServiceLoader.Provider<ExpressionLanguage>> providers =
                 ServiceLoader.load(ExpressionLanguage.class, loader).stream().iterator();
+        int errors = 0;
         while (true) {
             ServiceLoader.Provider<ExpressionLanguage> provider;
             try {
@@ -117,16 +132,26 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
                 provider = providers.next();
             } catch (ServiceConfigurationError e) {
                 // A loader with its own copy of this library's API, or that sees one, lists that copy's languages, and
-                // each is a second copy. Asked only here, so a build() without an error doesn't look.
-                if (!hasOwnCopy(loader)) {
+                // each is a second copy. Asked only here, at the first error, so a build() without an error doesn't
+                // look.
+                if (errors == 0 && !hasOwnCopy(loader)) {
                     throw e;
                 }
                 // The copy's languages implement the copy's ExpressionLanguage, not this one, so ServiceLoader
-                // rejects them. Nothing more is looked for with this loader: what it lists belongs to the copy, and
-                // an error ServiceLoader meets before it reads a listing comes back on every call.
-                log.debug("Stopped finding expression languages with {}: that class loader sees another copy of this"
-                        + " library, so the languages it lists are a second copy: {}", loader, e.getMessage());
-                return;
+                // rejects them, and goes on to the next language listed, which may be another plug-in's valid one.
+                // An error ServiceLoader meets before it reads a listing comes back on every call instead, and the
+                // same error can also come twice from a services file listed twice, so only too many end the search.
+                // The cause, such as an IOException, names the services file that can't be read.
+                String error = e.getCause() == null ? e.getMessage() : e.getMessage() + ": " + e.getCause();
+                errors++;
+                if (errors > MAX_ERRORS_SKIPPED) {
+                    log.debug("Stopped finding expression languages with {}: ServiceLoader reported more than {}"
+                            + " errors: {}", loader, MAX_ERRORS_SKIPPED, error);
+                    return;
+                }
+                log.debug("Skipped an error finding expression languages with {}: that class loader sees another copy"
+                        + " of this library, so the error may belong to that copy: {}", loader, error);
+                continue;
             }
             // By the class's name, before the language is created: a loader that delegates to this library's loader
             // finds the same class again, and one that holds a second copy of a language, with or without its own
