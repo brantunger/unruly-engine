@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.16.1](https://github.com/brantunger/unruly-engine/compare/v2.16.0...v2.16.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* language discovery skips another copy's errors and keeps reading, up to a cap ([#882](https://github.com/brantunger/unruly-engine/issues/882)) ([3edf618](https://github.com/brantunger/unruly-engine/commit/3edf6187cdfa243b67bc4cb400574f4651ccb6f9))
+
 ## [2.16.0](https://github.com/brantunger/unruly-engine/compare/v2.15.0...v2.16.0) (2026-10-01)
 
 
