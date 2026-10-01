@@ -170,6 +170,26 @@ class FactPropertiesTest {
         }
     }
 
+    /** A bean that counts the calls to its getters, as a lazy load or a remote call would be seen to run. */
+    public static class Counted {
+
+        private int calls;
+
+        public int getScore() {
+            calls++;
+            return 700;
+        }
+
+        public String getName() {
+            calls++;
+            return "Alex";
+        }
+
+        int calls() {
+            return calls;
+        }
+    }
+
     /**
      * A lazily loaded map whose backend fails, so its lookups and its iteration throw, a checked exception too,
      * which the map doesn't declare.
@@ -379,6 +399,21 @@ class FactPropertiesTest {
 
         public boolean isLocked() {
             return Thread.holdsLock(lock);
+        }
+    }
+
+    /** A map whose one key says whether the thread listing its keys holds a lock. */
+    static final class LockedKeys extends AbstractMap<String, Object> {
+
+        private Object lock = this;
+
+        void lockedBy(Object lock) {
+            this.lock = lock;
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            return Set.of(Map.entry(Thread.holdsLock(lock) ? "locked" : "unlocked", 1));
         }
     }
 
@@ -1261,5 +1296,196 @@ class FactPropertiesTest {
         Map<String, Object> data = FactProperties.toData(Map.of("none", new ArrayList<>()), 2);
 
         assertEquals(List.of(), data.get("none"));
+    }
+
+    @Test
+    @DisplayName("has and propertyNames call no getter, so asking whether a property is there doesn't run it")
+    void hasAndPropertyNamesCallNoGetter() {
+        Counted counted = new Counted();
+
+        assertTrue(FactProperties.has(counted, "score"));
+        assertFalse(FactProperties.has(counted, "rating"));
+        assertEquals(List.of("name", "score"), List.copyOf(FactProperties.propertyNames(counted)));
+        assertEquals(0, counted.calls());
+
+        // The counter does count: reading the property calls its getter, and converting calls every one.
+        FactProperties.read(counted, "score");
+        assertEquals(1, counted.calls());
+        FactProperties.toData(counted, 1);
+        assertEquals(3, counted.calls());
+    }
+
+    @Test
+    @DisplayName("a getter that throws is still a property to has and propertyNames, and fails only when read")
+    void aGetterThatThrowsIsStillThere() {
+        Broken broken = new Broken();
+
+        for (String property : List.of("boom", "checked", "validated")) {
+            assertTrue(FactProperties.has(broken, property), property);
+            assertThrows(IllegalStateException.class, () -> FactProperties.read(broken, property), property);
+        }
+        assertEquals(List.of("boom", "checked", "validated"), List.copyOf(FactProperties.propertyNames(broken)));
+        assertThrows(IllegalStateException.class, () -> FactProperties.toData(broken, 1));
+    }
+
+    @Test
+    @DisplayName("has is true exactly when read doesn't report the property missing, for every shape read takes")
+    void hasAgreesWithRead() throws IOException {
+        List<Map.Entry<Object, List<String>>> probes = new ArrayList<>();
+        probes.add(Map.entry(new Applicant(750, "Alex", new Address("Leeds")),
+                List.of("creditScore", "creditScor", "class")));
+        probes.add(Map.entry(new Loan(), List.of("amount", "approved", "URL", "boxed", "x", "class", "scaled", "static",
+                "notAProperty", "nothing", "something")));
+        probes.add(Map.entry(new TwoAccessors(), List.of("active")));
+        probes.add(Map.entry(new Order(2, 5), List.of("quantity", "total", "unitPrice", "price")));
+        probes.add(Map.entry(new Boxed(3), List.of("quantity")));
+        probes.add(Map.entry(new Broken(), List.of("boom", "checked", "validated", "missing")));
+        probes.add(Map.entry(Map.of("creditScore", 750), List.of("creditScore", "name")));
+        probes.add(Map.entry(new LazyMap(new IllegalStateException("backend down")), List.of("total", "count")));
+        probes.add(Map.entry(new TreeMap<>(Map.of(1, "one")), List.of("1", "creditScore")));
+        probes.add(Map.entry(Tier.GOLD, List.of("label", "declaringClass", "class")));
+        probes.add(Map.entry(Status.OPEN, List.of("declaringClass")));
+        probes.add(Map.entry("abc", List.of("empty", "blank", "bytes", "length")));
+        probes.add(Map.entry(42, List.of("value", "class")));
+        probes.add(Map.entry(LocalDate.of(2026, 1, 1), List.of("year", "dayOfWeek", "day")));
+        probes.add(Map.entry(List.of("a"), List.of("empty", "first", "size")));
+        probes.add(Map.entry(new LineItems(), List.of("empty")));
+        probes.add(Map.entry(HiddenFacts.withASecret(), List.of("secret", "public")));
+        probes.add(Map.entry(HiddenFacts.bareRecord(), List.of("score")));
+        probes.add(Map.entry(HiddenFacts.named(), List.of("name")));
+        probes.add(Map.entry(HiddenFacts.namedRecord(), List.of("name")));
+        probes.add(Map.entry(HiddenFacts.anonymousName(), List.of("name")));
+        probes.add(Map.entry(HiddenFacts.deeplyHidden(), List.of("deep")));
+        probes.add(Map.entry(HiddenFacts.account(), List.of("id")));
+        probes.add(Map.entry(HiddenFacts.labelled(), List.of("label", "ownLabel")));
+        probes.add(Map.entry(String.class, List.of("name", "simpleName")));
+        probes.add(Map.entry(String.class.getModule(), List.of("name")));
+        probes.add(Map.entry(String.class.getPackage(), List.of("name")));
+        probes.add(Map.entry(Thread.currentThread(), List.of("name")));
+        probes.add(Map.entry(new Worker(), List.of("jobs", "name")));
+
+        try (AppLoader loader = new AppLoader()) {
+            probes.add(Map.entry(loader, List.of("parent", "URLs")));
+            for (Map.Entry<Object, List<String>> probe : probes) {
+                Object target = probe.getKey();
+                List<String> properties = probe.getValue();
+                String type = target.getClass().getName();
+                Set<String> names = FactProperties.propertyNames(target);
+                for (String property : properties) {
+                    assertEquals(readFinds(target, property), FactProperties.has(target, property),
+                            type + "." + property);
+                }
+                // Every name listed is one has and read both find.
+                for (String name : names) {
+                    assertTrue(FactProperties.has(target, name), type + "." + name);
+                    assertTrue(readFinds(target, name), type + "." + name);
+                }
+            }
+        }
+        assertTrue(FactProperties.has("abc", "empty"));
+        assertTrue(FactProperties.propertyNames("abc").containsAll(List.of("empty", "blank", "bytes")));
+        assertTrue(FactProperties.propertyNames(List.of()).contains("empty"));
+        assertFalse(FactProperties.has(String.class, "name"));
+        assertEquals(Set.of(), FactProperties.propertyNames(String.class));
+        assertEquals(Set.of(), FactProperties.propertyNames(new Worker()));
+        assertFalse(FactProperties.propertyNames(String.class).contains(null));
+        assertFalse(FactProperties.propertyNames(new Worker()).contains(null));
+    }
+
+    /**
+     * Whether {@link FactProperties#read} finds a property: whether it reads it, or fails reading it, rather than
+     * reporting it missing.
+     */
+    private static boolean readFinds(Object target, String property) {
+        try {
+            FactProperties.read(target, property);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        } catch (IllegalStateException e) {
+            return true;
+        }
+    }
+
+    @Test
+    @DisplayName("a record's or a bean's property names are toData's keys, in the same order")
+    void propertyNamesAreToDatasKeys() {
+        List<Object> facts = List.of(new Applicant(750, "Alex", new Address("Leeds")), new Order(2, 5), new Boxed(3),
+                new Loan(), new TwoAccessors(), HiddenFacts.withASecret(), HiddenFacts.bareRecord(),
+                HiddenFacts.namedRecord(), HiddenFacts.account());
+
+        for (Object fact : facts) {
+            assertEquals(List.copyOf(FactProperties.toData(fact, 1).keySet()),
+                    List.copyOf(FactProperties.propertyNames(fact)), fact.getClass().getName());
+        }
+        assertEquals(List.of("quantity", "unitPrice", "total"), List.copyOf(FactProperties.propertyNames(
+                new Order(2, 5))));
+    }
+
+    @Test
+    @DisplayName("a map's property names are its string keys in its own order, and neither list can be changed")
+    void aMapsPropertyNames() {
+        Map<Object, Object> mixed = new LinkedHashMap<>();
+        mixed.put("b", 1);
+        mixed.put(1, "one");
+        mixed.put(null, "none");
+        mixed.put("a", null);
+
+        Set<String> names = FactProperties.propertyNames(mixed);
+
+        assertEquals(List.of("b", "a"), List.copyOf(names));
+        assertTrue(FactProperties.has(mixed, "a"));
+        assertFalse(FactProperties.has(mixed, "1"));
+        assertFalse(FactProperties.has(mixed, "null"));
+        assertThrows(UnsupportedOperationException.class, () -> names.add("c"));
+        assertThrows(UnsupportedOperationException.class, () -> FactProperties.propertyNames(new Loan()).add("c"));
+        assertEquals(Set.of(), FactProperties.propertyNames(new TreeMap<>(Map.of(1, "one"))));
+        assertFalse(FactProperties.has(new TreeMap<>(Map.of(1, "one")), "creditScore"));
+    }
+
+    @Test
+    @DisplayName("a synchronized map's property names are listed under its lock, as its key set's forEach holds it")
+    void aSynchronizedMapsNamesAreListedUnderItsLock() {
+        LockedKeys keys = new LockedKeys();
+        Map<String, Object> synchronizedKeys = Collections.synchronizedMap(keys);
+        keys.lockedBy(synchronizedKeys);
+
+        assertEquals(Set.of("locked"), FactProperties.propertyNames(synchronizedKeys));
+    }
+
+    @Test
+    @DisplayName("what a map's containsKey or iteration throws is wrapped, except a refused key, which isn't there")
+    void aMapThatThrowsWhenAsked() {
+        IllegalArgumentException backendDown = new IllegalArgumentException("backend down");
+
+        IllegalStateException onContainsKey = assertThrows(IllegalStateException.class,
+                () -> FactProperties.has(new FailingMap(backendDown, true), "score"));
+        assertSame(backendDown, onContainsKey.getCause());
+        assertEquals("Reading 'score' on a " + FailingMap.class.getName() + " failed: backend down",
+                onContainsKey.getMessage());
+
+        Exception checked = new IOException("disk gone");
+        IllegalStateException onChecked = assertThrows(IllegalStateException.class,
+                () -> FactProperties.has(new FailingMap(checked, true), "score"));
+        assertSame(checked, onChecked.getCause());
+
+        IllegalStateException onIteration = assertThrows(IllegalStateException.class,
+                () -> FactProperties.propertyNames(new FailingMap(checked, false)));
+        assertSame(checked, onIteration.getCause());
+        assertEquals("Reading the keys of a " + FailingMap.class.getName() + " failed: disk gone",
+                onIteration.getMessage());
+
+        // A NullPointerException or ClassCastException from containsKey is the map refusing the key, as for read.
+        assertFalse(FactProperties.has(new FailingMap(new NullPointerException("no nulls"), true), "score"));
+        assertFalse(FactProperties.has(new FailingMap(new ClassCastException("not a number"), true), "score"));
+    }
+
+    @Test
+    @DisplayName("has and propertyNames reject a null fact or property, as read does")
+    void hasAndPropertyNamesRejectNull() {
+        assertThrows(NullPointerException.class, () -> FactProperties.has(null, "x"));
+        assertThrows(NullPointerException.class, () -> FactProperties.has(new Loan(), null));
+        assertThrows(NullPointerException.class, () -> FactProperties.has(Map.of(), null));
+        assertThrows(NullPointerException.class, () -> FactProperties.propertyNames(null));
     }
 }

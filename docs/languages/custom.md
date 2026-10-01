@@ -263,10 +263,10 @@ With failures other than a rule's among them, the message reads `2 failures whil
 
 ## 📁 Reading facts
 
-Rules everywhere are written `applicant.creditScore`, where the fact may be a record, a JavaBean or a `Map`. The
-engine hands you the fact objects as they are, so making all three work is your job, and it's what adapters most
-often get wrong: a record's component is a method, so a language that looks only for a getter or a field reads
-nothing, and the condition is silently `false`. `FactProperties.read(fact, "creditScore")` does it:
+Rules are written `applicant.creditScore` whether the fact is a record, a JavaBean or a `Map`, and the engine hands you
+facts as they are, so making all three work is your job. Adapters most often get records wrong: a component is a method,
+so a language that looks only for a getter or a field reads nothing, and the condition is silently `false`.
+`FactProperties.read(fact, "creditScore")` does it:
 
 | Fact | What `read` returns |
 | --- | --- |
@@ -278,16 +278,19 @@ nothing, and the condition is silently `false`. `FactProperties.read(fact, "cred
 > `read` throws `IllegalArgumentException` when the fact has no such property. Let it reach the engine: a missing
 > property is a mistake in the rule, and evaluating it to `false` or to undefined hides it.
 
-A property that exists but whose accessor throws, or can't be called, fails with `IllegalStateException` instead, so
-a getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't public is read
-through a public supertype that declares the accessor, a superclass or an interface, or else directly where its
-package is open to `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the
-application `opens` it; see [Packaging](#-packaging).
+A property that exists but whose accessor throws, or can't be called, fails with `IllegalStateException` instead, so a
+getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't public is read
+through a public supertype that declares the accessor, or else directly where its package is open to
+`io.github.brantunger.unruly.core`: always on the class path, and on the module path when the application `opens` it;
+see [Packaging](#-packaging).
+
+`FactProperties.has(fact, "creditScore")` is `true` exactly when `read` wouldn't report the property missing, even if
+its getter throws; `propertyNames(fact)` lists the names `read` can reach. Neither calls a getter, though a map's
+`containsKey` or key iteration runs, so use them for `in`, `hasattr` or `Object.keys`.
 
 A language is expected to compare whole numbers of different types by value, so a condition written for `x` = 1
-matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that deliberately doesn't can
-skip the [contract kit](contract-kit.md)'s check by overriding `comparesWholeNumbersByValue()` in its test to return
-`false`.
+matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that doesn't can override
+`comparesWholeNumbersByValue()` in its [contract kit](contract-kit.md) test to return `false`.
 
 `FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
 that reads only maps. It throws `IllegalArgumentException` for a value it doesn't take apart, such as a number, a
@@ -299,10 +302,10 @@ Map<String, Object> data =
 // {applicant={creditScore=750}, score=750}
 ```
 
-Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the run's first condition or action to ask makes
-the map, and its other conditions and actions get the same one. Key it with the compiler, `this` in the lambdas, not
-with each expression. Nested and later runs make their own. The map misses a fact that Java code changes after it's
-made, and the engine drops it, unclosed, when the run returns.
+Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first condition or action to ask makes the
+map, and the run's others share it. Key it with the compiler, `this` in the lambdas, not with each expression. Nested
+and later runs make their own. The map misses a fact that Java code changes after it's made, and the engine drops it,
+unclosed, when the run returns.
 
 ## 📤 Actions and results
 
@@ -510,11 +513,11 @@ module com.example.app {
 }
 ```
 
-A public class needs `exports`; a class that isn't public needs `opens`, because calling its method is deep
-reflection. A language that reflects on facts itself needs its own access: in MVEL's case an export with no `to`
-clause at all, because the accessor classes MVEL generates live in the unnamed module, as the root README's
-[Installation](../../README.md#-installation) block explains. A test module that `requires` the contract kit opens its
-package `to org.junit.platform.commons`.
+A public class needs `exports`; a class that isn't public needs `opens`, because calling its method is deep reflection.
+A language that reflects on facts itself needs its own access: MVEL needs an export with no `to` clause, because its
+generated accessor classes live in the unnamed module; see the root README's
+[Installation](../../README.md#-installation). A test module that `requires` the contract kit opens its package `to
+org.junit.platform.commons`.
 
 ### Native image
 
@@ -557,10 +560,6 @@ Once per `load()`, at the first rule in your language, never at `build()`, so pe
 
 Yes. A copy of the rules has one session for every language the rule list uses, whichever rules a run reaches. See
 [Thread safety](#-thread-safety).
-
-### If `newSession()` fails, do listeners hear about it?
-
-No. It happens before `beforeRun`; see [Thread safety](#-thread-safety).
 
 ### Do I have to implement `evaluateWithDetail`?
 
