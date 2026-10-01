@@ -16,6 +16,8 @@ import java.util.function.Supplier;
  * them is final, and a failure to read one says nothing about the failure being reported, which is still reported as
  * it would be.
  * {@code core.Failures} keeps the engine's copy of these readers: the mvel package may not use that one.
+ * mvel's {@code ExceptionReadsCopiesTest} checks {@link #messageOf}, {@link #rootCause} and {@link #causeChain}, and
+ * the private readers they go through, against it.
  */
 final class ExceptionReads {
 

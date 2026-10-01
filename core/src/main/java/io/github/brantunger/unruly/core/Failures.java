@@ -479,7 +479,8 @@ public final class Failures {
      * rules, listeners and languages throw to describe it, and a {@code getMessage()} of their own can throw, such as
      * one built from a field that is {@code null}; a failure the engine was handling would then end as that one.
      * Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the message unavailable (see
-     * {@link #read}).
+     * {@link #read}). {@code mvel.ExceptionReads} keeps a copy for the {@code mvel} package, which may not use this
+     * class, and mvel's {@code ExceptionReadsCopiesTest} checks it against this one.
      *
      * @param e The exception
      * @return Its message, or {@code null} if it has none, or {@code (message unavailable: ...)}, naming the class of
@@ -541,6 +542,8 @@ public final class Failures {
      * Calls one of the accessors of an exception the engine didn't create, none of which is final, without letting
      * anything it throws escape, a fatal {@link Error} too: what an accessor throws says nothing about the failure the
      * engine is handling, which is still handled as it would be, its own fatal errors included.
+     * {@code mvel.ExceptionReads} keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one
+     * through {@link #messageOf} and {@link #causeChain}.
      *
      * @param accessor The accessor
      * @param ifThrown What to return instead, from what the accessor threw
@@ -557,6 +560,8 @@ public final class Failures {
 
     /**
      * Reads an exception's cause as {@link #messageOf} reads its message: {@code getCause()} isn't final either.
+     * {@code mvel.ExceptionReads} keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one
+     * through {@link #causeChain}.
      *
      * @param e The exception
      * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
@@ -984,6 +989,13 @@ public final class Failures {
         }
     }
 
+    /**
+     * Finds the last exception in {@code e}'s cause chain (see {@link #causeChain}). {@code mvel.ExceptionReads} keeps
+     * a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one.
+     *
+     * @param e The exception
+     * @return The last link of its cause chain that could be read, which is {@code e} if it has no cause
+     */
     static Throwable rootCause(Throwable e) {
         List<Throwable> chain = causeChain(e);
         return chain.get(chain.size() - 1);
@@ -992,7 +1004,8 @@ public final class Failures {
     /**
      * Lists {@code e} and its causes, stopping if the chain loops back on itself, at a link whose {@code getCause()}
      * throws (see {@link #causeOf}), or after {@value #MAX_CAUSE_CHAIN_LENGTH} links: a {@code getCause()} of its own
-     * that returns a new exception every time would otherwise make a chain that never ends.
+     * that returns a new exception every time would otherwise make a chain that never ends. {@code mvel.ExceptionReads}
+     * keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one.
      */
     static List<Throwable> causeChain(Throwable e) {
         List<Throwable> chain = new ArrayList<>();
