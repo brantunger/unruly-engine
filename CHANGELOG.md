@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.18.0](https://github.com/brantunger/unruly-engine/compare/v2.17.0...v2.18.0) (2026-10-01)
+
+
+### Features
+
+* has and propertyNames on FactProperties answer without calling a getter ([#891](https://github.com/brantunger/unruly-engine/issues/891)) ([63876df](https://github.com/brantunger/unruly-engine/commit/63876df04760facc48bf88a31ec2af7cf2bd51a4))
+
 ## [2.17.0](https://github.com/brantunger/unruly-engine/compare/v2.16.1...v2.17.0) (2026-10-01)
 
 
