@@ -21,9 +21,11 @@ import java.util.function.Supplier;
  * <b>Identity:</b> a context equals only itself, however its facts change and whatever another run's facts are, and its
  * {@code hashCode()} reads neither the facts nor, for an {@link ActionContext}, the output object. A run passes one
  * evaluation context to every condition, and a new action context to each action, so the two are different objects. A
- * {@link Session} serves one run at a time and later runs reuse it, and no call marks where a run starts or ends, so
- * state a run leaves in a session is still there for the next run; state for one run belongs in {@link #runScoped}. A
- * map keyed on contexts must not keep them alive, as a {@link java.util.WeakHashMap} doesn't.
+ * {@link Session} serves one run at a time and later runs reuse it, and no call to it marks where a run starts or
+ * ends, so state a run leaves in a session is still there for the next run; state for one run belongs in
+ * {@link #runScoped}, or, if it holds a resource that must be released, such as a runtime's context or interpreter
+ * opened for the run, in {@link #runScopedClosing}, which closes it when the run ends. A map keyed on contexts must not
+ * keep them alive, as a {@link java.util.WeakHashMap} doesn't.
  * </p>
  */
 public sealed interface EvaluationContext
@@ -105,7 +107,8 @@ public sealed interface EvaluationContext
      * <p>
      * The value is made when it is first asked for, and isn't made again during the run, so it doesn't see a change
      * that Java code makes to a fact later in the run. The engine keeps the values until the run returns, and then lets
-     * them go without closing them: a resource a language opens belongs in its {@link Session}. The values aren't
+     * them go without closing them: a resource a language opens for one run belongs in {@link #runScopedClosing},
+     * which closes it when the run ends, and one it keeps from run to run in its {@link Session}. The values aren't
      * synchronized, as a run evaluates one expression at a time. If {@code init} throws, nothing is kept, and the next
      * call for the key calls its {@code init} again. An {@code init} can ask for other keys, but not for its own: that
      * throws {@link IllegalStateException}, rather than recursing or making the value twice.
@@ -117,9 +120,54 @@ public sealed interface EvaluationContext
      * @return The value kept under {@code key}, never {@code null}
      * @throws NullPointerException  if {@code key} or {@code init} is {@code null}, or {@code init} returns
      *                               {@code null}
-     * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key
+     * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key, or
+     *                               the run keeps a value under {@code key} with {@link #runScopedClosing}
      */
     default <T> T runScoped(Object key, Supplier<? extends T> init) {
         return io.github.brantunger.unruly.core.EngineEvaluationContext.runScoped(this, key, init);
+    }
+
+    /**
+     * Returns the value kept under {@code key} for this run, as {@link #runScoped} does, and closes it when the run
+     * ends. It is for a resource a language opens for one run and must release, such as a runtime's context or
+     * interpreter, or a connection the run's expressions share.
+     *
+     * <p>
+     * The engine closes the values once the run has ended, however it ends: it returns, fails, passes its deadline or
+     * is interrupted. It closes them on the thread that ran it, after the run's last listener call and before
+     * {@code run()} returns. The run still holds its copy of the rules then, so no other run uses its sessions until
+     * its values are closed, and no session of the copy is closed before them. They are closed in the reverse of the
+     * order they were made, so a value whose {@code init} asked for another is closed before that one, and each is
+     * closed whatever the others throw. What a {@code close()} throws is handled as what a {@link Session#close()}
+     * throws is: it is logged at WARN, and the run's outcome stands, unless it is a fatal {@link Error}, such as an
+     * {@link OutOfMemoryError}. Once every value is closed, {@code run()} throws that error in place of the result, or
+     * of a failure of the run that isn't fatal, which the error carries as a suppressed exception; a run that failed
+     * with a fatal error of its own throws its own, carrying the one from {@code close()}. A nested run closes its own
+     * values when it ends.
+     * </p>
+     *
+     * <p>
+     * A key is either closing or not: asking with this method for a key that the run keeps a value under with
+     * {@link #runScoped}, or the other way round, throws {@link IllegalStateException}. So does asking for a value
+     * with this method once the run's values are being closed, or have been, such as from a value's {@code close()} or
+     * through a context kept past its run, as that value would never be closed. Unlike {@link #runScoped}, this method
+     * can be called from another thread while the run ends: the value is then either closed with the run's others, or
+     * refused with {@link IllegalStateException}, and never left open. A language's unit tests close a test context's
+     * values with {@code io.github.brantunger.unruly.test.LanguageTestContexts.endRun}. Otherwise the values behave as
+     * {@link #runScoped} describes.
+     * </p>
+     *
+     * @param key  The key, compared with {@link Object#equals(Object)}
+     * @param init Makes the value the first time the run asks for {@code key}
+     * @param <T>  The value's type
+     * @return The value kept under {@code key}, never {@code null}
+     * @throws NullPointerException  if {@code key} or {@code init} is {@code null}, or {@code init} returns
+     *                               {@code null}
+     * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key, the
+     *                               run keeps a value under {@code key} with {@link #runScoped}, or the run's values
+     *                               are being or have been closed
+     */
+    default <T extends AutoCloseable> T runScopedClosing(Object key, Supplier<? extends T> init) {
+        return io.github.brantunger.unruly.core.EngineEvaluationContext.runScopedClosing(this, key, init);
     }
 }

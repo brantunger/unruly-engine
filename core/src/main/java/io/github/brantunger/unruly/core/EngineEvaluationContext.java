@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.language.EvaluationContext;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -99,10 +100,63 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * @param init    Makes the value the first time the run asks for it
      * @param <T>     The value's type
      * @return The value
-     * @throws NullPointerException if {@code key}, {@code init} or what {@code init} returns is {@code null}
+     * @throws NullPointerException  if {@code key}, {@code init} or what {@code init} returns is {@code null}
+     * @throws IllegalStateException if the init of {@code key} is running, or {@code key} is kept with
+     *                               {@link EvaluationContext#runScopedClosing}
      */
     public static <T> T runScoped(EvaluationContext context, Object key, Supplier<? extends T> init) {
         return runScopeOf(context).get(key, init);
+    }
+
+    /**
+     * Returns the value a context's run keeps under a key, and closes when the run ends, as
+     * {@link EvaluationContext#runScopedClosing} describes it. <b>Internal:</b> public only so that method's default,
+     * in another package, can reach the run's values, which only the engine's own context records have.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @param key     The key
+     * @param init    Makes the value the first time the run asks for it
+     * @param <T>     The value's type
+     * @return The value
+     * @throws NullPointerException  if {@code key}, {@code init} or what {@code init} returns is {@code null}
+     * @throws IllegalStateException if the init of {@code key} is running, {@code key} is kept with
+     *                               {@link EvaluationContext#runScoped}, or the run has ended
+     */
+    public static <T extends AutoCloseable> T runScopedClosing(EvaluationContext context, Object key,
+                                                               Supplier<? extends T> init) {
+        return runScopeOf(context).getClosing(key, init);
+    }
+
+    /**
+     * Ends the run of a context the test kit created, as a run ends: closes the values kept with
+     * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, each whatever the others
+     * throw, and fails any later request for one. Unlike a run, it throws what a {@code close()} threw: the first, with
+     * the others suppressed on it. Calling it again does nothing. <b>Internal:</b> public only for the test kit.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @throws NullPointerException if {@code context} is {@code null}
+     * @throws Exception            the first thing a value's {@code close()} threw, as it is, with what the others
+     *                              threw suppressed on it: each once, and none it already carries or that carries it
+     *                              (see {@link Failures#keepAlso})
+     */
+    // Any Throwable: each value is closed whatever the one before threw, and what the first threw is thrown as it is.
+    public static void endRun(EvaluationContext context) throws Exception {
+        Objects.requireNonNull(context, "context must not be null");
+        List<AutoCloseable> values = runScopeOf(context).end();
+        Throwable first = null;
+        for (int i = values.size() - 1; i >= 0; i--) {
+            try {
+                values.get(i).close();
+            } catch (Throwable e) {
+                if (first == null) {
+                    first = e;
+                } else {
+                    // Not the same one twice, nor one that would make a loop of causes and suppressed exceptions.
+                    Failures.keepAlso(first, e);
+                }
+            }
+        }
+        Failures.<RuntimeException>rethrowUnchecked(first);
     }
 
     /**

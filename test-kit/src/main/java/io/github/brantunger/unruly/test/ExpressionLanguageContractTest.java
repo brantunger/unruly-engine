@@ -1506,10 +1506,17 @@ public abstract class ExpressionLanguageContractTest {
      * is thrown on, and fails the check by itself.
      *
      * <p>
-     * An exception or an {@link Error} from closing the session or the compiler doesn't fail this check, unless it's
-     * a fatal one: the engine only logs the rest, and {@code sessionsClosed}, {@code sessionClosedWhileAnotherRuns}
-     * and {@code sessionClosedOnAnotherThread} are the checks that fail a session whose {@code close()} throws, and
-     * {@code compilerClosed} the one that fails a compiler whose {@code close()} throws.
+     * Each fact is evaluated as a run of its own, which {@link LanguageTestContexts#endRun} ends before the next, as
+     * the engine ends a run: the values the language kept with {@link EvaluationContext#runScopedClosing} are closed
+     * then, before the session. A language that keeps none sees no difference.
+     * </p>
+     *
+     * <p>
+     * An exception or an {@link Error} from closing the session, the compiler or a value kept for the run doesn't
+     * fail this check, unless it's a fatal one: the engine only logs the rest, and {@code sessionsClosed},
+     * {@code sessionClosedWhileAnotherRuns} and {@code sessionClosedOnAnotherThread} are the checks that fail a session
+     * whose {@code close()} throws, and {@code compilerClosed} the one that fails a compiler whose {@code close()}
+     * throws.
      * </p>
      */
     @Test
@@ -1530,32 +1537,39 @@ public abstract class ExpressionLanguageContractTest {
                 for (Object x : List.of(1, 2, 1L, 2L, (short) 1, BigDecimal.ONE)) {
                     String forFact = "for x = " + x + " (" + x.getClass().getSimpleName() + "), ";
                     EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", x));
-                    ConditionResult detailed;
-                    try {
-                        detailed = condition.evaluateWithDetail(evaluation, session);
-                    } catch (Throwable e) {
-                        rethrowIfFatal(e);
-                        // A language that can't compare this type fails the rule either way, as long as evaluate
-                        // does too. The message is built only if it doesn't, since reading e can throw.
-                        rethrowIfFatal(assertThrows(Throwable.class, () -> condition.evaluate(evaluation, session),
-                                () -> forFact + "evaluateWithDetail threw " + describe(e) + ", but evaluate didn't"));
-                        continue;
-                    }
-                    assertNotNull(detailed,
-                            forFact + "evaluateWithDetail returned null, which fails the rule");
+                    // Each fact is a run of its own, which ends before the session is closed, as a run's does: the
+                    // values the language kept for it with runScopedClosing are closed, however the run ends.
+                    AutoCloseable run = () -> LanguageTestContexts.endRun(evaluation);
+                    closing(new ClosedQuietly<>(run), ended -> {
+                        ConditionResult detailed;
+                        try {
+                            detailed = condition.evaluateWithDetail(evaluation, session);
+                        } catch (Throwable e) {
+                            rethrowIfFatal(e);
+                            // A language that can't compare this type fails the rule either way, as long as evaluate
+                            // does too. The message is built only if it doesn't, since reading e can throw.
+                            rethrowIfFatal(assertThrows(Throwable.class, () -> condition.evaluate(evaluation, session),
+                                    () -> forFact + "evaluateWithDetail threw " + describe(e)
+                                            + ", but evaluate didn't"));
+                            return;
+                        }
+                        assertNotNull(detailed,
+                                forFact + "evaluateWithDetail returned null, which fails the rule");
 
-                    // Not assertDoesNotThrow, which would turn a fatal error into a failure of the check, and reads
-                    // the message of what evaluate threw, which can throw.
-                    Object value;
-                    try {
-                        value = condition.evaluate(evaluation, session);
-                    } catch (Throwable e) {
-                        rethrowIfFatal(e);
-                        throw new AssertionFailedError(forFact + "evaluate threw, but evaluateWithDetail returned "
-                                + describe(detailed.value()) + " ==> Unexpected exception thrown: " + describe(e), e);
-                    }
-                    assertEquals(detailed.value(), value,
-                            forFact + "evaluate returned a different value than evaluateWithDetail reported");
+                        // Not assertDoesNotThrow, which would turn a fatal error into a failure of the check, and
+                        // reads the message of what evaluate threw, which can throw.
+                        Object value;
+                        try {
+                            value = condition.evaluate(evaluation, session);
+                        } catch (Throwable e) {
+                            rethrowIfFatal(e);
+                            throw new AssertionFailedError(forFact + "evaluate threw, but evaluateWithDetail returned "
+                                    + describe(detailed.value()) + " ==> Unexpected exception thrown: " + describe(e),
+                                    e);
+                        }
+                        assertEquals(detailed.value(), value,
+                                forFact + "evaluate returned a different value than evaluateWithDetail reported");
+                    });
                 }
             });
         });

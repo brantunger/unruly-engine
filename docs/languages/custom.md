@@ -1,7 +1,7 @@
 # 🔨 Writing an expression language
 
 How to implement `ExpressionLanguage` so rules can be written in a language of your own, and what the engine calls,
-when, and on which thread. [The contract test kit](contract-kit.md) covers testing the language.
+when, and on which thread.
 
 **Who it's for:** language authors.
 **You'll be able to:** implement the four interfaces, report compile errors the way the engine expects, read facts of
@@ -51,6 +51,7 @@ sequenceDiagram
     Engine->>Comp: newSession(), when no idle copy is free
     Engine->>Comp: checkFactName(name), for each fact
     Engine->>Expr: evaluateWithDetail() or execute(), with the run's session
+    Engine->>Engine: after afterRun or onRunError, close the run's runScopedClosing values, newest first
     App->>Engine: load(newRules) or close()
     Engine->>Sess: close(), once no run uses the copy
     Engine->>Comp: close(), after its last session
@@ -65,6 +66,7 @@ sequenceDiagram
 | `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled. Return `Session.none()` or a new session each time | The run's thread, or the `load()` thread | Yes |
 | `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it. Never for `Session.none()`, a session a run creates, or `validate()` | The `load()` thread | No |
 | `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
+| `close()` of a [`runScopedClosing`](#-reading-facts) value | After its run's last listener call | The run's thread | Only with other runs' values |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
 | `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns. Don't throw | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
 
@@ -72,11 +74,10 @@ Who closes a session depends on its copy. An extra copy: its run. A kept copy in
 retired: its run, or, while runs wait on those rules, a later run. An idle copy: the `load()` or `close()` that retires
 the rules, or a later one if that stopped part way.
 
-A copy shared by every run holds only `Session.none()`, the session of a language that keeps no state, whose
-`close()` does nothing.
+A copy shared by every run holds only `Session.none()`, whose `close()` does nothing.
 
 Two failures close things early. A session made for a copy that another language then fails to make is closed on the
-run's thread, at once, before it's used. A `load()` that fails closes the compilers it created at once, on the
+run's thread before it's used. A `load()` that fails closes the compilers it created at once, on the
 `load()` thread; when it fails while making its copies, it closes the sessions of the copies it made first, then each
 compiler once.
 
@@ -199,10 +200,8 @@ returns `ConditionResult.of(evaluate(context, session))`, a result with no detai
 `evaluate` works unchanged. For a `Boolean` it returns the shared `ConditionResult.TRUE` or `FALSE`, so neither
 it nor `ConditionResult.of(value, null)` allocates.
 
-Since 2.3.0, two `ConditionResult`s are equal when their values and details are, by the detail's own `equals`, so
-`assertEquals` works when the detail is a `String` or a record; an array, or a class without its own `equals`,
-compares by identity. `toString()` prints the call that makes it, such as
-`ConditionResult.of(true, <detail>)`, as `ActionResult` does.
+Since 2.3.0, `ConditionResult`s with equal values and details are equal, by the detail's own `equals`, so an array
+compares by identity. `toString()` prints the call that makes it, such as `ConditionResult.of(true, <detail>)`.
 
 Keep `evaluate` returning the same value: a condition that wraps yours, or your own tests, may call it. The kit's
 `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
@@ -305,10 +304,21 @@ Map<String, Object> data =
 // {applicant={creditScore=750}, score=750}
 ```
 
-Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first condition or action to ask makes the
-map, and the run's others share it. Key it with the compiler, `this` in the lambdas, not with each expression. Nested
-and later runs make their own. The map misses a fact that Java code changes after it's made, and the engine drops it,
-unclosed, when the run returns.
+Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first expression to ask makes the map, the
+others share it. Key it with the compiler (`this`), not each expression. Nested and later runs make their own. The map
+misses a fact that Java code changes after it's made, and the engine drops it, unclosed, when the run returns: keep a
+resource with `runScopedClosing`.
+
+```java
+// MyInterpreter stands for your runtime's AutoCloseable context; a nested run makes and closes its own
+MyInterpreter interpreter = evaluation.runScopedClosing(MyInterpreter.class, MyInterpreter::new);
+```
+
+Since 2.20.0, `runScopedClosing(key, init)` closes the value however the run ends, before the copy is given back,
+newest first. A `close()` that throws is logged at WARN; a fatal error is then thrown, carrying a run failure that
+isn't fatal, but a fatal run failure wins. Using both methods on one key, or `runScopedClosing` once closing began,
+throws `IllegalStateException`. A value asked for on another thread as the run ends is closed with the others or
+refused.
 
 ## 📤 Actions and results
 
@@ -508,11 +518,11 @@ exports or opens its fact and output packages to that module, and needn't export
 ```java
 module com.example.app {
     requires io.github.brantunger.unruly.core;
-    exports com.example.app.model to io.github.brantunger.unruly.core;   // or opens, for classes that aren't public
+    exports com.example.app.model to io.github.brantunger.unruly.core;   // or opens, for classes that aren't public:
+                                                                          // calling their methods is deep reflection
 }
 ```
 
-A public class needs `exports`; a class that isn't public needs `opens`, because calling its method is deep reflection.
 A language that reflects on facts itself needs its own access: MVEL needs an export with no `to` clause, because its
 generated accessor classes live in the unnamed module; see the root README's
 [Installation](../../README.md#-installation). A test module that `requires` the contract kit opens its package `to
@@ -558,9 +568,4 @@ Once per `load()`, at the first rule in your language, never at `build()`, so pe
 
 Yes. A copy of the rules has one session for every language the rule list uses, whichever rules a run reaches. See
 [Thread safety](#-thread-safety).
-
-### Do I have to implement `evaluateWithDetail`?
-
-No. By default it calls your `evaluate`, and `RuleEvaluation.detail()` is `null` for your rules. If you do,
-`evaluate` must still return the same value. See [Explaining a condition's result](#explaining-a-conditions-result).
 

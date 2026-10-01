@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -590,5 +591,104 @@ class ConditionDetailKitCheckTest {
 
         assertEquals("the condition's detail is the session it ran with, which the engine gives to another run or"
                 + " closes: " + UnprintableOnceClosed.class.getName() + UNAVAILABLE, failure.getMessage());
+    }
+
+    /**
+     * Wraps a language so that each condition keeps a value for its run with
+     * {@link EvaluationContext#runScopedClosing}, which records in {@code closes} when it's made and when it's
+     * closed, and then throws what {@code failure} supplies, whatever its type, unless that's {@code null}.
+     */
+    private static ExpressionLanguage keepingClosingValues(ExpressionLanguage language, List<String> closes,
+                                                           Supplier<? extends Throwable> failure) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return new CompiledCondition() {
+                            @Override
+                            public Object evaluate(EvaluationContext evaluation, Session session) throws Exception {
+                                keep(evaluation);
+                                return condition.evaluate(evaluation, session);
+                            }
+
+                            @Override
+                            public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session)
+                                    throws Exception {
+                                keep(evaluation);
+                                return condition.evaluateWithDetail(evaluation, session);
+                            }
+                        };
+                    }
+                };
+            }
+
+            private void keep(EvaluationContext evaluation) {
+                evaluation.runScopedClosing("runtime", () -> {
+                    closes.add("value made");
+                    return () -> {
+                        closes.add("value");
+                        Throwable thrown = failure.get();
+                        if (thrown != null) {
+                            TestSupport.<RuntimeException>sneakyThrow(thrown);
+                        }
+                    };
+                });
+            }
+        };
+    }
+
+    private static List<String> eachFactsValueThenTheSessionAndCompiler() {
+        List<String> expected = new ArrayList<>();
+        // One run for each of the six facts, each closing its value before the next run starts.
+        for (int i = 0; i < 6; i++) {
+            expected.add("value made");
+            expected.add("value");
+        }
+        expected.add("session");
+        expected.add("compiler");
+        return expected;
+    }
+
+    @Test
+    @DisplayName("the agreement check ends each fact's run as the engine does, closing the values the language kept"
+            + " for it with runScopedClosing before the session (#850)")
+    void agreementCheckClosesRunValues() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+
+        assertDoesNotThrow(() -> runCheck(keepingClosingValues(recordingCloses(new ToyExpressionLanguage(), closes,
+                false), closes, () -> null), "evaluateAgreesWithDetail"));
+
+        assertEquals(eachFactsValueThenTheSessionAndCompiler(), closes);
+    }
+
+    @Test
+    @DisplayName("a value kept for a run whose close() throws what the engine only logs doesn't fail the agreement"
+            + " check (#850)")
+    void runValueCloseFailuresIgnored() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+
+        assertDoesNotThrow(() -> runCheck(keepingClosingValues(recordingCloses(new ToyExpressionLanguage(), closes,
+                false), closes, () -> new StackOverflowError("released recursively")), "evaluateAgreesWithDetail"));
+
+        assertEquals(eachFactsValueThenTheSessionAndCompiler(), closes);
+    }
+
+    @Test
+    @DisplayName("a fatal error from closing a value kept for a run fails the agreement check with that error, and the"
+            + " session and compiler are still closed (#850)")
+    void fatalRunValueCloseThrownOn() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+        InternalError crash = new InternalError("the run's native runtime crashed");
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(keepingClosingValues(
+                recordingCloses(new ToyExpressionLanguage(), closes, false), closes, () -> crash),
+                "evaluateAgreesWithDetail"));
+
+        assertSame(crash, failure);
+        assertEquals(List.of("value made", "value", "session", "compiler"), closes);
     }
 }

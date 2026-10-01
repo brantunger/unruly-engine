@@ -278,4 +278,25 @@ class FailuresTest {
             throw new OutOfMemoryError("no memory left to describe it");
         }, "plain"));
     }
+
+    @Test
+    @DisplayName("#850: of two throwables from a clean-up, a fatal Error is chosen over one that isn't, and else the"
+            + " first, which carries the other")
+    void fatalFirstPrefersAFatalError() {
+        StackOverflowError plain = new StackOverflowError("not fatal");
+        OutOfMemoryError fatal = new OutOfMemoryError("fatal");
+        OutOfMemoryError otherFatal = new OutOfMemoryError("fatal too");
+        IllegalStateException wrapping = new IllegalStateException("wraps a fatal error", otherFatal);
+
+        assertNull(Failures.fatalFirst(null, null));
+        assertSame(plain, Failures.fatalFirst(plain, null));
+        assertSame(plain, Failures.fatalFirst(null, plain));
+        assertSame(fatal, Failures.fatalFirst(plain, fatal));
+        assertArrayEquals(new Throwable[] {plain}, fatal.getSuppressed());
+        assertSame(fatal, Failures.fatalFirst(fatal, wrapping));
+        assertArrayEquals(new Throwable[] {plain, wrapping}, fatal.getSuppressed());
+        StackOverflowError later = new StackOverflowError("later");
+        assertSame(otherFatal, Failures.fatalFirst(later, wrapping));
+        assertArrayEquals(new Throwable[] {later}, otherFatal.getSuppressed());
+    }
 }

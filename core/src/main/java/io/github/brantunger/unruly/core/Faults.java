@@ -42,7 +42,18 @@ final class Faults {
         /** Settling the engine's list of rule sets to retire, before it looks at each rule set in it. */
         SETTLING,
         /** A run that stopped setting its thread's interrupt status again, before it has. */
-        INTERRUPT_KEPT
+        INTERRUPT_KEPT,
+        /** A run that has taken the values its languages kept to be closed, before it has closed any. */
+        RUN_VALUES_CLOSING,
+        /**
+         * A run handling what a value its languages kept threw from {@code close()}: before it logs it, and again, if
+         * logging it failed, before it keeps what it threw.
+         */
+        RUN_VALUE_FAILURE_LOGGED,
+        /** A run that has closed every value its languages kept, before it combines what they threw. */
+        RUN_VALUES_CLOSED,
+        /** A run that has closed its values and given back its copy, before it combines what they threw. */
+        RUN_ENDING_COMBINED
     }
 
     // The step that fails, the thread it fails on, how many more times that thread reaches it before it does, how many

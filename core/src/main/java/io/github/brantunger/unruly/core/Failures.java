@@ -361,6 +361,51 @@ public final class Failures {
     }
 
     /**
+     * Throws what was thrown, if anything, as it is, whatever its type: an unchecked exception or an {@link Error},
+     * or a checked exception a language's code threw undeclared, which the caller would have had thrown as it is too.
+     * Unlike {@link #throwIfPresent}, which is given only a fatal error.
+     *
+     * @param failure What was thrown, or {@code null}
+     * @param <T>     The type the compiler takes it for: an unchecked one, so the caller declares nothing
+     * @throws T {@code failure}, unless it's {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    static <T extends Throwable> void rethrowUnchecked(Throwable failure) throws T {
+        if (failure != null) {
+            throw (T) failure;
+        }
+    }
+
+    /**
+     * Chooses which of two throwables, from two steps of a clean-up one after the other, the caller throws, so that a
+     * fatal {@link Error} (see {@link #fatalError}) is never dropped for one that isn't: the fatal error in
+     * {@code second} if {@code first} carries none, and else {@code first}. What's chosen carries the other as a
+     * suppressed exception, as {@link #keepAlso} keeps it; but a {@code second} that wraps the fatal error chosen
+     * from it isn't kept on that error: it reaches the error already, and keeping it would make a loop of causes
+     * and suppressed exceptions.
+     *
+     * @param first  What the earlier step threw, or {@code null}
+     * @param second What the later step threw, or {@code null}
+     * @return What the caller throws, or {@code null} if neither threw
+     */
+    static Throwable fatalFirst(Throwable first, Throwable second) {
+        if (second == null) {
+            return first;
+        }
+        if (first == null) {
+            return second;
+        }
+        Error fatal = fatalError(second);
+        if (fatal != null && fatalError(first) == null) {
+            keepAlso(fatal, first);
+            keepAlso(fatal, second);
+            return fatal;
+        }
+        keepAlso(first, second);
+        return first;
+    }
+
+    /**
      * Chooses which of two fatal errors, from two things closed one after the other, the caller throws: the first,
      * which carries the other as a suppressed exception (see {@link #keepAlso}). The other was logged when it was
      * caught, as {@link Closing} logs every failure to close.

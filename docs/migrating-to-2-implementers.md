@@ -125,7 +125,7 @@ nothing, because `close()` has a default, but the interface changed in other way
 | `copy()` returning a new expression with its own state | Keep that state in a `Session` from `newSession()`, and read it from the `session` parameter |
 | `evaluate(EvaluationContext context)` | `evaluate(EvaluationContext context, Session session)`, which may throw a checked exception |
 | `execute(ActionContext context)` | `execute(ActionContext context, Session session)`, which may throw a checked exception |
-| Resources released by garbage collection | Release them in `Session.close()` or `ExpressionCompiler.close()` |
+| Resources released by garbage collection | Release them in `Session.close()` or `ExpressionCompiler.close()`; since 2.20.0, keep one for a single run with [`runScopedClosing`](languages/custom.md#-reading-facts) |
 | An engine you discard in a test | `close()` it, or use try-with-resources; `load()`, `validate()`, `run()`, `runWithResult()` and `rules()` then throw `IllegalStateException` |
 
 Closing an engine that is already closed does nothing, unless the first `close()`
