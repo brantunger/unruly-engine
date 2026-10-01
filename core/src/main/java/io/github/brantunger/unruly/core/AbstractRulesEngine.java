@@ -572,6 +572,17 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
+     * Returns what a rule of a run on this thread recorded as its fatal failure and {@link #leaveRun} hasn't cleared
+     * yet. For tests, which read it once a run has ended to see that the run left nothing of its own on the thread, as
+     * {@code FatalErrorLogTest#ruleFailureNotKeptAfterTheRun} does.
+     *
+     * @return The recorded failure, or {@code null} if none is recorded
+     */
+    RuleExecutionException recordedFatalFailure() {
+        return fatalFailure.get();
+    }
+
+    /**
      * Returns the exception {@code onRunError} gets for a fatal {@link Error} leaving a run: the one the rule it came
      * from was reported to {@code onError} with, which names the rule, or else one that names no rule. A rule's is
      * recorded just before its error is rethrown, and nothing between there and the run catches or replaces it.
