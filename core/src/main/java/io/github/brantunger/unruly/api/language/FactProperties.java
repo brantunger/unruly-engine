@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -71,6 +72,8 @@ public final class FactProperties {
      * higher up the same path is left as it is rather than converted again.
      */
     private static final int MAX_DEPTH = 20;
+
+    private static final String NULL_TARGET = "target must not be null";
 
     private FactProperties() {
     }
@@ -137,23 +140,13 @@ public final class FactProperties {
      *                                  map's own failure
      */
     public static @Nullable Object read(Object target, String property) {
-        Objects.requireNonNull(target, "target must not be null");
+        Objects.requireNonNull(target, NULL_TARGET);
         Objects.requireNonNull(property, "property must not be null");
         if (target instanceof Map<?, ?> map) {
-            // A sorted or otherwise restricted map can refuse a key of the wrong type outright, which is the same
-            // answer as not having it: rules name properties with strings. Anything else the map throws is its own
-            // failure, wrapped as a getter's is, and so is anything get() throws for a key the map said it has; the
-            // missing key is reported outside the tries, so that isn't wrapped. Exception, not RuntimeException: a
-            // map can throw a checked exception it doesn't declare.
-            boolean present;
-            try {
-                present = map.containsKey(property);
-            } catch (ClassCastException | NullPointerException e) {
-                throw new IllegalArgumentException(noSuchProperty(target, property), e);
-            } catch (Exception e) {
-                throw readFailed(target, property, e);
-            }
-            if (!present) {
+            // Anything get() throws for a key the map said it has is its own failure, wrapped as a getter's is; the
+            // missing key is reported outside the try, so that isn't wrapped. Exception, not RuntimeException: a map
+            // can throw a checked exception it doesn't declare.
+            if (!containsKey(map, property)) {
                 throw new IllegalArgumentException(noSuchProperty(target, property));
             }
             try {
@@ -173,6 +166,118 @@ public final class FactProperties {
             throw new IllegalArgumentException(noSuchProperty(target, property));
         }
         return invoke(accessor, target, property);
+    }
+
+    /**
+     * Says whether a fact has a property, without reading it: whether {@link #read} would find the property rather
+     * than throw {@link IllegalArgumentException}. No getter is called, and of a map only its own {@code containsKey},
+     * so a getter that is slow, has side effects or throws doesn't change the answer, which is what a language needs
+     * for its own "is it there" questions, such as JavaScript's {@code in} or Python's {@code hasattr}.
+     *
+     * <p>
+     * A map has the property when its {@code containsKey} says so, a record or a bean when it has an accessor of that
+     * name, by the same rules as {@link #read}, a fact whose class isn't public included. A property whose accessor
+     * throws, or can't be called, is still there: {@link #read} fails for it with {@link IllegalStateException},
+     * not as a missing property. A {@link String}, a number or a collection has the properties its public getters
+     * give it, as {@link #read} reads them, such as a string's {@code empty}; one of the JVM's own objects whose
+     * properties {@link #read} refuses has none.
+     * </p>
+     *
+     * @param target   The fact, which must not be {@code null}
+     * @param property The property's name, as the rule wrote it
+     * @return {@code true} if {@link #read} would read the property, {@code false} if it would report it missing
+     * @throws NullPointerException  if {@code target} or {@code property} is {@code null}
+     * @throws IllegalStateException if {@code target} is a map whose {@code containsKey} throws, with what it threw
+     *                               as the cause, as {@link #read} wraps it. A {@link ClassCastException} or
+     *                               {@link NullPointerException} from it is taken for the map refusing a key of
+     *                               that type, as {@link #read} takes it, and answers {@code false}
+     */
+    public static boolean has(Object target, String property) {
+        Objects.requireNonNull(target, NULL_TARGET);
+        Objects.requireNonNull(property, "property must not be null");
+        if (target instanceof Map<?, ?> map) {
+            try {
+                return containsKey(map, property);
+            } catch (IllegalArgumentException e) {
+                // The map refused a key of that type: containsKey wraps everything else the map throws in an
+                // IllegalStateException, so this can only be that.
+                return false;
+            }
+        }
+        return ACCESSORS.get(target.getClass()).containsKey(property);
+    }
+
+    /**
+     * Asks a map fact whether it has a key, for {@link #read} and {@link #has} alike, so the two can't disagree. A
+     * sorted or otherwise restricted map can refuse a key of the wrong type outright, which is the same answer as not
+     * having it: rules name properties with strings. Anything else the map throws is its own failure, wrapped as a
+     * getter's is. Exception, not RuntimeException: a map can throw a checked exception it doesn't declare.
+     *
+     * @param map      The map fact
+     * @param property The property's name
+     * @return Whether the map has the key
+     * @throws IllegalArgumentException if {@code containsKey} threw a {@link ClassCastException} or a
+     *                                  {@link NullPointerException}, with it as the cause
+     * @throws IllegalStateException    if {@code containsKey} threw anything else, with it as the cause
+     */
+    private static boolean containsKey(Map<?, ?> map, String property) {
+        try {
+            return map.containsKey(property);
+        } catch (ClassCastException | NullPointerException e) {
+            throw new IllegalArgumentException(noSuchProperty(map, property), e);
+        } catch (Exception e) {
+            throw readFailed(map, property, e);
+        }
+    }
+
+    /**
+     * Lists the properties {@link #read} can read on a fact, without reading any of them, for a language that
+     * enumerates an object's properties, such as JavaScript's {@code Object.keys} or Python's {@code dir}. No getter
+     * is called, and of a map only its own {@code keySet}, through its {@code forEach}, so a synchronized map lists
+     * its keys under its lock.
+     *
+     * <p>
+     * A map's properties are its {@link String} keys, in its iteration order. A key of another type, or
+     * {@code null}, isn't one {@link #read} can reach, so it's left out, though {@link #toData} gives it a string
+     * form. A record's are its components in the order it declares them, then any other getters it has, and a bean's
+     * are sorted by name: the names, in the order, of {@code toData(target, 1).keySet()}, with no getter called.
+     * </p>
+     *
+     * <p>
+     * Unlike {@link #toData}, which takes apart only a record, a bean or a map, this answers for any fact
+     * {@link #read} reads: a {@link String}, a number or a collection has the properties its public getters give it,
+     * such as a string's {@code empty}. One of the JVM's own objects whose properties {@link #read} refuses has none.
+     * {@link #has} is {@code true} for every name listed; a map whose {@code containsKey} finds keys it doesn't
+     * list, such as one that ignores case, has more.
+     * </p>
+     *
+     * @param target The fact, which must not be {@code null}
+     * @return The names, unmodifiable, in the same order every time for the same class, or for a map, in its
+     *         iteration order
+     * @throws NullPointerException  if {@code target} is {@code null}
+     * @throws IllegalStateException if {@code target} is a map whose {@code keySet} or its {@code forEach} throws,
+     *                               with what it threw as the cause, as {@code Reading the keys of a ... failed}
+     */
+    public static Set<String> propertyNames(Object target) {
+        Objects.requireNonNull(target, NULL_TARGET);
+        if (!(target instanceof Map<?, ?> map)) {
+            // The accessors are an unmodifiable map in the order toData reads them, so its keys are the answer.
+            return ACCESSORS.get(target.getClass()).keySet();
+        }
+        Set<String> names = new LinkedHashSet<>();
+        // Through forEach, not an iterator, as a collection's elements are read: a synchronized map's key set holds
+        // the map's lock for the whole of it. Exception, not RuntimeException: a map can throw a checked exception it
+        // doesn't declare.
+        try {
+            map.keySet().forEach(key -> {
+                if (key instanceof String name) {
+                    names.add(name);
+                }
+            });
+        } catch (Exception e) {
+            throw containerFailed("keys", map, e);
+        }
+        return Collections.unmodifiableSet(names);
     }
 
     /**
@@ -237,7 +342,7 @@ public final class FactProperties {
      *                                  {@code Reading the elements of a ... failed}
      */
     public static Map<String, @Nullable Object> toData(Object target, int depth) {
-        Objects.requireNonNull(target, "target must not be null");
+        Objects.requireNonNull(target, NULL_TARGET);
         if (depth < MIN_DEPTH || depth > MAX_DEPTH) {
             throw new IllegalArgumentException("depth must be between " + MIN_DEPTH + " and " + MAX_DEPTH
                     + ", but was " + depth);
@@ -288,7 +393,7 @@ public final class FactProperties {
         try {
             entries = map.entrySet().iterator();
         } catch (Exception e) {
-            throw entriesFailed(map, e);
+            throw containerFailed("entries", map, e);
         }
         while (true) {
             String key;
@@ -303,14 +408,15 @@ public final class FactProperties {
                 key = String.valueOf(entry.getKey());
                 value = entry.getValue();
             } catch (Exception e) {
-                throw entriesFailed(map, e);
+                throw containerFailed("entries", map, e);
             }
             converted.put(key, convert(value, depth - 1, path));
         }
     }
 
-    private static IllegalStateException entriesFailed(Map<?, ?> map, Exception cause) {
-        return Accessors.readFailed("Reading the entries of a " + map.getClass().getName() + " failed", cause);
+    private static IllegalStateException containerFailed(String what, Object container, Exception cause) {
+        return Accessors.readFailed("Reading the " + what + " of a " + container.getClass().getName() + " failed",
+                cause);
     }
 
     // Through forEach, not an iterator: a synchronized collection holds its lock for the whole of it, and a collection
@@ -323,7 +429,7 @@ public final class FactProperties {
         try {
             converted = new ArrayList<>(collection.size());
         } catch (Exception e) {
-            throw elementsFailed(collection, e);
+            throw containerFailed("elements", collection, e);
         }
         try {
             collection.forEach(element -> {
@@ -350,12 +456,7 @@ public final class FactProperties {
      */
     private static RuntimeException elementOrCollectionFailure(Collection<?> collection, Exception thrown) {
         ElementFailed carried = Accessors.inCauses(thrown, ElementFailed.class);
-        return carried != null ? carried.failure : elementsFailed(collection, thrown);
-    }
-
-    private static IllegalStateException elementsFailed(Collection<?> collection, Exception cause) {
-        return Accessors.readFailed("Reading the elements of a " + collection.getClass().getName() + " failed",
-                cause);
+        return carried != null ? carried.failure : containerFailed("elements", collection, thrown);
     }
 
     private static List<@Nullable Object> arrayElementsOf(Object array, int depth, Set<Object> path) {
@@ -447,7 +548,8 @@ public final class FactProperties {
 
     private static Map<String, Method> accessorsOf(Class<?> type) {
         if (isRuntimeType(type)) {
-            return Map.of();
+            // Not Map.of(), whose key set throws when asked whether it holds null: propertyNames hands that set out.
+            return Collections.emptyMap();
         }
         Map<String, Method> accessors = new LinkedHashMap<>();
         if (type.isRecord()) {

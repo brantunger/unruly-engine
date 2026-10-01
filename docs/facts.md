@@ -153,12 +153,12 @@ The engine hands each language the fact values as they are. It doesn't read prop
 [Reading facts](languages/custom.md#-reading-facts); MVEL's are in
 [Facts in MVEL](languages/mvel.md#-facts-in-mvel). Check another language's own documentation.
 
-`FactProperties` never offers `getClass()` or an enum's `getDeclaringClass()` as a property. A `Class`,
-`ClassLoader`, `Module`, `ModuleLayer`, `Package`, `ProtectionDomain`, `CodeSource` or `Thread`, an application's own
-subclass of one, such as its own class loader, and anything in `java.lang.reflect` have no properties: `read` throws
-`IllegalArgumentException` for any property of one, and `toData` keeps one as a value without taking it apart. A
-fact's own property may still return one of these; only reading further into it is refused. Other platform values,
-such as a `LocalDate`'s `year`, read as usual.
+`FactProperties` never offers `getClass()` or an enum's `getDeclaringClass()` as a property. A `Class`, `ClassLoader`,
+`Module`, `ModuleLayer`, `Package`, `ProtectionDomain`, `CodeSource` or `Thread`, an application's own subclass of one,
+and anything in `java.lang.reflect` have no properties: `read` throws `IllegalArgumentException` for any property, `has`
+is `false`, `propertyNames` is empty, and `toData` refuses one as its target and keeps one it meets as a value. A fact's
+own property may still return one of these; only reading further into it is refused. Other platform values, such as a
+`LocalDate`'s `year`, read as usual.
 
 ## 👀 Who sees facts
 
