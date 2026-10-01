@@ -429,7 +429,7 @@ class LanguageSessionsTest {
         EngineConfiguration<String> configuration = new EngineConfiguration<>(Map.of(), null, List.of(), List.of(),
                 CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
                 Map.of(), false);
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
+        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {
                 return reads.getAndIncrement() == 0 ? closedRules : super.currentRules();

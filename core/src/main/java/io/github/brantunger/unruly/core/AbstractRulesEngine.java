@@ -39,8 +39,9 @@ import io.github.brantunger.unruly.api.language.ConditionResult;
 /**
  * What every engine shares, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles,
  * borrowing a compiled copy for each run, evaluating conditions and running actions, listener callbacks, cancellation
- * and failure reporting. A subclass supplies the match policy in {@link #runRules(FactStore, Duration, Set)} and names
- * it in {@link #matchPolicy()}.
+ * and failure reporting. A subclass supplies the match policy through {@link #untilFirst()} and
+ * {@link #fire(Matches, RuleSet, RuleSet.Copy, RunFacts)}, which {@link #runRules(FactStore, Duration, Set)} calls,
+ * and names it in {@link #matchPolicy()}. The two hooks are one policy, as {@code fire} describes.
  *
  * <p>
  * The engine changes no global setting of any language: a session is used by one run at a time, so a language keeps
@@ -108,6 +109,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final Clock clock;
     // What sets the properties actions return.
     private final OutputWriter<? super O> outputWriter;
+    // Makes each run's output object, once a run has a rule to fire.
+    private final Supplier<O> outputFactory;
     // Collects and checks the facts each run is given.
     private final FactIntake factIntake;
     // Numbers the engines of this JVM, so a Flight Recorder event tells one engine's runs from another's.
@@ -127,6 +130,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * resolves its imports with the building thread's context class loader. A limit on copies means a run that finds
      * all of them in use waits for one; see {@link RuleSet}.
      *
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      * @param configuration The builder's settings
      * @throws IllegalStateException    if the languages or the default language can't be resolved, or options are given
      *                                  for a language the engine doesn't have, as
@@ -136,8 +140,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  valid package name; or if it names a class that exists but can't be loaded,
      *                                  with the linkage error's text cut to at most 1,000 characters, with a note of
      *                                  how many were left out, then escaped, and a root cause it hides named
+     * @throws NullPointerException     if {@code outputFactory} is {@code null}, checked after the settings
      */
-    AbstractRulesEngine(EngineConfiguration<O> configuration) {
+    AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
                 configuration.defaultLanguage(), ImportResolver.contextClassLoader());
         // Checked once the languages are known, so an option for a language that isn't found isn't silently ignored.
@@ -171,6 +176,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
                 Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
                 declaredFacts, allFactsDeclared);
+        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
     }
 
     /**
@@ -221,14 +227,64 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Fires the rules the way this engine fires them.
+     * Fires the rules the way this engine fires them: evaluates the conditions in priority order, stopping at the
+     * first match if {@link #untilFirst()} says to, and returns no output if no rule matched; otherwise
+     * {@link #fire(Matches, RuleSet, RuleSet.Copy, RunFacts)} fires the matched rules.
      *
      * @param facts   The facts the run was given
      * @param timeout How long the run may take, or {@code null} if it has no deadline
      * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
-     * @return What the run did
+     * @return What the run did: its output is {@code null} if the rule list is empty or no rule matched
      */
-    abstract RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags);
+    RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
+        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
+            // Match the facts and data against the set of rules with the highest priority first.
+            Matches matches = this.match(ruleSet.rules(), copy, runFacts, untilFirst());
+            if (matches.matched().isEmpty()) {
+                return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.checksum());
+            }
+            return fire(matches, ruleSet, copy, runFacts);
+        });
+    }
+
+    /**
+     * Returns whether a run stops evaluating conditions at the first match. By default it doesn't: every condition
+     * is evaluated, except those of rules the run skips. It is one policy with
+     * {@link #fire(Matches, RuleSet, RuleSet.Copy, RunFacts)}, as that describes.
+     *
+     * @return {@code true} to stop at the first match
+     */
+    boolean untilFirst() {
+        return false;
+    }
+
+    /**
+     * Fires the action of the first rule that matched, on a new output object. The run has evaluated the conditions
+     * already, and calls this only when at least one rule matched.
+     *
+     * <p>
+     * It is one policy with {@link #untilFirst()}: firing only the first match is right when the run stops there, or
+     * when an override fails a run with more than one match first, as the unique-match engine does, so a subclass
+     * that overrides either must consider the other. A check that fails the run must come before
+     * {@link #createOutput()}, so a failed run never calls the output factory.
+     * </p>
+     *
+     * @param matches The rules that matched, at least one, and every rule's outcome
+     * @param ruleSet The rule set the run uses
+     * @param copy    The run's copy of the rules
+     * @param facts   The run's facts and the views built over them
+     * @return The output object the action shaped, with the rule that fired
+     * @throws RuleExecutionException if the output factory throws or returns {@code null}, the action fails, or the
+     *                                run was cancelled before the rule. A {@link VirtualMachineError} other than
+     *                                {@link StackOverflowError} from the output factory is rethrown unchanged, as
+     *                                {@link #createOutput()} describes.
+     */
+    RunResult<O> fire(Matches matches, RuleSet ruleSet, RuleSet.Copy copy, RunFacts facts) {
+        // Run the action of the selected rule on given data and return the output.
+        CompiledRule resolvedRule = matches.matched().get(0);
+        O output = this.executeRule(resolvedRule, copy, createOutput(), facts);
+        return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(), ruleSet.checksum());
+    }
 
     /**
      * Runs one run inside its listener scope: every listener gets {@link RuleListener#beforeRun}, then the rule
@@ -1486,7 +1542,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * escaped {@code run()} unwrapped, and one that returned {@code null} surfaced later as an action
      * failure blamed on whichever rule ran first.
      *
-     * @param outputFactory The factory supplied to the engine's constructor
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
      *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
@@ -1502,7 +1557,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                that message and the nested failure as a note (see {@link Failures#describe}),
      *                                and is logged; a fatal error wrapped so is still rethrown.
      */
-    O createOutput(Supplier<O> outputFactory) {
+    O createOutput() {
         O output;
         try {
             output = outputFactory.get();

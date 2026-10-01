@@ -78,7 +78,7 @@ class ClosedRulesRetryTest {
                 Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
                 null, List.of(), listeners, CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
                 OutputWriter.beansAndMaps(), Map.of(), Map.of(), false);
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(configuration) {
+        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {
                 return reads.getAndIncrement() < closedReads ? closed.get() : super.currentRules();
