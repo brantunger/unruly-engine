@@ -3,12 +3,10 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -32,8 +30,6 @@ import java.util.function.Supplier;
  */
 final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
 
-    private final Supplier<O> outputFactory;
-
     /**
      * Construct a StatefulRulesEngine.
      *
@@ -45,41 +41,33 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
     StatefulRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
-        super(configuration);
-        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+        super(outputFactory, configuration);
     }
 
     /**
-     * Evaluates every condition, in priority order, and then fires the action of every {@link Rule} whose condition
-     * was true, in the same order, highest priority first. A rule the run skips isn't evaluated. The actions share one
-     * output object, so a lower-priority action can overwrite a field set by a higher-priority one.
+     * Once every condition has been evaluated in priority order, fires the action of every matched {@link Rule} in
+     * that order, highest priority first. A rule the run skips isn't evaluated. The actions share one output object,
+     * so a lower-priority action can overwrite a field set by a higher-priority one.
      *
-     * @param facts   The input fact store to run rules against
-     * @param timeout How long the run may take, or {@code null} if it has no deadline
-     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
-     * @return The accumulated output object resulting from firing the actions of all matching rules, or
-     *         {@code null} if the rule list is empty or no rule matched
+     * @param matches {@inheritDoc}
+     * @param ruleSet {@inheritDoc}
+     * @param copy    {@inheritDoc}
+     * @param facts   {@inheritDoc}
+     * @return The accumulated output object resulting from firing the actions of all matching rules
+     * @throws RuleExecutionException {@inheritDoc}
      */
     @Override
-    RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
-            // Match the facts and data against the set of rules with the highest priority first.
-            Matches matches = this.match(ruleSet.rules(), copy, runFacts, false);
-            if (matches.matched().isEmpty()) {
-                return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.checksum());
-            }
+    RunResult<O> fire(Matches matches, RuleSet ruleSet, RuleSet.Copy copy, RunFacts facts) {
+        O outputObject = createOutput();
 
-            O outputObject = createOutput(outputFactory);
+        // Run the action of every rule on given data, saving state each time
+        List<Rule> fired = new ArrayList<>();
+        for (CompiledRule rule : matches.matched()) {
+            outputObject = this.executeRule(rule, copy, outputObject, facts);
+            fired.add(rule.rule());
+        }
 
-            // Run the action of every rule on given data, saving state each time
-            List<Rule> fired = new ArrayList<>();
-            for (CompiledRule rule : matches.matched()) {
-                outputObject = this.executeRule(rule, copy, outputObject, runFacts);
-                fired.add(rule.rule());
-            }
-
-            return RunResult.of(outputObject, fired, matches.evaluations(), ruleSet.checksum());
-        });
+        return RunResult.of(outputObject, fired, matches.evaluations(), ruleSet.checksum());
     }
 
     @Override

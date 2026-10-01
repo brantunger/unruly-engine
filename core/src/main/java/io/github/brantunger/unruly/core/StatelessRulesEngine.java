@@ -1,13 +1,7 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.api.RunResult;
 
-import java.time.Duration;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -24,8 +18,6 @@ import java.util.function.Supplier;
  */
 final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
 
-    private final Supplier<O> outputFactory;
-
     /**
      * Construct a StatelessRulesEngine.
      *
@@ -37,37 +29,22 @@ final class StatelessRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws NullPointerException     if {@code outputFactory} is {@code null}
      */
     StatelessRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
-        super(configuration);
-        this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+        super(outputFactory, configuration);
     }
 
     /**
-     * Fires the action of the first rule whose condition is true. Conditions are evaluated in priority order, and the
-     * run stops at the first match, so the rules below it are never evaluated: they are neither matched nor unmatched,
-     * and the result reports them as not evaluated. The output object is therefore shaped by only one rule, the
-     * matching rule with the highest priority value.
+     * Stops evaluating at the first rule whose condition is true, and only that rule's action fires. Conditions are
+     * evaluated in priority order, so the rules below the match are never evaluated: they are neither matched nor
+     * unmatched, and the result reports them as not evaluated. The output object is therefore shaped by only one
+     * rule, the matching rule with the highest priority value.
      *
-     * @param facts   The key/value fact store to run the rule engine against.
-     * @param timeout How long the run may take, or {@code null} if it has no deadline
-     * @param tags    The tags that choose the rules the run uses, or none to use rules whatever their tags
-     * @return The object that is the result of the action getting fired against the given {@link Rule}, or
-     *         {@code null} if the rule list is empty or no rule matched
+     * @return {@code true}
      */
     @Override
-    RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
-            // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
-            // broken lower-priority condition can't fail a run that is already decided.
-            Matches matches = this.match(ruleSet.rules(), copy, runFacts, true);
-            if (matches.matched().isEmpty()) {
-                return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.checksum());
-            }
-
-            // Run the action of the selected rule on given data and return the output.
-            CompiledRule resolvedRule = matches.matched().get(0);
-            O output = this.executeRule(resolvedRule, copy, createOutput(outputFactory), runFacts);
-            return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(), ruleSet.checksum());
-        });
+    boolean untilFirst() {
+        // Evaluate in priority order and stop at the first match: the rules below it aren't evaluated, so a
+        // broken lower-priority condition can't fail a run that is already decided.
+        return true;
     }
 
     @Override
