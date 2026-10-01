@@ -3,6 +3,8 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 
+import java.util.Arrays;
+
 
 /**
  * A {@link RuleExecutionException} an engine throws from {@code run()} once it has logged it and told its listeners.
@@ -59,6 +61,12 @@ final class ReportedFailure extends RuleExecutionException {
     private final Throwable loggedBelow;
     /** Whether a {@code load()} logged {@link #loggedBelow}, rather than a {@code run()}. */
     private final boolean loggedBelowByLoad;
+    /**
+     * The suppressed exceptions the engine itself added (see {@link #addSuppressedByEngine}), by identity, or
+     * {@code null} if it added none, or once this has been deserialized, when every suppressed exception is read as one
+     * code outside the engine added.
+     */
+    private transient Throwable[] addedByEngine;
 
     /**
      * Creates the exception for a failure that belongs to no rule.
@@ -171,6 +179,50 @@ final class ReportedFailure extends RuleExecutionException {
      */
     boolean loggedByLoad() {
         return loggedBelowByLoad;
+    }
+
+    /**
+     * Adds a suppressed exception the engine keeps on this failure, such as a fatal {@link Error} a listener threw
+     * while it was told of it, or what an expression threw before the run stopped, and records that the engine added
+     * it, so the search for a fatal error in what was caught doesn't find it there again and take it for the failure's
+     * own (see {@link Failures#fatalError}). A suppressed exception code outside the engine adds later, as a
+     * {@code try}-with-resources around a nested run whose {@code close()} fails does, isn't recorded, and is read.
+     *
+     * @param suppressed The exception to keep
+     */
+    void addSuppressedByEngine(Throwable suppressed) {
+        // Recorded first, so no thread sees it among the suppressed exceptions before it's known for the engine's.
+        synchronized (this) {
+            Throwable[] added = addedByEngine == null ? new Throwable[1]
+                    : Arrays.copyOf(addedByEngine, addedByEngine.length + 1);
+            added[added.length - 1] = suppressed;
+            addedByEngine = added;
+        }
+        addSuppressed(suppressed);
+    }
+
+    /**
+     * Tells whether the engine added this very exception to this failure's suppressed exceptions (see
+     * {@link #addSuppressedByEngine}).
+     *
+     * @param suppressed One of its suppressed exceptions
+     * @return {@code true} if the engine added it; {@code false} if code outside the engine did
+     */
+    // The very same instance is what the engine added; an equal one is another.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    boolean suppressedByEngine(Throwable suppressed) {
+        Throwable[] added;
+        synchronized (this) {
+            added = addedByEngine;
+        }
+        if (added != null) {
+            for (Throwable t : added) {
+                if (t == suppressed) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

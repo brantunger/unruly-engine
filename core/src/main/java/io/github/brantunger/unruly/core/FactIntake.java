@@ -208,10 +208,11 @@ final class FactIntake {
      * Checks a fact name with the language of each rule in use. A language rejects a name with an
      * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
      * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
-     * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, a
-     * rejection included, which is logged and rethrown. A failure of a {@code run()} or a {@code load()} the check
-     * started, and a fatal error that run logged, isn't logged a second time, and a rejection this logs is recorded as
-     * logged, so the code around a nested run doesn't log it again (see {@link LoggedFailures}).
+     * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, or
+     * suppressed on them (see {@link Failures#fatalError}), a rejection included, which is logged and rethrown. A
+     * failure of a {@code run()} or a {@code load()} the check started, and a fatal error that run logged, isn't logged
+     * a second time, and a rejection this logs is recorded as logged, so the code around a nested run doesn't log it
+     * again (see {@link LoggedFailures}).
      *
      * @param log    The engine's logger
      * @param name   The fact's name

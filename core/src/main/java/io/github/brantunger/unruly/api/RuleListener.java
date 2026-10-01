@@ -161,8 +161,9 @@ public interface RuleListener {
      * stopped <b>while</b> a condition or action was running, which returns or throws once the run is cancelled,
      * closes that rule's callback here: {@code error} then has no rule name and an {@link InterruptedException} or
      * a {@link java.util.concurrent.TimeoutException} as its cause. That holds unless what it threw has an
-     * {@link Error} anywhere in its cause chain: that rule's own failure is reported instead, exactly as it would be
-     * with no stop pending, so {@code error} names the rule and has what the expression threw as its cause.
+     * {@link Error} anywhere in its cause chain, or one suppressed on it at any depth: that rule's own failure is
+     * reported instead, exactly as it would be with no stop pending, so {@code error} names the rule and has what the
+     * expression threw as its cause.
      * </p>
      *
      * @param rule  The rule whose condition or action failed
