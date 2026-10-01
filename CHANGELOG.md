@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.16.0](https://github.com/brantunger/unruly-engine/compare/v2.15.0...v2.16.0) (2026-10-01)
+
+
+### Features
+
+* a public MessageText lets any language shorten and escape text as the engine does ([#876](https://github.com/brantunger/unruly-engine/issues/876)) ([c6b318c](https://github.com/brantunger/unruly-engine/commit/c6b318c674fcc944324fcc880dc192999c19652a))
+
 ## [2.15.0](https://github.com/brantunger/unruly-engine/compare/v2.14.0...v2.15.0) (2026-09-30)
 
 
