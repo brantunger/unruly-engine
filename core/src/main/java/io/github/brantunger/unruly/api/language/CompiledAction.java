@@ -19,10 +19,10 @@ public interface CompiledAction {
     /**
      * Executes the action. The action either changes {@link ActionContext#output()} in place and returns
      * {@link ActionResult#done()}, or returns {@link ActionResult#set(java.util.Map)} with the properties the engine
-     * sets on the output, as a language without side effects does. Variables it declares stay local to this execution.
-     * An exception it throws fails the rule with a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, except a fatal {@link Error}, which
-     * {@code run()} rethrows unchanged.
+     * sets on the output, as a language without side effects does. Variables it declares stay local to this execution,
+     * or, for a language that documents it, to the run; they never reach another run. An exception it throws fails
+     * the rule with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, except a fatal
+     * {@link Error}, which {@code run()} rethrows unchanged.
      *
      * @param context The facts of the run and the output object
      * @param session The run's session for this action's language, created by the compiler that compiled it

@@ -548,6 +548,128 @@ class ContractKitChecksTest {
     }
 
     /**
+     * Wraps a language so that an action's {@code let NAME = VALUE} keeps the variable until the end of the run, with
+     * {@code runScoped}, and {@code put KEY NAME} reads a name that isn't a fact from there: a later rule in the same
+     * run reads the variable, and no later run does.
+     */
+    private static ExpressionLanguage runVariables(ExpressionLanguage language) {
+        Object key = new Object();
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length == 4 && "let".equals(tokens[0])) {
+                            return (actionContext, session) -> {
+                                declared(actionContext).put(tokens[1], Integer.valueOf(tokens[3]));
+                                return ActionResult.done();
+                            };
+                        }
+                        if (tokens.length != 3 || !"put".equals(tokens[0])) {
+                            return action;
+                        }
+                        return (actionContext, session) -> {
+                            Map<String, Object> declared = declared(actionContext);
+                            if (actionContext.facts().containsKey(tokens[2]) || !declared.containsKey(tokens[2])) {
+                                return action.execute(actionContext, session);
+                            }
+                            return ActionResult.set(Map.of(tokens[1], declared.get(tokens[2])));
+                        };
+                    }
+
+                    private Map<String, Object> declared(ActionContext actionContext) {
+                        return actionContext.runScoped(key, ConcurrentHashMap::new);
+                    }
+                };
+            }
+        };
+    }
+
+    /** Where {@link #sharedBuiltins} keeps the built-ins its actions change. */
+    private enum Builtins {
+        /** In the session, as a runtime that isn't sealed, and that every run of a copy of the rules uses. */
+        SESSION,
+        /** With {@code runScoped}, so that a change lasts only its run. */
+        RUN,
+        /** Nowhere: the language refuses an action that changes one when it loads the rule. */
+        REFUSED_AT_LOAD,
+        /** Nowhere: an action that changes one fails, as a sealed runtime's does. */
+        READ_ONLY,
+        /** In the session, as {@link #SESSION} keeps them, by an action that then fails. */
+        WRITE_THEN_FAIL
+    }
+
+    /** The built-ins of a language's runtime, kept in its session. */
+    private static final class BuiltinsSession implements Session {
+
+        private final Map<String, Object> values = new ConcurrentHashMap<>();
+    }
+
+    /**
+     * Wraps a language so that an action {@code set NAME = VALUE} changes one of its built-ins, and a condition
+     * {@code builtin NAME == VALUE} is true when the built-in holds the value, and false while it doesn't: a language
+     * with state outside a run's variables, kept as {@code builtins} says.
+     */
+    private static ExpressionLanguage sharedBuiltins(ExpressionLanguage language, Builtins builtins) {
+        Object key = new Object();
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 4 || !"builtin".equals(tokens[0]) || !"==".equals(tokens[2])) {
+                            return compiler.compileCondition(expression);
+                        }
+                        Integer value = Integer.valueOf(tokens[3]);
+                        return (evaluation, session) -> value.equals(values(evaluation, session).get(tokens[1]));
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 4 || !"set".equals(tokens[0]) || !"=".equals(tokens[2])) {
+                            return compiler.compileAction(expression);
+                        }
+                        if (builtins == Builtins.REFUSED_AT_LOAD) {
+                            throw new IllegalArgumentException("the built-in '" + tokens[1] + "' is read-only");
+                        }
+                        Integer value = Integer.valueOf(tokens[3]);
+                        return (actionContext, session) -> {
+                            if (builtins == Builtins.READ_ONLY) {
+                                throw new IllegalStateException("the built-in '" + tokens[1] + "' is read-only");
+                            }
+                            values(actionContext, session).put(tokens[1], value);
+                            if (builtins == Builtins.WRITE_THEN_FAIL) {
+                                throw new IllegalStateException("the action failed after it changed '" + tokens[1]
+                                        + "'");
+                            }
+                            return ActionResult.done();
+                        };
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return new BuiltinsSession();
+                    }
+
+                    private Map<String, Object> values(EvaluationContext evaluation, Session session) {
+                        return builtins == Builtins.RUN
+                                ? evaluation.runScoped(key, ConcurrentHashMap::new)
+                                : ((BuiltinsSession) session).values;
+                    }
+                };
+            }
+        };
+    }
+
+    /**
      * Wraps a language so that an action {@code let NAME = VALUE ; ...} keeps the variable in the session while the
      * rest of the action runs, and removes it once the rest has succeeded, but not when it throws, and {@code put KEY
      * NAME} reads a name that isn't a fact from there: a variable outlives only an action that fails.
@@ -684,6 +806,52 @@ class ContractKitChecksTest {
             @Override
             protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
                 builder.copiesAtLoad(2);
+            }
+        };
+    }
+
+    /**
+     * A contract test for {@code language} whose actions change a built-in with {@code set NAME = VALUE}, and whose
+     * conditions read one with {@code builtin NAME == VALUE}, as {@link #sharedBuiltins} compiles them.
+     */
+    private static class SharedStateContractTest extends ToyExpressionLanguageContractTest {
+
+        private final ExpressionLanguage language;
+
+        SharedStateContractTest(ExpressionLanguage language) {
+            this.language = language;
+        }
+
+        @Override
+        protected ExpressionLanguage language() {
+            return language;
+        }
+
+        // The two hooks have no @Override, so that this class compiles against the kit before them (#848), where the
+        // tests that run sharedStateStaysLocal fail for want of the check.
+        protected String changeSharedState(String name, int value) {
+            return "set " + name + " = " + value;
+        }
+
+        protected String sharedStateEquals(String name, int value) {
+            return "builtin " + name + " == " + value;
+        }
+    }
+
+    /**
+     * A contract test for {@code language} whose {@code actionVariablesLastTheRun()} returns {@code true}. The hook has
+     * no {@code @Override}, so that this compiles against the kit before it (#853), where the variable check ignores
+     * it.
+     */
+    private static ExpressionLanguageContractTest lastingTheRun(ExpressionLanguage language) {
+        return new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+
+            protected boolean actionVariablesLastTheRun() {
+                return true;
             }
         };
     }
@@ -2931,5 +3099,201 @@ class ContractKitChecksTest {
                 () -> runCheck(usableName, "usableFactNamesAccepted"));
         assertEquals("a rule on the fact name 'score' didn't put its value: expected: <{seen=1}> but was: <{seen=1}>,"
                 + " and at seen, expected 1 (java.lang.Integer) but was 1 (java.lang.String)", usable.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose actions change a built-in that a later run sees fails the shared-state check,"
+            + " whatever configure() sets (#848)")
+    void sharedBuiltinsFail() {
+        for (ExpressionLanguageContractTest test : List.of(
+                new SharedStateContractTest(sharedBuiltins(new ToyExpressionLanguage(), Builtins.SESSION)),
+                // The run that changes it fails, but the change is made.
+                new SharedStateContractTest(sharedBuiltins(new ToyExpressionLanguage(), Builtins.WRITE_THEN_FAIL)),
+                new SharedStateContractTest(sharedBuiltins(new ToyExpressionLanguage(), Builtins.SESSION)) {
+                    @Override
+                    protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                        builder.copiesAtLoad(2);
+                    }
+                })) {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(test, "sharedStateStaysLocal"));
+
+            assertEquals("a later run's condition saw what an earlier run's action changed in the language's shared"
+                    + " state: {seen=2}", failure.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a language that refuses a change to a built-in when it loads the rule, fails the action that makes"
+            + " it, or keeps it to the run passes the shared-state check (#848)")
+    void builtinsKeptFromLaterRunsPass() {
+        for (Builtins builtins : List.of(Builtins.REFUSED_AT_LOAD, Builtins.READ_ONLY, Builtins.RUN)) {
+            assertDoesNotThrow(() -> runCheck(new SharedStateContractTest(
+                    sharedBuiltins(new ToyExpressionLanguage(), builtins)), "sharedStateStaysLocal"), builtins.name());
+        }
+    }
+
+    @Test
+    @DisplayName("the shared-state check doesn't take a rejected or failed condition for a refused change (#848)")
+    void otherFailuresNotTakenForARefusedChange() {
+        // The toy rejects "builtin leak ==" when it loads the rule, and its > fails the rule for a string.
+        ExpressionLanguage language = sharedBuiltins(new ToyExpressionLanguage(), Builtins.SESSION);
+        ExpressionLanguageContractTest refusedAtLoad = new SharedStateContractTest(language) {
+            @Override
+            protected String sharedStateEquals(String name, int value) {
+                return "builtin " + name + " ==";
+            }
+        };
+        ExpressionLanguageContractTest failsTheRun = new SharedStateContractTest(language) {
+            @Override
+            protected String sharedStateEquals(String name, int value) {
+                return "'text' > " + value;
+            }
+        };
+
+        AssertionFailedError atLoad = assertThrows(AssertionFailedError.class,
+                () -> runCheck(refusedAtLoad, "sharedStateStaysLocal"));
+        assertTrue(atLoad.getMessage().startsWith("sharedStateEquals() must be false, not fail, while the shared state"
+                + " doesn't hold its value, but load() refused the rule that reads it, naming its condition: "),
+                atLoad.getMessage());
+        RuleCompilationException refused = assertInstanceOf(RuleCompilationException.class, atLoad.getCause());
+        assertEquals("reads", refused.getRuleName());
+        assertEquals(ExpressionKind.CONDITION, refused.getExpressionKind());
+        AssertionFailedError atRun = assertThrows(AssertionFailedError.class,
+                () -> runCheck(failsTheRun, "sharedStateStaysLocal"));
+        assertTrue(atRun.getMessage().startsWith("sharedStateEquals() must be false, not fail, while the shared state"
+                + " doesn't hold its value, but the run before any change failed, naming its condition: "),
+                atRun.getMessage());
+        RuleExecutionException failed = assertInstanceOf(RuleExecutionException.class, atRun.getCause());
+        assertEquals("reads", failed.getRuleName());
+        assertEquals(ExpressionKind.CONDITION, failed.getExpressionKind());
+    }
+
+    @Test
+    @DisplayName("the shared-state check doesn't take a rejected or failed condition of the rule that makes the change"
+            + " for a refused change (#848)")
+    void changingRulesConditionNotTakenForARefusedChange() {
+        // The check's factEquals() is the condition of the rule that makes the change.
+        ExpressionLanguage language = sharedBuiltins(new ToyExpressionLanguage(), Builtins.SESSION);
+        ExpressionLanguageContractTest refusedAtLoad = new SharedStateContractTest(language) {
+            @Override
+            protected String factEquals(String fact, int value) {
+                return fact + " ==";
+            }
+        };
+        ExpressionLanguageContractTest failsTheRun = new SharedStateContractTest(language) {
+            @Override
+            protected String factEquals(String fact, int value) {
+                return "'text' > " + value;
+            }
+        };
+
+        RuleCompilationException atLoad = assertThrows(RuleCompilationException.class,
+                () -> runCheck(refusedAtLoad, "sharedStateStaysLocal"));
+        assertEquals("changes", atLoad.getRuleName());
+        assertEquals(ExpressionKind.CONDITION, atLoad.getExpressionKind());
+        RuleExecutionException atRun = assertThrows(RuleExecutionException.class,
+                () -> runCheck(failsTheRun, "sharedStateStaysLocal"));
+        assertEquals("changes", atRun.getRuleName());
+        assertEquals(ExpressionKind.CONDITION, atRun.getExpressionKind());
+    }
+
+    @Test
+    @DisplayName("the shared-state check fails a contract test whose sharedStateEquals() is true before any action"
+            + " changed the state, rather than blame a leak (#848)")
+    void sharedStateTrueBeforeTheChangeFails() {
+        // Whether the action keeps the change to its run, or fails before it changes anything.
+        for (Builtins builtins : List.of(Builtins.RUN, Builtins.READ_ONLY)) {
+            ExpressionLanguageContractTest test = new SharedStateContractTest(
+                    sharedBuiltins(new ToyExpressionLanguage(), builtins)) {
+                @Override
+                protected String sharedStateEquals(String name, int value) {
+                    return "true";
+                }
+            };
+
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(test, "sharedStateStaysLocal"), builtins.name());
+
+            assertEquals("sharedStateEquals() was true before any action changed the language's shared state, or an"
+                    + " earlier engine left it changed: {seen=0}", failure.getMessage(), builtins.name());
+        }
+    }
+
+    @Test
+    @DisplayName("a contract test whose changeSharedState() returns an action, and whose sharedStateEquals() returns"
+            + " null, fails the shared-state check rather than skip it (#848)")
+    void noSharedStateEqualsFails() {
+        ExpressionLanguageContractTest test = new SharedStateContractTest(
+                sharedBuiltins(new ToyExpressionLanguage(), Builtins.SESSION)) {
+            @Override
+            protected String sharedStateEquals(String name, int value) {
+                return null;
+            }
+        };
+
+        NullPointerException failure = assertThrows(NullPointerException.class,
+                () -> runCheck(test, "sharedStateStaysLocal"));
+
+        assertEquals("sharedStateEquals() returned null, but changeSharedState() didn't", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a contract test whose changeSharedState() returns null skips the shared-state check (#848)")
+    void noChangeSharedStateSkipped() {
+        assertThrows(TestAbortedException.class,
+                () -> runCheck(new ToyExpressionLanguage(), "sharedStateStaysLocal"));
+    }
+
+    @Test
+    @DisplayName("a language whose action variables last the run fails the variable check while its contract test"
+            + " doesn't say so (#853)")
+    void runVariablesFailWithoutTheHook() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(runVariables(new ToyExpressionLanguage()), "actionVariablesStayLocal"));
+
+        assertEquals("a later rule read the variable 'y' an action declared: {seen=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose action variables last the run, and no longer, passes the variable check once its"
+            + " contract test says so (#853)")
+    void runVariablesPassWithTheHook() {
+        assertDoesNotThrow(() -> runCheck(lastingTheRun(runVariables(new ToyExpressionLanguage())),
+                "actionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("a language whose action variables reach a later run fails the variable check, though its contract"
+            + " test says they last the run (#853)")
+    void sessionVariablesFailWithTheHook() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(lastingTheRun(sessionVariables(new ToyExpressionLanguage(), false)),
+                        "actionVariablesStayLocal"));
+
+        assertEquals("a later run read the variable 'y' an action declared in an earlier one, although the rule that"
+                + " declares it didn't fire: {seen=2}", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a contract test that says its language's action variables last the run fails the variable check when"
+            + " a later rule in the run can't read them (#853)")
+    void localVariablesFailWithTheHook() {
+        // The toy fails the run on the unknown y; the wrapped ones read it as null, or refuse it at load.
+        AssertionFailedError failedRun = assertThrows(AssertionFailedError.class,
+                () -> runCheck(lastingTheRun(new ToyExpressionLanguage()), "actionVariablesStayLocal"));
+        AssertionFailedError readNull = assertThrows(AssertionFailedError.class,
+                () -> runCheck(lastingTheRun(unknownNames(new ToyExpressionLanguage(), false)),
+                        "actionVariablesStayLocal"));
+        AssertionFailedError refused = assertThrows(AssertionFailedError.class,
+                () -> runCheck(lastingTheRun(unknownNames(new ToyExpressionLanguage(), true)),
+                        "actionVariablesStayLocal"));
+
+        assertTrue(failedRun.getMessage().startsWith("actionVariablesLastTheRun() returns true, but the run in which a"
+                + " later rule reads the variable 'y' an action declared failed: "), failedRun.getMessage());
+        assertEquals("actionVariablesLastTheRun() returns true, but a later rule in the same run didn't read the"
+                + " variable 'y' an action declared: {seen=null}", readNull.getMessage());
+        assertTrue(refused.getMessage().startsWith("actionVariablesLastTheRun() returns true, but load() refused the"
+                + " rule that reads the variable 'y' an earlier rule's action declares: "), refused.getMessage());
     }
 }

@@ -14,7 +14,7 @@ explained in full.
 ### Action
 
 The expression a rule runs when it fires. It changes the [output object](#output-object) in place, or returns properties
-for the engine to set on it. A language keeps an action's own variables local to that action, as MVEL does. See
+for the engine to set on it. Its variables never outlive the run, and in MVEL not the action. See
 [Writing rules](writing-rules.md#actions-change-the-output).
 
 ### ActionResult

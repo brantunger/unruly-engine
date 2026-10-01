@@ -10,6 +10,45 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.16
+
+In 2.17.0 `sharedStateStaysLocal` was added and no check got stricter. A subclass written for the 2.16 kit still
+compiles and passes: the three new hooks return `null` or `false` by default, and while `changeSharedState()` returns
+`null` the new check is skipped. MVEL keeps the defaults, since it has no shared built-ins or globals of its own.
+Its actions can still change a class's static state through the class's full name (see
+[Security](mvel.md#-security)), which the check doesn't cover.
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `sharedStateStaysLocal`, once `changeSharedState()` returns an action | Lets an action change a built-in object or a global that its runs share | A later run's rule fires on a value no rule in that run set |
+
+The failure reads `a later run's condition saw what an earlier run's action changed in the language's shared state: `
+and the later run's output. Override both hooks to turn the check on:
+
+- `changeSharedState(name, value)`: an action that sets the shared state `name` to `value`, such as
+  `Math.discount = 50` in JavaScript.
+- `sharedStateEquals(name, value)`: a condition that is true when that state holds `value`, and false, without
+  throwing, until then. With `changeSharedState()` overridden, a `null` here fails the check.
+
+The check passes when `load()` refuses the `changes` rule's action. Otherwise it makes three runs on one copy of the
+rules: one in which that rule doesn't fire, one in which its action changes the state, and a later one. The condition
+must be false in the first, and the later run must fire nothing, even when the action failed: it may have changed the
+state before failing.
+
+It also fails when the condition is true in the first run, with `sharedStateEquals() was true before any action
+changed the language's shared state, or an earlier engine left it changed: `, and when the condition fails `load()` or
+any of the runs, with `sharedStateEquals() must be false, not fail, while the shared state doesn't hold its value, but `
+and what failed. Any other failure is rethrown.
+
+The third hook, `actionVariablesLastTheRun()`, returns `false` by default, which changes nothing. Return `true` for a
+language whose action variables last the run: `actionVariablesStayLocal` then requires a later rule in the same run
+to read the variable, failing with a message that starts `actionVariablesLastTheRun() returns true, but`, and still
+fails a variable that reaches a later run. `CompiledAction.execute`'s Javadoc now allows this: an action's variables
+stay local to the execution "or, for a language that documents it, to the run; they never reach another run."
+
+Skipped, `sharedStateStaysLocal` counts as aborted, as `nestedRunInsideAnAction` does, so a launcher that expects
+every check found to succeed sees one more aborted check: override the hooks, or count aborted checks as passing.
+
 ## 🔼 Upgrading from 2.14
 
 In 2.15.0 five checks got stricter and none was added, so a language that passed the 2.14 kit may now fail. Each new
@@ -112,69 +151,6 @@ count aborted checks as passing.
 When a run's output differs from what the check expected only in a value's type, such as the `Integer` 1 and the
 `String` "1", the failure now says so, rather than printing two identical outputs.
 
-## 🔼 Upgrading from 2.10.0
+## 🔼 Upgrading from 2.10.0 or earlier
 
-In 2.10.1 `unusableFactNameRejected` got stricter and no check was added, so a subclass that passed the 2.10.0
-kit may now fail. The failure is in your subclass's hook, not in your language:
-
-| Check | Now fails a subclass that | The defect |
-| --- | --- | --- |
-| `unusableFactNameRejected` | Returns a blank name, empty or only whitespace, from `unusableFactName()` | The engine now rejects a blank fact name itself, so the check never reached your `checkFactName`; return a name only your language rejects |
-
-The check fails with `unusableFactName() must return a name the language itself rejects`, as it does for `output`.
-
-## 🔼 Upgrading from 2.9
-
-In 2.10.0 `concurrentRuns` got stricter and `nestedRunInsideAnAction` was added, so a language that passed the 2.9 kit
-may now fail. Each new failure is a real defect:
-
-| Check | Now fails a language that | The defect |
-| --- | --- | --- |
-| `concurrentRuns` | Returns, from its third `newSession()` call on, a session it returned before, when runs overlap enough to need a third | Two runs use one session at once, and the engine closes it twice |
-| `concurrentRuns`, once `copyThroughVariable()` returns an action | Keeps an action's variables where every run reaches them, such as in the compiled action or a static. The check is likely, not certain, to catch it: another run must change the variable while the action runs | A run reads another run's value, or fails |
-| `nestedRunInsideAnAction`, once `putFactProperty()` returns an action | Keeps a run's state per thread, such as in a `ThreadLocal`, where a run nested inside an expression replaces it | The outer run's value lands in the nested run's output, and nothing throws |
-
-Both hooks return `null` by default, so a subclass written for the 2.9 kit still compiles, and the parts they turn on
-stay off. Override them to turn those parts on:
-
-- `copyThroughVariable(key, fact)`: an action that declares a variable holding the fact's value, then puts the
-  variable under the key. For MVEL, `"tmp = " + fact + "; output.put('" + key + "', tmp)"`.
-- `putFactProperty(key, fact, property)`: an action that puts the fact's property, read through its getter, under the
-  key. For MVEL, `"output.put('" + key + "', " + fact + "." + property + ")"`. If your `configure` declares facts,
-  declare `nest` too; see
-  [A language that needs declared facts](contract-kit.md#a-language-that-needs-declared-facts-imports-or-options).
-
-Skipped, `nestedRunInsideAnAction` counts as aborted, as `usableFactNamesAccepted` does, so a launcher that expects
-every check found to succeed sees one more aborted check: override `putFactProperty()`, or count aborted checks as
-passing. Like `sessionClosedWhileAnotherRuns`, it also needs a second session on a thread whose first is still in use.
-
-## 🔼 Upgrading from 2.8.9 or earlier
-
-The kit in 2.8.10 has two more checks, both on `Session.close()` and neither skippable, so a language that passed
-the 2.8.9 kit may now fail. Each new failure is a real defect:
-
-| Check | Fails a `Session.close()` that | Then |
-| --- | --- | --- |
-| `sessionClosedWhileAnotherRuns` | Tears down what the compiler's sessions share, or throws at any time during the check | Another session's run fails or gives the wrong output, or the engine only logs the throw at WARN |
-| `sessionClosedOnAnotherThread` | Throws when it's called on a thread other than the one that made the session | The engine only logs it at WARN, and what the session holds has usually leaked |
-
-`sessionClosedWhileAnotherRuns` also fails a language that can't make a second session on a thread whose first is
-still in use, since the run nested in the check's run needs one.
-
-## 🔼 Upgrading from 2.6
-
-In 2.7.0 five checks got stricter and `usableFactNamesAccepted` was added, so a language that passed the 2.6 kit may
-now fail. Each new failure is a real defect, not a kit change to work around:
-
-| Check | Now fails a language that | The defect |
-| --- | --- | --- |
-| `actionVariablesStayLocal` | Keeps an action's variable in its session | A later rule, or a later run, reads a value that no rule set for it |
-| `evaluateAgreesWithDetail` | Compares whole numbers differently in `evaluate` and `evaluateWithDetail`, such as by type in one and by value in the other | A wrapper that calls only `evaluate` matches a `Long`, `Short` or `BigDecimal` fact differently than the engine does |
-| `conditionDetail` | Returns a detail that reads the session when it's printed | The run's result reports another run's values; `CompiledCondition` forbids a detail that holds the session |
-| `unusableFactNameRejected` | Returns `output` from `unusableFactName()` | The check never reached your `checkFactName`; return a name only your language rejects |
-| `compilerClosed` | Has a compiler whose `close()` throws | The engine only logs it at WARN, and the compiler has usually leaked what it holds |
-
-`usableFactNamesAccepted` runs only when `usableFactNames()` returns names, so it can't fail a language that doesn't
-override the hook. Skipped, JUnit counts it as aborted, so a launcher that expects every check found to succeed now
-sees one more aborted check than with 2.6 (18 found and 17 succeeded with the 2.7 kit, when no other check is
-skipped): override `usableFactNames()`, or count aborted checks as passing.
+See [Upgrading the contract test kit from 2.10.0 or earlier](contract-kit-upgrading-older.md).
