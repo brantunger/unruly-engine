@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.1](https://github.com/brantunger/unruly-engine/compare/v2.21.0...v2.21.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* mvel tells a loop from long valid work by counting class-loader calls per call site ([#942](https://github.com/brantunger/unruly-engine/issues/942)) ([a66a4c5](https://github.com/brantunger/unruly-engine/commit/a66a4c570b99b1601ad3a45b7e605bc0d8d9377c))
+
 ## [2.21.0](https://github.com/brantunger/unruly-engine/compare/v2.20.7...v2.21.0) (2026-10-02)
 
 
