@@ -55,7 +55,8 @@ final class FactNames {
 
     /**
      * The longest text {@code MessageText.truncate} keeps, which is also the longest message about an expression the
-     * engine reports without shortening it again, and so the longest message about an expression MVEL rejected.
+     * engine reports without shortening it again, and so the longest message about an expression MVEL rejected, and
+     * about a fact name or an option it rejected.
      */
     static final int MAX_DESCRIPTION_LENGTH = 1_000;
 
@@ -111,13 +112,25 @@ final class FactNames {
      */
     void check(String name) {
         if (!isIdentifier(name)) {
-            throw new IllegalArgumentException("'" + MessageText.quote(name) + "' is not a valid fact name: "
-                    + "rules can only refer to a fact named with a Java identifier");
+            throw rejected(name, "' is not a valid fact name: rules can only refer to a fact named with a Java "
+                    + "identifier");
         }
         if (RESERVED.contains(name) || importedClassNames.contains(name) || isPackageClass(name)) {
-            throw new IllegalArgumentException("'" + MessageText.quote(name) + "' cannot be used as a fact name: "
-                    + "MVEL reads it as a keyword or class name, so rules would never see the fact");
+            throw rejected(name, "' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules "
+                    + "would never see the fact");
         }
+    }
+
+    /**
+     * Makes the exception that rejects a fact name: the name quoted within the message (see
+     * {@link #quotedWithin(String, String, String)}), then {@code after}.
+     *
+     * @param name  The rejected name
+     * @param after What the message says after the name, from its closing quote on
+     * @return The exception
+     */
+    private static IllegalArgumentException rejected(String name, String after) {
+        return new IllegalArgumentException(quotedWithin("'", name, after));
     }
 
     /**
@@ -183,8 +196,9 @@ final class FactNames {
     /**
      * Quotes a name as {@link MessageText#quote} does, or, if that is longer than {@code room} characters, escapes it
      * within the room as {@link #escapeWithin} does, for a name that is part of a message about an expression MVEL
-     * rejected, such as a class or an import, so the name can't make the message too long. Either way it shows no more
-     * of the name than {@link MessageText#quote} does.
+     * rejected, such as a class or an import, or of a message rejecting a fact name or an option, so the name can't
+     * make the message too long. Either way it shows no more of the name than {@link MessageText#quote} does. An empty
+     * name is quoted as empty, whatever the room, as nothing of it is left out.
      *
      * @param name The name
      * @param room The most characters the quoted name may take, the count of what was left out included
@@ -192,7 +206,43 @@ final class FactNames {
      */
     static String quoteWithin(String name, int room) {
         String quoted = MessageText.quote(name);
-        return quoted.length() <= room ? quoted : escapeWithin(name, shownOf(name), room);
+        return quoted.length() <= room || name.isEmpty() ? quoted : escapeWithin(name, shownOf(name), room);
+    }
+
+    /**
+     * Writes a message that quotes a name within {@value #MAX_DESCRIPTION_LENGTH} characters, as
+     * {@link #quotedWithin(String, String, String, int)} does: a message MVEL throws when it rejects a fact name or an
+     * option, which the engine shortens and escapes when it reports it. A message that fits is reported whole, so a
+     * long name of characters that escape isn't cut inside an escape, and the count of what was left out counts the
+     * name's own characters. The message is longer than {@value #MAX_DESCRIPTION_LENGTH} characters, and the engine
+     * shortens it when it reports it, when the text around the name, such as a declared type's long class name,
+     * leaves less room than the count takes for a name that doesn't fit whole, or is itself longer than that for an
+     * empty name.
+     *
+     * @param before What the message says before the name, up to its opening quote
+     * @param name   The name, not escaped
+     * @param after  What the message says after the name, from its closing quote on
+     * @return The message
+     */
+    static String quotedWithin(String before, String name, String after) {
+        return quotedWithin(before, name, after, MAX_DESCRIPTION_LENGTH);
+    }
+
+    /**
+     * Writes a message that quotes a name: {@code before}, the name quoted within what the rest of the message leaves
+     * of {@code room} (see {@link #quoteWithin}), and {@code after}. When the name doesn't fit whole, and
+     * {@code before} and {@code after} leave less room than the count of what was left out takes (22 characters
+     * and the count's digits), the name is shown as that count alone and the message is longer than
+     * {@code room}: {@code quotedWithin("<", "a".repeat(50), ">", 12)} gives 26 characters. Nothing is thrown.
+     *
+     * @param before What the message says before the name, up to its opening quote
+     * @param name   The name, not escaped
+     * @param after  What the message says after the name, from its closing quote on
+     * @param room   The most characters the message may take
+     * @return The message
+     */
+    static String quotedWithin(String before, String name, String after, int room) {
+        return before + quoteWithin(name, room - before.length() - after.length()) + after;
     }
 
     /**

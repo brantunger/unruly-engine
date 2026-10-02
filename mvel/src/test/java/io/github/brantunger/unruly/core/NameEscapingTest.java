@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -11,10 +12,17 @@ import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URL;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static io.github.brantunger.unruly.core.EngineLogs.capture;
@@ -28,6 +36,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class NameEscapingTest {
 
     private static final String FORGED = "[main] INFO com.example.Audit - forged entry";
+
+    // 199 control characters, each escaped to six, so a name of one more character quotes to 1,195 characters: more
+    // than the engine keeps of a message, so a message that quoted it whole would be cut, inside an escape (#875).
+    private static final String CONTROLS = String.valueOf((char) 1).repeat(Failures.MAX_NAME_LENGTH - 1);
+    private static final String ESCAPED_CONTROL = "\\u0001";
+    // A backslash that doesn't start a whole escape: an escape cut in half, in a message with no backslash of its own.
+    private static final Pattern CUT_ESCAPE = Pattern.compile("\\\\(?!u[0-9a-f]{4}|[nrt])");
+    private static final Pattern LEFT_OUT = Pattern.compile("\\.\\.\\. \\((\\d+) more characters\\)'");
 
     private final RulesEngine<Map<String, Object>> engine =
             RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
@@ -141,5 +157,189 @@ class NameEscapingTest {
         Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(new FactMap<>()));
 
         assertEquals("raw\nname", assertInstanceOf(RuleExecutionException.class, failure.thrown()).getRuleName());
+    }
+
+    @Test
+    @DisplayName("a long fact name of control characters fits in the message whole, with no escape cut in half")
+    void longFactNameOfControlCharacters() {
+        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
+        String name = "-" + CONTROLS;
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue(name, 1);
+
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(facts));
+
+        String message = failure.thrown().getMessage();
+        assertTrue(message.endsWith("' is not a valid fact name: rules can only refer to a fact named with a Java "
+                + "identifier"), message);
+        assertLoggedWhole(failure, message);
+        assertFitsWhole(message, name);
+    }
+
+    @Test
+    @DisplayName("a long declared fact name of control characters fits in the message load() reports, whole")
+    void longDeclaredFactNameOfControlCharacters() {
+        String name = "-" + CONTROLS;
+        RulesEngine<Map<String, Object>> declared = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .fact(name, Integer.class).build();
+
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> declared.load(List.of(
+                Rule.builder().ruleName("r").condition("true").action("x").build())));
+
+        String message = failure.thrown().getCause().getMessage();
+        assertTrue(message.endsWith("' is not a valid fact name: rules can only refer to a fact named with a Java "
+                + "identifier"), message);
+        assertLoggedWhole(failure, message);
+        assertFitsWhole(message, name);
+        assertTrue(failure.thrown().getMessage().endsWith("' can't be used: " + message),
+                failure.thrown().getMessage());
+    }
+
+    @Test
+    @DisplayName("a long class name of control characters, rejected as a fact name, fits in the message whole")
+    void longClassNameOfControlCharacters() {
+        // Control characters are identifier-ignorable, so the name is an identifier, and the class that has it is
+        // the reason MVEL can't see the fact.
+        String name = "X" + CONTROLS;
+        String pkg = NameEscapingTest.class.getPackageName();
+        ClassLoader loader = new OneClassLoader(pkg + "." + name);
+        RulesEngine<Map<String, Object>> imported = TestSupport.withContextClassLoader(loader, () -> {
+            RulesEngine<Map<String, Object>> built = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .imports(pkg).build();
+            built.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
+            return built;
+        });
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue(name, 1);
+
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> imported.run(facts));
+
+        String message = failure.thrown().getMessage();
+        assertTrue(message.endsWith("' cannot be used as a fact name: MVEL reads it as a keyword or class name, so "
+                + "rules would never see the fact"), message);
+        assertLoggedWhole(failure, message);
+        assertFitsWhole(message, name);
+    }
+
+    @Test
+    @DisplayName("a long dynamic declared fact's name of control characters fits in strongTyping's message, whole")
+    void longDynamicFactNameOfControlCharacters() {
+        String name = "X" + CONTROLS;
+        assertCompilerRejects(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).fact(name, HashMap.class)
+                .requireDeclaredFacts().option("mvel", "strongTyping", "true"), name, "' is declared as "
+                + "java.util.HashMap, whose members MVEL can't check");
+    }
+
+    @Test
+    @DisplayName("a long option name of control characters fits in the message MVEL rejects it with, whole")
+    void longOptionNameOfControlCharacters() {
+        String name = "X" + CONTROLS;
+        assertCompilerRejects(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .option("mvel", name, "true"), name, "'; its only option is strongTyping");
+    }
+
+    @Test
+    @DisplayName("a long strongTyping value of control characters fits in the message MVEL rejects it with, whole")
+    void longOptionValueOfControlCharacters() {
+        String value = "X" + CONTROLS;
+        assertCompilerRejects(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .option("mvel", "strongTyping", value), value, "'");
+    }
+
+    /** Asserts that loading a rule list fails because MVEL rejects a name, with a message that fits, whole. */
+    private static void assertCompilerRejects(RulesEngineBuilder<Map<String, Object>> builder, String name,
+                                              String after) {
+        RulesEngine<Map<String, Object>> rejecting = builder.build();
+
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> rejecting.load(List.of(
+                Rule.builder().ruleName("r").condition("true").action("x").build())));
+
+        assertInstanceOf(RuleCompilationException.class, failure.thrown());
+        String message = failure.thrown().getCause().getMessage();
+        assertTrue(message.endsWith(after), message);
+        assertLoggedWhole(failure, message);
+        assertFitsWhole(message, name);
+        assertTrue(failure.thrown().getMessage().endsWith("failed to create a compiler: " + message),
+                failure.thrown().getMessage());
+    }
+
+    /**
+     * Asserts that a message quoting a long name of control characters is no longer than the engine keeps of a message,
+     * so the engine reports it whole, that no escape in it is cut in half, and that the count of what was left out
+     * counts the name's own characters, not escaped ones: the name's first character and each escape shown are one.
+     */
+    private static void assertFitsWhole(String message, String name) {
+        assertTrue(message.length() <= Failures.MAX_DESCRIPTION_LENGTH, message.length() + ": " + message);
+        assertFalse(CUT_ESCAPE.matcher(message).find(), message);
+        Matcher leftOut = LEFT_OUT.matcher(message);
+        assertTrue(leftOut.find(), message);
+        int shown = 1 + (message.length() - message.replace(ESCAPED_CONTROL, "").length()) / ESCAPED_CONTROL.length();
+        assertEquals(name.length() - shown, Integer.parseInt(leftOut.group(1)), message);
+    }
+
+    /** Asserts that the engine logged {@code message} whole at the end of an ERROR line, with no escape cut in half. */
+    private static void assertLoggedWhole(Outcome<RuntimeException> failure, String message) {
+        List<String> errors = failure.lines("ERROR");
+        assertTrue(errors.stream().noneMatch(line -> CUT_ESCAPE.matcher(line).find()), failure.logs());
+        assertTrue(errors.stream().anyMatch(line -> line.endsWith(message)), failure.logs());
+    }
+
+    /**
+     * A class loader that has one class more than its parent, an empty one by the name given, and serves a class file
+     * for it, so a lookup of the class in its package finds it.
+     */
+    private static final class OneClassLoader extends ClassLoader {
+
+        private final String className;
+
+        OneClassLoader(String className) {
+            super(NameEscapingTest.class.getClassLoader());
+            this.className = className;
+        }
+
+        @Override
+        public URL getResource(String name) {
+            return name.equals(className.replace('.', '/') + ".class")
+                    ? super.getResource(NameEscapingTest.class.getName().replace('.', '/') + ".class")
+                    : super.getResource(name);
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            if (!name.equals(className)) {
+                throw new ClassNotFoundException(name);
+            }
+            byte[] bytes = emptyClass(name.replace('.', '/'));
+            return defineClass(name, bytes, 0, bytes.length);
+        }
+
+        /** Writes the class file of an empty public class that extends Object, in the format of Java 8. */
+        private static byte[] emptyClass(String internalName) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (DataOutputStream out = new DataOutputStream(bytes)) {
+                out.writeInt(0xCAFEBABE);
+                out.writeShort(0); // minor version
+                out.writeShort(52); // major version: Java 8
+                out.writeShort(5); // constant pool count: 4 entries, from 1
+                out.writeByte(1); // #1 Utf8: the class's name
+                out.writeUTF(internalName);
+                out.writeByte(7); // #2 Class #1
+                out.writeShort(1);
+                out.writeByte(1); // #3 Utf8: its superclass's name
+                out.writeUTF("java/lang/Object");
+                out.writeByte(7); // #4 Class #3
+                out.writeShort(3);
+                out.writeShort(0x21); // ACC_PUBLIC | ACC_SUPER
+                out.writeShort(2); // this class
+                out.writeShort(4); // superclass
+                out.writeShort(0); // interfaces
+                out.writeShort(0); // fields
+                out.writeShort(0); // methods
+                out.writeShort(0); // attributes
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return bytes.toByteArray();
+        }
     }
 }

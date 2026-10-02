@@ -24,8 +24,10 @@ import java.util.Objects;
  * it logs it, and the message of an exception from {@link ExpressionCompiler#checkFactName} when it logs it or, at
  * {@code load()}, reports it for a declared fact. <b>Leave a message the engine shortens raw: the engine escapes it
  * itself, and shortening escaped text can cut an escape in half.</b> The count of what was left out would then count
- * escaped characters too. The MVEL language escapes the messages of its compile errors itself, but fits each escaped
- * message in 1,000 characters, so the engine never shortens one.
+ * escaped characters too. The MVEL language escapes the messages of its compile errors, and of its rejections of a
+ * fact name or an option's name or value, itself, but fits each escaped message in 1,000 characters, so the engine
+ * never shortens one it reports directly. A rejection that names a class, such as of a declared or output type, may
+ * be longer.
  * </p>
  *
  * <p>

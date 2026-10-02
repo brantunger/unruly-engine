@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.MessageText;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -35,6 +34,10 @@ final class DeclaredTypes {
     /** The option that turns strong typing on. */
     static final String STRONG_TYPING = "strongTyping";
 
+    // How the message that strong typing can't apply starts, before the reason.
+    private static final String CANT_APPLY = "MVEL's " + STRONG_TYPING + " option is on, but strong typing can't apply,"
+            + " because ";
+
     private DeclaredTypes() {
     }
 
@@ -60,8 +63,10 @@ final class DeclaredTypes {
         }
         for (Map.Entry<String, Class<?>> fact : declared.entrySet()) {
             if (isDynamic(fact.getValue())) {
-                throw cantApply("fact '" + MessageText.quote(fact.getKey()) + "' is declared as "
-                        + fact.getValue().getName() + ", whose members MVEL can't check");
+                // The class name is part of the text around the fact's name, so a long one leaves the name less room:
+                // it may show as the count alone, and the message may be longer than 1,000 characters (#913).
+                throw new IllegalArgumentException(FactNames.quotedWithin(CANT_APPLY + "fact '", fact.getKey(),
+                        "' is declared as " + fact.getValue().getName() + ", whose members MVEL can't check"));
             }
         }
         if (isDynamic(context.outputType())) {
@@ -86,22 +91,21 @@ final class DeclaredTypes {
     private static boolean strongTyping(Map<String, String> options) {
         for (String key : options.keySet()) {
             if (!STRONG_TYPING.equals(key)) {
-                throw new IllegalArgumentException("MVEL has no option '" + MessageText.quote(key)
-                        + "'; its only option is " + STRONG_TYPING);
+                throw new IllegalArgumentException(FactNames.quotedWithin("MVEL has no option '", key,
+                        "'; its only option is " + STRONG_TYPING));
             }
         }
         String value = options.getOrDefault(STRONG_TYPING, "false");
         return switch (value) {
             case "true" -> true;
             case "false" -> false;
-            default -> throw new IllegalArgumentException("MVEL's " + STRONG_TYPING + " option must be true or false, "
-                    + "but was '" + MessageText.quote(value) + "'");
+            default -> throw new IllegalArgumentException(FactNames.quotedWithin("MVEL's " + STRONG_TYPING
+                    + " option must be true or false, but was '", value, "'"));
         };
     }
 
     private static IllegalArgumentException cantApply(String reason) {
-        return new IllegalArgumentException("MVEL's " + STRONG_TYPING + " option is on, but strong typing can't apply,"
-                + " because " + reason);
+        return new IllegalArgumentException(CANT_APPLY + reason);
     }
 
     /**
