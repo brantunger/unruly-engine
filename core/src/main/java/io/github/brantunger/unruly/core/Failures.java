@@ -23,9 +23,9 @@ import java.util.stream.Stream;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
- * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf} and
- * {@link #keepAlso} log, and under the engine's logger name, {@code io.github.brantunger.unruly.engine}, as every
- * failure is logged.
+ * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf},
+ * {@link #laterInsteadOf} and {@link #keepAlso} log, and under the engine's logger name,
+ * {@code io.github.brantunger.unruly.engine}, as every failure is logged.
  * <b>Internal:</b> this class may change in any release, and isn't part of the API. It's public only so that the
  * {@code api} package ({@code Names}, {@code LoggingRuleListener} and {@code language.MessageText}) and the benchmarks
  * can use it: they shorten and escape text the way the engine does, rather than keeping a copy that could drift.
@@ -464,9 +464,17 @@ public final class Failures {
         return new Reach(true, t -> t == target).from(from) != null;
     }
 
+    /**
+     * Tells whether {@code winner} carries {@code loser} among its own suppressed exceptions, as {@link #keepAlso}
+     * keeps it there.
+     *
+     * @param winner What the caller throws
+     * @param loser  What it may carry, or {@code null}
+     * @return {@code true} if {@code loser} is one of {@code winner}'s direct suppressed exceptions
+     */
     // The very same instance: an equal one is another failure.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private static boolean carries(Throwable winner, Throwable loser) {
+    static boolean carries(Throwable winner, Throwable loser) {
         for (Throwable kept : winner.getSuppressed()) {
             if (kept == loser) {
                 return true;
@@ -479,16 +487,20 @@ public final class Failures {
      * Chooses what the caller throws when closing what a failure left behind threw a fatal {@link Error}: a fatal
      * error beats any other failure, and of two fatal errors the first wins. So {@code closeFatal} replaces
      * {@code failure} only when {@code failure} holds no fatal error (see {@link #fatalError}), and then carries it as
-     * a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal error that loses
-     * was logged when it was caught, and the caller throws {@code failure}, which carries it as a suppressed exception
+     * a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal error a language's
+     * {@code close()} threw that loses was logged when it was caught; one from elsewhere is kept on what the caller
+     * throws, so a caller that must have it logged as well logs it itself, as a failed {@code load()} does for one
+     * retiring threw. The caller throws
+     * {@code failure}, which carries the one that loses as a suppressed exception
      * (see {@link #keepAlso}), when its own fatal error is in its cause chain; when that error is only suppressed on
      * it, the caller throws that error itself, carrying {@code closeFatal}, rather than an exception that carries two.
      *
      * <p>
-     * A {@code failure} caused by an interrupt sets the thread's interrupt status again when it's replaced (see
-     * {@link #keepInterruptStatus}), because the caller that would have set it never sees it. The fatal error that
-     * can't carry a suppressed exception is one built with suppression disabled, as the {@link OutOfMemoryError} the
-     * JVM keeps ready for when it has no memory left is: it would lose {@code failure}, so it's logged instead.
+     * A {@code failure} caused by an interrupt, or carrying one suppressed, sets the thread's interrupt status again
+     * when it's replaced (see {@link #keepInterruptStatus}), because the caller that would have set it never sees it.
+     * The fatal error that can't carry a suppressed exception is one built with suppression disabled, as the
+     * {@link OutOfMemoryError} the JVM keeps ready for when it has no memory left is: it would lose {@code failure}, so
+     * it's logged instead.
      * </p>
      *
      * @param failure    What was being thrown when the closing began
@@ -505,17 +517,7 @@ public final class Failures {
         List<Throwable> chain = causeChain(failure);
         Error fatal = fatalErrorIn(chain);
         if (fatal != null) {
-            if (fatalIn(chain) != null) {
-                keepAlso(failure, closeFatal);
-                return null;
-            }
-            // Only suppressed on the failure: that error is thrown, not an exception that carries two. The failure
-            // reaches it, so it can't be kept on it, and is logged instead.
-            keepInterruptStatus(failure);
-            keepAlso(fatal, closeFatal);
-            log.warn("A failure was replaced by the fatal error {} suppressed on it: {}", describeWithClass(fatal),
-                    describeWithClass(failure));
-            return fatal;
+            return fatalOfFailure(failure, chain, fatal, closeFatal);
         }
         keepInterruptStatus(failure);
         closeFatal.addSuppressed(failure);
@@ -525,6 +527,61 @@ public final class Failures {
                     describeWithClass(closeFatal), describeWithClass(failure));
         }
         return closeFatal;
+    }
+
+    /**
+     * Chooses what the caller throws when cleaning up after a failure, as retiring what a failed {@code load()} left
+     * behind or ending a failed run does, threw something that isn't fatal, as running out of stack is. A fatal
+     * {@link Error} in {@code failure} comes first, as it does against a fatal error from closing (see
+     * {@link #fatalInsteadOf}): when the error is in its cause chain, the caller throws {@code failure}, carrying
+     * {@code later}; only when it's suppressed on it alone does the caller throw that error itself, carrying
+     * {@code later}, with {@code failure} logged at WARN. When {@code failure} holds no fatal error,
+     * {@code later} replaces it, and carries it as a suppressed exception.
+     *
+     * @param failure What was being thrown when the cleaning up began
+     * @param later   What cleaning up threw, which holds no fatal error, or {@code null} if it threw nothing
+     * @return {@code later}, carrying {@code failure}, if the caller throws it in place of {@code failure}; the fatal
+     *         error suppressed on {@code failure}, carrying {@code later}, if the caller throws that; otherwise
+     *         {@code null}, and the caller throws {@code failure}, with {@code later}, if there is one, added to its
+     *         suppressed exceptions, or logged at WARN if it can't carry one (see {@link #keepAlso})
+     */
+    static Throwable laterInsteadOf(Throwable failure, Throwable later) {
+        if (later == null) {
+            return null;
+        }
+        List<Throwable> chain = causeChain(failure);
+        Error fatal = fatalErrorIn(chain);
+        if (fatal == null) {
+            // Replaced, so the caller that would have set it again never sees it.
+            keepInterruptStatus(failure);
+            keepAlso(later, failure);
+            return later;
+        }
+        return fatalOfFailure(failure, chain, fatal, later);
+    }
+
+    /**
+     * Keeps what failed after {@code failure} beside the fatal {@link Error} {@code failure} holds, which comes first.
+     *
+     * @param failure What was being thrown first
+     * @param chain   Its cause chain
+     * @param fatal   The fatal error it holds (see {@link #fatalErrorIn})
+     * @param other   What failed after it
+     * @return {@code null} when the error is in {@code failure}'s cause chain, and the caller throws {@code failure},
+     *         carrying {@code other}; otherwise the error, carrying {@code other}, for the caller to throw
+     */
+    private static Error fatalOfFailure(Throwable failure, List<Throwable> chain, Error fatal, Throwable other) {
+        if (fatalIn(chain) != null) {
+            keepAlso(failure, other);
+            return null;
+        }
+        // Only suppressed on the failure: that error is thrown, not an exception that carries two. The failure
+        // reaches it, so it can't be kept on it, and is logged instead.
+        keepInterruptStatus(failure);
+        keepAlso(fatal, other);
+        log.warn("A failure was replaced by the fatal error {} suppressed on it: {}", describeWithClass(fatal),
+                describeWithClass(failure));
+        return fatal;
     }
 
     /**
@@ -917,11 +974,19 @@ public final class Failures {
      *
      * @param e        What was caught
      * @param deadline The deadline the run around it passed, or {@code null} if its thread was interrupted
-     * @return {@code true} if the innermost {@link ReportedFailure} in {@code e}'s cause chain is that same stop
+     * @return {@code true} if the innermost {@link ReportedFailure} in {@code e}'s cause chain is that same stop, or
+     *         one is found among the suppressed exceptions of its links and what they lead to, as
+     *         {@link #fatalError} reads them, as a {@code try}-with-resources whose {@code close()} started that run
+     *         leaves it
      */
     static boolean nestedRunStopped(Throwable e, Deadline deadline) {
-        ReportedFailure innermost = innermostReported(e);
-        return innermost != null && innermost.isStopFor(deadline);
+        List<Throwable> chain = causeChain(e);
+        ReportedFailure innermost = below(chain).innermost();
+        if (innermost != null && innermost.isStopFor(deadline)) {
+            return true;
+        }
+        return suppressedMatching(chain,
+                t -> t instanceof ReportedFailure reported && reported.isStopFor(deadline)) != null;
     }
 
     /**
@@ -1267,20 +1332,28 @@ public final class Failures {
     }
 
     /**
-     * Sets the current thread's interrupt status again when what was caught was caused by an interrupt. A rule,
-     * listener or language interrupted while it blocks throws an {@link InterruptedException}, which clears the
-     * status, and the engine receives it wrapped by MVEL or the language; without this, the caller of {@code run()}
-     * couldn't tell the thread had been interrupted. A {@link java.io.InterruptedIOException} doesn't count: a
-     * {@link java.net.SocketTimeoutException} is one.
+     * Sets the current thread's interrupt status again when what was caught was caused by an interrupt, or carries
+     * one as a suppressed exception. A rule, listener or language interrupted while it blocks throws an
+     * {@link InterruptedException}, which clears the status, and the engine receives it wrapped by MVEL or the
+     * language, or suppressed on the body's exception by a {@code try}-with-resources whose {@code close()} was
+     * interrupted; without this, the caller of {@code run()} couldn't tell the thread had been interrupted. The cause
+     * chain is read first, then the suppressed exceptions as {@link #fatalError} reads them: one the engine added
+     * with {@link ReportedFailure#addSuppressedByEngine} isn't read, and one past the {@value #MAX_EXCEPTIONS_READ}
+     * exceptions read is missed. A
+     * {@link java.io.InterruptedIOException} doesn't count: a {@link java.net.SocketTimeoutException} is one.
      *
      * @param thrown What was caught, or {@code null}
      */
     static void keepInterruptStatus(Throwable thrown) {
-        for (Throwable t : causeChain(thrown)) {
+        List<Throwable> chain = causeChain(thrown);
+        for (Throwable t : chain) {
             if (t instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
                 return;
             }
+        }
+        if (suppressedMatching(chain, InterruptedException.class::isInstance) != null) {
+            Thread.currentThread().interrupt();
         }
     }
 

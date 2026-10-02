@@ -28,6 +28,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -193,6 +194,58 @@ class NestedStopLoggingTest {
         assertEquals(List.of("run() was interrupted during rule 'interrupting'"),
                 lines.stream().map(line -> line.substring(STOP_LINE.matcher(line).results().findFirst()
                         .orElseThrow().start() + ("WARN " + ENGINE_LOGGER).length())).toList());
+    }
+
+    @Test
+    @DisplayName("#895: a nested run started by a close() whose stop is only suppressed on the action's exception logs"
+            + " the stop, and the outer run doesn't")
+    void interruptSuppressed() {
+        RulesEngine<Map<String, Object>> inner = engine(RulesEngineBuilder.firstMatch(HashMap::new),
+                rule("interrupting", "pause.interrupt()", "output.put('x', 1)"));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("nested", new ClosingNested(inner));
+        AtomicReference<RuleExecutionException> thrown = new AtomicReference<>();
+
+        List<String> lines = stopLines(outer(RulesEngineBuilder.firstMatch(HashMap::new)), facts, thrown);
+
+        assertInstanceOf(InterruptedException.class, thrown.get().getCause());
+        assertEquals(1, lines.size(), String.join("\n", lines));
+        assertEquals(1, count(lines, "during rule 'interrupting'"), String.join("\n", lines));
+    }
+
+    /**
+     * A fact an action calls to fail inside a {@code try}-with-resources whose resource's {@code close()} runs another
+     * engine, so that run's exception reaches the run around it only as a suppressed exception.
+     */
+    public static final class ClosingNested {
+
+        private final RulesEngine<Map<String, Object>> inner;
+
+        ClosingNested(RulesEngine<Map<String, Object>> inner) {
+            this.inner = inner;
+        }
+
+        /** A resource whose {@code close()} runs the inner engine. */
+        private final class InnerRun implements AutoCloseable {
+            @Override
+            public void close() {
+                FactStore<Object> facts = new FactMap<>();
+                facts.setValue("pause", new Pause());
+                inner.run(facts);
+            }
+        }
+
+        /**
+         * Fails, and the inner run's exception, thrown while closing, is suppressed on that failure.
+         *
+         * @return never
+         */
+        public boolean run() {
+            try (InnerRun resource = new InnerRun()) {
+                Objects.requireNonNull(resource);
+                throw new IllegalStateException("body failed");
+            }
+        }
     }
 
     @Test

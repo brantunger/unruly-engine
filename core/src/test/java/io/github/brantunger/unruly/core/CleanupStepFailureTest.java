@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
@@ -54,7 +55,7 @@ class CleanupStepFailureTest {
     /**
      * A language that counts the compilers and sessions it makes and closes. Its conditions are true and its actions
      * do nothing, each session is its own, so every run needs a copy, and it fails to make a session while
-     * {@link #failSessions} is set.
+     * {@link #failSessions} or {@link #sessionFailure} is set.
      */
     private static final class Counting implements ExpressionLanguage {
         private final AtomicInteger compilers = new AtomicInteger();
@@ -62,6 +63,8 @@ class CleanupStepFailureTest {
         private final AtomicInteger sessions = new AtomicInteger();
         private final AtomicInteger sessionsClosed = new AtomicInteger();
         private volatile boolean failSessions;
+        // What making a session throws, while set.
+        private volatile Error sessionFailure;
         // What closing a session runs, once it has counted it, while set.
         private volatile Runnable onSessionClose = () -> {
         };
@@ -95,6 +98,10 @@ class CleanupStepFailureTest {
                 public Session newSession() {
                     if (failSessions) {
                         throw new IllegalStateException("no session");
+                    }
+                    Error failure = sessionFailure;
+                    if (failure != null) {
+                        throw failure;
                     }
                     sessions.incrementAndGet();
                     return new Session() {
@@ -484,9 +491,170 @@ class CleanupStepFailureTest {
         language.failSessions = true;
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the failed rules retired"));
 
-        TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.load(RULES)));
+        String logs = TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.load(RULES)));
 
+        assertEquals(0, retireAgainLines(logs), "what load() throws says it: " + logs);
         assertEquals(0, language.compilersClosed.get(), "the compilers aren't closed yet");
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#893 load: a load whose making of copies throws a fatal error, and whose retiring then fails, throws"
+            + " its own fatal error, carrying the retire failure")
+    void aLoadsOwnFatalErrorComesBeforeARetireFailure() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        OutOfMemoryError failure = new OutOfMemoryError("making a session");
+        language.sessionFailure = failure;
+        StackOverflowError retiring = new StackOverflowError("marking the failed rules retired");
+        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
+
+        assertSame(failure, thrown.get(), "the load's own fatal error isn't what load() threw");
+        assertArrayEquals(new Throwable[] {retiring}, failure.getSuppressed(), "the retire failure isn't kept");
+        assertEquals(1, retireAgainLines(logs), logs);
+        assertEquals(0, language.compilersClosed.get(), "the compilers aren't closed yet");
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#893 load: a load whose making of copies throws a fatal error, and whose retiring throws one too,"
+            + " throws its own, carrying the retire failure, which is logged once")
+    void aLoadsOwnFatalErrorCarriesAFatalRetireFailure() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        OutOfMemoryError failure = new OutOfMemoryError("making a session");
+        language.sessionFailure = failure;
+        OutOfMemoryError retiring = new OutOfMemoryError("marking the failed rules retired");
+        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
+
+        assertSame(failure, thrown.get(), "the load's own fatal error isn't what load() threw");
+        assertArrayEquals(new Throwable[] {retiring}, failure.getSuppressed(), "the retire failure isn't kept");
+        assertEquals(1, retireAgainLines(logs), logs);
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#893 load: a fatal error closing the failed load's compilers, carried by the load's own, is logged"
+            + " once, as it was closed, and the rules aren't said to be left to retire")
+    void aFatalErrorClosingTheFailedRulesIsLoggedOnce() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        OutOfMemoryError failure = new OutOfMemoryError("making a session");
+        language.sessionFailure = failure;
+        OutOfMemoryError closing = new OutOfMemoryError("closing the compiler");
+        language.closeFailure = closing;
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
+
+        assertSame(failure, thrown.get(), "the load's own fatal error isn't what load() threw");
+        assertArrayEquals(new Throwable[] {closing}, failure.getSuppressed(), "the close failure isn't kept");
+        assertEquals(0, retireAgainLines(logs), logs);
+        assertEquals(1, logs.lines().filter(line -> line.contains("WARN ") && line.contains("failed to close")).count(),
+                logs);
+        language.assertAllClosed("after the load failed");
+    }
+
+    @Test
+    @DisplayName("#893 load: a retire failure the load's own error can't carry is logged once, as not carried")
+    void aRetireFailureTheLoadsErrorCantCarryIsLoggedOnce() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        // Suppression disabled, as on an OutOfMemoryError the JVM keeps ready, with a fatal error in its chain.
+        Error failure = new Error("making the copies", new OutOfMemoryError("a session"), false, false) {
+        };
+        Faults.inject(Faults.Step.COPIES_PREPARED, 1, failure);
+        language.closeFailure = new OutOfMemoryError("closing the compiler");
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
+
+        assertSame(failure, thrown.get(), "the load's own failure isn't what load() threw");
+        assertEquals(0, retireAgainLines(logs), logs);
+        assertEquals(1, logs.lines().filter(line -> line.contains("WARN ") && line.contains("can't carry")).count(),
+                logs);
+        language.closeFailure = null;
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    // How many times the engine logged that rules couldn't all be retired, so the next load() or close() tries again.
+    private static int retireAgainLines(String logs) {
+        return (int) logs.lines().filter(line -> line.contains("WARN ")
+                && line.contains("couldn't all be retired, so the next load() or close() tries again")).count();
+    }
+
+    @Test
+    @DisplayName("#893 load: a load whose making of copies throws a fatal error, and whose retiring fails before it"
+            + " begins, throws its own fatal error, carrying the retire failure")
+    void aLoadsOwnFatalErrorSurvivesRetiringThatFailsBeforeItBegins() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        OutOfMemoryError failure = new OutOfMemoryError("making a session");
+        language.sessionFailure = failure;
+        StackOverflowError retiring = new StackOverflowError("retiring the claimed rules");
+        Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, retiring);
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
+
+        assertSame(failure, thrown.get(), "the load's own fatal error isn't what load() threw");
+        assertArrayEquals(new Throwable[] {retiring}, failure.getSuppressed(), "the retire failure isn't kept");
+        assertEquals(1, retireAgainLines(logs), logs);
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#893 load: a load whose own failure isn't fatal, and whose retiring fails before it begins, throws"
+            + " the retire failure, carrying the load's failure")
+    void aLoadsFailureIsKeptWhenRetiringFailsBeforeItBegins() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        language.failSessions = true;
+        StackOverflowError retiring = new StackOverflowError("retiring the claimed rules");
+        Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, retiring);
+
+        String logs = TestLogs.logsOf(
+                () -> assertSame(retiring, assertThrows(StackOverflowError.class, () -> engine.load(RULES))));
+
+        assertEquals(1, retiring.getSuppressed().length, "the load's own failure isn't kept");
+        assertInstanceOf(RuleCompilationException.class, retiring.getSuppressed()[0]);
+        assertEquals(0, retireAgainLines(logs), "what load() throws says it: " + logs);
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#893 load: a load whose own failure isn't fatal, and whose retiring throws a fatal error, throws that"
+            + " error, carrying the load's failure")
+    void aRetireFatalErrorComesBeforeALoadsOwnFailure() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        language.failSessions = true;
+        OutOfMemoryError retiring = new OutOfMemoryError("marking the failed rules retired");
+        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+
+        TestLogs.logsOf(() -> assertSame(retiring, assertThrows(OutOfMemoryError.class, () -> engine.load(RULES))));
+
+        assertEquals(1, retiring.getSuppressed().length, "the load's own failure isn't kept");
+        assertInstanceOf(RuleCompilationException.class, retiring.getSuppressed()[0]);
         engine.close();
         language.assertAllClosed("after close()");
     }
