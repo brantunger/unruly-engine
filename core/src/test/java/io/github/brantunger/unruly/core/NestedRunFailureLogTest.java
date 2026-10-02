@@ -1307,6 +1307,49 @@ class NestedRunFailureLogTest {
         assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
     }
 
+    /**
+     * A fatal {@link Error} a run or a {@code load()} nested one level deeper than a later sibling run logged, which
+     * the code around them kept and the sibling's rule wraps, wasn't logged below that rule either: the run that
+     * logged it had ended before the sibling started, however deep it was.
+     *
+     * @param how {@code run()} or {@code load()}, what the first nested run's rule starts
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"run()", "load()"})
+    @DisplayName("a fatal Error a deeper sibling's nested run() or load() logged, wrapped by a later one's rule, is"
+            + " noted as logged already")
+    void deeperSiblingNestedFatalWrappedNotedAsLogged(String how) {
+        boolean load = "load()".equals(how);
+        RulesEngine<Map<String, Object>> loading = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new StubExpressionLanguage().compileAction(expression -> {
+                    throw oom;
+                })).build();
+        List<Rule> rules = List.of(Rule.builder().ruleName("r").condition("c").action("a").build());
+        RulesEngine<Map<String, Object>> first = engine("mid-rule", doing(load ? () -> loading.load(rules)
+                : running(throwingOom())), HashMap::new);
+        AtomicReference<OutOfMemoryError> kept = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> second = engine("second-rule", doing(() -> {
+            throw new IllegalStateException("audit write failed", kept.get());
+        }), HashMap::new);
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            try {
+                first.run(new FactMap<>());
+            } catch (OutOfMemoryError e) {
+                kept.set(e);
+            }
+            second.run(new FactMap<>());
+        }), HashMap::new);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of(load ? "Action for rule 'r' failed to compile: simulated heap exhaustion" : INNER_FATAL,
+                "Failed to execute action for rule 'second-rule': audit write failed (caused by"
+                        + " java.lang.OutOfMemoryError: simulated heap exhaustion, already logged)"),
+                outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"a failure", "a fatal failure", "a stop"})
     @DisplayName("a listener whose onError wraps its own run()'s fatal Error has that logged once, at ERROR")
