@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -323,5 +324,298 @@ class SameOutputTest {
         AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
                 () -> SameOutput.assertSameOutput(List.of(1, 2), List.of(1)));
         assertEquals("expected: <[1, 2]> but was: <[1]>", thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("an output key whose equals throws makes the output not the same, and the check fails with its own"
+            + " message")
+    void outputKeyWhoseEqualsThrows() {
+        for (Runnable refusal : refusals()) {
+            Map<Object, Object> actual = new HashMap<>();
+            actual.put(new RefusingKey(refusal), 1);
+
+            assertFalse(SameOutput.sameValue(Map.of("a", 1), actual));
+            AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                    () -> SameOutput.assertSameOutput(Map.of("a", 1), actual));
+            assertEquals("expected: <{a=1}> but was: <{a=1}>, and expected key a (java.lang.String) but was key a"
+                    + " (" + RefusingKey.class.getName() + ")", thrown.getMessage());
+            assertSame(actual, thrown.getActual().getEphemeralValue());
+        }
+
+        Map<Object, Object> fatal = new HashMap<>();
+        fatal.put(new RefusingKey(() -> {
+            throw new OutOfMemoryError("refused");
+        }), 1);
+        assertEquals("refused", assertThrows(OutOfMemoryError.class,
+                () -> SameOutput.assertSameOutput(Map.of("a", 1), fatal)).getMessage());
+    }
+
+    @Test
+    @DisplayName("keys of the same class whose equals throws end the search for where two outputs differ")
+    void mismatchOfKeysWhoseEqualsThrows() {
+        for (Runnable refusal : refusals()) {
+            Map<Object, Object> actual = new HashMap<>();
+            actual.put(new RefusingKey(refusal), 1);
+
+            assertEquals("expected: <{a=1}> but was: <{a=1}>",
+                    SameOutput.mismatch(Map.of(new RefusingKey(refusal), 1), actual));
+        }
+    }
+
+    @Test
+    @DisplayName("a number whose toString throws isn't the same as any other, and the check fails with its own"
+            + " message")
+    void numberWhoseToStringThrows() {
+        for (Runnable refusal : refusals()) {
+            Number number = refusingNumber(refusal);
+            String unavailable = " (message unavailable: " + thrownBy(refusal).getName() + ")";
+
+            assertFalse(SameOutput.sameValue(2, number));
+            assertFalse(SameOutput.sameValue(number, 2));
+            assertFalse(SameOutput.sameValue(List.of(2), List.of(number)));
+
+            Map<String, Object> actual = new HashMap<>();
+            actual.put("a", number);
+            AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                    () -> SameOutput.assertSameOutput(Map.of("a", 2), actual));
+            assertEquals("expected: <{a=2}> but was: <java.util.HashMap" + unavailable + ">", thrown.getMessage());
+            assertEquals("expected: <[2]> but was: <java.util.ArrayList" + unavailable + ">",
+                    SameOutput.mismatch(List.of(2), new ArrayList<>(List.of(number))));
+        }
+
+        Number fatal = refusingNumber(() -> {
+            throw new OutOfMemoryError("refused");
+        });
+        assertEquals("refused",
+                assertThrows(OutOfMemoryError.class, () -> SameOutput.sameValue(2, fatal)).getMessage());
+    }
+
+    @Test
+    @DisplayName("an output whose toString throws an error fails the check with both values attached")
+    void outputWhoseToStringThrowsAnError() {
+        Map<String, Object> actual = new HashMap<>();
+        actual.put("a", refusingNumber(() -> {
+            throw new AssertionError("refused");
+        }));
+
+        AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                () -> SameOutput.assertSameOutput(Map.of("a", "x"), actual));
+        assertEquals("expected: <{a=x}> but was: <java.util.HashMap (message unavailable: java.lang.AssertionError)>",
+                thrown.getMessage());
+        assertEquals(Map.of("a", "x"), thrown.getExpected().getValue());
+        assertSame(actual, thrown.getActual().getEphemeralValue());
+        assertEquals("java.util.HashMap (message unavailable: java.lang.AssertionError)",
+                thrown.getActual().getStringRepresentation());
+    }
+
+    @Test
+    @DisplayName("an output list whose get or size throws isn't the same, and the check fails with its own message")
+    void listThatThrows() {
+        for (Runnable refusal : refusals()) {
+            List<Object> refusingGet = new ArrayList<>(List.of(1, 2)) {
+                @Override
+                public Object get(int index) {
+                    refusal.run();
+                    return super.get(index);
+                }
+            };
+            List<Object> refusingSize = new ArrayList<>(List.of(1, 2)) {
+                @Override
+                public int size() {
+                    refusal.run();
+                    return super.size();
+                }
+            };
+
+            for (List<Object> actual : List.of(refusingGet, refusingSize)) {
+                assertFalse(SameOutput.sameValue(List.of(1, 2), actual));
+                assertEquals("expected: <[1, 2]> but was: <[1, 2]>", SameOutput.mismatch(List.of(1, 2), actual));
+                AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                        () -> SameOutput.assertSameOutput(List.of(1, 2), actual));
+                assertEquals("expected: <[1, 2]> but was: <[1, 2]>", thrown.getMessage());
+                assertSame(actual, thrown.getActual().getEphemeralValue());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("an output list element whose equals throws isn't asked, as the expected element is")
+    void listElementWhoseEqualsThrows() {
+        Object element = new RefusingKey(() -> {
+            throw new IllegalArgumentException("refused");
+        });
+
+        assertFalse(SameOutput.sameValue(List.of("a"), List.of(element)));
+        assertEquals("expected: <[a]> but was: <[a]>, and at [0], expected a (java.lang.String) but was a ("
+                + RefusingKey.class.getName() + ")", SameOutput.mismatch(List.of("a"), List.of(element)));
+    }
+
+    @Test
+    @DisplayName("an output map whose get throws at the same keys isn't the same, and the check fails with its own"
+            + " message")
+    void mapWhoseGetThrows() {
+        for (Runnable refusal : refusals()) {
+            Map<Object, Object> actual = refusingGet(refusal);
+
+            assertFalse(SameOutput.sameValue(Map.of("a", 1), actual));
+            assertEquals("expected: <{a=1}> but was: <{a=1}>", SameOutput.mismatch(Map.of("a", 1), actual));
+            AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                    () -> SameOutput.assertSameOutput(Map.of("a", 1), actual));
+            assertEquals("expected: <{a=1}> but was: <{a=1}>", thrown.getMessage());
+            assertEquals(Map.of("a", 1), thrown.getExpected().getValue());
+            assertSame(actual, thrown.getActual().getEphemeralValue());
+        }
+
+        Map<Object, Object> fatal = refusingGet(() -> {
+            throw new OutOfMemoryError("refused");
+        });
+        assertEquals("refused", assertThrows(OutOfMemoryError.class,
+                () -> SameOutput.assertSameOutput(Map.of("a", 1), fatal)).getMessage());
+        assertEquals("refused",
+                assertThrows(OutOfMemoryError.class, () -> SameOutput.mismatch(Map.of("a", 1), fatal)).getMessage());
+    }
+
+    @Test
+    @DisplayName("an output map whose keySet throws isn't the same, and the check fails with its own message")
+    void mapWhoseKeySetThrows() {
+        for (Runnable refusal : refusals()) {
+            Map<Object, Object> actual = refusingKeySet(refusal);
+
+            assertFalse(SameOutput.sameValue(Map.of(7, 1), actual));
+            assertEquals("expected: <{7=1}> but was: <{x=1}>", SameOutput.mismatch(Map.of(7, 1), actual));
+            AssertionFailedError thrown = assertThrows(AssertionFailedError.class,
+                    () -> SameOutput.assertSameOutput(Map.of(7, 1), actual));
+            assertEquals("expected: <{7=1}> but was: <{x=1}>", thrown.getMessage());
+            assertSame(actual, thrown.getActual().getEphemeralValue());
+        }
+
+        Map<Object, Object> fatal = refusingKeySet(() -> {
+            throw new OutOfMemoryError("refused");
+        });
+        assertEquals("refused",
+                assertThrows(OutOfMemoryError.class, () -> SameOutput.mismatch(Map.of(7, 1), fatal)).getMessage());
+    }
+
+    @Test
+    @DisplayName("an output map whose get throws InterruptedException leaves the thread interrupted")
+    void mapWhoseGetIsInterrupted() {
+        try {
+            AssertionFailedError thrown = assertThrows(AssertionFailedError.class, () -> SameOutput.assertSameOutput(
+                    Map.of("a", 1), refusingGet(() -> sneakyThrow(new InterruptedException()))));
+            assertEquals("expected: <{a=1}> but was: <{a=1}>", thrown.getMessage());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            // So that no later test runs on an interrupted thread.
+            Thread.interrupted();
+        }
+    }
+
+    /**
+     * Refusals that throw an {@link IllegalArgumentException}, an {@link AssertionError} and a
+     * {@link StackOverflowError}, none of which the engine rethrows.
+     */
+    private static List<Runnable> refusals() {
+        return List.of(() -> {
+            throw new IllegalArgumentException("refused");
+        }, () -> {
+            throw new AssertionError("refused");
+        }, () -> {
+            throw new StackOverflowError();
+        });
+    }
+
+    private static Class<? extends Throwable> thrownBy(Runnable refusal) {
+        return assertThrows(Throwable.class, refusal::run).getClass();
+    }
+
+    /**
+     * The number 2, whose {@code toString} runs a refusal.
+     */
+    private static Number refusingNumber(Runnable refusal) {
+        return new Number() {
+            @Override
+            public int intValue() {
+                return 2;
+            }
+
+            @Override
+            public long longValue() {
+                return 2;
+            }
+
+            @Override
+            public float floatValue() {
+                return 2;
+            }
+
+            @Override
+            public double doubleValue() {
+                return 2;
+            }
+
+            @Override
+            public String toString() {
+                refusal.run();
+                return "2";
+            }
+        };
+    }
+
+    /**
+     * A map of {@code a=1} whose {@code get} runs a refusal.
+     */
+    private static Map<Object, Object> refusingGet(Runnable refusal) {
+        Map<Object, Object> map = new HashMap<>() {
+            @Override
+            public Object get(Object key) {
+                refusal.run();
+                return super.get(key);
+            }
+        };
+        map.put("a", 1);
+        return map;
+    }
+
+    /**
+     * A map of {@code x=1} whose {@code keySet} runs a refusal.
+     */
+    private static Map<Object, Object> refusingKeySet(Runnable refusal) {
+        Map<Object, Object> map = new HashMap<>() {
+            @Override
+            public Set<Object> keySet() {
+                refusal.run();
+                return super.keySet();
+            }
+        };
+        map.put("x", 1);
+        return map;
+    }
+
+    /**
+     * A key that prints as {@code a} and has its hash code, whose {@code equals} runs a refusal.
+     */
+    private static final class RefusingKey {
+
+        private final Runnable refusal;
+
+        RefusingKey(Runnable refusal) {
+            this.refusal = refusal;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            refusal.run();
+            return this == other;
+        }
+
+        @Override
+        public int hashCode() {
+            return "a".hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "a";
+        }
     }
 }
