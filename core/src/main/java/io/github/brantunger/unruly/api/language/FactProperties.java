@@ -125,7 +125,9 @@ public final class FactProperties {
      *                                  long, for the engine to shorten when it logs it. That is left out when what
      *                                  it threw has no message or reading it throws, and when it's a failure the
      *                                  engine has already logged and names in the rule's failure as
-     *                                  {@code a nested run() failed: }: a nested run's failure, whichever thread
+     *                                  {@code a nested run() failed: } and its text, or as its text and
+     *                                  {@code (already logged)} when no run the code around the read started
+     *                                  logged it: a nested run's failure, whichever thread
      *                                  the read is on, or a fatal {@link Error} a run nested in the one in progress
      *                                  on this thread logged, in either case with nothing of its own around it.
      *                                  The cause still holds it. What a getter throws is always wrapped, so that

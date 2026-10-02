@@ -113,17 +113,17 @@ public final class Accessors {
      * it didn't write.
      *
      * <p>
-     * What the accessor threw is left out too when the engine has already logged it and names it in the rule's
-     * failure, as {@code a nested run() failed: } and its text, which would otherwise repeat it: a nested run's
-     * failure, whether or not a run is in progress on this thread, or a fatal {@link Error} a run nested in the one in
-     * progress on this thread logged, in either case with nothing of its own around it, such as
-     * {@code new RuntimeException(e)}. A caller that reads the message directly finds it as the cause. While a run, a
-     * {@code load()} or a {@code validate()} is in progress on this thread, the exception around such a failure is
-     * recorded as one the engine built, so the failure is logged once, by the nested run, and the rule around it
-     * reads {@code a nested run() failed: } and that failure (see {@link LoggedFailures}). Nothing else is recorded,
-     * so a run's other read failures never push it out of the record. A fatal error the run in progress, or one
-     * around it, logged earlier and that is thrown again here, keeps its message, so the rule's failure names this
-     * read.
+     * What the accessor threw is left out too when the engine has already logged it and names it in the rule's failure,
+     * which would otherwise repeat it, as {@code a nested run() failed: } and its text, or as its text and
+     * {@code (already logged)} when no run the code around the read started logged it: a nested run's failure, whether
+     * or not a run is in progress on this thread, or a fatal {@link Error} a run nested in the one in progress on this
+     * thread logged, in either case with nothing of its own around it, such as {@code new RuntimeException(e)}. A
+     * caller that reads the message directly finds it as the cause. While a run, a {@code load()} or a
+     * {@code validate()} is in progress on this thread, the exception around such a failure is recorded as one the
+     * engine built, so the failure is logged once, by the nested run, and the rule around it names it so (see
+     * {@link LoggedFailures}). Nothing else is recorded, so a run's other read failures never push it out of the
+     * record. A fatal error the run in progress, or one around it, logged earlier and that is thrown again here, keeps
+     * its message, so the rule's failure names this read.
      * </p>
      *
      * @param what  What failed, such as {@code Reading 'price' on a com.example.Item failed}

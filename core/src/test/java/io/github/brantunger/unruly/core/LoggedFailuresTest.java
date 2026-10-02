@@ -559,6 +559,103 @@ class LoggedFailuresTest {
         }
     }
 
+    /**
+     * Asserts how a failure a run reported reads thrown on with no words of its own, as is and in
+     * {@code new RuntimeException(e)}, whose message is its {@code toString()}.
+     */
+    private static void assertThrownOnReads(String expected, ReportedFailure reported, String where) {
+        assertEquals(expected, Failures.describe(reported), where + ", as is");
+        assertEquals(expected, Failures.describe(new RuntimeException(reported)), where + ", wrapped");
+    }
+
+    @Test
+    @DisplayName("#956: a failure a run reported, thrown on with no words of its own, is nested only above the depth"
+            + " that built it, and once that run has ended reads as logged already")
+    void reportedThrownOnRecordedWithItsDepth() {
+        ReportedFailure nested;
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    nested = new ReportedFailure("by a nested run", null);
+                } finally {
+                    LoggedFailures.leave();
+                }
+                assertThrownOnReads("a nested run() failed: by a nested run", nested, "the run that started it");
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertThrownOnReads("a nested run() failed: by a nested run", nested, "a run around that one");
+            LoggedFailures.enter();
+            try {
+                assertThrownOnReads("by a nested run (already logged)", nested, "a later sibling");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            LoggedFailures.leave();
+        }
+        assertThrownOnReads("by a nested run (already logged)", nested, "no run in progress");
+        LoggedFailures.enter();
+        try {
+            assertThrownOnReads("by a nested run (already logged)", nested, "a later outermost run");
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("#956: past the bound, a failure a run reported, thrown on with no words of its own, is taken for a"
+            + " nested run's, and the newest reads as logged already")
+    void boundedReportedRecordThrownOn() {
+        List<ReportedFailure> reported = new ArrayList<>();
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
+                    reported.add(new ReportedFailure("reported " + i, null));
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            LoggedFailures.enter();
+            try {
+                assertThrownOnReads("a nested run() failed: reported 0", reported.get(0), "pushed out");
+                assertThrownOnReads("reported 32 (already logged)", reported.get(32), "the newest");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("#956 guard: a failure a run on another thread reported, thrown on with no words of its own, is taken"
+            + " for a nested run's")
+    void reportedOnAnotherThreadThrownOnIsNested() throws InterruptedException {
+        AtomicReference<ReportedFailure> reported = new AtomicReference<>();
+        Thread other = new Thread(() -> {
+            LoggedFailures.enter();
+            try {
+                reported.set(new ReportedFailure("on another thread", null));
+            } finally {
+                LoggedFailures.leave();
+            }
+        });
+        other.start();
+        other.join();
+        LoggedFailures.enter();
+        try {
+            assertThrownOnReads("a nested run() failed: on another thread", reported.get(), "another thread");
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"the oldest", "the newest"})
     @DisplayName("past the bound, the oldest failure recorded is logged again if it's thrown on, the newest isn't")
