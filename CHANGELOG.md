@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.2](https://github.com/brantunger/unruly-engine/compare/v2.21.1...v2.21.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* a run() racing close() sees the rules or a closed engine, never a missing load() ([#947](https://github.com/brantunger/unruly-engine/issues/947)) ([5a8b7cd](https://github.com/brantunger/unruly-engine/commit/5a8b7cd408730208e204e8a955d44d71f642f6e9))
+
 ## [2.21.1](https://github.com/brantunger/unruly-engine/compare/v2.21.0...v2.21.1) (2026-10-02)
 
 
