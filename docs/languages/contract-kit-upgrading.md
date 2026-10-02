@@ -12,6 +12,20 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ## 🔼 Upgrading from 2.20
 
+In 2.21.0 four checks got stricter and none was added. Each loads a valid rule `ok` before rule `r`, so every
+run evaluates `ok` first, on the same copy. `ok`'s condition is `alwaysTrue()` and its action
+`putFact("ok", fact)`. Both are hooks every language already implements, so there is nothing new to supply. A
+failure in `ok` fails the check.
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `conditionAssignmentRejected`, `conditionWritesRejected`, `outputNotReplaceable` and `missingPropertyFailsTheRun` | Leaves a copy's session unusable after a failure, like an "evaluating" flag never cleared | Every later run on that copy fails, whatever its rules. The three condition checks passed it, because the repeated run failed in `r` for that reason. `outputNotReplaceable` failed it with a misleading message, and passed it when only actions were left broken. |
+| `outputNotReplaceable` and `missingPropertyFailsTheRun` | Fails `load()` or the first run naming no rule, such as an uncreatable compiler or session, or a rejected declared fact name | The first failure went unchecked |
+
+A repeated run that fails in `ok` reads `<what failed> failed the first run, and the second run failed in the valid
+rule ok, which runs before rule r: a failed run must leave its copy usable: `. The condition checks fail in `r` before
+any action runs, missing a session broken for actions only.
+
 In 2.20.3 one check got stricter and none was added. The kit now finds a fatal error, any `VirtualMachineError`
 but `StackOverflowError`, where the engine finds it: thrown, or carried as a cause or a suppressed exception at any
 depth. It also reads the suppressed exceptions the engine added itself, which the engine skips, so it can find one

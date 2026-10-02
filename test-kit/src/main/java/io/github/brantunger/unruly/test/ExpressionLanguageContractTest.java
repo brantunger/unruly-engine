@@ -117,6 +117,12 @@ public abstract class ExpressionLanguageContractTest {
     /** The rule {@code sharedStateStaysLocal} changes the language's shared state in. */
     private static final String CHANGES = "changes";
 
+    /**
+     * The valid rule the checks that run a rejected rule a second time load before it, and the output key its action
+     * puts a fact's value under.
+     */
+    private static final String OK = "ok";
+
     /** The fact whose getter starts a nested run, and the property of it the nested-run checks read. */
     private static final String NEST = "nest";
     private static final String NEST_VALUE = "value";
@@ -712,6 +718,16 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Returns the valid rule {@code ok} that the checks that run a rejected rule {@code r} a second time load beside
+     * it: its condition is always true and its action puts {@code fact}, one of the run's facts, in the output. Its
+     * higher priority has each run evaluate it before {@code r}, on the same copy of the rules, so a copy whose session
+     * {@code r}'s failure left broken fails the second run in {@code ok}, which {@link #assertRunFailsAgain} reports.
+     */
+    private Rule okRule(String fact) {
+        return rule(OK, 2, alwaysTrue(), putFact(OK, fact));
+    }
+
+    /**
      * Starts building the engine a check runs its rules with: an {@code allMatches} engine whose output is a
      * {@link HashMap}, with the language added and {@link #configure} applied. A check that needs a setting of its own
      * sets it on what this returns, after {@code configure}, so that {@code configure} can't change it.
@@ -831,10 +847,11 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Checks that a condition is rejected by load or run: loads it in a rule {@code r} and runs the rule with
-     * {@code facts}, and requires an {@link UnrulyException} that names the rule and its condition. When the run
-     * failed, runs the rule once more with the same facts, on the same copy of the rules, and requires the same: a
-     * language that checks a compiled condition only on its first evaluation lets every later run through. Then checks
+     * Checks that a condition is rejected by load or run: loads it in a rule {@code r}, after {@link #okRule the valid
+     * rule ok}, and runs the rules with {@code facts}, and requires an {@link UnrulyException} that names {@code r} and
+     * its condition. When the run failed, runs the rules once more with the same facts, on the same copy of the rules,
+     * and requires the same: a language that checks a compiled condition only on its first evaluation lets every later
+     * run through, and one whose session the failure left broken fails every later run in {@code ok}. Then checks
      * {@code afterwards}, before the engine is closed, so that what closing it throws can't hide a failure.
      *
      * @param condition  The condition
@@ -844,6 +861,7 @@ public abstract class ExpressionLanguageContractTest {
      */
     private void assertConditionRejected(String condition, FactStore<Object> facts, String what, Runnable afterwards)
             throws Exception {
+        String rejected = "a condition that " + what;
         // One copy of the rules, so that the second run gets the compiled condition, and the session, the first used.
         closing(oneCopyEngine(language()), engine -> {
             // A language may reject the condition when compiling or when running: by refusing it, by failing to
@@ -851,32 +869,33 @@ public abstract class ExpressionLanguageContractTest {
             // the check.
             AtomicBoolean loaded = new AtomicBoolean();
             UnrulyException ex = assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(rule("r", 1, condition, putFact(SEEN, "x"))));
+                engine.load(List.of(okRule("x"), rule("r", 1, condition, putFact(SEEN, "x"))));
                 loaded.set(true);
                 engine.run(facts);
-            }, "a condition that " + what + " was neither rejected by load nor failed by run");
+            }, rejected + " was neither rejected by load nor failed by run");
 
+            assertFailedInRuleR(ex, rejected);
             if (ex instanceof RuleCompilationException compilation) {
-                assertEquals("r", compilation.getRuleName(), ex.getMessage());
                 assertEquals(ExpressionKind.CONDITION, compilation.getExpressionKind(), ex.getMessage());
             } else if (ex instanceof RuleExecutionException execution) {
-                assertEquals("r", execution.getRuleName(), ex.getMessage());
                 assertEquals(ExpressionKind.CONDITION, execution.getExpressionKind(), ex.getMessage());
             } else {
-                fail("a condition that " + what + " failed with an UnrulyException that is neither a"
+                fail(rejected + " failed with an UnrulyException that is neither a"
                         + " RuleCompilationException nor a RuleExecutionException: " + ex);
             }
-            assertRunFailsAgain(engine, loaded.get(), facts, ExpressionKind.CONDITION, "a condition that " + what);
+            assertRunFailsAgain(engine, loaded.get(), facts, ExpressionKind.CONDITION, rejected);
             afterwards.run();
         });
     }
 
     /**
      * Checks that a run of rule {@code r} that failed fails again: when the rules loaded, so that the run failed
-     * rather than load, runs the rule once more with the same facts, on the same copy of the rules, and requires a
-     * {@link RuleExecutionException} that names the rule and the {@code kind} of expression that failed. A language
-     * that checks a compiled expression only on its first evaluation lets every later run through. Does nothing when
-     * load failed.
+     * rather than load, runs the rules once more with the same facts, on the same copy of the rules, and requires a
+     * {@link RuleExecutionException} that names {@code r} and the {@code kind} of expression that failed. A language
+     * that checks a compiled expression only on its first evaluation lets every later run through. The rules include
+     * {@link #okRule the valid rule ok}, which each run evaluates first: a second run that fails in it fails the check,
+     * since a failed run must leave its copy usable, and a session the first failure left broken fails every later
+     * run, whatever it runs. Does nothing when load failed.
      *
      * @param engine The engine the first run failed on, which keeps one copy of the rules
      * @param loaded Whether the rules loaded, so that the first failure came from the run
@@ -892,6 +911,11 @@ public abstract class ExpressionLanguageContractTest {
         try {
             engine.run(facts);
         } catch (RuleExecutionException again) {
+            if (OK.equals(again.getRuleName())) {
+                throw new AssertionFailedError(what + " failed the first run, and the second run failed in the valid"
+                        + " rule ok, which runs before rule r: a failed run must leave its copy usable: "
+                        + describe(again), again);
+            }
             if (!"r".equals(again.getRuleName()) || again.getExpressionKind() != kind) {
                 throw failedDifferently(what, kind, again);
             }
@@ -900,6 +924,39 @@ public abstract class ExpressionLanguageContractTest {
             throw failedDifferently(what, kind, again);
         }
         fail(what + " failed the first run but not the second");
+    }
+
+    /**
+     * Checks that the first failure of a check that loads {@link #okRule the valid rule ok} before a rule {@code r}
+     * came from {@code r}: a {@link RuleCompilationException} or {@link RuleExecutionException} that names another
+     * rule, or none, fails the check. One that names {@code ok} means the language can't load or run the check's guard
+     * rule, so that the check would otherwise pass without testing {@code r}, or blame the failure on {@code r}.
+     *
+     * @param ex   What load or the first run threw
+     * @param what What the check's rule {@code r} does, which the failure's message says
+     */
+    private static void assertFailedInRuleR(UnrulyException ex, String what) {
+        String ruleName;
+        if (ex instanceof RuleCompilationException compilation) {
+            ruleName = compilation.getRuleName();
+        } else if (ex instanceof RuleExecutionException execution) {
+            ruleName = execution.getRuleName();
+        } else {
+            return;
+        }
+        if (OK.equals(ruleName)) {
+            throw new AssertionFailedError("the check of " + what + " failed in the valid rule ok, which runs before"
+                    + " rule r, so the language can't run the check's guard rule, alwaysTrue() with putFact(): "
+                    + describe(ex), ex);
+        }
+        if (ruleName == null) {
+            throw new AssertionFailedError("the check of " + what + " failed before rule r ran, with a failure that"
+                    + " names no rule: " + describe(ex), ex);
+        }
+        if (!"r".equals(ruleName)) {
+            throw new AssertionFailedError(what + " failed, but in rule " + ruleName + ", not in rule r: "
+                    + describe(ex), ex);
+        }
     }
 
     /** The failure of {@link #assertRunFailsAgain} when the second run threw {@code again}, which it's given. */
@@ -914,14 +971,16 @@ public abstract class ExpressionLanguageContractTest {
         String reassign = reassignOutput();
         assumeTrue(reassign != null, "the language's actions can't assign the output");
         // A language may reject the assignment when compiling or when running, so loading is inside the check. One
-        // copy of the rules, so that a second run gets the compiled action, and the session, the first used.
+        // copy of the rules, so that a second run gets the compiled action, and the session, the first used, and the
+        // valid rule ok, whose action runs first, so that a session the failure left broken fails the second run there.
         closing(oneCopyEngine(language()), engine -> {
             AtomicBoolean loaded = new AtomicBoolean();
-            assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(rule("r", 1, alwaysTrue(), reassign)));
+            UnrulyException ex = assertThrows(UnrulyException.class, () -> {
+                engine.load(List.of(okRule("x"), rule("r", 1, alwaysTrue(), reassign)));
                 loaded.set(true);
                 engine.run(new FactMap<>(new Fact<>("x", 1)));
             });
+            assertFailedInRuleR(ex, "an action that replaces the output");
             // A language that checks a compiled action only on its first run lets every later one replace the output.
             assertRunFailsAgain(engine, loaded.get(), new FactMap<>(new Fact<>("x", 1)), ExpressionKind.ACTION,
                     "an action that replaces the output");
@@ -1258,14 +1317,16 @@ public abstract class ExpressionLanguageContractTest {
         // and a faithful adapter for one of them shouldn't fail a contract written around a record's components.
         //
         // A run that failed is repeated, on the one copy of the rules the first run used: a language that checks a
-        // compiled condition only on its first evaluation reads the property as null from the second run on.
+        // compiled condition only on its first evaluation reads the property as null from the second run on. The
+        // valid rule ok runs first, so that a session the failure left broken fails the second run there.
         closing(oneCopyEngine(language()), engine -> {
             AtomicBoolean loaded = new AtomicBoolean();
-            assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(misspelled));
+            UnrulyException ex = assertThrows(UnrulyException.class, () -> {
+                engine.load(List.of(okRule(APPLICANT), misspelled));
                 loaded.set(true);
                 engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))));
             }, "a misspelled property of a record fact didn't fail");
+            assertFailedInRuleR(ex, "a misspelled property of a record fact");
             assertRunFailsAgain(engine, loaded.get(), new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))),
                     ExpressionKind.CONDITION, "a misspelled property of a record fact");
         });

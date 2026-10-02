@@ -1,6 +1,6 @@
 # 🧫 The contract test kit
 
-How to add `unruly-engine-test` to a language's tests, and what each of the contract kit's checks promises.
+How to add `unruly-engine-test` to a language's tests, and what each of the kit's checks promises.
 
 **Who it's for:** language authors.
 **You'll be able to:** add the kit to a Gradle or Maven build, extend `ExpressionLanguageContractTest` for your
@@ -97,9 +97,9 @@ language. Extend it and supply expressions in your language, one method for each
 | `conditionReadsFacts` | `factEquals`, `putFact` | No | Fires for `x` = 1, not for 2 |
 | `conditionReadsWholeNumbers` | `factEquals`, `putFact` | `comparesWholeNumbersByValue()` returns `false` | Fires for `x` = 1 given a `Long`, a `Short` or a `BigDecimal` fact, not for `2L` |
 | `conditionMustBeBoolean` | `factValue`, `putFact` | No | `true` fires; `null`, `"true"` and `1` fail the rule |
-| `conditionAssignmentRejected` | `assignment`, `putFact` | `assignment()` returns `null` | `load()` or two `run()`s throw, naming the rule and `CONDITION` |
-| `conditionWritesRejected` | `propertyAssignment`, `conditionDeclaration`, `putFact` | Both return `null`; each part is skipped by its own `null` | A condition that sets a property of `applicant`, a map and a `WritableApplicant`, and one that declares `z`, each make `load()` or two `run()`s throw, naming the rule and `CONDITION`, and `applicant` is unchanged |
-| `outputNotReplaceable` | `alwaysTrue`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or two `run()`s throw, the second naming the rule and `ACTION` |
+| `conditionAssignmentRejected` | `alwaysTrue`, `assignment`, `putFact` | `assignment()` returns `null` | `load()` or two `run()`s throw, naming the rule and `CONDITION` |
+| `conditionWritesRejected` | `alwaysTrue`, `propertyAssignment`, `conditionDeclaration`, `putFact` | Both return `null`; each part is skipped by its own `null` | A condition that sets a property of `applicant`, a map and a `WritableApplicant`, and one that declares `z`, each make `load()` or two `run()`s throw, naming the rule and `CONDITION`, and `applicant` is unchanged |
+| `outputNotReplaceable` | `alwaysTrue`, `putFact`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or two `run()`s throw, naming the rule, the second `ACTION` |
 | `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact`, `putVariable`, `variableEquals`, `actionVariablesLastTheRun` | `declareVariable()` returns `null` | A later rule still sees the fact's value, the run that declares `y` while `y` is a fact doesn't throw, no later run's condition or action sees the declared variable, and a later rule in the same run doesn't, or must if `actionVariablesLastTheRun()` returns `true` |
 | `sharedStateStaysLocal` | `factEquals`, `changeSharedState`, `sharedStateEquals`, `putFact` | `changeSharedState()` returns `null` | `load()` refuses the changing action, or `sharedStateEquals` is false before the change and in a later run, even when the action fails |
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
@@ -108,7 +108,7 @@ language. Extend it and supply expressions in your language, one method for each
 | `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be blank or `output`, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
-| `missingPropertyFailsTheRun` | `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, the second naming the rule and `CONDITION` |
+| `missingPropertyFailsTheRun` | `alwaysTrue`, `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, naming the rule, the second `CONDITION` |
 | `copiesAtLoad` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, two runs on two threads each see their own facts, and `x` = 2 fires nothing |
 | `compilerClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(1)`, each compiler is closed exactly once, after a reload and after `close()`, and its `close()` throws nothing |
 | `sessionsClosed` | `factEquals`, `putFact` | No | With `copiesAtLoad(2)`, `newSession()` never returns one instance twice, unless it's `Session.none()`, and no session's `close()` throws anything |
@@ -152,10 +152,10 @@ closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `
 `compilerClosed` adds `copiesAtLoad(1)`.
 
 `sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
-`maxCopies(1)`, so a run nested in another gets an extra copy. `conditionDetail`, `failedActionVariablesStayLocal`,
-`sharedStateStaysLocal`, the later-run parts of `actionVariablesStayLocal`, `conditionAssignmentRejected`,
-`conditionWritesRejected`, `outputNotReplaceable` and `missingPropertyFailsTheRun` add the same two, so each later run
-gets the copy, and the sessions, the run before it used.
+`maxCopies(1)`. `conditionDetail`, `failedActionVariablesStayLocal`, `sharedStateStaysLocal`, the later-run parts of
+`actionVariablesStayLocal`, `conditionAssignmentRejected`, `conditionWritesRejected`, `outputNotReplaceable` and
+`missingPropertyFailsTheRun` add the same two, so each later run gets the copy, and the sessions, the run before it
+used.
 
 `compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks (`sessionsClosed`,
 `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`) wrap your language to watch its compiler or
@@ -191,8 +191,11 @@ session's state. A language that gives no detail passes it with nothing to check
 `conditionAssignmentRejected` and `conditionWritesRejected` accept a rejection at either step, as
 `outputNotReplaceable` does: `load()` may reject the condition, or `run()` may fail it, for example by writing to the
 read-only `facts()`, or by evaluating to the assigned value, not a boolean. A condition that assigns and evaluates to
-`true` or `false` without throwing fails the check. A failed run must fail again, with a `RuleExecutionException`
-naming the rule and `CONDITION`, or `ACTION`.
+`true` or `false` without throwing fails the check.
+
+These three checks and `missingPropertyFailsTheRun` run a valid rule `ok` first. Each failure must name rule `r`, and
+a failed run must fail again with a `RuleExecutionException` and `CONDITION`, or `ACTION`: a failure mustn't break the
+session.
 
 The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
 
@@ -242,8 +245,8 @@ after the second.
 
 ### Upgrading the kit
 
-A newer kit can fail a language that passed an older one. [Upgrading the contract test kit](contract-kit-upgrading.md)
-lists, for each version, the checks added or made stricter, and the defect each new failure means.
+[Upgrading the contract test kit](contract-kit-upgrading.md) lists, for each version, the checks added or made
+stricter, and what each new failure means.
 
 ### Beyond the kit
 
