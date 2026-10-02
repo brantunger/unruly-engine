@@ -33,6 +33,8 @@ final class RuleSetLifecycle {
     // both. Assigned while holding lifecycle, so each rule set replaced is retired once, and none is assigned after
     // close().
     private volatile RuleSet ruleSet;
+    // Set by close() while holding lifecycle, before it lets go of ruleSet, so a reader that finds no rule set and
+    // then reads this sees the engine closed if close() took the rules (see currentOrThrow).
     private volatile boolean closed;
     private final Object lifecycle = new Object();
     // The rule sets still to retire, linked through RuleSet.nextUnretired, so adding one allocates nothing: each one a
@@ -85,7 +87,10 @@ final class RuleSetLifecycle {
 
     /**
      * Returns the rule set runs start with, for a caller that can't go on without one. The rule set is read first, and
-     * whether the engine is closed only if there is none.
+     * whether the engine is closed only if there is none: {@link #close()} marks the engine closed before it lets go
+     * of the rule set, so finding none on an engine that is closing finds it closed. A call made while it closes, once
+     * it has marked the engine closed and before it lets go of the rule set, still gets the rule set, while
+     * {@link #checkOpen()} already fails.
      *
      * @param notLoadedMessage What the exception says when the engine is open and no rules are loaded
      * @return The rule set
@@ -101,7 +106,8 @@ final class RuleSetLifecycle {
 
     /**
      * Returns the rule set runs start with, for a caller that can go on without one, but not on a closed engine. The
-     * rule set is read first, and whether the engine is closed only if there is none.
+     * rule set is read first, and whether the engine is closed only if there is none, as in
+     * {@link #currentOrThrow(String)}, so a call made while {@link #close()} runs may still get it.
      *
      * @return The rule set, or {@code null} if no rules are loaded
      * @throws IllegalStateException if the engine is closed
@@ -423,6 +429,13 @@ final class RuleSetLifecycle {
         try {
             long claim;
             synchronized (lifecycle) {
+                if (closed && ruleSet != null) {
+                    // Only a close() made from inside this very one, between its two writes below, as a test's watch
+                    // does (see Faults.Step.CLOSE_MARKED), finds the engine closed with its rules still held. The
+                    // close() around it lets go of them and retires them; detaching them again here would link them
+                    // to themselves, and leave claimToRetire looping for ever.
+                    return;
+                }
                 lastClaim++;
                 claim = lastClaim;
                 // The rules join the rules still to retire before the engine lets go of them, as in load(), and this
@@ -432,8 +445,19 @@ final class RuleSetLifecycle {
                     detached.nextUnretired = unretired;
                     unretired = detached;
                 }
-                ruleSet = null;
+                // Marked closed before the rules are let go of: a reader reads the rule set first, and whether the
+                // engine is closed only if there is none, so one that finds no rule set finds the engine closed, never
+                // an engine that was never loaded.
                 closed = true;
+                try {
+                    // Watched only, never failed. Calling it can still overflow the stack, and a test's watch can
+                    // throw, so the rules are let go of in a finally: a closed engine that still held its rules would
+                    // leave the next close() linking them to themselves. The finally only writes a field, so it calls
+                    // nothing and can't overflow itself.
+                    Faults.reached(Faults.Step.CLOSE_MARKED);
+                } finally {
+                    ruleSet = null;
+                }
                 claimToRetire(claim);
             }
             Failures.rethrowUnchecked(retireClaimed(claim));
