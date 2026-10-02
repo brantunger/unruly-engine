@@ -10,12 +10,12 @@ import java.lang.reflect.Proxy;
 import java.lang.reflect.RecordComponent;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -303,7 +303,10 @@ public final class FactProperties {
      * A map's values keep their keys, with a key that isn't a {@link String} converted by {@link String#valueOf}.
      * Two keys that read the same then collapse into one entry and the later wins, and a {@code null} key becomes
      * the entry {@code "null"}, which a real {@code "null"} key can't be told apart from. {@link #read} takes the
-     * key as it is, so a converted map can show a property that reading the fact directly can't reach.
+     * key as it is, so a converted map can show a property that reading the fact directly can't reach. A map's
+     * entries are copied through its entry set's {@code forEach}, so a synchronized map's are copied under its lock,
+     * each entry's {@code getKey()} and {@code getValue()} and each key's {@code toString()} included. Its values are
+     * converted after the lock is released, so their getters don't run under it.
      * </p>
      *
      * <p>
@@ -335,9 +338,11 @@ public final class FactProperties {
      *                                  {@code target} is a value this doesn't take apart, such as a {@link String},
      *                                  a number or a collection
      * @throws IllegalStateException    if an accessor can't be called, with what it threw as the cause, and its
-     *                                  message after a colon as {@link #read} appends it. A map's iteration and its
-     *                                  keys' {@code toString()}, and a collection's {@code size()} and
-     *                                  {@code forEach}, count as accessors, so what they throw is wrapped too, as
+     *                                  message after a colon as {@link #read} appends it. Reading a map's entries (its
+     *                                  {@code entrySet()}, the entry set's {@code forEach}, each entry's
+     *                                  {@code getKey()} and {@code getValue()} and each key's {@code toString()}) and a
+     *                                  collection's {@code size()} and {@code forEach} count as accessors, so what they
+     *                                  throw is wrapped too, as
      *                                  {@code Reading the entries of a ... failed} or
      *                                  {@code Reading the elements of a ... failed}
      */
@@ -386,32 +391,24 @@ public final class FactProperties {
         }
     }
 
+    // Through forEach, not an iterator, as a collection's elements are read: a synchronized map's entry set holds the
+    // map's lock for the whole of it. The entries are copied under the lock, keys' toString() included, and their
+    // values converted after it's released, so no nested getter runs under the map's lock, and only the map's own
+    // calls are wrapped: a nested value's failure isn't wrapped a second time. Exception, not RuntimeException: a map
+    // can throw a checked exception it doesn't declare.
     private static Map<String, @Nullable Object> entriesOf(Map<?, ?> map, int depth, Set<Object> path) {
-        Map<String, @Nullable Object> converted = new LinkedHashMap<>();
-        Iterator<? extends Map.Entry<?, ?>> entries;
-        // Exception, not RuntimeException, here and below: a map can throw a checked exception it doesn't declare.
+        List<Map.Entry<String, @Nullable Object>> entries = new ArrayList<>();
         try {
-            entries = map.entrySet().iterator();
+            map.entrySet().forEach(entry -> entries.add(
+                    new AbstractMap.SimpleImmutableEntry<>(String.valueOf(entry.getKey()), entry.getValue())));
         } catch (Exception e) {
             throw containerFailed("entries", map, e);
         }
-        while (true) {
-            String key;
-            @Nullable Object value;
-            // Only the map's own calls are wrapped here: a nested value's failure is converted outside the try, so
-            // it isn't wrapped a second time.
-            try {
-                if (!entries.hasNext()) {
-                    return converted;
-                }
-                Map.Entry<?, ?> entry = entries.next();
-                key = String.valueOf(entry.getKey());
-                value = entry.getValue();
-            } catch (Exception e) {
-                throw containerFailed("entries", map, e);
-            }
-            converted.put(key, convert(value, depth - 1, path));
+        Map<String, @Nullable Object> converted = new LinkedHashMap<>();
+        for (Map.Entry<String, @Nullable Object> entry : entries) {
+            converted.put(entry.getKey(), convert(entry.getValue(), depth - 1, path));
         }
+        return converted;
     }
 
     private static IllegalStateException containerFailed(String what, Object container, Exception cause) {
