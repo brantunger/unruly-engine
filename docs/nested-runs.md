@@ -43,7 +43,8 @@ at once.
 **A stop that leaves the expression stops the outer run too.** When the outer run is past its deadline or
 interrupted, its rule gets `onError` with a stop, and the nested stop is in the cause chain of `getSuppressed()`'s
 exception, which is what the expression threw. When both stopped for the same interrupt or deadline, the stop is
-logged once, by the nested run; otherwise each run logs its own.
+logged once, by the nested run, also when it's found only among suppressed exceptions, within the
+[glossary's limit](glossary.md#fatal-error); otherwise each run logs its own.
 
 **A nested run that stops at an earlier deadline of its own fails the outer rule.** The outer run isn't past its
 deadline, so its rule fails with `a nested run() failed: run() passed its deadline ...`, naming the outer rule, and
@@ -100,7 +101,7 @@ or `(after a nested load() failed: ...)` for a nested `load()`, and the call sti
 A fatal `Error` logged already, but not below the code that wrapped it, such as by an earlier nested run, gets
 `(caused by java.lang.OutOfMemoryError: ..., already logged)` instead when it's in the cause chain, or
 `(with suppressed java.lang.OutOfMemoryError: ..., already logged)` when it's found among the suppressed
-exceptions or what they lead to.
+exceptions or what they lead to, within the [glossary's limit](glossary.md#fatal-error).
 
 A listener's first fatal `Error` in a callback, `onError` included, logs such a wrapper at ERROR, as
 `A listener threw <class> in <callback>: ...`; wrapping the failure a listener was told of adds nothing. From `onError`

@@ -1,7 +1,7 @@
 # 🚨 Error handling
 
 The engine throws its own exceptions for rule problems and standard JDK exceptions for misuse of the API. Starting
-from a symptom or a message? [Troubleshooting](troubleshooting.md) maps each one to the section that explains it.
+from a symptom or a message? [Troubleshooting](troubleshooting.md) maps each one to its section.
 
 [← Documentation index](README.md)
 
@@ -59,7 +59,7 @@ reports it as the cause of a `RuleCompilationException`.
 
 ## 📋 Exceptions by method
 
-[Exceptions by method](exceptions-by-method.md) lists what each method throws, and when, and how the engine treats
+[Exceptions by method](exceptions-by-method.md) lists what each method throws, when, and how the engine treats
 exception text.
 
 ## 🔍 Caught when loading or only when running?
@@ -157,8 +157,8 @@ A failure of the call's own that isn't fatal loses to a fatal error from closing
 when that run is the one that closes. A fatal failure of the call's own came first, so it's thrown instead, and keeps
 the one from closing, still logged at WARN, in its `getSuppressed()`.
 
-A fatal error only among the call's failure's suppressed exceptions is thrown, carrying the closing one; the failure
-is logged at WARN.
+A fatal error only among the call's failure's suppressed exceptions, within the
+[glossary's limit](glossary.md#fatal-error), is thrown, carrying the closing one; the failure is logged at WARN.
 
 The call that closes throws it:
 
@@ -233,6 +233,7 @@ try {
   same exception before `run()` throws it; [the table](#-what-happens-on-each-failure) shows the failures
   that skip `onError` or every listener. A fact store's `asMap()` or a fact's `getValue()` that throws reaches no
   listener and isn't logged; see [Implementing FactStore](facts.md#-implementing-factstore).
-- **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or expression language throws an
-  `InterruptedException`, even wrapped or suppressed, the engine sets the interrupt status again; see
+- **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or language throws an
+  `InterruptedException`, even wrapped, or suppressed within the [glossary's limit](glossary.md#fatal-error), the
+  engine restores the interrupt status; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).

@@ -105,8 +105,8 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   [Reloading rules while running](thread-safety.md#-reloading-rules-while-running) and
   [Closing](thread-safety.md#closing).
 - **An interrupt that a rule, output writer, listener, output supplier or language throws is put back.** When an
-  `InterruptedException` is anywhere in the cause chain of what they throw, or suppressed there, the engine sets the
-  interrupt status again.
+  `InterruptedException` is anywhere in the cause chain of what they throw, or suppressed there within the
+  [glossary's limit](glossary.md#fatal-error), the engine sets the interrupt status again.
   A condition, action or output writer that throws it stops the run. A listener's exception is logged, and the next
   check stops the run if a condition or action is still to come; after the last one has returned, `run()` returns with
   the status set, unless a later listener clears it. An output supplier or a session that fails that way fails the run
