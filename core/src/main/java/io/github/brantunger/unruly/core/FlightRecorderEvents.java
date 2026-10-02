@@ -10,14 +10,20 @@ import org.slf4j.LoggerFactory;
  * Loading an event class runs Flight Recorder's registration of it. That fails where Flight Recorder isn't there: in a
  * GraalVM native image built without {@code --enable-monitoring=jfr}, and in a runtime image without the
  * {@code jdk.jfr} module that runs the engine from the class path. There the engine records no events, rather than
- * failing its first run.
+ * failing.
+ * </p>
+ *
+ * <p>
+ * The class is initialized when the first engine is built (see {@link RunClasses}), so a run never registers the
+ * events: registering takes more stack than the stack-headroom check makes room for (see StackHeadroom), and a
+ * {@link StackOverflowError} in it would leave this class unusable for the life of the JVM.
  * </p>
  */
 final class FlightRecorderEvents {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
-    /** Whether both event classes loaded. Checked once, when the engine first starts a run or a rule. */
+    /** Whether both event classes loaded. Checked once, when the first engine is built. */
     static final boolean USABLE = loads(new LoadEvents());
 
     private FlightRecorderEvents() {

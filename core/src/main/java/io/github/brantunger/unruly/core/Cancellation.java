@@ -68,7 +68,13 @@ final class Cancellation {
      * @return The deadline
      */
     static Instant after(Instant start, Duration timeout) {
-        return timeout.compareTo(Duration.between(start, Instant.MAX)) < 0 ? start.plus(timeout) : Instant.MAX;
+        // The time left before the latest instant, and the sum, worked out by hand: Duration.between() and
+        // Instant.plus(Duration) have the JDK initialize ChronoUnit and its kin, which a run that passes its deadline,
+        // and shows it, would be the first to use.
+        long seconds = Instant.MAX.getEpochSecond() - start.getEpochSecond();
+        int nanos = Instant.MAX.getNano() - start.getNano();
+        boolean before = timeout.getSeconds() < seconds || timeout.getSeconds() == seconds && timeout.getNano() < nanos;
+        return before ? start.plusSeconds(timeout.getSeconds()).plusNanos(timeout.getNano()) : Instant.MAX;
     }
 
     /**
@@ -120,7 +126,8 @@ final class Cancellation {
      * @return The exception
      */
     static TimeoutException timedOut(Deadline deadline) {
-        return new TimeoutException("The run's deadline of " + deadline.instant() + " has passed");
+        return new TimeoutException("The run's deadline of " + IsoInstant.text(deadline.instant())
+                + " has passed");
     }
 
     /**

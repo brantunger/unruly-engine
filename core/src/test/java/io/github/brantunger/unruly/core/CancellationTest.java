@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -113,6 +114,41 @@ class CancellationTest {
         assertEquals(Instant.MAX, Cancellation.after(start, Duration.between(start, Instant.MAX)));
         assertEquals(start.plusSeconds(1), Cancellation.after(start, Duration.ofSeconds(1)));
         assertEquals(Instant.MAX, Cancellation.deadlineFrom(Duration.ofSeconds(Long.MAX_VALUE)).instant());
+    }
+
+    @Test
+    @DisplayName("a timeout ends at the latest instant only when the time left before it is no longer than the timeout")
+    void theLatestInstantIsComparedToTheNanosecond() {
+        Instant start = Instant.parse("2026-09-16T00:00:00.5Z");
+        Duration left = Duration.between(start, Instant.MAX);
+
+        assertEquals(Instant.MAX.minusNanos(1), Cancellation.after(start, left.minusNanos(1)));
+        assertEquals(Instant.MAX, Cancellation.after(start, left.plusNanos(1)));
+        assertEquals(Instant.MAX, Cancellation.after(start, left.plusSeconds(1).minusNanos(1)));
+        assertEquals(Instant.MAX.minusSeconds(1), Cancellation.after(start, left.minusSeconds(1)));
+    }
+
+    @Test
+    @DisplayName("the end of a timeout is what comparing it with Duration.between(start, Instant.MAX) gives")
+    void afterAgreesWithDurationBetween() {
+        Random random = new Random(911);
+        for (int i = 0; i < 100_000; i++) {
+            Instant start = Instant.ofEpochSecond(Instant.MIN.getEpochSecond()
+                    + (long) (random.nextDouble() * (Instant.MAX.getEpochSecond() - Instant.MIN.getEpochSecond())),
+                    random.nextInt(1_000_000_000));
+            Duration left = Duration.between(start, Instant.MAX);
+            Duration timeout = switch (i % 3) {
+                case 0 -> Duration.ofSeconds(random.nextLong(Long.MAX_VALUE), random.nextInt(1_000_000_000));
+                case 1 -> left.plusNanos(random.nextInt(2_000_000_001) - 1_000_000_000L);
+                default -> Duration.ofSeconds(random.nextLong(left.getSeconds() + 1), random.nextInt(1_000_000_000));
+            };
+            if (timeout.isNegative()) {
+                continue;
+            }
+            Instant expected = timeout.compareTo(left) < 0 ? start.plus(timeout) : Instant.MAX;
+
+            assertEquals(expected, Cancellation.after(start, timeout), start + " plus " + timeout);
+        }
     }
 
     @Test

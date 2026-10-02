@@ -180,11 +180,12 @@ final class FactIntake {
         if (declared == null || value == null || Widening.wrap(declared).isInstance(value)) {
             return;
         }
-        String msg = "Fact '%s' was declared as %s, but the run supplied a %s%s"
-                .formatted(Failures.quote(name), declared.getName(), value.getClass().getName(),
-                        primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
-                                ? " (" + Widening.ONLY_WIDENED + ")" : "");
-        throw rejectedFact(msg);
+        // Concatenated, not formatted: String.formatted() has the JDK initialize Formatter's classes, which a run
+        // that rejects a fact would be the first to use (see RunClasses).
+        String why = primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
+                ? " (" + Widening.ONLY_WIDENED + ")" : "";
+        throw rejectedFact("Fact '" + Failures.quote(name) + "' was declared as " + declared.getName()
+                + ", but the run supplied a " + value.getClass().getName() + why);
     }
 
     /**
@@ -201,14 +202,14 @@ final class FactIntake {
         }
         for (String name : values.keySet()) {
             if (!declaredFacts.containsKey(name)) {
-                throw rejectedFact("Fact '%s' wasn't declared, and this engine was built with requireDeclaredFacts()"
-                        .formatted(Failures.quote(name)));
+                throw rejectedFact("Fact '" + Failures.quote(name)
+                        + "' wasn't declared, and this engine was built with requireDeclaredFacts()");
             }
         }
         for (String name : declaredFacts.keySet()) {
             if (!values.containsKey(name)) {
-                throw rejectedFact(("Fact '%s' was declared, but the run didn't supply it, and this engine was built "
-                        + "with requireDeclaredFacts()").formatted(Failures.quote(name)));
+                throw rejectedFact("Fact '" + Failures.quote(name) + "' was declared, but the run didn't supply it, "
+                        + "and this engine was built with requireDeclaredFacts()");
             }
         }
     }
@@ -278,8 +279,8 @@ final class FactIntake {
             failure = e;
         }
         Failures.keepInterruptStatus(failure);
-        String msg = "The '%s' expression language failed to check fact name '%s': %s"
-                .formatted(Failures.quote(language), Failures.quote(name), Failures.describe(failure));
+        String msg = "The '" + Failures.quote(language) + "' expression language failed to check fact name '"
+                + Failures.quote(name) + "': " + Failures.describe(failure);
         Error fatal = Failures.fatalError(failure);
         boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(failure);
         if (logs) {

@@ -34,7 +34,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #427: where Flight Recorder isn't there, such as a GraalVM native image built without JFR support, the engine
- * records no events instead of failing its first run. The native image itself is checked by CI's native-image job.
+ * records no events instead of failing when the JVM's first engine is built, which is when it finds out (#911). The
+ * native image itself is checked by CI's native-image job.
  * Where it is there, a run's event says how the run ended, whatever language its rules are written in.
  */
 @DisplayName("the engine uses its Flight Recorder events only where they can be loaded")

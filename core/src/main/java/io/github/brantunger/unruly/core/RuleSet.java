@@ -197,16 +197,16 @@ final class RuleSet {
         SLOT
     }
 
-    // Where a kept copy comes from when the run hasn't taken one already.
-    private enum Source {
+    // Where a kept copy comes from when the run hasn't taken one already. Not private, so RunClasses can name it.
+    enum Source {
         // An idle copy if there is one, or else a new one.
         IDLE_OR_NEW,
         // A new one: the run has just looked for an idle copy and found none.
         NEW
     }
 
-    // Whether lending a copy warns that the run made it after waiting for a kept one.
-    private enum Warning {
+    // Whether lending a copy warns that the run made it after waiting for a kept one. Not private, as Source isn't.
+    enum Warning {
         NONE,
         OVERFLOW
     }
@@ -993,10 +993,17 @@ final class RuleSet {
 
     /** Whether every language of these rules returned {@link Session#none()}, so a copy holds nothing of its own. */
     // Session.none() is one shared instance, and identity is the question: a session that merely equals it still
-    // belongs to one run at a time.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    // belongs to one run at a time. A loop, not a stream: a run calls it, and may be deep in another run's stack, where
+    // a stream's first allMatch would initialize JDK classes (see StackHeadroom). It only compares the sessions, so
+    // it has none to close, whatever PMD says. It reads values(), where a test injects a failure.
+    @SuppressWarnings({"PMD.CompareObjectsWithEquals", "PMD.CloseResource"})
     private static boolean statelessSessions(Map<String, Session> sessions) {
-        return sessions.values().stream().allMatch(session -> session == Session.none());
+        for (Session session : sessions.values()) {
+            if (session != Session.none()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void warnAboutOverflow() {

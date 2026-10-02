@@ -29,6 +29,9 @@ public final class Engines {
      *                                  given for a language the engine doesn't have
      * @throws IllegalArgumentException if an import can't be resolved
      * @throws NullPointerException     if an argument is {@code null}
+     * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
+     *                                  initialize the classes runs use; the room is checked before any of them is
+     *                                  touched
      */
     public static <O> RulesEngine<O> firstMatch(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         return new StatelessRulesEngine<>(outputFactory, configuration);
@@ -45,6 +48,9 @@ public final class Engines {
      *                                  given for a language the engine doesn't have
      * @throws IllegalArgumentException if an import can't be resolved
      * @throws NullPointerException     if an argument is {@code null}
+     * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
+     *                                  initialize the classes runs use; the room is checked before any of them is
+     *                                  touched
      */
     public static <O> RulesEngine<O> allMatches(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         return new StatefulRulesEngine<>(outputFactory, configuration);
@@ -61,6 +67,9 @@ public final class Engines {
      *                                  given for a language the engine doesn't have
      * @throws IllegalArgumentException if an import can't be resolved
      * @throws NullPointerException     if an argument is {@code null}
+     * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
+     *                                  initialize the classes runs use; the room is checked before any of them is
+     *                                  touched
      */
     public static <O> RulesEngine<O> uniqueMatch(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         return new UniqueMatchRulesEngine<>(outputFactory, configuration);

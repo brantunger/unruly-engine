@@ -657,6 +657,10 @@ public final class RulesEngineBuilder<O> {
      *                                  it names a class that exists but can't be loaded, for example because a class
      *                                  it depends on is missing; or if {@link #copiesAtLoad(int)} is more than
      *                                  {@link #maxCopies(int)}
+     * @throws StackOverflowError       if this is the JVM's first engine and the calling thread has too little stack
+     *                                  left to build it safely. The first engine initializes the classes runs use,
+     *                                  and the room for that is checked before any of them is touched, so none is
+     *                                  left unusable and the next {@code build()} checks again
      */
     public RulesEngine<O> build() {
         CopyLimit limit = copies != null ? copies : CopyLimit.forVirtualThreads();

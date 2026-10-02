@@ -62,7 +62,8 @@ value the same; run it with
 
 Nothing else is needed to build and run an image: no `native-image` option beyond the usual ones, no metadata for
 `unruly-engine-core`, and no change to how you build engines or load rules. `native-image` finds MVEL through its
-`META-INF/services` file, as the JVM does.
+`META-INF/services` file, as the JVM does. In an image, building an engine looks up no JDK class by name, so an image
+built to fail on a class it has no metadata for doesn't fail there; that mode hasn't been tested.
 
 ## ⚡ MVEL's JIT must be off
 
@@ -155,8 +156,8 @@ with GraalVM's or MVEL's error as its cause. See [Error handling](error-handling
 
 `native-image` builds an image without Flight Recorder support unless you pass `--enable-monitoring=jfr`. In such an
 image, the engine records none of its [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events), and
-runs work as usual. It checks once, at the first run, and logs this at DEBUG on the `io.github.brantunger.unruly.engine`
-logger, followed by the error that stopped the events loading:
+runs work as usual. It checks once, and logs this at DEBUG on the `io.github.brantunger.unruly.engine` logger,
+followed by the error that stopped the events loading:
 
 ```text
 The engine records no Flight Recorder events here, because they can't be loaded: ...

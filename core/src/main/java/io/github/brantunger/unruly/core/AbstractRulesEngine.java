@@ -111,6 +111,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  error's text cut to at most 1,000 characters, with a note of how many were left
      *                                  out, then escaped, and a root cause it hides named
      * @throws NullPointerException     if {@code outputFactory} is {@code null}, checked after the settings
+     * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
+     *                                  initialize the classes runs use, checked last, before any of them is touched
+     *                                  (see {@link RunClasses})
      */
     AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
@@ -146,6 +149,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 declaredFacts, allFactsDeclared, configuration.languageImports());
         this.ruleSets = new RuleSetLifecycle(log, compiler, configuration.copyLimit(), configuration.copiesAtLoad());
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
+        // Last, so the settings are checked first: the classes a run uses that have a static initializer, which a
+        // run, maybe deep in another run's stack, must not be the first to use (see RunClasses).
+        RunClasses.initialize();
     }
 
     /**
@@ -767,9 +773,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                         ? "to make a compiled copy of the rules: every build slot was in use"
                         : "for a compiled copy of the rules: all " + rules.limit() + " were in use");
             } else {
-                msg = "run() passed its deadline of " + deadline.instant() + " while waiting for a compiled copy of the"
-                        + " rules:"
-                        + " all " + rules.limit() + " were in use";
+                msg = "run() passed its deadline of " + IsoInstant.text(deadline.instant())
+                        + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use";
             }
             // The deadline passed, or none did when an interrupt stopped the run.
             failure = stoppedWaiting(rules, facts, msg, stop, interrupted ? null : deadline);
@@ -808,7 +813,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw stoppedWaiting(rules, facts, "run() was interrupted" + reading, new InterruptedException(), null);
         }
         if (reason == Cancellation.Reason.TIMED_OUT) {
-            throw stoppedWaiting(rules, facts, "run() passed its deadline of " + deadline.instant() + reading,
+            throw stoppedWaiting(rules, facts,
+                    "run() passed its deadline of " + IsoInstant.text(deadline.instant()) + reading,
                     Cancellation.timedOut(deadline), deadline);
         }
     }
@@ -1130,8 +1136,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     new InterruptedException(), null, thrown);
         }
         if (reason == Cancellation.Reason.TIMED_OUT) {
-            return cancelled("run() passed its deadline of " + deadline.instant() + " " + stage + " rule '"
-                    + rule.displayName() + "'", Cancellation.timedOut(deadline), deadline, thrown);
+            return cancelled("run() passed its deadline of " + IsoInstant.text(deadline.instant()) + " " + stage
+                    + " rule '" + rule.displayName() + "'", Cancellation.timedOut(deadline), deadline, thrown);
         }
         return null;
     }
