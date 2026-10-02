@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.20.5](https://github.com/brantunger/unruly-engine/compare/v2.20.4...v2.20.5) (2026-10-02)
+
+
+### Bug Fixes
+
+* toData reads a synchronized map's entries under its lock ([#919](https://github.com/brantunger/unruly-engine/issues/919)) ([a9facfa](https://github.com/brantunger/unruly-engine/commit/a9facfa8a2c42b2f6dee5dadb308a15c01b55321))
+
 ## [2.20.4](https://github.com/brantunger/unruly-engine/compare/v2.20.3...v2.20.4) (2026-10-02)
 
 
