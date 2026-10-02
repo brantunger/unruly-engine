@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.5](https://github.com/brantunger/unruly-engine/compare/v2.21.4...v2.21.5) (2026-10-02)
+
+
+### Bug Fixes
+
+* imports and class names in MVEL's rejections are escaped and fit 1,000 characters, and no cut lands inside an escape ([#954](https://github.com/brantunger/unruly-engine/issues/954)) ([165446b](https://github.com/brantunger/unruly-engine/commit/165446b0cb16f8d60a0ff4f30bfddbd2252c9923))
+
 ## [2.21.4](https://github.com/brantunger/unruly-engine/compare/v2.21.3...v2.21.4) (2026-10-02)
 
 
