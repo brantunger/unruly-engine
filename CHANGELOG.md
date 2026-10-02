@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.4](https://github.com/brantunger/unruly-engine/compare/v2.21.3...v2.21.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* building the JVM's first engine initializes the classes a run uses, so a run deep in a stack can't leave one broken for every engine ([#952](https://github.com/brantunger/unruly-engine/issues/952)) ([4a128e1](https://github.com/brantunger/unruly-engine/commit/4a128e1878383779a64edc02d7bd0417ce8044d9))
+
 ## [2.21.3](https://github.com/brantunger/unruly-engine/compare/v2.21.2...v2.21.3) (2026-10-02)
 
 
