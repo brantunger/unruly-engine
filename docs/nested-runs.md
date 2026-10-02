@@ -55,6 +55,21 @@ run is past its deadline or interrupted; see [What stops a run](stopping-runs.md
 fails with `a nested run() failed: ...`, with the nested failure in its cause chain; `run()` rethrows a fatal
 `Error` instead. Each rule it passes through gets one `onError`, each run one `onRunError`.
 
+**Building the JVM's first engine initializes the classes with a static initializer that a run's own steps use.** A
+run deep in a stack, as a nested run can be, would otherwise be the first to use them, and a `StackOverflowError`
+while a class runs its static initializer leaves that class unusable for the life of the JVM. A language's own
+classes, a listener's or your code's aren't among them.
+
+The engine's tests check this in a new JVM. They give engines first runs with map and bean outputs, declared,
+mistyped and missing facts, every listener callback, a failing condition, a write to read-only facts, and nested runs
+that throw a fatal error or pass their deadline. They fail if those runs initialize any class with a static
+initializer, the engine's, the JDK's or a library's, other than the hidden classes the JDK makes for method handles,
+which have no name to initialize ahead of time.
+
+A path the tests don't take may still initialize one. The engine names the JDK classes it initializes from first runs
+on JDK 21, 25 and 26, and skips any a JDK doesn't have, so another JDK release may use one it doesn't name. In a
+native image it names none, leaving those classes to the image.
+
 ## 🪵 What is logged
 
 A nested `run()` or `load()` logs its own failure, rejected facts and a fatal `Error` included. What it logged isn't

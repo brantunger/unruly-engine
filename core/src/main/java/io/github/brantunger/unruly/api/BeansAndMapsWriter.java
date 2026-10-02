@@ -18,13 +18,12 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * The default {@link OutputWriter}: {@code put} on a {@link Map}, and otherwise the output class's public setter that
@@ -70,16 +69,29 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     // a generic setter's override accepts only what the override does, not everything its erased parameter would.
     // Each also says whether it's such a bridge. Overloads are in the order mostSpecificFirst gives them, so the first
     // that accepts a value is a most specific one, as Java would pick, and the choice doesn't vary between runs. Each
-    // class's public methods are listed once, for the output class and for a class that declares a bridge.
+    // class's public methods are listed once, for the output class and for a class that declares a bridge. Loops, not
+    // streams, here and in what it calls: it runs in a run, which may be deep in another run's stack, and a stream's
+    // first use of an operation initializes JDK classes (see StackHeadroom).
     private static final ClassValue<Map<String, List<Setter>>> SETTERS = new ClassValue<>() {
         @Override
         protected Map<String, List<Setter>> computeValue(Class<?> type) {
             Lookup lookup = new Lookup(type);
-            return Arrays.stream(lookup.methods(type))
-                    .filter(Accessors::isSetter)
-                    .sorted(Comparator.comparing((Method method) -> parameter(method).getName()))
-                    .collect(Collectors.groupingBy(Method::getName, Collectors.collectingAndThen(Collectors.toList(),
-                            overloads -> mostSpecificFirst(lookup.named(overloads)))));
+            List<Method> setters = new ArrayList<>();
+            for (Method method : lookup.methods(type)) {
+                if (Accessors.isSetter(method)) {
+                    setters.add(method);
+                }
+            }
+            setters.sort(Comparator.comparing((Method method) -> parameter(method).getName()));
+            Map<String, List<Method>> byName = new HashMap<>();
+            for (Method setter : setters) {
+                byName.computeIfAbsent(setter.getName(), name -> new ArrayList<>()).add(setter);
+            }
+            Map<String, List<Setter>> resolved = new HashMap<>();
+            for (Map.Entry<String, List<Method>> overloads : byName.entrySet()) {
+                resolved.put(overloads.getKey(), mostSpecificFirst(lookup.named(overloads.getValue())));
+            }
+            return resolved;
         }
     };
 
@@ -188,15 +200,22 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         if (!Widening.isPrimitiveLike(value)) {
             return "";
         }
-        List<String> existing = setters.stream()
-                .flatMap(setter -> setter.accepts().stream())
-                .filter(type -> type.isPrimitive() || Widening.isWrapper(type))
-                .distinct()
-                .sorted(Comparator.comparing((Class<?> type) -> !type.isPrimitive())
-                        .thenComparingInt(Widening::order)
-                        .thenComparing(Class::getTypeName))
-                .map(type -> name + "(" + type.getTypeName() + ")")
-                .toList();
+        Set<Class<?>> types = new LinkedHashSet<>();
+        for (Setter setter : setters) {
+            for (Class<?> type : setter.accepts()) {
+                if (type.isPrimitive() || Widening.isWrapper(type)) {
+                    types.add(type);
+                }
+            }
+        }
+        List<Class<?>> sorted = new ArrayList<>(types);
+        sorted.sort(Comparator.comparing((Class<?> type) -> !type.isPrimitive())
+                .thenComparingInt(Widening::order)
+                .thenComparing(Class::getTypeName));
+        List<String> existing = new ArrayList<>(sorted.size());
+        for (Class<?> type : sorted) {
+            existing.add(name + "(" + type.getTypeName() + ")");
+        }
         if (existing.isEmpty()) {
             return "";
         }
@@ -224,17 +243,38 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         references.removeIf(setter -> parameter(setter.method()).isPrimitive());
         List<Setter> ordered = new ArrayList<>(overloads.size());
         while (!references.isEmpty()) {
-            Setter next = references.stream()
-                    .filter(setter -> references.stream()
-                            .noneMatch(other -> moreSpecific(other.method(), setter.method())))
-                    .findFirst().orElseThrow();
-            references.remove(next);
-            ordered.add(next);
+            // By its index: removing the setter itself would compare records, which the JDK does with a method
+            // handle whose classes a run would be the first to initialize.
+            ordered.add(references.remove(mostSpecific(references)));
         }
-        overloads.stream().filter(setter -> parameter(setter.method()).isPrimitive())
-                .sorted(Comparator.comparingInt((Setter setter) -> Widening.order(parameter(setter.method()))))
-                .forEach(ordered::add);
+        List<Setter> primitives = new ArrayList<>();
+        for (Setter setter : overloads) {
+            if (parameter(setter.method()).isPrimitive()) {
+                primitives.add(setter);
+            }
+        }
+        primitives.sort(Comparator.comparingInt((Setter setter) -> Widening.order(parameter(setter.method()))));
+        ordered.addAll(primitives);
         return List.copyOf(ordered);
+    }
+
+    // The index of the first setter that no other is more specific than. There's always one, as moreSpecific means a
+    // strict subtype, which has no cycles, so the last setter is it when no earlier one is.
+    private static int mostSpecific(List<Setter> references) {
+        int at = 0;
+        while (at < references.size() - 1 && anyMoreSpecific(references, references.get(at))) {
+            at++;
+        }
+        return at;
+    }
+
+    private static boolean anyMoreSpecific(List<Setter> references, Setter setter) {
+        for (Setter other : references) {
+            if (moreSpecific(other.method(), setter.method())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Works out one output class's setters, name by name, before resolving them. Each class's public methods, what
@@ -263,19 +303,35 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         // nothing. It's taken as declared by the method it calls, even through a bridge that makes it callable from a
         // public subclass. A generic setter's bridge accepts what the setters it may call accept.
         List<Setter> named(List<Method> overloads) {
-            long parameters = overloads.stream().filter(method -> bridged(method).isEmpty())
-                    .map(BeansAndMapsWriter::parameter).distinct().count();
+            List<Method> unbridged = new ArrayList<>();
+            Set<Class<?>> parameters = new HashSet<>();
+            for (Method method : overloads) {
+                if (bridged(method).isEmpty()) {
+                    unbridged.add(method);
+                    parameters.add(parameter(method));
+                }
+            }
             Map<Class<?>, Class<?>> accepted = new HashMap<>();
-            overloads.stream().filter(method -> bridged(method).isEmpty()).forEach(method -> accepted.put(
-                    parameter(method), parameters > 1 ? parameterIn(method) : parameter(method)));
-            return overloads.stream().map(method -> {
+            for (Method method : unbridged) {
+                accepted.put(parameter(method), parameters.size() > 1 ? parameterIn(method) : parameter(method));
+            }
+            List<Setter> setters = new ArrayList<>(overloads.size());
+            for (Method method : overloads) {
                 List<Class<?>> bridges = bridged(method);
-                boolean generic = !bridges.isEmpty();
-                return new Setter(Accessors.callable(type, method), generic, generic
-                        ? bridges.stream().<Class<?>>map(parameter -> accepted.getOrDefault(parameter, parameter))
-                        .distinct().toList()
-                        : List.of(accepted.get(parameter(method))));
-            }).toList();
+                Method callable = Accessors.callable(type, method);
+                List<Class<?>> accepts;
+                if (bridges.isEmpty()) {
+                    accepts = List.of(accepted.get(parameter(method)));
+                } else {
+                    Set<Class<?>> types = new LinkedHashSet<>();
+                    for (Class<?> parameter : bridges) {
+                        types.add(accepted.getOrDefault(parameter, parameter));
+                    }
+                    accepts = List.copyOf(types);
+                }
+                setters.add(new Setter(callable, !bridges.isEmpty(), accepts));
+            }
+            return setters;
         }
 
         // The parameters of the setters a bridge method may call, where it's a generic setter's, and none otherwise.
@@ -325,12 +381,15 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         // cast it, or calls the override where the overload's parameter is narrower than the override's: a known
         // limit. The parameter count is checked first, as any bridge, even one of the setter's name, may have none.
         private List<Class<?>> accepted(Method bridge) {
-            return Arrays.stream(methods(bridge.getDeclaringClass()))
-                    .filter(other -> other.getParameterCount() == 1 && other.getName().equals(bridge.getName())
-                            && moreSpecific(other, bridge) && !Modifier.isStatic(other.getModifiers())
-                            && bridged(other).isEmpty())
-                    .<Class<?>>map(BeansAndMapsWriter::parameter)
-                    .toList();
+            List<Class<?>> narrower = new ArrayList<>();
+            for (Method other : methods(bridge.getDeclaringClass())) {
+                if (other.getParameterCount() == 1 && other.getName().equals(bridge.getName())
+                        && moreSpecific(other, bridge) && !Modifier.isStatic(other.getModifiers())
+                        && bridged(other).isEmpty()) {
+                    narrower.add(parameter(other));
+                }
+            }
+            return List.copyOf(narrower);
         }
 
         // The type of value a setter that isn't a generic setter's bridge takes in the output class: for one whose
@@ -405,8 +464,12 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         if (!visited.add(type)) {
             return;
         }
-        List<Type> supertypes = Stream.concat(Stream.ofNullable(type.getGenericSuperclass()),
-                Arrays.stream(type.getGenericInterfaces())).toList();
+        List<Type> supertypes = new ArrayList<>();
+        Type superclass = type.getGenericSuperclass();
+        if (superclass != null) {
+            supertypes.add(superclass);
+        }
+        supertypes.addAll(Arrays.asList(type.getGenericInterfaces()));
         for (Type supertype : supertypes) {
             if (supertype instanceof ParameterizedType parameterized) {
                 Class<?> raw = (Class<?>) parameterized.getRawType();

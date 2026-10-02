@@ -201,7 +201,7 @@ message.
 
 The engine emits two [JDK Flight Recorder](https://docs.oracle.com/en/java/javase/21/jfapi/) events, whatever
 language the rules are written in. They need no dependency and no listener, and an event that isn't enabled costs
-nothing measurable after the JVM's first run, so they are how to see what an engine does in production without
+nothing measurable once an engine is built, so they are how to see what an engine does in production without
 writing code. The event names and fields below are the contract; the classes that emit them aren't API.
 
 | Event | Enabled by default | One for every |
@@ -227,7 +227,7 @@ The rule event carries `engineId` and `runId` too, so it joins to its run, plus 
 (`CONDITION` or `ACTION`) and `result`: `MATCHED` or `NOT_MATCHED` for a condition, `FIRED` for an action, and
 `STOPPED` or `FAILED` for either, with the same meaning as on the run. The run event keeps the stack trace of the
 `run()` caller; the rule event records none. A run refused because nothing is loaded or the engine is closed records
-nothing, unless the engine was closed while the run was starting: that run is `FAILED`. The first run of a JVM
+nothing, unless the engine was closed while the run was starting: that run is `FAILED`. Building a JVM's first engine
 registers the events with Flight Recorder, which loads about a hundred classes and takes about 50 ms, with or
 without a recording.
 
@@ -237,8 +237,8 @@ without a recording.
 > with no events, as a native image without Flight Recorder support does (below).
 
 A GraalVM native image built without `--enable-monitoring=jfr`, which is `native-image`'s default, has no Flight
-Recorder. There the engine records no events and its runs work as usual: at the first run it finds that the event
-classes can't be loaded, and logs that once at DEBUG. See [Native image](native-image.md#-flight-recorder-events).
+Recorder. There the engine records no events and its runs work as usual: it finds the event classes can't be loaded,
+and logs that once at DEBUG. See [Native image](native-image.md#-flight-recorder-events).
 
 To keep every run, lower the threshold; to see each rule, enable the rule event. Both can be done on a running JVM:
 

@@ -230,7 +230,9 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
     }
 
     private static UnsupportedOperationException rejected(String error, Object key) {
-        return new UnsupportedOperationException(error.formatted(Failures.quote(String.valueOf(key))));
+        // Replaced, not formatted: String.formatted() has the JDK initialize Formatter's classes, which a run whose
+        // expression writes to its facts would be the first to use (see RunClasses).
+        return new UnsupportedOperationException(error.replace("%s", Failures.quote(String.valueOf(key))));
     }
 
     private UnsupportedOperationException rejected() {
