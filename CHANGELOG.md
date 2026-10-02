@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.20.4](https://github.com/brantunger/unruly-engine/compare/v2.20.3...v2.20.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* the test kit names the classes of map keys that print the same but aren't equal ([#917](https://github.com/brantunger/unruly-engine/issues/917)) ([f10051d](https://github.com/brantunger/unruly-engine/commit/f10051d9b7becc22a73bdaaa256c37877e19fb18))
+
 ## [2.20.3](https://github.com/brantunger/unruly-engine/compare/v2.20.2...v2.20.3) (2026-10-02)
 
 
