@@ -17,6 +17,7 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.AbstractCollection;
 import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -24,6 +25,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TimeZone;
@@ -414,6 +416,97 @@ class FactPropertiesTest {
         @Override
         public Set<Entry<String, Object>> entrySet() {
             return Set.of(Map.entry(Thread.holdsLock(lock) ? "locked" : "unlocked", 1));
+        }
+    }
+
+    /**
+     * A map whose one key says whether the thread iterating its entries holds a lock, which it checks when the entry
+     * is taken rather than when the entry set or its iterator is asked for, as a synchronized map asks for the entry
+     * set under its lock.
+     */
+    static final class LockedEntries extends AbstractMap<String, Object> {
+
+        private final Object value;
+        private Object lock = this;
+
+        LockedEntries(Object value) {
+            this.value = value;
+        }
+
+        void lockedBy(Object lock) {
+            this.lock = lock;
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            return new AbstractSet<>() {
+                @Override
+                public Iterator<Entry<String, Object>> iterator() {
+                    return new Iterator<>() {
+                        private boolean taken;
+
+                        @Override
+                        public boolean hasNext() {
+                            return !taken;
+                        }
+
+                        @Override
+                        public Entry<String, Object> next() {
+                            if (taken) {
+                                throw new NoSuchElementException();
+                            }
+                            taken = true;
+                            return Map.entry(Thread.holdsLock(lock) ? "locked" : "unlocked", value);
+                        }
+                    };
+                }
+
+                @Override
+                public int size() {
+                    return 1;
+                }
+            };
+        }
+    }
+
+    /** A map whose entry set's iteration gives one entry, then throws, a checked exception too. */
+    static final class TornEntries extends AbstractMap<String, Object> {
+
+        private final Exception failure;
+
+        TornEntries(Exception failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            return new AbstractSet<>() {
+                @Override
+                public Iterator<Entry<String, Object>> iterator() {
+                    return new Iterator<>() {
+                        private boolean taken;
+
+                        @Override
+                        public boolean hasNext() {
+                            return true;
+                        }
+
+                        @Override
+                        public Entry<String, Object> next() {
+                            if (taken) {
+                                throw undeclared(failure);
+                            }
+                            taken = true;
+                            return Map.entry("first", 1);
+                        }
+                    };
+                }
+
+                @Override
+                public int size() {
+                    return 2;
+                }
+            };
         }
     }
 
@@ -944,6 +1037,23 @@ class FactPropertiesTest {
         assertEquals("boom", nested.getCause().getMessage());
     }
 
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("what a map's entries throw partway through toData is wrapped, synchronized or not")
+    void aMapThatThrowsPartwayThroughItsEntries(boolean synchronizedMap) {
+        IOException diskGone = new IOException("disk gone");
+        Map<String, Object> torn = synchronizedMap
+                ? Collections.synchronizedMap(new TornEntries(diskGone))
+                : new TornEntries(diskGone);
+
+        IllegalStateException wrapped = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(torn, 1));
+
+        assertSame(diskGone, wrapped.getCause());
+        assertEquals("Reading the entries of a " + torn.getClass().getName() + " failed: disk gone",
+                wrapped.getMessage());
+    }
+
     @Test
     @DisplayName("what an accessor threw is named in the message after a colon, so the reason isn't only in the trace")
     void anAccessorsMessageIsKept() {
@@ -1026,6 +1136,47 @@ class FactPropertiesTest {
         Map<String, Object> data = FactProperties.toData(new Carrier(synchronizedProbes), 3);
 
         assertEquals(List.of(Map.of("locked", true)), data.get("value"));
+    }
+
+    @Test
+    @DisplayName("a synchronized map's entries are read under its lock, as its entry set's forEach holds it")
+    void aSynchronizedMapsEntriesAreReadUnderItsLock() {
+        LockedEntries entries = new LockedEntries(1);
+        Map<String, Object> synchronizedEntries = Collections.synchronizedMap(entries);
+        entries.lockedBy(synchronizedEntries);
+
+        assertEquals(Map.of("locked", 1), FactProperties.toData(synchronizedEntries, 1));
+        assertEquals(Map.of("value", Map.of("locked", 1)), FactProperties.toData(new Carrier(synchronizedEntries), 2));
+    }
+
+    @Test
+    @DisplayName("a synchronized map's values are converted after its lock is released, so no getter runs under it")
+    void aSynchronizedMapsValuesAreConvertedOutsideItsLock() {
+        Map<String, Object> probes = new LinkedHashMap<>();
+        Map<String, Object> synchronizedProbes = Collections.synchronizedMap(probes);
+        probes.put("probe", new LockProbe(synchronizedProbes));
+
+        assertEquals(Map.of("probe", Map.of("locked", false)), FactProperties.toData(synchronizedProbes, 2));
+    }
+
+    @Test
+    @DisplayName("a synchronized map's value that fails is wrapped once, by the read that failed, and empty is empty")
+    void aSynchronizedMapsFailingOrMissingValues() {
+        IllegalStateException nested = assertThrows(IllegalStateException.class,
+                () -> FactProperties.toData(Collections.synchronizedMap(new LinkedHashMap<>(
+                        Map.of("broken", new Broken()))), 2));
+        assertEquals("Reading 'boom' on a " + Broken.class.getName() + " failed: boom", nested.getMessage());
+        assertEquals("boom", nested.getCause().getMessage());
+        assertNull(nested.getCause().getCause());
+
+        Map<String, Object> withNull = new LinkedHashMap<>();
+        withNull.put("missing", null);
+        assertEquals(withNull, FactProperties.toData(Collections.synchronizedMap(withNull), 1));
+
+        Map<String, Object> empty = FactProperties.toData(Collections.synchronizedMap(new LinkedHashMap<>()), 1);
+        assertEquals(Map.of(), empty);
+        empty.put("added", 1);
+        assertEquals(Map.of("added", 1), empty);
     }
 
     @Test
