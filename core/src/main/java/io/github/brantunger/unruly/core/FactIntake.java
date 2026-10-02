@@ -30,15 +30,19 @@ final class FactIntake {
 
     /**
      * Creates the fact intake of an engine. Built with the engine, so {@code FactIntake} itself is loaded then, not by
-     * a run, which may be nested deep in another run's stack (see StackHeadroom). The class javac makes for the
-     * {@code switch} in {@link #checkName(String)} is still loaded the first time a run's fact name is rejected, as it
-     * was when the switch was in the engine.
+     * a run, which may be nested deep in another run's stack (see StackHeadroom). {@link FactNames} and
+     * {@link FactNames.Problem} are loaded then too, and {@code FactIntake} itself neither loads a class nor bootstraps
+     * a lambda the first time a run's fact name is rejected or a run's fact declared with a primitive type is widened.
      *
      * @param log              The engine's logger
      * @param declaredFacts    The declared type of each fact, by name
      * @param allFactsDeclared Whether a run may supply only the declared facts
      */
     FactIntake(Logger log, Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
+        // FactNames and FactNames.Problem are initialized here, when the engine is built, so checking a run's first
+        // fact name never loads them: the run may be nested deep in another run's stack (see StackHeadroom). A null
+        // name is checked because it returns at once, with Problem.NULL.
+        FactNames.check(null);
         this.log = log;
         this.declaredFacts = declaredFacts;
         this.allFactsDeclared = allFactsDeclared;
@@ -73,13 +77,14 @@ final class FactIntake {
         if (primitiveFacts.isEmpty()) {
             return entryMap;
         }
-        primitiveFacts.forEach((name, type) -> {
+        // A loop, not a lambda, so the engine's first run with such a fact bootstraps nothing (see StackHeadroom).
+        for (Map.Entry<String, Class<?>> primitive : primitiveFacts.entrySet()) {
             // A null value, or a fact the run left out, stays as it is.
-            Object value = entryMap.get(name);
+            Object value = entryMap.get(primitive.getKey());
             if (value != null) {
-                entryMap.put(name, Widening.widen(value, type));
+                entryMap.put(primitive.getKey(), Widening.widen(value, primitive.getValue()));
             }
-        });
+        }
         return entryMap;
     }
 
@@ -114,15 +119,19 @@ final class FactIntake {
      */
     private void checkName(String name) {
         FactNames.Problem problem = FactNames.check(name);
-        if (problem != null) {
-            throw rejectedFact(switch (problem) {
-                case NULL -> "fact name must not be null";
-                case BLANK -> "fact name must not be blank";
-                // Actions bind the output object to this name, silently hiding a fact of the same name.
-                case OUTPUT -> "'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot"
-                        + " be used as a fact name";
-            });
+        if (problem == null) {
+            return;
         }
+        // Not a switch: the class javac makes for one is loaded by a run's first rejected name (see StackHeadroom).
+        if (problem == FactNames.Problem.NULL) {
+            throw rejectedFact("fact name must not be null");
+        }
+        if (problem == FactNames.Problem.BLANK) {
+            throw rejectedFact("fact name must not be blank");
+        }
+        // Actions bind the output object to this name, silently hiding a fact of the same name.
+        throw rejectedFact("'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot be used as"
+                + " a fact name");
     }
 
     /**
