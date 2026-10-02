@@ -70,8 +70,12 @@ or namespaces, which no other language sees. Calling it again for the same langu
 
 The language gets them as written, in order, duplicates kept. The engine doesn't resolve or check what they mean. A
 language can reject one it can't use by throwing from `newCompiler`, failing the rule list: `load()` throws, and
-`validate()` returns, a `RuleCompilationException` with the throw as its cause. MVEL rejects any, with `MVEL takes
-no language imports; give Java imports with imports(...)`.
+`validate()` returns, a `RuleCompilationException` with the throw as its cause.
+
+MVEL rejects any, with `MVEL takes no language imports; give Java imports with imports(...): 'lodash/fp'`. Each name
+is shortened to 200 characters and escaped, and the rejection, from `MVEL takes` on, lists them in order, until the
+next one doesn't fit in 1,000 characters, then `, and N more` for the rest. The first is always listed, cut to fit if
+it must be.
 
 The engine creates a language's compiler only for a rule list with a rule in that language, and the default
 language's for a list with no rules, so a language no such list uses never has its imports checked.

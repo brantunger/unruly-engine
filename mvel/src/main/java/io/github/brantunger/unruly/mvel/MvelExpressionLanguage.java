@@ -3,13 +3,11 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.MessageText;
 import org.mvel2.util.ErrorUtil;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * MVEL 2 as an expression language for the engine, named {@value #LANGUAGE_NAME}. A rule whose language is
@@ -79,13 +77,13 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * is given from {@code imports(...)}, so one given to it alone is a mistake rather than something to ignore.
      *
      * @param languageImports The imports given to MVEL alone
-     * @throws IllegalArgumentException if there are any, naming them
+     * @throws IllegalArgumentException if there are any, naming as many as fit in 1,000 characters (see
+     *                                  {@link FactNames#quotedAllWithin})
      */
     private static void rejectLanguageImports(List<String> languageImports) {
         if (!languageImports.isEmpty()) {
-            throw new IllegalArgumentException("MVEL takes no language imports; give Java imports with imports(...): "
-                    + languageImports.stream().map(name -> "'" + MessageText.quote(name) + "'")
-                            .collect(Collectors.joining(", ")));
+            throw new IllegalArgumentException(FactNames.quotedAllWithin("MVEL takes no language imports; give Java "
+                    + "imports with imports(...): ", languageImports));
         }
     }
 

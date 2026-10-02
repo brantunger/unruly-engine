@@ -4,6 +4,8 @@ import io.github.brantunger.unruly.api.language.MessageText;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.regex.Pattern;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -12,6 +14,58 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @DisplayName("FactNames shortens text to fit a room once it's escaped, counting the text's own characters")
 class FactNamesEscapeWithinTest {
+
+    // A backslash that doesn't start a whole escape: an escape cut in half, in text with no backslash of its own.
+    private static final Pattern CUT_ESCAPE = Pattern.compile("\\\\(?!u[0-9a-f]{4}|[nrt])");
+
+    // #910: the class loader's refusal of a 2,100-character name quotes the name, so it holds 199 escapes already, and
+    // is 1,301 characters long. A compile error whose root cause it is shortens it to the room causeNote leaves for it
+    // at line 1, column 1, and to the 5 rooms below, where a cut by code point fell inside the last escape kept.
+    @Test
+    @DisplayName("an escape the text already holds is kept whole or left out, and the count counts the text as given")
+    void refusalNotCutInsideItsEscapes() {
+        ExactNameClassLoader loader = new ExactNameClassLoader(FactNamesEscapeWithinTest.class.getClassLoader());
+        String refusal = assertThrows(ClassNotFoundException.class,
+                () -> loader.loadClass("a" + "\u0001".repeat(199) + "a".repeat(1900))).getMessage();
+        int room = FactNames.MAX_DESCRIPTION_LENGTH - "failed to compile at line 1, column 1: null".length()
+                - (" (caused by " + ClassNotFoundException.class.getName() + ": )").length();
+        assertEquals(1301, refusal.length());
+        assertEquals(910, room);
+
+        for (int within = room; within > room - 6; within--) {
+            String cut = FactNames.escapeWithin(refusal, within);
+
+            assertTrue(cut.length() <= within, within + ": " + cut);
+            assertFalse(CUT_ESCAPE.matcher(cut).find(), within + ": " + cut);
+            String kept = cut.substring(0, cut.lastIndexOf("... ("));
+            assertEquals(kept + FactNames.leftOut(refusal.length() - kept.length()), cut, within + ": " + cut);
+            assertTrue(refusal.startsWith(kept), within + ": " + cut);
+        }
+    }
+
+    @Test
+    @DisplayName("a cut inside \\n, \\r, \\t or a \\u escape the text holds leaves the escape out whole")
+    void ownEscapesLeftOutWhole() {
+        String rest = "c".repeat(30);
+
+        assertEquals("ab... (36 more characters)", FactNames.escapeWithin("ab\\u0001" + rest, 29));
+        assertEquals("ab... (32 more characters)", FactNames.escapeWithin("ab\\n" + rest, 27));
+        assertEquals("ab... (32 more characters)", FactNames.escapeWithin("ab\\r" + rest, 27));
+        assertEquals("ab... (32 more characters)", FactNames.escapeWithin("ab\\t" + rest, 27));
+        assertEquals("\\u00e9... (36 more characters)", FactNames.escapeWithin("\\u00e9\\u00e9" + rest, 34));
+    }
+
+    @Test
+    @DisplayName("a backslash that doesn't start an escape, or an escape that ends before the cut, is cut as any text")
+    void otherBackslashesCutAsText() {
+        String rest = "c".repeat(30);
+
+        assertEquals("ab\\... (31 more characters)", FactNames.escapeWithin("ab\\q" + rest, 27));
+        assertEquals("ab\\u0... (33 more characters)", FactNames.escapeWithin("ab\\u00g1" + rest, 29));
+        assertEquals("ab\\u0... (33 more characters)", FactNames.escapeWithin("ab\\u00AB" + rest, 29));
+        assertEquals("ab\\n... (31 more characters)", FactNames.escapeWithin("ab\\nc" + rest, 28));
+        assertEquals("ab\\u", FactNames.escapeWithin("ab\\u", 4));
+    }
 
     @Test
     @DisplayName("text that fits once escaped is escaped whole")

@@ -246,6 +246,101 @@ class NameEscapingTest {
                 .option("mvel", "strongTyping", value), value, "'");
     }
 
+    // #913: the class name was part of the text around the fact's name, so 1,100 characters of it left the fact's name
+    // no room: it showed as "... (5 more characters)", and the line break in the class name was left raw.
+    @Test
+    @DisplayName("a long dynamic declared type's class name leaves the fact's name room, and is escaped and shortened")
+    void longDeclaredClassNameKeepsFactName() {
+        Class<?> type = hashMapNamed("Big\nMap" + "M".repeat(1100));
+
+        String message = assertClassNameFits(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .fact("order", type).requireDeclaredFacts().option("mvel", "strongTyping", "true"),
+                "fact 'order' is declared as ", type.getName(), ", whose members MVEL can't check");
+
+        assertTrue(message.contains("Big\\nMap"), message);
+    }
+
+    @Test
+    @DisplayName("a dynamic declared type's class name with a tab and format characters is escaped, and fits")
+    void declaredClassNameEscaped() {
+        Class<?> type = hashMapNamed("Z\t" + "​".repeat(199));
+
+        assertClassNameFits(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .fact("order", type).requireDeclaredFacts().option("mvel", "strongTyping", "true"),
+                "fact 'order' is declared as ", type.getName(), ", whose members MVEL can't check");
+    }
+
+    @Test
+    @DisplayName("a dynamic output type's class name with a tab and format characters is escaped, and fits")
+    void outputClassNameEscaped() {
+        Class<?> type = hashMapNamed("Out\tType" + "​".repeat(300));
+
+        assertClassNameFits(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .outputType(mapType(type)).fact("applicant", Integer.class).requireDeclaredFacts()
+                .option("mvel", "strongTyping", "true"), "the output type is ", type.getName(),
+                ", and an action writes to the output; build the engine with outputType(...)");
+    }
+
+    // The fact's name gets the room first, but the class name keeps room for its first 100 characters.
+    @Test
+    @DisplayName("when a dynamic declared fact's name and its class name are both long, both are shown, cut to fit")
+    void longFactAndClassNames() {
+        String name = "X" + CONTROLS;
+        Class<?> type = hashMapNamed("Big\nMap" + "M".repeat(1100));
+
+        String message = assertClassNameFits(RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .fact(name, type).requireDeclaredFacts().option("mvel", "strongTyping", "true"),
+                "' is declared as ", type.getName(), ", whose members MVEL can't check");
+
+        assertFitsWhole(message, name);
+    }
+
+    /** Returns a class by the simple name given, in this test's package, that extends {@link HashMap}. */
+    private static Class<?> hashMapNamed(String simpleName) {
+        String className = NameEscapingTest.class.getPackageName() + "." + simpleName;
+        try {
+            return Class.forName(className, false, new OneClassLoader(className, "java/util/HashMap"));
+        } catch (ClassNotFoundException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Class<? super Map<String, Object>> mapType(Class<?> type) {
+        return (Class<? super Map<String, Object>>) type;
+    }
+
+    /**
+     * Asserts that loading a rule list fails because MVEL rejects a type, with a message that names the class escaped,
+     * cut between escapes, and fits whole, and whose count of what was left out of the class name counts its own
+     * characters. The class name is long enough to be cut.
+     *
+     * @return The message
+     */
+    private static String assertClassNameFits(RulesEngineBuilder<Map<String, Object>> builder, String before,
+                                              String className, String after) {
+        RulesEngine<Map<String, Object>> rejecting = builder.build();
+
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> rejecting.load(List.of(
+                Rule.builder().ruleName("r").condition("true").action("x").build())));
+
+        assertInstanceOf(RuleCompilationException.class, failure.thrown());
+        String message = failure.thrown().getCause().getMessage();
+        assertTrue(message.length() <= Failures.MAX_DESCRIPTION_LENGTH, message.length() + ": " + message);
+        assertEquals(Failures.escape(message), message);
+        assertFalse(CUT_ESCAPE.matcher(message).find(), message);
+        assertLoggedWhole(failure, message);
+        assertTrue(failure.thrown().getMessage().endsWith("failed to create a compiler: " + message),
+                failure.thrown().getMessage());
+        Matcher shown = Pattern.compile(Pattern.quote(before) + "(.+)\\.\\.\\. \\((\\d+) more characters\\)"
+                + Pattern.quote(after) + "$").matcher(message);
+        assertTrue(shown.find(), message);
+        int shownLength = shown.group(1).replaceAll("\\\\(u[0-9a-f]{4}|[nrt])", "-").length();
+        assertTrue(shownLength >= 100, message);
+        assertEquals(className.length() - shownLength, Integer.parseInt(shown.group(2)), message);
+        return message;
+    }
+
     /** Asserts that loading a rule list fails because MVEL rejects a name, with a message that fits, whole. */
     private static void assertCompilerRejects(RulesEngineBuilder<Map<String, Object>> builder, String name,
                                               String after) {
@@ -291,10 +386,22 @@ class NameEscapingTest {
     private static final class OneClassLoader extends ClassLoader {
 
         private final String className;
+        private final String superName;
 
         OneClassLoader(String className) {
+            this(className, "java/lang/Object");
+        }
+
+        /**
+         * Creates a loader whose one class extends the class given.
+         *
+         * @param className The class's binary name
+         * @param superName Its superclass's internal name, such as {@code java/util/HashMap}
+         */
+        OneClassLoader(String className, String superName) {
             super(NameEscapingTest.class.getClassLoader());
             this.className = className;
+            this.superName = superName;
         }
 
         @Override
@@ -309,12 +416,15 @@ class NameEscapingTest {
             if (!name.equals(className)) {
                 throw new ClassNotFoundException(name);
             }
-            byte[] bytes = emptyClass(name.replace('.', '/'));
+            byte[] bytes = emptyClass(name.replace('.', '/'), superName);
             return defineClass(name, bytes, 0, bytes.length);
         }
 
-        /** Writes the class file of an empty public class that extends Object, in the format of Java 8. */
-        private static byte[] emptyClass(String internalName) {
+        /**
+         * Writes the class file of an empty public class that extends the class given, in the format of Java 8. It
+         * has no constructor, so it can't be created, only declared as a type.
+         */
+        private static byte[] emptyClass(String internalName, String superName) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (DataOutputStream out = new DataOutputStream(bytes)) {
                 out.writeInt(0xCAFEBABE);
@@ -326,7 +436,7 @@ class NameEscapingTest {
                 out.writeByte(7); // #2 Class #1
                 out.writeShort(1);
                 out.writeByte(1); // #3 Utf8: its superclass's name
-                out.writeUTF("java/lang/Object");
+                out.writeUTF(superName);
                 out.writeByte(7); // #4 Class #3
                 out.writeShort(3);
                 out.writeShort(0x21); // ACC_PUBLIC | ACC_SUPER
