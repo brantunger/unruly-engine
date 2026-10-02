@@ -29,9 +29,23 @@ import java.util.stream.Stream;
  * </p>
  *
  * <p>
+ * Counting every call stays on until the pass or run ends, even if no site passes the bound again (#938). A valid
+ * expression that turned it on walks the stack for each of its later calls, about {@value #SAMPLED_EVERY} times as
+ * many walks as before. No valid expression tried has turned it on early. A valid expression's busiest site makes
+ * at most about one call for each two characters, and the bound allows 1,000 more, so the walks must count at least
+ * about 1,000 calls too many there. The counts drawn from the walks stray that far only after some 50,000 calls or
+ * more at one site (a 77,000-part chain did, at its last few calls; 40,000 parts never did), so they pass the bound,
+ * if ever, near the end of a very long chain, and few calls are left to pay for.
+ * </p>
+ *
+ * <p>
  * More than {@value #MAX_SITES} sites walked in one pass or run count as a loop too, which bounds what the count keeps
  * for a loop whose site keeps changing. The sites are counted afresh once every call is counted, as the counts drawn
- * from the walks are dropped then, so a pass or run may walk about twice as many in all, but never keeps more.
+ * from the walks are dropped then, so a pass or run may walk about twice as many in all, but never keeps more. Once
+ * every call is counted, every call's site is walked, not about one in {@value #SAMPLED_EVERY}, so sites that make a
+ * call or two each reach the limit up to about {@value #SAMPLED_EVERY} times sooner. A valid expression would have to
+ * turn on counting every call, which only a very long chain has done, near its end, and then ask from more than
+ * {@value #MAX_SITES} sites after that, before the pass or run ends.
  * </p>
  */
 final class CallSites {
@@ -79,6 +93,7 @@ final class CallSites {
     // What draws the gaps between walks (xorshift).
     private long gapState;
     // Whether every call is walked and counted at its own site, once a count drawn from the walks has passed the bound.
+    // It stays on until the pass ends or restart() starts a new run, whether or not a site passes the bound again.
     private boolean exact;
     // How many calls each site was counted, once the pass or run has made more than UNCOUNTED_CALLS, or null until
     // then: since every call has been counted, once it is, and from the walks until then.
