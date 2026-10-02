@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.20.1](https://github.com/brantunger/unruly-engine/compare/v2.20.0...v2.20.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* a load's fatal error survives a failed retire, and a suppressed interrupt is kept like a cause ([#905](https://github.com/brantunger/unruly-engine/issues/905)) ([b0f5118](https://github.com/brantunger/unruly-engine/commit/b0f51189be3c835b8dc19d9e72c8e1d2d497e02a))
+
 ## [2.20.0](https://github.com/brantunger/unruly-engine/compare/v2.19.0...v2.20.0) (2026-10-01)
 
 
