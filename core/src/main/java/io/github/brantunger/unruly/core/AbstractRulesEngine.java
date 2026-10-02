@@ -58,7 +58,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static final Logger log = LoggerFactory.getLogger(LOGGER_NAME);
 
     private static final String CLOSED_MESSAGE = "The engine is closed";
-    // What load() logs when rules the engine no longer uses couldn't all be retired, once it has swapped its own in.
+    // What load() logs when rules the engine no longer uses couldn't all be retired, once it has swapped its own in, or
+    // when its own rules couldn't be, under a fatal error of its own.
     private static final String RETIRE_AGAIN = "Rules this engine no longer uses couldn't all be retired, so the next"
             + " load() or close() tries again: {}";
     // Where a cancelled run stopped, as its message says: before a rule's condition or action, or while one ran.
@@ -532,9 +533,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Chooses what a run that failed throws once it has ended: what it failed with, or what ending it threw (see
      * {@link #endRun}). A fatal {@link Error} is never dropped for a failure that isn't fatal: a fatal error from
      * ending the run replaces a failure that isn't fatal, as {@link Failures#fatalInsteadOf} decides, and a fatal
-     * failure of the run is thrown in place of anything else ending it threw. Of two that aren't fatal, what ending
-     * threw is thrown, as what giving back the copy threw was before the run's values were closed with it. Either
-     * way what is thrown carries the other as a suppressed exception (see {@link Failures#keepAlso}).
+     * failure of the run comes before anything else ending it threw, as {@link Failures#laterInsteadOf} decides: the
+     * failure is thrown when the error is in its cause chain, and the error itself, the failure logged at WARN, when
+     * it's only suppressed on it. Of two that aren't fatal, what ending threw is thrown, as what giving back the copy
+     * threw was before the run's values were closed with it. What is thrown carries the other as a suppressed
+     * exception (see {@link Failures#keepAlso}), except that a fatal error only suppressed on the failure carries what
+     * ending threw, the failure itself being logged at WARN instead.
      *
      * @param failure What the run failed with
      * @param ending  What {@link #endRun} returned, or {@code null}
@@ -546,16 +550,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         // endRun returns a fatal error itself, never one that carries it.
         Error fatal = Failures.fatalError(ending);
-        if (fatal != null) {
-            return Failures.fatalInsteadOf(failure, fatal);
-        }
-        if (Failures.fatalError(failure) != null) {
-            Failures.keepAlso(failure, ending);
-            return null;
-        }
-        Failures.keepInterruptStatus(failure);
-        Failures.keepAlso(ending, failure);
-        return ending;
+        return fatal != null ? Failures.fatalInsteadOf(failure, fatal) : Failures.laterInsteadOf(failure, ending);
     }
 
     /**
@@ -1181,7 +1176,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code failure} as suppressed, or logging it at WARN if the error can't carry one, unless {@code failure} is a
      * fatal error itself, which came first, and carries the one from closing (see {@link Failures#fatalInsteadOf}). A
      * rule set that retiring fails to mark retired, as it can when it runs out of stack, is kept for the next
-     * {@code load()} or {@code close()} to retire.
+     * {@code load()} or {@code close()} to retire. What else stopped the retiring, even before it began, is thrown
+     * here instead of {@code failure}, carrying it, unless {@code failure} holds a fatal error, which came first: then
+     * that error carries it (see {@link Failures#laterInsteadOf}). What retiring threw that isn't thrown, fatal or
+     * not, is logged at WARN once while it leaves the rule set to a later {@code load()} or {@code close()}, as a
+     * {@code load()} that swapped its rules in logs it, so the compilers left open aren't news only to the code that
+     * catches the error; one the thrown error can't carry is logged instead (see {@link Failures#keepAlso}).
      *
      * @param loaded  The rule set, which no run can see
      * @param failure What the caller throws next
@@ -1195,14 +1195,24 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             loaded.retiringClaim = claim;
             unretired = loaded;
         }
-        Throwable failed = retireClaimed(claim);
-        Error fatal = Failures.fatalError(failed);
-        Failures.throwIfPresent(Failures.fatalInsteadOf(failure, fatal));
-        if (fatal == null) {
-            // The load's own failure goes with it, as it would under a fatal Error.
-            Failures.keepAlso(failed, failure);
-            Failures.rethrowUnchecked(failed);
+        Throwable failed;
+        try {
+            failed = retireClaimed(claim);
+        } catch (Throwable t) {
+            // Any Throwable, as after a swap: retiring them failed before it began, and the load's own failure is
+            // still weighed against it.
+            failed = t;
         }
+        Error fatal = Failures.fatalError(failed);
+        Throwable instead = fatal != null ? Failures.fatalInsteadOf(failure, fatal)
+                : Failures.laterInsteadOf(failure, failed);
+        // What retiring threw says it when it's thrown, and keepAlso logged it when it couldn't be carried. Carried,
+        // it's logged once here while the rule set is left for a later load() or close(); a fatal error closing it
+        // threw, which leaves it retired, was logged as it was caught.
+        if (Failures.carries(instead != null ? instead : failure, failed) && !loaded.retiredForGood()) {
+            log.warn(RETIRE_AGAIN, Failures.describe(failed));
+        }
+        Failures.rethrowUnchecked(instead);
     }
 
     // Claims the rule sets still to retire that no other call has claimed, for the call holding the claim to retire.
@@ -1569,8 +1579,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException stoppedOrFailed(CompiledRule rule, Deadline deadline, Throwable thrown,
                                                    Supplier<RuleExecutionException> failed) {
-        // An interrupt the expression caught and wrapped is put back first, so it counts as one here too, and an
-        // Error inside what it threw is the rule's failure as it always is, cancelled or not.
+        // An interrupt the expression caught and wrapped, or left suppressed, is put back first, so it counts as one
+        // here too, and an Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
         ReportedFailure stop = Failures.errorInChain(thrown) == null
                 ? cancellation(rule, DURING_RULE, deadline, thrown) : null;
@@ -2113,14 +2123,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * in an exception with a message of its own, which is logged, with the nested failure as a note (see
      * {@link Failures#describe}); a fatal error wrapped so is still rethrown. So is what a listener's {@code onError}
      * wrapped such an error in (see {@link #logWrappedFromOnError}).
-     * An interrupt in {@code cause} sets the thread's interrupt status again. Returns the exception for the caller to
+     * An interrupt in {@code cause} has set the thread's interrupt status again already: every caller with a cause is
+     * reached through {@link #stoppedOrFailed}, which sets it first. Returns the exception for the caller to
      * throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
     private RuleExecutionException failure(CompiledRule rule, ExpressionKind kind, String msg, Throwable cause) {
         ReportedFailure error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
-        Failures.keepInterruptStatus(cause);
         // A failed run() started by this rule has already logged its failure, or the fatal error it rethrew.
         Error listenerFatal = reportFailure(rule, error, LoggedFailures.unlogged(cause));
         // A fatal error in what the rule threw comes first; one from a listener's onError is rethrown otherwise.

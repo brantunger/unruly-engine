@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -20,24 +21,27 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.net.SocketTimeoutException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
-import java.util.function.Function;
 
 import static io.github.brantunger.unruly.TestLogs.logsOf;
+import static io.github.brantunger.unruly.core.EngineLogs.ENGINE_LOGGER;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Code the engine runs may be interrupted while it blocks. The {@link InterruptedException} it throws clears the
- * thread's interrupt status, and reaches the engine wrapped, so the engine must set the status again. Each test runs
- * the engine on a thread of its own and reports that thread's interrupt status afterwards.
+ * thread's interrupt status, and reaches the engine wrapped, or suppressed on another exception by a
+ * {@code try}-with-resources whose {@code close()} was interrupted (#895), so the engine must set the status again.
+ * Each test runs the engine on a thread of its own and reports that thread's interrupt status afterwards.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("an interrupt that reaches the engine inside a failure keeps the thread's interrupt status")
@@ -48,7 +52,22 @@ class InterruptStatusTest {
 
     /** The thread's interrupt status after {@code engine} ran into {@code interrupted} at {@code where}. */
     private static boolean interruptStatusAfter(Where where, Exception interrupted) throws InterruptedException {
-        RuntimeException thrown = new IllegalStateException("wrapped by the language", interrupted);
+        return interruptStatusAfterThrowing(where, new IllegalStateException("wrapped by the language", interrupted));
+    }
+
+    /**
+     * Returns what a {@code try}-with-resources throws when its body fails and its resource's {@code close()} is
+     * interrupted: the body's exception, carrying the {@link InterruptedException} only as a suppressed exception.
+     */
+    private static IllegalStateException suppressingAnInterrupt() {
+        IllegalStateException body = new IllegalStateException("body failed");
+        body.addSuppressed(new InterruptedException("close interrupted"));
+        return body;
+    }
+
+    /** The thread's interrupt status after {@code engine} ran into {@code thrown}, as it is, at {@code where}. */
+    private static boolean interruptStatusAfterThrowing(Where where, RuntimeException thrown)
+            throws InterruptedException {
         AtomicBoolean status = new AtomicBoolean();
         Thread thread = new Thread(() -> {
             logsOf(() -> {
@@ -66,13 +85,18 @@ class InterruptStatusTest {
     }
 
     private static void runInto(Where where, RuntimeException thrown) {
+        runInto(where, thrown, new RuleListener() {
+        });
+    }
+
+    private static void runInto(Where where, RuntimeException thrown, RuleListener listener) {
         RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
                 where == Where.OUTPUT
                         ? () -> {
                             throw thrown;
                         }
                         : HashMap::new)
-                .language(new ThrowingLanguage(where, thrown));
+                .language(new ThrowingLanguage(where, thrown)).listener(listener);
         if (where == Where.LISTENER) {
             builder.listener(new RuleListener() {
                 @Override
@@ -218,6 +242,89 @@ class InterruptStatusTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Where.class)
+    @DisplayName("#895: an InterruptedException only suppressed on what is thrown sets the interrupt status again")
+    void suppressedInterruptKept(Where where) throws InterruptedException {
+        assertTrue(interruptStatusAfterThrowing(where, suppressingAnInterrupt()), where.name());
+    }
+
+    /**
+     * Runs a rule whose {@code where} throws {@code thrown} on a thread of its own, and checks the run stopped as
+     * interrupted: no rule name, an {@link InterruptedException} cause, what the expression threw kept as a suppressed
+     * exception, logged at WARN and not as the rule's failure at ERROR, told to the rule's {@code onError} and to
+     * {@code onRunError}, and the thread still interrupted.
+     */
+    private static void assertStoppedAsInterrupted(Where where, RuntimeException thrown) throws InterruptedException {
+        AtomicReference<Throwable> caught = new AtomicReference<>();
+        AtomicReference<String> logs = new AtomicReference<>();
+        AtomicBoolean status = new AtomicBoolean();
+        List<Throwable> onError = new CopyOnWriteArrayList<>();
+        List<Throwable> onRunError = new CopyOnWriteArrayList<>();
+        RuleListener told = new RuleListener() {
+            @Override
+            public void onError(Rule rule, RuleExecutionException error) {
+                onError.add(error);
+            }
+
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                onRunError.add(error);
+            }
+        };
+        Thread thread = new Thread(() -> {
+            logs.set(logsOf(() -> {
+                try {
+                    runInto(where, thrown, told);
+                } catch (RuntimeException e) {
+                    caught.set(e);
+                }
+            }));
+            status.set(Thread.currentThread().isInterrupted());
+        });
+        thread.start();
+        thread.join();
+
+        RuleExecutionException stop = assertInstanceOf(RuleExecutionException.class, caught.get());
+        assertNull(stop.getRuleName(), "the run was reported as the rule's failure: " + stop.getMessage());
+        assertInstanceOf(InterruptedException.class, stop.getCause());
+        assertArrayEquals(new Throwable[] {thrown}, stop.getSuppressed(), "what the expression threw isn't kept");
+        assertTrue(logs.get().contains("WARN " + ENGINE_LOGGER + "run() was interrupted during rule 'r'"),
+                logs.get());
+        assertFalse(logs.get().contains("ERROR"), logs.get());
+        assertEquals(List.of(stop), onError, "the rule's onError wasn't told of the stop");
+        assertEquals(List.of(stop), onRunError, "onRunError wasn't told of the stop");
+        assertTrue(status.get(), "the thread's interrupt status after run() threw");
+    }
+
+    @ParameterizedTest(name = "suppressed: {0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("#895: a fact name a language rejects with an InterruptedException inside sets the status again")
+    void factNameRejectionKeepsTheInterrupt(boolean suppressed) throws InterruptedException {
+        IllegalArgumentException rejected = suppressed
+                ? suppressing(new IllegalArgumentException("bad name"), new InterruptedException("check interrupted"))
+                : new IllegalArgumentException("bad name", new InterruptedException("check interrupted"));
+
+        assertTrue(interruptStatusAfterThrowing(Where.FACT_NAME, rejected));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Where.class, names = {"CONDITION", "ACTION"})
+    @DisplayName("#895: a condition or action that throws with an InterruptedException only suppressed stops the run as"
+            + " interrupted, as one with it as a cause does")
+    void suppressedInterruptStopsTheRun(Where where) throws InterruptedException {
+        assertStoppedAsInterrupted(where, suppressingAnInterrupt());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Where.class, names = {"CONDITION", "ACTION"})
+    @DisplayName("a condition or action that throws with an InterruptedException as a cause stops the run as"
+            + " interrupted")
+    void causedInterruptStopsTheRun(Where where) throws InterruptedException {
+        assertStoppedAsInterrupted(where,
+                new IllegalStateException("wrapped by the language", new InterruptedException("sleep interrupted")));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(Where.class)
     @DisplayName("an InterruptedIOException such as SocketTimeoutException doesn't set it")
     void socketTimeoutIsNotAnInterrupt(Where where) throws InterruptedException {
         assertFalse(interruptStatusAfter(where, new SocketTimeoutException("Read timed out")), where.name());
@@ -254,26 +361,65 @@ class InterruptStatusTest {
         assertTrue(status.get(), "the thread's interrupt status after run() threw");
     }
 
+    /** The interrupt status of a thread of its own after {@link Failures#keepInterruptStatus} read {@code thrown}. */
+    private static boolean statusAfter(Throwable thrown) {
+        AtomicBoolean status = new AtomicBoolean();
+        Thread thread = new Thread(() -> {
+            Failures.keepInterruptStatus(thrown);
+            status.set(Thread.currentThread().isInterrupted());
+        });
+        thread.start();
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            throw new AssertionError(e);
+        }
+        return status.get();
+    }
+
+    /** Returns {@code top}, with {@code suppressed} added to its suppressed exceptions. */
+    private static <T extends Throwable> T suppressing(T top, Throwable suppressed) {
+        top.addSuppressed(suppressed);
+        return top;
+    }
+
     @Test
     @DisplayName("keepInterruptStatus looks through the whole cause chain, and ignores null and other causes")
-    void keepInterruptStatus() throws InterruptedException {
-        Function<Throwable, Boolean> statusAfter = thrown -> {
-            AtomicBoolean status = new AtomicBoolean();
-            Thread thread = new Thread(() -> {
-                Failures.keepInterruptStatus(thrown);
-                status.set(Thread.currentThread().isInterrupted());
-            });
-            thread.start();
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                throw new AssertionError(e);
-            }
-            return status.get();
-        };
+    void keepInterruptStatus() {
+        assertTrue(statusAfter(new RuntimeException(new RuntimeException(new InterruptedException()))));
+        assertFalse(statusAfter(null));
+        assertFalse(statusAfter(new RuntimeException(new IllegalStateException())));
+    }
 
-        assertTrue(statusAfter.apply(new RuntimeException(new RuntimeException(new InterruptedException()))));
-        assertFalse(statusAfter.apply(null));
-        assertFalse(statusAfter.apply(new RuntimeException(new IllegalStateException())));
+    @Test
+    @DisplayName("#895: keepInterruptStatus looks among suppressed exceptions at any depth, and ignores other ones")
+    void keepInterruptStatusAmongSuppressed() {
+        assertTrue(statusAfter(suppressing(new RuntimeException("top"), new InterruptedException())), "on the top");
+        assertTrue(statusAfter(new RuntimeException("top",
+                suppressing(new RuntimeException("cause"), new InterruptedException()))), "on a cause");
+        assertTrue(statusAfter(suppressing(new RuntimeException("top"),
+                new RuntimeException("suppressed", new InterruptedException()))), "causing a suppressed exception");
+        assertTrue(statusAfter(suppressing(new RuntimeException("top"),
+                suppressing(new RuntimeException("suppressed"), new InterruptedException()))),
+                "suppressed on a suppressed exception");
+        assertFalse(statusAfter(suppressing(new RuntimeException("top"), new SocketTimeoutException("Read timed out"))),
+                "an InterruptedIOException");
+        ReportedFailure stop = new ReportedFailure("stopped", null);
+        stop.addSuppressedByEngine(new InterruptedException("kept by the engine"));
+        assertFalse(statusAfter(stop), "one the engine added with addSuppressedByEngine");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"found as the last exception read", "missed one past the last exception read"})
+    @DisplayName("#895: an InterruptedException is found as the last exception read, and not past it")
+    void keepInterruptStatusUpToTheLastExceptionRead(String where) {
+        int fewer = where.startsWith("found") ? 2 : 1;
+        IllegalStateException top = new IllegalStateException("top");
+        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ - fewer; i++) {
+            top.addSuppressed(new IllegalStateException("before " + i));
+        }
+        top.addSuppressed(new InterruptedException("last read"));
+
+        assertEquals(fewer == 2, statusAfter(top), where);
     }
 }

@@ -167,8 +167,9 @@ The call that closes throws it:
   [Reloading rules while running](thread-safety.md#-reloading-rules-while-running)), failed, or found the engine closed.
 
 After its swap, `load()` retires the rules it replaced, then any an earlier call left half retired. It throws only a
-fatal error from them, carrying the others. If nothing was fatal, a failure that stopped the retiring part way, as
-running out of stack in the engine's own steps can, is logged at WARN, and the next `load()` or `close()` tries again.
+fatal error from them, carrying the others. If nothing was fatal, or a failed `load()`'s fatal error carries it, a
+failure that stopped retiring part way, such as a `StackOverflowError`, is logged at WARN, and the next `load()` or
+`close()` tries again.
 `close()` throws either, and a second `close()` finishes the job.
 
 A run throws it too, even when its rules ran without failing: from closing its `runScopedClosing` values, an extra
@@ -233,5 +234,5 @@ try {
   that skip `onError` or every listener. A fact store's `asMap()` or a fact's `getValue()` that throws reaches no
   listener and isn't logged; see [Implementing FactStore](facts.md#-implementing-factstore).
 - **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or expression language throws an
-  exception caused by an `InterruptedException`, the engine sets the interrupt status again; see
+  `InterruptedException`, even wrapped or suppressed, the engine sets the interrupt status again; see
   [What stops a run](stopping-runs.md#-what-stops-a-run).

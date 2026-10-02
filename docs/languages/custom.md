@@ -393,8 +393,8 @@ Since 2.9.0, `timeLeft()` is the time left before the run's deadline, as the eng
 without a timeout. None is required.
 
 A runtime that clears the interrupt status when it cancels, as JEXL's `cancellable(true)` does, hides the caller's
-interrupt from the engine, which sees an interrupt only in that status or as an `InterruptedException` in the cause
-chain of what an expression throws. Unless the deadline has passed too, a throw is then reported as that rule's
+interrupt from the engine, which sees an interrupt only in that status or as an `InterruptedException` causing, or
+suppressed in, what an expression throws. Unless the deadline has passed too, a throw is then reported as that rule's
 failure, at ERROR, and a return lets the run go on.
 
 So record what cancelled the runtime. When an interrupt cancelled it, call `Thread.currentThread().interrupt()`

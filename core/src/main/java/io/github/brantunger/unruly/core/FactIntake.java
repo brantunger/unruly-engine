@@ -250,6 +250,9 @@ final class FactIntake {
             return null;
         } catch (IllegalArgumentException e) {
             if (Failures.fatalError(e) == null) {
+                // An interrupt the language wrapped, or left suppressed, in its rejection is put back, as for any
+                // other exception it throws.
+                Failures.keepInterruptStatus(e);
                 // The language wrote this message and it names the fact, so it's escaped before it's logged. The
                 // exception is returned as it came, so a caller still reads exactly what the language said. A failed
                 // run() or load() the check started has already logged its failure; the language's own instance is

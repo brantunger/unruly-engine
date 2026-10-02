@@ -224,4 +224,17 @@ class ReportedFailureTest {
         ReportedFailure copy = roundTrip(failure);
         assertFalse(copy.suppressedByEngine(copy.getSuppressed()[1]));
     }
+
+    @Test
+    @DisplayName("#895: a nested stop only suppressed on what was thrown tells the run around it the nested run"
+            + " stopped, and a nested failure suppressed there doesn't")
+    void suppressedNestedStop() {
+        IllegalStateException stopped = new IllegalStateException("body failed");
+        stopped.addSuppressed(ReportedFailure.stop("run() was interrupted", new InterruptedException(), null));
+        IllegalStateException failed = new IllegalStateException("body failed");
+        failed.addSuppressed(new ReportedFailure("a nested rule failed", null));
+
+        assertTrue(Failures.nestedRunStopped(new RuntimeException("wrapped", stopped), null));
+        assertFalse(Failures.nestedRunStopped(failed, null));
+    }
 }

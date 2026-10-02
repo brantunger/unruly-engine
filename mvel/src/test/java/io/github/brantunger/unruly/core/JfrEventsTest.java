@@ -90,6 +90,18 @@ class JfrEventsTest {
         }
     }
 
+    /**
+     * Something a condition can call to fail as a {@code try}-with-resources does when its body fails and its
+     * resource's {@code close()} is interrupted: the interrupt is only suppressed on what it throws.
+     */
+    public static final class SuppressingThrower {
+        public boolean fail() {
+            IllegalStateException body = new IllegalStateException("body failed");
+            body.addSuppressed(new InterruptedException("close interrupted"));
+            throw body;
+        }
+    }
+
     /** Something an action can call to start a nested run, which records a run event of its own. */
     public static final class Nester {
 
@@ -363,6 +375,29 @@ class JfrEventsTest {
         assertEquals("STOPPED", run.getString("outcome"));
         assertEquals(1, run.getInt("rulesEvaluated"));
         assertEquals(List.of("jfr-stop-inside CONDITION STOPPED"),
+                ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
+    }
+
+    @Test
+    @DisplayName("#895: a condition that throws with an interrupt only suppressed records STOPPED on the rule and on"
+            + " the run")
+    void stoppedBySuppressedInterrupt() throws IOException {
+        RulesEngine<Map<String, Object>> engine =
+                RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).build();
+        engine.load(List.of(rule("jfr-stop-suppressed", 1, "thrower.fail()")));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("thrower", new SuppressingThrower());
+        String checksum = engine.rules().checksum();
+
+        Recording recording = recordEverything();
+        RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
+        assertTrue(Thread.interrupted(), "the run keeps the interrupt status set");
+        List<RecordedEvent> all = stop(recording, "stopped-suppressed");
+
+        assertInstanceOf(InterruptedException.class, thrown.getCause());
+        RecordedEvent run = runEvent(all, checksum);
+        assertEquals("STOPPED", run.getString("outcome"));
+        assertEquals(List.of("jfr-stop-suppressed CONDITION STOPPED"),
                 ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
     }
 

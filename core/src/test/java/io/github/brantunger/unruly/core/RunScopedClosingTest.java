@@ -51,6 +51,9 @@ class RunScopedClosingTest {
     // What happened, in order: listener calls, values closed and sessions closed.
     private final List<String> events = new CopyOnWriteArrayList<>();
     private final AtomicReference<RulesEngine<Map<String, Object>>> self = new AtomicReference<>();
+    // What onRunError does after recording the call, if anything.
+    private volatile Consumer<RuntimeException> onRunError = error -> {
+    };
 
     /** A value a language keeps for a run, which records its close() and then throws what the test set, if anything. */
     private class Value implements AutoCloseable {
@@ -83,7 +86,7 @@ class RunScopedClosingTest {
         }
     }
 
-    /** Records each run's last listener call. */
+    /** Records each run's last listener call, then runs {@link #onRunError} for one that failed. */
     private final RuleListener listener = new RuleListener() {
         @Override
         public void afterRun(RunContext run, RunResult<?> result) {
@@ -93,6 +96,7 @@ class RunScopedClosingTest {
         @Override
         public void onRunError(RunContext run, RuntimeException error) {
             events.add("onRunError");
+            onRunError.accept(error);
         }
     };
 
@@ -458,6 +462,53 @@ class RunScopedClosingTest {
     }
 
     @Test
+    @DisplayName("#893: a fatal Error only suppressed on a failed run's failure is thrown itself, carrying a failure"
+            + " ending the run that isn't fatal, and the run's failure is logged at WARN")
+    void suppressedFatalRunFailureWinsOverAFailureEndingTheRun() {
+        OutOfMemoryError fatal = new OutOfMemoryError("the rule ran out");
+        StackOverflowError injected = new StackOverflowError("injected");
+        // A listener may add to what the run failed with, so its fatal Error is only suppressed on it.
+        onRunError = error -> error.addSuppressed(fatal);
+        try (RulesEngine<Map<String, Object>> engine = engine(context -> {
+            context.runScopedClosing("key", () -> new Value("value"));
+            throw new IllegalStateException("the rule failed");
+        })) {
+            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
+
+            assertSame(fatal, outcome.thrown(), outcome.logs());
+            assertArrayEquals(new Throwable[] {injected}, fatal.getSuppressed(), "the ending's failure isn't kept");
+            assertEquals(List.of("A failure was replaced by the fatal error java.lang.OutOfMemoryError: the rule ran"
+                    + " out suppressed on it: " + ReportedFailure.class.getName() + ": Failed to execute action for"
+                    + " rule 'r': the rule failed"), outcome.lines("WARN"));
+            assertEquals(List.of("onRunError", "value closed"), events);
+        }
+    }
+
+    @Test
+    @DisplayName("#893: a run failure carrying an interrupt sets the thread's interrupt status again when a fatal Error"
+            + " only suppressed on it is thrown in its place, over a failure ending the run")
+    void suppressedFatalRunFailureKeepsTheInterrupt() {
+        OutOfMemoryError fatal = new OutOfMemoryError("the rule ran out");
+        StackOverflowError injected = new StackOverflowError("injected");
+        // Added by the listener, as an interrupt in what the rule threw would stop the run, which sets the status
+        // again itself.
+        onRunError = error -> {
+            error.addSuppressed(new InterruptedException("interrupted"));
+            error.addSuppressed(fatal);
+        };
+        try (RulesEngine<Map<String, Object>> engine = engine(context -> {
+            throw new IllegalStateException("the rule failed");
+        })) {
+            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+
+            assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertTrue(Thread.interrupted(), "the interrupt the replaced failure carried was lost");
+            assertArrayEquals(new Throwable[] {injected}, fatal.getSuppressed(), "the ending's failure isn't kept");
+        }
+    }
+
+    @Test
     @DisplayName("#850: a fatal Error inside what fails as a run ends is thrown itself")
     void fatalErrorInsideAnEndingFailureIsThrownItself() {
         OutOfMemoryError fatal = new OutOfMemoryError("ran out");
@@ -588,6 +639,41 @@ class RunScopedClosingTest {
 
             assertSame(logging, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Thread.interrupted(), "the interrupt that made close() fail was lost");
+        }
+    }
+
+    @Test
+    @DisplayName("#895: when logging a close() failure that holds an interrupt only as a suppressed exception fails,"
+            + " the thread's interrupt status is still set again")
+    void suppressedInterruptKeptWhenLoggingACloseFailureFails() {
+        StackOverflowError logging = new StackOverflowError("logging");
+        IllegalStateException failure = new IllegalStateException("interrupted while closing");
+        failure.addSuppressed(new InterruptedException("close interrupted"));
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("key", () -> new Value("value", failure)))) {
+            Faults.inject(Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
+
+            assertSame(logging, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertTrue(Thread.interrupted(), "the interrupt suppressed in what close() threw was lost");
+        }
+    }
+
+    @Test
+    @DisplayName("#895: a close() failure holding an interrupt only as a suppressed exception is logged, the run"
+            + " stands, and the thread's interrupt status is set again")
+    void interruptSuppressedInACloseFailureIsKept() {
+        // What a try-with-resources inside close() throws when its body fails and its resource's close() is
+        // interrupted.
+        IllegalStateException failure = new IllegalStateException("interrupted while closing");
+        failure.addSuppressed(new InterruptedException("close interrupted"));
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("key", () -> new Value("value", failure)))) {
+            Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
+
+            assertNull(outcome.thrown(), outcome.logs());
+            assertEquals(List.of(WARN_PREFIX + "interrupted while closing"), outcome.lines("WARN"));
+            assertTrue(Thread.interrupted(), "the interrupt suppressed in what close() threw was lost");
+            assertEquals(List.of("afterRun", "value closed"), events);
         }
     }
 
