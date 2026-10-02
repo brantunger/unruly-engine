@@ -257,6 +257,148 @@ class LoggedFailuresTest {
     }
 
     @Test
+    @DisplayName("a fatal Error a run that has ended logged deeper isn't nested in a run started after it")
+    void fatalLoggedDeeperByARunThatHasEnded() {
+        InternalError deeper = new InternalError("by a run that has ended");
+        InternalError own = new InternalError("by the run started after it");
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    assertTrue(LoggedFailures.unloggedFatal(deeper));
+                } finally {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(deeper), "on its way out");
+            LoggedFailures.enter();
+            try {
+                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(deeper), "a later sibling");
+                LoggedFailures.enter();
+                try {
+                    assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(deeper),
+                            "a run the sibling started");
+                } finally {
+                    LoggedFailures.leave();
+                }
+                assertTrue(LoggedFailures.unloggedFatal(own));
+                LoggedFailures.enter();
+                LoggedFailures.leave();
+                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(own), "its own level's");
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(deeper));
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(own));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("every fatal Error in a ring that has wrapped, logged deeper by runs that have ended, isn't nested"
+            + " in a run started after them")
+    void wrappedFatalRecordLoggedDeeperByRunsThatHaveEnded() {
+        List<InternalError> fatals = new ArrayList<>();
+        for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
+            fatals.add(new InternalError("by a run that has ended " + i));
+        }
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    for (InternalError fatal : fatals) {
+                        assertTrue(LoggedFailures.unloggedFatal(fatal));
+                    }
+                } finally {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertNull(LoggedFailures.loggedAt(fatals.get(0)), "pushed out of the ring");
+            List<InternalError> held = fatals.subList(1, fatals.size());
+            for (InternalError fatal : held) {
+                assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal), fatal.getMessage());
+            }
+            LoggedFailures.enter();
+            try {
+                // The newest is in the ring's first slot and the one before it in its last, past where the next goes.
+                for (InternalError fatal : held) {
+                    assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(fatal),
+                            fatal.getMessage());
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("a fatal Error logged deeper isn't nested in a later sibling when a shallower one was logged after it")
+    void fatalLoggedDeeperThenShallowerByRunsThatHaveEnded() {
+        InternalError deeper = new InternalError("by the deeper run");
+        InternalError shallower = new InternalError("by the run around it, after it ended");
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    assertTrue(LoggedFailures.unloggedFatal(deeper));
+                } finally {
+                    LoggedFailures.leave();
+                }
+                assertTrue(LoggedFailures.unloggedFatal(shallower));
+            } finally {
+                LoggedFailures.leave();
+            }
+            LoggedFailures.enter();
+            try {
+                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(deeper), "the deeper");
+                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(shallower), "the shallower");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("a fatal Error a load() logged through a run it started is still the load()'s once a sibling ran")
+    void fatalLoggedBelowALoadAfterASiblingRun() {
+        InternalError fatal = new InternalError("below a load");
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enterLoad();
+            try {
+                LoggedFailures.enter();
+                try {
+                    assertTrue(LoggedFailures.unloggedFatal(fatal));
+                } finally {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            LoggedFailures.enter();
+            LoggedFailures.leave();
+            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(fatal));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
     @DisplayName("a run nested at the depth of a load() that has ended is a run, not a load()")
     void runAfterALoadAtTheSameDepth() {
         InternalError fatal = new InternalError("by a run after a load");

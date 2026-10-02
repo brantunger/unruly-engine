@@ -378,6 +378,45 @@ class FactPropertiesFailureLogTest {
     }
 
     @Test
+    @DisplayName("a fatal Error a run nested one level deeper logged, thrown again by a getter a later run reads, is"
+            + " named with that read")
+    void aFatalErrorLoggedDeeperEarlierThrownAgainByAGetter() {
+        OutOfMemoryError oom = new OutOfMemoryError("simulated heap exhaustion");
+        RulesEngine<Map<String, Object>> inner = engine("inner-rule", new StubExpressionLanguage().action(
+                (context, session) -> {
+                    throw oom;
+                }), "c");
+        RulesEngine<Map<String, Object>> first = engine("first-rule", new StubExpressionLanguage().action(
+                (context, session) -> {
+                    inner.run(new FactMap<>());
+                    return ActionResult.done();
+                }), "c");
+        RulesEngine<Map<String, Object>> second = engine("second-rule", new ToyExpressionLanguage(),
+                "item.price == 5");
+        Item item = new Item(() -> {
+            throw oom;
+        });
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", new StubExpressionLanguage().action(
+                (context, session) -> {
+                    try {
+                        first.run(new FactMap<>());
+                    } catch (OutOfMemoryError e) {
+                        // Handled: the application carries on, and a later run meets the same instance.
+                    }
+                    second.run(new FactMap<>(new Fact<>("item", item)));
+                    return ActionResult.done();
+                }), "c");
+
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of("Failed to execute action for rule 'inner-rule': simulated heap exhaustion",
+                "Failed to evaluate condition for rule 'second-rule': Reading 'price' on a " + Item.class.getName()
+                        + " failed: simulated heap exhaustion (caused by java.lang.OutOfMemoryError: simulated heap "
+                        + "exhaustion, already logged)"), outcome.lines("ERROR"), outcome.logs());
+    }
+
+    @Test
     @DisplayName("a nested load()'s fatal Error out of a getter is logged once, by the load, and rethrown")
     void aNestedLoadsFatalErrorFromAGetter() {
         OutOfMemoryError oom = new OutOfMemoryError("simulated heap exhaustion");

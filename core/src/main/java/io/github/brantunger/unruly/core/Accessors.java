@@ -147,9 +147,9 @@ public final class Accessors {
     }
 
     /**
-     * Tells whether a run nested in the one in progress on this thread logged a fatal error, rather than that run or
-     * one around it, which logged it earlier and may see the same instance thrown again, as the JVM throws the
-     * {@link OutOfMemoryError} it keeps ready.
+     * Tells whether a run nested in the one in progress on this thread logged a fatal error, rather than that run, one
+     * around it, or a nested run that had ended before it started, however deep, which logged it earlier, and the same
+     * instance may be thrown again, as the JVM throws the {@link OutOfMemoryError} it keeps ready.
      */
     private static boolean loggedBelow(Error fatal) {
         LoggedFailures.LoggedAt at = LoggedFailures.loggedAt(fatal);

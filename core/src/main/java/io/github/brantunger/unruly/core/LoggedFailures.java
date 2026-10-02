@@ -92,11 +92,11 @@ final class LoggedFailures {
 
     /**
      * What is in progress on one thread, the last {@value #MAX_LOGGED} fatal {@link Error}s logged while it was, with
-     * how deep the run that logged each was and which of the runs it was nested in were a {@code load()} or a
-     * {@code validate()}, in rings created with it, before any fails, so recording an {@link OutOfMemoryError}
-     * allocates nothing, the last {@value #MAX_LOGGED} failures nested runs and loads logged, in a ring created
-     * with the first of them, and the last {@value #MAX_LOGGED} exceptions the engine built around a failure, in a
-     * ring created with the first of those.
+     * how deep the run that logged each was, or, if a shallower run has started since, how deep the shallowest such run
+     * was, and which of the runs it was nested in were a {@code load()} or a {@code validate()}, in rings created with
+     * it, before any fails, so recording an {@link OutOfMemoryError} allocates nothing, the last {@value #MAX_LOGGED}
+     * failures nested runs and loads logged, in a ring created with the first of them, and the last
+     * {@value #MAX_LOGGED} exceptions the engine built around a failure, in a ring created with the first of those.
      */
     private static final class Runs {
         private int depth;
@@ -107,6 +107,8 @@ final class LoggedFailures {
         private final int[] fatalDepth = new int[MAX_LOGGED];
         private final long[] fatalLoads = new long[MAX_LOGGED];
         private int nextFatal;
+        // No fatal Error is recorded deeper than this, so a run that starts no shallower lowers none.
+        private int deepestFatal;
         private Logged[] logged;
         private int next;
         private Throwable[] built;
@@ -115,7 +117,9 @@ final class LoggedFailures {
 
     /**
      * Counts a run, a {@code load()}, a {@code validate()} or a {@code close()} starting on this thread, until
-     * {@link #leave()}.
+     * {@link #leave()}. A fatal {@link Error} logged deeper than it starts was logged by a run that has ended, which
+     * isn't below it: it's recorded as logged at the depth it starts at, as a run that ended there would have logged
+     * it (see {@link #loggedAt}).
      */
     static void enter() {
         Faults.at(Faults.Step.RUN_COUNTED);
@@ -124,7 +128,17 @@ final class LoggedFailures {
             runs = new Runs();
             RUNS.set(runs);
         }
-        runs.depth++;
+        // Settled before the run is counted, calling nothing, so a throw here counts nothing.
+        int depth = runs.depth + 1;
+        if (runs.deepestFatal > depth) {
+            for (int i = 0; i < MAX_LOGGED; i++) {
+                if (runs.fatalDepth[i] > depth) {
+                    runs.fatalDepth[i] = depth;
+                }
+            }
+            runs.deepestFatal = depth;
+        }
+        runs.depth = depth;
     }
 
     /**
@@ -215,6 +229,7 @@ final class LoggedFailures {
         }
         runs.loggedFatal[runs.nextFatal] = fatal;
         runs.fatalDepth[runs.nextFatal] = runs.depth;
+        runs.deepestFatal = Math.max(runs.deepestFatal, runs.depth);
         runs.fatalLoads[runs.nextFatal] = runs.loads;
         runs.nextFatal = (runs.nextFatal + 1) % MAX_LOGGED;
         return true;
@@ -244,8 +259,8 @@ final class LoggedFailures {
         /** Below a {@code load()} or a {@code validate()} the innermost run in progress started. */
         NESTED_LOAD,
         /**
-         * By the innermost run in progress, or one around it, or a nested run that has ended at the same depth, such
-         * as one before it that logged the same {@link OutOfMemoryError} the JVM throws again and again.
+         * By the innermost run in progress, or one around it, or a nested run that ended before it started, at any
+         * depth, such as one before it that logged the same {@link OutOfMemoryError} the JVM throws again and again.
          */
         NOT_BELOW
     }
@@ -254,7 +269,8 @@ final class LoggedFailures {
      * Tells where a fatal {@link Error} that was logged already on this thread was logged, for the code that wraps it
      * in an exception of its own (see {@link Failures#describe}): below what the innermost run in progress started, a
      * {@code run()} or a {@code load()}, named for what it started, however deep below that it was logged, or not
-     * below it. A level's own fatal error, such as the one in the failure a listener is told of, is never nested.
+     * below it. A level's own fatal error, such as the one in the failure a listener is told of, is never nested, nor
+     * is one logged by a run that had ended before the innermost run in progress started, however deep that run was.
      *
      * @param fatal The fatal error
      * @return Where that very instance was logged, or {@code null} if it wasn't, it was logged before the last
