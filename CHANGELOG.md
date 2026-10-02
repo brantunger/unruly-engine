@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.0](https://github.com/brantunger/unruly-engine/compare/v2.20.7...v2.21.0) (2026-10-02)
+
+
+### Features
+
+* the contract kit's repeat checks run a valid rule before the rejected one, so a session a failure leaves broken fails them ([#939](https://github.com/brantunger/unruly-engine/issues/939)) ([cb78b60](https://github.com/brantunger/unruly-engine/commit/cb78b600cc0838978da570100c8ecd6cfdc41728))
+
 ## [2.20.7](https://github.com/brantunger/unruly-engine/compare/v2.20.6...v2.20.7) (2026-10-02)
 
 
