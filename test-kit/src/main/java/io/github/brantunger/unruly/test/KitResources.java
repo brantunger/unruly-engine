@@ -73,15 +73,14 @@ final class KitResources {
 
     /**
      * Closes a session or a compiler, ignoring what its {@code close()} throws that the engine only logs. A fatal
-     * {@link Error} (see {@link KitFailures#isFatal}) is thrown on.
+     * {@link Error} it throws or carries (see {@link KitFailures#fatalError}) is thrown on.
      *
      * <p>
      * {@code evaluateAgreesWithDetail} also wraps the end of each of its runs in one: a {@code close()} that calls
      * {@link LanguageTestContexts#endRun}, as the engine ends a run. So a value the language kept for the run with
      * {@code runScopedClosing}, whose {@code close()} throws what the engine only logs, doesn't fail the check, and
-     * one that throws a fatal error fails it with that error, as the engine throws it from {@code run()}. Only what
-     * {@code endRun} throws is looked at, not what it carries: a fatal error suppressed on another value's failure is
-     * ignored, where the engine would throw it.
+     * one that throws a fatal error fails it with that error, as the engine throws it from {@code run()}, a fatal error
+     * suppressed on another value's failure too.
      * </p>
      *
      * @param resource The session or compiler, or the end of a run
@@ -89,8 +88,8 @@ final class KitResources {
      */
     record ClosedQuietly<T extends AutoCloseable>(T resource) implements AutoCloseable {
 
-        // Anything but a fatal Error, a checked exception thrown sneakily and a StackOverflowError included: the
-        // engine logs any Exception or Error but a fatal one.
+        // Anything but a fatal Error, thrown or carried, a checked exception thrown sneakily and a StackOverflowError
+        // included: the engine logs any Exception or Error at WARN, and rethrows the fatal error one is or carries.
         @Override
         public void close() {
             try {

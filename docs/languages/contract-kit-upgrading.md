@@ -10,6 +10,21 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.20
+
+In 2.20.3 one check got stricter and none was added. The kit now finds a fatal error, any `VirtualMachineError`
+but `StackOverflowError`, where the engine finds it: thrown, or carried as a cause or a suppressed exception at any
+depth. It also reads the suppressed exceptions the engine added itself, which the engine skips, so it can find one
+the engine doesn't.
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `evaluateAgreesWithDetail` | Throws a fatal error carried as a cause or a suppressed exception from `evaluate`, `evaluateWithDetail`, a session's or compiler's `close()`, or the `close()` of a value kept with `runScopedClosing`, one value's fatal error kept on another value's exception when the run ends included | The engine rethrows that error, where the check passed or failed with its own message |
+
+The failure is the fatal error itself, thrown on. `compilerClosed`, the three session checks and `concurrentRuns`
+already failed with the error the engine rethrows; they no longer attach the exception that carried it as one the
+engine only logs.
+
 ## 🔼 Upgrading from 2.16
 
 In 2.17.0 `sharedStateStaysLocal` was added and no check got stricter. A subclass written for the 2.16 kit still

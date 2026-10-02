@@ -554,6 +554,50 @@ class ConditionDetailKitCheckTest {
     }
 
     @Test
+    @DisplayName("a fatal error carried as a cause or a suppressed exception by what evaluateWithDetail or evaluate"
+            + " throws, evaluate where evaluateWithDetail threw an exception too, fails the agreement check with that"
+            + " error, as the engine throws it (#894)")
+    void carriedFatalConditionErrorThrownOn() {
+        InternalError crash = new InternalError("the condition's native runtime crashed");
+        ConditionPath asCause = integersOnly(() -> new IllegalStateException("evaluation failed", crash));
+        ConditionPath suppressed = integersOnly(() -> {
+            IllegalStateException body = new IllegalStateException("evaluation failed");
+            body.addSuppressed(crash);
+            return body;
+        });
+
+        InternalError fromDetail = assertThrows(InternalError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), OWN, asCause), "evaluateAgreesWithDetail"));
+        InternalError fromEvaluate = assertThrows(InternalError.class,
+                () -> runCheck(twoPaths(new ToyExpressionLanguage(), suppressed, OWN), "evaluateAgreesWithDetail"));
+        InternalError fromBoth = assertThrows(InternalError.class, () -> runCheck(
+                twoPaths(new ToyExpressionLanguage(), suppressed, asCause), "evaluateAgreesWithDetail"));
+        InternalError afterDetailThrew = assertThrows(InternalError.class, () -> runCheck(
+                twoPaths(new ToyExpressionLanguage(), asCause, INTEGERS_ONLY), "evaluateAgreesWithDetail"));
+
+        assertSame(crash, fromDetail);
+        assertSame(crash, fromEvaluate);
+        assertSame(crash, fromBoth);
+        assertSame(crash, afterDetailThrew);
+    }
+
+    @Test
+    @DisplayName("a fatal error carried by what a session's close() throws fails the agreement check with that error,"
+            + " and the compiler is still closed (#894)")
+    void carriedFatalSessionCloseThrownOn() {
+        List<String> closes = new CopyOnWriteArrayList<>();
+        InternalError crash = new InternalError("the session's native runtime crashed");
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(recordingCloses(
+                new ToyExpressionLanguage(), closes, what -> "session".equals(what)
+                        ? new IllegalStateException("failed to release the session", crash) : null),
+                "evaluateAgreesWithDetail"));
+
+        assertSame(crash, failure);
+        assertEquals(List.of("session", "compiler"), closes);
+    }
+
+    @Test
     @DisplayName("a language whose evaluate alone throws an exception whose message can't be read fails the agreement"
             + " check with the kit's message (#657)")
     void onlyEvaluateThrowingUnreadableFails() {
@@ -639,6 +683,63 @@ class ConditionDetailKitCheckTest {
                 });
             }
         };
+    }
+
+    /**
+     * Wraps a language so that each condition keeps two values for its run with
+     * {@link EvaluationContext#runScopedClosing}, the first of which throws what {@code first} supplies when it's
+     * closed, and the second what {@code second} supplies, whatever their types. The run ends by closing the second
+     * first, so what the first throws is suppressed on what the second throws.
+     */
+    private static ExpressionLanguage keepingTwoClosingValues(ExpressionLanguage language,
+                                                              Supplier<? extends Throwable> first,
+                                                              Supplier<? extends Throwable> second) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return new CompiledCondition() {
+                            @Override
+                            public Object evaluate(EvaluationContext evaluation, Session session) throws Exception {
+                                keep(evaluation);
+                                return condition.evaluate(evaluation, session);
+                            }
+
+                            @Override
+                            public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session)
+                                    throws Exception {
+                                keep(evaluation);
+                                return condition.evaluateWithDetail(evaluation, session);
+                            }
+                        };
+                    }
+                };
+            }
+
+            private void keep(EvaluationContext evaluation) {
+                evaluation.runScopedClosing("first",
+                        () -> () -> TestSupport.<RuntimeException>sneakyThrow(first.get()));
+                evaluation.runScopedClosing("second",
+                        () -> () -> TestSupport.<RuntimeException>sneakyThrow(second.get()));
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("a fatal error from closing a value kept for a run, suppressed on what closing another value threw,"
+            + " fails the agreement check with that error, as the engine throws it (#894)")
+    void suppressedFatalRunValueCloseThrownOn() {
+        InternalError crash = new InternalError("the run's native runtime crashed");
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(keepingTwoClosingValues(
+                new ToyExpressionLanguage(), () -> crash, () -> new IllegalStateException("failed to release")),
+                "evaluateAgreesWithDetail"));
+
+        assertSame(crash, failure);
     }
 
     private static List<String> eachFactsValueThenTheSessionAndCompiler() {

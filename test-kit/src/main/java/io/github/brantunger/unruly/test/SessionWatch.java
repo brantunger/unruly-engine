@@ -190,14 +190,17 @@ final class SessionWatch {
             this.session = session;
         }
 
-        // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception or Error.
+        // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception or Error at
+        // WARN, and rethrows the fatal error one is or carries, which fails the check by itself.
         @Override
         public void close() {
             closes.incrementAndGet();
             try {
                 session.close();
             } catch (Throwable e) {
-                closeFailures.add(e);
+                if (!KitFailures.isFatal(e)) {
+                    closeFailures.add(e);
+                }
                 throw e;
             }
         }

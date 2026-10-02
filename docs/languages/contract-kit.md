@@ -202,9 +202,9 @@ closes. The engine calls only `evaluateWithDetail`, so without this check an `ev
 that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
 language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
 
-In the table, "both throw" means an exception or a non-fatal `Error`, such as `StackOverflowError`, from each. A
-fatal one, a `VirtualMachineError` other than `StackOverflowError`, is thrown on unchanged. Anything else a
-`close()` throws passes: `compilerClosed` and the three session checks own that.
+In the table, "both throw" means an exception or a non-fatal `Error` from each. A fatal one, any `VirtualMachineError`
+but `StackOverflowError`, is thrown on, even as a cause or suppressed. Anything else a `close()` throws passes:
+`compilerClosed` and the three session checks own that.
 
 `evaluateAgreesWithDetail` tries four number types: an `evaluate` that compares by type and an `evaluateWithDetail`
 that compares by value agree only for an `Integer`.
