@@ -241,10 +241,10 @@ expression language`, and every failure is logged at ERROR. The engine shortens 
 warning's issue, as [Exceptions by method](../exceptions-by-method.md) describes. Any other exception with no message
 shows its class name, and any root cause's in `(caused by ...)`.
 
-An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a
-message. Leave a message the engine shortens raw: the engine escapes it itself, and shortening escaped text can cut
-an escape in half. A warning's issue is one. Text the engine shows as it came, such as the issues you throw, is yours
-to make safe: since 2.16.0, `io.github.brantunger.unruly.api.language.MessageText` has `quote(name)` for a name and
+An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
+Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`; its cut never
+splits one. Text the engine shows as it came, such as the issues you throw, is yours to make safe: since 2.16.0,
+`io.github.brantunger.unruly.api.language.MessageText` has `quote(name)` for a name and, as `truncate` cuts plainly,
 `escape(truncate(text))` for other text.
 
 The `RuleCompilationException` carries the same issues; for several rules its message is `2 rules failed to compile:

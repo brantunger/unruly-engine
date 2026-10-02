@@ -599,7 +599,10 @@ public final class Failures {
      *     {@link #messageOf}), and likewise for a cause</li>
      * </ul>
      * The message is shortened before it's escaped, so the count of what was left out counts the exception's own
-     * characters. The exception is never changed: its {@code getMessage()} still reads as the language wrote it.
+     * characters. Every message is shortened as {@link #clip} shortens it, never inside an escape, with up to 5 fewer
+     * characters shown: the message of an exception the engine built, or of one that copies such a message, holds
+     * escapes already, and the count counts it as it's held, escaped where it was escaped. The exception is never
+     * changed: its {@code getMessage()} still reads as the language wrote it.
      * A failure of a {@code run()} or a {@code load()} started from a condition, an action, the output supplier, a
      * listener callback or a language is described by the innermost failure it logged only, as
      * {@code a nested run() failed: } or {@code a nested load() failed: } and that failure, so a failure nested many
@@ -623,7 +626,7 @@ public final class Failures {
      * The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
      * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
      * written (see {@link #noteText}). A nested failure's text is mostly text the engine has already escaped, so where
-     * it's shortened, in a note or alone (see {@link #loggedText}), it's shortened as {@link #clipNested} shortens it:
+     * it's shortened, in a note or alone (see {@link #loggedText}), it's shortened as {@link #clip} shortens it too:
      * never inside an escape, and counting the characters of the nested failure's message as it's held. A fatal
      * {@link Error} logged already, wrapped in an exception that says something of its own (see
      * {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
@@ -656,7 +659,7 @@ public final class Failures {
                 return withNote(news, note);
             }
             String text = clip(messageOr(e, e.getClass().getName()));
-            return text + causeNote(chain, shownOf(readableMessage(e), false));
+            return text + causeNote(chain, shownOf(readableMessage(e)));
         }
         String nested = nested(below.loggedByLoad());
         Throwable news = below.news();
@@ -732,7 +735,7 @@ public final class Failures {
      * text {@link #loggedText} returns, shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole before it's
      * escaped, as {@link #quoteAll} shortens a list, because the nested failure may itself hold news, run after run.
      * The engine wrote most of that text and escaped it already, a {@link ReportedFailure}'s message included, so it's
-     * shortened as {@link #clipNested} shortens it, never inside an escape. Its text names the root cause if it's
+     * shortened as {@link #clip} shortens it, never inside an escape. Its text names the root cause if it's
      * hidden, so the note of the exception around it doesn't.
      *
      * @param logged The nested failure
@@ -741,19 +744,19 @@ public final class Failures {
     private static String noteText(Throwable logged) {
         String message = messageOr(logged, logged.getClass().getName());
         if (logged instanceof ReportedFailure) {
-            return clipNested(message);
+            return clip(message);
         }
         // Shortened before it's escaped, as a whole, and before an escape the message already holds, so a cut never
         // falls inside an escape.
-        String note = rawCauseNote(causeChain(logged), shownOf(readableMessage(logged), true));
-        return clipNested(escape(message).contains(escape(note)) ? message : message + note);
+        String note = rawCauseNote(causeChain(logged), shownOf(readableMessage(logged)));
+        return clip(escape(message).contains(escape(note)) ? message : message + note);
     }
 
     /**
      * Returns the text a nested run or load logged a failure with, as the run around it names it: the message of a
      * {@link ReportedFailure}, which the engine wrote, or else the exception described as {@link #describe} describes
-     * one whose cause chain holds no nested failure, which escapes a message a language wrote, except that the message
-     * is shortened as {@link #clipNested} shortens it: the engine wrote most such messages, such as a rule that fails
+     * one whose cause chain holds no nested failure, which escapes a message a language wrote and shortens it as
+     * {@link #clip} shortens it, never inside an escape: the engine wrote most such messages, such as a rule that fails
      * to compile or a fact it rejects, and escaped the names and text in them already. The note of a root
      * cause it would otherwise hide is left out when the message already has it, as a message the engine wrote from
      * a language's exception does, so it isn't there twice, as {@link #describeWithClass} leaves it out.
@@ -765,8 +768,8 @@ public final class Failures {
         if (logged instanceof ReportedFailure) {
             return messageOf(logged);
         }
-        String text = clipNested(messageOr(logged, logged.getClass().getName()));
-        String note = causeNote(causeChain(logged), shownOf(readableMessage(logged), true));
+        String text = clip(messageOr(logged, logged.getClass().getName()));
+        String note = causeNote(causeChain(logged), shownOf(readableMessage(logged)));
         return text.contains(note) ? text : text + note;
     }
 
@@ -775,10 +778,9 @@ public final class Failures {
      * and message when an exception above it has none, unless the part of the first exception's text that the
      * description shows already has it: the first message for {@link #describe}, its {@code toString()} for
      * {@link #describeWithClass}. That part is the text's first {@value #MAX_DESCRIPTION_LENGTH} characters as
-     * {@link #truncate} keeps them, or as {@link #clipNested} keeps them for a nested failure's text (see
-     * {@link #shownOf}), searched raw, without the note of what was left out: a root cause's
-     * message found only past the cut isn't shown, and searching all of a long text took time that grew with the
-     * square of its length. A message that can't be read (see {@link #messageOf})
+     * {@link #clip} keeps them (see {@link #shownOf}), searched raw, without the note of what was left out: a root
+     * cause's message found only past the cut isn't shown, and searching all of a long text took time that grew with
+     * the square of its length. A message that can't be read (see {@link #messageOf})
      * hides the root cause as a missing one does, and a root cause whose message can't be read is named with the note
      * that it's unavailable. Only a text that can be read can already show the root cause's message: two notes that
      * messages are unavailable read the same whatever the messages were.
@@ -795,7 +797,9 @@ public final class Failures {
 
     /**
      * Names the root cause as {@link #causeNote} does, before the note is escaped: the root cause's class shortened as
-     * {@link #quote} shortens a name, and its message as {@link #truncate} shortens one.
+     * {@link #quote} shortens a name, and its message as {@link #shortenBeforeEscape} shortens one, never inside an
+     * escape: the message of a root cause the engine built holds escapes already, and escaping the note after, or
+     * shortening it again with the text it follows (see {@link #noteText}), can't mend one cut in half.
      *
      * @param chain An exception and its causes
      * @param shown As for {@link #causeNote}
@@ -813,34 +817,34 @@ public final class Failures {
         boolean hidden = !chain.stream().allMatch(t -> readableMessage(t) != null)
                 && (shown == null || !shown.contains(rootMessage));
         return hidden
-                ? " (caused by " + shorten(root.getClass().getName()) + ": " + truncate(rootMessage) + ")"
+                ? " (caused by " + shorten(root.getClass().getName()) + ": " + shortenBeforeEscape(rootMessage) + ")"
                 : "";
     }
 
     /**
      * Returns the part of a text that a description shows, for {@link #causeNote} to search: the characters it keeps
      * themselves, not the shortened text, whose note of what was left out could match. That's the whole text if it
-     * fits, or else its first characters as {@link #truncate} keeps them, or as {@link #clipNested} keeps them for a
-     * nested failure's text, which can be up to 5 fewer.
+     * fits, or else its first characters as {@link #clip} keeps them, which can be up to 5 fewer than
+     * {@link #truncate} keeps.
      *
-     * @param text   The text, or {@code null} if there's none that can be read
-     * @param nested Whether the text is a nested failure's, shortened by {@link #clipNested}
+     * @param text The text, or {@code null} if there's none that can be read
      * @return The part shown, or {@code null} if {@code text} is
      */
-    private static @Nullable String shownOf(@Nullable String text, boolean nested) {
+    private static @Nullable String shownOf(@Nullable String text) {
         if (text == null || text.length() <= MAX_DESCRIPTION_LENGTH) {
             return text;
         }
-        return text.substring(0, nested ? nestedKeptLength(text) : keptLength(text, MAX_DESCRIPTION_LENGTH));
+        return text.substring(0, keptBeforeEscape(text));
     }
 
     /**
      * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
      * calls outside any rule, such as the output factory: shortened to {@value #MAX_DESCRIPTION_LENGTH} characters,
-     * then escaped, like {@link #describe}, and naming a root cause it would otherwise hide as {@link #describe} does.
-     * The root cause counts as shown only when the part of the {@code toString()} this shows, its first
-     * {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #truncate} keeps them, has its message, so neither a class
-     * name that pushes the message past the cut nor a {@code toString()} that leaves the message out hides it. The
+     * then escaped, as {@link #clip} does, like {@link #describe}, so a message the engine escaped is never cut inside
+     * an escape, and naming a root cause it would otherwise hide as {@link #describe} does. The root cause counts as
+     * shown only when the part of the {@code toString()} this shows, its first {@value #MAX_DESCRIPTION_LENGTH}
+     * characters as {@link #clip} keeps them, has its message, so neither a class name that pushes the message past
+     * the cut nor a {@code toString()} that leaves the message out hides it. The
      * note is left out when the text already has it, as the message of a {@code run()} started from that code does
      * unless it was shortened, so it isn't there twice. When {@code toString()} throws, its class name stands in with a
      * note that its message is unavailable (see {@link #textOf}), which shows no root cause.
@@ -852,7 +856,7 @@ public final class Failures {
     static String describeWithClass(Throwable e) {
         String readable = read(e::toString, thrown -> null);
         String text = clip(readable != null ? readable : textOf(e));
-        String note = causeNote(causeChain(e), shownOf(readable, false));
+        String note = causeNote(causeChain(e), shownOf(readable));
         return text.contains(note) ? text : text + note;
     }
 
@@ -976,42 +980,44 @@ public final class Failures {
     }
 
     /**
-     * Makes text the engine didn't write safe to put in a message: shortened as {@link #truncate} shortens it, then
-     * {@link #escape escaped}, so a cut never falls inside an escape.
+     * Makes text safe to put in a message: shortened as {@link #shortenBeforeEscape} shortens it, then
+     * {@link #escape escaped}. Raw text, such as a name or a language's message, is never cut inside an escape, as it's
+     * escaped after it's cut. Text can hold escapes already, though: the message of an exception the engine built,
+     * such as a rule that fails to compile or a fact it rejects, with a language's message or a name in it, a nested
+     * failure's message, and a message of a rule's own that copies one. Those are cut before an escape, never inside
+     * one, so up to 5 fewer characters show; where raw text only reads as an escape, those characters are lost.
      *
      * @param text The text
      * @return The text, shortened if it was longer, then escaped
      */
     static String clip(String text) {
-        return escape(truncate(text));
+        return escape(shortenBeforeEscape(text));
     }
 
     /**
-     * Makes the text of a nested failure safe to put in a message, as {@link #clip} makes text the engine didn't write:
-     * shortened as {@link #truncate} shortens it, then escaped. That text is mostly a message the engine has already
-     * escaped, such as a rule that fails to compile, with a language's message or a name in it, so where the limit
-     * falls inside an escape {@link #escape} writes ({@code \n}, {@code \r}, {@code \t}, or a backslash, {@code u}
-     * and four lowercase hex digits), the escape is left out whole, and the text shows at most 5 characters fewer.
-     * {@link #escape} doesn't escape a backslash, so text that only reads as an escape is left out the same way.
-     * The count of what was left out counts the characters of the text as given: the nested failure's message as it's
-     * held, escaped where the engine escaped it, and a language's raw text otherwise. So it matches the count in the
-     * line the nested failure was logged with only when that line shows the same text.
+     * Shortens text to at most {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #truncate} does, except where the
+     * limit falls inside an escape {@link #escape} writes ({@code \n}, {@code \r}, {@code \t}, or a backslash,
+     * {@code u} and four lowercase hex digits): the escape is left out whole, and the text keeps at most 5 characters
+     * fewer. {@link #escape} doesn't escape a backslash, so text that only reads as an escape is left out the same way.
+     * The count of what was left out counts the characters of the text as given: escaped where it was escaped already,
+     * such as a nested failure's message as it's held, and raw otherwise. So it matches the count in the line a nested
+     * failure was logged with only when that line shows the same text.
      *
-     * @param text The text
-     * @return The text, shortened if it was longer, then escaped
+     * @param text The text, escaped or not
+     * @return The text, shortened if it was longer, not escaped
      */
-    static String clipNested(String text) {
+    private static String shortenBeforeEscape(String text) {
         if (text.length() <= MAX_DESCRIPTION_LENGTH) {
-            return escape(text);
+            return text;
         }
-        return escape(cut(text, nestedKeptLength(text)));
+        return cut(text, keptBeforeEscape(text));
     }
 
     /**
-     * How many characters of text longer than {@value #MAX_DESCRIPTION_LENGTH} {@link #clipNested} keeps: as many as
-     * {@link #truncate} keeps, or fewer, up to the backslash of an escape they would end inside.
+     * How many characters of text longer than {@value #MAX_DESCRIPTION_LENGTH} {@link #shortenBeforeEscape} keeps: as
+     * many as {@link #truncate} keeps, or fewer, up to the backslash of an escape they would end inside.
      */
-    private static int nestedKeptLength(String text) {
+    private static int keptBeforeEscape(String text) {
         int kept = keptLength(text, MAX_DESCRIPTION_LENGTH);
         int backslash = text.lastIndexOf('\\', kept - 1);
         return backslash >= 0 && backslash + escapeLength(text, backslash) > kept ? backslash : kept;
@@ -1370,8 +1376,8 @@ public final class Failures {
 
     /**
      * Makes a list of names safe to put in a message, shown as a {@link java.util.List}'s {@code toString()} shows it,
-     * such as {@code [eu, retail]}: each name shortened as {@link #quote} does, the list shortened as
-     * {@link #truncate} does, and the whole escaped last, so a cut never falls inside an escape. The count of what was
+     * such as {@code [eu, retail]}: each name shortened as {@link #quote} does, the list shortened and the whole
+     * escaped last, as {@link #clip} does, so a cut never falls inside an escape. The count of what was
      * left out of the list counts the characters of the list as it was before it was escaped: the shortened names, the
      * notes of what was left out of each, and the separators.
      *

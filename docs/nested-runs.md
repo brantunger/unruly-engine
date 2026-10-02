@@ -135,14 +135,17 @@ Rejected facts or another failure thrown as is, kept from an earlier outermost r
 on as is, or by the wrapper's message, which is their `toString()`, when wrapped in `new RuntimeException(e)`. They
 are logged again, as the thread forgot them.
 
-The nested failure's message is mostly escaped already, so where it's shortened, as a note or as a failed `load()` or
-rejected facts, the cut never splits an escape: the whole escape is left out, so up to 5 fewer characters show. Its
-`(N more characters)` counts the characters of the message as the nested failure holds it: escaped where the engine
-escaped it, a language's raw text otherwise. It matches the nested line's count only when that line shows the same
-text.
+The nested failure's message is mostly escaped already. Where it's shortened, as a note or as a failed `load()` or
+rejected facts, it's cut as the engine cuts any text to 1,000 characters, never inside an escape: the whole escape is
+left out, so up to 5 fewer characters show. The wrapper's own words are cut the same way, so nested text your
+message copies isn't split either.
+
+The `(N more characters)` count counts the characters of the message as the nested failure holds it: escaped where the
+engine escaped it, a language's raw text otherwise. It matches the nested line's count only when that line shows the
+same text.
 
 A language's raw text that reaches the same cut, such as its rejection of a fact name, is cut before anything that
-reads as an escape too, so it can show up to 5 fewer characters than the nested line.
+reads as an escape too, as the nested line cuts it.
 
 A wrapper that adds nothing is left out, and the nested text stands alone: one with no message, one whose message is
 its cause's `toString()`, as `new RuntimeException(cause)` makes, or its cause's message, or the nested failure's text.

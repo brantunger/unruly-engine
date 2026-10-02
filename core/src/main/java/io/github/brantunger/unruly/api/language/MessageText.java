@@ -23,10 +23,13 @@ import java.util.Objects;
  * {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException}, the message of a warning's issue when
  * it logs it, and the message of an exception from {@link ExpressionCompiler#checkFactName} when it logs it or, at
  * {@code load()}, reports it for a declared fact. <b>Leave a message the engine shortens raw: the engine escapes it
- * itself, and shortening escaped text can cut an escape in half.</b> The count of what was left out would then count
- * escaped characters too. The MVEL language escapes the messages of its compile errors, and of its rejections of a
- * fact name, an option's name or value, a declared or output type, or any language imports, itself, but fits each
- * escaped message in 1,000 characters, so the engine never shortens one it reports directly.
+ * itself, and the count of what was left out of escaped text counts escaped characters.</b> Where the 1,000-character
+ * limit falls inside an escape the engine writes, or inside text that reads as one (a backslash and {@code n},
+ * {@code r} or {@code t}, or a backslash, {@code u} and four lowercase hex digits), the engine leaves it out whole, so
+ * up to 5 fewer characters show. The MVEL language escapes the messages
+ * of its compile errors, and of its rejections of a fact name, an option's name or value, a declared or output type,
+ * or any language imports, itself, but fits each escaped message in 1,000 characters, so the engine never shortens
+ * one it reports directly.
  * </p>
  *
  * <p>
@@ -57,11 +60,10 @@ public final class MessageText {
      * </p>
      *
      * <p>
-     * To put long text in a message, shorten it first and escape it after, {@code escape(truncate(text))}, as the
-     * engine does, so a cut never falls inside an escape. The result can be up to six times longer than the 1,000
+     * To put long text in a message, shorten it first and escape it after, {@code escape(truncate(text))}, so a cut
+     * never falls inside an escape this writes. The result can be up to six times longer than the 1,000
      * characters kept, since a character escapes to at most 6, so use it only for text the engine won't shorten again.
-     * Leave a message the engine shortens raw: the engine escapes it itself, and shortening escaped text can cut an
-     * escape in half (see the class description).
+     * Leave a message the engine shortens raw: the engine escapes it itself (see the class description).
      * </p>
      *
      * @param text The text
