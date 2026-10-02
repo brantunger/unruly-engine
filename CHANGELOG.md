@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.20.7](https://github.com/brantunger/unruly-engine/compare/v2.20.6...v2.20.7) (2026-10-02)
+
+
+### Bug Fixes
+
+* mvel fits its fact-name and option rejections in 1,000 characters, so a long control-character name isn't cut inside an escape ([#935](https://github.com/brantunger/unruly-engine/issues/935)) ([4268a79](https://github.com/brantunger/unruly-engine/commit/4268a79b3a577b354cb8f2b9b42d392b98f8d4d3))
+
 ## [2.20.6](https://github.com/brantunger/unruly-engine/compare/v2.20.5...v2.20.6) (2026-10-02)
 
 
