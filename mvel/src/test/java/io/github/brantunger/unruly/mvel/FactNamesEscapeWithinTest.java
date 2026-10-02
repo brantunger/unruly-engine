@@ -94,4 +94,18 @@ class FactNamesEscapeWithinTest {
     void roomForCountAlone() {
         assertEquals("... (3 more characters)", FactNames.escapeWithin("a\nb", 3));
     }
+
+    @Test
+    @DisplayName("a message quotes a name within what the rest leaves, and a name that doesn't fit as the count alone "
+            + "when the rest leaves too little room")
+    void quotedWithinTheRest() {
+        assertEquals("<n\\nm>", FactNames.quotedWithin("<", "n\nm", ">", 6));
+        assertEquals("<a... (25 more characters)>", FactNames.quotedWithin("<", "abcdefghijklmnopqrstuvwxyz", ">", 27));
+        // #875: the rest can leave less room than the count takes, or none at all, as a long class name after the name
+        // does; an empty name, of which nothing is left out, is still quoted as empty.
+        assertEquals("<... (50 more characters)>", FactNames.quotedWithin("<", "a".repeat(50), ">", 12));
+        String after = "x".repeat(FactNames.MAX_DESCRIPTION_LENGTH);
+        assertEquals("<... (3 more characters)" + after, FactNames.quotedWithin("<", "n\nm", after));
+        assertEquals("<" + after, FactNames.quotedWithin("<", "", after));
+    }
 }

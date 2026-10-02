@@ -574,13 +574,14 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
 
         /**
          * Returns the exception's message with the name escaped within what the rest leaves of a room (see
-         * {@link FactNames#quoteWithin}), for a message about the expression: the message itself if it fits.
+         * {@link FactNames#quotedWithin(String, String, String, int)}), for a message about the expression: the
+         * message itself if it fits.
          *
          * @param room The most characters the message may take
          * @return The message, within the room
          */
         String describedWithin(int room) {
-            return START + FactNames.quoteWithin(name, room - START.length() - after.length()) + after;
+            return FactNames.quotedWithin(START, name, after, room);
         }
 
         /**
