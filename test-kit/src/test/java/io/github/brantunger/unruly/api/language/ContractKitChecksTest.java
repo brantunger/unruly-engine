@@ -21,11 +21,14 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -218,6 +221,11 @@ class ContractKitChecksTest {
 
     /** Wraps a language so that every action it compiles fails when it runs. */
     private static ExpressionLanguage throwingActions(ExpressionLanguage language) {
+        return throwingActions(language, ruleName -> true);
+    }
+
+    /** Wraps a language so that every action it compiles for a rule {@code ruleNames} accepts fails when it runs. */
+    private static ExpressionLanguage throwingActions(ExpressionLanguage language, Predicate<String> ruleNames) {
         return new ForwardingExpressionLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
@@ -225,6 +233,9 @@ class ContractKitChecksTest {
                 return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledAction compileAction(Expression expression) {
+                        if (!ruleNames.test(expression.ruleName())) {
+                            return compiler.compileAction(expression);
+                        }
                         return (actionContext, session) -> {
                             throw new IllegalStateException("the action failed");
                         };
@@ -1021,7 +1032,8 @@ class ContractKitChecksTest {
      * rule fails elsewhere in the rule: a condition that assigns, writes or reads the missing {@code creditScor} is
      * then true, its compiler's {@code compileAction} returns an action that always fails, whatever the expression,
      * and the other conditions fail from their second evaluation on, so that the rule of an action that assigns the
-     * output then fails in its condition.
+     * output then fails in its condition. Only rule {@code r}'s expressions: the valid rule the checks load beside it
+     * compiles as the language compiles it.
      */
     private static ExpressionLanguage failsElsewhereAfterTheFirstRun(ExpressionLanguage language) {
         return new ForwardingExpressionLanguage(language) {
@@ -1031,6 +1043,9 @@ class ContractKitChecksTest {
                 return new ForwardingExpressionCompiler(compiler) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
+                        if (!"r".equals(expression.ruleName())) {
+                            return compiler.compileCondition(expression);
+                        }
                         AtomicBoolean evaluated = new AtomicBoolean();
                         String text = expression.text();
                         if (text.contains(".creditScor ") || text.contains(" = ") && !text.startsWith("let ")) {
@@ -1048,11 +1063,134 @@ class ContractKitChecksTest {
 
                     @Override
                     public CompiledAction compileAction(Expression expression) {
+                        if (!"r".equals(expression.ruleName())) {
+                            return compiler.compileAction(expression);
+                        }
                         return (actionContext, session) -> {
                             throw new IllegalStateException("the action fails");
                         };
                     }
                 };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that each expression the checks that repeat a failed run expect it to reject compiles, and
+     * fails each time it's evaluated, which {@code rejections} counts: a condition that assigns, writes a property,
+     * declares a variable or reads the missing {@code creditScor}, and an action that assigns the output.
+     */
+    private static ExpressionLanguage rejectsOnEveryRun(ExpressionLanguage language, AtomicInteger rejections) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        String text = expression.text();
+                        if (!text.contains(" = ") && !text.contains(".creditScor ")) {
+                            return compiler.compileCondition(expression);
+                        }
+                        return (evaluation, session) -> {
+                            rejections.incrementAndGet();
+                            throw new IllegalStateException("the condition is rejected");
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        if (!expression.text().startsWith("output =")) {
+                            return compiler.compileAction(expression);
+                        }
+                        return (actionContext, session) -> {
+                            rejections.incrementAndGet();
+                            throw new IllegalStateException("an action can't replace the output");
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that the condition of a rule named {@code ok} fails to compile, if {@code atLoad}, or else
+     * fails each time it's evaluated: a language that can't run the valid rule the checks that repeat a failed run load
+     * before the rejected one.
+     */
+    private static ExpressionLanguage failsRuleOk(ExpressionLanguage language, boolean atLoad) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        if (!"ok".equals(expression.ruleName())) {
+                            return compiler.compileCondition(expression);
+                        }
+                        if (atLoad) {
+                            throw new IllegalArgumentException("the condition can't compile");
+                        }
+                        return (evaluation, session) -> {
+                            throw new IllegalStateException("the condition fails");
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language as a runtime that marks its session busy while it evaluates a condition, and, apart, while it
+     * runs an action: a condition, or an action, evaluated with a busy session fails with "session busy", whatever its
+     * expression. An expression that returns clears the mark; one that throws clears it only if
+     * {@code clearedOnFailure}, so that otherwise every later condition, or action, of the copy fails, as with an
+     * "evaluating" flag a failure never clears.
+     */
+    private static ExpressionLanguage busySessions(ExpressionLanguage language, boolean clearedOnFailure) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                // By identity, and for each compiler: the toy's session is Session.none(), which every copy shares.
+                Set<Session> evaluating = identitySet();
+                Set<Session> running = identitySet();
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> busy(evaluating, session,
+                                () -> condition.evaluate(evaluation, session));
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        return (actionContext, session) -> busy(running, session,
+                                () -> action.execute(actionContext, session));
+                    }
+                };
+            }
+
+            private Set<Session> identitySet() {
+                return Collections.newSetFromMap(Collections.synchronizedMap(new IdentityHashMap<>()));
+            }
+
+            private <T> T busy(Set<Session> busy, Session session, Callable<T> work) throws Exception {
+                if (!busy.add(session)) {
+                    throw new IllegalStateException("session busy");
+                }
+                boolean returned = false;
+                try {
+                    T result = work.call();
+                    returned = true;
+                    return result;
+                } finally {
+                    if (returned || clearedOnFailure) {
+                        busy.remove(session);
+                    }
+                }
             }
         };
     }
@@ -1809,8 +1947,9 @@ class ContractKitChecksTest {
     @DisplayName("a silently true assigning condition fails the assignment check when its rule's action fails the run"
             + " instead (#508)")
     void actionFailureNotTakenForTheCondition() {
-        // The run fails, naming the rule, but for its action: the check must look at which expression failed.
-        ExpressionLanguage language = throwingActions(silentTrue(new ToyExpressionLanguage()));
+        // The run fails, naming the rule, but for its action: the check must look at which expression failed. Only
+        // r's action fails, since the valid rule the check loads before it fires first.
+        ExpressionLanguage language = throwingActions(silentTrue(new ToyExpressionLanguage()), "r"::equals);
 
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> runCheck(language, "conditionAssignmentRejected"));
@@ -3075,8 +3214,8 @@ class ContractKitChecksTest {
     @DisplayName("a second run that fails with a RuleExecutionException naming another rule, or none, fails the"
             + " repeat, with what it threw (#847)")
     void secondRunFailsNamingAnotherRuleFails() throws Exception {
-        // The engine names the rule that failed, which is always r in the checks, so the check's helper is called
-        // with an engine whose run fails as the engine never would.
+        // The engine names the rule that failed, which in the checks is r or the valid rule ok, which another test
+        // covers, so the check's helper is called with an engine whose run fails as the engine never would.
         Method repeat = ExpressionLanguageContractTest.class.getDeclaredMethod("assertRunFailsAgain",
                 RulesEngine.class, boolean.class, FactStore.class, ExpressionKind.class, String.class);
         repeat.setAccessible(true);
@@ -3096,6 +3235,172 @@ class ContractKitChecksTest {
                     + " RuleExecutionException naming rule r and its condition: " + again, failure.getMessage());
             assertSame(again, failure.getCause());
         }
+    }
+
+    @Test
+    @DisplayName("a language whose session a rejected expression leaves broken, so that every later run fails, fails"
+            + " the checks that repeat a failed run in the valid rule before it, whether it stops rejecting the"
+            + " expression or not (#870)")
+    void sessionLeftBrokenAfterTheFirstFailureFails() {
+        for (ExpressionLanguage rejecting : List.of(checksFirstRunOnly(new ToyExpressionLanguage()),
+                rejectsOnEveryRun(new ToyExpressionLanguage(), new AtomicInteger()))) {
+            ExpressionLanguage language = busySessions(rejecting, false);
+
+            REPEATED.forEach((check, what) -> {
+                AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                        () -> runCheck(language, check), check);
+                assertTrue(failure.getMessage().startsWith(what + " failed the first run, and the second run failed"
+                        + " in the valid rule ok, which runs before rule r: a failed run must leave its copy usable: "),
+                        failure.getMessage());
+                RuleExecutionException again = assertInstanceOf(RuleExecutionException.class, failure.getCause(),
+                        check);
+                assertEquals("ok", again.getRuleName(), check);
+                assertEquals("outputNotReplaceable".equals(check) ? ExpressionKind.ACTION : ExpressionKind.CONDITION,
+                        again.getExpressionKind(), check);
+                assertTrue(failure.getMessage().contains("session busy"), failure.getMessage());
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("a language that fails the rejected expression on every run passes the checks that repeat a failed"
+            + " run, which repeat it, and so does one whose session a failure leaves usable (#870)")
+    void sessionUsableAfterTheFirstFailurePasses() {
+        AtomicInteger rejections = new AtomicInteger();
+        // Two runs of each rejected expression; conditionWritesRejected has three: a map, a bean and a declaration.
+        Map<String, Integer> expected = Map.of("conditionAssignmentRejected", 2, "conditionWritesRejected", 6,
+                "missingPropertyFailsTheRun", 2, "outputNotReplaceable", 2);
+        for (ExpressionLanguage language : List.of(rejectsOnEveryRun(new ToyExpressionLanguage(), rejections),
+                busySessions(rejectsOnEveryRun(new ToyExpressionLanguage(), rejections), true))) {
+            REPEATED.keySet().forEach(check -> {
+                rejections.set(0);
+                assertDoesNotThrow(() -> runCheck(language, check), check);
+                assertEquals(expected.get(check), rejections.get(), check);
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("a language that can't compile the valid rule the checks that repeat a failed run load first fails"
+            + " them, saying so, rather than passing them untested (#870)")
+    void guardRuleRejectedAtLoadFails() {
+        ExpressionLanguage language = failsRuleOk(new ToyExpressionLanguage(), true);
+
+        REPEATED.forEach((check, what) -> {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(language, check), check);
+            assertTrue(failure.getMessage().startsWith(guardRuleFailed(what)), failure.getMessage());
+            RuleCompilationException ex = assertInstanceOf(RuleCompilationException.class, failure.getCause(), check);
+            assertEquals("ok", ex.getRuleName(), check);
+        });
+    }
+
+    @Test
+    @DisplayName("a language that rejects both the valid rule's action and the output assignment when the rules load"
+            + " fails the output check with what the valid rule says, rather than passing it (#870)")
+    void guardRuleRejectedBesideTheOutputAssignmentFails() {
+        // A guard of the combined case, not a test that fails without the guard rule's check: the toy rejects
+        // output = 1 when it compiles it, so the load fails for both rules, and its rule name is ok's, the first.
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = super.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        if ("ok".equals(expression.ruleName())) {
+                            throw new IllegalArgumentException("the action can't compile");
+                        }
+                        return compiler.compileAction(expression);
+                    }
+                };
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "outputNotReplaceable"));
+
+        assertTrue(failure.getMessage().startsWith(guardRuleFailed("an action that replaces the output")),
+                failure.getMessage());
+        RuleCompilationException ex = assertInstanceOf(RuleCompilationException.class, failure.getCause());
+        assertEquals(List.of("ok", "r"), ex.failures().stream().map(RuleCompilationException::getRuleName).toList());
+    }
+
+    @Test
+    @DisplayName("a load failure that names no rule fails the checks that repeat a failed run, saying it names none,"
+            + " rather than passing them untested (#870)")
+    void loadFailureNamingNoRuleFails() {
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                throw new IllegalStateException("the runtime can't start");
+            }
+        };
+
+        REPEATED.forEach((check, what) -> {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(language, check), check);
+            assertTrue(failure.getMessage().startsWith(namesNoRule(what)), failure.getMessage());
+            RuleCompilationException ex = assertInstanceOf(RuleCompilationException.class, failure.getCause(), check);
+            assertNull(ex.getRuleName(), check);
+        });
+    }
+
+    @Test
+    @DisplayName("a first run that fails naming no rule, since the language can't make a session, fails the checks"
+            + " that repeat a failed run, whether a later run can make one or not (#870)")
+    void firstRunFailureNamingNoRuleFails() {
+        // A language that rejects r's expression only when it runs it, so that the rules load and the run makes the
+        // copy, and its session, which newSession() can't: ever, or only the first time it's called, so that the
+        // second run gets a session and fails in r.
+        for (boolean onlyOnce : List.of(false, true)) {
+            REPEATED.forEach((check, what) -> {
+                AtomicBoolean called = new AtomicBoolean();
+                ExpressionLanguage language = withSessions(
+                        rejectsOnEveryRun(new ToyExpressionLanguage(), new AtomicInteger()), () -> {
+                            if (onlyOnce && called.getAndSet(true)) {
+                                return new Session() {
+                                };
+                            }
+                            throw new IllegalStateException("the runtime can't start");
+                        });
+
+                AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                        () -> runCheck(language, check), check);
+                assertTrue(failure.getMessage().startsWith(namesNoRule(what)), failure.getMessage());
+                RuleExecutionException ex = assertInstanceOf(RuleExecutionException.class, failure.getCause(),
+                        check);
+                assertNull(ex.getRuleName(), check);
+            });
+        }
+    }
+
+    /** What a check that repeats a failed run says when load or the first run failed naming no rule. */
+    private static String namesNoRule(String what) {
+        return "the check of " + what + " failed before rule r ran, with a failure that names no rule: ";
+    }
+
+    @Test
+    @DisplayName("a language whose valid rule, which the checks that repeat a failed run load first, fails every run"
+            + " fails them, saying so, rather than blaming the session (#870)")
+    void guardRuleFailingEveryRunFails() {
+        // A language that rejects r's expression when it runs it, so that the rules load and ok runs.
+        ExpressionLanguage language = failsRuleOk(rejectsOnEveryRun(new ToyExpressionLanguage(), new AtomicInteger()),
+                false);
+
+        REPEATED.forEach((check, what) -> {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(language, check), check);
+            assertTrue(failure.getMessage().startsWith(guardRuleFailed(what)), failure.getMessage());
+            RuleExecutionException ex = assertInstanceOf(RuleExecutionException.class, failure.getCause(), check);
+            assertEquals("ok", ex.getRuleName(), check);
+        });
+    }
+
+    /** What a check that repeats a failed run says when its valid rule {@code ok} failed, before what it threw. */
+    private static String guardRuleFailed(String what) {
+        return "the check of " + what + " failed in the valid rule ok, which runs before rule r, so the language can't"
+                + " run the check's guard rule, alwaysTrue() with putFact(): ";
     }
 
     @Test
