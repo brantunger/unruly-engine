@@ -31,6 +31,12 @@ import java.util.Arrays;
  * run around it doesn't lose the message either. A form serialized before that was recorded names its chain by the
  * innermost failure, as it did then.
  * </p>
+ *
+ * <p>
+ * It keeps, while it isn't serialized, the thread and the outermost run it was built in, so a run that wraps it in an
+ * exception of its own tells one a run it started built from one an earlier outermost run on the thread built (see
+ * {@link LoggedFailures#loggedBelow(ReportedFailure)}).
+ * </p>
  */
 final class ReportedFailure extends RuleExecutionException {
     private static final long serialVersionUID = 1L;
@@ -67,6 +73,11 @@ final class ReportedFailure extends RuleExecutionException {
      * code outside the engine added.
      */
     private transient Throwable[] addedByEngine;
+    /**
+     * The outermost run in progress on the thread it was built on, when it was built (see
+     * {@link LoggedFailures#reported}), or {@code null} if none was, or once this has been deserialized.
+     */
+    private final transient LoggedFailures.Outermost outermost;
 
     /**
      * Creates the exception for a failure that belongs to no rule.
@@ -90,6 +101,7 @@ final class ReportedFailure extends RuleExecutionException {
         this.belowRecorded = true;
         this.loggedBelow = below.news() == null ? below.logged() : this;
         this.loggedBelowByLoad = below.news() == null && below.loggedByLoad();
+        this.outermost = LoggedFailures.reported(this);
     }
 
     /**
@@ -179,6 +191,16 @@ final class ReportedFailure extends RuleExecutionException {
      */
     boolean loggedByLoad() {
         return loggedBelowByLoad;
+    }
+
+    /**
+     * Returns the outermost run in progress on the thread this failure was built on when it was built.
+     *
+     * @return That run, as {@link LoggedFailures#reported} returned it, or {@code null} if none was in progress, or
+     *         if this has been deserialized
+     */
+    LoggedFailures.Outermost builtIn() {
+        return outermost;
     }
 
     /**

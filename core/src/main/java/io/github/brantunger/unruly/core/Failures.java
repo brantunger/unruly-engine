@@ -608,6 +608,13 @@ public final class Failures {
      * chain with a message of its own, one that has the nested failure's text with words around it too, is described
      * by that message, shortened and escaped, with the nested failure as a note,
      * {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is lost.
+     * When no run the code that wrapped it started logged that failure, but a run that had ended before in the same
+     * outermost run, such as an earlier sibling, however deep, the note reads {@code (caused by ..., already logged)}
+     * instead, and so it does for a {@link ReportedFailure} built in an earlier outermost run on the thread (see
+     * {@link LoggedFailures#loggedBelow(ReportedFailure)}). A failure thrown as is in an earlier outermost run, such as
+     * facts a nested run rejected, isn't found at all, so the exception around it reads by its own message, with no
+     * nested run's note, and a {@link ReportedFailure} built in the same outermost run before the last
+     * {@value LoggedFailures#MAX_LOGGED} is noted as a nested run's.
      * The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
      * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
      * written (see {@link #noteText}). A nested failure's text is mostly text the engine has already escaped, so where
@@ -639,9 +646,9 @@ public final class Failures {
                 // The error found is in the chain itself whenever the chain holds one, and suppressed on it otherwise.
                 String how = fatalIn(chain) != null ? "caused by " : "with suppressed ";
                 String note = at == LoggedFailures.LoggedAt.NOT_BELOW
-                        ? how + describeWithClass(fatal) + ", already logged"
+                        ? alreadyLogged(how, describeWithClass(fatal))
                         : "after " + nested(at == LoggedFailures.LoggedAt.NESTED_LOAD) + describeWithClass(fatal);
-                return clip(messageOr(news, news.getClass().getName())) + " (" + note + ")";
+                return withNote(news, note);
             }
             String text = clip(messageOr(e, e.getClass().getName()));
             return text + causeNote(chain, shownOf(readableMessage(e), false));
@@ -651,12 +658,37 @@ public final class Failures {
         if (news == null) {
             return nested + loggedText(logged);
         }
-        return clip(messageOr(news, news.getClass().getName())) + " (after " + nested + noteText(logged) + ")";
+        // The failure is in the chain, which is where it was found.
+        return withNote(news, below.loggedBelow() ? "after " + nested + noteText(logged)
+                : alreadyLogged("caused by ", noteText(logged)));
     }
 
     /** Says what failed below a description: {@code a nested run() failed: } or {@code a nested load() failed: }. */
     private static String nested(boolean byLoad) {
         return "a nested " + (byLoad ? "load()" : "run()") + " failed: ";
+    }
+
+    /**
+     * Says a failure was logged already, by no run the code that wrapped it started, for the note {@link #describe}
+     * adds: {@code caused by ..., already logged} or {@code with suppressed ..., already logged}.
+     *
+     * @param how  {@code "caused by "} or {@code "with suppressed "}, where the failure was found
+     * @param text The failure's text
+     * @return The note
+     */
+    private static String alreadyLogged(String how, String text) {
+        return how + text + ", already logged";
+    }
+
+    /**
+     * Describes an exception that says something of its own by its message, shortened and escaped, with a note.
+     *
+     * @param news The exception
+     * @param note The note, which goes in parentheses after the message
+     * @return The description
+     */
+    private static String withNote(Throwable news, String note) {
+        return clip(messageOr(news, news.getClass().getName())) + " (" + note + ")";
     }
 
     /**
@@ -1105,8 +1137,17 @@ public final class Failures {
      * @param news         The first exception from the top of the chain, above {@code logged}, with a message of its
      *                     own, which nothing has logged, or {@code null} if there is none, and {@code logged} names
      *                     the chain whole
+     * @param loggedBelow  {@code true} if a run the innermost run in progress on this thread started logged
+     *                     {@code logged}, however deep below it, or a run on another thread did, or it names the
+     *                     chain of a {@link ReportedFailure} built in the same outermost run before the last
+     *                     {@value LoggedFailures#MAX_LOGGED}, or one built outside any run, or one deserialized;
+     *                     {@code false} if a run that had ended before it started
+     *                     did, or {@code logged} names a {@link ReportedFailure}'s chain and
+     *                     that failure was built in an earlier outermost run on this thread (see
+     *                     {@link LoggedFailures#loggedBelow(ReportedFailure)}), or if there is no {@code logged}
      */
-    record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad, Throwable news) {
+    record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad, Throwable news,
+                 boolean loggedBelow) {
     }
 
     /**
@@ -1162,9 +1203,12 @@ public final class Failures {
             if (t instanceof ReportedFailure failure) {
                 if (failure.recorded()) {
                     Error first = error != null ? error : failure.error();
+                    // Where the failure that names the chain was logged is told by the link the code that caught
+                    // it was given: the failure a nested run threw as is, or this one, which a run built.
                     return logged != null
-                            ? below(chain, loggedAt, failure.innermost(), first, logged.failure(), logged.byLoad())
-                            : below(chain, i, failure.innermost(), first, failure.logged(), failure.loggedByLoad());
+                            ? below(chain, loggedAt, failure.innermost(), first, logged)
+                            : below(chain, i, failure.innermost(), first, failure.logged(), failure.loggedByLoad(),
+                                    LoggedFailures.loggedBelow(failure));
                 }
                 innermost = failure;
                 innermostAt = i;
@@ -1178,9 +1222,23 @@ public final class Failures {
                 loggedAt = i;
             }
         }
+        // A failure that recorded nothing was serialized, which says nothing of where it was built, so it's taken for
+        // a nested run's, as one from another thread is.
         return logged != null
-                ? below(chain, loggedAt, innermost, error, logged.failure(), logged.byLoad())
-                : below(chain, innermostAt, innermost, error, innermost, false);
+                ? below(chain, loggedAt, innermost, error, logged)
+                : below(chain, innermostAt, innermost, error, innermost, false, innermost != null);
+    }
+
+    /**
+     * Makes what {@link #below} found, when the failure logged is one a nested run or load on this thread recorded.
+     *
+     * @param chain    The cause chain
+     * @param loggedAt Where in {@code chain} the failure logged is
+     */
+    private static Below below(List<Throwable> chain, int loggedAt, ReportedFailure innermost, Error error,
+                               LoggedFailures.Logged logged) {
+        return below(chain, loggedAt, innermost, error, logged.failure(), logged.byLoad(),
+                LoggedFailures.loggedBelow(logged));
     }
 
     /**
@@ -1191,8 +1249,8 @@ public final class Failures {
      *                 there is none
      */
     private static Below below(List<Throwable> chain, int loggedAt, ReportedFailure innermost, Error error,
-                               Throwable logged, boolean byLoad) {
-        return new Below(innermost, error, logged, byLoad, firstNews(chain, loggedAt, logged));
+                               Throwable logged, boolean byLoad, boolean loggedBelow) {
+        return new Below(innermost, error, logged, byLoad, firstNews(chain, loggedAt, logged), loggedBelow);
     }
 
     /**

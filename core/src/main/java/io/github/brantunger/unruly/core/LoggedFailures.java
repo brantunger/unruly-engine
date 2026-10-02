@@ -30,13 +30,14 @@ package io.github.brantunger.unruly.core;
  * on the thread ends, because the JVM throws the {@link OutOfMemoryError} it keeps ready for when it has no memory
  * left again and again, and a later run must log it again, as it must an exception kept from an earlier run and
  * thrown again.
- * Only a nested run or {@code load()} records a failure it logged, other than a fatal error: what the outermost one
- * logs goes to its caller, and no code of the engine's catches it on the way, so the outermost records nothing and
- * creates nothing to record it in. The record holds the last {@value #MAX_LOGGED} of them, and apart from them the last
- * {@value #MAX_LOGGED} fatal errors any run, {@code load()}, {@code validate()} or {@code close()} on the thread
- * logged, so a run whose nested runs fail again and again keeps no more memory. One logged before those is logged a
- * second time if code keeps it and throws it on to the code around it, as it was before the engine recorded any; the
- * bound never leaves a failure out.
+ * Only a nested run or {@code load()} records a failure it logged and threw as is: what the outermost one logs goes to
+ * its caller, and no code of the engine's catches it on the way, so the outermost records none and creates nothing to
+ * record one in. Every run records a {@link ReportedFailure} it built, the outermost too, so where it was logged is
+ * known (see {@link #loggedBelow(ReportedFailure)}). The record holds the last {@value #MAX_LOGGED} of each, and apart
+ * from them the last {@value #MAX_LOGGED} fatal errors any run, {@code load()}, {@code validate()} or {@code close()}
+ * on the thread logged, so a run whose nested runs fail again and again keeps no more memory. One logged before those
+ * is logged a second time if code keeps it and throws it on to the code around it, as it was before the engine
+ * recorded any; the bound never leaves a failure out.
  * Nothing here logs: the caller logs when it's told the failure isn't logged yet.
  * </p>
  *
@@ -48,6 +49,16 @@ package io.github.brantunger.unruly.core;
  * fact's name has it logged only the first time a nested run rejects a name in an outermost run, even when that
  * rejection was handled and a later one, the same instance, is what fails the run; the next outermost run logs it
  * again.
+ * </p>
+ *
+ * <p>
+ * Where each failure was logged is recorded too, as how deep the run that logged it was, for the code that wraps one
+ * in an exception that says something of its own, which names it as a note (see {@link Failures#describe}): a failure
+ * logged by a run the innermost run in progress started, however deep, is a nested run's, and one logged by a run that
+ * had ended before it started, such as an earlier sibling, however deep, is noted as logged already, as a fatal error
+ * is (see {@link #loggedAt}). So is a {@link ReportedFailure} built on the thread in an earlier outermost run, as only
+ * such a failure says which outermost run built it. One built on another thread is a nested run's, as one an action
+ * hands to an executor and waits for is.
  * </p>
  *
  * <p>
@@ -82,12 +93,47 @@ final class LoggedFailures {
     }
 
     /**
-     * A failure a nested {@code run()} or {@code load()} logged and threw as is, not as a {@link ReportedFailure}.
-     *
-     * @param failure The very exception that was logged
-     * @param byLoad  {@code true} if a {@code load()} logged it, {@code false} if a {@code run()} did
+     * A failure a nested {@code run()} or {@code load()} logged and threw as is, not as a {@link ReportedFailure}, or a
+     * {@link ReportedFailure} a run on this thread built, with how deep the run that logged it was, or, if a shallower
+     * run has started since, how deep the shallowest such run was, as for a fatal {@link Error} (see
+     * {@link #loggedAt}).
      */
-    record Logged(Throwable failure, boolean byLoad) {
+    static final class Logged {
+        private final Throwable thrown;
+        private final boolean loggedByLoad;
+        private int depth;
+
+        private Logged(Throwable thrown, boolean loggedByLoad, int depth) {
+            this.thrown = thrown;
+            this.loggedByLoad = loggedByLoad;
+            this.depth = depth;
+        }
+
+        /**
+         * Returns the failure.
+         *
+         * @return The very exception that was logged
+         */
+        Throwable failure() {
+            return thrown;
+        }
+
+        /**
+         * Tells whether a {@code load()} logged the failure.
+         *
+         * @return {@code true} if a {@code load()} logged it, {@code false} if a {@code run()} did
+         */
+        boolean byLoad() {
+            return loggedByLoad;
+        }
+    }
+
+    /**
+     * An outermost run on a thread, which a {@link ReportedFailure} built in it keeps, so a later run tells whether it
+     * was built in the same one (see {@link #loggedBelow(ReportedFailure)}).
+     */
+    static final class Outermost {
+        private final long thread = Thread.currentThread().threadId();
     }
 
     /**
@@ -95,10 +141,14 @@ final class LoggedFailures {
      * how deep the run that logged each was, or, if a shallower run has started since, how deep the shallowest such run
      * was, and which of the runs it was nested in were a {@code load()} or a {@code validate()}, in rings created with
      * it, before any fails, so recording an {@link OutOfMemoryError} allocates nothing, the last {@value #MAX_LOGGED}
-     * failures nested runs and loads logged, in a ring created with the first of them, and the last
-     * {@value #MAX_LOGGED} exceptions the engine built around a failure, in a ring created with the first of those.
+     * failures nested runs and loads logged, in a ring created with the first of them, the last {@value #MAX_LOGGED}
+     * {@link ReportedFailure}s runs built, in a ring created with the first of those, each of these with how deep the
+     * run that logged it was, lowered as for a fatal error, and the last {@value #MAX_LOGGED} exceptions the engine
+     * built around a failure, in a ring created with the first of those.
      */
     private static final class Runs {
+        // Which outermost run this is, so a ReportedFailure built in an earlier one on this thread is told apart.
+        private final Outermost outermost = new Outermost();
         private int depth;
         // Bit n is set while the run in progress n deep is a load() or a validate(); one deeper than a long has bits
         // for counts as a run.
@@ -111,6 +161,10 @@ final class LoggedFailures {
         private int deepestFatal;
         private Logged[] logged;
         private int next;
+        private Logged[] reported;
+        private int nextReported;
+        // No failure in logged or reported is recorded deeper than this, so a run that starts no shallower lowers none.
+        private int deepestLogged;
         private Throwable[] built;
         private int nextBuilt;
     }
@@ -119,7 +173,8 @@ final class LoggedFailures {
      * Counts a run, a {@code load()}, a {@code validate()} or a {@code close()} starting on this thread, until
      * {@link #leave()}. A fatal {@link Error} logged deeper than it starts was logged by a run that has ended, which
      * isn't below it: it's recorded as logged at the depth it starts at, as a run that ended there would have logged
-     * it (see {@link #loggedAt}).
+     * it (see {@link #loggedAt}). So is a failure a nested run or load logged, and a {@link ReportedFailure} a run
+     * built (see {@link #loggedBelow(Logged)}).
      */
     static void enter() {
         Faults.at(Faults.Step.RUN_COUNTED);
@@ -138,7 +193,23 @@ final class LoggedFailures {
             }
             runs.deepestFatal = depth;
         }
+        if (runs.deepestLogged > depth) {
+            lower(runs.logged, depth);
+            lower(runs.reported, depth);
+            runs.deepestLogged = depth;
+        }
         runs.depth = depth;
+    }
+
+    /** Records the failures in a ring logged deeper than a run that starts as logged at the depth it starts at. */
+    private static void lower(Logged[] ring, int depth) {
+        if (ring != null) {
+            for (Logged logged : ring) {
+                if (logged != null && logged.depth > depth) {
+                    logged.depth = depth;
+                }
+            }
+        }
     }
 
     /**
@@ -325,8 +396,72 @@ final class LoggedFailures {
         if (runs.logged == null) {
             runs.logged = new Logged[MAX_LOGGED];
         }
-        runs.logged[runs.next] = new Logged(failure, byLoad);
+        runs.logged[runs.next] = new Logged(failure, byLoad, runs.depth);
         runs.next = (runs.next + 1) % MAX_LOGGED;
+        runs.deepestLogged = Math.max(runs.deepestLogged, runs.depth);
+    }
+
+    /**
+     * Records a {@link ReportedFailure} a run has just built, with how deep that run is, in place of the oldest once
+     * {@value #MAX_LOGGED} are, so a run that reads it later in the same outermost run on this thread tells whether a
+     * run it started logged it (see {@link #loggedBelow(ReportedFailure)}). The outermost run records one too, as its
+     * own code may read it. Nothing is recorded when no run is in progress.
+     *
+     * @param failure The failure, which the run logs
+     * @return The outermost run on this thread, for the failure to keep, or {@code null} if no run is in progress
+     */
+    static Outermost reported(ReportedFailure failure) {
+        Runs runs = RUNS.get();
+        if (runs == null) {
+            return null;
+        }
+        if (runs.reported == null) {
+            runs.reported = new Logged[MAX_LOGGED];
+        }
+        runs.reported[runs.nextReported] = new Logged(failure, false, runs.depth);
+        runs.nextReported = (runs.nextReported + 1) % MAX_LOGGED;
+        runs.deepestLogged = Math.max(runs.deepestLogged, runs.depth);
+        return runs.outermost;
+    }
+
+    /**
+     * Tells whether a failure a nested run or load logged, as {@link #find} found it, was logged below the innermost
+     * run in progress on this thread: by a run that run started, however deep below it, rather than by a run that had
+     * ended before it started, as an earlier sibling had, however deep that run was. Only {@link Failures#below} asks,
+     * while the run that found it is still in progress.
+     *
+     * @param logged What {@link #find} returned
+     * @return {@code true} if a run the innermost run in progress started logged it
+     */
+    static boolean loggedBelow(Logged logged) {
+        return logged.depth > RUNS.get().depth;
+    }
+
+    /**
+     * Tells whether a {@link ReportedFailure} was logged below the innermost run in progress on this thread, as
+     * {@link #loggedBelow(Logged)} tells for a failure thrown as is: built by a run that run started, in the same
+     * outermost run. One built on another thread is taken for nested, as a run an action hands to an executor and
+     * waits for builds it, and so is one built when no run was in progress, or one deserialized, which say nothing of
+     * where they were built, and one built in the same outermost run but before the last {@value #MAX_LOGGED}, as
+     * before the engine recorded any. One built on this thread in an outermost run that has ended isn't, nor is one
+     * read when no run is in progress.
+     *
+     * @param failure The failure
+     * @return {@code true} if it's taken for logged by a run the innermost run in progress started
+     */
+    static boolean loggedBelow(ReportedFailure failure) {
+        Outermost builtIn = failure.builtIn();
+        if (builtIn == null || builtIn.thread != Thread.currentThread().threadId()) {
+            return true;
+        }
+        Runs runs = RUNS.get();
+        // The very same outermost run, as an Outermost is equal only to itself.
+        if (runs == null || !runs.outermost.equals(builtIn)) {
+            return false;
+        }
+        // Built in this outermost run, so recorded in the ring of reported failures, unless pushed out of it since.
+        Logged logged = in(runs.reported, failure);
+        return logged == null || logged.depth > runs.depth;
     }
 
     /**
@@ -338,15 +473,20 @@ final class LoggedFailures {
      *         the last {@value #MAX_LOGGED}, or was logged by an outermost run, or if no run is in progress on this
      *         thread
      */
-    // The very same instance is what was logged; an equal one would still be news.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     static Logged find(Throwable thrown) {
         Runs runs = RUNS.get();
         if (runs == null || runs.logged == null) {
             return null;
         }
-        for (Logged logged : runs.logged) {
-            if (logged != null && logged.failure() == thrown) {
+        return in(runs.logged, thrown);
+    }
+
+    /** Finds this very exception in a ring of failures logged, or {@code null} if it isn't there. */
+    // The very same instance is what was logged; an equal one would still be news.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    private static Logged in(Logged[] ring, Throwable thrown) {
+        for (Logged logged : ring) {
+            if (logged != null && logged.thrown == thrown) {
                 return logged;
             }
         }
