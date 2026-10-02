@@ -12,13 +12,14 @@ import io.github.brantunger.unruly.api.exception.RuleCompilationException;
  * Holds an engine's rule set from one {@code load()} to the next: swaps in each rule list {@code load()} is given, once
  * {@link RuleListCompiler} has compiled it and its copies are made, and retires the rule sets the engine no longer
  * uses, on {@code load()} and {@code close()}. It owns the engine's current rule set, whether the engine is closed,
- * the rule sets still to retire and the lock that guards them; runs read the current rule set with {@link #current()}.
+ * the rule sets still to retire and the lock that guards them; runs read the current rule set with
+ * {@link #currentOrThrow(String)}.
  * It holds the engine's copy limit and permits, its compiler and its logger, all fixed when the engine is built, and
  * the stall window a test can set.
  */
 final class RuleSetLifecycle {
 
-    static final String CLOSED_MESSAGE = "The engine is closed";
+    private static final String CLOSED_MESSAGE = "The engine is closed";
     // What load() logs when rules the engine no longer uses couldn't all be retired, once it has swapped its own in, or
     // when its own rules couldn't be, under a fatal error of its own.
     private static final String RETIRE_AGAIN = "Rules this engine no longer uses couldn't all be retired, so the next"
@@ -83,12 +84,45 @@ final class RuleSetLifecycle {
     }
 
     /**
-     * Returns whether {@link #close()} has closed the engine.
+     * Returns the rule set runs start with, for a caller that can't go on without one. The rule set is read first, and
+     * whether the engine is closed only if there is none.
      *
-     * @return {@code true} once the engine is closed
+     * @param notLoadedMessage What the exception says when the engine is open and no rules are loaded
+     * @return The rule set
+     * @throws IllegalStateException if no rules are loaded, or the engine is closed
      */
-    boolean isClosed() {
-        return closed;
+    RuleSet currentOrThrow(String notLoadedMessage) {
+        RuleSet rules = ruleSet;
+        if (rules == null) {
+            throw new IllegalStateException(closed ? CLOSED_MESSAGE : notLoadedMessage);
+        }
+        return rules;
+    }
+
+    /**
+     * Returns the rule set runs start with, for a caller that can go on without one, but not on a closed engine. The
+     * rule set is read first, and whether the engine is closed only if there is none.
+     *
+     * @return The rule set, or {@code null} if no rules are loaded
+     * @throws IllegalStateException if the engine is closed
+     */
+    RuleSet currentIfOpen() {
+        RuleSet rules = ruleSet;
+        if (rules == null && closed) {
+            throw new IllegalStateException(CLOSED_MESSAGE);
+        }
+        return rules;
+    }
+
+    /**
+     * Fails if {@link #close()} has closed the engine.
+     *
+     * @throws IllegalStateException if the engine is closed
+     */
+    void checkOpen() {
+        if (closed) {
+            throw new IllegalStateException(CLOSED_MESSAGE);
+        }
     }
 
     /**
@@ -131,9 +165,7 @@ final class RuleSetLifecycle {
         Objects.requireNonNull(ruleList, "ruleList must not be null");
         // Checked here so a closed engine rejects any list, and again under the lock, for a close() that runs while
         // this compiles.
-        if (closed) {
-            throw new IllegalStateException(CLOSED_MESSAGE);
-        }
+        checkOpen();
         // A null rule or a duplicate name stops the load before anything is compiled: duplicate names would make
         // error messages, exceptions and listener logs ambiguous.
         List<RuleCompilationException> listProblems = compiler.listProblems(ruleList, RuleListCompiler.Mode.LOAD);
