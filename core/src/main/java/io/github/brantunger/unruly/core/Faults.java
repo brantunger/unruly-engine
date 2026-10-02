@@ -3,13 +3,14 @@ package io.github.brantunger.unruly.core;
 /**
  * Steps of a run's, a load's or a close's set-up and clean-up that a test can make fail, as a
  * {@link StackOverflowError} or an {@link OutOfMemoryError} can at any call, to show that the state each takes is
- * put back and the steps after it still run. It is a deliberate test seam: nothing but a test sets a fault, and with
- * none set each step costs a read of one field. A fault fails a step only on the thread it was set for, so a thread
- * of another test that reaches the same step meanwhile is never failed, nor uses the fault up.
+ * put back and the steps after it still run; and steps a test can only watch, to act at a point no other call can
+ * reach. It is a deliberate test seam: nothing but a test sets a fault or a watch, and with none set each step costs a
+ * read of one field. A fault fails a step, and a watch runs, only on the thread it was set for, so a thread of another
+ * test that reaches the same step meanwhile is never failed, nor uses the fault or the watch up.
  */
 final class Faults {
 
-    /** A step a test can make fail. */
+    /** A step a test can make fail, or, for one reached with {@link #reached(Step)}, only watch. */
     enum Step {
         /** {@link LoggedFailures#enter()} counting a run, before it has counted anything. */
         RUN_COUNTED,
@@ -53,7 +54,23 @@ final class Faults {
         /** A run that has closed every value its languages kept, before it combines what they threw. */
         RUN_VALUES_CLOSED,
         /** A run that has closed its values and given back its copy, before it combines what they threw. */
-        RUN_ENDING_COMBINED
+        RUN_ENDING_COMBINED,
+        /**
+         * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
+         * failed (see {@link #reached(Step)}).
+         */
+        CLOSE_MARKED(true);
+
+        // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
+        private final boolean watchOnly;
+
+        Step() {
+            this(false);
+        }
+
+        Step(boolean watchOnly) {
+            this.watchOnly = watchOnly;
+        }
     }
 
     // The step that fails, the thread it fails on, how many more times that thread reaches it before it does, how many
@@ -65,6 +82,12 @@ final class Faults {
     private static int reaches;
     private static int failures;
     private static Error error;
+    // The step that is watched, the thread it is watched on, and what that thread runs the next time it reaches it.
+    // Set as a fault is, the step last: it's volatile, so a thread that reads the step sees the thread and the action
+    // set with it, never those of an earlier watch.
+    private static volatile Step watched;
+    private static Thread watching;
+    private static Runnable onReach;
 
     private Faults() {
     }
@@ -102,8 +125,12 @@ final class Faults {
      * @param reach  Which time it first fails, from 1
      * @param times  How many times in a row it fails
      * @param thrown What it throws
+     * @throws IllegalArgumentException if the step can only be watched
      */
     static void inject(Thread on, Step step, int reach, int times, Error thrown) {
+        if (step.watchOnly) {
+            throw new IllegalArgumentException(step + " can only be watched");
+        }
         thread = on;
         reaches = reach;
         failures = times;
@@ -111,13 +138,32 @@ final class Faults {
         failing = step;
     }
 
-    /** Takes back a fault that hasn't been thrown yet. */
-    // No fault is set until a test sets one.
+    /**
+     * Makes the current thread run {@code action} the next time it reaches {@code step}, once.
+     *
+     * @param step   The step, one the code reaches with {@link #reached(Step)}
+     * @param action What the thread runs there
+     * @throws IllegalArgumentException if the step is one a test makes fail, which is never watched
+     */
+    static void watch(Step step, Runnable action) {
+        if (!step.watchOnly) {
+            throw new IllegalArgumentException(step + " is made to fail, not watched");
+        }
+        watching = Thread.currentThread();
+        onReach = action;
+        watched = step;
+    }
+
+    /** Takes back a fault that hasn't been thrown yet, and a watch that hasn't run yet. */
+    // No fault or watch is set until a test sets one.
     @SuppressWarnings("PMD.NullAssignment")
     static void clear() {
         failing = null;
         thread = null;
         error = null;
+        watched = null;
+        watching = null;
+        onReach = null;
     }
 
     /**
@@ -139,6 +185,23 @@ final class Faults {
                 }
                 throw error;
             }
+        }
+    }
+
+    /**
+     * Reaches a step a test can only watch, which runs what a test set for it this time on this thread. No fault is
+     * ever thrown here: it is for a step where a failure would leave state that no later call can mend. It doesn't
+     * catch what the test's action throws, though, nor can it stop a call to it running out of stack, so the caller
+     * keeps its state whole around it, as {@code close()} does by letting go of the rules in a finally.
+     *
+     * @param step The step reached
+     */
+    // A watch runs once, and on the very thread it was set for.
+    @SuppressWarnings({"PMD.NullAssignment", "PMD.CompareObjectsWithEquals"})
+    static void reached(Step step) {
+        if (step == watched && Thread.currentThread() == watching) {
+            watched = null;
+            onReach.run();
         }
     }
 }

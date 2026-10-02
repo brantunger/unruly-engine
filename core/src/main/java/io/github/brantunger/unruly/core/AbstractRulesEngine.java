@@ -674,7 +674,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Returns the rules this engine has loaded, their checksum and when they were loaded.
+     * Returns the rules this engine has loaded, their checksum and when they were loaded. A call made while
+     * {@link #close()} runs may still return them, even once {@link #validate(List)} and {@link #load(List)} throw.
      *
      * @return The loaded rules, or an empty rule list with the checksum of no rules before the first
      *         {@link #load(List)}
@@ -944,8 +945,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * fails, it throws what it would on an open engine, such as {@link RuleCompilationException}. If it succeeds,
      * either it swapped its rules in first, and this method retires them like any others, or it finds the engine
      * closed, retires its rules rather than swapping them in, and throws {@link IllegalStateException}. Closing it
-     * again does nothing, unless retiring a rule list failed part way, as it can when it runs out of stack: then
-     * closing it again finishes retiring it. So does a {@code close()} after a {@code load()} whose retiring of a
+     * again does nothing, unless retiring a rule list failed part way, as it can when it runs out of stack, or a
+     * {@code close()} threw before retiring began, leaving the rule list detached: then closing it again finishes
+     * retiring it. So does a {@code close()} after a {@code load()} whose retiring of a
      * rule list failed part way, and it throws a fatal {@link Error} closing that rule list throws.
      *
      * <p>
