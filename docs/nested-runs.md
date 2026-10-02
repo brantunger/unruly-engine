@@ -116,8 +116,24 @@ outside any run, was deserialized, or is past the 32 the thread remembers in the
 another failure thrown as is, kept from an earlier outermost run, get no nested-run note: the wrapper's words stand
 alone, apart from a root cause they would hide, as the thread forgot them when that run ended.
 
-A wrapper with no words of its own still reads `a nested run() failed: ...`, even when an earlier run logged it; see
-[#956](https://github.com/brantunger/unruly-engine/issues/956).
+A failure a nested run logged, rejected facts included, also gets the nested run's note when a later rule in the same
+run throws it, though an earlier rule started the run that logged it: the engine tells where a failure was logged run
+by run, not rule by rule. That holds with or without words of its own; see
+[#961](https://github.com/brantunger/unruly-engine/issues/961).
+
+Code that throws a failure that gets the `already logged` note above on with no words of its own, as is (`throw e`) or
+in `new RuntimeException(e)`, has it read as that failure followed by `(already logged)`:
+`Failed to execute action for rule 'second-rule': <innermost failure> (already logged)`. The failure's text is
+shortened as any nested failure's is, and the note follows its `(N more characters)`.
+
+Only what that code throws reads so. A run further out, around the run whose rule threw it, still names the failure
+as a nested run's: `Failed to execute action for rule 'z-rule': a nested run() failed: ...`. The cases above that get
+the nested run's note read `a nested run() failed: ...` here too. The failure is still logged once, and the wrapper
+isn't logged.
+
+Rejected facts or another failure thrown as is, kept from an earlier outermost run, read by their own text when thrown
+on as is, or by the wrapper's message, which is their `toString()`, when wrapped in `new RuntimeException(e)`. They
+are logged again, as the thread forgot them.
 
 The nested failure's message is mostly escaped already, so where it's shortened, as a note or as a failed `load()` or
 rejected facts, the cut never splits an escape: the whole escape is left out, so up to 5 fewer characters show. Its

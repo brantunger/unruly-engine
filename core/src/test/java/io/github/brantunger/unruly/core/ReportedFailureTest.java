@@ -149,7 +149,9 @@ class ReportedFailureTest {
 
         ReportedFailure copy = roundTrip(top);
 
-        assertEquals("a nested load() failed: Duplicate rule name 'dup'", Failures.describe(top));
+        // Once the run it was built in has ended, it reads as logged already; a copy, which can't tell where it was
+        // built, still reads as a nested load's.
+        assertEquals("Duplicate rule name 'dup' (already logged)", Failures.describe(top));
         assertEquals("a nested load() failed: Duplicate rule name 'dup'", Failures.describe(copy));
         assertEquals("Duplicate rule name 'dup'", Failures.nestedRunFailure(copy).getMessage());
     }

@@ -615,6 +615,11 @@ public final class Failures {
      * facts a nested run rejected, isn't found at all, so the exception around it reads by its own message, with no
      * nested run's note, and a {@link ReportedFailure} built in the same outermost run before the last
      * {@value LoggedFailures#MAX_LOGGED} is noted as a nested run's.
+     * Where every exception wrapped around such a failure logged already adds nothing to it, as when the code throws it
+     * on as is or as {@code new RuntimeException(e)}, it's described by its text alone, followed by
+     * {@code (already logged)}, not as a nested run's: the text as {@link #loggedText} shortens it, so the note comes
+     * after any count of what was left out. That holds only for what such code throws itself: a run further out, around
+     * the run whose rule threw it, still names the failure as a nested run's.
      * The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
      * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
      * written (see {@link #noteText}). A nested failure's text is mostly text the engine has already escaped, so where
@@ -656,7 +661,7 @@ public final class Failures {
         String nested = nested(below.loggedByLoad());
         Throwable news = below.news();
         if (news == null) {
-            return nested + loggedText(logged);
+            return below.loggedBelow() ? nested + loggedText(logged) : loggedText(logged) + " (already logged)";
         }
         // The failure is in the chain, which is where it was found.
         return withNote(news, below.loggedBelow() ? "after " + nested + noteText(logged)

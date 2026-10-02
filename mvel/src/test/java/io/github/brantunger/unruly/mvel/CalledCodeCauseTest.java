@@ -365,12 +365,13 @@ public class CalledCodeCauseTest {
     }
 
     /**
-     * The same argument failing with a nested run's failure: MVEL's wrapper, whose message the rule's code didn't
+     * The same argument failing with an earlier run's failure: MVEL's wrapper, whose message the rule's code didn't
      * write, would otherwise read as a message of the code's own around it, so the rule's failure would be logged a
      * second time, named by MVEL's message.
      */
     @Test
-    @DisplayName("a nested run's failure from that argument is the cause, named as nested and not logged again")
+    @DisplayName("an earlier run's failure from that argument is the cause, named as logged already and not logged"
+            + " again")
     void nestedRunFailureInAReflectiveCall() {
         RulesEngine<Map<String, Object>> engine = mixedEngine();
         RulesEngine<Map<String, Object>> inner = engine("true", "output.put('v', code.value)");
@@ -381,7 +382,7 @@ public class CalledCodeCauseTest {
                 () -> engine.run(facts(nested)));
 
         assertSame(nested, outcome.thrown().getCause());
-        assertEquals("Failed to execute action for rule 'r': a nested run() failed: " + nested.getMessage(),
+        assertEquals("Failed to execute action for rule 'r': " + nested.getMessage() + " (already logged)",
                 outcome.thrown().getMessage());
         assertFalse(outcome.logs().contains("ERROR"), outcome.logs());
     }

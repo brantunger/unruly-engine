@@ -70,6 +70,7 @@ class NestedRunFailureLogTest {
             + "simulated heap exhaustion)";
     private static final String OUTPUT_REJECTED = "'output' is reserved for the output object and cannot be used as "
             + "a fact name";
+    private static final String IN_NEW = "in new RuntimeException(e)";
 
     private final OutOfMemoryError oom = new OutOfMemoryError("simulated heap exhaustion");
     private final AtomicInteger onError = new AtomicInteger();
@@ -1559,6 +1560,360 @@ class NestedRunFailureLogTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    /**
+     * Throws on what was kept with no words of its own: as is, or, where {@code how} ends with {@value #IN_NEW}, in an
+     * exception whose message is its {@code toString()}.
+     */
+    private static RuntimeException thrownOn(AtomicReference<RuntimeException> kept, String how) {
+        return how.endsWith(IN_NEW) ? new RuntimeException(kept.get()) : kept.get();
+    }
+
+    /** An engine whose rule throws on what was kept with no words of its own (see {@link #thrownOn}). */
+    private RulesEngine<Map<String, Object>> throwingOnKept(String ruleName, AtomicReference<RuntimeException> kept,
+                                                           String how) {
+        return engine(ruleName, doing(() -> {
+            throw thrownOn(kept, how);
+        }), HashMap::new);
+    }
+
+    /** Runs an engine whose rule fails, at the outermost level, and keeps what it throws. */
+    private Runnable keptFromAnEarlierRun(AtomicReference<RuntimeException> kept) {
+        return keeping(running(failing()), kept);
+    }
+
+    /**
+     * A failure a nested run logged, a rule's or the facts it rejected, which the code around it kept and a later
+     * sibling's rule throws on with no words of its own, wasn't logged by a run that rule started: it reads as the
+     * failure, logged already, not as a nested run's, and isn't logged again. The rule around both runs started the one
+     * that logged it, so it still names a nested run's failure.
+     *
+     * @param how Whose failure, of what kind, and how it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"a sibling's failure, as is", "a sibling's failure, " + IN_NEW,
+            "a sibling's rejected facts, as is", "a sibling's rejected facts, " + IN_NEW,
+            "a deeper sibling's failure, as is", "a deeper sibling's failure, " + IN_NEW,
+            "a deeper sibling's rejected facts, as is", "a deeper sibling's rejected facts, " + IN_NEW})
+    @DisplayName("#956: a failure an earlier nested run logged, thrown on by a later sibling's rule with no words of"
+            + " its own, reads as logged already")
+    void siblingNestedFailureThrownOnReadsAsLogged(String how) {
+        boolean rejected = how.contains("rejected facts");
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        Runnable first = how.contains("deeper")
+                ? running(engine("mid-rule", doing(keeping(failingNested(rejected), kept)), HashMap::new))
+                : keeping(failingNested(rejected), kept);
+        RulesEngine<Map<String, Object>> second = throwingOnKept("second-rule", kept, how);
+        AtomicReference<RuntimeException> secondThrew = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            first.run();
+            try {
+                second.run(new FactMap<>());
+            } catch (RuntimeException e) {
+                secondThrew.set(e);
+                throw e;
+            }
+        }), HashMap::new);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        String logged = rejected ? OUTPUT_REJECTED : INNER_FAILURE;
+        assertEquals(List.of(logged), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+        assertEquals("Failed to execute action for rule 'second-rule': " + logged + " (already logged)",
+                secondThrew.get().getMessage());
+        assertEquals("Failed to execute action for rule 'outer-rule': a nested run() failed: " + logged,
+                outcome.thrown().getMessage());
+    }
+
+    /**
+     * A rule's failure kept from an earlier outermost run, a nested run's or the outermost run's own, and thrown on by
+     * a later run's rule with no words of its own, wasn't logged by a run that rule started: it reads as the failure,
+     * logged already, and isn't logged again.
+     *
+     * @param how Where the failure kept came from, and how it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"an earlier outermost run's nested failure, as is",
+            "an earlier outermost run's nested failure, " + IN_NEW, "an earlier outermost run's own failure, as is",
+            "an earlier outermost run's own failure, " + IN_NEW})
+    @DisplayName("#956: a failure kept from an earlier outermost run, thrown on by a later run's rule with no words of"
+            + " its own, reads as logged already")
+    void earlierOutermostFailureThrownOnReadsAsLogged(String how) {
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        Runnable earlier = how.contains("own failure") ? keptFromAnEarlierRun(kept)
+                : running(engine("earlier-rule", doing(keeping(running(failing()), kept)), HashMap::new));
+        RulesEngine<Map<String, Object>> later = throwingOnKept("later-rule", kept, how);
+
+        Outcome<Throwable> outcome = failed(() -> {
+            earlier.run();
+            later.run(new FactMap<>());
+        });
+
+        assertEquals(List.of(INNER_FAILURE), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+        assertEquals("Failed to execute action for rule 'later-rule': " + INNER_FAILURE + " (already logged)",
+                outcome.thrown().getMessage());
+    }
+
+    /**
+     * A rule around the run whose rule threw on, with no words of its own, a failure kept from an earlier outermost
+     * run still names that failure as a nested run's: only what the code that throws it on throws reads as logged
+     * already. A guard for #956's fix, which doesn't carry that outward.
+     *
+     * @param how How it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"as is", IN_NEW})
+    @DisplayName("#956 guard: a rule around the run that threw on a failure kept from an earlier outermost run names a"
+            + " nested run's failure")
+    void ruleAroundTheRunThatThrewOnNamesNestedRun(String how) {
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        keptFromAnEarlierRun(kept).run();
+        RulesEngine<Map<String, Object>> engine = engine("z-rule",
+                doing(running(throwingOnKept("later-rule", kept, how))), HashMap::new);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        assertEquals(List.of(), outcome.lines("ERROR"), outcome.logs());
+        assertEquals("Failed to execute action for rule 'z-rule': " + NESTED_FAILURE, outcome.thrown().getMessage());
+    }
+
+    /**
+     * A failure too long to show whole, thrown on with no words of its own, keeps its count of what was left out, and
+     * the note follows that count.
+     */
+    @Test
+    @DisplayName("#956: a long failure thrown on with no words of its own has the note after its count of what was"
+            + " left out")
+    void longFailureThrownOnKeepsTheNote() {
+        String message = "x".repeat(Failures.MAX_DESCRIPTION_LENGTH + 500);
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        Runnable earlier = keeping(running(engine("inner-rule", doing(() -> {
+            throw new IllegalStateException(message);
+        }), HashMap::new)), kept);
+        RulesEngine<Map<String, Object>> later = throwingOnKept("later-rule", kept, "as is");
+
+        Outcome<Throwable> outcome = failed(() -> {
+            earlier.run();
+            later.run(new FactMap<>());
+        });
+
+        String inner = "Failed to execute action for rule 'inner-rule': "
+                + "x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters)";
+        assertEquals(List.of(inner), outcome.lines("ERROR"), outcome.logs());
+        assertEquals("Failed to execute action for rule 'later-rule': " + inner + " (already logged)",
+                outcome.thrown().getMessage());
+    }
+
+    /**
+     * A pooled thread keeps nothing of a run that has ended: a nested run's failure kept by one task and thrown on with
+     * no words of its own by a later task's run on the same thread reads as logged already, and is logged once.
+     *
+     * @param how How it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"as is", IN_NEW})
+    @DisplayName("#956: a failure kept by one task on a pooled thread, thrown on by a later task's run there with no"
+            + " words of its own, reads as logged already")
+    void pooledThreadFailureThrownOnReadsAsLogged(String how) throws Exception {
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> earlier = engine("earlier-rule", doing(keeping(running(failing()), kept)),
+                HashMap::new);
+        RulesEngine<Map<String, Object>> later = throwingOnKept("later-rule", kept, how);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            AtomicReference<Thread> threads = new AtomicReference<>();
+            Outcome<Throwable> outcome = failed(() -> {
+                executor.submit(() -> {
+                    threads.set(Thread.currentThread());
+                    earlier.run(new FactMap<>());
+                }).get();
+                try {
+                    executor.submit(() -> {
+                        assertSame(threads.get(), Thread.currentThread(), "the same pooled thread");
+                        later.run(new FactMap<>());
+                    }).get();
+                } catch (ExecutionException e) {
+                    throw e.getCause();
+                }
+            });
+
+            assertEquals(List.of(INNER_FAILURE), outcome.lines("ERROR"), outcome.logs());
+            assertEquals("Failed to execute action for rule 'later-rule': " + INNER_FAILURE + " (already logged)",
+                    outcome.thrown().getMessage());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    /**
+     * A failure kept from an earlier outermost run and thrown on with no words of its own by the output supplier, a
+     * language's {@code newSession()}, its check of a fact name or its {@code warmUp()} reads as logged already there
+     * too, and isn't logged again.
+     *
+     * @param how Where it's thrown on, and how
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"the output supplier, as is", "the output supplier, " + IN_NEW, "newSession(), as is",
+            "newSession(), " + IN_NEW, "a fact name's check, as is", "a fact name's check, " + IN_NEW,
+            "warmUp(), as is", "warmUp(), " + IN_NEW})
+    @DisplayName("#956: a failure kept from an earlier outermost run, thrown on with no words of its own by the output"
+            + " supplier or a language, reads as logged already")
+    void earlierOutermostFailureThrownOnByCalledCodeReadsAsLogged(String how) {
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        keptFromAnEarlierRun(kept).run();
+        String where = how.substring(0, how.indexOf(','));
+        FactMap<Object> facts = new FactMap<>();
+        facts.setValue("x", 1);
+        Executable later = switch (where) {
+            case "the output supplier" -> () -> engine("later-rule", doing(() -> { }), () -> {
+                throw thrownOn(kept, how);
+            }).run(facts);
+            case "newSession()" -> () -> engine("later-rule", new StubExpressionLanguage().newSession(() -> {
+                throw thrownOn(kept, how);
+            }), HashMap::new).run(facts);
+            case "a fact name's check" -> () -> engine("later-rule", new StubExpressionLanguage().checkFactName(
+                    name -> {
+                        throw thrownOn(kept, how);
+                    }), HashMap::new).run(facts);
+            default -> () -> loadedWarmingUp(() -> {
+                throw thrownOn(kept, how);
+            });
+        };
+
+        Outcome<Throwable> outcome = failed(later);
+
+        String says = switch (where) {
+            case "the output supplier" -> "Output factory threw: ";
+            case "newSession()" -> "The 'stub' expression language failed to create a session: ";
+            case "a fact name's check" -> "The 'stub' expression language failed to check fact name 'x': ";
+            default -> "The 'warming' expression language failed to warm up a session: ";
+        };
+        assertEquals(says + INNER_FAILURE + " (already logged)", outcome.thrown().getMessage());
+        assertEquals(List.of(), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+    }
+
+    /**
+     * A listener that throws on, with no words of its own, a failure kept from an earlier outermost run gets no WARN
+     * line, as that failure was logged already: a guard for #956's fix, which a listener's line never reaches here, as
+     * it describes only what's news.
+     *
+     * @param how How it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"as is", IN_NEW})
+    @DisplayName("#956 guard: a listener that throws on a failure kept from an earlier outermost run gets no WARN line")
+    void listenerThrowingOnEarlierFailureGetsNoWarn(String how) {
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        keptFromAnEarlierRun(kept).run();
+        RulesEngine<Map<String, Object>> later = plain("later-rule", onBeforeRun(() -> {
+            throw thrownOn(kept, how);
+        }));
+
+        Outcome<Throwable> outcome = returned(() -> later.run(new FactMap<>()));
+
+        assertEquals(List.of(), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+    }
+
+    /**
+     * The rule that started the nested run, throwing on its failure with no words of its own, still names it as a
+     * nested run's failure: a guard for #956's fix, which tells this case from a sibling's.
+     *
+     * @param how Of what kind, and how it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"a failure, as is", "a failure, " + IN_NEW, "rejected facts, as is",
+            "rejected facts, " + IN_NEW})
+    @DisplayName("#956 guard: the rule that started a nested run, throwing on its failure with no words of its own,"
+            + " names a nested run's failure")
+    void starterThrowingOnNestedFailureNamesNestedRun(String how) {
+        boolean rejected = how.startsWith("rejected facts");
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        Runnable nested = failingNested(rejected);
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            try {
+                nested.run();
+            } catch (RuntimeException e) {
+                kept.set(e);
+                throw thrownOn(kept, how);
+            }
+        }), HashMap::new);
+
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+        String logged = rejected ? OUTPUT_REJECTED : INNER_FAILURE;
+        assertEquals(List.of(logged), outcome.lines("ERROR"), outcome.logs());
+        assertEquals("Failed to execute action for rule 'outer-rule': a nested run() failed: " + logged,
+                outcome.thrown().getMessage());
+    }
+
+    /**
+     * A run's failure from another thread, thrown on with no words of its own by the rule that waited for it, still
+     * names a nested run's failure, as {@code docs/nested-runs.md} says: a guard for #956's fix.
+     *
+     * @param how How it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"as is", IN_NEW})
+    @DisplayName("#956 guard: a run's failure from another thread, thrown on by the rule that waited for it with no"
+            + " words of its own, names a nested run's failure")
+    void otherThreadFailureThrownOnNamesNestedRun(String how) {
+        RulesEngine<Map<String, Object>> inner = failing();
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+                Future<?> run = executor.submit(running(inner));
+                try {
+                    run.get();
+                } catch (ExecutionException e) {
+                    kept.set((RuntimeException) e.getCause());
+                    throw thrownOn(kept, how);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }), HashMap::new);
+
+            Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+
+            assertEquals(List.of(INNER_FAILURE), outcome.lines("ERROR"), outcome.logs());
+            assertEquals("Failed to execute action for rule 'outer-rule': " + NESTED_FAILURE,
+                    outcome.thrown().getMessage());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    /**
+     * Facts a nested run rejected, kept from an earlier outermost run and thrown on with no words of its own by a later
+     * run's rule, aren't found, as the thread forgot them when that run ended: the later rule logs them again, as its
+     * own failure. A guard for #956's fix, which reads only a failure that was found.
+     *
+     * @param how How it's thrown on
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"as is", IN_NEW})
+    @DisplayName("#956 guard: facts rejected in an earlier outermost run, thrown on by a later run's rule with no words"
+            + " of its own, are logged again")
+    void earlierOutermostRejectionThrownOnLoggedAgain(String how) {
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        Runnable earlier = running(engine("earlier-rule", doing(keeping(failingNested(true), kept)), HashMap::new));
+        RulesEngine<Map<String, Object>> later = throwingOnKept("later-rule", kept, how);
+
+        Outcome<Throwable> outcome = failed(() -> {
+            earlier.run();
+            later.run(new FactMap<>());
+        });
+
+        String wrapper = "Failed to execute action for rule 'later-rule': "
+                + (how.endsWith(IN_NEW) ? IllegalArgumentException.class.getName() + ": " : "") + OUTPUT_REJECTED;
+        assertEquals(List.of(OUTPUT_REJECTED, wrapper), outcome.lines("ERROR"), outcome.logs());
+        assertEquals(wrapper, outcome.thrown().getMessage());
     }
 
     @ParameterizedTest(name = "{0}")

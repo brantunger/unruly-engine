@@ -58,7 +58,8 @@ package io.github.brantunger.unruly.core;
  * had ended before it started, such as an earlier sibling, however deep, is noted as logged already, as a fatal error
  * is (see {@link #loggedAt}). So is a {@link ReportedFailure} built on the thread in an earlier outermost run, as only
  * such a failure says which outermost run built it. One built on another thread is a nested run's, as one an action
- * hands to an executor and waits for is.
+ * hands to an executor and waits for is. Code that throws such a failure on with no words of its own has it read as
+ * the failure, logged already, the same way, not as a nested run's.
  * </p>
  *
  * <p>
