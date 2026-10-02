@@ -81,9 +81,18 @@ for a rule's failure, the output supplier's, a language's or a rule that fails t
 a listener or a `close()`.
 
 The wrapper's message comes first, shortened and escaped, and the nested failure follows as a note, shortened to 1,000
-characters before it's escaped, such as
+characters, such as
 `Failed to execute action for rule 'r': pricing failed (after a nested run() failed: <innermost failure>)`. When
 several wrappers have one, the outermost is named. A run further out names that logged line, not the innermost failure.
+
+The nested failure's message is mostly escaped already, so where it's shortened, as a note or as a failed `load()` or
+rejected facts, the cut never splits an escape: the whole escape is left out, so up to 5 fewer characters show. Its
+`(N more characters)` counts the characters of the message as the nested failure holds it: escaped where the engine
+escaped it, a language's raw text otherwise. It matches the nested line's count only when that line shows the same
+text.
+
+A language's raw text that reaches the same cut, such as its rejection of a fact name, is cut before anything that
+reads as an escape too, so it can show up to 5 fewer characters than the nested line.
 
 A wrapper that adds nothing is left out, and the nested text stands alone: one with no message, one whose message is
 its cause's `toString()`, as `new RuntimeException(cause)` makes, or its cause's message, or the nested failure's text.

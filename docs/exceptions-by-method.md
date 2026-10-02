@@ -55,16 +55,17 @@ without parsing the message.
 | `FactMap` methods | `IllegalArgumentException` | A `null` name, a key that differs from the fact's name, or a duplicate name in the constructor |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
 
-Messages about a specific rule name it, for example `Failed to evaluate condition for rule 'prime-rate': ...`. Line
+Messages about a rule name it, for example `Failed to evaluate condition for rule 'prime-rate': ...`. Line
 breaks, tabs, control characters, line and paragraph separators, format characters such as bidi controls, lone
 surrogates, and the other characters Unicode marks default-ignorable, which show as nothing (U+3164 HANGUL FILLER,
 variation selectors, unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` and four lowercase hex digits
 (`\u202e`), one per UTF-16 unit, so two for a character outside the BMP.
 
-Neither a name nor a quoted fact value can then start a log line, change how it reads or pass for another name through
+Neither a name nor a quoted fact value can start a log line, change how it reads or pass for another name through
 an invisible character, and escaping twice changes nothing. Ordinary text shows escapes too, such as an emoji's
-U+FE0F. Shortening never splits such a character. The engine's limits count `char`s before escaping, so an escaped
-text can show more than its limit, and the `(N more characters)` count is the `char`s cut:
+U+FE0F. Shortening never splits such a character. The engine's limits count `char`s before escaping, except for
+[already escaped nested text](nested-runs.md#-what-is-logged), so an escaped text can show more than its limit, and
+the `(N more characters)` count is the `char`s cut:
 
 | Part of a message | What the engine does with it |
 | --- | --- |
@@ -97,6 +98,5 @@ name is thrown at once, before anything is compiled.
 `RuleCompilationException` says where the language found each problem, with a line and column when it knows them.
 
 To act on the failing rule without parsing the message, call `getRuleName()` on the `RuleCompilationException` or
-`RuleExecutionException`. It returns the name exactly as the rule has it, or `null` for failures that aren't about one
-rule, such as a failing output supplier, an expression language that can't create its compiler or a session, or a
-stopped run.
+`RuleExecutionException`. It returns the rule's exact name, or `null` for failures that aren't about one rule, such as
+a failing output supplier, an expression language that can't create its compiler or a session, or a stopped run.

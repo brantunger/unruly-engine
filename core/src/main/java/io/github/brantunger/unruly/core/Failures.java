@@ -610,8 +610,11 @@ public final class Failures {
      * {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is lost.
      * The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
      * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
-     * written (see {@link #noteText}). A fatal {@link Error} logged already, wrapped in an exception that says
-     * something of its own (see {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
+     * written (see {@link #noteText}). A nested failure's text is mostly text the engine has already escaped, so where
+     * it's shortened, in a note or alone (see {@link #loggedText}), it's shortened as {@link #clipNested} shortens it:
+     * never inside an escape, and counting the characters of the nested failure's message as it's held. A fatal
+     * {@link Error} logged already, wrapped in an exception that says something of its own (see
+     * {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
      * {@link #describeWithClass} describes it: {@code (after a nested run() failed: ...)} or
      * {@code (after a nested load() failed: ...)} when what the code that wrapped it started logged it, or else
      * {@code (caused by ..., already logged)} when the error is in the cause chain, or
@@ -641,7 +644,7 @@ public final class Failures {
                 return clip(messageOr(news, news.getClass().getName())) + " (" + note + ")";
             }
             String text = clip(messageOr(e, e.getClass().getName()));
-            return text + causeNote(chain, readableMessage(e));
+            return text + causeNote(chain, shownOf(readableMessage(e), false));
         }
         String nested = nested(below.loggedByLoad());
         Throwable news = below.news();
@@ -691,7 +694,9 @@ public final class Failures {
      * Returns the text of a nested failure for the note {@link #describe} adds after an exception's own message: the
      * text {@link #loggedText} returns, shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole before it's
      * escaped, as {@link #quoteAll} shortens a list, because the nested failure may itself hold news, run after run.
-     * Its text names the root cause if it's hidden, so the note of the exception around it doesn't.
+     * The engine wrote most of that text and escaped it already, a {@link ReportedFailure}'s message included, so it's
+     * shortened as {@link #clipNested} shortens it, never inside an escape. Its text names the root cause if it's
+     * hidden, so the note of the exception around it doesn't.
      *
      * @param logged The nested failure
      * @return Its text, shortened, then escaped
@@ -699,17 +704,20 @@ public final class Failures {
     private static String noteText(Throwable logged) {
         String message = messageOr(logged, logged.getClass().getName());
         if (logged instanceof ReportedFailure) {
-            return clip(message);
+            return clipNested(message);
         }
-        // Shortened before it's escaped, as a whole, so a cut never falls inside an escape.
-        String note = rawCauseNote(causeChain(logged), readableMessage(logged));
-        return clip(escape(message).contains(escape(note)) ? message : message + note);
+        // Shortened before it's escaped, as a whole, and before an escape the message already holds, so a cut never
+        // falls inside an escape.
+        String note = rawCauseNote(causeChain(logged), shownOf(readableMessage(logged), true));
+        return clipNested(escape(message).contains(escape(note)) ? message : message + note);
     }
 
     /**
      * Returns the text a nested run or load logged a failure with, as the run around it names it: the message of a
      * {@link ReportedFailure}, which the engine wrote, or else the exception described as {@link #describe} describes
-     * one whose cause chain holds no nested failure, which escapes a message a language wrote. The note of a root
+     * one whose cause chain holds no nested failure, which escapes a message a language wrote, except that the message
+     * is shortened as {@link #clipNested} shortens it: the engine wrote most such messages, such as a rule that fails
+     * to compile or a fact it rejects, and escaped the names and text in them already. The note of a root
      * cause it would otherwise hide is left out when the message already has it, as a message the engine wrote from
      * a language's exception does, so it isn't there twice, as {@link #describeWithClass} leaves it out.
      *
@@ -720,8 +728,8 @@ public final class Failures {
         if (logged instanceof ReportedFailure) {
             return messageOf(logged);
         }
-        String text = clip(messageOr(logged, logged.getClass().getName()));
-        String note = causeNote(causeChain(logged), readableMessage(logged));
+        String text = clipNested(messageOr(logged, logged.getClass().getName()));
+        String note = causeNote(causeChain(logged), shownOf(readableMessage(logged), true));
         return text.contains(note) ? text : text + note;
     }
 
@@ -730,7 +738,8 @@ public final class Failures {
      * and message when an exception above it has none, unless the part of the first exception's text that the
      * description shows already has it: the first message for {@link #describe}, its {@code toString()} for
      * {@link #describeWithClass}. That part is the text's first {@value #MAX_DESCRIPTION_LENGTH} characters as
-     * {@link #truncate} keeps them, searched raw, without {@link #truncate}'s note of what was left out: a root cause's
+     * {@link #truncate} keeps them, or as {@link #clipNested} keeps them for a nested failure's text (see
+     * {@link #shownOf}), searched raw, without the note of what was left out: a root cause's
      * message found only past the cut isn't shown, and searching all of a long text took time that grew with the
      * square of its length. A message that can't be read (see {@link #messageOf})
      * hides the root cause as a missing one does, and a root cause whose message can't be read is named with the note
@@ -738,12 +747,13 @@ public final class Failures {
      * messages are unavailable read the same whatever the messages were.
      *
      * @param chain An exception and its causes
-     * @param text  The text the description shows of the first exception, whole, or {@code null} if it shows none
-     *              that can be read: {@link #describe}'s message, or {@link #describeWithClass}'s {@code toString()}
+     * @param shown The part of the first exception's text the description shows, as {@link #shownOf} returns it, or
+     *              {@code null} if it shows none that can be read: of {@link #describe}'s message, or of
+     *              {@link #describeWithClass}'s {@code toString()}
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
      */
-    private static String causeNote(List<Throwable> chain, @Nullable String text) {
-        return escape(rawCauseNote(chain, text));
+    private static String causeNote(List<Throwable> chain, @Nullable String shown) {
+        return escape(rawCauseNote(chain, shown));
     }
 
     /**
@@ -751,10 +761,10 @@ public final class Failures {
      * {@link #quote} shortens a name, and its message as {@link #truncate} shortens one.
      *
      * @param chain An exception and its causes
-     * @param text  As for {@link #causeNote}
+     * @param shown As for {@link #causeNote}
      * @return {@code " (caused by ...)"}, unescaped, or an empty string if nothing is hidden
      */
-    private static String rawCauseNote(List<Throwable> chain, @Nullable String text) {
+    private static String rawCauseNote(List<Throwable> chain, @Nullable String shown) {
         if (chain.subList(1, chain.size()).isEmpty()) {
             return "";
         }
@@ -763,14 +773,28 @@ public final class Failures {
         if (rootMessage == null) {
             return " (caused by " + shorten(root.getClass().getName()) + ")";
         }
-        // The kept characters themselves, not truncate()'s text, whose note of what was left out could match.
-        String shown = text == null || text.length() <= MAX_DESCRIPTION_LENGTH
-                ? text : text.substring(0, keptLength(text, MAX_DESCRIPTION_LENGTH));
         boolean hidden = !chain.stream().allMatch(t -> readableMessage(t) != null)
                 && (shown == null || !shown.contains(rootMessage));
         return hidden
                 ? " (caused by " + shorten(root.getClass().getName()) + ": " + truncate(rootMessage) + ")"
                 : "";
+    }
+
+    /**
+     * Returns the part of a text that a description shows, for {@link #causeNote} to search: the characters it keeps
+     * themselves, not the shortened text, whose note of what was left out could match. That's the whole text if it
+     * fits, or else its first characters as {@link #truncate} keeps them, or as {@link #clipNested} keeps them for a
+     * nested failure's text, which can be up to 5 fewer.
+     *
+     * @param text   The text, or {@code null} if there's none that can be read
+     * @param nested Whether the text is a nested failure's, shortened by {@link #clipNested}
+     * @return The part shown, or {@code null} if {@code text} is
+     */
+    private static @Nullable String shownOf(@Nullable String text, boolean nested) {
+        if (text == null || text.length() <= MAX_DESCRIPTION_LENGTH) {
+            return text;
+        }
+        return text.substring(0, nested ? nestedKeptLength(text) : keptLength(text, MAX_DESCRIPTION_LENGTH));
     }
 
     /**
@@ -791,7 +815,7 @@ public final class Failures {
     static String describeWithClass(Throwable e) {
         String readable = read(e::toString, thrown -> null);
         String text = clip(readable != null ? readable : textOf(e));
-        String note = causeNote(causeChain(e), readable);
+        String note = causeNote(causeChain(e), shownOf(readable, false));
         return text.contains(note) ? text : text + note;
     }
 
@@ -926,6 +950,64 @@ public final class Failures {
     }
 
     /**
+     * Makes the text of a nested failure safe to put in a message, as {@link #clip} makes text the engine didn't write:
+     * shortened as {@link #truncate} shortens it, then escaped. That text is mostly a message the engine has already
+     * escaped, such as a rule that fails to compile, with a language's message or a name in it, so where the limit
+     * falls inside an escape {@link #escape} writes ({@code \n}, {@code \r}, {@code \t}, or a backslash, {@code u}
+     * and four lowercase hex digits), the escape is left out whole, and the text shows at most 5 characters fewer.
+     * {@link #escape} doesn't escape a backslash, so text that only reads as an escape is left out the same way.
+     * The count of what was left out counts the characters of the text as given: the nested failure's message as it's
+     * held, escaped where the engine escaped it, and a language's raw text otherwise. So it matches the count in the
+     * line the nested failure was logged with only when that line shows the same text.
+     *
+     * @param text The text
+     * @return The text, shortened if it was longer, then escaped
+     */
+    static String clipNested(String text) {
+        if (text.length() <= MAX_DESCRIPTION_LENGTH) {
+            return escape(text);
+        }
+        return escape(cut(text, nestedKeptLength(text)));
+    }
+
+    /**
+     * How many characters of text longer than {@value #MAX_DESCRIPTION_LENGTH} {@link #clipNested} keeps: as many as
+     * {@link #truncate} keeps, or fewer, up to the backslash of an escape they would end inside.
+     */
+    private static int nestedKeptLength(String text) {
+        int kept = keptLength(text, MAX_DESCRIPTION_LENGTH);
+        int backslash = text.lastIndexOf('\\', kept - 1);
+        return backslash >= 0 && backslash + escapeLength(text, backslash) > kept ? backslash : kept;
+    }
+
+    /**
+     * How long the escape {@link #escape} writes that starts at a backslash is: 2 for {@code \n}, {@code \r} and
+     * {@code \t}, 6 for a backslash, {@code u} and four lowercase hex digits, or 0 if what follows the backslash is
+     * none of them.
+     *
+     * @param text The text
+     * @param at   Where the backslash is
+     * @return The escape's length, or 0
+     */
+    private static int escapeLength(String text, int at) {
+        // A backslash the cut falls after is never the text's last character, as the cut leaves some out.
+        char kind = text.charAt(at + 1);
+        if ("nrt".indexOf(kind) >= 0) {
+            return 2;
+        }
+        if (kind != 'u' || at + 6 > text.length()) {
+            return 0;
+        }
+        for (int i = at + 2; i < at + 6; i++) {
+            char digit = text.charAt(i);
+            if ((digit < '0' || digit > '9') && (digit < 'a' || digit > 'f')) {
+                return 0;
+            }
+        }
+        return 6;
+    }
+
+    /**
      * Shortens text to at most {@code limit} characters, saying how many were left out: the one rule {@link #truncate}
      * and {@link #shorten(String)} share. A surrogate pair the limit falls inside is left out whole, so the text never
      * ends in half a character.
@@ -938,7 +1020,17 @@ public final class Failures {
         if (text.length() <= limit) {
             return text;
         }
-        int kept = keptLength(text, limit);
+        return cut(text, keptLength(text, limit));
+    }
+
+    /**
+     * Keeps the first characters of a text, saying how many were left out, as {@link #shorten(String, int)} writes it.
+     *
+     * @param text The text
+     * @param kept How many characters to keep
+     * @return The kept characters, then {@code ... (N more characters)}
+     */
+    private static String cut(String text, int kept) {
         return text.substring(0, kept) + "... (" + (text.length() - kept) + " more characters)";
     }
 
