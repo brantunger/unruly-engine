@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +19,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.core.EngineLogs.capture;
@@ -416,6 +419,143 @@ class LoggedFailuresTest {
             assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
         } finally {
             LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("#904: a failure a run reported is nested only above the depth that built it, and once that run has"
+            + " ended, not in a sibling, nor once the outermost run has ended")
+    void reportedRecordedWithItsDepth() {
+        ReportedFailure nested;
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    nested = new ReportedFailure("by a nested run", null);
+                } finally {
+                    LoggedFailures.leave();
+                }
+                assertEquals("wrapped (after a nested run() failed: by a nested run)",
+                        Failures.describe(new IllegalStateException("wrapped", nested)), "the run that started it");
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertEquals("wrapped (after a nested run() failed: by a nested run)",
+                    Failures.describe(new IllegalStateException("wrapped", nested)), "a run around that one");
+            LoggedFailures.enter();
+            try {
+                assertEquals("wrapped (caused by by a nested run, already logged)",
+                        Failures.describe(new IllegalStateException("wrapped", nested)), "a later sibling");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            LoggedFailures.leave();
+        }
+        assertEquals("wrapped (caused by by a nested run, already logged)",
+                Failures.describe(new IllegalStateException("wrapped", nested)), "no run in progress");
+        LoggedFailures.enter();
+        try {
+            assertEquals("wrapped (caused by by a nested run, already logged)",
+                    Failures.describe(new IllegalStateException("wrapped", nested)), "a later outermost run");
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("#904: past the bound, a failure a run reported is taken for a nested run's, as before the engine"
+            + " recorded any, and the newest isn't")
+    void boundedReportedRecord() {
+        List<ReportedFailure> reported = new ArrayList<>();
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
+                    reported.add(new ReportedFailure("reported " + i, null));
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            LoggedFailures.enter();
+            try {
+                assertEquals("wrapped (after a nested run() failed: reported 0)",
+                        Failures.describe(new IllegalStateException("wrapped", reported.get(0))), "pushed out");
+                assertEquals("wrapped (caused by reported 32, already logged)",
+                        Failures.describe(new IllegalStateException("wrapped", reported.get(32))), "the newest");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("#904: a failure a run on another thread reported is taken for a nested run's")
+    void reportedOnAnotherThreadIsNested() throws InterruptedException {
+        AtomicReference<ReportedFailure> reported = new AtomicReference<>();
+        Thread other = new Thread(() -> {
+            LoggedFailures.enter();
+            try {
+                reported.set(new ReportedFailure("on another thread", null));
+            } finally {
+                LoggedFailures.leave();
+            }
+        });
+        other.start();
+        other.join();
+        LoggedFailures.enter();
+        try {
+            assertEquals("wrapped (after a nested run() failed: on another thread)",
+                    Failures.describe(new IllegalStateException("wrapped", reported.get())));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    @Test
+    @DisplayName("#904: a pooled thread keeps no record of a run's reported failures once its outermost run has ended")
+    void pooledThreadKeepsNoReportedRecord() throws Exception {
+        RulesEngine<Map<String, Object>> failing = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new StubExpressionLanguage().action((action, session) -> {
+                    throw new IllegalStateException("inner rule failed");
+                })).build();
+        failing.load(List.of(Rule.builder().ruleName("inner-rule").condition("c").action("a").build()));
+        AtomicReference<RuntimeException> kept = new AtomicReference<>();
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .language(new StubExpressionLanguage().action((action, session) -> {
+                    try {
+                        failing.run(new FactMap<>());
+                    } catch (RuntimeException e) {
+                        kept.set(e);
+                    }
+                    return ActionResult.done();
+                })).build();
+        engine.load(List.of(Rule.builder().ruleName("outer-rule").condition("c").action("a").build()));
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Outcome<Throwable> run = capture(() -> executor.submit(() -> engine.run(new FactMap<>())).get());
+            assertNull(run.thrown(), run.logs());
+            assertEquals(List.of("Failed to execute action for rule 'inner-rule': inner rule failed"),
+                    run.lines("ERROR"), run.logs());
+            Field runsField = LoggedFailures.class.getDeclaredField("RUNS");
+            runsField.setAccessible(true);
+            assertNull(executor.submit(() -> ((ThreadLocal<?>) runsField.get(null)).get()).get());
+            assertEquals("wrapped (caused by Failed to execute action for rule 'inner-rule': inner rule failed,"
+                    + " already logged)", executor.submit(() -> {
+                        LoggedFailures.enter();
+                        try {
+                            return Failures.describe(new IllegalStateException("wrapped", kept.get()));
+                        } finally {
+                            LoggedFailures.leave();
+                        }
+                    }).get());
+        } finally {
+            executor.shutdownNow();
         }
     }
 

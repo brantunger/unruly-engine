@@ -77,13 +77,16 @@ logged again, even when a listener or a language's `close()` started it: the rul
 it says `a nested run() failed: <innermost failure>` or `a nested load() failed: ...`, and a listener's or a
 `close()`'s WARN is left out. A listener's stack trace is still logged at DEBUG.
 
-The thread remembers 32 failures, and 32 fatal `Error`s, until its outermost run, `load()`, `validate()` or `close()`
-ends; then, or past 32, one thrown on may be logged again.
+The thread remembers 32 failures nested runs threw as is, 32 rule failures that runs threw, and 32 fatal `Error`s,
+until its outermost run, `load()`, `validate()` or `close()` ends. Then, or past 32, one thrown as is may be logged
+again. A rule's failure that `run()` threw as a `RuleExecutionException` is never logged again, but past 32 in the same
+outermost run a wrapper notes it as a nested run's, as described below. A `RuleExecutionException` your own code builds
+is news, so it's logged.
 
 A run on another thread, such as one an action hands to an executor and waits for, isn't nested: it logs its failure on
 its own thread. A rule's failure, which `run()` throws as a `RuleExecutionException`, isn't logged again. The waiting
 rule's message still reads `a nested run() failed: <innermost failure>`: the engine recognizes a failure `run()`
-threw, whichever thread threw it.
+threw, whichever thread threw it, and always reads such a failure from another thread as a nested run's.
 
 What `run()` throws as is, a fatal `Error` or an `IllegalArgumentException` for rejected facts, for example, is logged
 again as the waiting rule's failure. When the action lets the `ExecutionException` from `Future.get()` through, the line
@@ -99,6 +102,22 @@ The wrapper's message comes first, shortened and escaped, and the nested failure
 characters, such as
 `Failed to execute action for rule 'r': pricing failed (after a nested run() failed: <innermost failure>)`. When
 several wrappers have one, the outermost is named. A run further out names that logged line, not the innermost failure.
+
+That note usually means a run the wrapping code started logged the failure; the exceptions are below. When a run that
+had already ended logged it, the note says the failure was logged already, as for a fatal `Error` below:
+`Failed to execute action for rule 'r': pricing failed (caused by <innermost failure>, already logged)`.
+
+The run that logged it may be an earlier sibling whose failure your code kept, at any depth, or, for a rule's failure
+`run()` threw, a run in an earlier outermost run on the thread, whatever the count. The failure still has one line of
+its own.
+
+A rule's failure that `run()` threw still gets the nested run's note when it came from another thread, was built
+outside any run, was deserialized, or is past the 32 the thread remembers in the same outermost run. Rejected facts or
+another failure thrown as is, kept from an earlier outermost run, get no nested-run note: the wrapper's words stand
+alone, apart from a root cause they would hide, as the thread forgot them when that run ended.
+
+A wrapper with no words of its own still reads `a nested run() failed: ...`, even when an earlier run logged it; see
+[#956](https://github.com/brantunger/unruly-engine/issues/956).
 
 The nested failure's message is mostly escaped already, so where it's shortened, as a note or as a failed `load()` or
 rejected facts, the cut never splits an escape: the whole escape is left out, so up to 5 fewer characters show. Its
@@ -122,8 +141,9 @@ Around a nested fatal `Error`, the note is the `Error`'s class and message, such
 `Failed to execute action for rule 'r': audit failed (after a nested run() failed: java.lang.OutOfMemoryError: ...)`,
 or `(after a nested load() failed: ...)` for a nested `load()`, and the call still rethrows the `Error` itself.
 
-A fatal `Error` logged already, but not below the code that wrapped it, such as by an earlier nested run, gets
-`(caused by java.lang.OutOfMemoryError: ..., already logged)` instead when it's in the cause chain, or
+As for a failure that isn't fatal, a fatal `Error` logged already, but not below the code that wrapped it, such as by
+an earlier nested run, gets `(caused by java.lang.OutOfMemoryError: ..., already logged)` instead when it's in the
+cause chain, or
 `(with suppressed java.lang.OutOfMemoryError: ..., already logged)` when it's found among the suppressed
 exceptions or what they lead to, within the [glossary's limit](glossary.md#fatal-error).
 
