@@ -244,7 +244,7 @@ class UnreadableTextTest {
     void logStackTraceLogs() {
         boolean[] logged = {false};
 
-        AbstractRulesEngine.logStackTrace(() -> logged[0] = true);
+        ListenerNotifier.logStackTrace(() -> logged[0] = true);
 
         assertTrue(logged[0]);
     }
@@ -252,7 +252,7 @@ class UnreadableTextTest {
     @Test
     @DisplayName("logStackTrace leaves the stack trace out when the log call throws")
     void logStackTraceLeftOut() {
-        assertDoesNotThrow(() -> AbstractRulesEngine.logStackTrace(() -> {
+        assertDoesNotThrow(() -> ListenerNotifier.logStackTrace(() -> {
             throw new NullPointerException("printing");
         }));
     }
@@ -260,7 +260,7 @@ class UnreadableTextTest {
     @Test
     @DisplayName("logStackTrace leaves the stack trace out when the log call throws a fatal error")
     void logStackTraceFatal() {
-        assertDoesNotThrow(() -> AbstractRulesEngine.logStackTrace(() -> {
+        assertDoesNotThrow(() -> ListenerNotifier.logStackTrace(() -> {
             throw new OutOfMemoryError("printing");
         }));
     }
