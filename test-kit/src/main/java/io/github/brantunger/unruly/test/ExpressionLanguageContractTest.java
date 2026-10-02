@@ -1503,7 +1503,7 @@ public abstract class ExpressionLanguageContractTest {
      * language that compares whole numbers by type may; one that throws from only one of them fails. What either
      * throws counts as the engine counts it: an exception or an {@link Error} fails the rule, such as a
      * {@link StackOverflowError} or an {@link AssertionError}, but a fatal one, another {@link VirtualMachineError},
-     * is thrown on, and fails the check by itself.
+     * thrown or carried as a cause or a suppressed exception, is thrown on, and fails the check by itself.
      *
      * <p>
      * Each fact is evaluated as a run of its own, which {@link LanguageTestContexts#endRun} ends before the next, as
@@ -1513,7 +1513,7 @@ public abstract class ExpressionLanguageContractTest {
      *
      * <p>
      * An exception or an {@link Error} from closing the session, the compiler or a value kept for the run doesn't
-     * fail this check, unless it's a fatal one: the engine only logs the rest, and {@code sessionsClosed},
+     * fail this check, unless it is or carries a fatal one: the engine only logs the rest, and {@code sessionsClosed},
      * {@code sessionClosedWhileAnotherRuns} and {@code sessionClosedOnAnotherThread} are the checks that fail a session
      * whose {@code close()} throws, and {@code compilerClosed} the one that fails a compiler whose {@code close()}
      * throws.

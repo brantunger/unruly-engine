@@ -1527,6 +1527,53 @@ class ContractKitChecksTest {
     }
 
     @Test
+    @DisplayName("a session whose close() throws an exception carrying a fatal error fails each session check with that"
+            + " error, without the exception attached to it as one the engine only logs (#894)")
+    void sessionCloseCarryingAFatalErrorNotAttachedToIt() {
+        List<String> sessionChecks = List.of("sessionsClosed", "sessionClosedWhileAnotherRuns",
+                "sessionClosedOnAnotherThread");
+        for (String check : sessionChecks) {
+            InternalError crash = new InternalError("the session's native runtime crashed");
+            ExpressionLanguage language = withSessions(new ToyExpressionLanguage(), () -> new Session() {
+                @Override
+                public void close() {
+                    throw new IllegalStateException("failed to release the session", crash);
+                }
+            });
+
+            InternalError failure = assertThrows(InternalError.class, () -> runCheck(language, check), check);
+
+            assertSame(crash, failure, check);
+            assertEquals(List.of(), Arrays.asList(failure.getSuppressed()), check);
+        }
+    }
+
+    @Test
+    @DisplayName("of two sessions, one whose close() throws what the engine only logs and one whose close() throws an"
+            + " exception carrying a fatal error, the session check fails with that error, with only the first's"
+            + " exception attached (#894)")
+    void sessionCloseCarryingAFatalErrorBesideALoggedOne() {
+        IllegalStateException leak = new IllegalStateException("leak");
+        InternalError crash = new InternalError("the session's native runtime crashed");
+        IllegalStateException carrier = new IllegalStateException("failed to release the session", crash);
+        AtomicInteger created = new AtomicInteger();
+        ExpressionLanguage language = withSessions(new ToyExpressionLanguage(), () -> {
+            RuntimeException thrown = created.getAndIncrement() % 2 == 0 ? leak : carrier;
+            return new Session() {
+                @Override
+                public void close() {
+                    throw thrown;
+                }
+            };
+        });
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(language, "sessionsClosed"));
+
+        assertSame(crash, failure);
+        assertEquals(List.of(leak), Arrays.asList(failure.getSuppressed()));
+    }
+
+    @Test
     @DisplayName("a language that returns one session for every copy of the rules fails the session check (#470)")
     void sharedSessionFails() {
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
@@ -2039,6 +2086,20 @@ class ContractKitChecksTest {
                 + " logs at WARN", failure.getMessage());
         assertEquals("a compiler's close() threw java.lang.StackOverflowError: released recursively, which the engine"
                 + " only logs at WARN", overflow.getMessage());
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() throws an exception carrying a fatal error fails the compiler check with"
+            + " that error, without the exception attached to it as one the engine only logs (#894)")
+    void compilerCloseCarryingAFatalErrorNotAttachedToIt() {
+        InternalError crash = new InternalError("the compiler's native runtime crashed");
+        ExpressionLanguage language = throwingCompilerClose(new ToyExpressionLanguage(),
+                () -> new IllegalStateException("failed to release the runtime", crash));
+
+        InternalError failure = assertThrows(InternalError.class, () -> runCheck(language, "compilerClosed"));
+
+        assertSame(crash, failure);
+        assertEquals(List.of(), Arrays.asList(failure.getSuppressed()));
     }
 
     @Test

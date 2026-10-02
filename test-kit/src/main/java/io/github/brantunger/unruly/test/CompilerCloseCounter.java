@@ -68,7 +68,8 @@ final class CompilerCloseCounter {
                     }
 
                     // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception
-                    // or Error but a fatal one, which it rethrows, and which fails the check by itself.
+                    // or Error at WARN, and rethrows the fatal error one is or carries, which fails the check by
+                    // itself.
                     @Override
                     public void close() {
                         closed.incrementAndGet();
