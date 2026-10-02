@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.6](https://github.com/brantunger/unruly-engine/compare/v2.21.5...v2.21.6) (2026-10-02)
+
+
+### Bug Fixes
+
+* the contract kit's output check fails with its own message when comparing an output value throws ([#957](https://github.com/brantunger/unruly-engine/issues/957)) ([bef07fb](https://github.com/brantunger/unruly-engine/commit/bef07fb5d78ded5f2ce8f5b82290a88e22d19762))
+
 ## [2.21.5](https://github.com/brantunger/unruly-engine/compare/v2.21.4...v2.21.5) (2026-10-02)
 
 
