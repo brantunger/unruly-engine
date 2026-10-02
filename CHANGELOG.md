@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.20.6](https://github.com/brantunger/unruly-engine/compare/v2.20.5...v2.20.6) (2026-10-02)
+
+
+### Bug Fixes
+
+* the fact-name check and primitive-fact widening load no class on a run's first use ([#933](https://github.com/brantunger/unruly-engine/issues/933)) ([7ea8b11](https://github.com/brantunger/unruly-engine/commit/7ea8b11991ced2c39b8aa7269d6e95e311365e23))
+
 ## [2.20.5](https://github.com/brantunger/unruly-engine/compare/v2.20.4...v2.20.5) (2026-10-02)
 
 
