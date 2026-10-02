@@ -30,7 +30,7 @@ class RunLoopStateTest {
     @Test
     @DisplayName("a run configuration answers as many calls as each run allows, then throws, until the next run")
     void runLimitThrowsUntilTheNextRun() {
-        ParserConfiguration configuration = IMPORTS.newRunConfiguration(3);
+        ParserConfiguration configuration = IMPORTS.newRunConfiguration(3, 3);
         // While the expression compiles, before its first run, MVEL may ask any number of times.
         for (int call = 0; call < 100; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
@@ -59,7 +59,7 @@ class RunLoopStateTest {
     @Test
     @DisplayName("each run has the whole limit")
     void eachRunHasTheLimit() {
-        ParserConfiguration configuration = IMPORTS.newRunConfiguration(3);
+        ParserConfiguration configuration = IMPORTS.newRunConfiguration(3, 3);
 
         for (int run = 0; run < 10; run++) {
             Imports.startRun(configuration);
@@ -71,27 +71,27 @@ class RunLoopStateTest {
     }
 
     @Test
-    @DisplayName("each run of a compiled copy may ask as many times as MVEL's analysis of the expression may")
+    @DisplayName("each run of a compiled copy may ask as many times in all as MVEL's analysis of the expression may, "
+            + "and as many from one place")
     void limitGrowsWithTheLength() {
         // The first run of a copy compiles each argument that is a chain of properties, asking about twice for each
-        // part, so a long expression may ask more than a fixed limit would allow.
+        // part, from two places, so a long expression may ask more than a fixed limit would allow.
         String text = "/*" + " ".repeat(50_000) + "*/ x == 1";
-        long limit = MvelAnalysis.classLoaderCallLimit(text.length());
+        long perSite = MvelAnalysis.classLoaderCallsPerSite(text.length());
         ParserConfiguration configuration = MvelExpression.compile(text, IMPORTS).newCompiled().configuration();
 
-        assertEquals(limit, MvelExpression.classLoaderCallsPerRun(text.length()));
+        assertEquals(MvelAnalysis.classLoaderCallLimit(text.length()),
+                MvelExpression.classLoaderCallsPerRun(text.length()));
         Imports.startRun(configuration);
-        for (long call = 0; call < limit; call++) {
-            configuration.getClassLoader();
-        }
-        assertThrows(Imports.RunLoop.class, configuration::getClassLoader);
+        CallSitesTest.askedUntilStopped(configuration);
+        CallSitesTest.assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(configuration), perSite);
     }
 
     @Test
     @DisplayName("a configuration for compiling only throws what MVEL's analysis went round in, whatever is called")
     void analysisConfigurationThrowsAnalysisLoop() {
         ParserConfiguration configuration = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(configuration, 0);
+        Imports.limitClassLoaderCalls(configuration, 0, 0);
 
         Imports.AnalysisLoop loop = assertThrows(Imports.AnalysisLoop.class, configuration::getClassLoader);
         assertSame(loop, Imports.analysisLoop(configuration));

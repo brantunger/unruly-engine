@@ -4,7 +4,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.mvel2.CompileException;
 import org.mvel2.MVEL;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
@@ -87,7 +86,7 @@ class AnalysisLoopTest {
     @DisplayName("a configuration answers as many calls as the limit allows, and then throws on every call")
     void limitAllowsExactlyTheCalls() {
         ParserConfiguration configuration = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(configuration, 3);
+        Imports.limitClassLoaderCalls(configuration, 3, 3);
 
         for (int call = 0; call < 3; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
@@ -145,25 +144,17 @@ class AnalysisLoopTest {
     }
 
     @ParameterizedTest(name = "{0} characters -> {1}")
-    @CsvSource({"0, 10000", "1, 10020", "3, 10060", "140000, 2810000"})
-    @DisplayName("the limit is a fixed allowance and 20 more for each character")
+    @CsvSource({"0, 10000", "1, 10020", "3, 10062", "401, 58220", "140000, 4902810000"})
+    @DisplayName("the limit in all is a fixed allowance, 20 more for each character, and a quarter of the length "
+            + "squared")
     void limit(int length, long limit) {
         assertEquals(limit, MvelAnalysis.classLoaderCallLimit(length));
     }
 
-    /** A chain of n names that aren't classes, wrapped in n levels of parentheses MVEL analyses it again for. */
-    private static String wrappedChain(int levels) {
-        return "(".repeat(levels) + "m" + ".a".repeat(levels) + ")".repeat(levels);
-    }
-
-    @Test
-    @DisplayName("a long chain in 92 levels of brackets still loads, and one in 93 is rejected: MVEL asks about as "
-            + "many times as the levels and the chain's parts multiplied")
-    void wrappedChainAtTheLimit() {
-        // A documented consequence of a limit that grows with the length alone (see classLoaderCallLimit).
-        assertDoesNotThrow(() -> new MvelAnalysis(wrappedChain(92), IMPORTS).compile());
-        CompileException loop = assertThrows(CompileException.class,
-                () -> new MvelAnalysis(wrappedChain(93), IMPORTS).compile());
-        assertInstanceOf(Imports.AnalysisLoop.class, loop.getCause());
+    @ParameterizedTest(name = "{0} characters -> {1}")
+    @CsvSource({"0, 1000", "1, 1000", "3, 1001", "401, 1200", "2147483647, 1073742823"})
+    @DisplayName("the limit for one place is a fixed allowance and one more for each two characters")
+    void limitPerSite(int length, long limit) {
+        assertEquals(limit, MvelAnalysis.classLoaderCallsPerSite(length));
     }
 }

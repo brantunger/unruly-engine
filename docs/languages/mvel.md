@@ -294,15 +294,17 @@ its class instead, such as Math.max(a, b).` See
 **An over-long or late `import pkg.*;`** fails; see [Classes and imports](#-classes-and-imports).
 
 **A call through a class named with its package with something glued to it**, such as `java.lang.Math.abs(1)x`,
-fails `load()` with `MVEL's analysis went round in a loop, ...` at line and column 0, usually in milliseconds, but
-about 90 seconds for a 4,000-character argument, 13 minutes with brackets nested 50 deep in it. `m.a.a...` with 93
-or more `.a` in as many levels of needless parentheses is wrongly reported too.
+fails `load()` with `MVEL's analysis went round in a loop, ...` at line and column 0 after MVEL asked for the
+class loader up to 2,132 + the expression's length times from one place: milliseconds, or 48 s for a 4,000-character
+argument 50 brackets deep.
 
 **A call after a package-qualified class and a non-ASCII space**, such as `java.lang.String.class`, then U+00A0, then
-`(2)`, passes `load()`, but a run reaching it fails the rule after 10,000 + 20 × the expression's length class-loader
-requests (about 20 ms at 100 characters, 4.5 s at 100,000), even past the deadline, with
-`MVEL went round in a loop while running the expression, ...`. Package-qualified calls nested hundreds deep, in a
-copy's first run, and `def` recursion past 10,000 deep, importing a package, on a huge stack, are misreported too.
+`(2)`, passes `load()`; a run reaching it fails the rule within milliseconds, even past the deadline, with
+`MVEL went round in a loop while running the expression, ...`. `def` recursion past 10,000 deep, importing a package,
+on a huge stack, is misreported as a loop.
+
+**On JDK 21, package-qualified calls nested hundreds deep are slow**, needing a large stack: 450 deep in a
+`foreach` took 7 s to load and run (3 s unchecked); 1,000 deep in a condition, 26 s (5 s). JDK 26: 4 s and 10 s.
 
 **A condition that doesn't compile hides its action's errors** until the next `load()`; see
 [Errors when rules load](custom.md#-errors-when-rules-load).
@@ -338,10 +340,8 @@ keeps making them, by starting a run of the same engine on another thread under 
 [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and regenerates accessors each time, churning
 CPU and metaspace.
 
-A session's expressions belong to one run at a time, so they're safe with any MVEL optimizer, and the engine leaves
-MVEL's global optimizer setting alone: its default JIT optimizer stays on unless you pass
-`-Dmvel2.disable.jit=true`. Before 2.0, the engine switched the JVM to the slower reflective optimizer as its
-class loaded, unless started with `-Dunruly.mvel.jit=true` (`AbstractRulesEngine.JIT_PROPERTY`).
+A session's expressions belong to one run at a time, so any MVEL optimizer is safe. The engine leaves MVEL's JIT
+optimizer on unless you pass `-Dmvel2.disable.jit=true`.
 
 ### The dynamic optimizer and class loaders
 

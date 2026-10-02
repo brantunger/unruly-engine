@@ -24,9 +24,12 @@ final class MvelAnalysis extends ExpressionCompiler {
     private static final long serialVersionUID = 1L;
 
     // How many times MVEL's analysis may ask for the class loader: a fixed allowance, and more for each character of
-    // the expression (see classLoaderCallLimit).
+    // the expression and for its length squared (see classLoaderCallLimit).
     private static final long CLASS_LOADER_CALLS = 10_000;
     private static final long CLASS_LOADER_CALLS_PER_CHARACTER = 20;
+    // How many times it may ask from one place: a fixed allowance, and one more for each two characters (see
+    // classLoaderCallsPerSite).
+    private static final long CLASS_LOADER_CALLS_PER_SITE = 1_000;
 
     // An identifier, as Java reads one.
     private static final String IDENTIFIER = "\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*";
@@ -65,7 +68,8 @@ final class MvelAnalysis extends ExpressionCompiler {
         this.source = source;
         this.imports = imports;
         setVerifyOnly(true);
-        Imports.limitClassLoaderCalls(pCtx.getParserConfiguration(), classLoaderCallLimit(source.length()));
+        Imports.limitClassLoaderCalls(pCtx.getParserConfiguration(), classLoaderCallLimit(source.length()),
+                classLoaderCallsPerSite(source.length()));
     }
 
     /**
@@ -75,8 +79,9 @@ final class MvelAnalysis extends ExpressionCompiler {
      * <p>
      * MVEL's analysis never ends for some expressions, such as {@code java.lang.Math.abs(1)x}, a call through a class
      * named with its package with something glued to it, and never checks for an interrupt (#840). On every round it
-     * asks the parser configuration for its class loader, so the pass is stopped once it has asked more times than
-     * {@link #classLoaderCallLimit} allows for the expression, and the expression is rejected.
+     * asks the parser configuration for its class loader, from the same place, so the pass is stopped once it has
+     * asked from one place more times than {@link #classLoaderCallsPerSite} allows for the expression, or more times
+     * in all than {@link #classLoaderCallLimit} allows, and the expression is rejected.
      * </p>
      *
      * @return What MVEL compiled, which is only checked
@@ -115,23 +120,37 @@ final class MvelAnalysis extends ExpressionCompiler {
     }
 
     /**
-     * Returns how many times MVEL's analysis of an expression may ask for the class loader: a fixed allowance of
-     * {@value #CLASS_LOADER_CALLS}, and {@value #CLASS_LOADER_CALLS_PER_CHARACTER} more for each character. MVEL asks
-     * about once for each part of a chain of properties and calls, at most about once for each character of an
-     * expression it analyses to its end, and once on each round of the loop that never ends.
-     *
-     * <p>
-     * MVEL analyses what is inside brackets again for each level of them, so a long chain of names that aren't
-     * classes, wrapped in many levels of brackets that aren't needed, asks about as many times as the levels and the
-     * chain's parts multiplied, and is rejected once that passes the limit: {@code m.a.a...} with 93 or more
-     * {@code .a}, inside as many levels of parentheses (#840).
-     * </p>
+     * Returns how many times in all MVEL's analysis of an expression may ask for the class loader: a fixed allowance
+     * of {@value #CLASS_LOADER_CALLS}, {@value #CLASS_LOADER_CALLS_PER_CHARACTER} more for each character, and a
+     * quarter of the length squared. MVEL asks about once for each part of a chain of properties and calls, and once
+     * on each round of the loop that never ends. It analyses what is inside brackets again for each level of them, so
+     * a long chain of names that aren't classes, wrapped in as many levels of brackets that aren't needed, asks about
+     * twice as many times as the levels and the chain's parts multiplied, about an eighth of the length squared:
+     * 20,300 times for {@code m.a.a...} with 100 {@code .a} in 100 levels of parentheses, 401 characters. The loop
+     * that never ends asks from one place, and {@link #classLoaderCallsPerSite} stops it far sooner: this limit only
+     * stops a loop that asks from places that change.
      *
      * @param length The expression's length
      * @return How many times MVEL may ask
      */
     static long classLoaderCallLimit(int length) {
-        return CLASS_LOADER_CALLS + CLASS_LOADER_CALLS_PER_CHARACTER * length;
+        return CLASS_LOADER_CALLS + CLASS_LOADER_CALLS_PER_CHARACTER * length + (long) length * length / 4;
+    }
+
+    /**
+     * Returns how many times MVEL's analysis of an expression, or a run of it, may ask for the class loader from one
+     * place (see {@link CallSites}): a fixed allowance of {@value #CLASS_LOADER_CALLS_PER_SITE}, and one more for each
+     * two characters. A valid expression asked at most about once from one place for each part of a chain of
+     * properties and calls, which takes at least two characters: 100 times for {@code m.a.a...} with 100 {@code .a} in
+     * 100 levels of parentheses, which asks 20,300 times in all, and 5,100 times from one place in the first run of
+     * {@code s.equals(m.a.a...)} with 5,100 parts, 10,211 characters. Each round of a loop that never ends asks from
+     * the same place.
+     *
+     * @param length The expression's length
+     * @return How many times MVEL may ask from one place
+     */
+    static long classLoaderCallsPerSite(int length) {
+        return CLASS_LOADER_CALLS_PER_SITE + length / 2;
     }
 
     /**

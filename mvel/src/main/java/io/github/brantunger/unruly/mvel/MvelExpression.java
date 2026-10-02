@@ -29,7 +29,8 @@ import java.util.function.Supplier;
  * MVEL builds what reads each value as the expression first runs, and goes round in a loop that never ends as it
  * builds it for some expressions, such as a call after a class named with its package and a non-ASCII space (#857).
  * So each run may ask the copy's parser configuration for its class loader, as MVEL does on every round of that loop,
- * only as many times as {@link #classLoaderCallsPerRun} allows the expression, and the rule fails with an
+ * from the same place, only as many times from one place as {@link MvelAnalysis#classLoaderCallsPerSite} allows the
+ * expression, and as many in all as {@link #classLoaderCallsPerRun} allows, and the rule fails with an
  * {@link Imports.RunLoop} once it has asked more.
  * </p>
  *
@@ -64,7 +65,8 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
 
     private final String source;
     private final Imports imports;
-    // How many times each run of a compiled copy may ask for the class loader: classLoaderCallsPerRun, but for tests.
+    // How many times in all each run of a compiled copy may ask for the class loader: classLoaderCallsPerRun, but for
+    // tests.
     private final long callsPerRun;
     // The compiled copy from when the rule list loaded, which no run has used, until a session takes it.
     private final AtomicReference<Copy> loaded;
@@ -99,13 +101,13 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     /**
-     * Compiles an expression whose runs may each ask for the class loader only so many times, in place of what
+     * Compiles an expression whose runs may each ask for the class loader only so many times in all, in place of what
      * {@link #classLoaderCallsPerRun} allows it. Only for tests: the engine compiles with
      * {@link #compile(MvelAnalysis)}.
      *
      * @param source      The expression's source text
      * @param imports     The imports to compile it with
-     * @param callsPerRun How many times each run of a compiled copy may ask
+     * @param callsPerRun How many times in all each run of a compiled copy may ask
      * @return The compiled expression
      */
     static MvelExpression compile(String source, Imports imports, long callsPerRun) {
@@ -124,32 +126,33 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     /**
-     * Returns how many times each run of an expression may ask its parser configuration for the class loader: as many
-     * as MVEL's analysis of it may (see {@link MvelAnalysis#classLoaderCallLimit}).
+     * Returns how many times in all each run of an expression may ask its parser configuration for the class loader:
+     * as many as MVEL's analysis of it may (see {@link MvelAnalysis#classLoaderCallLimit}). Each run may also ask only
+     * as many times from one place as {@link MvelAnalysis#classLoaderCallsPerSite} allows, a place told by the
+     * {@value CallSites#RUN_FRAMES} frames at the top of the stack and its depth (see {@link CallSites}).
      *
      * <p>
      * MVEL asks as it builds what reads a value: in a copy's first run, again after 50 runs, and once a value's type
      * changes. The first run of a copy also compiles each argument that is a chain of properties, asking about twice
-     * for each of its parts: 10,200 times for {@code s.equals(m.a.a...)} with 5,100 parts, 10,211 characters, and
-     * 10,001 times for 1,000 of {@code s.equals(m.a.a.a.a.a)} joined by {@code ||}, 24,996 characters, with a package
-     * imported. Later runs asked up to 5,792 times for 60 calls with 90-part chains, 11,696 characters, as MVEL built
-     * them anew. So a run of such flat chains asked at most about once for each character, and the limit allows 20
-     * times as many and 10,000 more. Calls nested in one another through a class named with its package cost far
-     * more as a copy first builds them, about half the square of how deep they are: {@code a.B.f(} nested 340 deep
-     * around {@code x}, 2,381 characters, and {@code java.lang.Math.abs(} nested 450 deep in a {@code foreach} over
-     * 60 values, 9,039 characters, each ask more than the limit allows, so a run of such an expression fails as if
-     * MVEL went round in a loop (#861). Without such arguments a run asked at most 6 times, with 201 packages
-     * imported, however many rounds the expression's own loops went. A function that calls itself, with a package
-     * imported and a class loader that isn't one of the JDK's own, asks about once more for each call still under
-     * way, as MVEL builds what reads a value in each before any is built: 205 times 200 calls deep. Only a thread with
-     * a very large stack gets deep enough to pass the limit: a run on a thread of the JVM's default stack size ran out
-     * of stack at 500 deep.
+     * for each of its parts, from two places: 10,200 times for {@code s.equals(m.a.a...)} with 5,100 parts, 10,211
+     * characters, 5,100 from each. Calls nested in one another through a class named with its package cost about half
+     * the square of how deep they are as a copy first builds them, from places that differ in the stack's depth:
+     * {@code a.B.f(} nested 340 deep around {@code x}, 2,381 characters, asks 57,970 times, at most 85 from one place,
+     * and {@code java.lang.Math.abs(} nested 450 deep in a {@code foreach} over 60 values, 9,039 characters, asks
+     * 202,951 times, at most 113 from one place. Without such arguments a run asked at most 6 times, with 201 packages
+     * imported, however many rounds the expression's own loops went, so it never reads where it asks from. A function
+     * that calls itself, with a package imported and a class loader that isn't one of the JDK's own, asks about once
+     * more for each call still under way, as MVEL builds what reads a value in each before any is built, each at its
+     * own depth: 205 times 200 calls deep. Only a thread with a very large stack gets deep enough to pass the limit in
+     * all: a run on a thread of the JVM's default stack size ran out of stack at 500 deep.
      * </p>
      *
      * <p>
-     * MVEL asks on every round of the loop that never ends (#857), about once every 1.8 microseconds, keeping more
-     * memory each round until the run ends, so the limit ends such a run in about 20 milliseconds for an expression
-     * of 100 characters, 50 for 1,000, 375 for 10,000 and 4.5 seconds for 100,000.
+     * MVEL asks on every round of the loop that never ends (#857), from one place, about once every 1.8 microseconds,
+     * keeping more memory each round until the run ends, so the limit for one place ends such a run after at most
+     * {@value CallSites#UNCOUNTED_CALLS} calls, plus the limit for one place, plus one gap between two walks of the
+     * stack, fewer than twice {@value CallSites#SAMPLED_EVERY} calls, plus the limit and one more, as the calls are
+     * then counted one by one (see {@link CallSites}).
      * </p>
      *
      * @param length The expression's length
@@ -213,15 +216,17 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
 
     /**
      * Compiles a copy of an expression, whose runs may each ask the configuration it was compiled with for the class
-     * loader only so many times (see {@link Imports#newRunConfiguration}).
+     * loader only so many times in all, and as many from one place as {@link MvelAnalysis#classLoaderCallsPerSite}
+     * allows the expression (see {@link Imports#newRunConfiguration}).
      *
      * @param source      The expression's source text
      * @param imports     The imports to compile it with
-     * @param callsPerRun How many times each run may ask
+     * @param callsPerRun How many times in all each run may ask
      * @return The compiled copy
      */
     static Copy newCopy(String source, Imports imports, long callsPerRun) {
-        ParserConfiguration configuration = imports.newRunConfiguration(callsPerRun);
+        ParserConfiguration configuration = imports.newRunConfiguration(callsPerRun,
+                MvelAnalysis.classLoaderCallsPerSite(source.length()));
         return new Copy(MVEL.compileExpression(source, newParserContext(imports, configuration)), configuration);
     }
 
