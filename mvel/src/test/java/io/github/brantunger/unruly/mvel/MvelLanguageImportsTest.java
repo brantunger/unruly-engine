@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -96,6 +98,64 @@ class MvelLanguageImportsTest {
                 .getMessage();
 
         assertEquals(REJECTED + "'a\\nb', '" + "m".repeat(200) + "... (100 more characters)'", message);
+    }
+
+    // #913: 8 names of 60 zero-width spaces each quote to 363 characters, so all of them took 2,987, and the engine cut
+    // the message at 1,000, inside an escape, counting escaped characters.
+    @Test
+    @DisplayName("the imports listed fit in 1,000 characters, whole, and the message says how many more there are")
+    void manyImportsFit() {
+        String name = "a" + "​".repeat(60);
+        RulesEngine<Map<String, Object>> engine = builder().languageImports("mvel", List.of(name, name, name, name,
+                name, name, name, name)).build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(MVEL_RULE)));
+
+        String quoted = "'a" + "\\u200b".repeat(60) + "'";
+        String cause = thrown.getCause().getMessage();
+        assertTrue(cause.length() <= FactNames.MAX_DESCRIPTION_LENGTH, cause.length() + ": " + cause);
+        assertEquals(REJECTED + quoted + ", " + quoted + ", and 6 more", thrown.getMessage());
+    }
+
+    // A name is listed only when the count of the names after it fits too: a fifth name of 110 characters fits on its
+    // own, but not with ", and 1 more" after it.
+    @Test
+    @DisplayName("a name is listed only if the count of those left out after it fits as well")
+    void listedNameLeavesRoomForCount() {
+        String name = "m".repeat(200);
+        RulesEngine<Map<String, Object>> engine = builder().languageImports("mvel", name, name, name, name,
+                "m".repeat(110), "x").build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(MVEL_RULE)));
+
+        String quoted = "'" + name + "'";
+        String cause = thrown.getCause().getMessage();
+        assertTrue(cause.length() <= FactNames.MAX_DESCRIPTION_LENGTH, cause.length() + ": " + cause);
+        assertEquals(REJECTED + String.join(", ", quoted, quoted, quoted, quoted) + ", and 2 more",
+                thrown.getMessage());
+    }
+
+    // The first name is listed whatever its length, within the room the rest leaves: a name of 199 control characters
+    // and 800 more, the longest an import may be, quoted to 1,220 characters, which the engine cut inside an escape.
+    @Test
+    @DisplayName("a first import too long to list whole is cut between escapes, and the count counts its characters")
+    void longFirstImportCut() {
+        String name = "a" + String.valueOf((char) 1).repeat(199) + "b".repeat(800);
+        RulesEngine<Map<String, Object>> engine = builder().languageImports("mvel", name, "lodash").build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(MVEL_RULE)));
+
+        String cause = thrown.getCause().getMessage();
+        assertTrue(cause.length() <= FactNames.MAX_DESCRIPTION_LENGTH, cause.length() + ": " + cause);
+        assertTrue(thrown.getMessage().endsWith("failed to create a compiler: " + cause), thrown.getMessage());
+        Matcher listed = Pattern.compile(Pattern.quote(REJECTED.substring(REJECTED.indexOf("MVEL takes")))
+                + "'a((?:\\\\u0001)+)\\.\\.\\. \\((\\d+) more characters\\)', and 1 more").matcher(cause);
+        assertTrue(listed.matches(), cause);
+        int shown = 1 + listed.group(1).length() / "\\u0001".length();
+        assertEquals(name.length() - shown, Integer.parseInt(listed.group(2)), cause);
     }
 
     @Test

@@ -268,8 +268,9 @@ for the condition `applicant.creditScore >= ` and the action `output.put('rate',
 both at line and column 0; `x == 1 && in` gets `malformed expression` at MVEL's position. MVEL's errors without a
 position keep its description, such as `illegal use of reserved word: in`.
 
-**MVEL shortens the description once**, so the escaped message from `failed to compile` on fits 1,000 characters;
-`(N more characters)` counts characters before escaping.
+**MVEL shortens the description once**, never inside an escape: the escaped message from `failed to compile` on
+fits 1,000 characters. `(N more characters)` counts characters before escaping; an escape the text holds counts as
+written, as for a [nested failure](../nested-runs.md#-what-is-logged).
 
 **A description of `null` ends with the root cause**, unless MVEL's own parser failed. The first rule to use, by
 full name, a class whose static initializer throws gets `null`:
@@ -291,8 +292,6 @@ or declare variables; use == to compare.`
 its class instead, such as Math.max(a, b).` See
 [What rules can change](../writing-rules.md#-what-rules-can-change).
 
-**An over-long or late `import pkg.*;`** fails; see [Classes and imports](#-classes-and-imports).
-
 **A call through a class named with its package with something glued to it**, such as `java.lang.Math.abs(1)x`,
 fails `load()` with `MVEL's analysis went round in a loop, ...` at line and column 0 after MVEL asked for the
 class loader up to 2,132 + the expression's length times from one place: milliseconds, or 48 s for a 4,000-character
@@ -306,8 +305,7 @@ on a huge stack, is misreported as a loop.
 **On JDK 21, package-qualified calls nested hundreds deep are slow**, needing a large stack: 450 deep in a
 `foreach` took 7 s to load and run (3 s unchecked); 1,000 deep in a condition, 26 s (5 s). JDK 26: 4 s and 10 s.
 
-**A condition that doesn't compile hides its action's errors** until the next `load()`; see
-[Errors when rules load](custom.md#-errors-when-rules-load).
+**A condition that doesn't compile hides its action's errors** until the next `load()`.
 
 **What `load()` doesn't catch:** a missing import or an unknown identifier, unless it's a declared variable's type
 or [strong typing](#-strong-typing) is on; see [Classes and imports](#-classes-and-imports). With strong typing,

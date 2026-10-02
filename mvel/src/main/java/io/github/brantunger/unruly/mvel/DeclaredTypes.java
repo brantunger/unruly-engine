@@ -63,15 +63,14 @@ final class DeclaredTypes {
         }
         for (Map.Entry<String, Class<?>> fact : declared.entrySet()) {
             if (isDynamic(fact.getValue())) {
-                // The class name is part of the text around the fact's name, so a long one leaves the name less room:
-                // it may show as the count alone, and the message may be longer than 1,000 characters (#913).
-                throw new IllegalArgumentException(FactNames.quotedWithin(CANT_APPLY + "fact '", fact.getKey(),
-                        "' is declared as " + fact.getValue().getName() + ", whose members MVEL can't check"));
+                throw new IllegalArgumentException(FactNames.quotedWithClass(CANT_APPLY + "fact '", fact.getKey(),
+                        "' is declared as ", fact.getValue().getName(), ", whose members MVEL can't check"));
             }
         }
         if (isDynamic(context.outputType())) {
-            throw cantApply("the output type is " + context.outputType().getName()
-                    + ", and an action writes to the output; build the engine with outputType(...)");
+            throw new IllegalArgumentException(FactNames.quotedWithin(CANT_APPLY + "the output type is ",
+                    context.outputType().getName(), ", and an action writes to the output; build the engine with "
+                            + "outputType(...)"));
         }
         Map<String, Class<?>> inputs = new LinkedHashMap<>(declared);
         // Only an action binds the output, but a condition that referred to it would be a mistake either way: it

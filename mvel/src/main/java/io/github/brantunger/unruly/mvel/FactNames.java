@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -52,6 +54,13 @@ final class FactNames {
 
     // The longest part of a name a message shows, as MessageText.quote shows it: quoteWithin shows no more of a name.
     private static final int MAX_NAME_LENGTH = 200;
+
+    // The least of a class name a message that also quotes a fact's name keeps room for: the fact's name gets the
+    // room first, but not all of it, so the class name is never the count alone.
+    private static final int MIN_CLASS_NAME_SHOWN = 100;
+
+    // An escape MessageText.escape writes: \n, \r, \t, or a backslash, u and four lowercase hex digits.
+    private static final Pattern ESCAPE = Pattern.compile("\\\\(?:[nrt]|u[0-9a-f]{4})");
 
     /**
      * The longest text {@code MessageText.truncate} keeps, which is also the longest message about an expression the
@@ -134,14 +143,15 @@ final class FactNames {
     }
 
     /**
-     * Tells how many of a name's characters {@link MessageText#quote} shows: at most {@value #MAX_NAME_LENGTH}, and
-     * never half a surrogate pair.
+     * Tells how many of a name's characters a message shows when it shows at most {@code limit} of them, as
+     * {@link MessageText#quote} shows at most {@value #MAX_NAME_LENGTH}: never half a surrogate pair.
      *
-     * @param name The name
+     * @param name  The name
+     * @param limit The most of its characters to show
      * @return How many of its first characters are shown
      */
-    private static int shownOf(String name) {
-        int shown = Math.min(name.length(), MAX_NAME_LENGTH);
+    private static int shownOf(String name, int limit) {
+        int shown = Math.min(name.length(), limit);
         if (shown < name.length() && Character.isHighSurrogate(name.charAt(shown - 1))) {
             shown--;
         }
@@ -153,12 +163,18 @@ final class FactNames {
      * {@code room} characters, to as many of its first characters as fit in {@code room} with
      * {@code ... (N more characters)} after them, as {@link MessageText#truncate} writes it. N counts the text's own
      * characters left out, not escaped ones, and the text is cut between code points, so never inside a surrogate pair
-     * or an escape. A message about an expression MVEL rejected is its description and a fixed part, such as
+     * or an escape. Nor is it cut inside an escape the text already holds ({@code \n}, {@code \r}, {@code \t}, or a
+     * backslash, {@code u} and four lowercase hex digits), as the engine's own cut of a nested failure's text isn't:
+     * such an escape is left out whole. Text MVEL is given can hold one, such as a class loader's refusal that quoted
+     * a name, and {@link MessageText#escape} leaves it as it is, so it would show cut in half. N counts such an escape
+     * as the characters it is written with, as the text holds it. {@link MessageText#escape} doesn't escape a
+     * backslash, so text that only reads as an escape is kept whole or left out the same way. A message about an
+     * expression MVEL rejected is its description and a fixed part, such as
      * {@code failed to compile at line 1, column 8: }, so given the room the fixed part leaves in
      * {@value #MAX_DESCRIPTION_LENGTH} characters, the message is shortened once, here, and the engine, which shortens
      * a message longer than that, reports it whole. A room too small for the count alone gets the count alone.
      *
-     * @param text The text, not escaped
+     * @param text The text, raw, or with escapes the engine already wrote
      * @param room The most characters the escaped text may take, the count included
      * @return The text, shortened if it didn't fit, and escaped
      */
@@ -170,7 +186,7 @@ final class FactNames {
      * Escapes text within a room as {@link #escapeWithin(String, int)} does, showing at most its first {@code most}
      * characters.
      *
-     * @param text The text, not escaped
+     * @param text The text, raw, or with escapes the engine already wrote
      * @param most The most of its characters to show, which ends between code points
      * @param room The most characters the escaped text may take, the count included
      * @return The text, shortened if it didn't fit or is longer than {@code most}, and escaped
@@ -184,13 +200,32 @@ final class FactNames {
         while (end < most && shown <= room) {
             int next = end + Character.charCount(text.codePointAt(end));
             shown += MessageText.escape(text.substring(end, next)).length();
-            if (shown + leftOut(text.length() - next).length() <= room) {
+            if (shown + leftOut(text.length() - next).length() <= room && !insideEscape(text, next)) {
                 kept = next;
             }
             end = next;
         }
         return end == text.length() && shown <= room ? MessageText.escape(text)
                 : MessageText.escape(text.substring(0, kept)) + leftOut(text.length() - kept);
+    }
+
+    /**
+     * Tells whether a cut at {@code at} falls inside an escape the text already holds, as {@link MessageText#escape}
+     * writes one. Only the last backslash before the cut can start such an escape, as no escape holds a backslash
+     * after its first character, and only one at most 5 characters before it, as no escape is longer than 6.
+     *
+     * @param text The text
+     * @param at   Where the text would be cut
+     * @return {@code true} if an escape starts before the cut and ends after it
+     */
+    private static boolean insideEscape(String text, int at) {
+        int from = Math.max(0, at - 5);
+        int backslash = text.substring(from, at).lastIndexOf('\\');
+        if (backslash < 0) {
+            return false;
+        }
+        Matcher escape = ESCAPE.matcher(text).region(from + backslash, text.length());
+        return escape.lookingAt() && escape.end() > at;
     }
 
     /**
@@ -206,7 +241,8 @@ final class FactNames {
      */
     static String quoteWithin(String name, int room) {
         String quoted = MessageText.quote(name);
-        return quoted.length() <= room || name.isEmpty() ? quoted : escapeWithin(name, shownOf(name), room);
+        return quoted.length() <= room || name.isEmpty() ? quoted
+                : escapeWithin(name, shownOf(name, MAX_NAME_LENGTH), room);
     }
 
     /**
@@ -215,9 +251,9 @@ final class FactNames {
      * option, which the engine shortens and escapes when it reports it. A message that fits is reported whole, so a
      * long name of characters that escape isn't cut inside an escape, and the count of what was left out counts the
      * name's own characters. The message is longer than {@value #MAX_DESCRIPTION_LENGTH} characters, and the engine
-     * shortens it when it reports it, when the text around the name, such as a declared type's long class name,
-     * leaves less room than the count takes for a name that doesn't fit whole, or is itself longer than that for an
-     * empty name.
+     * shortens it when it reports it, when the text around the name leaves less room than the count takes for a name
+     * that doesn't fit whole, or is itself longer than that for an empty name. A message that quotes a class's name
+     * too quotes both with {@link #quotedWithClass}, so the class's name is fitted as well.
      *
      * @param before What the message says before the name, up to its opening quote
      * @param name   The name, not escaped
@@ -243,6 +279,71 @@ final class FactNames {
      */
     static String quotedWithin(String before, String name, String after, int room) {
         return before + quoteWithin(name, room - before.length() - after.length()) + after;
+    }
+
+    /**
+     * Writes a message that quotes a fact's name and a class's name within {@value #MAX_DESCRIPTION_LENGTH}
+     * characters, as {@link #quotedWithin(String, String, String)} quotes one name: {@code before}, the fact's name,
+     * {@code between}, the class's name and {@code after}, each name quoted within the room the rest leaves (see
+     * {@link #quoteWithin}). A class name can hold any character a class file allows, and be long, so it is escaped
+     * and shortened like any name. The fact's name, which is what the call that declared the fact can change, gets
+     * the room first, but the class's name keeps room for at least its first {@value #MIN_CLASS_NAME_SHOWN}
+     * characters, or up to 5 fewer, where an escape it already holds would be cut, and gets what the fact's name
+     * leaves.
+     *
+     * @param before    What the message says before the fact's name
+     * @param name      The fact's name, not escaped
+     * @param between   What the message says between the two names
+     * @param className The class's name, not escaped
+     * @param after     What the message says after the class's name
+     * @return The message
+     */
+    static String quotedWithClass(String before, String name, String between, String className, String after) {
+        int room = MAX_DESCRIPTION_LENGTH - before.length() - between.length() - after.length();
+        String least = escapeWithin(className, shownOf(className, MIN_CLASS_NAME_SHOWN), Integer.MAX_VALUE);
+        String quotedName = quoteWithin(name, room - least.length());
+        return before + quotedName + between + quoteWithin(className, room - quotedName.length()) + after;
+    }
+
+    /**
+     * Writes a message that lists names within {@value #MAX_DESCRIPTION_LENGTH} characters: {@code before}, then the
+     * names, each quoted as {@link MessageText#quote} quotes it, between single quotes and separated by {@code ", "},
+     * as the engine lists names, such as {@code 'lodash', 'os.path'}. Names are listed whole, in order, until the next
+     * one doesn't fit; then {@code , and N more} for the rest, where N counts the names left out. The first name is
+     * always listed, quoted within the room the rest leaves (see {@link #quoteWithin}) if it doesn't fit whole.
+     *
+     * @param before What the message says before the first name's opening quote
+     * @param names  The names, not escaped; at least one
+     * @return The message
+     */
+    static String quotedAllWithin(String before, List<String> names) {
+        int room = MAX_DESCRIPTION_LENGTH - before.length();
+        StringBuilder list = new StringBuilder();
+        int listed = 0;
+        while (listed < names.size()) {
+            String quoted = (listed == 0 ? "'" : ", '") + MessageText.quote(names.get(listed)) + "'";
+            if (list.length() + quoted.length() + andMore(names.size() - listed - 1).length() > room) {
+                break;
+            }
+            list.append(quoted);
+            listed++;
+        }
+        if (listed == 0) {
+            String rest = andMore(names.size() - 1);
+            list.append('\'').append(quoteWithin(names.get(0), room - "''".length() - rest.length())).append('\'');
+            listed = 1;
+        }
+        return before + list + andMore(names.size() - listed);
+    }
+
+    /**
+     * Says how many names a list left out.
+     *
+     * @param count How many names were left out
+     * @return {@code , and N more}, or an empty string if none were
+     */
+    private static String andMore(int count) {
+        return count == 0 ? "" : ", and " + count + " more";
     }
 
     /**

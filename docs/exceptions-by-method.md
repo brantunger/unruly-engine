@@ -64,13 +64,13 @@ variation selectors, unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` a
 Neither a name nor a quoted fact value can start a log line, change how it reads or pass for another name through
 an invisible character, and escaping twice changes nothing. Ordinary text shows escapes too, such as an emoji's
 U+FE0F. Shortening never splits such a character. The engine's limits count `char`s before escaping, except for
-[already escaped nested text](nested-runs.md#-what-is-logged), so an escaped text can show more than its limit, and
+[already escaped nested text](nested-runs.md#-what-is-logged), so escaped text can show more than its limit, and
 the `(N more characters)` count is the `char`s cut:
 
 | Part of a message | What the engine does with it |
 | --- | --- |
 | A rule, fact or language name | Shortened to 200 characters, then escaped |
-| Text copied from an exception, such as a language's compile error or warning, or what the output supplier or a listener threw | Shortened to 1,000 characters, then escaped. MVEL's compile error [already fits once escaped](languages/mvel.md#-errors-when-rules-load) |
+| Text copied from an exception, such as a language's compile error or warning, or what the output supplier or a listener threw | Shortened to 1,000 characters, then escaped. MVEL's [compile errors](languages/mvel.md#-errors-when-rules-load) and rejections already fit once escaped |
 | A list of names: the rules a unique-match engine matched, a rule's or a run's tags, or the engine's languages | Each name shortened to 200 characters, the list to 1,000, then escaped |
 | What the output supplier threw, a listener's exception logged at WARN, or the fatal error in `The run failed with` | Its class, then `: <message>` if it has one, or, since 2.6.1, ` (message unavailable: <class>)` naming what reading the message threw if its `getMessage()` or `toString()` throws, such as `Output factory threw java.lang.IllegalStateException: boom` or `The run failed with java.lang.OutOfMemoryError: Java heap space` |
 | An exception in the chain with no message, or an unreadable one | A note on the root cause at the end of a message the engine throws, or logs at WARN or ERROR, that copies an exception's text, except an `InvalidExpressionException`, a language's warning or a nested run's failure the engine wrapped. For MVEL's own compile error, see [Errors when rules load](languages/mvel.md#-errors-when-rules-load). A root cause with no message gives `... (caused by java.io.IOException)`; one with a message gives `... (caused by java.io.IOException: disk full)`, unless the part of the first exception's text that the message shows already has it; one whose `getMessage()` throws gives `... (caused by com.example.UnreadableException: (message unavailable: java.lang.IllegalStateException))`. There's no note when the exception has no cause, or when every exception in the chain has a readable message. The chain ends where it loops or a `getCause()` throws |
