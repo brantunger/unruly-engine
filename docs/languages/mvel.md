@@ -129,10 +129,11 @@ dot-separated parts, and an import may have at most 64`. One whose `.*` starts p
 characters fails too: move it earlier, or use `imports(...)`. Inline class imports and `import_static` aren't
 size-checked.
 
-MVEL checks whether `applicant` in `applicant.creditScore` is a class. In a class directory on a case-insensitive
-file system, the lookup for `applicant.class` finds `Applicant.class`, and the JVM reports
-`NoClassDefFoundError: applicant (wrong name: Applicant)`, which counts as no class: `applicant` stays the fact.
-Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the rule.
+In a class directory on a case-insensitive file system, MVEL's check whether `applicant` in `applicant.creditScore`
+is a class finds `Applicant.class`; `NoClassDefFoundError: applicant (wrong name: Applicant)` counts as no class,
+so `applicant` stays the fact. Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the
+rule; so does this one for a name over about 1,000 bytes
+([#1001](https://github.com/brantunger/unruly-engine/issues/1001)).
 
 ## 📁 Facts in MVEL
 
@@ -153,7 +154,7 @@ A name must be a Java identifier. `my-fact` would read as `my - fact`, so it, `2
 'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java identifier
 ```
 
-MVEL reads these as something else before looking at the facts, so they're rejected too:
+MVEL reads these as something else before the facts, so they're rejected too:
 
 | Kind | Names |
 | --- | --- |
@@ -198,8 +199,7 @@ Check with `isdef` for a fact that may be left out, and for `null` before readin
 .condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
 ```
 
-A `Map` fact works the same way: a missing key is an error, not `null`, on purpose, as it's usually a misspelled
-rule.
+A `Map` fact works the same way: a missing key is an error, not `null`, as it's usually a misspelled rule.
 
 | Condition, for an `order` map with no `missing` key | Result |
 | --- | --- |
@@ -232,7 +232,7 @@ unless all of these hold, so MVEL can check everything:
 | No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
 | `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
 
-Strong typing also changes arithmetic: MVEL computes in the declared types, not in doubles; see the
+Strong typing also changes arithmetic: MVEL computes in the declared types, not doubles; see the
 Division row of [Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
 
 See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
