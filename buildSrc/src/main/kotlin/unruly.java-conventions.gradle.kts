@@ -43,6 +43,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
+// The main sources build strings with StringBuilder, not invokedynamic: on JDK 25 and later, a concatenation whose
+// first link overflows the stack fails for good, so one first used deep in a stack could break the engine (#965). It is
+// a hidden javac option, which a javac that drops it ignores without a word; StringConcatenationTest catches that.
+tasks.named<JavaCompile>("compileJava") {
+    options.compilerArgs.add("-XDstringConcat=inline")
+}
+
 // Every jar, and any other archive, gets its entries in a stable order and with a fixed timestamp, so two builds of
 // the same sources, on the same JDK build, produce byte-identical files. The JDK build is part of that because javac
 // records the java.base it compiled against, patch level included, in module-info.class: of the nine published jars

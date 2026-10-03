@@ -192,6 +192,17 @@ final class FirstRunScenario {
         Map<String, Class<?>> facts = Map.of("m", Object.class);
         // The toy language splits an expression with a regular expression, which is the application's use of the JDK.
         "a b".split("\\s+");
+        // Its error messages are the JDK's string concatenations, as a test fixture is compiled with javac's default,
+        // which the engine isn't (#965): its first one would initialize these two in the first loads. They are the
+        // application's, so initialized here, by name, to link no concatenation and leave the JDK's others alone.
+        for (String name : new String[]{"java.lang.invoke.StringConcatFactory",
+                "java.lang.invoke.StringConcatFactory$InlineHiddenClassStrategy"}) {
+            try {
+                Class.forName(name);
+            } catch (ClassNotFoundException e) {
+                // Not in this JDK release.
+            }
+        }
         mark(BUILDING);
         RulesEngine<Map<String, Object>> map = RulesEngineBuilder.allMatches(maps).language(toy).listener(listener)
                 .option("toy", "some", "value").languageImports("toy", "some.Name").facts(facts).build();
