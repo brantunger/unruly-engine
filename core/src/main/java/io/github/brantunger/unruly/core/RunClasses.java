@@ -44,9 +44,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * one. This class has no static initializer of its own, which an engine built deep in a stack could break, as the
  * lists are built only once the room is checked. What a builder's settings reject may still initialize classes before
  * any check, maybe deep in a stack, though nothing a builder accepts does: {@code language()} initializes
- * {@link LanguageNames.Problem} when it rejects a language's name, {@code fact()} and {@code facts()} initialize
- * {@link FactNames.Problem} when they reject a fact's name, and the message of a setting a builder rejects may be
- * the JVM's first use of the JDK's string concatenation.
+ * {@link LanguageNames.Problem} when it rejects a language's name, and {@code fact()} and {@code facts()} initialize
+ * {@link FactNames.Problem} when they reject a fact's name. The message of a setting a builder rejects isn't the
+ * JVM's first use of the JDK's string concatenation, as the engine is compiled to build its strings without it (#965).
  * </p>
  */
 final class RunClasses {
@@ -217,10 +217,10 @@ final class RunClasses {
     // Those are the streams' that describe a failure (Failures builds some messages with streams), ClassValue's, which
     // caches an output's setters and a fact's properties, and those of the method handles that call them and convert a
     // widened value, which differ between JDK releases: 21's, then 25's and later ones'. Then the method handle a
-    // load's first method reference to a compiler's method makes, and, in 25 and later releases, the strategy that
-    // links a string concatenation of several values, as a load's first failure message is. A class that isn't there,
-    // as in a JDK release that has none of the name, is skipped, and in a native image none is named. The method
-    // handles' hidden classes, which the JDK makes when they are first needed, can't be named.
+    // load's first method reference to a compiler's method makes. None is the JDK's string concatenation's: the engine
+    // is compiled to build its strings without it (#965). A class that isn't there, as in a JDK release that has none
+    // of the name, is skipped, and in a native image none is named. The method handles' hidden classes, which the JDK
+    // makes when they are first needed, can't be named.
     private static List<String> namedClasses() {
         return List.of("java.util.stream.MatchOps$MatchKind", "java.util.stream.Collectors",
                 "java.util.stream.Collector$Characteristics", "java.lang.ClassValue$ClassValueMap",
@@ -229,8 +229,7 @@ final class RunClasses {
                 "sun.invoke.util.ValueConversions$1", "java.lang.invoke.ClassSpecializer$Factory$1Var",
                 "java.lang.ClassValue$RemovalToken", "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
                 "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
-                "java.lang.invoke.DirectMethodHandle$Interface",
-                "java.lang.invoke.StringConcatFactory$InlineHiddenClassStrategy");
+                "java.lang.invoke.DirectMethodHandle$Interface");
     }
 
     /**

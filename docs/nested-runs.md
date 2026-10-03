@@ -87,9 +87,9 @@ next use prepares it again.
 > `.defaultLanguage("mvel")`, and build the JVM's first engine near the top of a stack.
 
 Not covered: a name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the
-problem before any check; a rejected setting's message, maybe the JVM's first string concatenation; another instance of
-a prepared language class, such as a wrapper around another language, which gets no check, nor at a first use
-`prepare()`; and listeners' or your own code's classes.
+problem before any check; another instance of a prepared language class, such as a wrapper around another language,
+which gets no check, nor at a first use `prepare()`; and listeners' or your code's classes and javac-default
+concatenations: the JVM's first, or on JDK 25 and later one of several values, fails for good if linked too deep.
 
 Tests in a new JVM cover first builds, loads and runs across outputs, facts, listener callbacks, failing conditions and
 loads, nested runs, `validate()`, `close()`, and MVEL's first steps, JIT on and off. They fail if a first load or run,

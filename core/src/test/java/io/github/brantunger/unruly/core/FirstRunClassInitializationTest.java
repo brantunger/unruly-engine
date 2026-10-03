@@ -84,8 +84,7 @@ class FirstRunClassInitializationTest {
             "java.lang.invoke.ClassSpecializer$Factory$1Var", "java.lang.ClassValue$RemovalToken",
             "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
             "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
-            "java.lang.invoke.DirectMethodHandle$Interface",
-            "java.lang.invoke.StringConcatFactory$InlineHiddenClassStrategy");
+            "java.lang.invoke.DirectMethodHandle$Interface");
 
     @Test
     @DisplayName("the scenario's first loads and runs initialize no class with a static initializer but the JDK's "

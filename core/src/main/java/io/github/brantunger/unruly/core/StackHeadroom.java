@@ -27,8 +27,10 @@ package io.github.brantunger.unruly.core;
  * that {@code RunClasses} lists, initialize any class with a static initializer other than the JDK's hidden ones, or
  * if its first build initializes any but the application's own before {@code RunClasses}; a path it doesn't take may
  * still initialize one. An overflow while a class is only loaded or linked, or while a lambda is set up, isn't
- * remembered: its next use tries again. The hidden classes the JDK makes for method handles when they are first
- * needed can't be named, so a run may still initialize those.
+ * remembered: its next use tries again. On JDK 25 and later, one while a string concatenation of several values is
+ * first linked is: that concatenation fails for good. So the engine is compiled to build its strings without the JDK's
+ * string concatenation (#965). The hidden classes the JDK makes for method handles when they are first needed can't be
+ * named, so a run may still initialize those.
  * </p>
  */
 final class StackHeadroom {
