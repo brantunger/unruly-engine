@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.22.5](https://github.com/brantunger/unruly-engine/compare/v2.22.4...v2.22.5) (2026-10-03)
+
+
+### Bug Fixes
+
+* take a library location that can't be found for its own copy on JDK 26, and test on JDK 26 in CI ([#999](https://github.com/brantunger/unruly-engine/issues/999)) ([f2c60d5](https://github.com/brantunger/unruly-engine/commit/f2c60d52d60ddb82bf561bd79f4e3a4516d184f4))
+
 ## [2.22.4](https://github.com/brantunger/unruly-engine/compare/v2.22.3...v2.22.4) (2026-10-03)
 
 
