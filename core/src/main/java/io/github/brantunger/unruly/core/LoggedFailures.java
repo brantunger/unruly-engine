@@ -56,18 +56,18 @@ package io.github.brantunger.unruly.core;
  * wraps one in an exception that says something of its own, which names it as a note (see {@link Failures#describe}).
  * The time is marked each time a run hands control to code it doesn't own, a call-out: a condition, an action, the
  * output supplier or writer, a listener callback, the clock, a fact store's {@code asMap()} or a fact's
- * {@code getValue()} as the facts are read, and a language creating its compiler, compiling, checking a fact name,
- * creating, warming up or closing a session or closing its compiler, and a value a language kept for the run being
- * closed (see {@link #callOut()}). Each is a call-out of its own, a rule's condition and its action too. A failure
- * logged by a run the call-out in progress in the innermost run started, however deep, is a nested run's, and one
- * logged by a run that had ended before that call-out started, however deep, such as one an earlier sibling, an earlier
- * rule, the same rule's condition or a listener started, is noted as logged already, as a fatal error is (see
- * {@link #loggedAt}). Call-outs are told apart in runs fewer than {@value #MARKED_DEPTHS} deep; in a deeper run, a
- * failure logged by any run it started is a nested run's, and only one logged by a run that had ended before it started
- * is logged already. So is a {@link ReportedFailure} built on the thread in an earlier outermost run, as only such a
- * failure says which outermost run built it. One built on another thread is a nested run's, as one an action hands to
- * an executor and waits for is. Code that throws such a failure on with no words of its own has it read as the failure,
- * logged already, the same way, not as a nested run's.
+ * {@code getValue()} as the facts are read, and a language preparing itself at its first use, creating its compiler,
+ * compiling, checking a fact name, creating, warming up or closing a session or closing its compiler, and a value a
+ * language kept for the run being closed (see {@link #callOut()}). Each is a call-out of its own, a rule's condition
+ * and its action too. A failure logged by a run the call-out in progress in the innermost run started, however deep, is
+ * a nested run's, and one logged by a run that had ended before that call-out started, however deep, such as one an
+ * earlier sibling, an earlier rule, the same rule's condition or a listener started, is noted as logged already, as a
+ * fatal error is (see {@link #loggedAt}). Call-outs are told apart in runs fewer than {@value #MARKED_DEPTHS} deep; in
+ * a deeper run, a failure logged by any run it started is a nested run's, and only one logged by a run that had ended
+ * before it started is logged already. So is a {@link ReportedFailure} built on the thread in an earlier outermost run,
+ * as only such a failure says which outermost run built it. One built on another thread is a nested run's, as one an
+ * action hands to an executor and waits for is. Code that throws such a failure on with no words of its own has it read
+ * as the failure, logged already, the same way, not as a nested run's.
  * </p>
  *
  * <p>

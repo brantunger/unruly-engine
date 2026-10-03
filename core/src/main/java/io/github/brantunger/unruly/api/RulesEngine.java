@@ -59,6 +59,15 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws IllegalStateException if the engine is closed; this is checked before anything in the list, so a closed
      *         engine throws it even for a list that would fail to load
      * @throws NullPointerException if {@code ruleList} itself is {@code null}
+     * @throws StackOverflowError    if the thread has too little stack left for the load's own steps, checked before
+     *                               it compiles anything; also if the list is the first to use a language of a class
+     *                               no engine has prepared yet, one the engine finds with
+     *                               {@link java.util.ServiceLoader} without its builder naming it, and the thread has
+     *                               too little stack left to prepare it (see
+     *                               {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#prepare()}):
+     *                               checked before the language is prepared, so nothing is left unusable, and the
+     *                               rules loaded before, if any, stay loaded. The room is about 160 KB on x64 while
+     *                               the check is interpreted, as in a JVM that has run few rules
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
      *                               compiling or making copies, also as the cause of another exception or one
      *                               suppressed on it, is logged and then rethrown unchanged. So is one a language
@@ -115,6 +124,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @return One exception for each problem found, as {@code load()} would have reported it; empty when it finds none
      * @throws IllegalStateException if the engine is closed
      * @throws NullPointerException  if the list itself is {@code null}
+     * @throws StackOverflowError    as {@link #load(List)} throws it: if the thread has too little stack left for the
+     *                               validation's own steps, checked before it compiles anything; also if the list is
+     *                               the first to use a language the engine wasn't built to use
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
      *                               compiling, also as the cause of another exception or one suppressed on it, is
      *                               logged and then rethrown unchanged. So is one a language throws while closing a

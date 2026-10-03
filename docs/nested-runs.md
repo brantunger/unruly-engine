@@ -13,6 +13,7 @@ failure is logged.
 
 - [What counts as nested](#-what-counts-as-nested)
 - [Stops and failures](#-stops-and-failures)
+- [A first build or load deep in a stack](#-a-first-build-or-load-deep-in-a-stack)
 - [What is logged](#-what-is-logged)
 
 ---
@@ -55,20 +56,48 @@ run is past its deadline or interrupted; see [What stops a run](stopping-runs.md
 fails with `a nested run() failed: ...`, with the nested failure in its cause chain; `run()` rethrows a fatal
 `Error` instead. Each rule it passes through gets one `onError`, each run one `onRunError`.
 
-**Building the JVM's first engine initializes the classes with a static initializer that a run's own steps use.** A
-run deep in a stack, as a nested run can be, would otherwise be the first to use them, and a `StackOverflowError`
-while a class runs its static initializer leaves that class unusable for the life of the JVM. A language's own
-classes, a listener's or your code's aren't among them.
+## 🪜 A first build or load deep in a stack
 
-The engine's tests check this in a new JVM. They give engines first runs with map and bean outputs, declared,
-mistyped and missing facts, every listener callback, a failing condition, a write to read-only facts, and nested runs
-that throw a fatal error or pass their deadline. They fail if those runs initialize any class with a static
-initializer, the engine's, the JDK's or a library's, other than the hidden classes the JDK makes for method handles,
-which have no name to initialize ahead of time.
+A nested run or load can start deep in a stack. A `StackOverflowError` inside a class's static initializer leaves the
+class unusable for the JVM's life: every later use throws `NoClassDefFoundError`.
 
-A path the tests don't take may still initialize one. The engine names the JDK classes it initializes from first runs
-on JDK 21, 25 and 26, and skips any a JDK doesn't have, so another JDK release may use one it doesn't name. In a
-native image it names none, leaving those classes to the image.
+**The JVM's first `build()` checks the room first, then initializes the classes engines use:** the engine's, SLF4J's and
+the JDK's, such as the clock, the SHA-256 digest and streams, that building, loading, validating, running or closing
+uses. Without room, `build()` throws `StackOverflowError` before it touches any of them or checks any setting, even a
+wrong one. The next `build()` checks again.
+
+The check takes about 160 KB on x64, so a first build's thread needs more: about 200 KB on Windows x64, more on macOS,
+where 256 KB can be too small.
+
+**A language initializes its own classes in [`prepare()`](languages/custom.md#preparing-the-languages-classes),** after
+the same check, made once per language class:
+
+| The language is | Prepared |
+| --- | --- |
+| Named with `language(...)`, `defaultLanguage(...)`, `option(...)` or `languageImports(...)` | At every `build()`, after the settings are checked |
+| Found by `ServiceLoader`, unnamed, even as the only language: the usual MVEL setup | Once, at the first `load()` or `validate()` that uses it, an empty list using the default |
+
+A language's first use too deep throws `StackOverflowError` from the check, unlogged, with the language untouched; the
+rules loaded before stay loaded. What `prepare()` throws fails `build()` unchanged. At a first use, it fails that
+language's rules, like a failing `newCompiler()`, with `The '<name>' expression language failed to prepare: ...`; the
+next use prepares it again.
+
+> [!TIP]
+> To have the room checked at `build()` rather than at a deep first `load()`, name the language, such as
+> `.defaultLanguage("mvel")`, and build the JVM's first engine near the top of a stack.
+
+Not covered: a name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the
+problem before any check; a rejected setting's message, maybe the JVM's first string concatenation; another instance of
+a prepared language class, such as a wrapper around another language, which gets no check, nor at a first use
+`prepare()`; and listeners' or your own code's classes.
+
+Tests in a new JVM cover first builds, loads and runs across outputs, facts, listener callbacks, failing conditions and
+loads, nested runs, `validate()`, `close()`, and MVEL's first steps, JIT on and off. They fail if a first load or run,
+or a first build before its check, initializes a class with a static initializer, other than the application's and the
+JDK's nameless hidden method-handle classes.
+
+A path they don't take may still initialize one, as may a JDK other than 21 and 25, whose classes the engine names,
+skipping missing ones. A native image names none, leaving them to it.
 
 ## 🪵 What is logged
 
@@ -110,7 +139,7 @@ already, as for a fatal `Error` below:
 
 Each place a run, `load()` or `validate()` hands control to your code or a language counts as code of its own here: a
 rule's condition and, separately, its action, each listener's callback, the output supplier, the output writer, the
-clock, reading the facts and each fact's value, a language's `checkFactName()`, `newCompiler()`, compiling,
+clock, reading the facts and each fact's value, a language's `checkFactName()`, `prepare()`, `newCompiler()`, compiling,
 `newSession()` and `warmUp()`, and each close.
 
 So the run that logged it may be an earlier sibling, or a run an earlier rule, the same rule's condition or a listener

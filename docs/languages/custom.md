@@ -43,8 +43,9 @@ sequenceDiagram
     participant Sess as Session
     App->>Engine: language(lang), or build() finds it
     Engine->>Lang: name(), once
+    Engine->>Lang: prepare(), on each build that names it
     App->>Engine: load(rules)
-    Engine->>Lang: newCompiler(context), at the first rule in this language
+    Engine->>Lang: prepare(), if not yet prepared, then newCompiler(context), at the first rule in this language
     Engine->>Comp: compileCondition(), then compileAction(), for each rule in priority order
     Engine->>Comp: newSession(), then warmUp(session), n times with copiesAtLoad(n)
     App->>Engine: run(facts), on any thread
@@ -90,7 +91,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 | Interface | You implement | It returns |
 | --- | --- | --- |
-| `ExpressionLanguage` | `name()` and `newCompiler(CompileContext)` | A new compiler for each rule list |
+| `ExpressionLanguage` | `name()`, `newCompiler(CompileContext)`, optionally `prepare()` | A new compiler for each rule list |
 | `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
@@ -218,6 +219,33 @@ it.
 > [!WARNING]
 > A condition that wraps another one must override `evaluateWithDetail` and forward it. A lambda implements only
 > `evaluate`, so the default answers with no detail, and the wrapped condition's detail is silently dropped.
+
+### Preparing the language's classes
+
+See [Nested runs](../nested-runs.md#-a-first-build-or-load-deep-in-a-stack).
+
+```java
+// Initializes the classes with a static initializer that your first compile or run would use, perhaps deep in a
+// stack: yours and your libraries'. By default it does nothing; a language that wraps another forwards it.
+@Override
+public void prepare() {
+    // Called at build(), on every build of an engine that names this language, or else before the first
+    // newCompiler(); the first time for its class, after the engine has checked that the stack has room.
+    // Initialize classes and nothing else: create no state an engine uses, since the language may never compile
+    // anything, and stay cheap once done. A throw fails build() unchanged, or, at a first use, the rules in this
+    // language, as a failing newCompiler() does: "The 'my' expression language failed to prepare: ...". The next
+    // use prepares again. It runs on the thread of that build(), load() or validate(), and may run on several
+    // threads at once.
+    MethodHandles.Lookup lookup = MethodHandles.lookup();
+    for (Class<?> type : List.of(MyParser.class, MyExpression.class)) {   // yours, and your libraries' classes
+        try {
+            lookup.ensureInitialized(type);   // runs the static initializer, and nothing else
+        } catch (IllegalAccessException e) {
+            // Out of this lookup's reach: left to its first use.
+        }
+    }
+}
+```
 
 ## 🚨 Errors when rules load
 
@@ -523,10 +551,9 @@ module com.example.app {
 }
 ```
 
-A language that reflects on facts itself needs its own access: MVEL needs an export with no `to` clause, because its
-generated accessor classes live in the unnamed module; see the root README's
-[Installation](../../README.md#-installation). A test module that `requires` the contract kit opens its package `to
-org.junit.platform.commons`.
+A language that reflects on facts itself needs its own access, as MVEL needs an export with no `to` clause; see the
+root README's [Installation](../../README.md#-installation). A test module that `requires` the contract kit opens its
+package `to org.junit.platform.commons`.
 
 ### Native image
 

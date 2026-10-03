@@ -16,7 +16,13 @@ final class DeepRuleScenario {
     static final String OUTCOMES = "OUTCOMES ";
 
     private static final int DEPTH = 5_000;
-    private static final long SMALL_STACK_BYTES = 256L * 1024;
+    /**
+     * Small enough that the deep rule overflows, which it does on a stack of 1 MB too, and large enough for what the
+     * thread does first: building the JVM's first engine and first using MVEL, each of which checks the stack has room
+     * for initializing classes, about 160 KB (see StackHeadroom), beyond the pages the JVM keeps at the stack's end,
+     * which are larger on some platforms, such as macOS on ARM. 256 KB left too little room there.
+     */
+    private static final long SMALL_STACK_BYTES = 512L * 1024;
 
     private DeepRuleScenario() {
     }

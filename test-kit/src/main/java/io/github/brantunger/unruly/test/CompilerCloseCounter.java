@@ -33,6 +33,12 @@ final class CompilerCloseCounter {
                 return language.name();
             }
 
+            // Forwarded, so the language initializes its classes when the engine is built, as it does unwrapped.
+            @Override
+            public void prepare() {
+                language.prepare();
+            }
+
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);

@@ -28,9 +28,10 @@ public final class ChildJvm {
 
     /**
      * Runs {@code main} in a new JVM, with this JVM's class path, the options given and the engine's logging off, and
-     * waits for it at most {@link #TIMEOUT}.
+     * waits for it at most {@link #TIMEOUT}. Its temporary directory is {@code dir}, so what it creates there is
+     * deleted with {@code dir}, unless the options give it another.
      *
-     * @param dir     A directory for the class path's argument file and the output
+     * @param dir     A directory for the class path's argument file, the output and the JVM's temporary files
      * @param main    The class whose {@code main} runs
      * @param options The JVM's options, such as {@code -da}
      * @return What the JVM printed, standard output and error together
@@ -43,7 +44,7 @@ public final class ChildJvm {
                 Charset.forName(System.getProperty("native.encoding")));
         // The child writes its output in UTF-8, as it is read here, whatever the platform's encoding.
         List<String> command = new ArrayList<>(List.of("@" + arguments, "-Dstdout.encoding=UTF-8",
-                "-Dstderr.encoding=UTF-8"));
+                "-Dstderr.encoding=UTF-8", "-Djava.io.tmpdir=" + dir.toAbsolutePath()));
         command.addAll(List.of(options));
         command.addAll(List.of("-Dorg.slf4j.simpleLogger.defaultLogLevel=off", main.getName()));
         return run(dir, TIMEOUT, command);

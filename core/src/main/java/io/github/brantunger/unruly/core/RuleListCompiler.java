@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -174,12 +175,7 @@ final class RuleListCompiler {
          * @param ruleList The rules
          */
         void compile(List<Rule> ruleList) {
-            List<Rule> sorted = ruleList.stream()
-                    .sorted(Comparator.comparing(
-                            Rule::getPriority,
-                            Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
-                    .toList();
-            for (Rule rule : sorted) {
+            for (Rule rule : inPriorityOrder(ruleList)) {
                 String language = languageOf(rule);
                 // A language that can't create its compiler is reported once, for the first rule that needed it. The
                 // rules written in it can't be compiled, and asking the language again would only repeat the failure.
@@ -339,6 +335,32 @@ final class RuleListCompiler {
         return cause == null ? failure : LoggedFailures.builtByEngine(failure);
     }
 
+    /**
+     * Returns the rules in the order they're compiled and evaluated: highest priority first, a rule without one last,
+     * and rules of equal priority in list order.
+     *
+     * @param rules The rules, with no {@code null} entry
+     * @return The rules in priority order
+     */
+    static List<Rule> inPriorityOrder(List<Rule> rules) {
+        return rules.stream()
+                .sorted(Comparator.comparing(
+                        Rule::getPriority,
+                        Comparator.nullsFirst(Comparator.naturalOrder())).reversed())
+                .toList();
+    }
+
+    /**
+     * Returns the rules that aren't {@code null}, in list order, as {@code validate()} compiles them, having reported
+     * each {@code null} entry itself.
+     *
+     * @param rules The rules
+     * @return The rules without the {@code null} entries
+     */
+    static List<Rule> withoutNulls(List<Rule> rules) {
+        return rules.stream().filter(Objects::nonNull).toList();
+    }
+
     private static RuleCompilationException combined(List<RuleCompilationException> failures) {
         String what = failures.stream().allMatch(failure -> failure.getRuleName() != null)
                 ? " rules failed to compile: "
@@ -372,16 +394,28 @@ final class RuleListCompiler {
      * @param language The language
      * @param context  The imports and class loader the rule list is compiled with
      * @return The compiler
-     * @throws RuleCompilationException if the language throws or returns {@code null}
+     * @throws RuleCompilationException if the language throws or returns {@code null}, or its first use prepares it and
+     *                                  that throws
      */
     private ExpressionCompiler newCompiler(String name, ExpressionLanguage language, CompileContext context) {
+        // A language the engine wasn't built to use is prepared at its first use (see RunClasses). The room for that
+        // is checked out here, so a StackOverflowError from the check reaches the caller as it is, with nothing
+        // initialized; what prepare() throws fails the language as what newCompiler() throws does, saying which failed.
+        boolean firstUse = RunClasses.firstUse(language);
         ExpressionCompiler compiler;
+        String failedTo = "prepare";
         try {
+            // prepare() and newCompiler() are each a call-out to the language, so each is marked (see LoggedFailures).
+            if (firstUse) {
+                LoggedFailures.callOut();
+                RunClasses.prepare(language);
+            }
+            failedTo = "create a compiler";
             LoggedFailures.callOut();
             compiler = language.newCompiler(context);
         } catch (Throwable e) {
-            throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to create a "
-                    + "compiler: " + Failures.describe(e), e, null);
+            throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to " + failedTo
+                    + ": " + Failures.describe(e), e, null);
         }
         if (compiler == null) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language returned no compiler",

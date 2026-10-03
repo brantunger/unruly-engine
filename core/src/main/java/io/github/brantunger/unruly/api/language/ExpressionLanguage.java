@@ -42,4 +42,29 @@ public interface ExpressionLanguage {
      * @return A new compiler, used for this rule list only
      */
     ExpressionCompiler newCompiler(CompileContext context);
+
+    /**
+     * Initializes the classes with a static initializer that the language's first compile or run would otherwise be
+     * the first to use: the language's own and those of any library it runs on. A rule list may be loaded, or a rule
+     * run, deep in another run's stack, for example from an action, and a {@link StackOverflowError} inside a class's
+     * static initializer leaves the class unusable for the life of the JVM: every later use of it, by any engine,
+     * throws {@link NoClassDefFoundError}. Initializing them here leaves a later load or run nothing to initialize.
+     *
+     * <p>
+     * The engine calls it before anything is compiled with the language, having first checked that the thread has
+     * room on its stack for it if no engine has prepared a language of the same class yet. It calls it while an
+     * engine is built for each language the builder names, by giving it, naming it the default, or giving it options
+     * or imports, on every build of such an engine. It calls it for another language the engine has, one found with
+     * {@link java.util.ServiceLoader}, even the only one found, which is then the default language, when a rule list
+     * first uses it, once for the language's class. So it must be cheap once it has done its work, as initializing a
+     * class that is already initialized is. It should do nothing else: it creates no state an engine uses, and may be
+     * called on a language that never compiles anything. Anything it throws while an engine is built fails the build,
+     * unchanged; anything it throws when a rule list first uses the language fails the language for that rule list, as
+     * what {@link #newCompiler(CompileContext)} throws does, reported as the language failing to prepare, and the
+     * language's next use prepares it again. By default it does nothing.
+     * </p>
+     */
+    default void prepare() {
+        // Nothing to initialize.
+    }
 }
