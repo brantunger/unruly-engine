@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The class loader MVEL compiles rules with. It asks the application's class loader for every class, unless the name
- * can't be one, but reports a class file whose name only matches in a different case as a missing class, and links the
+ * can't be one, but reports a class file found for the name only in a different case as a missing class, and links the
  * code MVEL's JIT generates against the MVEL running the rules.
  *
  * <p>
@@ -16,7 +16,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * on a case-insensitive file system (the default on Windows and macOS), the lookup for {@code applicant.class} finds
  * {@code Applicant.class}, and the JVM throws {@code NoClassDefFoundError: applicant (wrong name: Applicant)}. MVEL
  * doesn't catch it, so the rule would fail to compile. Reported as a {@link ClassNotFoundException}, it tells MVEL
- * that {@code applicant} isn't a class, so it reads it as the fact. Any other linkage error is passed on unchanged.
+ * that {@code applicant} isn't a class, so it reads it as the fact. Any other linkage error is passed on unchanged,
+ * including a "wrong name" error for a class the class looked up depends on, such as its superclass, which the JVM
+ * names in its message instead: that class exists but can't be loaded.
  * </p>
  *
  * <p>
@@ -211,9 +213,9 @@ final class ExactNameClassLoader extends ClassLoader {
      * @param name The class's binary name
      * @return The class
      * @throws ClassNotFoundException if the application's class loader has no class by that name, or only a class
-     *                                file whose name differs in case, or, in a native image built with strict
-     *                                reachability metadata, no metadata for it, or, before the application's class
-     *                                loader is asked, if {@code name} has more than {@value #MAX_NAME_LENGTH}
+     *                                file found for that name in a different case, or, in a native image built with
+     *                                strict reachability metadata, no metadata for it, or, before the application's
+     *                                class loader is asked, if {@code name} has more than {@value #MAX_NAME_LENGTH}
      *                                characters, or more than {@value #MAX_NAME_PARTS} dot-separated parts and no
      *                                {@code $}, or a character that is neither a {@code .} nor one a Java identifier
      *                                may have, or if the application's class loader is one of the JDK's own and
@@ -236,7 +238,7 @@ final class ExactNameClassLoader extends ClassLoader {
             }
             return loaded;
         } catch (NoClassDefFoundError e) {
-            if (isWrongName(e)) {
+            if (isWrongName(e, name)) {
                 throw new ClassNotFoundException(name, e);
             }
             throw e;
@@ -377,17 +379,24 @@ final class ExactNameClassLoader extends ClassLoader {
     }
 
     /**
-     * Tells whether a linkage error only means that a class file was found for a name that differs in case, so there
-     * is no class by the name that was looked up.
+     * Tells whether a linkage error only means that a class file was found for the name looked up in a different
+     * case, so there is no class by that name. The message names the class asked for, in internal form, on one side:
+     * first on HotSpot, last on OpenJ9. One about a class that one depends on, such as its superclass, names it on
+     * neither, so it isn't taken for it.
      *
      * @param error The error a class lookup threw
-     * @return {@code true} for the JVM's "wrong name" {@code NoClassDefFoundError}
+     * @param name  The binary name the lookup asked for
+     * @return {@code true} for the JVM's "wrong name" {@code NoClassDefFoundError} for {@code name}
      */
-    // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together. The error may
-    // come from a context class loader of the application's own, so its message is read as core reads it.
-    static boolean isWrongName(LinkageError error) {
+    // core.ImportResolver.isWrongName(NoClassDefFoundError, String) keeps a copy of this: the mvel package may not use
+    // that one. Fix both together. The error may come from a context class loader of the application's own, so its
+    // message is read as core reads it.
+    static boolean isWrongName(LinkageError error, String name) {
         String message = ExceptionReads.messageOf(error);
-        return error instanceof NoClassDefFoundError && message != null && message.contains("(wrong name: ");
+        String internal = name.replace('.', '/');
+        return error instanceof NoClassDefFoundError && message != null
+                && (message.startsWith(internal + " (wrong name: ")
+                || message.endsWith(" (wrong name: " + internal + ")"));
     }
 
     /**

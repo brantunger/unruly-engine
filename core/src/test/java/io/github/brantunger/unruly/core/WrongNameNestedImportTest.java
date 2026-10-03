@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * finds a class file as a case-insensitive file system does, ignoring case, and defines it under the name it was asked
  * for, so the JVM itself throws its {@code NoClassDefFoundError: ... (wrong name: ...)} when the file's class has a
  * name in another case. That happens on every operating system, unlike in
- * {@code mvel.RealCaseInsensitiveClassDirectoryTest}, which needs a case-insensitive file system.
+ * {@code mvel.RealCaseInsensitiveClassDirectoryTest}, which needs a case-insensitive file system. The error the JVM
+ * throws for a class the class looked up depends on, such as its superclass, names that class, so it isn't one about
+ * the import's name (#993).
  */
 @DisplayName("a class file an import's name finds in another case doesn't stop the lookup of the class it names (#973)")
 class WrongNameNestedImportTest {
@@ -64,22 +66,62 @@ class WrongNameNestedImportTest {
             }
             """;
 
+    private static final String DEP = """
+            package com.acme;
+
+            public class Dep {
+            }
+            """;
+
+    private static final String NEEDS_DEP = """
+            package com.acme;
+
+            public class NeedsDep extends Dep {
+            }
+            """;
+
+    private static final String HOLDER = """
+            package com.acme;
+
+            public class Holder {
+                public static class In extends Dep {
+                }
+            }
+            """;
+
+    private static final String OTHER_CASE_DEP = """
+            package com.acme;
+
+            public class DEP {
+            }
+            """;
+
     @TempDir
     static Path classes;
+
+    @TempDir
+    static Path otherCaseClasses;
 
     /**
      * Compiles the classes once. {@code com.acme.Base} is then deleted, so {@code Outer.Sub} exists but can't be
      * loaded, and {@code com/acme/rules/Limit-1.class}, a copy of {@code Limit}'s class file, is a file whose name is
-     * no class's.
+     * no class's. {@code com.acme.Dep} is replaced by {@code com/acme/DEP.class}, compiled apart, as the two files
+     * would be one on a case-insensitive file system, so {@code NeedsDep} and {@code Holder.In} exist but their
+     * superclass's lookup finds a class file in another case.
      */
     @BeforeAll
     static void compileClasses() throws IOException {
         assertCompiles(List.of("-proc:none", "-d", classes.toString()), List.of(source("com/acme/Rules", RULES),
                 source("com/acme/rules/Limit", OTHER_CASE_LIMIT), source("com/acme/Base", BASE),
-                source("com/acme/Outer", OUTER)));
+                source("com/acme/Outer", OUTER), source("com/acme/Dep", DEP), source("com/acme/NeedsDep", NEEDS_DEP),
+                source("com/acme/Holder", HOLDER)));
+        assertCompiles(List.of("-proc:none", "-d", otherCaseClasses.toString()),
+                List.of(source("com/acme/DEP", OTHER_CASE_DEP)));
         Files.delete(classes.resolve("com/acme/Base.class"));
         Path limit = classes.resolve("com/acme/rules/Limit.class");
         Files.copy(limit, limit.resolveSibling("Limit-1.class"));
+        Files.delete(classes.resolve("com/acme/Dep.class"));
+        Files.copy(otherCaseClasses.resolve("com/acme/DEP.class"), classes.resolve("com/acme/DEP.class"));
     }
 
     /**
@@ -175,6 +217,34 @@ class WrongNameNestedImportTest {
 
         assertTrue(ex.getMessage().startsWith("Can't import 'com.acme.Outer.Sub': the class exists but can't be"
                 + " loaded: java.lang.NoClassDefFoundError: com/acme/Base"), ex.getMessage());
+        assertInstanceOf(NoClassDefFoundError.class, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("a class whose superclass's lookup finds a class file in another case is rejected, not taken for a"
+            + " package (#993)")
+    void wrongNameOfADependencyRejected() {
+        ClassLoader loader = new CaseInsensitiveClassDirectory();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> resolve(loader, "com.acme.NeedsDep"));
+
+        assertEquals("Can't import 'com.acme.NeedsDep': the class exists but can't be loaded:"
+                + " java.lang.NoClassDefFoundError: com/acme/Dep (wrong name: com/acme/DEP)", ex.getMessage());
+        assertInstanceOf(NoClassDefFoundError.class, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("a nested class whose $ form's superclass finds a class file in another case is rejected, not taken"
+            + " for a package (#993)")
+    void wrongNameOfANestedClassDependencyRejected() {
+        ClassLoader loader = new CaseInsensitiveClassDirectory();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> resolve(loader, "com.acme.Holder.In"));
+
+        assertEquals("Can't import 'com.acme.Holder.In': the class exists but can't be loaded:"
+                + " java.lang.NoClassDefFoundError: com/acme/Dep (wrong name: com/acme/DEP)", ex.getMessage());
         assertInstanceOf(NoClassDefFoundError.class, ex.getCause());
     }
 }
