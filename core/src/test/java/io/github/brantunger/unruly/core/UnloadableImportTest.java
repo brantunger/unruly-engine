@@ -26,7 +26,8 @@ class UnloadableImportTest {
     /**
      * A class loader where these classes exist but can't be loaded: {@code p.A}, whose superclass {@code p.Base} is
      * missing; {@code p.B}, whose error has no message; and {@code p.C}, whose class file is malformed. And where
-     * {@code p.a} finds {@code A}'s class file, as a class directory on a case-insensitive file system does. And
+     * {@code p.a} finds {@code A}'s class file, as a class directory on a case-insensitive file system does, and
+     * {@code p.b} finds {@code B}'s, with the names in the order OpenJ9 writes them. And
      * {@code p.D}, whose error text has a line break and a bidi control; {@code p.E}, whose error text is long;
      * {@code p.F}, whose error text has line breaks where it is cut; and {@code p.G}, whose error has no message and
      * a cause that has one. And {@code p.X\nforged}, whose name has a line break, and {@code p.q},
@@ -40,6 +41,7 @@ class UnloadableImportTest {
                 case "p.B" -> throw new NoClassDefFoundError();
                 case "p.C" -> throw new ClassFormatError("Incompatible magic value 16909060 in class file p/C");
                 case "p.a" -> throw new NoClassDefFoundError("p/a (wrong name: p/A)");
+                case "p.b" -> throw new NoClassDefFoundError("p/B (wrong name: p/b)");
                 case "p.D" -> throw new NoClassDefFoundError("p/Base\nFORGED LOG LINE" + (char) 0x202e);
                 case "p.E" -> throw new NoClassDefFoundError(LONG_TEXT);
                 case "p.F" -> throw new NoClassDefFoundError(BREAKS_AT_LIMIT);
@@ -79,6 +81,15 @@ class UnloadableImportTest {
     @DisplayName("a name that only finds a class file in a different case is still a package import")
     void wrongNameIsAPackage() {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.a");
+
+        assertDoesNotThrow(() -> withContextClassLoader(LOADER, builder::build));
+    }
+
+    @Test
+    @DisplayName("a name that only finds a class file in a different case is a package import on OpenJ9 too, which"
+            + " names the class asked for last")
+    void wrongNameInOpenJ9OrderIsAPackage() {
+        RulesEngineBuilder<Map<String, Object>> builder = importing("p.b");
 
         assertDoesNotThrow(() -> withContextClassLoader(LOADER, builder::build));
     }

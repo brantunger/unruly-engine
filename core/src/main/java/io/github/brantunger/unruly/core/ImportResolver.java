@@ -34,9 +34,10 @@ final class ImportResolver {
      * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
      * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}. A class file found for the name, or for one
      * of its {@code $} forms, in a different case, as a class directory on a case-insensitive file system finds one,
-     * isn't a class of that name, so the forms still to try are tried. In a native image built with strict
-     * reachability metadata, a name the image has no metadata for isn't a class, as on the JVM a name no class has
-     * isn't one, so a package import such as {@code java.util} still works there.
+     * isn't a class of that name, so the forms still to try are tried; one found in a different case for a class the
+     * class named depends on, such as its superclass, makes it a class that can't be loaded. In a native image built
+     * with strict reachability metadata, a name the image has no metadata for isn't a class, as on the JVM a name no
+     * class has isn't one, so a package import such as {@code java.util} still works there.
      *
      * @param name An import string given to the builder
      * @return The class, or {@code null} if {@code name} is a package name
@@ -55,8 +56,9 @@ final class ImportResolver {
         } catch (ClassNotFoundException e) {
             return packageImport(name, e);
         } catch (LinkageError e) {
-            // A class file found for a name that differs in case is already no class (see load). Any other linkage
-            // error means the class exists, and rules couldn't use it.
+            // A class file found for the name looked up, in another case, is already no class (see load). Any other
+            // linkage error, a class file found in another case for a class it depends on too, means the class
+            // exists, and rules couldn't use it.
             throw new IllegalArgumentException("Can't import '" + Failures.quote(name)
                     + "': the class exists but can't be loaded: "
                     + Failures.describeWithClass(e), e);
@@ -111,11 +113,16 @@ final class ImportResolver {
         return null;
     }
 
-    // The JVM's "wrong name" NoClassDefFoundError, as in mvel.ExactNameClassLoader. The error may come from a context
-    // class loader of the application's own, so its message is read as any exception's the engine didn't create is.
-    private static boolean isWrongName(NoClassDefFoundError error) {
+    // The JVM's "wrong name" NoClassDefFoundError for the name looked up, as in mvel.ExactNameClassLoader. Its message
+    // names the class asked for, in internal form, on one side: first on HotSpot, last on OpenJ9. One about a class it
+    // depends on, such as its superclass, names it on neither, so it isn't taken for it. The error may come from a
+    // context class loader of the application's own, so its message is read as any exception's the engine didn't
+    // create is. WrongNameCopiesTest checks the copy against it.
+    static boolean isWrongName(NoClassDefFoundError error, String name) {
         String message = Failures.messageOf(error);
-        return message != null && message.contains("(wrong name: ");
+        String internal = name.replace('.', '/');
+        return message != null && (message.startsWith(internal + " (wrong name: ")
+                || message.endsWith(" (wrong name: " + internal + ")"));
     }
 
     /**
@@ -150,22 +157,23 @@ final class ImportResolver {
     }
 
     /**
-     * Loads a class, without initializing it, reporting as a class that isn't there a class file found for a name that
-     * differs in case, as a class directory on a case-insensitive file system finds one, and a name a native image has
+     * Loads a class, without initializing it, reporting as a class that isn't there a class file found for its name in
+     * a different case, as a class directory on a case-insensitive file system finds one, and a name a native image has
      * no metadata for (see {@link MissingRegistration#isMissingRegistration}), before any caller can take their error
      * for a class that exists but can't be loaded. So a form of an import's name that only finds such a file isn't a
-     * class, and the next form is tried.
+     * class, and the next form is tried. Such a file found for a class this one depends on, such as its superclass,
+     * fails the load as any other missing class it depends on does.
      *
      * @throws ClassNotFoundException if the class loader has no class by that name; if it only finds a class file
-     *                                whose name differs in case, with the JVM's "wrong name" error as the cause; or,
-     *                                in a native image built with strict reachability metadata, if the image has no
-     *                                metadata for it, with the image's error as the cause
+     *                                for that name in a different case, with the JVM's "wrong name" error as the
+     *                                cause; or, in a native image built with strict reachability metadata, if the
+     *                                image has no metadata for it, with the image's error as the cause
      */
     private static Class<?> load(String name, ClassLoader loader) throws ClassNotFoundException {
         try {
             return loader.loadClass(name);
         } catch (NoClassDefFoundError e) {
-            if (isWrongName(e)) {
+            if (isWrongName(e, name)) {
                 throw new ClassNotFoundException(name, e);
             }
             throw e;
