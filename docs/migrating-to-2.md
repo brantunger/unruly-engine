@@ -147,7 +147,7 @@ class file versions up to 61.0
   </properties>
   ```
 
-The engine is built and tested on Java 21, and its tests also run on Java 25.
+The engine is built and tested on Java 21; its tests also run on 25 and 26.
 
 ## 📦 What you depend on
 

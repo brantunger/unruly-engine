@@ -65,8 +65,8 @@ flowchart TD
 
 ## 💻 Development setup
 
-You need **JDK 21** installed: the build compiles with a Java 21 toolchain, and Gradle doesn't download one, so a
-missing JDK fails the build naming the version it needs. **JDK 25** is optional: only `-PtestJdk=25` needs it.
+You need **JDK 21** installed: the build compiles with a Java 21 toolchain, which Gradle doesn't download, so a
+missing JDK fails the build naming the version. Only `-PtestJdk=N` needs JDK N; CI uses 25 and 26.
 
 In an IDE, import the project as a Gradle build: the build scripts and `buildSrc`'s convention plugins are Kotlin
 DSL (`.gradle.kts`). IntelliJ IDEA then completes code in them; Eclipse and VS Code only highlight their syntax.
@@ -82,7 +82,7 @@ cd unruly-engine
 | The full gate | `./gradlew clean build` | `./gradlew clean build` | `gradlew clean build` |
 | One test class | `./gradlew :mvel:test --tests '*StatefulSemanticsTest*'` | `./gradlew :mvel:test --tests '*StatefulSemanticsTest*'` | `gradlew :mvel:test --tests "*StatefulSemanticsTest*"` |
 | The coverage report | `./gradlew jacocoTestReport` | `./gradlew jacocoTestReport` | `gradlew jacocoTestReport` |
-| The tests on JDK 25 | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | `gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` |
+| The tests on JDK 26 | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26` | `gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26` |
 
 `:core:test`, `:mvel:test` and `:test-kit:test` are separate tasks, so `--tests` has to name a class the project
 holds, or Gradle reports `No tests found for given includes`. [Where things live](#-where-things-live) says which
@@ -180,7 +180,7 @@ Three things to know about the gate:
 > are exempt.
 
 On every pull request and push to `main`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows
-and macOS, the tests again on **JDK 25** on Linux, and the native-image check, except on a
+and macOS, the tests on **JDK 25 and 26** on Linux, and the native-image check, except on a
 [documentation-only pull request](docs/contributing/build-and-gates.md#-ci). It also checks the PR title, broken
 links, CRLF line endings and the workflows, and warns about the changed pages' style. No branch protection
 requires a check; maintainers merge when CI and the title check are green. The reports, caches and artifacts are

@@ -607,6 +607,33 @@ class LanguageDiscoveryTest {
         }
     }
 
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged when the library's own loader gives the"
+            + " library's API in a jar that can't be found, which is taken for the same file as the one listed")
+    void notALanguageWhereTheLibrarysOwnApiIsInAMissingJar() throws Exception {
+        // The application loads the library from its jar or directory, but its loader gives the API's class file in
+        // a jar that isn't there, so the context class loader, which asks it, lists the API somewhere else.
+        String classFile = ExpressionLanguage.class.getName().replace('.', '/') + ".class";
+        URL missing = URI.create("jar:" + pluginRoot.resolve("missing.jar").toUri() + "!/" + classFile).toURL();
+        Path listing = pluginRoot.resolve("listing");
+        Path services = listing.resolve(SERVICES_FILE);
+        Files.createDirectories(services.getParent());
+        Files.writeString(services, "app.Main");
+        URL[] classPath = {library().toUri().toURL(), codeOf(Logger.class), application().toUri().toURL()};
+
+        try (URLClassLoader application = new URLClassLoader("application", classPath,
+                ClassLoader.getPlatformClassLoader()) {
+            @Override
+            public URL getResource(String name) {
+                return name.equals(classFile) ? missing : super.getResource(name);
+            }
+        };
+             URLClassLoader context = new URLClassLoader(new URL[]{listing.toUri().toURL()}, application)) {
+            assertEquals(ServiceConfigurationError.class.getName() + ": " + ExpressionLanguage.class.getName()
+                    + ": app.Main not a subtype", buildIn(application, context));
+        }
+    }
+
     /**
      * Compiles an application whose {@code app.Main.build()} builds an engine and says how that went: {@code built},
      * or what it threw.

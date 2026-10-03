@@ -12,6 +12,7 @@ import java.net.URL;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -237,7 +238,12 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
      */
     private static boolean isSameFile(URL classFile, URL other) {
         try {
-            return Files.isSameFile(location(classFile), location(other));
+            Path path = location(classFile);
+            Path otherPath = location(other);
+            // Reading a file's attributes throws when it can't be found on every JDK; isSameFile doesn't from JDK 26.
+            Files.readAttributes(path, BasicFileAttributes.class);
+            Files.readAttributes(otherPath, BasicFileAttributes.class);
+            return Files.isSameFile(path, otherPath);
         } catch (FileSystemNotFoundException e) {
             // No file system for the URL's scheme, so the URLs are all there is to compare, and they differ.
             return false;

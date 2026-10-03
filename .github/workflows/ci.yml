@@ -65,19 +65,21 @@ jobs:
         # The full gate runs on JDK 21 on each OS: the module-path applications and the child JVMs the tests launch
         # depend on the OS, and Windows's and macOS's file systems are case-insensitive, so the tests that look a
         # compiled class up in another case for real run there, and skip on ubuntu-latest, where fakes cover them.
-        # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25, on Linux only.
+        # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25 and 26, on Linux only.
         os: [ ubuntu-latest, windows-latest, macos-latest ]
         java-version: [ '21' ]
         include:
           - os: ubuntu-latest
             java-version: '25'
+          - os: ubuntu-latest
+            java-version: '26'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # Compilation always uses the Java 21 toolchain, and Gradle doesn't download one (gradle.properties turns
-      # auto-download off), so the JDK 25 leg installs 21 as well. setup-java lists each JDK it installs in
+      # auto-download off), so the JDK 25 and 26 legs install 21 as well. setup-java lists each JDK it installs in
       # ~/.m2/toolchains.xml, which Gradle reads. Installed first, so the leg's own JDK stays JAVA_HOME.
       - name: Set up the Java 21 toolchain
         if: matrix.java-version != '21'
@@ -120,7 +122,8 @@ jobs:
       # -PapiCheck.refresh looks the API baseline, the newest release, up again. Without it, the version lookup in the
       # Gradle cache that setup-gradle restores can be up to a day old, so a leg could compare with an older release.
       # Local builds keep the lookup for 24 hours so the configuration cache can be reused; CI doesn't save that cache,
-      # so it loses nothing. The JDK 25 step and the native-image job don't run the check, so they don't need it.
+      # so it loses nothing. The steps on JDK 25 and 26 and the native-image job don't run the check, so they don't need
+      # the refresh.
       - name: Build & Test
         if: matrix.java-version == '21'
         run: ./gradlew build jacocoTestReport "-PapiCheck.refresh"
@@ -173,7 +176,8 @@ jobs:
             test-kit/hs_err_pid*.log
             **/replay_pid*.log
 
-      # The JDK 25 leg runs only the tests, so it has no coverage, but its test results show what ran and failed.
+      # The JDK 25 and 26 legs run only the tests, so they have no coverage, but their test results show what ran and
+      # what failed.
       - name: Upload Test Results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always() && matrix.java-version != '21'
