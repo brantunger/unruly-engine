@@ -63,9 +63,9 @@ variation selectors, unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` a
 
 Neither a name nor a quoted fact value can start a log line, change how it reads or pass for another name through
 an invisible character, and escaping twice changes nothing. Ordinary text shows escapes too, such as an emoji's
-U+FE0F. Shortening never splits such a character. The engine's limits count `char`s before escaping, except for
-[already escaped nested text](nested-runs.md#-what-is-logged), so escaped text can show more than its limit, and
-the `(N more characters)` count is the `char`s cut:
+U+FE0F. Shortening never splits such a character or an escape. Limits count `char`s before escaping, except for
+[text escaped already](nested-runs.md#-what-is-logged), so escaped text can show more than its limit, and the
+`(N more characters)` count is the `char`s cut:
 
 | Part of a message | What the engine does with it |
 | --- | --- |
