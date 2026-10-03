@@ -208,3 +208,4 @@ and in that of the exception `onRunError` gets.
 
 A `close()` logs a wrapper around a nested fatal `Error` at WARN, with the note. So does a listener for any but the
 first fatal `Error` thrown in a callback, as `<class>: <message>`, without the note.
+[seed](../README.md#no-such-anchor)
