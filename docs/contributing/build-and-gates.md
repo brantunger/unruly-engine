@@ -161,9 +161,8 @@ the next push to `main` waits for it, so a run isn't cut off before its cache sa
 queue: GitHub keeps one waiting run per branch, so a later push to `main` replaces a waiting one, whose commit gets
 a cancelled run and no build.
 
-`docs-and-hygiene` only warns for now, except its last step, which fails the job and `ci-result`: another failed step
-shows as an annotation, and the job stays green. A page written before the style guide may have findings in lines you
-didn't touch.
+A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: a page
+written before the style guide may have findings in lines you didn't touch. Steps after a failed one still run.
 `check_style.py` also enforces the 2,500-word cap, with the exceptions `docs/scripts/long-pages.txt` lists. Run the
 checks before you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
 
