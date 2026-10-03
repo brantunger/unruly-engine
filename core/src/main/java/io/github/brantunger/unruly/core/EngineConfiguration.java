@@ -107,4 +107,47 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
         languageImports.forEach((language, names) -> copiedImports.put(language, List.copyOf(names)));
         languageImports = Collections.unmodifiableMap(copiedImports);
     }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(Object other) {
+        return this == other || other instanceof EngineConfiguration<?> that
+                && Objects.equals(languageImports, that.languageImports) && allFactsDeclared == that.allFactsDeclared
+                && Objects.equals(declaredFacts, that.declaredFacts) && Objects.equals(options, that.options)
+                && Objects.equals(outputWriter, that.outputWriter) && Objects.equals(outputType, that.outputType)
+                && Objects.equals(clock, that.clock) && Objects.equals(runTimeout, that.runTimeout)
+                && copiesAtLoad == that.copiesAtLoad && Objects.equals(copyLimit, that.copyLimit)
+                && Objects.equals(listeners, that.listeners) && Objects.equals(imports, that.imports)
+                && Objects.equals(defaultLanguage, that.defaultLanguage) && Objects.equals(languages, that.languages);
+    }
+
+    @Override
+    public final int hashCode() {
+        int hash = Objects.hashCode(languages);
+        hash = hash * 31 + Objects.hashCode(defaultLanguage);
+        hash = hash * 31 + Objects.hashCode(imports);
+        hash = hash * 31 + Objects.hashCode(listeners);
+        hash = hash * 31 + Objects.hashCode(copyLimit);
+        hash = hash * 31 + Integer.hashCode(copiesAtLoad);
+        hash = hash * 31 + Objects.hashCode(runTimeout);
+        hash = hash * 31 + Objects.hashCode(clock);
+        hash = hash * 31 + Objects.hashCode(outputType);
+        hash = hash * 31 + Objects.hashCode(outputWriter);
+        hash = hash * 31 + Objects.hashCode(options);
+        hash = hash * 31 + Objects.hashCode(declaredFacts);
+        hash = hash * 31 + Boolean.hashCode(allFactsDeclared);
+        return hash * 31 + Objects.hashCode(languageImports);
+    }
+
+    @Override
+    public final String toString() {
+        return "EngineConfiguration[languages=" + languages + ", defaultLanguage=" + defaultLanguage
+                + ", imports=" + imports + ", listeners=" + listeners + ", copyLimit=" + copyLimit
+                + ", copiesAtLoad=" + copiesAtLoad + ", runTimeout=" + runTimeout + ", clock=" + clock
+                + ", outputType=" + outputType + ", outputWriter=" + outputWriter + ", options=" + options
+                + ", declaredFacts=" + declaredFacts + ", allFactsDeclared=" + allFactsDeclared
+                + ", languageImports=" + languageImports + "]";
+    }
 }

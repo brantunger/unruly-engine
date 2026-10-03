@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.RunContext;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * What every rule of one run needs: the run's fact values, the read-only views built over them, and when the run
@@ -50,5 +51,37 @@ record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, En
                        RunContext parent, RunTally tally, RuleSelection selection, LoggedFailures.Runs runs) {
         return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline, new RunScope()),
                 deadline, runId, parent, tally, selection, runs);
+    }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(Object other) {
+        return this == other || other instanceof RunFacts that && Objects.equals(runs, that.runs)
+                && Objects.equals(selection, that.selection) && Objects.equals(tally, that.tally)
+                && Objects.equals(parent, that.parent) && runId == that.runId && Objects.equals(deadline, that.deadline)
+                && Objects.equals(evaluation, that.evaluation) && Objects.equals(forListeners, that.forListeners)
+                && Objects.equals(values, that.values);
+    }
+
+    @Override
+    public final int hashCode() {
+        int hash = Objects.hashCode(values);
+        hash = hash * 31 + Objects.hashCode(forListeners);
+        hash = hash * 31 + Objects.hashCode(evaluation);
+        hash = hash * 31 + Objects.hashCode(deadline);
+        hash = hash * 31 + Long.hashCode(runId);
+        hash = hash * 31 + Objects.hashCode(parent);
+        hash = hash * 31 + Objects.hashCode(tally);
+        hash = hash * 31 + Objects.hashCode(selection);
+        return hash * 31 + Objects.hashCode(runs);
+    }
+
+    @Override
+    public final String toString() {
+        return "RunFacts[values=" + values + ", forListeners=" + forListeners + ", evaluation=" + evaluation
+                + ", deadline=" + deadline + ", runId=" + runId + ", parent=" + parent + ", tally=" + tally
+                + ", selection=" + selection + ", runs=" + runs + "]";
     }
 }

@@ -9,6 +9,7 @@ import org.mvel2.util.MethodStub;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -655,5 +656,30 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         String rejectedName() {
             return name;
         }
+    }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(@Nullable Object other) {
+        return this == other || other instanceof Imports that && Objects.equals(inputs, that.inputs)
+                && Objects.equals(notClasses, that.notClasses) && Objects.equals(classLoader, that.classLoader)
+                && Objects.equals(classes, that.classes) && Objects.equals(packages, that.packages);
+    }
+
+    @Override
+    public final int hashCode() {
+        int hash = Objects.hashCode(packages);
+        hash = hash * 31 + Objects.hashCode(classes);
+        hash = hash * 31 + Objects.hashCode(classLoader);
+        hash = hash * 31 + Objects.hashCode(notClasses);
+        return hash * 31 + Objects.hashCode(inputs);
+    }
+
+    @Override
+    public final String toString() {
+        return "Imports[packages=" + packages + ", classes=" + classes + ", classLoader=" + classLoader
+                + ", notClasses=" + notClasses + ", inputs=" + inputs + "]";
     }
 }

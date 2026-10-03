@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -24,5 +25,26 @@ public record Expression(String ruleName, ExpressionKind kind, String text) {
         Objects.requireNonNull(ruleName, "ruleName must not be null");
         Objects.requireNonNull(kind, "kind must not be null");
         Objects.requireNonNull(text, "text must not be null");
+    }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(@Nullable Object other) {
+        return this == other || other instanceof Expression that && Objects.equals(text, that.text)
+                && Objects.equals(kind, that.kind) && Objects.equals(ruleName, that.ruleName);
+    }
+
+    @Override
+    public final int hashCode() {
+        int hash = Objects.hashCode(ruleName);
+        hash = hash * 31 + Objects.hashCode(kind);
+        return hash * 31 + Objects.hashCode(text);
+    }
+
+    @Override
+    public final String toString() {
+        return "Expression[ruleName=" + ruleName + ", kind=" + kind + ", text=" + text + "]";
     }
 }

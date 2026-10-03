@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.MessageText;
+import org.jspecify.annotations.Nullable;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
@@ -80,6 +81,24 @@ final class MvelCompileErrors {
      * @param column The column, counting from 1
      */
     private record Position(int line, int column) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Position that && column == that.column && line == that.line;
+        }
+
+        @Override
+        public final int hashCode() {
+            return Integer.hashCode(line) * 31 + Integer.hashCode(column);
+        }
+
+        @Override
+        public final String toString() {
+            return "Position[line=" + line + ", column=" + column + "]";
+        }
     }
 
     /**

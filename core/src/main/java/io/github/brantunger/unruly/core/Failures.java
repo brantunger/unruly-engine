@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -1163,6 +1164,33 @@ public final class Failures {
      */
     record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad, Throwable news,
                  boolean loggedBelow) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(Object other) {
+            return this == other || other instanceof Below that && loggedBelow == that.loggedBelow
+                    && Objects.equals(news, that.news) && loggedByLoad == that.loggedByLoad
+                    && Objects.equals(logged, that.logged) && Objects.equals(error, that.error)
+                    && Objects.equals(innermost, that.innermost);
+        }
+
+        @Override
+        public final int hashCode() {
+            int hash = Objects.hashCode(innermost);
+            hash = hash * 31 + Objects.hashCode(error);
+            hash = hash * 31 + Objects.hashCode(logged);
+            hash = hash * 31 + Boolean.hashCode(loggedByLoad);
+            hash = hash * 31 + Objects.hashCode(news);
+            return hash * 31 + Boolean.hashCode(loggedBelow);
+        }
+
+        @Override
+        public final String toString() {
+            return "Below[innermost=" + innermost + ", error=" + error + ", logged=" + logged
+                    + ", loggedByLoad=" + loggedByLoad + ", news=" + news + ", loggedBelow=" + loggedBelow + "]";
+        }
     }
 
     /**

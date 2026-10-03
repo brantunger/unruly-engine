@@ -1,5 +1,8 @@
 package io.github.brantunger.unruly.test;
 
+import org.jspecify.annotations.Nullable;
+
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -99,6 +102,24 @@ final class KitResources {
                 // not this one's; a run's values have no check of their own.
                 KitFailures.rethrowIfFatal(e);
             }
+        }
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof ClosedQuietly<?> that && Objects.equals(resource, that.resource);
+        }
+
+        @Override
+        public final int hashCode() {
+            return Objects.hashCode(resource);
+        }
+
+        @Override
+        public final String toString() {
+            return "ClosedQuietly[resource=" + resource + "]";
         }
     }
 }

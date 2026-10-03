@@ -74,4 +74,23 @@ public record CopyLimit(int maxCopies, boolean virtualThreadsOnly) {
     public boolean appliesToCurrentThread() {
         return limits() && (!virtualThreadsOnly || Thread.currentThread().isVirtual());
     }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(Object other) {
+        return this == other || other instanceof CopyLimit that && virtualThreadsOnly == that.virtualThreadsOnly
+                && maxCopies == that.maxCopies;
+    }
+
+    @Override
+    public final int hashCode() {
+        return Integer.hashCode(maxCopies) * 31 + Boolean.hashCode(virtualThreadsOnly);
+    }
+
+    @Override
+    public final String toString() {
+        return "CopyLimit[maxCopies=" + maxCopies + ", virtualThreadsOnly=" + virtualThreadsOnly + "]";
+    }
 }

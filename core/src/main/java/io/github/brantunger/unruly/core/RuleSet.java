@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeoutException;
@@ -237,6 +238,27 @@ final class RuleSet {
          */
         boolean kept() {
             return kind == Kind.KEPT;
+        }
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(Object other) {
+            return this == other || other instanceof Copy that && Objects.equals(loan, that.loan)
+                    && Objects.equals(kind, that.kind) && Objects.equals(sessions, that.sessions);
+        }
+
+        @Override
+        public final int hashCode() {
+            int hash = Objects.hashCode(sessions);
+            hash = hash * 31 + Objects.hashCode(kind);
+            return hash * 31 + Objects.hashCode(loan);
+        }
+
+        @Override
+        public final String toString() {
+            return "Copy[sessions=" + sessions + ", kind=" + kind + ", loan=" + loan + "]";
         }
     }
 

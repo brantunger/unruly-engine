@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import org.slf4j.Logger;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import io.github.brantunger.unruly.api.RuleListener;
@@ -249,6 +250,27 @@ final class ListenerNotifier {
      *               is the run's own, whatever run logged it
      */
     private record ListenerFatal(Error fatal, Throwable thrown, boolean ofTold) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(Object other) {
+            return this == other || other instanceof ListenerFatal that && ofTold == that.ofTold
+                    && Objects.equals(thrown, that.thrown) && Objects.equals(fatal, that.fatal);
+        }
+
+        @Override
+        public final int hashCode() {
+            int hash = Objects.hashCode(fatal);
+            hash = hash * 31 + Objects.hashCode(thrown);
+            return hash * 31 + Boolean.hashCode(ofTold);
+        }
+
+        @Override
+        public final String toString() {
+            return "ListenerFatal[fatal=" + fatal + ", thrown=" + thrown + ", ofTold=" + ofTold + "]";
+        }
     }
 
     /**
