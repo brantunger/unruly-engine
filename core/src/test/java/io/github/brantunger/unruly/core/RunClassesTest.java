@@ -14,13 +14,16 @@ import static org.junit.jupiter.api.Assertions.*;
  * native image. Which classes it initializes is {@code FirstRunClassInitializationTest}'s to check.
  */
 @DisplayName("RunClasses initializes a class a lookup can't reach by name, skips one that isn't there, and names none"
-        + " in a native image (#911)")
+        + " in a native image (#911, #951)")
 class RunClassesTest {
 
     private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
 
     // Set by Unreachable's static initializer.
     private static final AtomicBoolean INITIALIZED = new AtomicBoolean();
+
+    // Set by UnreachableInImage's static initializer.
+    private static final AtomicBoolean UNREACHABLE_IN_IMAGE_INITIALIZED = new AtomicBoolean();
 
     // Set by Reachable's, Named's and NamedWhileBuilding's static initializers.
     private static final AtomicBoolean REACHABLE_INITIALIZED = new AtomicBoolean();
@@ -31,6 +34,13 @@ class RunClassesTest {
     private static final class Unreachable {
         static {
             INITIALIZED.set(true);
+        }
+    }
+
+    // Not public, as Unreachable isn't, and only ever given to RunClasses in a native image.
+    private static final class UnreachableInImage {
+        static {
+            UNREACHABLE_IN_IMAGE_INITIALIZED.set(true);
         }
     }
 
@@ -76,6 +86,21 @@ class RunClassesTest {
 
         assertTrue(REACHABLE_INITIALIZED.get());
         assertFalse(NAMED_INITIALIZED.get(), "a class named in a native image was initialized");
+    }
+
+    // #951: naming the class is a lookup by name too, which an image built with strict reachability metadata fails.
+    @Test
+    @DisplayName("in a native image, a class the lookup can't reach isn't initialized by name either (#951)")
+    void nativeImageUnreachable() {
+        System.setProperty(IMAGE_CODE, "runtime");
+        try {
+            RunClasses.initialize(MethodHandles.publicLookup(), List.of(UnreachableInImage.class), List.of());
+        } finally {
+            System.clearProperty(IMAGE_CODE);
+        }
+
+        assertFalse(UNREACHABLE_IN_IMAGE_INITIALIZED.get(),
+                "a class the lookup can't reach was named in a native image");
     }
 
     @Test

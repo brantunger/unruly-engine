@@ -32,7 +32,9 @@ it lists exactly the published artifacts).
 
 The other two aren't: `benchmarks`, whose sources the build checks and whose generated workload one test asserts the
 shape of, while only the `jmh` task measures anything, and `native-smoke`, a small application CI builds into a
-GraalVM native image.
+GraalVM native image. Its `checkStrictImagePackages`, run by `build` without GraalVM, fails unless CI's
+[strict](../native-image.md#-strict-metadata) image step gives `native-image` exactly the `core` and `mvel` jars'
+packages.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
@@ -122,8 +124,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 | `javadoc` | `build/docs/javadoc/index.html` for the site; the console for the warnings that failed it |
 | `cyclonedxDirectBom`, which `assemble` runs | `<project>/build/reports/cyclonedx-direct/<artifact>-<version>.cdx.json`, the SBOM a release attaches, for `core`, `mvel` and `test-kit` |
 
-`core`, `mvel` and `test-kit` each write a japicmp report, and `core` a second one for the constructors the test
-kit calls; [API compatibility](api-compatibility.md#-baselines) explains which release each one is compared with.
+[API compatibility](api-compatibility.md#-baselines) explains which release each japicmp report is compared with.
 `jacocoTestCoverageVerification` fails on the console; the HTML report from `jacocoTestReport` shows the uncovered
 lines and branches.
 
@@ -146,7 +147,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | --- | --- | --- |
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
-| `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary | The engine and MVEL work in a native image with only the metadata the jar ships and the application's own; see [Native image](../native-image.md) |
+| `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Fails when `build`, `native-image` or `docs-and-hygiene` failed or was cancelled; a skipped job counts as passed, and `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |

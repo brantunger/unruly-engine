@@ -16,6 +16,7 @@ the errors an image gives when one is missing.
 - [Registering your classes](#-registering-your-classes)
 - [Gotchas](#-gotchas)
 - [Errors and what they mean](#-errors-and-what-they-mean)
+- [Strict metadata](#-strict-metadata)
 - [Flight Recorder events](#-flight-recorder-events)
 - [Other expression languages](#-other-expression-languages)
 - [What was tested](#-what-was-tested)
@@ -62,8 +63,8 @@ value the same; run it with
 
 Nothing else is needed to build and run an image: no `native-image` option beyond the usual ones, no metadata for
 `unruly-engine-core`, and no change to how you build engines or load rules. `native-image` finds MVEL through its
-`META-INF/services` file, as the JVM does. In an image, building an engine looks up no JDK class by name, so an image
-built to fail on a class it has no metadata for doesn't fail there; that mode hasn't been tested.
+`META-INF/services` file, as the JVM does. An image built to fail on a class it has no metadata for works too, given
+the package list [Strict metadata](#-strict-metadata) describes.
 
 ## ⚡ MVEL's JIT must be off
 
@@ -96,8 +97,10 @@ A native image keeps reflection only for what it was told about. MVEL reads fact
 reflection, so the image must register those classes.
 
 **What the `unruly-engine` jar ships.** `META-INF/native-image/io.github.brantunger/unruly-engine/reflect-config.json`
-registers the no-argument constructor of `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer`, the one thing
-MVEL itself needs with the JIT off. `native-image` reads it from the class path; you do nothing.
+registers what MVEL itself needs with the JIT off: the no-argument constructor of
+`org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer`, and `org.mvel2.asm.ClassWriter`, a class MVEL looks up
+when it starts. Without that entry, an image built with [strict metadata](#-strict-metadata) logs a `WARNING` with a
+stack trace there. `native-image` reads the file from the class path; you do nothing.
 
 **What your application registers.** Everything your rules reach, in your own
 `src/main/resources/META-INF/native-image/<group>/<artifact>/reflect-config.json`, which `native-image` also finds on
@@ -144,13 +147,67 @@ write an entry by hand, register the method on the class the error names.
 
 A condition or action that fails in an image fails the run like any other: `run()` throws a
 `RuleExecutionException`, `Failed to evaluate condition for rule '...'` or `Failed to execute action for rule '...'`,
-with GraalVM's or MVEL's error as its cause. See [Error handling](error-handling.md#-handling-failures).
+with GraalVM's or MVEL's error as its cause. See [Error handling](error-handling.md#-handling-failures). The last row
+is a `load()` that fails instead.
 
 | The cause contains | Why | Fix |
 | --- | --- | --- |
 | `UnsupportedFeatureError: No classes have been predefined during the image build to load from bytecodes at runtime` | MVEL's JIT is on and tried to generate a class | Start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](#-mvels-jit-must-be-off) |
 | `unable to instantiate accessor compiler`, caused by `NoSuchMethodException: org.mvel2.optimizers.dynamic.DynamicOptimizer.<init>()` | MVEL's JIT is on, and its optimizer isn't registered | The same: turn the JIT off. Registering the optimizer only leads to the error above |
 | `MissingReflectionRegistrationError: The program tried to reflectively invoke method ...` | A method the rule calls isn't registered | Add it to your `reflect-config.json`; see [Registering your classes](#-registering-your-classes) |
+| `RuleCompilationException` from `load()`: `The program tried to reflectively access class applicant.creditScore`, a name made from the rule's text | The image was built with strict metadata for all code, MVEL's included | List packages instead; see [Strict metadata](#-strict-metadata) |
+
+## 🔒 Strict metadata
+
+By default, an image answers a class lookup it has no metadata for as if the class weren't there: `Class.forName`
+throws `ClassNotFoundException`. Built with strict metadata, it throws GraalVM's `MissingReflectionRegistrationError`
+instead, so a missing entry fails where it's used. GraalVM says this will become the default. On GraalVM for JDK 21
+the option is experimental. These are CI's commands for its second image:
+
+```bash
+packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
+packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
+packages=$packages,io.github.brantunger.unruly.mvel
+native-image --no-fallback -H:+ReportExceptionStackTraces \
+    -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
+    -cp 'native-smoke/build/install/native-smoke/lib/*' -o native-smoke/build/native/native-smoke-strict \
+    com.example.nativesmoke.Main
+native-smoke/build/native/native-smoke-strict -Dmvel2.disable.jit=true
+```
+
+> [!WARNING]
+> With MVEL rules, always give the option a list. With none, `-H:ThrowMissingRegistrationErrors=` covers MVEL's own
+> code too. MVEL looks up names it makes from a rule's text, such as `applicant.creditScore`, with `Class.forName`, and
+> no metadata can list them, so every rule that reads a property fails to compile and `load()` throws.
+
+How the list works on GraalVM for JDK 21, from GraalVM's source:
+
+- Each entry is a package or a class, matched exactly, not as a prefix. `io.github.brantunger` covers none of the
+  library's classes, so CI lists each of its five packages. The build's `checkStrictImagePackages` task, which
+  `./gradlew build` runs, fails when that list misses a package of the `core` or `mvel` jars, or names another.
+- The list picks whose `Class.forName` and other reflection calls throw. A lookup through a class loader's
+  `loadClass` throws for any name the image has no metadata for, whatever the list.
+
+CI lists only the library's packages. Adding your application's packages checks its own lookups too, which wasn't
+tested. With CI's list, the sample needed no metadata beyond what its default image uses. GraalVM for JDK 23 and later
+name the option `--exact-reachability-metadata`, which wasn't tested.
+
+The engine reads `MissingReflectionRegistrationError` as "no such class" wherever it looks a class up by name, as the
+JVM reads `ClassNotFoundException`. So a package import such as `"java.util"` works; on GraalVM for JDK 21, earlier
+releases of the engine failed `build()` there. MVEL's lookups through the engine's class loader get a
+`ClassNotFoundException`, so a nested class or a static member in a rule resolves as on the JVM.
+
+An image initializes no class by name. The engine knows the error by its class name,
+`org.graalvm.nativeimage.MissingReflectionRegistrationError`, and handles any other error as it did before.
+
+Known gap ([#972](https://github.com/brantunger/unruly-engine/issues/972)): for a fact or output class that isn't
+public, and for a bridge setter, the engine looks the method up on the class's supertypes with `getMethod` and
+catches only `NoSuchMethodException`. In a strict image, even with CI's list, an unregistered lookup there throws
+`MissingReflectionRegistrationError` instead of falling back. Register those supertypes too, with
+`queryAllPublicMethods`.
+
+To list every lookup that would throw, without stopping the run, add `-H:MissingRegistrationReportingMode=Warn` to
+the build. Built unscoped that way, the sample printed each site, and its run still passed.
 
 ## 📡 Flight Recorder events
 
@@ -176,7 +233,8 @@ image.
 ## 🧪 What was tested
 
 CI's `native-image` job builds the native-smoke application with GraalVM Community Edition for JDK 21 (21.0.2) on
-Linux, and runs it. The application checks its own results and exits with 1 if one is wrong. It covers:
+Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's five
+packages. The application checks its own results and exits with 1 if one is wrong. It covers:
 
 - a first-match engine with a class and a package import, a record fact read by property and a bean output an
   action sets;
@@ -192,4 +250,5 @@ engine already loaded, so it never reaches that lookup; that is from reading the
 
 Not tested: Oracle GraalVM, GraalVM for other JDK versions, Windows and macOS images, the module path, frameworks'
 own native support such as Spring Boot's, listeners, timeouts, the other builder options, a fact named after a
-single imported class, and recording Flight Recorder events in an image.
+single imported class, and recording Flight Recorder events in an image. Nor, with strict metadata: GraalVM 23 and
+later, any other package list, and a broken `META-INF/services` listing.

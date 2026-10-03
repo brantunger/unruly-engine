@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import org.graalvm.nativeimage.MissingReflectionRegistrationError;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Stream;
 
 import static io.github.brantunger.unruly.JavaSources.assertCompiles;
 import static io.github.brantunger.unruly.JavaSources.source;
@@ -84,7 +86,30 @@ class NestedClassImportTest {
         }
     }
 
-    private static Object run(ApplicationLoader loader, String action, String... imports) {
+    /**
+     * The application's class loader, which serves the compiled classes but throws {@code error} for
+     * {@code app.exp.Outer$Nested}, as a native image built with strict reachability metadata throws its error for a
+     * class it has no metadata for.
+     */
+    private static final class ThrowingLoader extends URLClassLoader {
+
+        private final Error error;
+
+        ThrowingLoader(Error error) throws IOException {
+            super(new URL[] {classes.toUri().toURL()}, NestedClassImportTest.class.getClassLoader());
+            this.error = error;
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (name.equals("app.exp.Outer$Nested")) {
+                throw error;
+            }
+            return super.loadClass(name, resolve);
+        }
+    }
+
+    private static Object run(ClassLoader loader, String action, String... imports) {
         // The engine resolves its imports when it is built, and takes its class loader from the thread that loads
         // rules.
         return withContextClassLoader(loader, () -> {
@@ -219,6 +244,33 @@ class NestedClassImportTest {
                 () -> run("output.put('k', new Outer.NeedsDep())", "app.gone.Outer"));
 
         assertTrue(ex.getMessage().contains("could not resolve class: Outer.NeedsDep"), ex.getMessage());
+    }
+
+    // #951: GraalVM for JDK 21's error is an Error, not a LinkageError, so it escaped the lookup.
+    @Test
+    @DisplayName("a nested class a native image has no metadata for fails when it runs, as a class that isn't there"
+            + " (#951)")
+    void nestedClassWithoutMetadata() throws IOException {
+        Error missing = new MissingReflectionRegistrationError("app.exp.Outer$Nested");
+        try (ThrowingLoader loader = new ThrowingLoader(missing)) {
+            RuntimeException ex = assertThrows(RuntimeException.class,
+                    () -> run(loader, "output.put('k', new Outer.Nested().v())", "app.exp.Outer"));
+
+            assertTrue(ex.getMessage().contains("could not resolve class: Outer.Nested"), ex.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("another error from looking a nested class up that isn't a LinkageError fails the rule list (#951)")
+    void nestedClassOtherError() throws IOException {
+        Error other = new Error("not the image's");
+        try (ThrowingLoader loader = new ThrowingLoader(other)) {
+            RuntimeException ex = assertThrows(RuntimeException.class,
+                    () -> run(loader, "output.put('k', new Outer.Nested().v())", "app.exp.Outer"));
+
+            assertTrue(Stream.iterate((Throwable) ex, t -> t != null, Throwable::getCause).anyMatch(t -> t == other),
+                    ex.toString());
+        }
     }
 
     @Test
