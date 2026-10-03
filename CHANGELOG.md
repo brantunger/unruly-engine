@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.22.1](https://github.com/brantunger/unruly-engine/compare/v2.22.0...v2.22.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* an engine with a package import builds, and MVEL rules compile, in a native image built with strict metadata ([#976](https://github.com/brantunger/unruly-engine/issues/976)) ([4212fa6](https://github.com/brantunger/unruly-engine/commit/4212fa6373a893b3df208e467319a908b56ff2ca))
+
 ## [2.22.0](https://github.com/brantunger/unruly-engine/compare/v2.21.10...v2.22.0) (2026-10-03)
 
 
