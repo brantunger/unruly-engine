@@ -48,9 +48,10 @@ Key servers are off (`<key-servers enabled="false"/>`), so a build never fetches
 | A new signer: a dependency's new version is signed with a key the keyring doesn't hold | The keyring is the only place a build takes keys from |
 | A new signing key for this project's own releases | The API check's baseline is [signed with it](#-the-api-baseline) |
 | A `gradle/actions` bump that changes the dependency-graph plugin's version | The plugin is [pinned by hand](#-the-dependency-graph-plugin); the command below doesn't do it |
+| A Gradle wrapper bump | `buildSrc`'s `kotlin-dsl` plugin takes its version from Gradle, and the metadata trusts its signing key for one version only |
 
 Dependabot's two Gradle entries in `.github/dependabot.yml`, for the root build and for `buildSrc`, both open such
-pull requests. Run the command on each one, even when CI passes, and commit whatever it changes.
+pull requests. Run the command on each one, even when CI passes, and commit what it changes for the bump.
 
 A failed build says `Dependency verification failed for configuration`, lists the files it couldn't verify, then
 prints one of these lines and a link to the report:
@@ -78,23 +79,54 @@ Gradle Central Plugin Repository, an `.asc` download usually failed on the runne
 
 ## 🧰 How to regenerate
 
-Check out the pull request's branch, and run this from the repository root. It needs no signing key:
+Check out the pull request's branch. Write the metadata from an empty Gradle user home, then check it from a second
+empty one. Neither step needs a signing key.
+
+> [!IMPORTANT]
+> **Write from an empty Gradle user home, never from your usual one (`~/.gradle` by default).** With files already in
+> its cache, the write can miss entries, and the metadata then passes on your machine and fails in CI. A write in a
+> warm cache missed `kotlinx-coroutines-bom-1.8.0.pom` when `buildSrc` gained `kotlin-dsl`.
+
+Run this from the repository root, in Git Bash on Windows:
 
 ```bash
-./gradlew --write-verification-metadata sha256,pgp --export-keys --no-build-cache -PapiCheck.refresh \
+WRITE_HOME="$(mktemp -d)"
+cp -r ~/.gradle/wrapper "$WRITE_HOME/"   # optional: skips downloading Gradle itself
+GRADLE_USER_HOME="$WRITE_HOME" ./gradlew --no-daemon --write-verification-metadata sha256,pgp --export-keys \
+  --no-build-cache -PapiCheck.refresh \
   clean build jacocoTestReport plainJavadocJar :native-smoke:installDist :benchmarks:classes
 ```
 
 The tasks are there so the write pass resolves what CI and the release download. The command rewrites
-`verification-metadata.xml` and, with `--export-keys`, `verification-keyring.keys`. Commit both to the branch.
+`verification-metadata.xml` and, with `--export-keys`, `verification-keyring.keys`. It downloads every dependency
+again, so it's slow. `--no-daemon` leaves no Gradle daemon behind in the temporary home, which on Windows would keep
+you from deleting it.
 
 - **A new signer's key** is fetched by this command, although key servers are off: Gradle prints
   `Will use key servers to download missing keys`, adds a `<trusted-key>` and exports the key. `--offline` stops it.
-- **An `ignored-key` with `Key couldn't be downloaded`** in the output means Gradle's key cache is stale. Run the
-  command again with `--refresh-keys`.
+- **An `<ignored-key>` with `Key couldn't be downloaded`** means Gradle couldn't fetch that key this time.
+  `--refresh-keys` fetches it again, but leaves the `<ignored-key>` in the metadata. Once
+  `verification-keyring.keys` lists the key's id, restore the metadata with
+  `git checkout -- gradle/verification-metadata.xml` and write again in another empty home, which takes the key
+  from the keyring.
+
+Then check the result from a second empty home, with verification on:
+
+```bash
+CHECK_HOME="$(mktemp -d)"
+cp -r ~/.gradle/wrapper "$CHECK_HOME/"
+GRADLE_USER_HOME="$CHECK_HOME" ./gradlew --no-daemon --no-build-cache -PapiCheck.refresh \
+  clean build jacocoTestReport plainJavadocJar :native-smoke:installDist :benchmarks:classes
+```
+
+If it fails with `Dependency verification failed`, the write missed an entry: write again in a new empty home. When
+it passes, delete both homes with `rm -rf "$WRITE_HOME" "$CHECK_HOME"`.
+
+On Windows, Gradle writes the files with CRLF line endings; `.gitattributes` turns them into LF on `git add`. Read
+the change with `git diff --ignore-space-at-eol`, then commit both files to the branch.
 
 The command adds entries and doesn't delete the old version's, and it keeps the dependency-graph plugin's pin as it
-is.
+is. It can also add entries for components your change doesn't touch. Drop those, and say so in the pull request.
 
 ## 🔍 Reviewing the diff
 
