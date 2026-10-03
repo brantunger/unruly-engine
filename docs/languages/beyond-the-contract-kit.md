@@ -1,10 +1,11 @@
 # 🔬 Testing beyond the contract kit
 
-What the contract kit's checks leave untested, and how to test a compiler or a compiled expression without an engine.
+What the contract kit's checks leave untested, how to give them declared facts, imports or options, and how to test a
+compiler or a compiled expression without an engine.
 
 **Who it's for:** language authors.
-**You'll be able to:** tell what passing the kit doesn't prove, test a compiled expression with
-`LanguageTestContexts`, and run those tests from a named module with Maven.
+**You'll be able to:** tell what passing the kit doesn't prove, configure its checks for your language, test a
+compiled expression with `LanguageTestContexts`, and run those tests from a named module with Maven.
 **Before you start:** [The contract test kit](contract-kit.md).
 
 [← Documentation index](../README.md)
@@ -34,6 +35,38 @@ default, so a language that ignores imports, options, declared facts and the out
 language handles each;
 [Implementing the interfaces](custom.md#-implementing-the-interfaces) says what the context carries.
 
+## 🔧 A language that needs declared facts, imports or options
+
+Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
+the same. For `languageImports(...)`, use the
+[`compile(...)` overload](#-testing-a-compiler-without-an-engine) that takes them.
+
+The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is also a
+`Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a fact of
+another type fails the run before your language sees it. Declare `nest` as `Object` too, or as
+`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
+
+```java
+@Override
+protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+    builder.fact("x", Object.class).fact("y", Object.class).fact("applicant", Object.class).fact("nest", Object.class);
+}
+
+@Override
+protected CompileContext compileContext() {
+    return LanguageTestContexts.compile(Set.of(), Set.of(), getClass().getClassLoader(), Object.class, Map.of(),
+            Map.of("x", Object.class, "y", Object.class, "applicant", Object.class, "nest", Object.class), false);
+}
+```
+
+`configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
+`runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
+checks could fail for reasons unrelated to your language. Nor may it declare a name your language
+[reserves](custom.md#-fact-names), which fails `build()`, or the `unusableFactName()` name: `load()`
+checks declared names with your language, which rejects it. A `copiesAtLoad` or `maxCopies` it sets doesn't change
+the checks that set their own. A `maxCopies(2)` keeps `concurrentRuns` to two sessions, so it can't catch a repeat
+after the second.
+
 ## 🧪 Testing a compiler without an engine
 
 `LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or compiled
@@ -44,14 +77,21 @@ the context is made, then time `deadline` as a run does, so one built from `Inst
 For a language that reads [its own imports](custom.md#-implementing-the-interfaces), a `compile(...)` overload added
 in 2.19.0 also takes them: the list your compiler gets from `languageImports()`. The other overloads give none.
 
+Another, added in 2.23.0, takes your language first, then the same arguments. A language whose `name()` is `null` or
+blank throws `IllegalArgumentException` with `An expression language's name must not be null or blank: <class>`.
+It asks the language's `reservedFactNames()` once, as `build()` does, and rejects a fact declared with one of those
+names with `build()`'s message, or throws `build()`'s `IllegalStateException` for a `null` set or name. The other
+overloads reject `output`, the default, whatever your language reserves. Use the new one when your language reserves
+another name, or none.
+
 A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
 `facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
 such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
 `type must not be null`. A fact's value may be `null`.
 
 The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared with a
-blank name or as `output`, a package import over the [size limits](mvel.md#-classes-and-imports), and a language
-import over 1,000 characters.
+blank or reserved name, a package import over the [size limits](mvel.md#-classes-and-imports), and a language import
+over 1,000 characters.
 
 As in a run, each evaluation or action context equals only itself, and its `hashCode()` never reads the facts or, for
 an action context, the output object. A run passes the same evaluation context to every condition, and a new action
@@ -116,7 +156,7 @@ LanguageTestContexts.endRun(evaluation);
 assertTrue(interpreter.isClosed());   // isClosed() stands for your runtime's own check
 ```
 
-On the module path, the kit is the module `io.github.brantunger.unruly.test`; see [Packaging](custom.md#-packaging).
+On the module path, the kit is the module `io.github.brantunger.unruly.test`; see [Packaging a language](packaging.md).
 
 ### A named module with Maven
 

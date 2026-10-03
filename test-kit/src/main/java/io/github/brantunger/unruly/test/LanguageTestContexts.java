@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.test;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.core.EngineActionContext;
 import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineEvaluationContext;
@@ -101,7 +102,8 @@ public final class LanguageTestContexts {
      *                                  is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or a fact is declared with a blank name or the name
-     *                                  {@code output}, which an engine rejects too
+     *                                  {@code output}, which an engine rejects too when one of its languages reserves
+     *                                  it, as the default {@code ExpressionLanguage.reservedFactNames()} does
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
@@ -131,7 +133,8 @@ public final class LanguageTestContexts {
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
      *                                  dot-separated parts, a language import has more than 1,000 characters, or a
      *                                  fact is declared with a blank name or the name {@code output}, which an engine
-     *                                  rejects too
+     *                                  rejects too when one of its languages reserves it, as the default
+     *                                  {@code ExpressionLanguage.reservedFactNames()} does
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
@@ -139,6 +142,43 @@ public final class LanguageTestContexts {
                                          List<String> languageImports) {
         return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options, declaredFacts,
                 allFactsDeclared, true, languageImports);
+    }
+
+    /**
+     * Creates a compile context for one language, which rejects exactly the declarations an engine with that language
+     * rejects when it's built: a fact may not be declared with a name the language reserves, as its
+     * {@link ExpressionLanguage#reservedFactNames()} returns them, asked once, so a language that reserves no name may
+     * declare {@code output}. The other {@code compile} methods reject {@code output}, which the default reserves.
+     *
+     * @param language         The language the context is for; asked for its name and the fact names it reserves
+     * @param packageImports   The imported packages, such as {@code java.util}; copied
+     * @param classImports     The classes imported one by one; copied
+     * @param classLoader      The class loader to look up classes in the imported packages with
+     * @param outputType       The type of the output object, as the engine's builder was told; {@code Object.class}
+     *                         when it wasn't
+     * @param options          The language's options, as the engine's builder was given them; copied
+     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
+     * @param allFactsDeclared Whether a run may supply only the declared facts, as
+     *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
+     * @param languageImports  The language's own imports, such as {@code lodash/fp}, as written and in order; copied
+     * @return The context. Its {@link CompileContext#languageImports()} are {@code languageImports}, duplicates
+     *         included. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
+     * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
+     *                                  or of the declarations, is {@code null}
+     * @throws IllegalArgumentException if the language's name is {@code null} or blank; if an imported package has
+     *                                  more than 1,000 characters or more than 64 dot-separated parts, a language
+     *                                  import has more than 1,000 characters, or a fact is declared with a blank
+     *                                  name; or if a fact is declared with a name the language reserves, with the
+     *                                  message {@code build()} gives
+     * @throws IllegalStateException    if the language's {@code reservedFactNames()} returns {@code null} or a set
+     *                                  holding {@code null}, as {@code build()} throws it
+     */
+    public static CompileContext compile(ExpressionLanguage language, Set<String> packageImports,
+                                         Set<Class<?>> classImports, ClassLoader classLoader, Class<?> outputType,
+                                         Map<String, String> options, Map<String, Class<?>> declaredFacts,
+                                         boolean allFactsDeclared, List<String> languageImports) {
+        return EngineCompileContext.forLanguage(language, packageImports, classImports, classLoader, outputType,
+                options, declaredFacts, allFactsDeclared, languageImports);
     }
 
     /**

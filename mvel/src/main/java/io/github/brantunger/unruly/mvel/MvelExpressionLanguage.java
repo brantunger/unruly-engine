@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
@@ -118,6 +119,18 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // classes that describe a frame of one of its modules, so this reads one created in a method of the JDK's.
         ExceptionReads.stackTraceOf(Optional.<Throwable>empty().orElseGet(Throwable::new));
         prepared = true;
+    }
+
+    /**
+     * Returns {@value ActionContext#OUTPUT_NAME}, the name MVEL's actions see the output object by, which would hide a
+     * fact of the same name. Said here rather than left to the default, so a change to the default doesn't change
+     * MVEL.
+     *
+     * @return {@value ActionContext#OUTPUT_NAME} alone
+     */
+    @Override
+    public Set<String> reservedFactNames() {
+        return Set.of(ActionContext.OUTPUT_NAME);
     }
 
     /**

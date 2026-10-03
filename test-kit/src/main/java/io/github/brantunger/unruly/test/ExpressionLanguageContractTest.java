@@ -18,6 +18,7 @@ import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.test.KitResources.ClosedQuietly;
 import org.jspecify.annotations.Nullable;
@@ -356,10 +357,11 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Returns a fact name that rules in this language can't refer to. It must not be {@code "output"} or blank, and
-     * the check fails when it is: the engine rejects those names itself, before the language is asked, so they would
-     * pass the check without the language's {@code checkFactName} ever running. Nor may it be {@code "x"}, the fact
-     * the check's rule reads, and the check fails when it is too.
+     * Returns a fact name that rules in this language can't refer to. It must not be blank or one of the names the
+     * language reserves, as {@link ExpressionLanguage#reservedFactNames()} returns them ({@code "output"} by default),
+     * and the check fails when it is: the engine rejects those names itself, before the language is asked, so they
+     * would pass the check without the language's {@code checkFactName} ever running. Nor may it be {@code "x"}, the
+     * fact the check's rule reads, and the check fails when it is too.
      *
      * @return The name, or {@code null} if every name is accepted
      */
@@ -1259,13 +1261,18 @@ public abstract class ExpressionLanguageContractTest {
     void unusableFactNameRejected() throws Exception {
         String name = unusableFactName();
         assumeTrue(name != null, "the language accepts every fact name");
-        // The engine rejects "output" and blank names before the language is asked, so either would make this check
-        // pass without the language's checkFactName running at all.
-        assertNotEquals("output", name, "unusableFactName() must return a name the language itself rejects");
+        // The engine rejects the names the language reserves and blank names before the language is asked, so any of
+        // them would make this check pass without the language's checkFactName running at all. A language whose
+        // reservedFactNames() returns null fails reservedFactNamesRejected instead.
+        ExpressionLanguage language = language();
+        Set<String> reserved = language.reservedFactNames();
+        assertFalse(reserved != null && reserved.contains(name),
+                "unusableFactName() must return a name the language itself rejects, not '" + name + "', which"
+                        + " reservedFactNames() reserves");
         assertFalse(name.isBlank(), "unusableFactName() must return a name the language itself rejects");
         // The check's rule reads x, which the run supplies alongside the name, so x can't be the name as well.
         assertNotEquals("x", name, "unusableFactName() must not be x, which the check's rule reads");
-        closing(engine(), engine -> {
+        closing(engine(language), engine -> {
             engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
             // The rule reads x, so x is supplied too: then only checkFactName can make the run throw.
             FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1), new Fact<>(name, 1));
@@ -1296,6 +1303,44 @@ public abstract class ExpressionLanguageContractTest {
                 }
             });
         }
+    }
+
+    @Test
+    @DisplayName("the fact names the language reserves are the same every time, and run() rejects each")
+    void reservedFactNamesRejected() throws Exception {
+        ExpressionLanguage language = language();
+        // Asked before the engine is built, so before the language is prepared: an engine asks every language it has
+        // when it's built, even one it prepares only when a rule list first uses it.
+        Set<String> reserved = assertDoesNotThrow(language::reservedFactNames,
+                "reservedFactNames() must answer before prepare() is called");
+        assertNotNull(reserved, "reservedFactNames() must not return null: return an empty set to reserve no name");
+        for (String name : reserved) {
+            assertNotNull(name, "reservedFactNames() must not return a set holding null");
+        }
+        assertEquals(reserved, language.reservedFactNames(), "reservedFactNames() must return the same names every"
+                + " time: the engine asks once, when it's built");
+        closing(engine(language), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
+            for (String name : reserved) {
+                if (name.isBlank()) {
+                    // The engine rejects a blank name whoever reserves it.
+                    continue;
+                }
+                // The rule reads x, so x is supplied too, unless it's the reserved name itself.
+                FactStore<Object> facts = "x".equals(name) ? new FactMap<>(new Fact<>(name, 1))
+                        : new FactMap<>(new Fact<>("x", 1), new Fact<>(name, 1));
+
+                IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                        () -> engine.run(facts), "reservedFactNames() returned '" + name + "', but run() didn't"
+                                + " throw an IllegalArgumentException for a fact with that name");
+                // The engine checks a name it reserves before the language checks it, and before a run that leaves
+                // out a declared fact or supplies an undeclared one fails, so no other rejection can come first.
+                String reservedBy = "'" + MessageText.quote(name) + "' is reserved";
+                assertTrue(thrown.getMessage() != null && thrown.getMessage().startsWith(reservedBy),
+                        "reservedFactNames() returned '" + name + "', but run() rejected a fact with that name for"
+                                + " another reason: " + thrown.getMessage());
+            }
+        });
     }
 
     @Test

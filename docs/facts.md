@@ -99,14 +99,14 @@ language, and each language adds its own.
 | --- | --- | --- |
 | `null` (only a custom `FactStore` can hold one) | ❌ rejected | `fact name must not be null` |
 | Blank: empty or only whitespace | ❌ rejected | `fact name must not be blank` |
-| `output` | ❌ rejected | `'output' is reserved for the output object and cannot be used as a fact name` |
+| A name a language [reserves](languages/custom.md#-fact-names), `output` by default | ❌ rejected | `'output' is reserved for the output object and cannot be used as a fact name` |
 | `Output`, `OUTPUT` | ✅ allowed | The check is exact and case-sensitive |
 | Anything else | The rules' languages decide | Each language rejects the names it can't refer to |
 
 `run()` checks each fact's name, and throws `IllegalArgumentException` for the first one that breaks a rule:
 
-- It checks against every language the loaded rules use, or the engine's default language when the rule list is
-  empty. A language that has no rules in the list isn't asked.
+- All the engine's languages give their reserved names at `build()`; only those the loaded rules use, or the default
+  for an empty list, check the rest.
 - The check comes after listeners get `beforeRun` and before any condition runs, so it reaches `onRunError`, and no
   output object is created.
 - **`FactMap`** already rejects a `null` name, a key that differs from the fact's own name
@@ -252,8 +252,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
 - **`fact(name, type)`** says what a run's value must be. A run that supplies something else fails with
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
   declaration. A run that leaves the fact out is unaffected. A primitive type [widens](#primitive-types-widen), and a
-  `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring `output` or a blank name
-  fails at once, and `load()` fails for a declared name the rules' languages can't refer to.
+  `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring a blank name fails at
+  once, a [reserved](#-naming-rules) one at `build()`, and one the rules' languages can't refer to at `load()`.
 - **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
 - **`facts(map)`** declares several at once, as `fact()` does each one. If it rejects an entry, it declares none.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,

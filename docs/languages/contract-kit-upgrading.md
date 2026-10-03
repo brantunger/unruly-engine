@@ -10,6 +10,27 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.22
+
+In 2.23.0 `reservedFactNamesRejected` was added and `unusableFactNameRejected` got stricter. Both follow
+`ExpressionLanguage.reservedFactNames()`, new in 2.23.0: the fact names your language binds to something of its own,
+such as its actions' name for the output object. The engine asks every language it has once, at `build()`, before
+it prepares any, and rejects each name for every rule: a declared fact at `build()`, a run's fact at `run()`. The
+default returns `output`, so a language written for 2.22 keeps the engine's old rule and passes both checks as it is.
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `reservedFactNamesRejected` | Returns `null`, a set holding `null`, or a different set the second time from `reservedFactNames()`, or throws when it's called before `prepare()` | `build()` throws `IllegalStateException` or what the method threw, or the engine rejects other names than the ones your language binds |
+| `unusableFactNameRejected` | Returns a name from `unusableFactName()` that `reservedFactNames()` returns, not only `output` | The engine rejects that name itself, so the check never reached your `checkFactName`; return a name only your language rejects |
+
+`reservedFactNamesRejected` can't be skipped. An empty set, for a language that binds the output object to no name,
+passes it, and `output` is then an ordinary fact name, unless another of the engine's languages reserves it.
+
+A `compile(...)` overload of `LanguageTestContexts` now takes the language first, and rejects a declared fact with a
+name it reserves, as `build()` does. The other overloads still reject `output`, the default. Use the new one in
+`compileContext()` if your language reserves another name, or none; see
+[Testing a compiler without an engine](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
+
 ## 🔼 Upgrading from 2.20
 
 In 2.21.0 four checks got stricter and none was added. Each loads a valid rule `ok` before rule `r`, so every
@@ -127,7 +148,7 @@ condition checks off. Override it to turn them on:
 
 - `bothConditions(condition, other)`: a condition that is true when both are, evaluating `condition` first. For
   MVEL, `condition + " && " + other`. If your `configure` declares facts, declare `nest` too; see
-  [A language that needs declared facts](contract-kit.md#a-language-that-needs-declared-facts-imports-or-options).
+  [Declared facts for the kit](beyond-the-contract-kit.md#-a-language-that-needs-declared-facts-imports-or-options).
 
 `nestedRunFailsInsideACondition` is also skipped when its nested run neither fails nor reads the `nest.value` that
 makes it fail. That happens in a language that evaluates the right side of a condition first, even one that overrides
@@ -138,48 +159,6 @@ Skipped, the two condition checks count as aborted, as `nestedRunInsideAnAction`
 every check found to succeed sees two more aborted checks, three if `putFactProperty()` also returns `null`: override
 the hooks, or count aborted checks as passing.
 
-## 🔼 Upgrading from 2.11
+## 🔼 Upgrading from 2.11 or earlier
 
-In 2.12.0 `actionVariablesStayLocal`, `compilerClosed` and `conditionDetail` got stricter, and
-`conditionWritesRejected` and `failedActionVariablesStayLocal` were added, so a language that passed the 2.11 kit may
-now fail. Each new failure is a real defect:
-
-| Check | Now fails a language that | The defect |
-| --- | --- | --- |
-| `actionVariablesStayLocal` | Lets a later run's condition read a variable an earlier run's action declared | A later run's rule fires on a value no rule in that run set |
-| `actionVariablesStayLocal`, when `configure` sets `copiesAtLoad(2)` or more | Keeps an action's variable in its session. The check used to miss it: the later run got the other copy, whose session never saw the variable | A later run reads a value that no rule set for it |
-| `actionVariablesStayLocal` | Fails the run whose action declares the variable `y` while a fact is also named `y` | An action can't declare a variable with a fact's name, which the check's first part already requires with `x` |
-| `compilerClosed`, when `configure` sets `copiesAtLoad(1)` or more | Has a compiler whose `close()` throws only once `warmUp` has run. The check's wrapper used to skip `warmUp` | The engine only logs it at WARN, and the compiler has usually leaked what it holds |
-| `conditionWritesRejected`, once `propertyAssignment()` or `conditionDeclaration()` returns a condition | Lets a condition set a property of a fact, or declare a variable | The caller's fact changes, or a later expression in the run reads a value no action set |
-| `failedActionVariablesStayLocal`, once `declareVariableThenFail()` returns an action | Clears an action's variables only when the action ends normally, rather than however it ends | The next run on that copy of the rules reads the failed action's variable |
-| `conditionDetail`, when `configure` sets `copiesAtLoad(2)` or more | Returns a detail that reads the session when it's printed. The check used to miss it: the other run got the other copy | The run's result reports another run's values |
-
-Why a variable left in a session reaches a later run is in
-[Testing a compiler without an engine](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
-
-A subclass written for the 2.11 kit still compiles. Three new hooks return `null` by default, which leaves their parts
-off. Override them to turn those parts on:
-
-- `propertyAssignment(fact, property, value)`: a condition that sets the fact's property to the value. For MVEL,
-  `fact + "." + property + " = " + value`.
-- `conditionDeclaration(name, value)`: a condition that declares a variable holding the value, and is then true. For
-  MVEL, `name + " = " + value + "; true"`.
-- `declareVariableThenFail(name, value)`: an action that declares a variable holding the value, then fails the run.
-  For MVEL, `name + " = " + value + "; Integer.parseInt('not a number')"`.
-
-The action must declare the variable before it fails, or `failedActionVariablesStayLocal` proves nothing.
-
-Two more, `putVariable(key, variable)` and `variableEquals(variable, value)`, default to `putFact` and `factEquals`. If
-your variables have a namespace of their own, such as SpEL's `#y`, override them with an action that puts the variable
-under the key and a condition that compares it with the value; see [The contract test kit](contract-kit.md).
-
-Skipped, `conditionWritesRejected` and `failedActionVariablesStayLocal` count as aborted, as `nestedRunInsideAnAction`
-does, so a launcher that expects every check found to succeed sees two more aborted checks: override the hooks, or
-count aborted checks as passing.
-
-When a run's output differs from what the check expected only in a value's type, such as the `Integer` 1 and the
-`String` "1", the failure now says so, rather than printing two identical outputs.
-
-## 🔼 Upgrading from 2.10.0 or earlier
-
-See [Upgrading the contract test kit from 2.10.0 or earlier](contract-kit-upgrading-older.md).
+See [Upgrading the contract test kit from 2.11 or earlier](contract-kit-upgrading-older.md).

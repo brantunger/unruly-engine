@@ -146,7 +146,7 @@ class ModulePathTest {
     void withTestKit() throws Exception {
         String output = run("withTestKit", "com.example.withtestkit", MODULE_PATH);
 
-        assertTrue(output.contains("Module path with the test kit: 26 contract checks passed, and"
+        assertTrue(output.contains("Module path with the test kit: 27 contract checks passed, and"
                 + " [sharedStateStaysLocal] skipped"), output);
     }
 

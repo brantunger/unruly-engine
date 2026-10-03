@@ -158,11 +158,13 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
      *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
      *         {@code null}.
-     * @throws IllegalArgumentException if a fact is named {@code output} or {@code null}, or has a blank name or a
-     *         name that the language of a loaded rule can't refer to (a rule list without rules is checked against
-     *         the engine's default language); if a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a
-     *         non-null value that isn't an instance of its declared type or, for a primitive type, of its wrapper or
-     *         of a wrapper whose primitive Java widens to it; or, with
+     * @throws IllegalArgumentException if a fact's name is {@code null}, blank, or one of the engine's languages
+     *         reserves (see {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()},
+     *         {@code output} by default), or a name that the language of a loaded rule can't refer to (a rule list
+     *         without rules is checked against the engine's default language); if a
+     *         {@link RulesEngineBuilder#fact(String, Class) declared fact} has a non-null value that isn't an instance
+     *         of its declared type or, for a primitive type, of its wrapper or of a wrapper whose primitive Java widens
+     *         to it; or, with
      *         {@link RulesEngineBuilder#requireDeclaredFacts()}, if a declared fact is missing or an undeclared one is
      *         supplied. Also if a language's check of a fact name fails with any other exception, which becomes the
      *         cause.

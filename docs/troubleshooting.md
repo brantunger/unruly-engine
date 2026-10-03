@@ -102,7 +102,7 @@ the rule's `isEnabled()`, `getValidFrom()`, `getValidTo()` and `getTags()` with 
 ## 🔧 An exception from build()
 
 Most of these are `IllegalStateException` from `build()`. The two that start with `Two expression languages` and
-`An expression language's name` are `IllegalArgumentException` from `language(...)`, and the last two are
+`An expression language's name` are `IllegalArgumentException` from `language(...)`, and the last three are
 `IllegalArgumentException` from `build()`.
 
 | Message starts with | Cause | Fix |
@@ -116,8 +116,10 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 | `An expression language's name must not be null or blank` | `language(...)` was given a language whose `name()` is `null` or blank | [Exceptions by method](exceptions-by-method.md) |
 | `The expression language ... found with ServiceLoader has a null or blank name` | A language jar on the class path has no name | [Exceptions by method](exceptions-by-method.md) |
 | `The expression languages ... found with ServiceLoader are both named '` | Two language jars on the class path use the same name | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
+| `The '...' expression language returned null from reservedFactNames()`, or `returned a null name from` | A language broke the `reservedFactNames()` contract | Fix the language: return a set, empty to reserve no name; see [Fact names](languages/custom.md#-fact-names) |
 | `'...' is neither a class nor a valid package name` | An import such as `"java.util."`, or a module, such as `lodash/fp`, meant for `languageImports(...)` | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
 | `Can't import '...'` | An import is over 1,000 characters, or 64 dot-separated parts for `imports(...)`, or names a class missing a dependency | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
+| `'output' is reserved for the output object and cannot be declared as a fact`, or `'...' is reserved by the '...' expression language` | `fact(...)` or `facts(...)` declared a name one of the engine's languages reserves | Rename the fact; see [Naming rules](facts.md#-naming-rules) |
 
 A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted by `build()` and `load()`. In MVEL,
 a rule that uses a class from it fails at `run()` as if the import were missing; see
@@ -164,7 +166,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `IllegalStateException` | `load() must be called before run()` | No `load()` has succeeded yet. Load the rules before traffic; see [Lifecycle and closing](thread-safety.md#-lifecycle-and-closing) |
 | `IllegalStateException` | `The engine is closed` | Your framework closed the engine at shutdown; see [Closing](thread-safety.md#closing) and [Shutting down](spring-boot.md#-shutting-down) |
 | `IllegalStateException` | `while this run was borrowing a copy of it` | Not your code: an engine invariant has broken, and the message says which one. Report it with the stack trace at the issue link the message gives |
-| `IllegalArgumentException` | `' is reserved for the output object`, `must not be blank` | A fact's name is `output` or blank; see [Naming rules](facts.md#-naming-rules) |
+| `IllegalArgumentException` | `' is reserved for the output object`, `' is reserved by`, `must not be blank` | A blank or [reserved](facts.md#-naming-rules) fact name |
 | `IllegalArgumentException` | `' is not a valid fact name`, `' cannot be used as a fact name` | In MVEL, the name isn't an identifier, or is a keyword or class name; see [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
 | `IllegalArgumentException` | `was declared as`, `wasn't declared`, `was declared, but the run didn't supply it` | A fact doesn't match its declaration; see [Declaring facts](facts.md#-declaring-facts) |
 | `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, or a class that isn't imported; see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
@@ -181,13 +183,13 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `run() passed its deadline` | The run passed its timeout; see [Stopping a run](stopping-runs.md) |
 | `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT is on: start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](native-image.md#-mvels-jit-must-be-off) |
 | `RuleExecutionException` | `MissingReflectionRegistrationError` as the cause | In a native image, a class or method the rule uses isn't registered for reflection; see [Registering your classes](native-image.md#-registering-your-classes) |
-| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, after about 50 runs in quick succession | That class isn't reachable from the `load()` thread's context class loader; see [Class loaders](thread-safety.md#-class-loaders) |
+| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, [after about 50 runs](languages/mvel-gotchas.md#-a-rule-failing-for-ever-after-about-50-quick-runs) in quick succession | That class isn't reachable from the `load()` thread's context class loader; see [Class loaders](thread-safety.md#-class-loaders) |
 | `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](exceptions-by-method.md). On the module path, see [Installation](../README.md#-installation) |
 
 A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
 `io.github.brantunger.unruly.core.ReportedFailure`, the engine's internal subclass of `RuleExecutionException`. Catch
 `RuleExecutionException`, never the class name. Line breaks in a language's message are escaped in the engine's
-message; the original is `getCause()`. See [Exceptions by method](exceptions-by-method.md).
+message; the original is `getCause()`. See [Reading exception messages](exception-messages.md).
 
 ## 🚢 It works in tests but not in production
 
@@ -200,18 +202,6 @@ message; the original is `getCause()`. See [Exceptions by method](exceptions-by-
   [Logging setup](listeners-and-logging.md#-logging-setup).
 - **Rules pass on the JVM but fail in a native image:** MVEL's JIT is on, or the image doesn't register a class or
   method the rules use; see [Errors and what they mean](native-image.md#-errors-and-what-they-mean).
-
-### A rule fails for ever after about 50 runs in quick succession
-
-A rule works in tests and in the first minutes of production, then fails on every run. In MVEL, that's when the JIT
-optimizer takes over the rule's accessors; see
-[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders). It has two shapes:
-
-- On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
-  isn't reachable from the `load()` thread's context class loader; see
-  [Class loaders](thread-safety.md#-class-loaders).
-- On the module path, an `IllegalAccessError` naming your package: it needs an export without a `to` clause; see
-  [Installation](../README.md#-installation).
 
 ### Under load, or at shutdown
 

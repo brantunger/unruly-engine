@@ -44,25 +44,28 @@ final class RuleListCompiler {
     // those facts.
     private final Map<String, Class<?>> declaredFacts;
     private final boolean allFactsDeclared;
+    // The fact names the engine's languages reserve, which no declared fact has.
+    private final Set<String> reservedFactNames;
     // Each language's own imports, by language name, as written.
     private final Map<String, List<String>> languageImports;
 
     /**
      * Creates the compiler of an engine's rule lists.
      *
-     * @param log              The engine's logger
-     * @param languages        The engine's languages and its default language
-     * @param packageImports   The imported packages
-     * @param classImports     The imported classes
-     * @param outputType       The output type languages are told about
-     * @param options          Each language's options, by language name
-     * @param declaredFacts    The declared type of each fact, by name
-     * @param allFactsDeclared Whether a run may supply only the declared facts
-     * @param languageImports  Each language's own imports, by language name
+     * @param log               The engine's logger
+     * @param languages         The engine's languages and its default language
+     * @param packageImports    The imported packages
+     * @param classImports      The imported classes
+     * @param outputType        The output type languages are told about
+     * @param options           Each language's options, by language name
+     * @param declaredFacts     The declared type of each fact, by name
+     * @param allFactsDeclared  Whether a run may supply only the declared facts
+     * @param reservedFactNames The fact names the engine's languages reserve
+     * @param languageImports   Each language's own imports, by language name
      */
     RuleListCompiler(Logger log, LanguageRegistry languages, Set<String> packageImports, Set<Class<?>> classImports,
                      Class<?> outputType, Map<String, Map<String, String>> options,
-                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared, Set<String> reservedFactNames,
                      Map<String, List<String>> languageImports) {
         // Initialized here, when the engine is built, so load() and validate() never run a class's initializer: they
         // may be called deep in a run's stack, from an action (see StackHeadroom).
@@ -75,6 +78,7 @@ final class RuleListCompiler {
         this.options = options;
         this.declaredFacts = declaredFacts;
         this.allFactsDeclared = allFactsDeclared;
+        this.reservedFactNames = reservedFactNames;
         this.languageImports = languageImports;
     }
 
@@ -165,7 +169,7 @@ final class RuleListCompiler {
             compilers = new LanguageCompilers(languages.languages(), (name, language) -> newCompiler(name, language,
                     new EngineCompileContext(packageImports, classImports, loader, outputType,
                             options.getOrDefault(name, Map.of()), declaredFacts, allFactsDeclared, logged,
-                            languageImports.getOrDefault(name, List.of()))));
+                            languageImports.getOrDefault(name, List.of()), reservedFactNames)));
         }
 
         /**

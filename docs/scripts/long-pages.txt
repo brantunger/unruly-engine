@@ -11,9 +11,9 @@ RELEASING.md 2651
 docs/compiled-copies.md 2660
 docs/contributing/build-and-gates.md 2633
 docs/engines-and-runs.md 3574
-docs/glossary.md 2676
-docs/languages/custom.md 4650
+docs/glossary.md 2675
+docs/languages/custom.md 4502
 docs/languages/mvel.md 3489
 docs/listeners-and-logging.md 3342
 docs/migrating-to-2.md 5340
-docs/troubleshooting.md 2529
+docs/troubleshooting.md 2510

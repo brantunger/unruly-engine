@@ -226,7 +226,7 @@ such declaration.
 
 **Who is affected:** anyone publishing a language in its own jar.
 
-**What to add.** Declare the language both ways, as [Packaging](languages/custom.md#-packaging) describes in full:
+**What to add.** Declare the language both ways, as [Packaging a language](languages/packaging.md) describes in full:
 
 | Where | What |
 | --- | --- |

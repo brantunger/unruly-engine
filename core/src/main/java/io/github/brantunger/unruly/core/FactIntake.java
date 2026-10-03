@@ -4,17 +4,18 @@ import org.slf4j.Logger;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
-import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 
 /**
  * Takes in a run's facts for an engine: collects their values, widening a boxed primitive to the primitive type its
  * fact was declared with, and checks them, first as the engine itself does and then with the languages of the rules in
  * use. It holds only the engine's declared facts, whether a run may supply only those, the facts among them declared
- * with a primitive type, and the engine's logger, all fixed when the engine is built.
+ * with a primitive type, the fact names the engine's languages reserve, and the engine's logger, all fixed when the
+ * engine is built.
  */
 final class FactIntake {
 
@@ -27,6 +28,10 @@ final class FactIntake {
     // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
     // engines, which then convert nothing.
     private final Map<String, Class<?>> primitiveFacts;
+    // The language that reserves each fact name the engine's languages reserve, by name, which no fact may have; and
+    // the names alone, which a run's names are looked up in.
+    private final Map<String, String> reservedFactNames;
+    private final Set<String> reserved;
 
     /**
      * Creates the fact intake of an engine. Built with the engine, so {@code FactIntake} itself is loaded then, not by
@@ -35,17 +40,22 @@ final class FactIntake {
      * a lambda the first time a run's fact name is rejected or a run's fact declared with a primitive type is widened.
      *
      * @param log              The engine's logger
-     * @param declaredFacts    The declared type of each fact, by name
-     * @param allFactsDeclared Whether a run may supply only the declared facts
+     * @param declaredFacts     The declared type of each fact, by name
+     * @param allFactsDeclared  Whether a run may supply only the declared facts
+     * @param reservedFactNames The language that reserves each fact name the engine's languages reserve, by name, as
+     *                          {@link FactNames#reserved} returns them
      */
-    FactIntake(Logger log, Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
+    FactIntake(Logger log, Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+               Map<String, String> reservedFactNames) {
         // FactNames and FactNames.Problem are initialized here, when the engine is built, so checking a run's first
         // fact name never loads them: the run may be nested deep in another run's stack (see StackHeadroom). A null
         // name is checked because it returns at once, with Problem.NULL.
-        FactNames.check(null);
+        FactNames.check(null, Set.of());
         this.log = log;
         this.declaredFacts = declaredFacts;
         this.allFactsDeclared = allFactsDeclared;
+        this.reservedFactNames = reservedFactNames;
+        this.reserved = reservedFactNames.keySet();
         Map<String, Class<?>> primitives = new HashMap<>();
         declaredFacts.forEach((name, type) -> {
             // void is primitive, but nothing widens to it, and no value is a Void.
@@ -95,9 +105,9 @@ final class FactIntake {
     /**
      * Checks a run's facts as the engine itself does, before the run borrows a copy of the rules, and returns what the
      * check threw, for the run to fail with once its listeners have heard of it: every name is not {@code null}, not
-     * blank and not the output's name, every value is an instance of the type its fact was declared with or of its
-     * wrapper, and, when the engine requires declared facts, the run supplied every declared fact and nothing else.
-     * The languages check the names later, with {@link #checkFactNames}.
+     * blank and not one the engine's languages reserve, every value is an instance of the type its fact was declared
+     * with or of its wrapper, and, when the engine requires declared facts, the run supplied every declared fact and
+     * nothing else. The languages check the names later, with {@link #checkFactNames}.
      *
      * @param values The fact values by name
      * @return The {@link IllegalArgumentException} the check threw, or {@code null} if the facts passed
@@ -116,13 +126,13 @@ final class FactIntake {
     }
 
     /**
-     * Checks that a fact name is not {@code null}, not blank and not the output's name.
+     * Checks that a fact name is not {@code null}, not blank and not one the engine's languages reserve.
      *
      * @param name The fact's name
      * @throws IllegalArgumentException if it is
      */
     private void checkName(String name) {
-        FactNames.Problem problem = FactNames.check(name);
+        FactNames.Problem problem = FactNames.check(name, reserved);
         if (problem == null) {
             return;
         }
@@ -133,9 +143,9 @@ final class FactIntake {
         if (problem == FactNames.Problem.BLANK) {
             throw rejectedFact("fact name must not be blank");
         }
-        // Actions bind the output object to this name, silently hiding a fact of the same name.
-        throw rejectedFact("'" + ActionContext.OUTPUT_NAME + "' is reserved for the output object and cannot be used as"
-                + " a fact name");
+        // A language binds something of its own to this name, such as the output object, which would silently hide a
+        // fact of the same name.
+        throw rejectedFact(FactNames.reservedMessage(name, reservedFactNames.get(name), false));
     }
 
     /**

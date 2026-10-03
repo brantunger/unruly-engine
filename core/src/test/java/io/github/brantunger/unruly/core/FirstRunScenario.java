@@ -17,6 +17,7 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionLanguage;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 
@@ -30,6 +31,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -253,6 +255,13 @@ final class FirstRunScenario {
                 })).build();
         RulesEngine<Map<String, Object>> broken = RulesEngineBuilder.firstMatch(maps).language(toy).build();
         RulesEngine<Map<String, Object>> windowed = RulesEngineBuilder.firstMatch(maps).language(toy).build();
+        RulesEngine<Map<String, Object>> reserving = RulesEngineBuilder.firstMatch(maps)
+                .language(new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+                    @Override
+                    public Set<String> reservedFactNames() {
+                        return Set.of("ctx");
+                    }
+                }).build();
         mark(BUILT);
 
         // Each step is marked, so a class one initializes can be told by the step it came after. Every step runs, even
@@ -267,8 +276,8 @@ final class FirstRunScenario {
                 .build())).isEmpty();
         asExpected &= !broken.validate(List.of(Rule.builder().ruleName("syntax").condition("a b c d")
                 .action("put k 1").build())).isEmpty();
-        mark(STEP + "a fact name the builder rejects, blank and output");
-        asExpected &= rejectsName(" ") && rejectsName("output");
+        mark(STEP + "a fact name the builder rejects, blank, and one build() rejects, output");
+        asExpected &= rejectsName(" ") && buildRejectsName(maps, toy, "output");
         mark(STEP + "loads that succeed");
         map.load(List.of(Rule.builder().ruleName("matches").condition("true").action("put k 1").build(),
                 Rule.builder().ruleName("doesn't").condition("false").action("put j 1").build()));
@@ -281,6 +290,7 @@ final class FirstRunScenario {
         }
         slow.load(List.of(Rule.builder().ruleName("first").priority(2).condition("x").action("x").build(),
                 Rule.builder().ruleName("second").priority(1).condition("x").action("x").build()));
+        reserving.load(List.of(Rule.builder().ruleName("reserves").condition("true").action("put k 1").build()));
         mark(STEP + "a rule with a validity window, loaded");
         // An instant from its parts: parsing one is what the application does, and initializes the JDK's formatter.
         windowed.load(List.of(Rule.builder().ruleName("dated").condition("true").action("put k 1")
@@ -308,13 +318,16 @@ final class FirstRunScenario {
         asExpected &= rejectsFacts(strict);
         mark(STEP + "a rule within its validity window");
         asExpected &= Map.of("k", 1).equals(windowed.run(new FactMap<>()));
+        mark(STEP + "a fact with a name a language reserves: output, and ctx");
+        asExpected &= throwsOnRun(windowed, new FactMap<>(new Fact<>("output", 1)), IllegalArgumentException.class)
+                && throwsOnRun(reserving, new FactMap<>(new Fact<>("ctx", 1)), IllegalArgumentException.class);
         mark(STEP + "close(), the JVM's first");
         broken.close();
         if (asExpected) {
             mark(RAN);
         }
         for (RulesEngine<?> engine : List.of(map, bean, declared, failing, toData, fatal, outer, strict, writing, slow,
-                overrun, windowed)) {
+                overrun, windowed, reserving)) {
             engine.close();
         }
     }
@@ -348,6 +361,18 @@ final class FirstRunScenario {
     private static boolean rejectsName(String name) {
         try {
             RulesEngineBuilder.firstMatch(HashMap::new).fact(name, Object.class);
+            return false;
+        } catch (IllegalArgumentException expected) {
+            return true;
+        }
+    }
+
+    private static boolean buildRejectsName(Supplier<Map<String, Object>> maps, ToyExpressionLanguage language,
+                                            String name) {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(maps).language(language)
+                .fact(name, Object.class);
+        try {
+            builder.build();
             return false;
         } catch (IllegalArgumentException expected) {
             return true;

@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
+import java.util.Set;
+
 /**
  * A language that forwards every method to another, for a test that needs a language that works like a real one
  * except for what it overrides. A test that changes the compiler usually overrides {@link #newCompiler} to wrap the
@@ -36,5 +38,10 @@ public class ForwardingExpressionLanguage implements ExpressionLanguage {
     @Override
     public void prepare() {
         language.prepare();
+    }
+
+    @Override
+    public Set<String> reservedFactNames() {
+        return language.reservedFactNames();
     }
 }

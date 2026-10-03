@@ -479,8 +479,11 @@ public final class RulesEngineBuilder<O> {
      *             type-check
      * @return This builder
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is blank, or is {@code output}, which actions use for the output
-     *                                  object
+     * @throws IllegalArgumentException if {@code name} is blank. A name one of the engine's languages reserves, such
+     *                                  as {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME},
+     *                                  which actions use for the output object by default (see
+     *                                  {@link ExpressionLanguage#reservedFactNames()}), is rejected by
+     *                                  {@link #build()}, once the languages are known
      */
     public RulesEngineBuilder<O> fact(String name, Class<?> type) {
         EngineCompileContext.checkDeclaration(name, type);
@@ -494,7 +497,8 @@ public final class RulesEngineBuilder<O> {
      * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
      * @return This builder
      * @throws NullPointerException     if {@code types}, a name or a type is {@code null}; nothing is declared
-     * @throws IllegalArgumentException if a name is blank or {@code output}; nothing is declared
+     * @throws IllegalArgumentException if a name is blank; nothing is declared. A name one of the engine's languages
+     *                                  reserves is rejected by {@link #build()}, as for {@link #fact(String, Class)}
      */
     public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
         Objects.requireNonNull(types, "types must not be null");
@@ -706,17 +710,22 @@ public final class RulesEngineBuilder<O> {
      *                                  {@link #defaultLanguage(String) default language}; if the default language, a
      *                                  language given an {@link #option(String, String, String) option}, or one given
      *                                  {@link #languageImports(String, String...) imports}, isn't one of its
-     *                                  languages; or if a language found with
+     *                                  languages; if a language found with
      *                                  {@link java.util.ServiceLoader} has a {@code null} or blank name, or two found
-     *                                  languages have the same name. Anything {@code ServiceLoader} or a language
-     *                                  throws while it's found, such as a {@link java.util.ServiceConfigurationError},
-     *                                  is thrown unchanged.
-     * @throws IllegalArgumentException if a language's own import has more than 1,000 characters; if an import has
-     *                                  more than 1,000 characters or more than 64 dot-separated parts, checked before
-     *                                  it is looked up; if it is neither a loadable class nor a valid package name; if
-     *                                  it names a class that exists but can't be loaded, for example because a class
-     *                                  it depends on is missing; or if {@link #copiesAtLoad(int)} is more than
-     *                                  {@link #maxCopies(int)}
+     *                                  languages have the same name; or if one of the engine's languages, given or
+     *                                  found, returns {@code null}, or a set holding {@code null}, from
+     *                                  {@link ExpressionLanguage#reservedFactNames()}. Anything {@code ServiceLoader}
+     *                                  or a language throws while it's found, such as a
+     *                                  {@link java.util.ServiceConfigurationError}, is thrown unchanged, and so is
+     *                                  anything a language's {@code reservedFactNames()} throws.
+     * @throws IllegalArgumentException if a fact is {@link #fact(String, Class) declared} with a name one of the
+     *                                  engine's languages, given or found, reserves (see
+     *                                  {@link ExpressionLanguage#reservedFactNames()}); if a language's own import has
+     *                                  more than 1,000 characters; if an import has more than 1,000 characters or more
+     *                                  than 64 dot-separated parts, checked before it is looked up; if it is neither
+     *                                  a loadable class nor a valid package name; if it names a class that exists but
+     *                                  can't be loaded, for example because a class it depends on is missing; or if
+     *                                  {@link #copiesAtLoad(int)} is more than {@link #maxCopies(int)}
      * @throws StackOverflowError       if this is the JVM's first engine and the calling thread has too little stack
      *                                  left to build it safely. The first engine initializes the classes engines use
      *                                  to build, load, validate, run and close, and the room for that is checked

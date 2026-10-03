@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
+import java.util.Set;
+
 /**
  * A language that rule conditions and actions are written in, such as MVEL.
  *
@@ -7,8 +9,9 @@ package io.github.brantunger.unruly.api.language;
  * The engine compiles each rule list with a new {@link ExpressionCompiler}, which keeps whatever the language caches
  * for that list. The engine enforces the rest of the rule contract itself, whatever the language: rule names are
  * unique, conditions and actions aren't blank, rules run in priority order, a condition evaluates to a
- * {@link Boolean}, no fact has a blank name or is named {@value ActionContext#OUTPUT_NAME}, and failures are reported
- * as {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} or
+ * {@link Boolean}, no fact has a blank name or a name one of the engine's languages reserves (see
+ * {@link #reservedFactNames()}), and failures are reported as
+ * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} or
  * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} and to listeners.
  * </p>
  *
@@ -66,5 +69,28 @@ public interface ExpressionLanguage {
      */
     default void prepare() {
         // Nothing to initialize.
+    }
+
+    /**
+     * Returns the fact names this language reserves for itself, such as the name its actions see the output object
+     * by. A run's facts reach every rule, so the engine rejects a name that any of its languages reserves, whatever
+     * language the rules are written in: {@code build()} rejects a fact declared with one, and {@code run()} a fact
+     * supplied with one, before any language checks the name with
+     * {@link ExpressionCompiler#checkFactName(String)}.
+     *
+     * <p>
+     * The engine calls it once, when it's built, for every language it has, those found with
+     * {@link java.util.ServiceLoader} included, before the engine prepares any language and whether or not a rule list
+     * ever uses the language. So it must not need {@link #prepare()} to have been called, and should initialize no
+     * class of the language's: return a constant. The engine keeps a copy of the set, so a later change to it changes
+     * nothing. It must return the same names every time. By default, {@value ActionContext#OUTPUT_NAME}, so a
+     * language written before this method existed keeps the engine's earlier rule; a language that binds the output
+     * object to no fact name can return an empty set.
+     * </p>
+     *
+     * @return The names, never {@code null} and holding no {@code null}; an empty set if the language reserves none
+     */
+    default Set<String> reservedFactNames() {
+        return Set.of(ActionContext.OUTPUT_NAME);
     }
 }

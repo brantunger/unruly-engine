@@ -5,7 +5,7 @@ when, and on which thread.
 
 **Who it's for:** language authors.
 **You'll be able to:** implement the four interfaces, report compile errors the way the engine expects, read facts of
-any shape, keep state in sessions or for one run, and package the language for both paths.
+any shape, keep state in sessions or for one run, and [package](packaging.md) the language for both paths.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
 [Compiled copies](../compiled-copies.md). Moving a language from 1.x?
 [Migrating a language or an engine](../migrating-to-2-implementers.md) lists what changed.
@@ -43,6 +43,7 @@ sequenceDiagram
     participant Sess as Session
     App->>Engine: language(lang), or build() finds it
     Engine->>Lang: name(), once
+    Engine->>Lang: reservedFactNames(), once per build, before the build prepares any language
     Engine->>Lang: prepare(), on each build that names it
     App->>Engine: load(rules)
     Engine->>Lang: prepare(), if not yet prepared, then newCompiler(context), at the first rule in this language
@@ -61,6 +62,7 @@ sequenceDiagram
 | Method | When | Thread | Concurrent with itself? |
 | --- | --- | --- | --- |
 | `name()` | Once: in `language(...)`, or when `ServiceLoader` finds it | The building thread | Keep it constant |
+| `reservedFactNames()` | Once per `build()`, for every language, before any is prepared | The building thread | Keep it constant |
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
 | `checkFactName` | Each declared fact, once every rule has compiled or failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
@@ -150,8 +152,8 @@ public final class MyLanguage implements ExpressionLanguage {
 never-blank `text()`.
 
 **Facts and output.** `facts()` is a read-only map of fact values by name, whose values can be `null`; writing to it
-throws `UnsupportedOperationException`. Actions see the output object as `output` (`ActionContext.OUTPUT_NAME`), and the
-engine already rejects a fact with that name.
+throws `UnsupportedOperationException`. `output()` is the output object, MVEL's `output`. The engine rejects a name
+any language's `reservedFactNames()` returns: by default, `output`.
 
 **Errors while running.** An exception from `evaluate`, `evaluateWithDetail` or `execute` becomes a
 `RuleExecutionException` naming the rule; a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even
@@ -266,8 +268,8 @@ applies to both:
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine shortens and escapes your message, and a
-warning's issue, as [Exceptions by method](../exceptions-by-method.md) describes. Any other exception with no message
-shows its class name, and any root cause's in `(caused by ...)`.
+warning's issue, as [Reading exception messages](../exception-messages.md) describes. Any other exception with no
+message shows its class name, and any root cause's in `(caused by ...)`.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
 Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`; its cut never
@@ -312,7 +314,7 @@ A property that exists but whose accessor throws, or can't be called, fails with
 getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't public is read
 through a public supertype that declares the accessor, or else directly where its package is open to
 `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the application `opens` it;
-see [Packaging](#-packaging).
+see [Packaging a language](packaging.md).
 
 `FactProperties.has(fact, "creditScore")` is `true` exactly when `read` wouldn't report the property missing, even if
 its getter throws; `propertyNames(fact)` lists the names `read` can reach. Neither calls a getter, though a map's
@@ -378,9 +380,18 @@ Override `checkFactName(String)` to reject a name your rules couldn't refer to, 
 
 A [fatal error](../glossary.md#fatal-error), even your exception's cause or suppressed on it, is logged with that
 `failed to check` message and rethrown, by `load()` too. Only the loaded rules' languages are asked, in first-use order,
-or the default language for an empty list. The engine rejects `null`, blank names and `output` first, and caches
+or the default language for an empty list. The engine rejects `null`, blank and reserved names first, and caches
 nothing: keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) tests it both ways:
 `unusableFactName()` and `usableFactNames()`.
+
+Override `reservedFactNames()` to name the facts your language binds to something of its own; by default it returns
+`output` (`ActionContext.OUTPUT_NAME`). It's asked once per `build()` for every language the engine has, before the
+engine prepares any, even one no rule uses, and each name is rejected for every rule: a declared fact at `build()`, a
+run's fact at `run()`.
+
+Return a constant: the same names every time, never `null` and holding no `null`, which fail `build()` with
+`IllegalStateException`. What `reservedFactNames()` throws, `build()` throws unchanged. Return an empty set to reserve
+none.
 
 ## ⏳ Stopping a run
 
@@ -519,52 +530,7 @@ the copies are still made. MVEL compiles every condition and action into the ses
 
 ## 📦 Packaging
 
-A language in its own jar needs only `unruly-engine-core`, the engine without MVEL. An engine built without
-`language(...)` finds a language when its jar declares it as a service, and the class needs a public no-argument
-constructor. Declare it both ways:
-
-- **Class path:** a file `META-INF/services/io.github.brantunger.unruly.api.language.ExpressionLanguage` that contains
-  the class name, such as `com.example.lang.MyLanguage`.
-- **Module path:** a `provides` clause. The engine's module `uses` the service, and `ServiceLoader` runs on every
-  `build()`, so a constructor that throws fails every engine built without `language(...)`.
-
-```java
-module com.example.lang {
-    requires io.github.brantunger.unruly.core;   // transitive, if your public API exposes engine types
-
-    provides io.github.brantunger.unruly.api.language.ExpressionLanguage
-            with com.example.lang.MyLanguage;
-
-    // exports com.example.lang;                 // only if applications call language(new MyLanguage())
-}
-```
-
-The engine, not your module, reads facts with `FactProperties` and writes the output with its default
-`OutputWriter`, from the module `io.github.brantunger.unruly.core`. So an application whose rules use your language
-exports or opens its fact and output packages to that module, and needn't export them to yours:
-
-```java
-module com.example.app {
-    requires io.github.brantunger.unruly.core;
-    exports com.example.app.model to io.github.brantunger.unruly.core;   // or opens, for classes that aren't public:
-                                                                          // calling their methods is deep reflection
-}
-```
-
-A language that reflects on facts itself needs its own access, as MVEL needs an export with no `to` clause; see the
-root README's [Installation](../../README.md#-installation). A test module that `requires` the contract kit opens its
-package `to org.junit.platform.commons`.
-
-### Native image
-
-A language works in a GraalVM native image if it generates no classes while rules run: an image can't load a class
-that wasn't in it when it was built. Register the reflection the language itself needs in its jar, in
-`META-INF/native-image/<group>/<artifact>/reflect-config.json`, which `native-image` reads from the class path. The
-`unruly-engine` jar does this for MVEL. `native-image` registers the provider in your `META-INF/services` file, so
-`ServiceLoader` finds the language as on the JVM.
-
-The application registers its own fact and output classes, because `FactProperties` and the default `OutputWriter`
-read and write them by reflection. Only MVEL has been tested in an image; see [Native image](../native-image.md).
+See [Packaging a language](packaging.md): the service declarations, the module path and native images.
 
 ## 🧪 Testing with the contract kit
 

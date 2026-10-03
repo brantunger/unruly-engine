@@ -102,10 +102,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      * @param configuration The builder's settings
-     * @throws IllegalStateException    if the languages or the default language can't be resolved, or options or
-     *                                  imports are given for a language the engine doesn't have, as
+     * @throws IllegalStateException    if the languages or the default language can't be resolved, a language's
+     *                                  {@link ExpressionLanguage#reservedFactNames()} returns {@code null} or a set
+     *                                  holding {@code null}, or options or imports are given for a language the
+     *                                  engine doesn't have, as
      *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
-     * @throws IllegalArgumentException if a language's own import has more than 1,000 characters; if an import has
+     * @throws IllegalArgumentException if a fact is declared with a name one of the engine's languages reserves; if a
+     *                                  language's own import has more than 1,000 characters; if an import has
      *                                  more than 1,000 characters or more than 64 dot-separated parts, checked
      *                                  before it is looked up; if it is neither a loadable class nor a valid package
      *                                  name; or if it names a class that exists but can't be loaded, with the linkage
@@ -124,6 +127,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
                 configuration.defaultLanguage(), ImportResolver.contextClassLoader());
+        // Every language the engine has, not only those it prepares now: a run's facts reach every rule, so a name
+        // any of them reserves is rejected whatever language the rules are written in.
+        Map<String, String> reservedFactNames = FactNames.reserved(languages.languages());
+        for (String name : configuration.declaredFacts().keySet()) {
+            String language = reservedFactNames.get(name);
+            if (language != null) {
+                throw new IllegalArgumentException(FactNames.reservedMessage(name, language, true));
+            }
+        }
         // Checked once the languages are known, so an option for a language that isn't found isn't silently ignored.
         for (String language : configuration.options().keySet()) {
             checkLanguageKnown(languages, language, "Options");
@@ -149,10 +161,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.outputWriter = configuration.outputWriter();
         Map<String, Class<?>> declaredFacts = configuration.declaredFacts();
         boolean allFactsDeclared = configuration.allFactsDeclared();
-        this.factIntake = new FactIntake(log, declaredFacts, allFactsDeclared);
+        this.factIntake = new FactIntake(log, declaredFacts, allFactsDeclared, reservedFactNames);
         this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
                 Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
-                declaredFacts, allFactsDeclared, configuration.languageImports());
+                declaredFacts, allFactsDeclared, Set.copyOf(reservedFactNames.keySet()),
+                configuration.languageImports());
         this.ruleSets = new RuleSetLifecycle(log, compiler, configuration.copyLimit(), configuration.copiesAtLoad());
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
         // Last, so the settings are checked first: the classes engines use that have a static initializer, which a
