@@ -4,7 +4,7 @@ What `./gradlew clean build` runs, where each report lands, how the caches and C
 static checks expect.
 
 **Who it's for:** contributors whose build failed, or who want to know what CI will run before they push.
-**You'll be able to:** find the report for a failing task, rebuild without stale results, run the tests on JDK 25,
+**You'll be able to:** find the report for a failing task, rebuild without stale results, run the tests on another JDK,
 and suppress a PMD finding the way the code does.
 **Before you start:** [CONTRIBUTING.md](../../CONTRIBUTING.md#-run-the-gate-locally), which lists the gates and the
 usual fix for each.
@@ -15,7 +15,7 @@ usual fix for each.
 - [Reports](#-reports)
 - [The build cache and the configuration cache](#-the-build-cache-and-the-configuration-cache)
 - [CI](#-ci)
-- [Running the tests on JDK 25](#-running-the-tests-on-jdk-25)
+- [Running the tests on another JDK](#-running-the-tests-on-another-jdk)
 - [PMD suppressions](#-pmd-suppressions)
 - [Javadoc and doclint](#-javadoc-and-doclint)
 
@@ -146,7 +146,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | Job | Runs | Why |
 | --- | --- | --- |
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
-| JDK 25 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25` | Compilation stays on the Java 21 toolchain; only the tests need the newer JDK |
+| JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them; compilation stays on the Java 21 toolchain |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
@@ -187,7 +187,7 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 What the jobs leave behind:
 
 - **Artifacts:** each build job's JUnit XML and test JVM crash logs, always, in `jacoco-report-jdk21-<os>`, with
-  the coverage, or `test-results-jdk25-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` and
+  the coverage, or `test-results-jdk<version>-ubuntu-latest`; `api-compatibility-report-jdk21-<os>` and
   `dependency-verification-report-*` only when a job fails.
 - **Codecov** gets one upload per run, from the Linux JDK 21 job, with OIDC. Fork and Dependabot runs skip it:
   they get no OIDC token.
@@ -197,15 +197,15 @@ What the jobs leave behind:
 No branch protection requires a check; maintainers merge when CI and the title check are green, except
 [release PRs](../../RELEASING.md#-the-normal-flow).
 
-## 🔢 Running the tests on JDK 25
+## 🔢 Running the tests on another JDK
 
-Compilation always uses the Java 21 toolchain. `-PtestJdk=25` runs the test task on a JDK 25 launcher instead, so
+Compilation always uses the Java 21 toolchain. `-PtestJdk=N` runs the test task on a JDK N launcher instead, so
 the JDK must be installed: Gradle doesn't download toolchains (`org.gradle.java.installations.auto-download=false`),
 and a missing one fails the build naming the version. The build passes `unruly.test.jdk` to the tests, and
 `TestJdkTest` fails if the JVM running them doesn't match.
 
 ```bash
-./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=25
+./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26
 ```
 
 ## 🔕 PMD suppressions
