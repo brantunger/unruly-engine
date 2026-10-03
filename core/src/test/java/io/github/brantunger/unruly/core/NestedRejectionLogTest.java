@@ -616,7 +616,8 @@ class NestedRejectionLogTest {
     }
 
     @Test
-    @DisplayName("a nested rejection kept by one rule and thrown by another later in the same run isn't logged again")
+    @DisplayName("#961: a nested rejection kept by one rule and thrown by another later in the same run isn't logged"
+            + " again, and reads as logged already, not as the later rule's nested run's")
     void keptRejectionThrownLaterInTheSameRun() {
         RulesEngine<Map<String, Object>> nested = plain("inner-rule");
         AtomicReference<IllegalArgumentException> kept = new AtomicReference<>();
@@ -634,7 +635,8 @@ class NestedRejectionLogTest {
         engine.load(List.of(rule("first"), rule("second")));
 
         assertFailed(failed(() -> engine.run(new FactMap<>())),
-                "Failed to execute action for rule 'second': " + NESTED_RUN + OUTPUT_REJECTED, OUTPUT_REJECTED);
+                "Failed to execute action for rule 'second': " + OUTPUT_REJECTED + " (already logged)",
+                OUTPUT_REJECTED);
     }
 
     @Test

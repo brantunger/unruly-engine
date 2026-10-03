@@ -611,8 +611,11 @@ public final class Failures {
      * chain with a message of its own, one that has the nested failure's text with words around it too, is described
      * by that message, shortened and escaped, with the nested failure as a note,
      * {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is lost.
-     * When no run the code that wrapped it started logged that failure, but a run that had ended before in the same
-     * outermost run, such as an earlier sibling, however deep, the note reads {@code (caused by ..., already logged)}
+     * The code that wrapped it is the call-out in progress in the innermost run in progress on the thread, such as
+     * the condition, the action, the listener callback, the output supplier or the language call the run is in (see
+     * {@link LoggedFailures#callOut()}). When no run that call-out started logged that failure, but a run that had
+     * ended before it started, in the same outermost run, such as one an earlier sibling, an earlier rule, the same
+     * rule's condition or a listener started, however deep, the note reads {@code (caused by ..., already logged)}
      * instead, and so it does for a {@link ReportedFailure} built in an earlier outermost run on the thread (see
      * {@link LoggedFailures#loggedBelow(ReportedFailure)}). A failure thrown as is in an earlier outermost run, such as
      * facts a nested run rejected, isn't found at all, so the exception around it reads by its own message, with no
@@ -631,7 +634,7 @@ public final class Failures {
      * {@link Error} logged already, wrapped in an exception that says something of its own (see
      * {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
      * {@link #describeWithClass} describes it: {@code (after a nested run() failed: ...)} or
-     * {@code (after a nested load() failed: ...)} when what the code that wrapped it started logged it, or else
+     * {@code (after a nested load() failed: ...)} when what the call-out that wrapped it started logged it, or else
      * {@code (caused by ..., already logged)} when the error is in the cause chain, or
      * {@code (with suppressed ..., already logged)} when it's found among the suppressed exceptions of the chain's
      * links or what they lead to (see {@link #fatalError}).
@@ -677,8 +680,8 @@ public final class Failures {
     }
 
     /**
-     * Says a failure was logged already, by no run the code that wrapped it started, for the note {@link #describe}
-     * adds: {@code caused by ..., already logged} or {@code with suppressed ..., already logged}.
+     * Says a failure was logged already, by no run the call-out that wrapped it started, for the note
+     * {@link #describe} adds: {@code caused by ..., already logged} or {@code with suppressed ..., already logged}.
      *
      * @param how  {@code "caused by "} or {@code "with suppressed "}, where the failure was found
      * @param text The failure's text
@@ -1148,13 +1151,14 @@ public final class Failures {
      * @param news         The first exception from the top of the chain, above {@code logged}, with a message of its
      *                     own, which nothing has logged, or {@code null} if there is none, and {@code logged} names
      *                     the chain whole
-     * @param loggedBelow  {@code true} if a run the innermost run in progress on this thread started logged
-     *                     {@code logged}, however deep below it, or a run on another thread did, or it names the
-     *                     chain of a {@link ReportedFailure} built in the same outermost run before the last
+     * @param loggedBelow  {@code true} if a run the call-out in progress in the innermost run in progress on this
+     *                     thread started logged {@code logged}, however deep below it (see
+     *                     {@link LoggedFailures#callOut()}), or a run on another thread did, or it names the chain of a
+     *                     {@link ReportedFailure} built in the same outermost run before the last
      *                     {@value LoggedFailures#MAX_LOGGED}, or one built outside any run, or one deserialized;
-     *                     {@code false} if a run that had ended before it started
-     *                     did, or {@code logged} names a {@link ReportedFailure}'s chain and
-     *                     that failure was built in an earlier outermost run on this thread (see
+     *                     {@code false} if a run that had ended before that call-out started did, such as one an
+     *                     earlier call-out of the same run started, or {@code logged} names a {@link ReportedFailure}'s
+     *                     chain and that failure was built in an earlier outermost run on this thread (see
      *                     {@link LoggedFailures#loggedBelow(ReportedFailure)}), or if there is no {@code logged}
      */
     record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad, Throwable news,

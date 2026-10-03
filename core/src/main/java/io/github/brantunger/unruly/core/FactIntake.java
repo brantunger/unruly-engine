@@ -61,17 +61,21 @@ final class FactIntake {
      * facts before the names are checked. A fact declared with a primitive type whose value is a boxed primitive that
      * Java widens to that type, such as an {@link Integer} for a {@code long}, is widened here, so listeners and
      * languages see only the declared type; its value in the store isn't changed. Any other value is kept as it is,
-     * for {@link #checkDeclaredType(String, Object)} to judge.
+     * for {@link #checkDeclaredType(String, Object)} to judge. Reading the store and reading each fact are call-outs
+     * of the run (see {@link LoggedFailures#callOut()}).
      *
      * @param facts The key/value fact store
+     * @param runs  What is in progress on the run's thread, which marks each call-out
      * @return A map of fact names to their values, which may hold a {@code null} name a custom store allowed
      */
-    Map<String, Object> factValues(FactStore<?> facts) {
+    Map<String, Object> factValues(FactStore<?> facts, LoggedFailures.Runs runs) {
         Map<String, Object> entryMap = new HashMap<>();
+        runs.callOut();
         for (Map.Entry<String, ? extends FactReference<?>> entry : facts.asMap().entrySet()) {
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
             // unresolvable, so `x == null` failed instead of matching.
             FactReference<?> fact = entry.getValue();
+            runs.callOut();
             entryMap.put(entry.getKey(), fact != null ? fact.getValue() : null);
         }
         if (primitiveFacts.isEmpty()) {
@@ -140,12 +144,13 @@ final class FactIntake {
      *
      * @param values The fact values by name
      * @param checks The compilers of the rule list the run uses, which check each name, by language name
+     * @param runs   What is in progress on the run's thread, which marks each check as a call-out
      * @throws IllegalArgumentException if a language can't refer to a fact's name, or its check of the name throws
      *                                  anything else
      */
-    void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks) {
+    void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks, LoggedFailures.Runs runs) {
         for (String name : values.keySet()) {
-            IllegalArgumentException rejected = factNameRejection(log, name, checks, true);
+            IllegalArgumentException rejected = factNameRejection(log, name, checks, true, runs);
             if (rejected != null) {
                 throw rejected;
             }
@@ -222,18 +227,21 @@ final class FactIntake {
      * suppressed on them (see {@link Failures#fatalError}), a rejection included, which is logged and rethrown. A
      * failure of a {@code run()} or a {@code load()} the check started, and a fatal error that run logged, isn't logged
      * a second time, and a rejection this logs is recorded as logged, so the code around a nested run doesn't log it
-     * again (see {@link LoggedFailures}).
+     * again (see {@link LoggedFailures}). Each language's check is a call-out of the run, load or validation (see
+     * {@link LoggedFailures#callOut()}).
      *
      * @param log    The engine's logger
      * @param name   The fact's name
      * @param checks The compilers to check it with, by language name
      * @param logged Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own message
+     * @param runs   What is in progress on this thread, which marks each check
      * @return The exception a language rejected the name with, or {@code null} if every language accepts it
      */
-    static IllegalArgumentException factNameRejection(Logger log, String name,
-                                                      Map<String, ExpressionCompiler> checks, boolean logged) {
+    static IllegalArgumentException factNameRejection(Logger log, String name, Map<String, ExpressionCompiler> checks,
+                                                      boolean logged, LoggedFailures.Runs runs) {
         for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
-            IllegalArgumentException rejected = factNameRejection(log, name, check.getKey(), check.getValue(), logged);
+            IllegalArgumentException rejected = factNameRejection(log, name, check.getKey(), check.getValue(), logged,
+                    runs);
             if (rejected != null) {
                 return rejected;
             }
@@ -242,7 +250,8 @@ final class FactIntake {
     }
 
     /**
-     * Checks a fact name with one language, as {@link #factNameRejection(Logger, String, Map, boolean)} describes.
+     * Checks a fact name with one language, as
+     * {@link #factNameRejection(Logger, String, Map, boolean, LoggedFailures.Runs)} describes.
      *
      * @param log      The engine's logger
      * @param name     The fact's name
@@ -250,12 +259,15 @@ final class FactIntake {
      * @param compiler The compiler to check it with
      * @param logged   Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own
      *                 message
+     * @param runs     What is in progress on this thread, which marks the check
      * @return The exception the language rejected the name with, or {@code null} if it accepts it
      */
     private static IllegalArgumentException factNameRejection(Logger log, String name, String language,
-                                                              ExpressionCompiler compiler, boolean logged) {
+                                                              ExpressionCompiler compiler, boolean logged,
+                                                              LoggedFailures.Runs runs) {
         Throwable failure;
         try {
+            runs.callOut();
             compiler.checkFactName(name);
             return null;
         } catch (IllegalArgumentException e) {

@@ -6,9 +6,9 @@ import java.util.Map;
 
 /**
  * What every rule of one run needs: the run's fact values, the read-only views built over them, and when the run
- * must stop, and which rules it uses. It also carries the run it was started from, so the engine passes one value
- * from reading the facts to reporting the run, whether or not the run gets a copy of the rules. <b>Internal:</b> this
- * record may change in any release.
+ * must stop, and which rules it uses. It also carries the run it was started from, and what is in progress on its
+ * thread, so the engine passes one value from reading the facts to reporting the run, whether or not the run gets a
+ * copy of the rules. <b>Internal:</b> this record may change in any release.
  *
  * <p>
  * The views and the evaluation context depend only on the run, not on the rule being evaluated, so the engine builds
@@ -25,9 +25,13 @@ import java.util.Map;
  * @param parent       The run this one was started from, or {@code null}
  * @param tally        What the run counts as it goes, for its Flight Recorder event
  * @param selection    Which rules the run uses, and which it skips
+ * @param runs         What is in progress on the run's thread, which the run marks each of its call-outs with, so a
+ *                     rule's condition or action, a listener callback or the output supplier or writer looks nothing
+ *                     up to mark it (see {@link LoggedFailures#callOut()})
  */
 record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, EngineEvaluationContext evaluation,
-                Deadline deadline, long runId, RunContext parent, RunTally tally, RuleSelection selection) {
+                Deadline deadline, long runId, RunContext parent, RunTally tally, RuleSelection selection,
+                LoggedFailures.Runs runs) {
 
     /**
      * Builds the views one run needs.
@@ -39,11 +43,12 @@ record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, En
      * @param parent       The run this one was started from, or {@code null}
      * @param tally        What the run counts as it goes
      * @param selection    Which rules the run uses
+     * @param runs         What {@link LoggedFailures#enter()} returned when the run started
      * @return The run's facts
      */
     static RunFacts of(Map<String, Object> values, Map<String, Object> forListeners, Deadline deadline, long runId,
-                       RunContext parent, RunTally tally, RuleSelection selection) {
+                       RunContext parent, RunTally tally, RuleSelection selection, LoggedFailures.Runs runs) {
         return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline, new RunScope()),
-                deadline, runId, parent, tally, selection);
+                deadline, runId, parent, tally, selection, runs);
     }
 }

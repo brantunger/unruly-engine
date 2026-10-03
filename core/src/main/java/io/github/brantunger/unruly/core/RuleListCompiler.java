@@ -282,8 +282,10 @@ final class RuleListCompiler {
      */
     private List<RuleCompilationException> declaredNameFailures(Map<String, ExpressionCompiler> checks) {
         List<RuleCompilationException> failures = new ArrayList<>();
+        // Inside the load() or validate(), whose call-out each check is.
+        LoggedFailures.Runs runs = LoggedFailures.inProgress();
         for (String name : declaredFacts.keySet()) {
-            IllegalArgumentException rejected = FactIntake.factNameRejection(log, name, checks, false);
+            IllegalArgumentException rejected = FactIntake.factNameRejection(log, name, checks, false, runs);
             if (rejected != null) {
                 failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
                         + Failures.describe(rejected), rejected, null));
@@ -375,6 +377,7 @@ final class RuleListCompiler {
     private ExpressionCompiler newCompiler(String name, ExpressionLanguage language, CompileContext context) {
         ExpressionCompiler compiler;
         try {
+            LoggedFailures.callOut();
             compiler = language.newCompiler(context);
         } catch (Throwable e) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to create a "
@@ -427,6 +430,7 @@ final class RuleListCompiler {
         String expression = Failures.expression(source.kind(), source.ruleName());
         T compiled;
         try {
+            LoggedFailures.callOut();
             compiled = compilation.apply(source);
         } catch (InvalidExpressionException e) {
             // A language's own subclass may have a getMessage() or an issues() that throws.

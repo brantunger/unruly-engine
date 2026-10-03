@@ -103,23 +103,29 @@ characters, such as
 `Failed to execute action for rule 'r': pricing failed (after a nested run() failed: <innermost failure>)`. When
 several wrappers have one, the outermost is named. A run further out names that logged line, not the innermost failure.
 
-That note usually means a run the wrapping code started logged the failure; the exceptions are below. When a run that
-had already ended logged it, the note says the failure was logged already, as for a fatal `Error` below:
+That note usually means the code that threw the wrapper started the run that logged the failure; the exceptions are
+below. When a run that had already ended when that code was called logged it, the note says the failure was logged
+already, as for a fatal `Error` below:
 `Failed to execute action for rule 'r': pricing failed (caused by <innermost failure>, already logged)`.
 
-The run that logged it may be an earlier sibling whose failure your code kept, at any depth, or, for a rule's failure
-`run()` threw, a run in an earlier outermost run on the thread, whatever the count. The failure still has one line of
-its own.
+Each place a run, `load()` or `validate()` hands control to your code or a language counts as code of its own here: a
+rule's condition and, separately, its action, each listener's callback, the output supplier, the output writer, the
+clock, reading the facts and each fact's value, a language's `checkFactName()`, `newCompiler()`, compiling,
+`newSession()` and `warmUp()`, and each close.
+
+So the run that logged it may be an earlier sibling, or a run an earlier rule, the same rule's condition or a listener
+started, at any depth, whose failure your code kept, or, for a rule's failure `run()` threw, a run in an earlier
+outermost run on the thread, whatever the count. The failure still has one line of its own.
 
 A rule's failure that `run()` threw still gets the nested run's note when it came from another thread, was built
 outside any run, was deserialized, or is past the 32 the thread remembers in the same outermost run. Rejected facts or
 another failure thrown as is, kept from an earlier outermost run, get no nested-run note: the wrapper's words stand
 alone, apart from a root cause they would hide, as the thread forgot them when that run ended.
 
-A failure a nested run logged, rejected facts included, also gets the nested run's note when a later rule in the same
-run throws it, though an earlier rule started the run that logged it: the engine tells where a failure was logged run
-by run, not rule by rule. That holds with or without words of its own; see
-[#961](https://github.com/brantunger/unruly-engine/issues/961).
+Those places are told apart only in a run fewer than 64 deep, counting the outermost one as 1 and each `run()`,
+`load()`, `validate()` or engine `close()` in progress on the thread. In a deeper run, what any run it started logged,
+a fatal `Error` or rejected facts included, gets the nested run's note, whichever place started that run; what a run
+that had ended before it started logged is still noted as logged already.
 
 Code that throws a failure that gets the `already logged` note above on with no words of its own, as is (`throw e`) or
 in `new RuntimeException(e)`, has it read as that failure followed by `(already logged)`:
@@ -161,8 +167,8 @@ Around a nested fatal `Error`, the note is the `Error`'s class and message, such
 or `(after a nested load() failed: ...)` for a nested `load()`, and the call still rethrows the `Error` itself.
 
 As for a failure that isn't fatal, a fatal `Error` logged already, but not below the code that wrapped it, such as by
-an earlier nested run, gets `(caused by java.lang.OutOfMemoryError: ..., already logged)` instead when it's in the
-cause chain, or
+a nested run an earlier rule started, gets `(caused by java.lang.OutOfMemoryError: ..., already logged)` instead when
+it's in the cause chain, or
 `(with suppressed java.lang.OutOfMemoryError: ..., already logged)` when it's found among the suppressed
 exceptions or what they lead to, within the [glossary's limit](glossary.md#fatal-error).
 

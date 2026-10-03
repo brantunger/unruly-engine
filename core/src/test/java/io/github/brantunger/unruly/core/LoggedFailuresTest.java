@@ -88,6 +88,43 @@ class LoggedFailuresTest {
         }
     }
 
+    /**
+     * Reads one field of what is in progress on this thread.
+     *
+     * @param runs What {@link LoggedFailures#enter()} returned
+     * @param name The field's name
+     * @return Its value
+     */
+    private static Object field(LoggedFailures.Runs runs, String name) throws ReflectiveOperationException {
+        Field field = LoggedFailures.Runs.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(runs);
+    }
+
+    @Test
+    @DisplayName("#961: an outermost run that starts no nested run and builds no failure creates nothing to tell its"
+            + " call-outs apart with, and the first nested run creates it, a fatal Error's stamps included")
+    void callOutRecordCreatedWithTheFirstNestedRun() throws ReflectiveOperationException {
+        LoggedFailures.Runs runs = LoggedFailures.enter();
+        try {
+            runs.callOut();
+            assertTrue(LoggedFailures.unloggedFatal(new InternalError("by the outermost run")));
+            for (String name : List.of("stamps", "outermost")) {
+                assertNull(field(runs, name), name);
+            }
+            LoggedFailures.enter();
+            try {
+                assertNotNull(field(runs, "stamps"));
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertNotNull(new ReportedFailure("built", null).builtIn());
+            assertNotNull(field(runs, "outermost"));
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
     @Test
     @DisplayName("a top-level run that rejects its facts leaves the thread with no ring while its listeners hear of it")
     void topLevelRejectionCreatesNoRing() {
@@ -724,5 +761,101 @@ class LoggedFailuresTest {
             LoggedFailures.leave();
         }
         assertFalse(LoggedFailures.isEngineWrapper(engines), "forgotten when the outermost run ends");
+    }
+
+    /**
+     * A run's call-outs are told apart in a run fewer than {@value LoggedFailures#MARKED_DEPTHS} deep: what a run the
+     * call-out in progress started logged is below the run, even when that run is too deep to mark call-outs of its
+     * own, and what one an earlier call-out started logged isn't, until that call-out is taken up again. In a run
+     * deeper than that, what any run it started logged is below it, as before call-outs were told apart.
+     *
+     * @param depth How deep the run is
+     */
+    @ParameterizedTest(name = "a run {0} deep")
+    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS - 1, LoggedFailures.MARKED_DEPTHS})
+    @DisplayName("#961: a run's call-outs are told apart up to the bound, and past it a failure below the run is a"
+            + " nested run's whatever call-out started it")
+    void callOutsToldApartUpToTheBound(int depth) {
+        InternalError fatal = new InternalError("by a nested run");
+        IllegalArgumentException rejection = new IllegalArgumentException("rejected by a nested run");
+        ReportedFailure reported;
+        LoggedFailures.Runs runs = LoggedFailures.enter();
+        for (int i = 1; i < depth; i++) {
+            runs = LoggedFailures.enter();
+        }
+        try {
+            long first = runs.callOut();
+            LoggedFailures.enter();
+            try {
+                assertTrue(LoggedFailures.unloggedFatal(fatal));
+                LoggedFailures.loggedByRun(rejection);
+                reported = new ReportedFailure("reported by a nested run", null);
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertBelow(true, fatal, rejection, reported, "the call-out that started the nested run");
+            runs.callOut();
+            assertBelow(depth >= LoggedFailures.MARKED_DEPTHS, fatal, rejection, reported, "a later call-out");
+            runs.resume(first);
+            assertBelow(true, fatal, rejection, reported, "the call-out that started it, taken up again");
+        } finally {
+            for (int i = 0; i < depth; i++) {
+                LoggedFailures.leave();
+            }
+        }
+    }
+
+    /**
+     * A failure a run that had ended logged, however deep, isn't below a run started after it, past the bound of
+     * {@value LoggedFailures#MARKED_DEPTHS} too, where the run's call-outs aren't told apart:
+     * {@link LoggedFailures#enter} lowers it to the depth the later run starts at.
+     *
+     * @param depth How deep the later run is
+     */
+    @ParameterizedTest(name = "a run {0} deep")
+    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS - 1, LoggedFailures.MARKED_DEPTHS,
+        LoggedFailures.MARKED_DEPTHS + 1})
+    @DisplayName("#961: a failure a run that had ended logged deeper isn't below a later sibling, past the bound too")
+    void loggedByASiblingThatHadEndedNotBelowPastTheBound(int depth) {
+        InternalError fatal = new InternalError("by a nested run of an earlier sibling");
+        IllegalArgumentException rejection = new IllegalArgumentException("rejected by a nested run");
+        ReportedFailure reported;
+        LoggedFailures.enter();
+        for (int i = 2; i < depth; i++) {
+            LoggedFailures.enter();
+        }
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    assertTrue(LoggedFailures.unloggedFatal(fatal));
+                    LoggedFailures.loggedByRun(rejection);
+                    reported = new ReportedFailure("reported by a nested run", null);
+                } finally {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            LoggedFailures.enter();
+            try {
+                assertBelow(false, fatal, rejection, reported, "a later sibling");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            for (int i = 1; i < depth; i++) {
+                LoggedFailures.leave();
+            }
+        }
+    }
+
+    private static void assertBelow(boolean below, InternalError fatal, IllegalArgumentException rejection,
+                                    ReportedFailure reported, String where) {
+        assertEquals(below ? LoggedFailures.LoggedAt.NESTED_RUN : LoggedFailures.LoggedAt.NOT_BELOW,
+                LoggedFailures.loggedAt(fatal), where + ": a fatal Error");
+        assertEquals(below, LoggedFailures.loggedBelow(LoggedFailures.find(rejection)), where + ": rejected facts");
+        assertEquals(below, LoggedFailures.loggedBelow(reported), where + ": a run's failure");
     }
 }

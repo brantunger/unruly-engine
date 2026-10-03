@@ -82,43 +82,48 @@ final class ListenerNotifier {
      * {@link AbstractRulesEngine#keepInterruptOfStop}). A fatal error a listener throws is rethrown in place of what
      * the run failed with, and carries that as a suppressed exception (see {@link Failures#keepAlso}).
      *
+     * @param runs    What is in progress on the run's thread, which marks each listener's callback as a call-out (see
+     *                {@link LoggedFailures#callOut()})
      * @param error   The exception listeners are told of
      * @param failing What the run throws if no listener throws a fatal error: {@code error}, or the fatal error it
      *                carries
      */
-    void notifyRunError(RunContext run, RuntimeException error, Throwable failing, RunTally tally) {
+    void notifyRunError(LoggedFailures.Runs runs, RunContext run, RuntimeException error, Throwable failing,
+                        RunTally tally) {
         if (ReportedFailure.isStop(error)) {
             tally.markStopped();
             if (error.getCause() instanceof InterruptedException) {
                 tally.markInterrupted();
             }
         }
-        notifyRun("onRunError", listener -> listener.onRunError(run, error), error, failing);
+        notifyRun(runs, "onRunError", listener -> listener.onRunError(run, error), error, failing);
     }
 
     /**
      * Calls one run callback on every listener, logging what a listener throws, like the rule callbacks. A fatal
      * {@link Error} a listener throws is rethrown once every listener has had the callback, and logged first unless a
      * run it started logged it already (see {@link LoggedFailures}), or else what it wrapped the error in, when that
-     * says something of its own (see {@link #listenerFatalMessage}).
+     * says something of its own (see {@link #listenerFatalMessage}). Each listener's callback is a call-out of the
+     * run's own (see {@link LoggedFailures#callOut()}), marked through {@code runs}.
      */
-    void notifyRun(String callback, Consumer<RuleListener> call) {
-        notifyRun(callback, call, null, null);
+    void notifyRun(LoggedFailures.Runs runs, String callback, Consumer<RuleListener> call) {
+        notifyRun(runs, callback, call, null, null);
     }
 
     /**
-     * Calls one run callback on every listener, as {@link #notifyRun(String, Consumer)} does, for a callback that
-     * tells listeners of the run's failure. A fatal {@link Error} a listener throws carries what it's rethrown in
-     * place of as a suppressed exception (see {@link Failures#keepAlso}). The failure the callback tells listeners of,
-     * rethrown or wrapped, is the run's own, whatever run logged its fatal error, so nothing a listener wrapped around
-     * it is taken for news about a nested run.
+     * Calls one run callback on every listener, as {@link #notifyRun(LoggedFailures.Runs, String, Consumer)} does, for
+     * a callback that tells listeners of the run's failure. A fatal {@link Error} a listener throws carries what it's
+     * rethrown in place of as a suppressed exception (see {@link Failures#keepAlso}). The failure the callback tells
+     * listeners of, rethrown or wrapped, is the run's own, whatever run logged its fatal error, so nothing a listener
+     * wrapped around it is taken for news about a nested run.
      *
      * @param told    The exception the callback tells listeners of, or {@code null}; see
      *                {@link #logListenerException}
      * @param failing What the run throws if no listener throws a fatal error, or {@code null}
      */
-    private void notifyRun(String callback, Consumer<RuleListener> call, Throwable told, Throwable failing) {
-        ListenerFatal thrown = listenerFatal(callback, call, null, told);
+    private void notifyRun(LoggedFailures.Runs runs, String callback, Consumer<RuleListener> call, Throwable told,
+                           Throwable failing) {
+        ListenerFatal thrown = listenerFatal(runs, callback, call, null, told);
         if (thrown != null) {
             Error fatal = thrown.fatal();
             // Asked before unlogged() records a fatal error it's told of for the first time.
@@ -143,7 +148,9 @@ final class ListenerNotifier {
      * @return {@code stop}, to throw
      */
     RuleExecutionException closedWithStop(CompiledRule rule, ReportedFailure stop) {
-        ListenerFatal thrown = listenerFatal("onError", listener -> listener.onError(rule.rule(), stop), null, stop);
+        // Only a rule's condition, action or output writer stops a run here, inside run(), so a run is in progress.
+        ListenerFatal thrown = listenerFatal(LoggedFailures.inProgress(), "onError",
+                listener -> listener.onError(rule.rule(), stop), null, stop);
         if (thrown != null) {
             Error fatal = logWrappedFromOnError(thrown, rule);
             stop.addSuppressedByEngine(fatal);
@@ -158,10 +165,10 @@ final class ListenerNotifier {
      * doesn't run: every listener gets {@link RuleListener#onError} to close the callback it received, and the error
      * is rethrown. It's logged first, unless a run the listener started logged it already (see
      * {@link LoggedFailures}), or else what the listener wrapped it in, when that says something of its own (see
-     * {@link #listenerFatalMessage}).
+     * {@link #listenerFatalMessage}). Each listener's callback is marked as a call-out through {@code runs}.
      */
-    void notifyBefore(CompiledRule rule, String callback, Consumer<RuleListener> call) {
-        ListenerFatal thrown = listenerFatal(callback, call);
+    void notifyBefore(LoggedFailures.Runs runs, CompiledRule rule, String callback, Consumer<RuleListener> call) {
+        ListenerFatal thrown = listenerFatal(runs, callback, call);
         if (thrown != null) {
             Error fatal = thrown.fatal();
             // Described before unlogged() records a fatal error it's told of for the first time.
@@ -180,10 +187,11 @@ final class ListenerNotifier {
      * Calls an {@code after*} callback on every listener, then logs the first fatal {@link Error} one threw at ERROR,
      * unless a run the listener started logged it already (see {@link LoggedFailures}), or else what the listener
      * wrapped it in, when that says something of its own (see {@link #listenerFatalMessage}), and rethrows it. Every
-     * listener already closed its callback, so none gets {@code onError}.
+     * listener already closed its callback, so none gets {@code onError}. Each listener's callback is marked as a
+     * call-out through {@code runs}.
      */
-    void notifyAfter(CompiledRule rule, String callback, Consumer<RuleListener> call) {
-        ListenerFatal thrown = listenerFatal(callback, call);
+    void notifyAfter(LoggedFailures.Runs runs, CompiledRule rule, String callback, Consumer<RuleListener> call) {
+        ListenerFatal thrown = listenerFatal(runs, callback, call);
         if (thrown != null) {
             // Asked before unlogged() records a fatal error it's told of for the first time.
             boolean wrapped = Failures.wrapsLoggedFatal(thrown.thrown());
@@ -251,18 +259,27 @@ final class ListenerNotifier {
      * error in the same callback is logged like an exception, and kept on the first as a suppressed exception (see
      * {@link Failures#keepAlso}).
      *
+     * <p>
+     * Each listener's callback is a call-out of its own (see {@link LoggedFailures#callOut()}), so what a run one
+     * listener started logged isn't below the next listener. Once every listener has been called, the call-out of the
+     * listener that threw the fatal error is taken up again, so what that listener's own nested run logged is still
+     * below it when the caller tells what the listener wrapped the error in.
+     * </p>
+     *
+     * @param runs What is in progress on the run's thread, which marks each call-out
      * @return The first fatal {@link Error} a listener threw, and what it threw it in, or {@code null}
      */
-    private ListenerFatal listenerFatal(String callback, Consumer<RuleListener> call) {
-        return listenerFatal(callback, call, null, null);
+    private ListenerFatal listenerFatal(LoggedFailures.Runs runs, String callback, Consumer<RuleListener> call) {
+        return listenerFatal(runs, callback, call, null, null);
     }
 
     /**
-     * Calls every listener, as {@link #listenerFatal(String, Consumer)} does, ignoring what the run already
-     * reports: a listener that rethrows the reported exception, or the fatal {@link Error} in it, has added nothing,
-     * so it doesn't count as the first fatal error, whichever listener rethrows it. What a listener wrapped it in is
-     * still logged, because its own message says something.
+     * Calls every listener, as {@link #listenerFatal(LoggedFailures.Runs, String, Consumer)} does, ignoring what the
+     * run already reports: a listener that rethrows the reported exception, or the fatal {@link Error} in it, has added
+     * nothing, so it doesn't count as the first fatal error, whichever listener rethrows it. What a listener wrapped it
+     * in is still logged, because its own message says something.
      *
+     * @param runs     What is in progress on the run's thread, which marks each call-out
      * @param reported The exception listeners were told about, whose fatal {@link Error} the run is already
      *                 reporting, or {@code null}
      * @param told     The exception the callback tells listeners of, or {@code null}; see
@@ -272,13 +289,16 @@ final class ListenerNotifier {
      */
     // Rethrowing the very same instance is what makes it nothing new; an equal one would still be news.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private ListenerFatal listenerFatal(String callback, Consumer<RuleListener> call, RuleExecutionException reported,
-                                        Throwable told) {
+    private ListenerFatal listenerFatal(LoggedFailures.Runs runs, String callback, Consumer<RuleListener> call,
+                                        RuleExecutionException reported, Throwable told) {
         Error reportedFatal = reported == null ? null : Failures.fatalError(reported);
         Error fatal = null;
         Throwable fatalThrown = null;
+        long fatalCall = 0;
         for (RuleListener listener : listeners) {
+            long started = 0;
             try {
+                started = runs.callOut();
                 call.accept(listener);
             } catch (Throwable e) {
                 Failures.keepInterruptStatus(e);
@@ -290,6 +310,7 @@ final class ListenerNotifier {
                 } else if (found != null && fatal == null) {
                     fatal = found;
                     fatalThrown = e;
+                    fatalCall = started;
                 } else {
                     // A non-fatal exception, or a second fatal error in this callback, which the caller can't rethrow
                     // but finds on the first.
@@ -298,7 +319,11 @@ final class ListenerNotifier {
                 }
             }
         }
-        return fatal == null ? null : new ListenerFatal(fatal, fatalThrown, fatal == Failures.fatalError(told));
+        if (fatal == null) {
+            return null;
+        }
+        runs.resume(fatalCall);
+        return new ListenerFatal(fatal, fatalThrown, fatal == Failures.fatalError(told));
     }
 
     /**
@@ -424,7 +449,10 @@ final class ListenerNotifier {
         if (logged) {
             log.error(error.getMessage());
         }
-        ListenerFatal thrown = listenerFatal("onError", listener -> listener.onError(rule.rule(), error), error, error);
+        // Only a rule's condition, action or output writer, or a listener before one, fails a rule, inside run(), so a
+        // run is in progress.
+        ListenerFatal thrown = listenerFatal(LoggedFailures.inProgress(), "onError",
+                listener -> listener.onError(rule.rule(), error), error, error);
         return thrown == null ? null : logWrappedFromOnError(thrown, rule);
     }
 }

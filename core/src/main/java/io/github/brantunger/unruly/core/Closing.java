@@ -85,6 +85,7 @@ final class Closing {
         for (int i = values.size() - 1; i >= 0; i--) {
             Throwable thrown = null;
             try {
+                LoggedFailures.callOut();
                 values.get(i).close();
             } catch (Throwable e) {
                 thrown = e;
@@ -151,6 +152,7 @@ final class Closing {
     // validate() or a close(), so what a run a close() starts logged is known.
     private static Error close(AutoCloseable resource, Consumer<Throwable> warning) {
         try {
+            LoggedFailures.callOut();
             resource.close();
             return null;
         } catch (Throwable e) {

@@ -257,7 +257,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * It is one policy with {@link #untilFirst()}: firing only the first match is right when the run stops there, or
      * when an override fails a run with more than one match first, as the unique-match engine does, so a subclass
      * that overrides either must consider the other. A check that fails the run must come before
-     * {@link #createOutput()}, so a failed run never calls the output factory.
+     * {@link #createOutput(RunFacts)}, so a failed run never calls the output factory.
      * </p>
      *
      * @param matches The rules that matched, at least one, and every rule's outcome
@@ -268,12 +268,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @throws RuleExecutionException if the output factory throws or returns {@code null}, the action fails, or the
      *                                run was cancelled before the rule. A {@link VirtualMachineError} other than
      *                                {@link StackOverflowError} from the output factory is rethrown unchanged, as
-     *                                {@link #createOutput()} describes.
+     *                                {@link #createOutput(RunFacts)} describes.
      */
     RunResult<O> fire(Matches matches, RuleSet ruleSet, RuleSet.Copy copy, RunFacts facts) {
         // Run the action of the selected rule on given data and return the output.
         CompiledRule resolvedRule = matches.matched().get(0);
-        O output = this.executeRule(resolvedRule, copy, createOutput(), facts);
+        O output = this.executeRule(resolvedRule, copy, createOutput(facts), facts);
         return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(), ruleSet.checksum());
     }
 
@@ -333,17 +333,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         RuleSet.Copy copy = null;
         try {
             Cancellation.enter(deadline);
-            LoggedFailures.enter();
+            LoggedFailures.Runs runs = LoggedFailures.enter();
             counted = true;
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
             // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
+            runs.callOut();
             RuleSelection selection = new RuleSelection(
                     Objects.requireNonNull(clock.instant(), "the engine's clock returned a null instant"), tags);
-            Map<String, Object> values = factIntake.factValues(facts);
+            Map<String, Object> values = factIntake.factValues(facts, runs);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
             // Checked before the run waits for a copy, which facts the engine will reject needn't do.
             RuntimeException rejected = factIntake.factRejection(values);
-            RunFacts runFacts = RunFacts.of(values, listenerFacts, deadline, runId, parent, tally, selection);
+            RunFacts runFacts = RunFacts.of(values, listenerFacts, deadline, runId, parent, tally, selection, runs);
             if (rejected == null) {
                 copy = borrow(rules, runFacts);
                 int read = 1;
@@ -562,21 +563,21 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RunResult<O> result;
             try {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
-                notifier.notifyRun("beforeRun", listener -> listener.beforeRun(run));
+                notifier.notifyRun(facts.runs(), "beforeRun", listener -> listener.beforeRun(run));
                 if (rejected != null) {
                     throw rejected;
                 }
                 // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name.
-                factIntake.checkFactNames(facts.values(), rules.factChecks());
+                factIntake.checkFactNames(facts.values(), rules.factChecks(), facts.runs());
                 // Every run that returns passes here, a nested one too, so the result carries the run's tags and
                 // start before afterRun or the caller sees it.
                 result = body.run(rules, copy, facts).withRun(run);
             } catch (RuntimeException e) {
-                notifier.notifyRunError(run, e, e, facts.tally());
+                notifier.notifyRunError(facts.runs(), run, e, e, facts.tally());
                 throw e;
             } catch (Error e) {
                 // run() rethrows the error itself; listeners see what it failed with.
-                notifier.notifyRunError(run, notifier.runFailure(e), e, facts.tally());
+                notifier.notifyRunError(facts.runs(), run, notifier.runFailure(e), e, facts.tally());
                 throw e;
             } catch (Throwable t) {
                 // A backstop: every place the run calls a rule, a listener, a language or the output reports a
@@ -589,11 +590,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 log.error(msg);
                 RuleExecutionException failure = new ReportedFailure(msg, t);
                 Error fatal = Failures.fatalError(t);
-                notifier.notifyRunError(run, failure, fatal != null ? fatal : failure, facts.tally());
+                notifier.notifyRunError(facts.runs(), run, failure, fatal != null ? fatal : failure, facts.tally());
                 Failures.throwIfPresent(fatal);
                 throw failure;
             }
-            notifier.notifyRun("afterRun", listener -> listener.afterRun(run, result));
+            notifier.notifyRun(facts.runs(), "afterRun", listener -> listener.afterRun(run, result));
             return result;
         } finally {
             leaveRun(facts.parent(), outerDeadline);
@@ -849,14 +850,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             enterRun(run, facts.deadline());
             try {
-                notifier.notifyRun("beforeRun", listener -> listener.beforeRun(run));
+                notifier.notifyRun(facts.runs(), "beforeRun", listener -> listener.beforeRun(run));
             } catch (Error e) {
                 // The run stopped, though the error keeps the stop from reaching onRunError: its event says so.
                 tally.markStopped();
-                notifier.notifyRunError(run, notifier.runFailure(e), e, tally);
+                notifier.notifyRunError(facts.runs(), run, notifier.runFailure(e), e, tally);
                 throw e;
             }
-            notifier.notifyRunError(run, failure, failure, tally);
+            notifier.notifyRunError(facts.runs(), run, failure, failure, tally);
             return failure;
         } finally {
             leaveRun(facts.parent(), outerDeadline);
@@ -1255,6 +1256,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * escaped {@code run()} unwrapped, and one that returned {@code null} surfaced later as an action
      * failure blamed on whichever rule ran first.
      *
+     * @param facts The run's facts, and what the run carries with them
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
      *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
@@ -1270,9 +1272,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                that message and the nested failure as a note (see {@link Failures#describe}), and
      *                                is logged; a fatal error wrapped so is still rethrown.
      */
-    O createOutput() {
+    O createOutput(RunFacts facts) {
         O output;
         try {
+            facts.runs().callOut();
             output = outputFactory.get();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
@@ -1336,13 +1339,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The run's evaluation context has its own read-only view, whose messages are about conditions, so a
         // listener that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = facts.forListeners();
-        notifier.notifyBefore(rule, "beforeEvaluate", listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
+        notifier.notifyBefore(facts.runs(), rule, "beforeEvaluate",
+                listener -> listener.beforeEvaluate(rule.rule(), listenerFacts));
 
         // Evaluated without a target type: asking MVEL for Boolean.class coerces any value, so a
         // condition like `status` (a non-empty string) would silently match instead of failing. Always with
         // evaluateWithDetail, never evaluate, or the detail of a language that explains its conditions is lost.
         ConditionResult condition;
         try {
+            // A call-out of its own, after the listeners': what a run the condition starts logs is below it, and
+            // what one a listener or an earlier rule started logged isn't (see LoggedFailures). The rule's failure is
+            // described, and built, before onError marks the next call-out.
+            facts.runs().callOut();
             condition = rule.compiledCondition().evaluateWithDetail(facts.evaluation(),
                     copy.sessions().get(rule.language()));
         } catch (Throwable t) {
@@ -1361,7 +1369,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw notifier.failure(rule, ExpressionKind.CONDITION, wrongResult, null);
         }
 
-        notifier.notifyAfter(rule, "afterEvaluate",
+        notifier.notifyAfter(facts.runs(), rule, "afterEvaluate",
                 listener -> listener.afterEvaluate(rule.rule(), listenerFacts, result));
 
         return condition;
@@ -1412,7 +1420,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private O executeAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
-        notifier.notifyBefore(rule, "beforeExecute", listener -> listener.beforeExecute(rule.rule(), outputResult));
+        notifier.notifyBefore(facts.runs(), rule, "beforeExecute",
+                listener -> listener.beforeExecute(rule.rule(), outputResult));
 
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
@@ -1422,6 +1431,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 facts.evaluation().runScope());
         ActionResult result;
         try {
+            // A call-out of its own, as the condition is: what a run the rule's condition started logged isn't below
+            // the action.
+            facts.runs().callOut();
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
         } catch (Throwable t) {
             throw stoppedOrFailed(rule, facts.deadline(), t, () -> expressionFailure(rule, ExpressionKind.ACTION, t));
@@ -1434,12 +1446,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw notifier.failure(rule, ExpressionKind.ACTION, wrongResult, null);
         }
         for (Map.Entry<String, Object> property : result.properties().entrySet()) {
-            setProperty(rule, outputResult, property.getKey(), property.getValue(), facts.deadline());
+            setProperty(rule, outputResult, property.getKey(), property.getValue(), facts);
         }
         // After them too: a writer that took the run past its deadline stops it, though what it set stays set.
         stopIfCancelled(rule, ExpressionKind.ACTION, facts.deadline(), null);
 
-        notifier.notifyAfter(rule, "afterExecute", listener -> listener.afterExecute(rule.rule(), outputResult));
+        notifier.notifyAfter(facts.runs(), rule, "afterExecute",
+                listener -> listener.afterExecute(rule.rule(), outputResult));
 
         return outputResult;
     }
@@ -1450,16 +1463,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @throws RuleExecutionException if the property can't be set, or the run was cancelled while it was being set
      */
-    private void setProperty(CompiledRule rule, O output, String property, Object value, Deadline deadline) {
+    private void setProperty(CompiledRule rule, O output, String property, Object value, RunFacts facts) {
         try {
+            // A call-out of its own, as the action that returned the property is.
+            facts.runs().callOut();
             outputWriter.set(output, property, value);
         } catch (InvocationTargetException e) {
             // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
             Throwable cause = Failures.causeOf(e);
             Throwable thrown = cause != null ? cause : e;
-            throw stoppedOrFailed(rule, deadline, thrown, () -> propertyFailure(rule, property, thrown));
+            throw stoppedOrFailed(rule, facts.deadline(), thrown, () -> propertyFailure(rule, property, thrown));
         } catch (Throwable e) {
-            throw stoppedOrFailed(rule, deadline, e, () -> propertyFailure(rule, property, e));
+            throw stoppedOrFailed(rule, facts.deadline(), e, () -> propertyFailure(rule, property, e));
         }
     }
 

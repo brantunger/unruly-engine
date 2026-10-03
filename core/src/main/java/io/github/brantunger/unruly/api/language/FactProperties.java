@@ -128,8 +128,8 @@ public final class FactProperties {
      *                                  {@code a nested run() failed: } and its text, or as its text and
      *                                  {@code (already logged)} when no run the code around the read started
      *                                  logged it: a nested run's failure, whichever thread
-     *                                  the read is on, or a fatal {@link Error} a run nested in the one in progress
-     *                                  on this thread logged, in either case with nothing of its own around it.
+     *                                  the read is on, or a fatal {@link Error} a run the code around the read
+     *                                  started logged, in either case with nothing of its own around it.
      *                                  The cause still holds it. What a getter throws is always wrapped, so that
      *                                  one throwing {@link IllegalArgumentException} isn't read as a missing
      *                                  property. A map's own {@code containsKey} and {@code get} are its accessors,
