@@ -158,7 +158,7 @@ on JDK 25, and checks the PR title.
 | 📏 **Checkstyle** | Main and test sources: lines of at most 120 columns, no tabs, a final newline, braces, no star or unused imports | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
-| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
+| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle.kts` |
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🔏 **Dependency verification** | Every dependency and plugin the build downloads has a trusted PGP signature, or otherwise matches its checksum | `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys`; see [Dependency verification](docs/contributing/dependency-verification.md) |

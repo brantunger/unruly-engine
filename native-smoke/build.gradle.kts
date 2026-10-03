@@ -1,0 +1,33 @@
+import unruly.conventions.StrictImagePackagesCheck
+
+// An application that CI builds into a GraalVM native image and runs, to check the engine and MVEL work there
+// (see docs/native-image.md). Not published, and not part of the coverage gate.
+plugins {
+    id("unruly.java-conventions")
+    application
+}
+
+dependencies {
+    implementation(project(":mvel"))
+    runtimeOnly(libs.slf4j.simple)
+}
+
+application {
+    mainClass = "com.example.nativesmoke.Main"
+}
+
+// CI's strict native image build checks only the packages it lists, so the list must name every package of the
+// library's classes in the image: those in the jars of this build's projects on the application's class path.
+val strictImagePackages = tasks.register<StrictImagePackagesCheck>("checkStrictImagePackages") {
+    group = "verification"
+    description = "Fails unless CI's strict native image build lists exactly the library's packages in the image."
+    workflow = layout.settingsDirectory.file(".github/workflows/ci.yml")
+    libraries.from(configurations.runtimeClasspath.get().incoming.artifactView {
+        componentFilter { it is ProjectComponentIdentifier }
+    }.files)
+    result = layout.buildDirectory.file("strict-image-packages.txt")
+}
+
+tasks.named("check") {
+    dependsOn(strictImagePackages)
+}

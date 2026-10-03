@@ -38,11 +38,11 @@ packages.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their build scripts, and `core/src/testFixtures/resources/junit-platform.properties` |
+| 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their `build.gradle.kts` files, and `core/src/testFixtures/resources/junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: UTF-8, lines of at most 120 columns, no tabs, a final newline, `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
-| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle` |
+| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle.kts` |
 | 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests below |
@@ -94,7 +94,7 @@ own and aborts it at the deadline, instead of reporting the deadline once the te
 ran on. One method in it asks for `SEPARATE_THREAD` by name, to test a wait that has no deadline.
 
 The `benchmarks` project's main sources are the exception to the javac gate: they compile JMH's generated code, so
-`compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle`). Its test sources are hand-written, so
+`compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle.kts`). Its test sources are hand-written, so
 `compileTestJava` keeps `-Xlint:all -Werror` like everything else.
 
 The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unruly/` in the source set named:
