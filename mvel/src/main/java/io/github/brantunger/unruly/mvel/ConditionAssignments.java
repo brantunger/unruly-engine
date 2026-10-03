@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.mvel;
 
 import org.jspecify.annotations.Nullable;
 
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -47,6 +48,25 @@ final class ConditionAssignments {
          */
         boolean isStaticImport() {
             return STATIC_IMPORT.equals(text);
+        }
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Write that && position == that.position
+                    && Objects.equals(text, that.text);
+        }
+
+        @Override
+        public final int hashCode() {
+            return Objects.hashCode(text) * 31 + Integer.hashCode(position);
+        }
+
+        @Override
+        public final String toString() {
+            return "Write[text=" + text + ", position=" + position + "]";
         }
     }
 

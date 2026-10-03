@@ -1068,6 +1068,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param evaluations One evaluation for every rule, in evaluation order; immutable, for the run's result
      */
     record Matches(List<CompiledRule> matched, List<RuleEvaluation> evaluations) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(Object other) {
+            return this == other || other instanceof Matches that && Objects.equals(evaluations, that.evaluations)
+                    && Objects.equals(matched, that.matched);
+        }
+
+        @Override
+        public final int hashCode() {
+            return Objects.hashCode(matched) * 31 + Objects.hashCode(evaluations);
+        }
+
+        @Override
+        public final String toString() {
+            return "Matches[matched=" + matched + ", evaluations=" + evaluations + "]";
+        }
     }
 
     /**

@@ -108,6 +108,29 @@ public class InvalidExpressionException extends UnrulyException {
             }
         }
 
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Issue that && Objects.equals(message, that.message)
+                    && column == that.column && line == that.line && Objects.equals(severity, that.severity);
+        }
+
+        @Override
+        public final int hashCode() {
+            int hash = Objects.hashCode(severity);
+            hash = hash * 31 + Integer.hashCode(line);
+            hash = hash * 31 + Integer.hashCode(column);
+            return hash * 31 + Objects.hashCode(message);
+        }
+
+        @Override
+        public final String toString() {
+            return "Issue[severity=" + severity + ", line=" + line + ", column=" + column
+                    + ", message=" + message + "]";
+        }
+
         /** Whether an issue stops an expression compiling. */
         public enum Severity {
 

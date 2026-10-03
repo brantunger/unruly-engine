@@ -108,6 +108,27 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      *                Java widens to it.
      */
     private record Setter(Method method, boolean generic, List<Class<?>> accepts) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Setter that && Objects.equals(accepts, that.accepts)
+                    && generic == that.generic && Objects.equals(method, that.method);
+        }
+
+        @Override
+        public final int hashCode() {
+            int hash = Objects.hashCode(method);
+            hash = hash * 31 + Boolean.hashCode(generic);
+            return hash * 31 + Objects.hashCode(accepts);
+        }
+
+        @Override
+        public final String toString() {
+            return "Setter[method=" + method + ", generic=" + generic + ", accepts=" + accepts + "]";
+        }
     }
 
     /**
@@ -117,6 +138,25 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      * @param cause  What calling it threw
      */
     private record Refusal(Setter setter, IllegalAccessException cause) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Refusal that && Objects.equals(cause, that.cause)
+                    && Objects.equals(setter, that.setter);
+        }
+
+        @Override
+        public final int hashCode() {
+            return Objects.hashCode(setter) * 31 + Objects.hashCode(cause);
+        }
+
+        @Override
+        public final String toString() {
+            return "Refusal[setter=" + setter + ", cause=" + cause + "]";
+        }
     }
 
     private BeansAndMapsWriter() {

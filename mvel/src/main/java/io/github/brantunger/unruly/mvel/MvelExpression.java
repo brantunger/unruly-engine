@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Session;
+import org.jspecify.annotations.Nullable;
 import org.mvel2.MVEL;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.ParserContext;
@@ -13,6 +14,7 @@ import org.mvel2.optimizers.OptimizerFactory;
 
 import java.io.Serializable;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -87,6 +89,25 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      *                      each run
      */
     record Copy(Serializable expression, ParserConfiguration configuration) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Copy that && Objects.equals(configuration, that.configuration)
+                    && Objects.equals(expression, that.expression);
+        }
+
+        @Override
+        public final int hashCode() {
+            return Objects.hashCode(expression) * 31 + Objects.hashCode(configuration);
+        }
+
+        @Override
+        public final String toString() {
+            return "Copy[expression=" + expression + ", configuration=" + configuration + "]";
+        }
     }
 
     /**

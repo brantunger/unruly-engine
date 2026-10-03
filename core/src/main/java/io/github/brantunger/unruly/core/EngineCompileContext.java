@@ -201,4 +201,39 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         private Warnings() {
         }
     }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(Object other) {
+        return this == other || other instanceof EngineCompileContext that
+                && Objects.equals(languageImportNames, that.languageImportNames)
+                && warningsLogged == that.warningsLogged && allFactsDeclared == that.allFactsDeclared
+                && Objects.equals(declaredFacts, that.declaredFacts) && Objects.equals(options, that.options)
+                && Objects.equals(outputType, that.outputType) && Objects.equals(classLoader, that.classLoader)
+                && Objects.equals(classImports, that.classImports)
+                && Objects.equals(packageImports, that.packageImports);
+    }
+
+    @Override
+    public final int hashCode() {
+        int hash = Objects.hashCode(packageImports);
+        hash = hash * 31 + Objects.hashCode(classImports);
+        hash = hash * 31 + Objects.hashCode(classLoader);
+        hash = hash * 31 + Objects.hashCode(outputType);
+        hash = hash * 31 + Objects.hashCode(options);
+        hash = hash * 31 + Objects.hashCode(declaredFacts);
+        hash = hash * 31 + Boolean.hashCode(allFactsDeclared);
+        hash = hash * 31 + Boolean.hashCode(warningsLogged);
+        return hash * 31 + Objects.hashCode(languageImportNames);
+    }
+
+    @Override
+    public final String toString() {
+        return "EngineCompileContext[packageImports=" + packageImports + ", classImports=" + classImports
+                + ", classLoader=" + classLoader + ", outputType=" + outputType + ", options=" + options
+                + ", declaredFacts=" + declaredFacts + ", allFactsDeclared=" + allFactsDeclared
+                + ", warningsLogged=" + warningsLogged + ", languageImportNames=" + languageImportNames + "]";
+    }
 }

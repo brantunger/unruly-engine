@@ -573,6 +573,24 @@ public abstract class ExpressionLanguageContractTest {
      * @param creditScore The applicant's credit score, the property the contract test reads
      */
     public record Applicant(int creditScore) {
+
+        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
+        // which can fail for good when first called deep in the stack (#996). equals compares the components last
+        // first, as ObjectMethods does.
+        @Override
+        public final boolean equals(@Nullable Object other) {
+            return this == other || other instanceof Applicant that && creditScore == that.creditScore;
+        }
+
+        @Override
+        public final int hashCode() {
+            return Integer.hashCode(creditScore);
+        }
+
+        @Override
+        public final String toString() {
+            return "Applicant[creditScore=" + creditScore + "]";
+        }
     }
 
     /**

@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.Set;
@@ -264,5 +265,24 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
             // A URL made from a path without encoding it, as File.toURL() makes one: its path is the file's own.
             return Path.of(new URI(file.getProtocol(), file.getAuthority(), file.getPath(), null, null));
         }
+    }
+
+    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
+    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
+    // ObjectMethods does.
+    @Override
+    public final boolean equals(Object other) {
+        return this == other || other instanceof LanguageRegistry that
+                && Objects.equals(defaultLanguage, that.defaultLanguage) && Objects.equals(languages, that.languages);
+    }
+
+    @Override
+    public final int hashCode() {
+        return Objects.hashCode(languages) * 31 + Objects.hashCode(defaultLanguage);
+    }
+
+    @Override
+    public final String toString() {
+        return "LanguageRegistry[languages=" + languages + ", defaultLanguage=" + defaultLanguage + "]";
     }
 }
