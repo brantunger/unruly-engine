@@ -153,9 +153,9 @@ language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 
 ### NoClassDefFoundError: applicant (wrong name: Applicant)
 
-In a class directory on a case-insensitive file system, the lookup for `applicant.class` finds `Applicant.class`. In
-MVEL, such a class file counts as no class, so `applicant` is read as the fact and the rule compiles and runs; see
-[Classes and imports](languages/mvel.md#-classes-and-imports). Any other `NoClassDefFoundError` while a rule
+In a class directory on a case-insensitive file system, `applicant.class` finds `Applicant.class`. In MVEL, such a
+class file counts as no class, for a name under about 1,000 bytes, so `applicant` stays the fact and the rule runs;
+see [Classes and imports](languages/mvel.md#-classes-and-imports). Any other `NoClassDefFoundError` while a rule
 compiles fails `load()` with a `RuleCompilationException` naming the rule; see the
 [migration guide](migrating-to-2.md#-a-missing-class-is-reported-like-any-other-failure).
 

@@ -117,7 +117,11 @@ final class ImportResolver {
     // names the class asked for, in internal form, on one side: first on HotSpot, last on OpenJ9. One about a class it
     // depends on, such as its superclass, names it on neither, so it isn't taken for it. The error may come from a
     // context class loader of the application's own, so its message is read as any exception's the engine didn't
-    // create is. WrongNameCopiesTest checks the copy against it.
+    // create is. WrongNameCopiesTest checks the copy against it. HotSpot cuts the message at 1023 bytes of UTF-8, so
+    // for a name over about 1,000 ASCII characters, or 500 two-byte ones, " (wrong name: " is cut off and the error
+    // isn't recognised; written last, as on OpenJ9, the name would be cut off itself. The class then can't be loaded
+    // rather than being missing: an error, never a wrong answer (#1001). MAX_IMPORT_LENGTH keeps an ASCII import under
+    // the cut, but not one of two-byte characters.
     static boolean isWrongName(NoClassDefFoundError error, String name) {
         String message = Failures.messageOf(error);
         String internal = name.replace('.', '/');
