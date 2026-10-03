@@ -355,7 +355,7 @@ jobs:
           exit 1
 
   # Submits the resolved dependency graph so Dependabot alerts cover transitives,
-  # not just the coordinates declared in build.gradle.
+  # not just the coordinates declared in build.gradle.kts.
   dependency-graph:
     # Dependabot alerts use the default branch's graph, so only a push to `main` has anything to submit. The trigger
     # above already limits pushes to `main`, so the ref test can't fail today; it's kept so that adding a branch
