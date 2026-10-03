@@ -563,6 +563,7 @@ final class RuleSet {
 
     private static void warmUp(String language, ExpressionCompiler compiler, Session session) {
         try {
+            LoggedFailures.callOut();
             compiler.warmUp(session);
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
@@ -1155,6 +1156,7 @@ final class RuleSet {
         String failed = "The '" + Failures.quote(language) + "' expression language ";
         Session session;
         try {
+            LoggedFailures.callOut();
             session = compiler.newSession();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
