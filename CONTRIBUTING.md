@@ -99,7 +99,7 @@ project a test belongs to; an unqualified `./gradlew test` runs all three, and t
 | `benchmarks` | — | JMH benchmarks; not published. The build checks them, but only `jmh` measures anything |
 | `native-smoke` | — | An application CI runs as a GraalVM native image; not published |
 
-Shared settings are in the convention plugins in `buildSrc/src/main/groovy` and `buildSrc/src/main/kotlin`. The
+Shared settings are in `buildSrc`'s convention plugins (`src/main/kotlin`) and classes (`src/main/java`). The
 `core` package is internal: its module exports it only to the test kit's module, and a class in it is public only
 where the builder or the test kit needs it. The constructors the test kit calls are the exception: an older kit
 may run on a newer `core`, so the build checks them against the latest release; see
@@ -159,7 +159,7 @@ on JDK 25, and checks the PR title.
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets; see [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle.kts` |
-| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
+| 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🔏 **Dependency verification** | Every dependency and plugin the build downloads has a trusted PGP signature, or otherwise matches its checksum | `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys`; see [Dependency verification](docs/contributing/dependency-verification.md) |
 | 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
