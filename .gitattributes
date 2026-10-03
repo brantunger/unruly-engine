@@ -6,7 +6,6 @@
 *.xml text
 *.properties text
 *.md text
-*.gradle text
 *.kts text
 *.yml text
 *.yaml text

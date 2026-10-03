@@ -25,7 +25,8 @@ taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 | 🩹 **Spotted a doc problem?** | Fixes to the README, `docs/` and Javadoc are as welcome as code. |
 | 🙋 **Want something to work on?** | Look for issues labelled [good first issue][good-first-issue] or [help wanted][help-wanted], and comment on one to claim it. |
 
-[good-first-issue]: https://github.com/brantunger/unruly-engine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
+[good-first-issue]:
+  https://github.com/brantunger/unruly-engine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
 [help-wanted]: https://github.com/brantunger/unruly-engine/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22
 
 ## 🚀 Your first pull request
@@ -66,6 +67,9 @@ flowchart TD
 
 You need **JDK 21** installed: the build compiles with a Java 21 toolchain, and Gradle doesn't download one, so a
 missing JDK fails the build naming the version it needs. **JDK 25** is optional: only `-PtestJdk=25` needs it.
+
+In an IDE, import the project as a Gradle build: the build scripts and `buildSrc`'s convention plugins are Kotlin
+DSL (`.gradle.kts`). IntelliJ IDEA then completes code in them; Eclipse and VS Code only highlight their syntax.
 
 ```bash
 git clone https://github.com/<your-username>/unruly-engine.git
@@ -149,8 +153,7 @@ first, then remove it with `git -c core.longpaths=true worktree remove --force .
 
 ## ✅ Run the gate locally
 
-`./gradlew clean build` is the gate. CI runs the same build on each of its operating systems, runs the tests again
-on JDK 25, and checks the PR title.
+`./gradlew clean build` is the gate.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
@@ -174,8 +177,7 @@ Three things to know about the gate:
 
 > [!IMPORTANT]
 > A line over 120 columns in a main, test or test-fixtures source fails Checkstyle; only `package` and `import` lines
-> are exempt. So do a tab and a file without a final newline. Wrap the line, indent with spaces, and end the file
-> with a newline.
+> are exempt.
 
 On every pull request and push to `main`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows
 and macOS, the tests again on **JDK 25** on Linux, and the native-image check, except on a
