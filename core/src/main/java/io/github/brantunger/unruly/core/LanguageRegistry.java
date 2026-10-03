@@ -25,7 +25,8 @@ import java.util.TreeSet;
 /**
  * The expression languages an engine compiles rules with, and its default language, fixed when the engine is built:
  * the languages given to the builder, or else those found with {@link ServiceLoader}, such as MVEL. The engine refers
- * to no language directly, and a language creates nothing until rules are loaded.
+ * to no language directly, and a language creates nothing until rules are loaded: when the engine is built, the
+ * languages it is built to use only initialize their classes, in {@link ExpressionLanguage#prepare()}.
  *
  * @param languages       The languages by name
  * @param defaultLanguage The name of the language of a rule whose language is {@code null}

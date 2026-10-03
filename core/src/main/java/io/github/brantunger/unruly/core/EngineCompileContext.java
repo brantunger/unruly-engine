@@ -37,8 +37,6 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
                                    boolean allFactsDeclared, boolean warningsLogged,
                                    List<String> languageImportNames) implements CompileContext {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
-
     /**
      * Keeps unmodifiable copies of the imports, options and declarations, so the context can't change after it's
      * created. A declared primitive type is kept as its wrapper, as {@link #declaredType(String, Class)} says, so a
@@ -112,13 +110,13 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(name, "name must not be null");
         Objects.requireNonNull(type, "type must not be null");
         FactNames.Problem problem = FactNames.check(name);
+        // Not a switch: the class javac makes for one would be initialized by the first rejected name, maybe deep in a
+        // stack, and Problem itself is compared only once there is one (see RunClasses).
         if (problem != null) {
-            throw new IllegalArgumentException(switch (problem) {
-                case BLANK -> "fact name must not be blank";
-                // The name isn't null, as checked above, so the only other problem it can have is being output.
-                default -> "'" + ActionContext.OUTPUT_NAME
-                        + "' is reserved for the output object and cannot be declared as a fact";
-            });
+            // The name isn't null, as checked above, so the only other problem it can have is being output.
+            throw new IllegalArgumentException(problem == FactNames.Problem.BLANK ? "fact name must not be blank"
+                    : "'" + ActionContext.OUTPUT_NAME
+                    + "' is reserved for the output object and cannot be declared as a fact");
         }
     }
 
@@ -185,8 +183,22 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(source, "source must not be null");
         Objects.requireNonNull(issue, "issue must not be null");
         if (warningsLogged) {
-            log.warn("{} has a warning{}: {}", Failures.expression(source.kind(), source.ruleName()),
+            Warnings.LOG.warn("{} has a warning{}: {}", Failures.expression(source.kind(), source.ruleName()),
                     Failures.position(issue), Failures.clip(issue.message()));
+        }
+    }
+
+    /**
+     * The logger warnings go to, in a class of its own so that this one has no static initializer: the builder checks
+     * each declared fact with {@link #checkDeclaration(String, Class)}, maybe deep in a stack, before the engine has
+     * made room for initializing classes, and creating the logger may start SLF4J. The engine initializes it when it's
+     * built (see RunClasses).
+     */
+    static final class Warnings {
+
+        static final Logger LOG = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+
+        private Warnings() {
         }
     }
 }

@@ -32,4 +32,9 @@ public class ForwardingExpressionLanguage implements ExpressionLanguage {
     public ExpressionCompiler newCompiler(CompileContext context) {
         return language.newCompiler(context);
     }
+
+    @Override
+    public void prepare() {
+        language.prepare();
+    }
 }

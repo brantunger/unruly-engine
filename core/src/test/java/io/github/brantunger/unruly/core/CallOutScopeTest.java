@@ -22,17 +22,27 @@ import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import static io.github.brantunger.unruly.TestSupport.withContextClassLoader;
 import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -708,5 +718,150 @@ class CallOutScopeTest {
         assertEquals(List.of(INNER_FAILURE), outcome.lines("ERROR"), outcome.logs());
         assertEquals(List.of(wrappedLoggedAlready("The 'hooked' expression language failed to close its compiler: ")),
                 outcome.lines("WARN"), outcome.logs());
+    }
+
+    // A language's prepare() at its first use is a call-out of its own too (#945)
+
+    /**
+     * A language a services file lists, named {@code found}, whose {@code prepare()} and {@code newCompiler()} run the
+     * hooks set for its class first. The engine prepares a language of a class once, so each test has a class of its
+     * own; found with {@link java.util.ServiceLoader} and not named, it's prepared at its first use, in a load.
+     */
+    public abstract static class Found implements ExpressionLanguage {
+        static final Map<Class<?>, Runnable> PREPARE = new ConcurrentHashMap<>();
+        static final Map<Class<?>, Runnable> NEW_COMPILER = new ConcurrentHashMap<>();
+
+        @Override
+        public String name() {
+            return "found";
+        }
+
+        @Override
+        public void prepare() {
+            PREPARE.getOrDefault(getClass(), () -> {
+            }).run();
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            NEW_COMPILER.getOrDefault(getClass(), () -> {
+            }).run();
+            return new StubExpressionLanguage().newCompiler(context);
+        }
+    }
+
+    /** Keeps a nested run's failure in prepare(), and throws it from newCompiler(). */
+    public static final class FoundKeepingInPrepare extends Found {
+    }
+
+    /** Throws from prepare() what an earlier language's compiling kept. */
+    public static final class FoundThrowingKeptInPrepare extends Found {
+    }
+
+    /** Throws from prepare() what its own nested run threw. */
+    public static final class FoundThrowingOwnInPrepare extends Found {
+    }
+
+    /** A language a services file lists, named {@code first}, whose compiling of an action runs {@link #ACTION}. */
+    public static final class FoundFirst implements ExpressionLanguage {
+        static final AtomicReference<Runnable> ACTION = new AtomicReference<>(() -> {
+        });
+
+        @Override
+        public String name() {
+            return "first";
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            return new StubExpressionLanguage().compileAction(expression -> {
+                ACTION.get().run();
+                return doing(() -> {
+                });
+            }).newCompiler(context);
+        }
+    }
+
+    @TempDir
+    Path servicesRoot;
+
+    /** A class loader that sees the tests, and a services file listing {@code languages}. */
+    private URLClassLoader listing(Class<?>... languages) {
+        try {
+            Path file = servicesRoot.resolve("META-INF/services/" + ExpressionLanguage.class.getName());
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, String.join("\n", Arrays.stream(languages).map(Class::getName).toList()));
+            return new URLClassLoader(new URL[]{servicesRoot.toUri().toURL()}, CallOutScopeTest.class.getClassLoader());
+        } catch (MalformedURLException e) {
+            throw new IllegalStateException(e);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Builds, with {@code loader} as the context class loader, an engine that finds its languages with it. */
+    private static RulesEngine<Map<String, Object>> found(URLClassLoader loader, String defaultLanguage) {
+        return withContextClassLoader(loader, () -> {
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(HashMap::new);
+            return (defaultLanguage == null ? builder : builder.defaultLanguage(defaultLanguage)).build();
+        });
+    }
+
+    @Test
+    @DisplayName("#945: a failure a language's prepare() logged through a nested run, at its first use, wrapped by the"
+            + " language creating its compiler, is noted as logged already")
+    void keptByPrepareWrappedByNewCompiler() throws IOException {
+        Found.PREPARE.put(FoundKeepingInPrepare.class, keeping(failingRun()));
+        Found.NEW_COMPILER.put(FoundKeepingInPrepare.class, throwingKept("with words of its own"));
+        try (URLClassLoader loader = listing(FoundKeepingInPrepare.class)) {
+            RulesEngine<Map<String, Object>> engine = found(loader, null);
+
+            Outcome<Throwable> outcome = capture(() -> engine.load(List.of(rule("r"))));
+
+            String failure = wrappedLoggedAlready("The 'found' expression language failed to create a compiler: ");
+            assertEquals(List.of(INNER_FAILURE, failure), outcome.lines("ERROR"), outcome.logs());
+        }
+    }
+
+    @Test
+    @DisplayName("#945: a failure an earlier language's compiling logged through a nested run, wrapped by the next"
+            + " language's prepare() at its first use, is noted as logged already")
+    void keptByCompilingWrappedByTheNextPrepare() throws IOException {
+        FoundFirst.ACTION.set(keeping(failingRun()));
+        Found.PREPARE.put(FoundThrowingKeptInPrepare.class, throwingKept("with words of its own"));
+        try (URLClassLoader loader = listing(FoundFirst.class, FoundThrowingKeptInPrepare.class)) {
+            RulesEngine<Map<String, Object>> engine = found(loader, "first");
+            List<Rule> rules = List.of(rule("a"), Rule.builder().ruleName("b").condition("c").action("a")
+                    .language("found").build());
+
+            Outcome<Throwable> outcome = capture(() -> engine.load(rules));
+
+            String failure = wrappedLoggedAlready("The 'found' expression language failed to prepare: ");
+            assertEquals(List.of(INNER_FAILURE, failure), outcome.lines("ERROR"), outcome.logs());
+        } finally {
+            FoundFirst.ACTION.set(() -> {
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("#945 guard: a language's prepare() that throws its own nested run's failure names it as a nested"
+            + " run's")
+    void prepareThrowsItsOwnNestedRunsFailure() throws IOException {
+        Runnable nested = keeping(failingRun());
+        Runnable throwing = throwingKept("with words of its own");
+        Found.PREPARE.put(FoundThrowingOwnInPrepare.class, () -> {
+            nested.run();
+            throwing.run();
+        });
+        try (URLClassLoader loader = listing(FoundThrowingOwnInPrepare.class)) {
+            RulesEngine<Map<String, Object>> engine = found(loader, null);
+
+            Outcome<Throwable> outcome = capture(() -> engine.load(List.of(rule("r"))));
+
+            String failure = "The 'found' expression language failed to prepare: " + OWN_WORDS
+                    + " (after a nested run() failed: " + INNER_FAILURE + ")";
+            assertEquals(List.of(INNER_FAILURE, failure), outcome.lines("ERROR"), outcome.logs());
+        }
     }
 }

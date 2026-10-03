@@ -69,10 +69,39 @@ public final class RulesEngineBuilder<O> {
     private static final String NULL_NAMES = "names must not be null";
     private static final String NULL_NAME = "names must not contain null";
 
-    /** Creates an engine with one match policy from the output supplier and the builder's settings. */
+    /**
+     * Creates an engine with one match policy from the output supplier and the builder's settings. Each is a class of
+     * its own, not a method reference: linking one is the JDK's work, which may be the JVM's first and initialize the
+     * JDK's classes for it, and a builder may be created deep in a stack, before the engine has made room for that
+     * (see {@link Engines#initialize()}).
+     */
     @FunctionalInterface
     private interface EngineFactory<O> {
         RulesEngine<O> create(Supplier<O> outputFactory, EngineConfiguration<O> configuration);
+    }
+
+    /** Creates a first-match engine. */
+    private static final class FirstMatch<O> implements EngineFactory<O> {
+        @Override
+        public RulesEngine<O> create(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
+            return Engines.firstMatch(outputFactory, configuration);
+        }
+    }
+
+    /** Creates an all-matches engine. */
+    private static final class AllMatches<O> implements EngineFactory<O> {
+        @Override
+        public RulesEngine<O> create(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
+            return Engines.allMatches(outputFactory, configuration);
+        }
+    }
+
+    /** Creates a unique-match engine. */
+    private static final class UniqueMatch<O> implements EngineFactory<O> {
+        @Override
+        public RulesEngine<O> create(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
+            return Engines.uniqueMatch(outputFactory, configuration);
+        }
     }
 
     private final Supplier<O> outputFactory;
@@ -87,11 +116,13 @@ public final class RulesEngineBuilder<O> {
     private @Nullable CopyLimit copies;
     private int loadCopies;
     private @Nullable Duration timeout;
-    private Clock runClock = Clock.systemUTC();
+    // null until the engine is built for the system clock, and the output writer below for beansAndMaps(): reading
+    // either initializes classes, which build() leaves until the engine has made room for that (see Engines).
+    private @Nullable Clock runClock;
     private final Map<String, Class<?>> factTypes = new LinkedHashMap<>();
     private boolean allFactsDeclared;
     private Class<? super O> outputClass = Object.class;
-    private OutputWriter<? super O> writer = OutputWriter.beansAndMaps();
+    private @Nullable OutputWriter<? super O> writer;
     private final Map<String, Map<String, String>> languageOptions = new LinkedHashMap<>();
     private final Map<String, List<String>> languageImportNames = new LinkedHashMap<>();
 
@@ -119,7 +150,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngineBuilder<O> firstMatch(Supplier<O> outputFactory) {
-        return new RulesEngineBuilder<>(outputFactory, Engines::firstMatch);
+        return new RulesEngineBuilder<>(outputFactory, new FirstMatch<>());
     }
 
     /**
@@ -134,7 +165,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngineBuilder<O> allMatches(Supplier<O> outputFactory) {
-        return new RulesEngineBuilder<>(outputFactory, Engines::allMatches);
+        return new RulesEngineBuilder<>(outputFactory, new AllMatches<>());
     }
 
     /**
@@ -158,7 +189,7 @@ public final class RulesEngineBuilder<O> {
      * @throws NullPointerException if {@code outputFactory} is {@code null}
      */
     public static <O> RulesEngineBuilder<O> uniqueMatch(Supplier<O> outputFactory) {
-        return new RulesEngineBuilder<>(outputFactory, Engines::uniqueMatch);
+        return new RulesEngineBuilder<>(outputFactory, new UniqueMatch<>());
     }
 
     /**
@@ -168,6 +199,13 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * The language's {@link ExpressionLanguage#name()} is read once, here, and the engine knows the language by that
      * name from then on.
+     * </p>
+     *
+     * <p>
+     * Adding a language initializes no class of the engine's, as {@link #build()} first makes room on the stack for
+     * that. A language this rejects is the exception: rejecting it initializes the engine's small class that names
+     * the problem, before any room is made, so a rejected language added deep in a stack can still leave that class
+     * unusable for the life of the JVM.
      * </p>
      *
      * @param language The language
@@ -180,11 +218,13 @@ public final class RulesEngineBuilder<O> {
         Objects.requireNonNull(language, NULL_LANGUAGE);
         String name = language.name();
         LanguageNames.Problem problem = LanguageNames.check(name, languageMap);
-        if (problem == LanguageNames.Problem.NULL_OR_BLANK) {
-            throw new IllegalArgumentException("An expression language's name must not be null or blank: "
-                    + language.getClass().getName());
-        }
-        if (problem == LanguageNames.Problem.TAKEN) {
+        // Problem is compared only once there is one, so adding a language initializes no class: this may be called
+        // deep in a stack, before the engine has made room for that (see Engines).
+        if (problem != null) {
+            if (problem == LanguageNames.Problem.NULL_OR_BLANK) {
+                throw new IllegalArgumentException("An expression language's name must not be null or blank: "
+                        + language.getClass().getName());
+            }
             throw new IllegalArgumentException("Two expression languages are named '" + Names.quote(name) + "': "
                     + languageMap.get(name).getClass().getName() + " and " + language.getClass().getName());
         }
@@ -297,7 +337,15 @@ public final class RulesEngineBuilder<O> {
         for (String name : names) {
             Objects.requireNonNull(name, NULL_NAME);
         }
-        languageImportNames.computeIfAbsent(language, name -> new ArrayList<>()).addAll(names);
+        // Not computeIfAbsent() with a lambda: linking one is the JDK's work, which may be the JVM's first and
+        // initialize the JDK's classes for it, before build() has made room for that (see Engines). So for option() and
+        // facts().
+        List<String> imports = languageImportNames.get(language);
+        if (imports == null) {
+            imports = new ArrayList<>();
+            languageImportNames.put(language, imports);
+        }
+        imports.addAll(names);
         return this;
     }
 
@@ -374,7 +422,12 @@ public final class RulesEngineBuilder<O> {
         Objects.requireNonNull(language, NULL_LANGUAGE);
         Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(value, "value must not be null");
-        languageOptions.computeIfAbsent(language, name -> new LinkedHashMap<>()).put(key, value);
+        Map<String, String> options = languageOptions.get(language);
+        if (options == null) {
+            options = new LinkedHashMap<>();
+            languageOptions.put(language, options);
+        }
+        options.put(key, value);
         return this;
     }
 
@@ -413,6 +466,13 @@ public final class RulesEngineBuilder<O> {
      * rules load; the engine's own check happens whatever the language does. See each language's documentation.
      * </p>
      *
+     * <p>
+     * Declaring a fact initializes no class of the engine's, as {@link #build()} first makes room on the stack for
+     * that. A name this rejects is the exception: rejecting it initializes the engine's small class that names the
+     * problem, before any room is made, so a rejected name declared deep in a stack can still leave that class
+     * unusable for the life of the JVM.
+     * </p>
+     *
      * @param name The fact's name, as rules refer to it
      * @param type The type a run's value must be an instance of, or, for a primitive type, be widened to. Declaring
      *             {@link Object} or a {@link java.util.Map} says the fact's shape isn't fixed, which no language can
@@ -441,10 +501,10 @@ public final class RulesEngineBuilder<O> {
         // Each of the map's own entries is checked, before a copy could merge two equal names, and before any is
         // declared, so a rejected map leaves the builder as it was.
         Map<String, Class<?>> copy = new LinkedHashMap<>();
-        types.forEach((name, type) -> {
-            EngineCompileContext.checkDeclaration(name, type);
-            copy.put(name, type);
-        });
+        for (Map.Entry<String, ? extends Class<?>> entry : types.entrySet()) {
+            EngineCompileContext.checkDeclaration(entry.getKey(), entry.getValue());
+            copy.put(entry.getKey(), entry.getValue());
+        }
         factTypes.putAll(copy);
         return this;
     }
@@ -658,19 +718,29 @@ public final class RulesEngineBuilder<O> {
      *                                  it depends on is missing; or if {@link #copiesAtLoad(int)} is more than
      *                                  {@link #maxCopies(int)}
      * @throws StackOverflowError       if this is the JVM's first engine and the calling thread has too little stack
-     *                                  left to build it safely. The first engine initializes the classes runs use,
-     *                                  and the room for that is checked before any of them is touched, so none is
-     *                                  left unusable and the next {@code build()} checks again
+     *                                  left to build it safely. The first engine initializes the classes engines use
+     *                                  to build, load, validate, run and close, and the room for that is checked
+     *                                  first, before any of them is touched and before any setting is checked, so a
+     *                                  first engine built too deep with wrong settings throws this, not their
+     *                                  exception; none is left unusable, and the next {@code build()} checks again.
+     *                                  Thrown too, before any language is prepared, if a language this builder
+     *                                  names, with {@link #defaultLanguage(String)}, {@link #language} or settings for
+     *                                  it, is of a class no engine has prepared yet (see
+     *                                  {@link ExpressionLanguage#prepare()}) and too little stack is left to prepare
+     *                                  it
      */
     public RulesEngine<O> build() {
+        // First, so no class is initialized before the room for initializing it is checked, settings included.
+        Engines.initialize();
         CopyLimit limit = copies != null ? copies : CopyLimit.forVirtualThreads();
         if (limit.limits() && !limit.virtualThreadsOnly() && loadCopies > limit.maxCopies()) {
             throw new IllegalArgumentException("copiesAtLoad(" + loadCopies + ") is more than maxCopies("
                     + limit.maxCopies() + "): no more copies than that are used at once");
         }
         EngineConfiguration<O> configuration = new EngineConfiguration<>(languageMap, defaultLanguageName,
-                importNames, listenerList, limit, loadCopies, timeout, runClock,
-                outputClass, writer, languageOptions, factTypes, allFactsDeclared, languageImportNames);
+                importNames, listenerList, limit, loadCopies, timeout, runClock != null ? runClock : Clock.systemUTC(),
+                outputClass, writer != null ? writer : OutputWriter.beansAndMaps(), languageOptions, factTypes,
+                allFactsDeclared, languageImportNames);
         return engineFactory.create(outputFactory, configuration);
     }
 }

@@ -97,8 +97,9 @@ or executing on the thread. Nothing is lost: MVEL still throws, and the engine r
 `RuleExecutionException` with the original exception in its cause chain. If the run was stopped at the same time, the
 stop's `RuleExecutionException` keeps MVEL's exception among its suppressed exceptions instead.
 
-A filter you set on that logger before the engine first loads MVEL rules keeps deciding every other record. MVEL
-still logs the `WARNING` when:
+A filter you set on that logger before the engine sets its own keeps deciding every other record. The engine sets it
+when it builds an engine that names MVEL, such as with `defaultLanguage("mvel")`, or else when it first loads or
+validates MVEL rules. MVEL still logs the `WARNING` when:
 
 - **You set a filter on that logger after that.** Yours replaces the engine's.
 - **The logging setup refuses the filter**, such as one under a `SecurityManager` or a protected JBoss log context.

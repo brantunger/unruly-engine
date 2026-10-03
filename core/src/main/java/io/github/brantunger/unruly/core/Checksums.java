@@ -60,9 +60,13 @@ final class Checksums {
         return hex(SHA_256, bytes.toByteArray());
     }
 
-    /** An instant as ISO-8601 text in UTC, as {@link Instant#toString()} writes it, or {@code null}. */
+    /**
+     * An instant as ISO-8601 text in UTC, as {@link Instant#toString()} writes it, or {@code null}. Written by
+     * {@link IsoInstant}, so a load, maybe deep in another run's stack, initializes none of the classes of the
+     * formatter {@code toString()} uses.
+     */
     private static String text(Instant instant) {
-        return instant == null ? null : instant.toString();
+        return instant == null ? null : IsoInstant.text(instant);
     }
 
     /**

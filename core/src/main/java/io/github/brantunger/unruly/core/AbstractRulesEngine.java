@@ -34,6 +34,7 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
 /**
  * What every engine shares, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles and
@@ -112,8 +113,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  out, then escaped, and a root cause it hides named
      * @throws NullPointerException     if {@code outputFactory} is {@code null}, checked after the settings
      * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
-     *                                  initialize the classes runs use, checked last, before any of them is touched
-     *                                  (see {@link RunClasses})
+     *                                  initialize the classes engines use, before any of them is touched (see
+     *                                  {@link RunClasses}): {@link Engines} checks that before it creates the engine,
+     *                                  and before the builder resolves its settings, and this checks it last for a
+     *                                  caller that doesn't; or if a language the engine is built to use (see
+     *                                  {@link #languagesInUse}) is of a class no engine has prepared yet and the thread
+     *                                  has too little stack left to prepare it, checked last, before any language is
+     *                                  prepared
      */
     AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
         LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
@@ -149,9 +155,39 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 declaredFacts, allFactsDeclared, configuration.languageImports());
         this.ruleSets = new RuleSetLifecycle(log, compiler, configuration.copyLimit(), configuration.copiesAtLoad());
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
-        // Last, so the settings are checked first: the classes a run uses that have a static initializer, which a
-        // run, maybe deep in another run's stack, must not be the first to use (see RunClasses).
+        // Last, so the settings are checked first: the classes engines use that have a static initializer, which a
+        // load or a run, maybe deep in another run's stack, must not be the first to use (see RunClasses). Engines
+        // has initialized them already, before the builder read its settings, unless the engine was created without
+        // it. Then each language the engine is built to use initializes its own, before anything is compiled.
         RunClasses.initialize();
+        RunClasses.prepare(languagesInUse(languages, configuration));
+    }
+
+    /**
+     * Returns the languages an engine is built to use, which it prepares when it's built: every language the builder
+     * named, by naming it with {@code defaultLanguage()}, giving it with {@code language()}, or giving it options with
+     * {@code option()} or imports with {@code languageImports()}. A language found with
+     * {@link java.util.ServiceLoader} that none of those names, even the only one found, which is then the default, is
+     * prepared when a rule list first uses it, so building an engine loads none of its classes.
+     *
+     * @param languages     The engine's languages, already checked against the settings
+     * @param configuration The builder's settings
+     * @return The languages, the default first if the builder named it
+     */
+    private static List<ExpressionLanguage> languagesInUse(LanguageRegistry languages,
+                                                           EngineConfiguration<?> configuration) {
+        Set<String> names = new LinkedHashSet<>();
+        if (configuration.defaultLanguage() != null) {
+            names.add(configuration.defaultLanguage());
+        }
+        names.addAll(configuration.languages().keySet());
+        names.addAll(configuration.options().keySet());
+        names.addAll(configuration.languageImports().keySet());
+        List<ExpressionLanguage> inUse = new ArrayList<>();
+        for (String name : names) {
+            inUse.add(languages.languages().get(name));
+        }
+        return inUse;
     }
 
     /**
@@ -1014,7 +1050,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         List<RuleCompilationException> problems = compiler.listProblems(ruleList, RuleListCompiler.Mode.VALIDATE);
         RuleListCompiler.Compilation compilation = compiler.compilation(RuleListCompiler.Mode.VALIDATE);
         try {
-            compilation.compile(ruleList.stream().filter(Objects::nonNull).toList());
+            compilation.compile(RuleListCompiler.withoutNulls(ruleList));
         } catch (Throwable t) {
             Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
             throw t;

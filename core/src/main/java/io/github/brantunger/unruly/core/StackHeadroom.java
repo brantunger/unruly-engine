@@ -18,13 +18,17 @@ package io.github.brantunger.unruly.core;
  * Nor does it make room for the JVM to initialize the classes the steps use: registering the engine's Flight Recorder
  * events alone takes several times the room it makes. A {@link StackOverflowError} inside a class's static
  * initializer leaves the class unusable for the life of the JVM, for every engine. That's why the classes with a
- * static initializer that a run uses, every one of the engine's and those of the JDK that {@link RunClasses} names,
- * are initialized when the JVM's first engine is built, after {@link #checkInitializing()} has made room for them, not
- * by its first run. {@code FirstRunClassInitializationTest} fails if the first runs of its scenario, which takes the
- * paths that {@code RunClasses} lists, initialize any class with a static initializer other than the JDK's hidden
- * ones; a path it doesn't take may still initialize one. An overflow while a class is only loaded or linked, or
- * while a lambda is set up, isn't remembered: its next use tries again. The hidden classes the JDK makes for method
- * handles when they are first needed can't be named, so a run may still initialize those.
+ * static initializer that a run, a load, {@code validate()} or {@code close()} uses, or a build itself, every one of
+ * the engine's, SLF4J's and those of the JDK that {@link RunClasses} names or reaches, are initialized when the JVM's
+ * first engine is built, after {@link #checkInitializing()} has made room for them, before anything else the build
+ * does, not by the first call that uses them; and a language's own by its {@code prepare()}, after the same check,
+ * when an engine built to use it is built, or else when a rule list first uses it.
+ * {@code FirstRunClassInitializationTest} fails if the first loads and runs of its scenario, which takes the paths
+ * that {@code RunClasses} lists, initialize any class with a static initializer other than the JDK's hidden ones, or
+ * if its first build initializes any but the application's own before {@code RunClasses}; a path it doesn't take may
+ * still initialize one. An overflow while a class is only loaded or linked, or while a lambda is set up, isn't
+ * remembered: its next use tries again. The hidden classes the JDK makes for method handles when they are first
+ * needed can't be named, so a run may still initialize those.
  * </p>
  */
 final class StackHeadroom {
@@ -50,21 +54,30 @@ final class StackHeadroom {
 
     /**
      * How many frames {@link #checkInitializing()} recurses: room for initializing the classes {@link RunClasses}
-     * names, of which registering the Flight Recorder events takes most. Four times as many as the fewest that left
-     * nothing behind when measured: with SLF4J started, as an engine's own logger starts it before this, and
-     * {@code RunClasses} started from each of the last depths of a 512 KB stack, each in a new JVM on JDK 21, a check
-     * of 120 frames left {@code FlightRecorderEvents} unusable and 160 left nothing. It runs once in a JVM, when the
-     * first engine is built, before any other check has run, so interpreted, at about 170 bytes a frame on x64: it
-     * reserves about 105 KB, which the JVM's first engine needs left on the stack it's built on.
+     * names or reaches, SLF4J's and the JDK's security settings among them, or the classes a language's
+     * {@code prepare()} initializes, of which MVEL's take most. Four times as many as the fewest that left nothing
+     * behind when measured. It was measured with SLF4J not yet started and the JVM's first build preparing MVEL along
+     * with the engine's classes, as a build whose builder names MVEL does: made from each of the last 900 depths of a
+     * 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code FactNames} unusable, at 6 depths on
+     * JDK 21 and 2 on JDK 25, and 240 left nothing, on both, and twice on JDK 21; the engine's own classes were left
+     * unusable by no check, even of 80 frames. The JVM's first build runs it while it is still interpreted, at about
+     * 170 bytes a frame on x64, once for the engine's classes and, if it prepares a language, again for that: it
+     * reserves about 160 KB, which the JVM's first engine needs left on the stack it's built on. A later build, or a
+     * load or {@code validate()} that first uses a language, as a load does with MVEL found with
+     * {@link java.util.ServiceLoader} and not named, that prepares a language of a class no engine has prepared yet
+     * runs it again, compiled if runs have made it hot, at about 50 bytes a frame, so it reserves about 48 KB:
+     * measured with it compiled at the first build, 640 frames left {@code FactNames} unusable at 29 of 1,500 depths,
+     * and 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't swept
+     * on its own: it prepares the language alone, without the engine's classes the measured build initialized too.
      */
-    static final int INITIALIZING_FRAMES = 640;
+    static final int INITIALIZING_FRAMES = 960;
 
     // Written by a check that finds them different, so the recursion has an effect the JIT can't drop. Each is the
     // same every time, so the checks of other threads only read it.
     private static long sink;
     private static long giveBackSink;
-    // Written by the one check of the JVM that makes room for initializing classes, for the same reason, and read by
-    // nothing.
+    // Written by each check that makes room for initializing classes, the engine's or a language's, for the same
+    // reason, and read by nothing.
     @SuppressWarnings("PMD.UnusedPrivateField")
     private static long initializingSink;
 
