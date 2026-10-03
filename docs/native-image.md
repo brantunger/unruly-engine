@@ -113,10 +113,10 @@ the class path. For the sample's rules:
 | Call a method on a JDK output: `output.put('rate', 'standard')` | That method of the JDK class | `java.util.HashMap`: `put(Object, Object)` |
 | Call a JDK static method: `Math.max(applicant.income, 0)` | That method | `java.lang.Math`: `max(int, int)` |
 
-The sample also sets `queryAllPublicMethods` on each class, and `allPublicFields` on its own two. Its
-`reflect-config.json` is
+The sample also sets `queryAllPublicMethods` on each class its rules use, and `allPublicFields` on `Main$Applicant`
+and `Main$LoanDecision`. Its `reflect-config.json` is
 [the full file](../native-smoke/src/main/resources/META-INF/native-image/com.example/native-smoke/reflect-config.json).
-Other shapes, such as a bean fact's getters, a `Map` fact or a public field, weren't tested.
+Rules reading a bean's getters, a `Map` fact or a public field weren't tested.
 
 ### Finding what to register
 
@@ -141,7 +141,7 @@ write an entry by hand, register the method on the class the error names.
 | --- | --- | --- |
 | **The agent saw only the rules that ran** | A first-match engine stops at the first match, so the agent records nothing for the rules below it. The image fails when production facts reach them | Run the agent with facts that fire each rule, or register by hand |
 | **Rules loaded after the build** | Rules reloaded from a database or a file can use a class or method the image doesn't register. They can load, then fail when they run | Register what new rules may use, and test each rule list in the image before loading it in production |
-| **An entry that only allows lookups** | `queryAllPublicMethods` alone lets MVEL find a method but not call it | List each called method under `methods` |
+| **An entry that only allows lookups** | `queryAllPublicMethods` alone lets MVEL, or the engine on a supertype, find a method but not call it | List each called method under `methods` |
 
 ## 🚨 Errors and what they mean
 
@@ -195,16 +195,18 @@ name the option `--exact-reachability-metadata`, which wasn't tested.
 The engine reads `MissingReflectionRegistrationError` as "no such class" wherever it looks a class up by name, as the
 JVM reads `ClassNotFoundException`. So a package import such as `"java.util"` works; on GraalVM for JDK 21, earlier
 releases of the engine failed `build()` there. MVEL's lookups through the engine's class loader get a
-`ClassNotFoundException`, so a nested class or a static member in a rule resolves as on the JVM.
+`ClassNotFoundException`, so a nested class or a static member in a rule resolves as on the JVM. For a method looked
+up on a supertype, or the methods of a bridge's class, the error means "not found".
+
+The engine looks a method up on a supertype for a getter or setter of a non-public fact or output class, and to
+find a bridge setter's target. MVEL rules never get there; another language's `ActionResult.set(...)` does, as do
+`OutputWriter.beansAndMaps()` and `FactProperties` called directly. A supertype your metadata doesn't cover is
+skipped, and the next public supertype that declares the method, or else the class's own, is called. So
+[registering your class](#-registering-your-classes) is enough. A supertype registered for lookups only can't have its
+method called; see [Gotchas](#-gotchas).
 
 An image initializes no class by name. The engine knows the error by its class name,
 `org.graalvm.nativeimage.MissingReflectionRegistrationError`, and handles any other error as it did before.
-
-Known gap ([#972](https://github.com/brantunger/unruly-engine/issues/972)): for a fact or output class that isn't
-public, and for a bridge setter, the engine looks the method up on the class's supertypes with `getMethod` and
-catches only `NoSuchMethodException`. In a strict image, even with CI's list, an unregistered lookup there throws
-`MissingReflectionRegistrationError` instead of falling back. Register those supertypes too, with
-`queryAllPublicMethods`.
 
 To list every lookup that would throw, without stopping the run, add `-H:MissingRegistrationReportingMode=Warn` to
 the build. Built unscoped that way, the sample printed each site, and its run still passed.
@@ -242,6 +244,11 @@ packages. The application checks its own results and exits with 1 if one is wron
 - 200 runs of each engine, well past the about 50 runs after which MVEL's JIT would step in;
 - loading rules, which computes their checksum with SHA-256, and finding MVEL with `ServiceLoader`;
 - an image without Flight Recorder support.
+
+With `OutputWriter.beansAndMaps()`, it sets two properties on an output class that isn't public: one declared by a
+public interface, and one through a bridge setter over a public generic superclass. It reads a bean fact that isn't
+public with `FactProperties.read`. Only the classes that aren't public are registered, not the public interface and
+superclass, so the strict image checks that the engine skips those.
 
 It also runs a fact named after a class in an imported package, the one path where the fact-name check resolves a
 class name: an image rejects such a name, as the JVM does. The application checks that outcome, so a change either

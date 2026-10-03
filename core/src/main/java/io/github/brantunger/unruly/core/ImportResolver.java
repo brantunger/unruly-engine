@@ -25,9 +25,6 @@ final class ImportResolver {
      */
     static final int MAX_IMPORT_PARTS = 64;
 
-    // What a native image built with strict reachability metadata throws for a name it has no metadata for.
-    private static final String MISSING_REGISTRATION = "org.graalvm.nativeimage.MissingReflectionRegistrationError";
-
     private ImportResolver() {
     }
 
@@ -155,8 +152,8 @@ final class ImportResolver {
 
     /**
      * Loads a class, without initializing it, reporting a name a native image has no metadata for as a class that
-     * isn't there (see {@link #isMissingRegistration}), before any caller can take its error for a class that exists
-     * but can't be loaded.
+     * isn't there (see {@link MissingRegistration#isMissingRegistration}), before any caller can take its error for a
+     * class that exists but can't be loaded.
      *
      * @throws ClassNotFoundException if the class loader has no class by that name, or, in a native image built with
      *                                strict reachability metadata, no metadata for it, with the image's error as the
@@ -166,27 +163,11 @@ final class ImportResolver {
         try {
             return loader.loadClass(name);
         } catch (Error e) {
-            if (isMissingRegistration(e)) {
+            if (MissingRegistration.isMissingRegistration(e)) {
                 throw new ClassNotFoundException(name, e);
             }
             throw e;
         }
-    }
-
-    /**
-     * Tells whether an error is the one a native image built with strict reachability metadata throws for a name it
-     * has no metadata for, existing or not, where any other build, and the JVM, throw
-     * {@link ClassNotFoundException}: GraalVM's {@code MissingReflectionRegistrationError}, an {@link Error} in
-     * GraalVM for JDK 21 and a {@link LinkageError} in GraalVM for JDK 25. It is told by its class's name, so this
-     * library needs no dependency on GraalVM's SDK, and no other error, a {@link StackOverflowError} least of all, is
-     * taken for it.
-     *
-     * @param error The error a class lookup threw
-     * @return {@code true} for GraalVM's {@code MissingReflectionRegistrationError}
-     */
-    // mvel.ExactNameClassLoader keeps a copy of this: the mvel package may not use this one. Fix both together.
-    static boolean isMissingRegistration(Throwable error) {
-        return MISSING_REGISTRATION.equals(error.getClass().getName());
     }
 
     /**

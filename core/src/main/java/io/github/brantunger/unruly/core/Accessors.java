@@ -202,6 +202,9 @@ public final class Accessors {
      * module, which every package on the class path is. It widens only the class's access, never the member's,
      * because every method passed here is public. Where access is refused, the method is returned anyway, so that
      * calling it reports why. Access is a flag on the {@link Method} object, which callers cache and never hand out.
+     * In a native image built with strict reachability metadata, a supertype the image has no metadata for counts as
+     * one that doesn't declare the method (see {@link MissingRegistration#publicMethod}), so the rest are still asked,
+     * and the method is still made accessible.
      * </p>
      *
      * @param type   The object's class, which the method was found on
@@ -216,16 +219,13 @@ public final class Accessors {
             if (!reachable(supertype)) {
                 continue;
             }
-            try {
-                Method declared = supertype.getMethod(method.getName(), method.getParameterTypes());
-                // A reachable type can inherit the method from one that isn't, and invoking it would fail the same
-                // way, so what matters is where the method we found is declared. An interface may also declare a
-                // static method of the same name, which isn't the object's method at all.
-                if (reachable(declared.getDeclaringClass()) && !Modifier.isStatic(declared.getModifiers())) {
-                    return declared;
-                }
-            } catch (NoSuchMethodException e) {
-                continue;
+            Method declared = MissingRegistration.publicMethod(supertype, method.getName(), method.getParameterTypes());
+            // A reachable type can inherit the method from one that isn't, and invoking it would fail the same way, so
+            // what matters is where the method we found is declared. An interface may also declare a static method of
+            // the same name, which isn't the object's method at all.
+            if (declared != null && reachable(declared.getDeclaringClass())
+                    && !Modifier.isStatic(declared.getModifiers())) {
+                return declared;
             }
         }
         method.trySetAccessible();

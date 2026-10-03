@@ -192,8 +192,8 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
      * can't say, because looking the class or its class files up fails in any way, has none, and a location whose file
      * can't be found is taken for this library's. So has a loader in a native image built with strict reachability
      * metadata that has none for the class, whose lookup throws GraalVM's {@code MissingReflectionRegistrationError}
-     * (see {@link ImportResolver#isMissingRegistration}). Any other {@link Error} the class's lookup throws that isn't
-     * a {@link LinkageError} fails {@code build()}.
+     * (see {@link MissingRegistration#isMissingRegistration}). Any other {@link Error} the class's lookup throws that
+     * isn't a {@link LinkageError} fails {@code build()}.
      */
     private static boolean hasOwnCopy(ClassLoader loader) {
         try {
@@ -204,7 +204,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
             return false;
         } catch (Error e) {
             // A LinkageError in GraalVM for JDK 25, so caught above, but not in GraalVM for JDK 21.
-            if (ImportResolver.isMissingRegistration(e)) {
+            if (MissingRegistration.isMissingRegistration(e)) {
                 return false;
             }
             throw e;
