@@ -57,7 +57,7 @@ abstract class StrictImagePackagesCheck extends DefaultTask {
         // An empty set would pass only an empty list: the jars weren't found.
         if (expected.isEmpty()) {
             throw new GradleException('No class found in the libraries the native image includes, so the strict ' +
-                    'image package check would check nothing. Check how native-smoke/build.gradle finds them.')
+                    'image package check would check nothing. Check how native-smoke/build.gradle.kts finds them.')
         }
         def listed = listedPackages()
         def missing = expected - listed

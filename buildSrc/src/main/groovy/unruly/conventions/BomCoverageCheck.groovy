@@ -45,7 +45,7 @@ abstract class BomCoverageCheck extends DefaultTask {
         // artifacts were read before their projects set them.
         if (expected.isEmpty()) {
             throw new GradleException('No published artifact found, so the BOM check would pass whatever the BOM ' +
-                    'lists. Check how bom/build.gradle finds the published projects.')
+                    'lists. Check how bom/build.gradle.kts finds the published projects.')
         }
         def xml = new XmlSlurper().parse(pom.get().asFile)
         def managed = xml.dependencyManagement.dependencies.dependency.collect { dependency ->
@@ -56,7 +56,7 @@ abstract class BomCoverageCheck extends DefaultTask {
         def extra = managed - expected
         if (missing || extra) {
             def message = new StringBuilder('The BOM must manage every published artifact and nothing else, at the ' +
-                    'version it is published with. Add or fix a constraint in bom/build.gradle.')
+                    'version it is published with. Add or fix a constraint in bom/build.gradle.kts.')
             if (missing) {
                 message << "\nPublished but not in the BOM:\n  ${missing.join('\n  ')}"
             }
