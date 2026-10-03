@@ -142,10 +142,10 @@ nothing when a trusted key already covers it. Stop and find out why when the dif
 | A changed checksum for a version that already had one | The same published file changed its contents, which a repository never should |
 | A `<trust>` or `<trusted-artifacts>` entry | It turns verification off for everything it matches |
 
-As committed, the metadata has one `<ignored-key>` (the revoked key that signed the dependency-graph plugin), no
-`<trust>` and no `<trusted-artifacts>`. Five signed files also have a checksum with no `reason`, which Gradle
-wrote: this project's three 2.2.0 jars, `mvel2-2.5.4.Final.pom` and `slf4j-api-2.0.19.pom`. The element names are
-those of
+As committed, the metadata has two `<ignored-key>` entries, both Gradle Inc. keys for the
+[dependency-graph plugin](#-the-dependency-graph-plugin), no `<trust>` and no `<trusted-artifacts>`. Five signed
+files also have a checksum with no `reason`, which Gradle wrote: this project's three 2.2.0 jars,
+`mvel2-2.5.4.Final.pom` and `slf4j-api-2.0.19.pom`. The element names are those of
 [Gradle's verification metadata](https://docs.gradle.org/current/userguide/dependency_verification.html).
 
 ## 🤖 The dependency-graph plugin
@@ -157,9 +157,12 @@ those of
 - The **pull request's `ubuntu-latest` JDK 21 build** generates the graph without submitting it, with verification
   on. That is where a stale pin fails: on the pull request, before the merge.
 
-The plugin's signing key, `7B79ADD1…` (Gradle Inc.), is revoked, so the metadata ignores it with a reason and pins
-the plugin's `.jar` and `.module` (version 1.4.2) by sha256. The regeneration command never writes that pin, so it's
-kept by hand. When a `gradle/actions` bump changes the plugin's version:
+The build doesn't trust the plugin's signing key: the metadata ignores the key with a reason and pins the plugin's
+`.jar` and `.module` (version 1.5.0) by sha256. Version 1.5.0 is signed with Gradle Inc.'s subkey
+`E2879931…9F3298BA`, which the metadata ignores by its 64-bit ID, `D9B2DFBD9F3298BA`. That key isn't in the
+keyring, and an `<ignored-key>` with its full fingerprint doesn't match it. The other ignored key, `7B79ADD1…`,
+signed 1.4.2, and Gradle Inc. has revoked it. The regeneration command never writes the pin, so it's kept by hand.
+When a `gradle/actions` bump changes the plugin's version:
 
 1. Read the default `dependencyGraphPluginVersion` in
    `sources/src/resources/init-scripts/gradle-actions.github-dependency-graph-gradle-plugin-apply.groovy`, at the
@@ -181,9 +184,15 @@ sha256sum github-dependency-graph-gradle-plugin-$V.jar github-dependency-graph-g
 `-L` is required: `plugins.gradle.org` answers with a redirect, and without `-L` `curl` saves an empty file and
 still exits 0, so you'd pin the empty file's hash, `e3b0c442…`.
 
+If the pull request's `ubuntu-latest` JDK 21 build fails with the [third line](#-when-to-regenerate)
+(`Key servers are disabled`), the new version is signed with a key the metadata neither trusts nor ignores, as
+1.5.0 was. The report names the key's 64-bit ID. Check that it is Gradle Inc.'s: the plugin's release notes and
+README name the signing key. Then add that ID as an `<ignored-key>` with a reason. Don't add it as a
+`<trusted-key>`.
+
 The regeneration command doesn't resolve the plugin. If you regenerate with the `gradle/actions` init script added
-(`-I`), it can add `<trusted-key id="7B79ADD1…" … version="1.4.2"/>`. That changes nothing, because the ignored key
-wins, but delete it.
+(`-I`), it can add `<trusted-key id="E2879931…" … version="1.5.0"/>` and export that key to
+`verification-keyring.keys`. That changes nothing, because the ignored key wins, but delete both.
 
 ## 🧬 The API baseline
 
