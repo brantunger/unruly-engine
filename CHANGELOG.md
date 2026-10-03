@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.21.9](https://github.com/brantunger/unruly-engine/compare/v2.21.8...v2.21.9) (2026-10-03)
+
+
+### Bug Fixes
+
+* the engine's 1,000-character cut of an exception's text never splits an escape ([#966](https://github.com/brantunger/unruly-engine/issues/966)) ([f0f59db](https://github.com/brantunger/unruly-engine/commit/f0f59db12f405c25ebd156bc4e9f6732411604bf))
+
 ## [2.21.8](https://github.com/brantunger/unruly-engine/compare/v2.21.7...v2.21.8) (2026-10-02)
 
 
