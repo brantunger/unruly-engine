@@ -376,12 +376,12 @@ class MvelWarningFilterTest {
     }
 
     /**
-     * Creates a filter of a copy of this class, sets it on a logger, and installs this class's filter over it. Only
-     * this method's frame holds the copy's filter strongly.
+     * Creates a filter of a copy of this class, sets it on a logger, and installs this class's filter over it. The
+     * installed filter holds the copy's filter only weakly, so the caller's reference is the only strong one.
      *
-     * @return A weak reference to the copy's filter
+     * @return The copy's filter
      */
-    private static WeakReference<Object> installOverCopy(Class<?> copy, Logger logger, Filter previous)
+    private static Filter installOverCopy(Class<?> copy, Logger logger, Filter previous)
             throws ReflectiveOperationException {
         Constructor<?> constructor = copy.getDeclaredConstructor(Reference.class, Filter.class);
         constructor.setAccessible(true);
@@ -395,7 +395,7 @@ class MvelWarningFilterTest {
         }
         logger.setFilter(copied);
         MvelWarningFilter.install(logger);
-        return new WeakReference<>(copied);
+        return copied;
     }
 
     @Test
@@ -403,11 +403,15 @@ class MvelWarningFilterTest {
     void copyIsHeldWeakly() throws Exception {
         Class<?> copy = copyInAnotherClassLoader();
         Logger logger = Logger.getAnonymousLogger();
-        WeakReference<Object> copied = installOverCopy(copy, logger, record -> !"drop".equals(record.getMessage()));
+        Filter alive = installOverCopy(copy, logger, record -> !"drop".equals(record.getMessage()));
+        WeakReference<Object> copied = new WeakReference<>(alive);
         Filter filter = logger.getFilter();
         Object copyOutermost = callCopy(copy, "enter", new Class<?>[0])[0];
         try {
             assertFalse(filter.isLoggable(KEEP), "the copy isn't asked while it lives");
+            // Until here the copy's filter is held strongly, as its class loader would hold it; from here only weakly.
+            Reference.reachabilityFence(alive);
+            alive = null;
             for (int i = 0; i < 50 && copied.get() != null; i++) {
                 System.gc();
                 Thread.sleep(20);
