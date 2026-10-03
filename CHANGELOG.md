@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.22.0](https://github.com/brantunger/unruly-engine/compare/v2.21.10...v2.22.0) (2026-10-03)
+
+
+### Features
+
+* a language can prepare its classes, and no first build, load or language use leaves a class broken by a deep stack ([#970](https://github.com/brantunger/unruly-engine/issues/970)) ([d332054](https://github.com/brantunger/unruly-engine/commit/d33205403a5dfe7e0c8793919297e62f54e6972a))
+
 ## [2.21.10](https://github.com/brantunger/unruly-engine/compare/v2.21.9...v2.21.10) (2026-10-03)
 
 
