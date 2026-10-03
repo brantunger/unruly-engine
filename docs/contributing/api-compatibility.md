@@ -33,8 +33,8 @@ removed or changes in a binary- or source-incompatible way.
 
 Each project writes its report to `<project>/build/reports/japicmp/report.html` (and `report.txt`). CI uploads the
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
-`buildSrc/src/main/groovy/unruly.library.gradle`, and each project's `apiCheck { }` block in its `build.gradle.kts` says
-which artifact it compares and which packages it leaves out. `unruly-engine-core` leaves out its internal `core`
+`buildSrc/src/main/kotlin/unruly.library.gradle.kts`, and each project's `apiCheck { }` block in its `build.gradle.kts`
+says which artifact it compares and which packages it leaves out. `unruly-engine-core` leaves out its internal `core`
 package, except the constructors the test kit calls: `:core:japicmpTestKitLinkage` checks those, as
 [The test kit's links into core](#-the-test-kits-links-into-core) explains.
 

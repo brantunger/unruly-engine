@@ -9,7 +9,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reads which members a japicmp text report compared. A class rather than a script closure, so a task can keep a
+ * Reads which members a japicmp text report compared. A class rather than a script function, so a task can keep a
  * reference.
  */
 public final class JapicmpReport {

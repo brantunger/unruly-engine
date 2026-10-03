@@ -18,7 +18,7 @@ import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/** Reads what the API check needs from jars. A class rather than a script closure, so a task can keep a reference. */
+/** Reads what the API check needs from jars. A class rather than a script function, so a task can keep a reference. */
 public final class Jars {
 
     /** The type of each primitive in a descriptor. */

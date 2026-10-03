@@ -43,7 +43,7 @@ packages.
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle.kts` |
-| 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
+| 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests below |
 
