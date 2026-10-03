@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.22.2](https://github.com/brantunger/unruly-engine/compare/v2.22.1...v2.22.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* read a missing-registration error as "not found" in the supertype and bridge lookups ([#991](https://github.com/brantunger/unruly-engine/issues/991)) ([55d75d9](https://github.com/brantunger/unruly-engine/commit/55d75d9d1859491c0ce56d979328c764c51e9937))
+
 ## [2.22.1](https://github.com/brantunger/unruly-engine/compare/v2.22.0...v2.22.1) (2026-10-03)
 
 
