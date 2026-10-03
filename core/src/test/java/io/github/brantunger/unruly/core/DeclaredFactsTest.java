@@ -169,13 +169,15 @@ class DeclaredFactsTest {
     }
 
     @Test
-    @DisplayName("a map with a fact named output declares none of its entries")
-    void rejectedOutputDeclaresNothing() {
+    @DisplayName("a map with a fact named output is declared, and build() rejects it, as the languages reserve output")
+    void outputInAMapRejectedByBuild() {
         RulesEngineBuilder<Map<String, Object>> builder = requiring();
 
-        assertThrows(IllegalArgumentException.class, () -> builder.facts(validThen("output", String.class)));
+        assertSame(builder, builder.facts(validThen("output", String.class)));
 
-        assertNothingDeclared(builder);
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, builder::build);
+        assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
+                thrown.getMessage());
     }
 
     @Test
@@ -213,7 +215,7 @@ class DeclaredFactsTest {
     void rejectedMapKeepsEarlierDeclaration() {
         RulesEngineBuilder<Map<String, Object>> builder = requiring().fact("a", Integer.class);
 
-        assertThrows(IllegalArgumentException.class, () -> builder.facts(validThen("output", String.class)));
+        assertThrows(IllegalArgumentException.class, () -> builder.facts(validThen(" ", String.class)));
 
         try (RulesEngine<Map<String, Object>> engine = builder.build()) {
             engine.load(List.of(RULE));
@@ -254,15 +256,22 @@ class DeclaredFactsTest {
     }
 
     @Test
-    @DisplayName("declaring a fact named output is rejected: actions use that name for the output object")
+    @DisplayName("declaring a fact named output is rejected by build(): the engine's languages reserve that name")
     void outputCannotBeDeclared() {
-        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new StubExpressionLanguage());
 
-        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                () -> builder.fact("output", String.class));
+        // The languages say which names they reserve, so fact() can't know: only build() has the languages.
+        assertSame(builder, builder.fact("output", String.class));
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, builder::build);
         assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
                 thrown.getMessage());
-        assertThrows(IllegalArgumentException.class, () -> builder.facts(Map.of("output", String.class)));
+        RulesEngineBuilder<Map<String, Object>> other = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new StubExpressionLanguage());
+        assertSame(other, other.facts(Map.of("output", String.class)));
+        thrown = assertThrows(IllegalArgumentException.class, other::build);
+        assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
+                thrown.getMessage());
     }
 
     @Test

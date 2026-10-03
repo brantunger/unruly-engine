@@ -168,7 +168,7 @@ by them. Package and class names didn't change. With only `unruly-engine-<versio
 
 Usually nothing to change: a Maven or Gradle dependency on `unruly-engine` brings `unruly-engine-core` with it. An
 application whose rules all name other languages can depend on `unruly-engine-core` alone; see
-[Packaging](languages/custom.md#-packaging).
+[Packaging](languages/packaging.md).
 
 ### The jars are named modules
 
@@ -528,7 +528,7 @@ the engine's messages. None of it is a compile error.
 | Parsing MVEL's `'+=' at position 13` for an assignment or `import_static` in a condition | `at line 1, column 14`, carried as an `InvalidExpressionException.Issue` as well as in the text |
 
 1.x already escaped rule, fact and language *names*, and already shortened names to 200 characters and copied text
-to 1,000; [Exceptions by method](exceptions-by-method.md) owns those rules, and
+to 1,000; [Reading exception messages](exception-messages.md) owns those rules, and
 [Logging setup](listeners-and-logging.md#-logging-setup) owns every line and its level. A positioned compile error
 reads `Condition for rule 'r' failed to compile at line 1, column 6: Malformed expression`, and
 [Errors when rules load](languages/mvel.md#-errors-when-rules-load) covers what MVEL puts in one.
@@ -538,8 +538,9 @@ rejects outright reads `Condition for rule 'prime-rate' contains an assignment (
 with no `failed to compile`.
 
 When several rules fail, one exception reports them all, so `getCause()` is one level deeper than for a single rule:
-the combined exception wraps the first failure. [Exceptions by method](exceptions-by-method.md) owns
-the message shape and what `failures()` holds.
+the combined exception wraps the first failure.
+[Reading exception messages](exception-messages.md#-several-failures-from-load) owns the message shape and
+what `failures()` holds.
 
 To replace the logger name, for example:
 

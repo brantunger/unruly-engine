@@ -30,7 +30,8 @@ import java.util.Objects;
  * @param outputWriter    Sets the properties actions return on the output object
  * @param declaredFacts   The declared type of each fact, by name, empty if none were declared. A primitive type is
  *                        kept as it was declared, not as its wrapper, so a run widens a boxed primitive to it, and no
- *                        fact may have a blank name or be named {@code output}
+ *                        fact may have a blank name. The engine rejects a name one of its languages reserves, once it
+ *                        has found them
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param languageImports Each language's own imports, by language name, as written and in order, not resolved
@@ -52,11 +53,12 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
     /**
      * Keeps unmodifiable copies of the languages, lists, options, declarations and language imports, so later changes
      * to the builder don't change an engine. A declared type is checked as
-     * {@link EngineCompileContext#checkDeclaration(String, Class)} checks it, and kept as it was declared.
+     * {@link EngineCompileContext#checkDeclaration(String, Class)} checks it, and kept as it was declared. A declared
+     * name a language reserves isn't checked here: the languages may be found only when the engine is created.
      *
      * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
      *                                  element, a language's name or a language, is {@code null}
-     * @throws IllegalArgumentException if a fact is declared with a blank name or the name {@code output}
+     * @throws IllegalArgumentException if a fact is declared with a blank name
      */
     public EngineConfiguration {
         Objects.requireNonNull(languages, "languages must not be null");

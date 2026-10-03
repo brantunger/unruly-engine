@@ -1,9 +1,9 @@
 # 🚧 MVEL gotchas
 
-Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, what
-compiles slowly, and what MVEL logs itself.
+Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, why a rule can
+start failing after about 50 runs, what compiles slowly, and what MVEL logs itself.
 
-**Who it's for:** rule authors, and application developers who configure logging.
+**Who it's for:** rule authors, and application developers who configure logging or deploy rules.
 **You'll be able to:** spot a condition that matches, or doesn't, only because of how MVEL compares, write an
 action that stores exactly the value you meant, and turn off what MVEL logs itself.
 **Before you start:** [MVEL](mvel.md).
@@ -13,6 +13,7 @@ action that stores exactly the value you meant, and turn off what MVEL logs itse
 - [Comparison gotchas](#-comparison-gotchas)
 - [Assignment gotchas](#-assignment-gotchas)
 - [Calling Java code](#-calling-java-code)
+- [A rule failing for ever after about 50 quick runs](#-a-rule-failing-for-ever-after-about-50-quick-runs)
 - [Compile time](#-compile-time)
 - [MVEL's own logging](#-mvels-own-logging)
 
@@ -59,6 +60,18 @@ MVEL reaches a fact's methods and getters through reflection, which fails in som
 | --- | --- | --- |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path. So does `color.label` on an enum constant with a body that overrides `getLabel()`, such as `RED { ... }`: the constant's class is a non-public subclass | Make the record public, or have it implement a public interface that declares `score()`. For the enum constant, call the getter: `color.getLabel()` |
 | 🫥 **An exception whose `getMessage()` throws** | When a method or getter a rule calls throws such an exception, MVEL loses it: the rule fails with what `getMessage()` threw as the cause, such as `Failed to execute action for rule 'r': nope`, and the original exception and its causes are gone. This lasts until one evaluation of the expression succeeds in that [compiled copy](../glossary.md#compiled-copy); later failures keep the original, with a `(message unavailable: ...)` note | Give the exception a `getMessage()` that doesn't throw |
+
+## 🔥 A rule failing for ever after about 50 quick runs
+
+A rule works in tests and in the first minutes of production, then fails on every run. That's when MVEL's JIT
+optimizer takes over the rule's accessors; see
+[The dynamic optimizer and class loaders](mvel.md#the-dynamic-optimizer-and-class-loaders). It has two shapes:
+
+- On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
+  isn't reachable from the `load()` thread's context class loader; see
+  [Class loaders](../thread-safety.md#-class-loaders).
+- On the module path, an `IllegalAccessError` naming your package: it needs an export without a `to` clause; see
+  [Installation](../../README.md#-installation).
 
 ## 🐢 Compile time
 

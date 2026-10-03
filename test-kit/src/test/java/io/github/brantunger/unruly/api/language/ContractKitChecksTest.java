@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -2128,6 +2129,120 @@ class ContractKitChecksTest {
 
         assertTrue(failure.getMessage().startsWith("unusableFactName() must not be x, which the check's rule reads"),
                 failure.getMessage());
+    }
+
+    /** Wraps a language so that {@code reservedFactNames()} returns what {@code reserved} supplies on each call. */
+    private static ExpressionLanguage reserving(ExpressionLanguage language, Supplier<Set<String>> reserved) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public Set<String> reservedFactNames() {
+                return reserved.get();
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("a contract test that names a fact name its language reserves as the one it rejects fails the"
+            + " fact-name check (#468)")
+    void reservedAsUnusableNameFails() {
+        // The engine rejects the name itself, so a language that accepts every name, as the toy does, would pass.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return reserving(new ToyExpressionLanguage(), () -> Set.of("ctx"));
+            }
+
+            @Override
+            protected String unusableFactName() {
+                return "ctx";
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unusableFactNameRejected"));
+
+        assertTrue(failure.getMessage().startsWith("unusableFactName() must return a name the language itself"
+                + " rejects, not 'ctx', which reservedFactNames() reserves"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that reserves its own fact names, or none, passes the reserved-name check, and one that"
+            + " returns null, a null name or other names each time fails it (#468)")
+    void reservedFactNamesChecked() throws Throwable {
+        runCheck(new ToyExpressionLanguage(), "reservedFactNamesRejected");
+        runCheck(reserving(new ToyExpressionLanguage(), Set::of), "reservedFactNamesRejected");
+        runCheck(reserving(new ToyExpressionLanguage(), () -> Set.of("ctx", "x")), "reservedFactNamesRejected");
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(reserving(new ToyExpressionLanguage(), () -> null), "reservedFactNamesRejected"));
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() must not return null"), failure.getMessage());
+        Set<String> withNull = new HashSet<>();
+        withNull.add(null);
+        failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(reserving(new ToyExpressionLanguage(), () -> withNull), "reservedFactNamesRejected"));
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() must not return a set holding null"),
+                failure.getMessage());
+        AtomicInteger calls = new AtomicInteger();
+        failure = assertThrows(AssertionFailedError.class, () -> runCheck(reserving(new ToyExpressionLanguage(),
+                () -> Set.of("name" + calls.incrementAndGet())), "reservedFactNamesRejected"));
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() must return the same names every time"),
+                failure.getMessage());
+        // A blank name is the engine's to reject, so it's skipped.
+        runCheck(reserving(new ToyExpressionLanguage(), () -> Set.of(" ", "ctx")), "reservedFactNamesRejected");
+    }
+
+    @Test
+    @DisplayName("a run that rejects a reserved fact name for another reason than its being reserved fails the"
+            + " reserved-name check (#468)")
+    void reservedNameRejectedForAnotherReasonFails() {
+        // Reserves ctx when the check asks, twice, and nothing when the engine asks, once it's built: the engine then
+        // doesn't reject ctx itself, and the language's own checkFactName does.
+        AtomicInteger asked = new AtomicInteger();
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public Set<String> reservedFactNames() {
+                return asked.incrementAndGet() <= 2 ? Set.of("ctx") : Set.of();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(super.newCompiler(context)) {
+                    @Override
+                    public void checkFactName(String name) {
+                        if ("ctx".equals(name)) {
+                            throw new IllegalArgumentException("not a name: " + name);
+                        }
+                    }
+                };
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "reservedFactNamesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() returned 'ctx', but run() rejected a fact with"
+                + " that name for another reason: not a name: ctx"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the checks that wrap the language keep the fact names it reserves: one that reserves none passes"
+            + " every check with a fact named output declared (#468)")
+    void wrappedLanguageKeepsReservedNames() {
+        // A wrapper that didn't forward reservedFactNames() would reserve output by default, and build() would reject
+        // the declaration in compilerClosed and the session checks.
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return reserving(new ToyExpressionLanguage(), Set::of);
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.fact("output", Object.class);
+            }
+        };
+
+        assertEquals(List.of(), failedChecks(test));
     }
 
     @Test

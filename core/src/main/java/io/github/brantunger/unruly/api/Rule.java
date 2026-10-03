@@ -24,8 +24,8 @@ import java.util.TreeSet;
  *     blank, and unique within a rule list.</li>
  *     <li>{@code condition}: an expression that must evaluate to a boolean. It can't assign or declare anything.
  *     Required.</li>
- *     <li>{@code action}: an expression run when the rule fires. It changes the output object, which it sees as
- *     {@code output}. Required.</li>
+ *     <li>{@code action}: an expression run when the rule fires. It changes the output object, which a language may
+ *     bind to a name, such as {@code output} in MVEL. Required.</li>
  *     <li>{@code priority}: higher values fire first. Equal priorities keep their list order, and a {@code null}
  *     priority sorts last.</li>
  *     <li>{@code description}: free text for your own use. The engine ignores it, but listeners receive it.</li>
@@ -110,7 +110,10 @@ public final class Rule {
     /** The condition, which must evaluate to a boolean and can't assign or declare anything. */
     private final String condition;
 
-    /** The action, run when the rule fires; it changes the output object, which it sees as {@code output}. */
+    /**
+     * The action, run when the rule fires; it changes the output object, which a language may bind to a name, such as
+     * {@code output} in MVEL.
+     */
     private final String action;
 
     /** The rule's priority: higher values fire first, and {@code null} sorts last. */
@@ -191,7 +194,8 @@ public final class Rule {
     }
 
     /**
-     * Returns the action, run when the rule fires. It changes the output object, which it sees as {@code output}.
+     * Returns the action, run when the rule fires. It changes the output object, which a language may bind to a
+     * name, such as {@code output} in MVEL.
      *
      * @return The action
      */
@@ -383,7 +387,8 @@ public final class Rule {
         }
 
         /**
-         * Sets the action, run when the rule fires; it changes the output object, which it sees as {@code output}.
+         * Sets the action, run when the rule fires; it changes the output object, which a language may bind to a
+         * name, such as {@code output} in MVEL.
          * Required.
          *
          * @param action The action

@@ -26,7 +26,7 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 public final class Main {
 
     /** The kit's checks. */
-    private static final int CHECKS = 27;
+    private static final int CHECKS = 28;
 
     /**
      * The checks MvelContractTest skips. MVEL has no built-in object or global of its own for sharedStateStaysLocal to

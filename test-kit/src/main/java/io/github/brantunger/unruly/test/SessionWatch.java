@@ -134,6 +134,12 @@ final class SessionWatch {
                 language.prepare();
             }
 
+            // Forwarded, so the engine rejects the fact names the language reserves, and only those.
+            @Override
+            public Set<String> reservedFactNames() {
+                return language.reservedFactNames();
+            }
+
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);

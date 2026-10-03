@@ -13,7 +13,11 @@ package io.github.brantunger.unruly.api.language;
 public sealed interface ActionContext extends EvaluationContext
         permits io.github.brantunger.unruly.core.EngineActionContext {
 
-    /** The name an action uses for the output object. No fact can have this name. */
+    /**
+     * The name an action uses for the output object, in a language that binds it to a name, such as MVEL. It's the
+     * fact name {@link ExpressionLanguage#reservedFactNames()} reserves by default, so no fact can have it in an engine
+     * with a language that doesn't say otherwise.
+     */
     String OUTPUT_NAME = "output";
 
     /**

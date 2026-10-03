@@ -228,8 +228,8 @@ JVM. Recording them in an image wasn't tested.
 ## 🧩 Other expression languages
 
 Only MVEL ships with the engine. A language of your own works in an image if it generates no classes while rules run,
-and registers the reflection it uses itself; see [Native image](languages/custom.md#native-image) for language authors.
-Your application still registers its fact and output classes, as above. No other language has been tested in an
+and registers the reflection it uses itself; see [Native image](languages/packaging.md#-native-image) for language
+authors. Your application still registers its fact and output classes, as above. No other language has been tested in an
 image.
 
 ## 🧪 What was tested

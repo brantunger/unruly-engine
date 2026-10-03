@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -8,6 +9,8 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +27,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -413,5 +418,106 @@ class LanguageTestContextsTest {
         assertEquals(false, condition.evaluate(LanguageTestContexts.evaluation(Map.of("x", 2)), session));
         action.execute(LanguageTestContexts.action(Map.of("x", 1), output), session);
         assertEquals(Map.of("seen", 1), output);
+    }
+
+    /** A toy language whose {@code reservedFactNames()} returns what {@code reserved} supplies on each call. */
+    private static ExpressionLanguage reserving(String name, Supplier<Set<String>> reserved) {
+        return new ForwardingExpressionLanguage(new ToyExpressionLanguage(name)) {
+            @Override
+            public Set<String> reservedFactNames() {
+                return reserved.get();
+            }
+        };
+    }
+
+    /** A compile context for {@code language} that declares {@code declaredFacts} and nothing else. */
+    private static CompileContext compile(ExpressionLanguage language, Map<String, Class<?>> declaredFacts) {
+        return LanguageTestContexts.compile(language, Set.of(), Set.of(), LanguageTestContextsTest.class
+                .getClassLoader(), Object.class, Map.of(), declaredFacts, false, List.of());
+    }
+
+    /** What build() throws for an engine with only {@code language} that declares {@code name}. */
+    private static String buildRejection(ExpressionLanguage language, String name) {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(language).fact(name, Object.class);
+        return assertThrows(IllegalArgumentException.class, builder::build).getMessage();
+    }
+
+    @Test
+    @DisplayName("a compile context for a language that reserves ctx and nothing else rejects ctx and accepts output,"
+            + " as build() does (#468)")
+    void compileForLanguageReservingCtx() {
+        ExpressionLanguage language = reserving("toy", () -> Set.of("ctx"));
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> compile(language, Map.of("ctx", String.class)));
+        assertEquals("'ctx' is reserved by the 'toy' expression language and cannot be declared as a fact",
+                thrown.getMessage());
+        assertEquals(buildRejection(language, "ctx"), thrown.getMessage());
+        CompileContext context = LanguageTestContexts.compile(language, Set.of("java.util"), Set.of(List.class),
+                LanguageTestContextsTest.class.getClassLoader(), String.class, Map.of("o", "v"),
+                Map.of("output", int.class), true, List.of("own"));
+        assertEquals(Map.of("output", Integer.class), context.declaredFacts());
+        assertEquals(Set.of("java.util"), context.packageImports());
+        assertEquals(Set.of(List.class), context.classImports());
+        assertEquals(String.class, context.outputType());
+        assertEquals(Map.of("o", "v"), context.options());
+        assertTrue(context.allFactsDeclared());
+        assertEquals(List.of("own"), context.languageImports());
+        try (var engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(language)
+                .fact("output", int.class).build()) {
+            assertNotNull(engine);
+        }
+    }
+
+    @Test
+    @DisplayName("a compile context for a language that keeps the default rejects output, as build() does (#468)")
+    void compileForDefaultLanguage() {
+        ExpressionLanguage language = new ToyExpressionLanguage();
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> compile(language, Map.of("output", String.class)));
+        assertEquals("'output' is reserved for the output object and cannot be declared as a fact",
+                thrown.getMessage());
+        assertEquals(buildRejection(language, "output"), thrown.getMessage());
+        assertEquals(Map.of("x", String.class), compile(language, Map.of("x", String.class)).declaredFacts());
+    }
+
+    @Test
+    @DisplayName("a compile context for a language asks it for its reserved names once, and fails as build() does on"
+            + " null or a null name (#468)")
+    void compileForLanguageAsksOnce() {
+        AtomicInteger asked = new AtomicInteger();
+        compile(reserving("toy", () -> {
+            asked.incrementAndGet();
+            return Set.of();
+        }), Map.of());
+        assertEquals(1, asked.get());
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> compile(reserving("broken", () -> null), Map.of()));
+        assertEquals("The 'broken' expression language returned null from reservedFactNames()", thrown.getMessage());
+        Set<String> withNull = new HashSet<>();
+        withNull.add(null);
+        thrown = assertThrows(IllegalStateException.class,
+                () -> compile(reserving("broken", () -> withNull), Map.of()));
+        assertEquals("The 'broken' expression language returned a null name from reservedFactNames()",
+                thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("a compile context for a language needs the language, and a name it has (#468)")
+    void compileForLanguageNamed() {
+        assertEquals("language must not be null", assertThrows(NullPointerException.class,
+                () -> compile(null, Map.of())).getMessage());
+        for (String name : new String[] {null, " "}) {
+            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                    () -> compile(reserving(name, Set::of), Map.of()));
+            assertTrue(thrown.getMessage().startsWith("An expression language's name must not be null or blank: "),
+                    thrown.getMessage());
+        }
+        // The other arguments are checked as the other compile methods check them, before the reserved names.
+        assertEquals("fact name must not be blank", assertThrows(IllegalArgumentException.class,
+                () -> compile(reserving("toy", () -> Set.of(" ")), Map.of(" ", String.class))).getMessage());
     }
 }

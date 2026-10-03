@@ -85,8 +85,9 @@ language ...`, and so does an import over 1,000 characters, with `Can't import .
 
 **Fact names** are checked by every language the loaded rules use: `run()` rejects a name one of them can't refer to,
 and `load()` rejects a [declared fact](../facts.md#-declaring-facts) with such a name. A language no loaded rule uses
-isn't asked, and an empty rule list is checked against the default language. See [Naming
-rules](../facts.md#-naming-rules).
+isn't asked, and an empty rule list is checked against the default language. The names a language
+[reserves](custom.md#-fact-names) are the exception: the engine takes them from every language it has at `build()`.
+See [Naming rules](../facts.md#-naming-rules).
 
 ## 🧭 How the engine picks a language
 
@@ -180,10 +181,10 @@ The project ships only MVEL. The other names are examples of what a language can
 here; anyone can write one, as [Writing a language](custom.md) shows.
 
 Whatever the language, the engine enforces the same contract: unique rule names, no blank expressions, priority
-order, a `Boolean` from every condition, no fact whose name is `null`, blank or `output`, failures reported as
-`RuleCompilationException` or `RuleExecutionException` and to listeners, and a run stopped between rules and when an
-expression returns. Stopping inside an expression is up to the language; see
-[Stopping a run](custom.md#-stopping-a-run).
+order, a `Boolean` from every condition, no fact whose name is `null`, blank or [reserved](custom.md#-fact-names) by
+any of its languages (`output` for MVEL and by default), failures reported as `RuleCompilationException` or
+`RuleExecutionException` and to listeners, and a run stopped between rules and when an expression returns. Stopping
+inside an expression is up to the language; see [Stopping a run](custom.md#-stopping-a-run).
 
 ## 📦 Dependencies
 
@@ -207,7 +208,7 @@ The coordinates and version are in the root README's [Installation](../../README
 requires `io.github.brantunger.unruly` with MVEL, or `io.github.brantunger.unruly.core` without it. The engine reads
 your fact classes and writes your output class from its own module, so export or open their packages to
 `io.github.brantunger.unruly.core`, unless the language reads them itself, as MVEL does. The rule is in
-[Packaging](custom.md#-packaging); the README's module-path block covers MVEL.
+[Packaging a language](packaging.md); the README's module-path block covers MVEL.
 
 **A repackaged (shaded) jar** must merge the `META-INF/services` files, or `build()` finds no language. See [Migrating
 to 2.0](../migrating-to-2.md#-expression-languages-are-found-with-serviceloader).
@@ -247,8 +248,9 @@ The default language: the one `defaultLanguage(...)` names, or else the engine's
 
 ### Does a language I gave the engine, but no loaded rule uses, check fact names?
 
-No. Only the languages the loaded rules use check them, or the default language when the rule list is empty. See
-[Choosing a language per rule](#-choosing-a-language-per-rule).
+No. Only the languages the loaded rules use check them, or the default language when the rule list is empty. But the
+names it [reserves](custom.md#-fact-names), such as `output`, are rejected whatever rules are loaded: `build()` takes
+them from every language the engine has. See [Choosing a language per rule](#-choosing-a-language-per-rule).
 
 ### Can I add a language after `build()`?
 

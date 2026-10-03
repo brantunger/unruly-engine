@@ -90,7 +90,7 @@ and Surefire 3.5.4, Surefire supplies the test engine, so the block above is eno
 module: then see [A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven).
 
 `ExpressionLanguageContractTest` checks the promises [Writing an expression language](custom.md) describes for any
-language. Extend it and supply expressions in your language, one method for each hook. Its twenty-seven checks:
+language. Extend it and supply expressions in your language, one method for each hook. Its twenty-eight checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -105,7 +105,8 @@ language. Extend it and supply expressions in your language, one method for each
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
 | `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
-| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be blank or `output`, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
+| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be blank or one your language reserves, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
+| `reservedFactNamesRejected` | `alwaysTrue`, `putFact` | No; an empty set passes with nothing to run | `reservedFactNames()` answers before `prepare()`, isn't `null`, holds no `null` and gives the same set a second time, and `run()` rejects a fact with each name, unless blank, with an `IllegalArgumentException` saying the name is reserved |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `alwaysTrue`, `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, naming the rule, the second `CONDITION` |
@@ -147,9 +148,9 @@ own, so per-thread state left there can't reach later checks.
 For `usableFactNamesAccepted`, return the names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
-[`configure(builder)`](#a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
-closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, and
-`compilerClosed` adds `copiesAtLoad(1)`.
+[`configure(builder)`](beyond-the-contract-kit.md#-a-language-that-needs-declared-facts-imports-or-options), which
+adds nothing by default, and closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add
+`copiesAtLoad(2)`, and `compilerClosed` adds `copiesAtLoad(1)`.
 
 `sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
 `maxCopies(1)`. `conditionDetail`, `failedActionVariablesStayLocal`, `sharedStateStaysLocal`, the later-run parts of
@@ -212,37 +213,6 @@ but `StackOverflowError`, is thrown on, even as a cause or suppressed. Anything 
 `evaluateAgreesWithDetail` tries four number types: an `evaluate` that compares by type and an `evaluateWithDetail`
 that compares by value agree only for an `Integer`.
 
-### A language that needs declared facts, imports or options
-
-Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
-the same. For `languageImports(...)`, use the
-[`compile(...)` overload](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine) that takes them.
-
-The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is also a
-`Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a fact of
-another type fails the run before your language sees it. Declare `nest` as `Object` too, or as
-`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
-
-```java
-@Override
-protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
-    builder.fact("x", Object.class).fact("y", Object.class).fact("applicant", Object.class).fact("nest", Object.class);
-}
-
-@Override
-protected CompileContext compileContext() {
-    return LanguageTestContexts.compile(Set.of(), Set.of(), getClass().getClassLoader(), Object.class, Map.of(),
-            Map.of("x", Object.class, "y", Object.class, "applicant", Object.class, "nest", Object.class), false);
-}
-```
-
-`configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
-`runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
-checks could fail for reasons unrelated to your language. Nor may it declare the `unusableFactName()` name: `load()`
-checks declared names with your language, which rejects it. A `copiesAtLoad` or `maxCopies` it sets doesn't change
-the checks that set their own. A `maxCopies(2)` keeps `concurrentRuns` to two sessions, so it can't catch a repeat
-after the second.
-
 ### Upgrading the kit
 
 [Upgrading the contract test kit](contract-kit-upgrading.md) lists, for each version, the checks added or made
@@ -250,8 +220,8 @@ stricter, and what each new failure means.
 
 ### Beyond the kit
 
-[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, `LanguageTestContexts`,
-and a named module with Maven.
+[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, a language that needs
+declared facts, imports or options, `LanguageTestContexts`, and a named module with Maven.
 
 ## 🚧 Gotchas
 

@@ -191,11 +191,10 @@ condition or action fails, the listener logs a line such as
 When the run stops during a rule, because its thread was interrupted or it passed its deadline, the line reads
 `Stopped rule: prime-rate | run() passed its deadline of ...` instead.
 
-Rule names appear as the engine's error messages show them: a name over 200 characters is shortened, then line
-breaks, control and [invisible characters](exceptions-by-method.md) are escaped (`\n`), so a name can't start a log
-line. The failure message on that line is escaped the same way and isn't
-shortened, because it carries text the engine didn't write, such as the fact values a language quotes in its own
-message.
+Rule names appear as the engine's error messages show them: a name over 200 characters is shortened, then line breaks,
+control and [invisible characters](exception-messages.md#-shortening-and-escaping) are escaped (`\n`), so a name can't
+start a log line. The failure message on that line is escaped the same way and isn't shortened, because it carries text
+the engine didn't write, such as the fact values a language quotes in its own message.
 
 ## 📡 Flight Recorder events
 

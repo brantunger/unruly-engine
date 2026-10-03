@@ -48,7 +48,9 @@
  * <p>
  * <b>What the engine enforces for every language:</b> rule names are unique and conditions and actions aren't blank;
  * rules are evaluated in priority order; a condition must evaluate to a {@link Boolean}; no fact has a blank name or
- * is named {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME}; the facts a condition or
+ * a name one of the engine's languages reserves, which is
+ * {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME} by default (see
+ * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()}); the facts a condition or
  * action sees are read-only; a run is stopped between expressions when its thread is interrupted or its deadline
  * passes; a failure while rules compile is reported as a
  * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and a failure while they run as a

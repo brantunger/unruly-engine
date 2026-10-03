@@ -43,8 +43,9 @@ public interface ExpressionCompiler extends AutoCloseable {
     CompiledCondition compileCondition(Expression source);
 
     /**
-     * Compiles an action. When it runs, the action either changes the output object it sees as
-     * {@value ActionContext#OUTPUT_NAME} and returns {@link ActionResult#done()}, or returns
+     * Compiles an action. When it runs, the action either changes the output object, {@link ActionContext#output()},
+     * which a language may bind to a name such as {@value ActionContext#OUTPUT_NAME}, and returns
+     * {@link ActionResult#done()}, or returns
      * {@link ActionResult#set(java.util.Map)} with the properties for the engine to set on the output object.
      *
      * @param source The action: the name of its rule, {@code ACTION}, and its text, which isn't blank
@@ -92,8 +93,8 @@ public interface ExpressionCompiler extends AutoCloseable {
 
     /**
      * Rejects the name of a fact that rules written in this language couldn't refer to, such as a keyword of the
-     * language. The engine has already rejected {@value ActionContext#OUTPUT_NAME}, {@code null} and blank names. By
-     * default, every other name is accepted.
+     * language. The engine has already rejected {@code null} and blank names, and the names its languages reserve
+     * (see {@link ExpressionLanguage#reservedFactNames()}). By default, every other name is accepted.
      *
      * @param name The fact's name
      * @throws IllegalArgumentException if rules can't refer to a fact with this name; {@code run()} throws it as is,

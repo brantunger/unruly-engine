@@ -120,7 +120,7 @@ On the module path, `unruly-engine` is the module `io.github.brantunger.unruly`,
 then read your classes: the engine, `io.github.brantunger.unruly.core`, reads the facts and writes the output, and the
 language's module reads whatever its expressions reach. So export or open every package whose classes rules use: fact
 types, the output type, the types of properties rules reach through them, and imported classes. An export without a
-`to` clause works for every language; [Packaging](docs/languages/custom.md#-packaging) shows the narrower export an
+`to` clause works for every language; [Packaging](docs/languages/packaging.md) shows the narrower export an
 application can use when its language doesn't reflect on facts itself.
 
 ```java
@@ -338,17 +338,17 @@ and `language`, and `enabled`, `validFrom`, `validTo` and `tags`, which choose t
 ### Facts
 
 Facts are the inputs. Put them in a `FactStore`, such as the built-in `FactMap`; each fact's name is the variable rules
-use. A fact name can't be blank or `output`, and must be a name the rules' languages can refer to: in MVEL, a Java
-identifier that isn't a reserved word such as `empty` or `in`, or a class name MVEL resolves, such as `Math`. `run()`
-throws `IllegalArgumentException` for a name that breaks these rules. Build a new store for each request. See
-[Naming rules](docs/facts.md#-naming-rules).
+use. A fact name can't be blank or one a language reserves, such as MVEL's `output`, and must be one the rules'
+languages can refer to: in MVEL, a Java identifier that isn't a reserved word such as `empty` or `in`, or a class name
+MVEL resolves, such as `Math`. `run()` throws `IllegalArgumentException` for a name breaking these rules. Build a new
+store for each request. See [Naming rules](docs/facts.md#-naming-rules).
 
 ### The output object
 
-The output supplier creates it once in a run, after a rule has matched, and must return a new object on every call.
-Actions see it as `output` and change it. `run()` returns it, or `null` exactly when no rule fired. `runWithResult()`
-also reports the rules that fired, what each rule's condition evaluated to, a checksum of the rules the run used,
-and the run's tags and start instant. See [The output object](docs/engines-and-runs.md#-the-output-object).
+The output supplier creates it once in a run, after a rule has matched, and must return a new object on every call. MVEL
+actions see it as `output` and change it. `run()` returns it, or `null` exactly when no rule fired. `runWithResult()`
+also reports the rules that fired, what each rule's condition evaluated to, a checksum of the rules the run used, and
+the run's tags and start instant. See [The output object](docs/engines-and-runs.md#-the-output-object).
 
 ### Choosing an engine
 

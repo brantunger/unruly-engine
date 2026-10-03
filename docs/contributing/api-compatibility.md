@@ -103,19 +103,23 @@ build warns that its lines no longer apply, and they can be deleted.
 
 ## 🧷 The test kit's links into core
 
-The `core` package is internal, but the published test kit, `unruly-engine-test`, calls some of its constructors.
-A user's build can pair an older kit with a newer `unruly-engine-core`, because Gradle picks the newest version of
-`core` that anything asks for, and Maven the nearest. So these constructors are API for released kits, and a change
-to one of them gives such a kit a `NoSuchMethodError`, although `japicmp` leaves the package out. Today the kit
-calls these:
+The `core` package is internal, but the published test kit, `unruly-engine-test`, calls some of its constructors and
+methods. A user's build can pair an older kit with a newer `unruly-engine-core`, because Gradle picks the newest version
+of `core` that anything asks for, and Maven the nearest. So these members are API for released kits, and a change to one
+of them gives such a kit a `NoSuchMethodError`, although `japicmp` leaves the package out. Today the kit calls these:
 
-| Constructor | The kit calls it from |
+| Constructor or method | The kit calls it from |
 | --- | --- |
 | `EngineCompileContext(Set, Set, ClassLoader, Class, Map, Map, boolean)` | `LanguageTestContexts`, for a compile context |
+| `EngineCompileContext(Set, Set, ClassLoader, Class, Map, Map, boolean, boolean, List)` | `LanguageTestContexts`, for a compile context with language imports |
+| `EngineCompileContext.forLanguage(ExpressionLanguage, Set, Set, ClassLoader, Class, Map, Map, boolean, List)` | `LanguageTestContexts`, for a compile context that rejects the language's reserved fact names |
 | `EngineEvaluationContext(Map, Instant)` | `LanguageTestContexts`, for an evaluation context |
 | `EngineActionContext(Map, Object, Instant)` | `LanguageTestContexts`, for an action context |
+| `EngineActionContext(EvaluationContext, Object)` | `LanguageTestContexts.actionInRun`, for an action context in the same run |
+| `EngineEvaluationContext.endRun(EvaluationContext)` | `LanguageTestContexts.endRun` |
 
-The `EngineCompileContext` one is the seven-parameter constructor, not the record's canonical one, which has eight.
+The `EngineCompileContext` ones are the seven- and nine-parameter constructors and `forLanguage`, not the record's
+canonical constructor, which has ten.
 
 ### What the linkage check compares
 

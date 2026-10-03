@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -37,6 +38,12 @@ final class CompilerCloseCounter {
             @Override
             public void prepare() {
                 language.prepare();
+            }
+
+            // Forwarded, so the engine rejects the fact names the language reserves, and only those.
+            @Override
+            public Set<String> reservedFactNames() {
+                return language.reservedFactNames();
             }
 
             @Override

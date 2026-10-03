@@ -59,8 +59,8 @@ reports it as the cause of a `RuleCompilationException`.
 
 ## 📋 Exceptions by method
 
-[Exceptions by method](exceptions-by-method.md) lists what each method throws, when, and how the engine treats
-exception text.
+[Exceptions by method](exceptions-by-method.md) lists what each method throws, when, and
+[how the engine treats exception text](exception-messages.md).
 
 ## 🔍 Caught when loading or only when running?
 

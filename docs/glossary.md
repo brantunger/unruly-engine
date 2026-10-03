@@ -33,7 +33,7 @@ See [match policy](#match-policy).
 Three jars in the `io.github.brantunger` group: `unruly-engine` (MVEL and the engine), `unruly-engine-core`
 (the engine alone) and `unruly-engine-test` (the [contract test kit](#contract-test-kit)). A Maven bill of materials
 (BOM) with no jar, `unruly-engine-bom`, keeps them at one version. See [Installation](../README.md#-installation)
-and [Packaging](languages/custom.md#-packaging).
+and [Packaging](languages/packaging.md).
 
 ### Build slot
 
@@ -146,7 +146,7 @@ sessions are closed when the run ends. See [Runs that don't wait](compiled-copie
 ### Fact
 
 A named input value that rules refer to by its name, such as `applicant`. `Fact` is the built-in `FactReference`. A
-fact's name can't be `null`, blank, `output` or one the rules' languages can't refer to. See
+fact's name can't be `null`, blank, [reserved](facts.md#-naming-rules) or one the rules' languages can't refer to. See
 [Facts](facts.md#-the-fact-types).
 
 ### Fact store
@@ -236,9 +236,9 @@ condition such as `coapplicant == null` is `true`, unlike for a [missing fact](#
 
 ### Output object
 
-The object a run's actions change, which rules see as `output`. The [output supplier](#output-supplier) creates it once
-per run that matches a rule, and `run()` returns it, or `null` when no rule fired. See
-[The output object](engines-and-runs.md#-the-output-object).
+The object a run's actions change, which MVEL rules see as `output`. The [output supplier](#output-supplier) creates it
+once per run that matches a rule, and `run()` returns it, or `null` when no rule fired. See [The output
+object](engines-and-runs.md#-the-output-object).
 
 ### Output supplier
 
@@ -342,7 +342,7 @@ case included, and [skips](#skipped-rule) the rest, including rules with no tags
 
 How long a run may take: `runTimeout(duration)` on the builder, or `RunOptions.withTimeoutOf(duration)` for one run. The
 engine never interrupts the thread: it checks before and after each condition and action, and while a run waits for a
-copy, so an expression that is already running isn't stopped unless its language checks `isCancelled()`. See
+copy, so an expression already running isn't stopped unless its language checks `isCancelled()`. See
 [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
 
 ### Unique-match engine

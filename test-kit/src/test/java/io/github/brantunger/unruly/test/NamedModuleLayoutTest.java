@@ -155,7 +155,7 @@ class NamedModuleLayoutTest {
         String output = run(List.of());
 
         assertTrue(output.contains("compile(): java.lang.IllegalAccessError: "), output);
-        assertTrue(output.lines().anyMatch(line -> line.equals("found 27, failed 1")), output);
+        assertTrue(output.lines().anyMatch(line -> line.equals("found 28, failed 1")), output);
         assertTrue(output.contains("FAILED evaluateAgreesWithDetail(): java.lang.IllegalAccessError: "), output);
     }
 
@@ -165,7 +165,7 @@ class NamedModuleLayoutTest {
         String output = run(EXPORT);
 
         assertTrue(output.contains("compile(): ok"), output);
-        assertTrue(output.lines().anyMatch(line -> line.equals("found 27, failed 0")), output);
+        assertTrue(output.lines().anyMatch(line -> line.equals("found 28, failed 0")), output);
         assertFalse(output.contains("FAILED "), output);
     }
 }

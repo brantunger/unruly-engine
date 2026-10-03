@@ -37,7 +37,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
    failure means.
 6. [Testing beyond the contract kit](languages/beyond-the-contract-kit.md): what the checks leave untested, and
    `LanguageTestContexts`.
-7. [Packaging](languages/custom.md#-packaging).
+7. [Packaging a language](languages/packaging.md): service declarations, the module path and native images.
 
 ## 🔼 Upgrading from 1.x
 
@@ -54,19 +54,21 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🔀 [Engines and runs](engines-and-runs.md) | Application developers | Rule order, which rules a run uses, first match, all matches or unique match, the output object, and reloading |
 | 🏁 [Run results and audits](run-results.md) | Application developers | What a run reports and why each rule did or didn't apply, the loaded rules, and what to record to audit a decision, checksums included |
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, facts, strong typing, compile errors, compiled copies, virtual threads and security |
-| 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, what compiles slowly, and what MVEL logs itself |
+| 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, why a rule can start failing after about 50 runs, what compiles slowly, and what MVEL logs itself |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
-| 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, sessions and packaging for a language of your own |
+| 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, fact names and sessions for a language of your own |
+| 📦 [Packaging a language](languages/packaging.md) | Language authors | Declaring a language as a service on the class path and the module path, the exports applications need, and native images |
 | 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, and what each of its checks promises |
 | 🔼 [Upgrading the contract test kit](languages/contract-kit-upgrading.md) | Language authors | The checks each kit version added or made stricter, and the defect each new failure means |
-| 🔼 [Upgrading the contract test kit from 2.10.0 or earlier](languages/contract-kit-upgrading-older.md) | Language authors | The same, for the kits up to 2.10.1 |
-| 🔬 [Testing beyond the contract kit](languages/beyond-the-contract-kit.md) | Language authors | What the kit's checks leave untested, testing a compiler without an engine with `LanguageTestContexts`, and a named module with Maven |
+| 🔼 [Upgrading the contract test kit from 2.11 or earlier](languages/contract-kit-upgrading-older.md) | Language authors | The same, for the kits up to 2.12.0 |
+| 🔬 [Testing beyond the contract kit](languages/beyond-the-contract-kit.md) | Language authors | What the kit's checks leave untested, configuring the checks for your language, testing a compiler without an engine with `LanguageTestContexts`, and a named module with Maven |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
 | 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: turning MVEL's JIT off, registering reflection, the errors a missing registration gives, strict metadata, Flight Recorder, and what was tested |
 | 🌱 [Spring Boot](spring-boot.md) | Application developers | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | Application developers | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Application developers | Exception types, what's caught when rules load and what only at run time, and what happens on each failure |
-| 🧨 [Exceptions by method](exceptions-by-method.md) | Application developers | Every exception by method, and what the engine does with an exception's text in its messages |
+| 🧨 [Exceptions by method](exceptions-by-method.md) | Application developers | Every exception by method, and when each is thrown |
+| 📨 [Reading exception messages](exception-messages.md) | Application developers | What the engine does with an exception's text, how `load()` reports several failures, and finding the failing rule |
 | 🩺 [Troubleshooting](troubleshooting.md) | Everyone | Symptoms and exception messages from `build()`, `load()` and `run()`, each linked to the guide that explains it |
 | 🏭 [Before you go to production](production.md) | Application developers | A checklist: rules and their source, startup, failures, auditing, threads and shutdown |
 | ⏳ [Stopping a run](stopping-runs.md) | Application developers | Timeouts and interrupts: where a run stops and what a timeout can't stop |
