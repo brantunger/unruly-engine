@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.22.4](https://github.com/brantunger/unruly-engine/compare/v2.22.3...v2.22.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* compile the engine without invokedynamic string concatenation, which JDK 25 fails for good when first linked deep ([#997](https://github.com/brantunger/unruly-engine/issues/997)) ([1de785d](https://github.com/brantunger/unruly-engine/commit/1de785dbe61f970bc470df6f3f0bc1f6078979d5))
+
 ## [2.22.3](https://github.com/brantunger/unruly-engine/compare/v2.22.2...v2.22.3) (2026-10-03)
 
 
