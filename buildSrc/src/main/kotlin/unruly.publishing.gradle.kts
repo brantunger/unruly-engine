@@ -2,7 +2,7 @@
 // BOM. Each project says what it publishes with mavenPublishing { configure(...) }: a library its jars, the BOM its
 // constraints.
 plugins {
-    id 'com.vanniktech.maven.publish'
+    id("com.vanniktech.maven.publish")
 }
 
 // Publishes to the Maven Central Portal (central.sonatype.com). All the artifacts go up in one deployment, so a
@@ -16,24 +16,24 @@ mavenPublishing {
     signAllPublications()
 
     pom {
-        url = 'https://github.com/brantunger/unruly-engine'
+        url = "https://github.com/brantunger/unruly-engine"
         licenses {
             license {
-                name = 'The Apache License, Version 2.0'
-                url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                name = "The Apache License, Version 2.0"
+                url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
             }
         }
         developers {
             developer {
-                id = 'brantunger'
-                name = 'Brant Unger'
-                email = 'brant.unger@gmail.com'
+                id = "brantunger"
+                name = "Brant Unger"
+                email = "brant.unger@gmail.com"
             }
         }
         scm {
-            connection = 'scm:git:https://github.com/brantunger/unruly-engine.git'
-            developerConnection = 'scm:git:ssh://git@github.com/brantunger/unruly-engine.git'
-            url = 'https://github.com/brantunger/unruly-engine'
+            connection = "scm:git:https://github.com/brantunger/unruly-engine.git"
+            developerConnection = "scm:git:ssh://git@github.com/brantunger/unruly-engine.git"
+            url = "https://github.com/brantunger/unruly-engine"
         }
     }
 }

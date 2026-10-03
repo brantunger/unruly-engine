@@ -99,10 +99,10 @@ project a test belongs to; an unqualified `./gradlew test` runs all three, and t
 | `benchmarks` | — | JMH benchmarks; not published. The build checks them, but only `jmh` measures anything |
 | `native-smoke` | — | An application CI runs as a GraalVM native image; not published |
 
-Settings shared by the projects are in the convention plugins in `buildSrc/src/main/groovy`. The `core` package is
-internal: its module exports it only to the test kit's module, and a class in it is public only where the builder
-or the test kit needs it. The constructors the test kit calls are the exception: an older kit may run on a
-newer `core`, so the build checks them against the latest release; see
+Shared settings are in the convention plugins in `buildSrc/src/main/groovy` and `buildSrc/src/main/kotlin`. The
+`core` package is internal: its module exports it only to the test kit's module, and a class in it is public only
+where the builder or the test kit needs it. The constructors the test kit calls are the exception: an older kit
+may run on a newer `core`, so the build checks them against the latest release; see
 [The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core).
 
 Where does my test go? The library has three test source sets. The line between `core/src/test` and

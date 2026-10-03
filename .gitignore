@@ -9,6 +9,7 @@ Thumbs.db
 
 # Gradle
 .gradle/
+.kotlin/
 build/
 gradle-app.setting
 .gradletasknamecache

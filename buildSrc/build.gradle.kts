@@ -1,0 +1,16 @@
+plugins {
+    `groovy-gradle-plugin`
+    `kotlin-dsl`
+}
+
+repositories {
+    gradlePluginPortal()
+}
+
+// The plugins the convention plugins apply, by their plugin marker coordinates.
+dependencies {
+    implementation("com.vanniktech.maven.publish:com.vanniktech.maven.publish.gradle.plugin:0.37.0")
+    implementation("me.champeau.gradle.japicmp:me.champeau.gradle.japicmp.gradle.plugin:0.4.6")
+    implementation("org.gradlex.extra-java-module-info:org.gradlex.extra-java-module-info.gradle.plugin:1.14.2")
+    implementation("org.cyclonedx.bom:org.cyclonedx.bom.gradle.plugin:3.4.1")
+}
