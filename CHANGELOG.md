@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.23.0](https://github.com/brantunger/unruly-engine/compare/v2.22.7...v2.23.0) (2026-10-03)
+
+
+### Features
+
+* let each expression language reserve its own fact names ([#1006](https://github.com/brantunger/unruly-engine/issues/1006)) ([bb4570c](https://github.com/brantunger/unruly-engine/commit/bb4570c4446e76da4dc89ee753bb73cd0937dbf6))
+
 ## [2.22.7](https://github.com/brantunger/unruly-engine/compare/v2.22.6...v2.22.7) (2026-10-03)
 
 
