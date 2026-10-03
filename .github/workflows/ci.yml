@@ -275,9 +275,9 @@ jobs:
         run: native-smoke/build/native/native-smoke-strict -Dmvel2.disable.jit=true
 
   # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint, without
-  # Gradle. The four checks only warn until they have run on a week of pull requests (continue-on-error); then they
-  # block. The last step, which runs the docs checks on their fixtures, already fails the job. See
-  # docs/contributing/build-and-gates.md for running them locally.
+  # Gradle. A failed step fails the job, and so ci-result, except the style check, which only warns
+  # (continue-on-error). Each check runs even when an earlier one failed (!cancelled()), so a run reports them all.
+  # See docs/contributing/build-and-gates.md for running them locally.
   docs-and-hygiene:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -288,12 +288,11 @@ jobs:
           persist-credentials: false
 
       - name: Links, anchors and table rows
-        continue-on-error: true
         run: python3 docs/scripts/check_docs.py
 
       # Every text file is stored with LF (.gitattributes); a file committed with CRLF, or with both, shows here.
       - name: Line endings
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         run: |
           bad=$(git ls-files --eol | awk '$1 == "i/crlf" || $1 == "i/mixed"')
           if [ -n "$bad" ]; then
@@ -306,7 +305,7 @@ jobs:
       # isn't an action, so Dependabot doesn't bump it: to update, change the version and take the sha256 from the
       # linux_amd64 line of the release's actionlint_<version>_checksums.txt.
       - name: Workflows
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           ACTIONLINT_VERSION: 1.7.12
           ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
@@ -319,10 +318,10 @@ jobs:
           shellcheck --version   # without shellcheck, actionlint silently drops its shellcheck rule
           "$RUNNER_TEMP/actionlint" -color
 
-      # Only the pages a pull request changes: pages written before docs/contributing/style.md still have findings.
-      # CHANGELOG.md is written by release-please.
+      # Only the pages a pull request changes, and it only warns: pages written before docs/contributing/style.md
+      # still have findings. CHANGELOG.md is written by release-please.
       - name: Style of the changed pages
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         run: |
           pages=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- '*.md' ':!CHANGELOG.md')
@@ -332,9 +331,9 @@ jobs:
           fi
 
       # The pages in config/docs-checks/ hold the cases the two docs checks above once got wrong; check_fixtures.py
-      # runs both scripts on them and compares every line they print with the verdict it records for each page. The
-      # only step here that fails the job, so it comes last: a step after a failed one doesn't run.
+      # runs both scripts on them and compares every line they print with the verdict it records for each page.
       - name: The docs checks on their fixtures
+        if: ${{ !cancelled() }}
         run: python3 docs/scripts/check_fixtures.py
 
   # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the
