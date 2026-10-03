@@ -7,5 +7,8 @@
         "parameterTypes": []
       }
     ]
+  },
+  {
+    "name": "org.mvel2.asm.ClassWriter"
   }
 ]

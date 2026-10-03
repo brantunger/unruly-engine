@@ -20,6 +20,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * </p>
  *
  * <p>
+ * In a native image built with strict reachability metadata, the application's class loader throws GraalVM's
+ * {@code MissingReflectionRegistrationError}, an {@link Error}, for every name the image has no metadata for, existing
+ * or not, where the JVM and any other build throw {@link ClassNotFoundException}. MVEL looks up many names that aren't
+ * classes, as above, and in most of those lookups reads only a {@link ClassNotFoundException} as "not a class", so a
+ * rule as plain as {@code applicant.creditScore} failed to compile. That error is reported as a
+ * {@link ClassNotFoundException} too, with the image's error as its cause, so MVEL reads each name as on the JVM.
+ * </p>
+ *
+ * <p>
  * It's registered as parallel-capable. Otherwise the JVM would hold this loader's lock through every class lookup made
  * with it, so the threads compiling the rule list's expressions would look up even different names one at a time,
  * each waiting virtual thread pinned to its carrier. The application's class loader still decides what waits: the
@@ -134,6 +143,9 @@ final class ExactNameClassLoader extends ClassLoader {
     private static final String NESTED_LOOKUP_CLASS = ExceptionReads.MVEL_PACKAGE + "util.ParseTools";
     private static final String NESTED_LOOKUP_METHOD = "findInnerClass";
 
+    // What a native image built with strict reachability metadata throws for a name it has no metadata for.
+    private static final String MISSING_REGISTRATION = "org.graalvm.nativeimage.MissingReflectionRegistrationError";
+
     static {
         registerAsParallelCapable();
     }
@@ -199,12 +211,13 @@ final class ExactNameClassLoader extends ClassLoader {
      * @param name The class's binary name
      * @return The class
      * @throws ClassNotFoundException if the application's class loader has no class by that name, or only a class
-     *                                file whose name differs in case, or, before the application's class loader is
-     *                                asked, if {@code name} has more than {@value #MAX_NAME_LENGTH} characters, or
-     *                                more than {@value #MAX_NAME_PARTS} dot-separated parts and no {@code $}, or a
-     *                                character that is neither a {@code .} nor one a Java identifier may have, or if
-     *                                the application's class loader is one of the JDK's own and serves no class file
-     *                                for it
+     *                                file whose name differs in case, or, in a native image built with strict
+     *                                reachability metadata, no metadata for it, or, before the application's class
+     *                                loader is asked, if {@code name} has more than {@value #MAX_NAME_LENGTH}
+     *                                characters, or more than {@value #MAX_NAME_PARTS} dot-separated parts and no
+     *                                {@code $}, or a character that is neither a {@code .} nor one a Java identifier
+     *                                may have, or if the application's class loader is one of the JDK's own and
+     *                                serves no class file for it
      * @throws NameTooLarge           if MVEL's lookup of a nested class asks for {@code name}, which has a {@code $}
      *                                and more than {@value #MAX_NAME_PARTS} parts, counting one for the {@code $},
      *                                before the application's class loader is asked
@@ -224,6 +237,11 @@ final class ExactNameClassLoader extends ClassLoader {
             return loaded;
         } catch (NoClassDefFoundError e) {
             if (isWrongName(e)) {
+                throw new ClassNotFoundException(name, e);
+            }
+            throw e;
+        } catch (Error e) {
+            if (isMissingRegistration(e)) {
                 throw new ClassNotFoundException(name, e);
             }
             throw e;
@@ -370,6 +388,20 @@ final class ExactNameClassLoader extends ClassLoader {
     static boolean isWrongName(LinkageError error) {
         String message = ExceptionReads.messageOf(error);
         return error instanceof NoClassDefFoundError && message != null && message.contains("(wrong name: ");
+    }
+
+    /**
+     * Tells whether an error is the one a native image built with strict reachability metadata throws for a name it
+     * has no metadata for: GraalVM's {@code MissingReflectionRegistrationError}, an {@link Error} in GraalVM for JDK 21
+     * and a {@link LinkageError} in GraalVM for JDK 25, told by its class's name, so the module needs no dependency on
+     * GraalVM's SDK.
+     *
+     * @param error The error a class lookup threw
+     * @return {@code true} for GraalVM's {@code MissingReflectionRegistrationError}
+     */
+    // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together.
+    static boolean isMissingRegistration(Throwable error) {
+        return MISSING_REGISTRATION.equals(error.getClass().getName());
     }
 
     /**

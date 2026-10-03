@@ -10,6 +10,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
+import org.graalvm.nativeimage.MissingReflectionRegistrationError;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -706,6 +707,48 @@ class LanguageDiscoveryTest {
 
             assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype",
                     error.getMessage());
+        }
+    }
+
+    // #951: GraalVM for JDK 21's error for a class an image built with strict reachability metadata has no metadata
+    // for is an Error, not a LinkageError, so it escaped instead of ServiceLoader's.
+    @Test
+    @DisplayName("a listed class that isn't a language fails build() unchanged when its loader is a native image's with"
+            + " no metadata for ExpressionLanguage (#951)")
+    void notALanguageWhereTheApiHasNoMetadata() throws IOException {
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.equals(ExpressionLanguage.class.getName())) {
+                    throw new MissingReflectionRegistrationError(name);
+                }
+                return super.loadClass(name, resolve);
+            }
+        }) {
+            ServiceConfigurationError error = withContextClassLoader(loader,
+                    () -> assertThrows(ServiceConfigurationError.class, () -> builder().build()));
+
+            assertEquals(ExpressionLanguage.class.getName() + ": " + NotALanguage.class.getName() + " not a subtype",
+                    error.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("an error that isn't a LinkageError from looking ExpressionLanguage up fails build() itself (#951)")
+    void otherErrorWhereTheApiIsLookedUp() throws IOException {
+        Error other = new Error("not the image's");
+        URL[] urls = {servicesListing(NotALanguage.class.getName()), codeOf(NotALanguage.class)};
+        try (URLClassLoader loader = new URLClassLoader(urls, LanguageDiscoveryTest.class.getClassLoader()) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.equals(ExpressionLanguage.class.getName())) {
+                    throw other;
+                }
+                return super.loadClass(name, resolve);
+            }
+        }) {
+            assertSame(other, withContextClassLoader(loader, () -> assertThrows(Error.class, () -> builder().build())));
         }
     }
 

@@ -25,6 +25,9 @@ final class ImportResolver {
      */
     static final int MAX_IMPORT_PARTS = 64;
 
+    // What a native image built with strict reachability metadata throws for a name it has no metadata for.
+    private static final String MISSING_REGISTRATION = "org.graalvm.nativeimage.MissingReflectionRegistrationError";
+
     private ImportResolver() {
     }
 
@@ -32,7 +35,9 @@ final class ImportResolver {
      * Works out what an import string names. A class the context class loader can load is imported on its own, so
      * {@code imports("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
      * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
-     * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}.
+     * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}. In a native image built with strict
+     * reachability metadata, a name the image has no metadata for isn't a class, as on the JVM a name no class has
+     * isn't one, so a package import such as {@code java.util} still works there.
      *
      * @param name An import string given to the builder
      * @return The class, or {@code null} if {@code name} is a package name
@@ -126,7 +131,7 @@ final class ImportResolver {
      */
     private static Class<?> loadImport(String name, ClassLoader loader) throws ClassNotFoundException {
         try {
-            return loader.loadClass(name);
+            return load(name, loader);
         } catch (ClassNotFoundException notFound) {
             String binaryName = name;
             for (int dot = name.lastIndexOf('.'); dot > 0; dot = binaryName.lastIndexOf('.')) {
@@ -142,10 +147,46 @@ final class ImportResolver {
 
     private static Class<?> loadOrNull(String name, ClassLoader loader) {
         try {
-            return loader.loadClass(name);
+            return load(name, loader);
         } catch (ClassNotFoundException e) {
             return null;
         }
+    }
+
+    /**
+     * Loads a class, without initializing it, reporting a name a native image has no metadata for as a class that
+     * isn't there (see {@link #isMissingRegistration}), before any caller can take its error for a class that exists
+     * but can't be loaded.
+     *
+     * @throws ClassNotFoundException if the class loader has no class by that name, or, in a native image built with
+     *                                strict reachability metadata, no metadata for it, with the image's error as the
+     *                                cause
+     */
+    private static Class<?> load(String name, ClassLoader loader) throws ClassNotFoundException {
+        try {
+            return loader.loadClass(name);
+        } catch (Error e) {
+            if (isMissingRegistration(e)) {
+                throw new ClassNotFoundException(name, e);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Tells whether an error is the one a native image built with strict reachability metadata throws for a name it
+     * has no metadata for, existing or not, where any other build, and the JVM, throw
+     * {@link ClassNotFoundException}: GraalVM's {@code MissingReflectionRegistrationError}, an {@link Error} in
+     * GraalVM for JDK 21 and a {@link LinkageError} in GraalVM for JDK 25. It is told by its class's name, so this
+     * library needs no dependency on GraalVM's SDK, and no other error, a {@link StackOverflowError} least of all, is
+     * taken for it.
+     *
+     * @param error The error a class lookup threw
+     * @return {@code true} for GraalVM's {@code MissingReflectionRegistrationError}
+     */
+    // mvel.ExactNameClassLoader keeps a copy of this: the mvel package may not use this one. Fix both together.
+    static boolean isMissingRegistration(Throwable error) {
+        return MISSING_REGISTRATION.equals(error.getClass().getName());
     }
 
     /**

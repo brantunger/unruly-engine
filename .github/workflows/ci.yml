@@ -206,6 +206,7 @@ jobs:
   # Builds the native-smoke application into a GraalVM native image and runs it (docs/native-image.md), with only the
   # reflection metadata the mvel jar ships and the application's own, and without Flight Recorder support, which is
   # native-image's default. MVEL generates classes at run time unless its JIT is off, which a native image can't do.
+  # Then builds and runs it again with strict reachability metadata, which GraalVM says will become the default.
   native-image:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
@@ -251,6 +252,27 @@ jobs:
       # The application checks its own results and exits with 1 if one is wrong.
       - name: Run it
         run: native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
+
+      # In this mode a lookup the image has no metadata for throws MissingReflectionRegistrationError, where the default
+      # mode throws ClassNotFoundException, so library code that looks a name up and handles only the latter fails the
+      # run below. Only the library's packages are listed: MVEL looks up with Class.forName names that a rule's text
+      # makes up, which can't have metadata, so the mode for all code fails every rule that reads a property. GraalVM
+      # for JDK 21 matches each package exactly, not as a prefix, so the packages= lines must name every package of the
+      # library's classes in the image; native-smoke's checkStrictImagePackages task, part of ./gradlew build, fails
+      # when they don't, or name one that isn't there. A lookup through a ClassLoader throws regardless of the list.
+      # GraalVM for JDK 23 and later name the option --exact-reachability-metadata.
+      - name: Build the native image with strict metadata
+        run: |
+          packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
+          packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
+          packages=$packages,io.github.brantunger.unruly.mvel
+          native-image --no-fallback -H:+ReportExceptionStackTraces \
+            -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
+            -cp 'native-smoke/build/install/native-smoke/lib/*' -o native-smoke/build/native/native-smoke-strict \
+            com.example.nativesmoke.Main
+
+      - name: Run it with strict metadata
+        run: native-smoke/build/native/native-smoke-strict -Dmvel2.disable.jit=true
 
   # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint, without
   # Gradle. The four checks only warn until they have run on a week of pull requests (continue-on-error); then they

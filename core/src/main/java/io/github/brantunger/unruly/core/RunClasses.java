@@ -147,23 +147,30 @@ final class RunClasses {
 
     /**
      * Initializes {@code classes} through {@code lookup}, or by name where it can't reach one, and the classes
-     * {@code named}, skipping one that isn't there, and every one of those in a native image.
+     * {@code named}, skipping one that isn't there. In a native image, nothing is initialized by name: neither a class
+     * the lookup can't reach nor any of those named.
      *
      * @param lookup  The lookup to initialize the classes through
      * @param classes The classes to initialize through it
      * @param named   The names of the classes to initialize by name
      */
     static void initialize(MethodHandles.Lookup lookup, List<Class<?>> classes, List<String> named) {
+        // In a native image nothing is looked up by name: which names an image has is its application's metadata to
+        // decide, not this library's, and a lookup of one it lacks fails, with ClassNotFoundException or, in an image
+        // built with strict reachability metadata, with an error (see ImportResolver.isMissingRegistration). Skipping
+        // the lookups, rather than telling that error apart, also leaves CI's strict image build a check that none
+        // is made.
+        boolean image = inNativeImage();
         for (Class<?> type : classes) {
             try {
                 lookup.ensureInitialized(type);
             } catch (IllegalAccessException e) {
-                initialize(type.getName());
+                if (!image) {
+                    initialize(type.getName());
+                }
             }
         }
-        // An image built with strict reachability metadata throws an error, not ClassNotFoundException, for a name it
-        // has no metadata for, and catching that error would catch a StackOverflowError too.
-        if (inNativeImage()) {
+        if (image) {
             return;
         }
         for (String name : named) {

@@ -381,7 +381,8 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * @param outer The class the nested class is declared in
          * @param name  The nested class's simple name
          * @return The nested class, or {@code null} if {@code outer} declares none by that name the class loader can
-         *         load, such as one whose class file is missing, or which needs a class that is
+         *         load, such as one whose class file is missing, or which needs a class that is, or one a native image
+         *         built with strict reachability metadata has no metadata for
          */
         // PMD asks for the context class loader instead, which is the one that may not see the imported class.
         @SuppressWarnings("PMD.UseProperClassLoader")
@@ -399,6 +400,13 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
                 // Such as a class file found for a name that differs in case, or a NoClassDefFoundError for a class
                 // it needs that is missing.
                 return null;
+            } catch (Error e) {
+                // A native image's error for a name it has no metadata for, a LinkageError in GraalVM for JDK 25, so
+                // caught above, but not in GraalVM for JDK 21.
+                if (ExactNameClassLoader.isMissingRegistration(e)) {
+                    return null;
+                }
+                throw e;
             }
         }
 
