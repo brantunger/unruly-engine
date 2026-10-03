@@ -216,7 +216,7 @@ def japicmp = tasks.register('japicmp', JapicmpTask) {
     // predecessor is dead once the artifact has a release of its own. A wildcard exclusion isn't checked.
     def configuredExcludes = excluded.map { packages -> packages.findAll { !it.contains('*') } }
     def predecessorConfigured = apiCheck.predecessor.map { true }.orElse(false)
-    def buildFile = "${project.name}/build.gradle"
+    def buildFile = rootProject.relativePath(project.buildFile).replace(File.separatorChar, '/' as char)
 
     htmlOutputFile = layout.buildDirectory.file('reports/japicmp/report.html')
     txtOutputFile = layout.buildDirectory.file('reports/japicmp/report.txt')
@@ -273,8 +273,9 @@ afterEvaluate {
     }
     def linkageFile = apiCheck.testKitLinkage.get().asFile
     def linkageName = rootProject.relativePath(linkageFile).replace(File.separatorChar, '/' as char)
+    def buildFileName = rootProject.relativePath(project.buildFile).replace(File.separatorChar, '/' as char)
     if (!linkageFile.isFile()) {
-        throw new GradleException("${project.name}/build.gradle names ${linkageName} as apiCheck.testKitLinkage, " +
+        throw new GradleException("${buildFileName} names ${linkageName} as apiCheck.testKitLinkage, " +
                 "but there is no such file")
     }
     def linkedMembers = providers.fileContents(apiCheck.testKitLinkage).asText.map { text ->

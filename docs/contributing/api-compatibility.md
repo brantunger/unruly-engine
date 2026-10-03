@@ -33,7 +33,7 @@ removed or changes in a binary- or source-incompatible way.
 
 Each project writes its report to `<project>/build/reports/japicmp/report.html` (and `report.txt`). CI uploads the
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
-`buildSrc/src/main/groovy/unruly.library.gradle`, and each project's `apiCheck { }` block in its `build.gradle` says
+`buildSrc/src/main/groovy/unruly.library.gradle`, and each project's `apiCheck { }` block in its `build.gradle.kts` says
 which artifact it compares and which packages it leaves out. `unruly-engine-core` leaves out its internal `core`
 package, except the constructors the test kit calls: `:core:japicmpTestKitLinkage` checks those, as
 [The test kit's links into core](#-the-test-kits-links-into-core) explains.
@@ -138,7 +138,7 @@ those lines. A member added since the release passes. A line that isn't a member
 task runs, with `expected a member as japicmp names it`.
 
 The task is skipped, with a `Skipping the test kit's linkage check` line, while `core` has no release to compare
-with, or when accepted breaks cover every member. `core/build.gradle` names the file in
+with, or when accepted breaks cover every member. `core/build.gradle.kts` names the file in
 `apiCheck { testKitLinkage = … }`, and the report is `core/build/reports/japicmp/test-kit-linkage.html` (and `.txt`).
 
 > [!IMPORTANT]

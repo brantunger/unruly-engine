@@ -1,4 +1,4 @@
-rootProject.name = 'unruly-engine'
+rootProject.name = "unruly-engine"
 
 dependencyResolutionManagement {
     repositories {
@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 // benchmarks: JMH benchmarks of the engine. Not published. `check` compiles and lints them and asserts the shape
 //   of the workload they generate; only the `jmh` task measures anything.
 // native-smoke: an application CI builds into a GraalVM native image and runs (docs/native-image.md). Not published.
-include 'core', 'mvel', 'test-kit', 'bom', 'benchmarks', 'native-smoke'
+include("core", "mvel", "test-kit", "bom", "benchmarks", "native-smoke")
