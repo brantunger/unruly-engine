@@ -399,7 +399,7 @@ final class ExactNameClassLoader extends ClassLoader {
      * @param error The error a class lookup threw
      * @return {@code true} for GraalVM's {@code MissingReflectionRegistrationError}
      */
-    // core.ImportResolver keeps a copy of this: the mvel package may not use that one. Fix both together.
+    // core.MissingRegistration keeps a copy of this: the mvel package may not use that one. Fix both together.
     static boolean isMissingRegistration(Throwable error) {
         return MISSING_REGISTRATION.equals(error.getClass().getName());
     }

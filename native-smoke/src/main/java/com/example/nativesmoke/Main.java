@@ -2,9 +2,11 @@ package com.example.nativesmoke;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.language.FactProperties;
 
 import java.util.HashMap;
 import java.util.List;
@@ -18,7 +20,9 @@ import java.util.Objects;
  * in an imported package, the one class name the fact-name check resolves for itself: the name is rejected on both
  * platforms, which an image managed only once the check stopped asking for the class file it serves to nobody. The
  * bean and map engines each run more than MVEL's JIT threshold of about 50 runs, so a native image meets whatever
- * MVEL does after it. It prints one line and exits with 1 if a result is wrong.
+ * MVEL does after it. It also writes and reads a class that isn't public through the engine's own reflection, as a
+ * language other than MVEL would, where the image has no metadata for the public types above it. It prints one line
+ * and exits with 1 if a result is wrong.
  */
 public final class Main {
 
@@ -77,6 +81,100 @@ public final class Main {
         }
     }
 
+    /**
+     * A rate, which the image has no metadata for, so the engine can't reach the methods of {@link Grade} and
+     * {@link Rating} through it.
+     */
+    public interface Rated {
+
+        /**
+         * Returns the rate.
+         *
+         * @return The rate, or {@code null}
+         */
+        String getRate();
+
+        /**
+         * Sets the rate.
+         *
+         * @param rate The rate
+         */
+        void setRate(String rate);
+    }
+
+    /**
+     * A level of a type a subclass picks, which the image has no metadata for: {@link Tier}'s override of its setter
+     * gets a bridge, whose target the engine looks up on this class.
+     *
+     * @param <T> The level's type
+     */
+    public abstract static class Leveled<T> {
+
+        /** Creates one with no level. */
+        protected Leveled() {
+            // No level until a subclass sets one.
+        }
+
+        /**
+         * Sets the level.
+         *
+         * @param level The level
+         */
+        public abstract void setLevel(T level);
+    }
+
+    // Not public, and the class that declares the bridge for setLevel. The image has metadata for its getter, its
+    // setter and the bridge, which is how the output writer finds the bridge on Grade, and then looks its target up.
+    static class Tier extends Leveled<String> {
+
+        private String level;
+
+        public String getLevel() {
+            return level;
+        }
+
+        @Override
+        public void setLevel(String level) {
+            this.level = level;
+        }
+    }
+
+    // An output that isn't public, so the writer looks its setters up on Rated, Leveled and Object before calling its
+    // own. The image has metadata for its own getter and setter, and none for a list of its methods: in a strict image
+    // built with one, the lookup on Leveled threw NoSuchMethodException, so the bridge's target lookup never met the
+    // image's error.
+    static final class Grade extends Tier implements Rated {
+
+        private String rate;
+
+        @Override
+        public String getRate() {
+            return rate;
+        }
+
+        @Override
+        public void setRate(String rate) {
+            this.rate = rate;
+        }
+    }
+
+    // A fact that isn't public, so FactProperties looks its getter up on Rated and Object before calling its own. The
+    // image has metadata for a list of its methods, which reading a fact needs, and for its own getter and setter.
+    static final class Rating implements Rated {
+
+        private String rate = "standard";
+
+        @Override
+        public String getRate() {
+            return rate;
+        }
+
+        @Override
+        public void setRate(String rate) {
+            this.rate = rate;
+        }
+    }
+
     private Main() {
     }
 
@@ -91,9 +189,11 @@ public final class Main {
         String bean = beanOutput();
         String map = mapOutput();
         String factName = factNameOutcome();
-        boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName);
+        String hidden = hiddenOutcome();
+        boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName)
+                && "prime,gold,standard".equals(hidden);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
-                + " factName=" + factName + " dateResource=" + dateResource()
+                + " factName=" + factName + " hidden=" + hidden + " dateResource=" + dateResource()
                 + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
                 + " jit=" + (Boolean.getBoolean("mvel2.disable.jit") ? "off" : "on"));
         if (!ok) {
@@ -182,6 +282,24 @@ public final class Main {
                 return "unexpected: " + e.getMessage();
             }
         }
+    }
+
+    // The default output writer and FactProperties, called directly, as a language other than MVEL calls them, on
+    // classes that aren't public. Each looks a setter or getter up on the public types above its class, and the writer
+    // looks the target of Tier's bridge up on Leveled. The image has no metadata for those types, so a strict image
+    // throws MissingReflectionRegistrationError there: the engine must read that as a type without the method, and
+    // call the class's own, which the image has metadata for. The image's error isn't an Exception, so it isn't
+    // caught here: it ends the run with a stack trace that names the lookup that threw.
+    private static String hiddenOutcome() {
+        Grade grade = new Grade();
+        OutputWriter<Object> writer = OutputWriter.beansAndMaps();
+        try {
+            writer.set(grade, "rate", "prime");
+            writer.set(grade, "level", "gold");
+        } catch (Exception e) {
+            return e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
+        }
+        return grade.getRate() + "," + grade.getLevel() + "," + FactProperties.read(new Rating(), "rate");
     }
 
     // A diagnostic, never an assertion: it must not feed into ok or the exit code. It shows why the check has to ask

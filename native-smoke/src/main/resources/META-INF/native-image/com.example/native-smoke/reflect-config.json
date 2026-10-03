@@ -17,6 +17,29 @@
     ]
   },
   {
+    "name": "com.example.nativesmoke.Main$Grade",
+    "methods": [
+      {"name": "getRate", "parameterTypes": []},
+      {"name": "setRate", "parameterTypes": ["java.lang.String"]}
+    ]
+  },
+  {
+    "name": "com.example.nativesmoke.Main$Rating",
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "getRate", "parameterTypes": []},
+      {"name": "setRate", "parameterTypes": ["java.lang.String"]}
+    ]
+  },
+  {
+    "name": "com.example.nativesmoke.Main$Tier",
+    "methods": [
+      {"name": "getLevel", "parameterTypes": []},
+      {"name": "setLevel", "parameterTypes": ["java.lang.String"]},
+      {"name": "setLevel", "parameterTypes": ["java.lang.Object"]}
+    ]
+  },
+  {
     "name": "java.lang.Math",
     "queryAllPublicMethods": true,
     "methods": [

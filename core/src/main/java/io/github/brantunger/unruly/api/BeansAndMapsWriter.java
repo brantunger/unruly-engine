@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.core.Accessors;
+import io.github.brantunger.unruly.core.MissingRegistration;
 import io.github.brantunger.unruly.core.Widening;
 import org.jspecify.annotations.Nullable;
 
@@ -280,7 +281,7 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     // Works out one output class's setters, name by name, before resolving them. Each class's public methods, what
     // each class gives the type variables of its supertypes, and whether each bridge method is a generic setter's are
     // looked up once.
-    private static final class Lookup {
+    static final class Lookup {
 
         private final Class<?> type;
         private final Map<Class<?>, Method[]> publicMethods = new HashMap<>();
@@ -380,9 +381,20 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         // of that type reaches the bridge only where the engine can't reach the overload, and the bridge then fails to
         // cast it, or calls the override where the overload's parameter is narrower than the override's: a known
         // limit. The parameter count is checked first, as any bridge, even one of the setter's name, may have none.
+        // A bridge's class that a native image built with strict reachability metadata has no metadata for, which
+        // may be a superclass of the output class, is taken to have none of those methods.
         private List<Class<?>> accepted(Method bridge) {
+            Method[] methods;
+            try {
+                methods = methods(bridge.getDeclaringClass());
+            } catch (Error e) {
+                if (MissingRegistration.isMissingRegistration(e)) {
+                    return List.of();
+                }
+                throw e;
+            }
             List<Class<?>> narrower = new ArrayList<>();
-            for (Method other : methods(bridge.getDeclaringClass())) {
+            for (Method other : methods) {
                 if (other.getParameterCount() == 1 && other.getName().equals(bridge.getName())
                         && moreSpecific(other, bridge) && !Modifier.isStatic(other.getModifiers())
                         && bridged(other).isEmpty()) {
@@ -424,14 +436,13 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
 
     // The method a bridge calls, as far as its class and superclasses say: the first method with its name and
     // parameter, of its class or a superclass, that isn't a bridge. Null where there's none, as where only an
-    // interface declares it. A method that isn't a bridge is its own.
-    private static @Nullable Method target(Method bridge) {
+    // interface declares it, or where a native image built with strict reachability metadata has none for a class it
+    // looks at. A method that isn't a bridge is its own.
+    static @Nullable Method target(Method bridge) {
         Class<?> type = bridge.getDeclaringClass();
         while (type != null) {
-            Method target;
-            try {
-                target = type.getMethod(bridge.getName(), bridge.getParameterTypes());
-            } catch (NoSuchMethodException e) {
+            Method target = MissingRegistration.publicMethod(type, bridge.getName(), bridge.getParameterTypes());
+            if (target == null) {
                 return null;
             }
             if (!target.isBridge()) {

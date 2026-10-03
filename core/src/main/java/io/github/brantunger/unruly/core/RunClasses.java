@@ -157,9 +157,9 @@ final class RunClasses {
     static void initialize(MethodHandles.Lookup lookup, List<Class<?>> classes, List<String> named) {
         // In a native image nothing is looked up by name: which names an image has is its application's metadata to
         // decide, not this library's, and a lookup of one it lacks fails, with ClassNotFoundException or, in an image
-        // built with strict reachability metadata, with an error (see ImportResolver.isMissingRegistration). Skipping
-        // the lookups, rather than telling that error apart, also leaves CI's strict image build a check that none
-        // is made.
+        // built with strict reachability metadata, with an error (see MissingRegistration.isMissingRegistration).
+        // Skipping the lookups, rather than telling that error apart, also leaves CI's strict image build a check that
+        // none is made.
         boolean image = inNativeImage();
         for (Class<?> type : classes) {
             try {
