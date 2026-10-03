@@ -40,8 +40,8 @@ packages.
 | --- | --- | --- |
 | 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their `build.gradle.kts` files, and `core/src/testFixtures/resources/junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: UTF-8, lines of at most 120 columns, no tabs, a final newline, `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
-| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
-| ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
+| 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
+| ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle.kts` |
 | 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/groovy/unruly.library.gradle`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
@@ -76,9 +76,9 @@ Checkstyle reads every file as UTF-8.
 **The build never runs PMD on test sources, by decision.** On them this rule set finds 2,885 violations (measured at
 `0367bb2`), 2,576 of them an assertion without a message, a test with several assertions, or a resource a test doesn't
 close. The seven multithreading rules it keeps find none. The decision is recorded in
-`buildSrc/src/main/groovy/unruly.java-conventions.gradle`, and `check` runs `pmdMain` only.
+`buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`, and `check` runs `pmdMain` only.
 
-Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/groovy/unruly.java-conventions.gradle`),
+Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),
 so a test that never returns fails the build rather than holding CI until the `build` job's own 20-minute cap. Gradle
 logs `Requesting stop of task ':core:test' as it has exceeded its configured timeout`, stops the test worker, and
 fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML

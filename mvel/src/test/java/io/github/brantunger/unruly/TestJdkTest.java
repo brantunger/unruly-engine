@@ -17,7 +17,7 @@ class TestJdkTest {
     void runsOnRequestedJdk() {
         String requested = System.getProperty("unruly.test.jdk");
 
-        assertNotNull(requested, "build.gradle sets unruly.test.jdk for the test task");
+        assertNotNull(requested, "unruly.java-conventions sets unruly.test.jdk for the test task");
         assertEquals(Integer.parseInt(requested), Runtime.version().feature());
     }
 }
