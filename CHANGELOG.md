@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.22.7](https://github.com/brantunger/unruly-engine/compare/v2.22.6...v2.22.7) (2026-10-03)
+
+
+### Bug Fixes
+
+* write the records' toString, equals and hashCode by hand, so none links ObjectMethods deep in the stack ([#1004](https://github.com/brantunger/unruly-engine/issues/1004)) ([a3497e5](https://github.com/brantunger/unruly-engine/commit/a3497e5ff01ea349942f1148517965f3d3ca7cd6))
+
 ## [2.22.6](https://github.com/brantunger/unruly-engine/compare/v2.22.5...v2.22.6) (2026-10-03)
 
 
