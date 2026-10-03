@@ -1,73 +1,73 @@
 import unruly.conventions.FilesSystemProperty
 
 plugins {
-    id 'unruly.library'
-    id 'org.gradlex.extra-java-module-info'
+    id("unruly.library")
+    id("org.gradlex.extra-java-module-info")
 }
 
 // The MVEL language. It keeps 1.x's artifact ID and module name, so existing users change nothing: depending on it
 // still brings the whole engine.
-def artifact = 'unruly-engine'
+val artifact = "unruly-engine"
 
 base {
     archivesName = artifact
 }
 
 dependencies {
-    api project(':core')
-    implementation libs.mvel2
+    api(project(":core"))
+    implementation(libs.mvel2)
     // MVEL says at DEBUG when it can't compile a rule list against the engine's declared facts. SLF4J is already a
     // runtime dependency through core, so this adds no artifact for users.
-    implementation libs.slf4j.api
+    implementation(libs.slf4j.api)
 
-    testImplementation project(':test-kit')
+    testImplementation(project(":test-kit"))
     // TestEngines, TestLogs and the test languages, shared with core's own tests.
-    testImplementation testFixtures(project(':core'))
+    testImplementation(testFixtures(project(":core")))
     // The Jackson mix-ins the docs show for reading rules from JSON are tested with Jackson 2 and Jackson 3.
-    testImplementation libs.jackson2.databind
+    testImplementation(libs.jackson2.databind)
     // Jackson 2 reads a rule's validity window (java.time.Instant) only with its java.time module; Jackson 3 needs none.
-    testImplementation libs.jackson2.datatype.jsr310
-    testImplementation libs.jackson3.databind
-    testImplementation platform(libs.junit.bom)
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testRuntimeOnly libs.slf4j.simple
+    testImplementation(libs.jackson2.datatype.jsr310)
+    testImplementation(libs.jackson3.databind)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly(libs.slf4j.simple)
 }
 
 // The jars ModulePathTest runs its applications with: the three artifacts, their dependencies, and what the
 // applications need besides. It isn't linked to a source set, so extra-java-module-info leaves mvel2 as it is, and java
 // derives the module name mvel2 from its file name, as it does for users.
-def modulePathDependencies = configurations.dependencyScope('modulePathTest')
-def modulePathTestJars = configurations.resolvable('modulePathTestJars') {
+val modulePathDependencies = configurations.dependencyScope("modulePathTest")
+val modulePathTestJars = configurations.resolvable("modulePathTestJars") {
     extendsFrom(modulePathDependencies.get())
     attributes {
-        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
-        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
-        attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.JAR))
-        attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named<Category>(Category.LIBRARY))
+        attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named<LibraryElements>(LibraryElements.JAR))
+        attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named<Bundling>(Bundling.EXTERNAL))
         attribute(TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE,
-                objects.named(TargetJvmEnvironment, TargetJvmEnvironment.STANDARD_JVM))
+                objects.named<TargetJvmEnvironment>(TargetJvmEnvironment.STANDARD_JVM))
     }
 }
 
 dependencies {
-    modulePathTest project(':mvel')
-    modulePathTest project(':test-kit')
-    modulePathTest libs.jackson2.databind
-    modulePathTest libs.jackson3.databind
-    modulePathTest platform(libs.junit.bom)
-    modulePathTest 'org.junit.platform:junit-platform-launcher'
-    modulePathTest 'org.junit.jupiter:junit-jupiter-engine'
-    modulePathTest libs.slf4j.simple
+    "modulePathTest"(project(":mvel"))
+    "modulePathTest"(project(":test-kit"))
+    "modulePathTest"(libs.jackson2.databind)
+    "modulePathTest"(libs.jackson3.databind)
+    "modulePathTest"(platform(libs.junit.bom))
+    "modulePathTest"("org.junit.platform:junit-platform-launcher")
+    "modulePathTest"("org.junit.jupiter:junit-jupiter-engine")
+    "modulePathTest"(libs.slf4j.simple)
     // JUnit's modules require it statically, so compiling against them needs it.
-    modulePathTest libs.apiguardian.api
+    "modulePathTest"(libs.apiguardian.api)
 }
 
 // mvel2 has no module name: no module-info.class and no Automatic-Module-Name. On a module path, java derives the name
 // mvel2 from the jar's file name, which is what module-info.java requires. Gradle only puts a jar that has a module
 // name on the module path, so this gives mvel2 the same name.
 extraJavaModuleInfo {
-    automaticModule('org.mvel:mvel2', 'mvel2')
+    automaticModule("org.mvel:mvel2", "mvel2")
 }
 
 mavenPublishing {
@@ -75,8 +75,8 @@ mavenPublishing {
 
     pom {
         name = artifact
-        description = 'Unruly is a pure Java rules engine that evaluates rules written in MVEL or a pluggable ' +
-                'expression language'
+        description = "Unruly is a pure Java rules engine that evaluates rules written in MVEL or a pluggable " +
+                "expression language"
     }
 }
 
@@ -92,17 +92,17 @@ apiCheck {
 // PackageDependencyTest, ClassFileVersionTest, TestJdkTest) are here because they check the whole build. Every
 // source set runs on the class path, so a test in a package can use its package-private classes, wherever the
 // project holding them is.
-tasks.named('test', Test) {
+tasks.named<Test>("test") {
     // Read by ModulePathTest. The jars are an input, so a changed jar reruns the tests, and their absolute paths
     // aren't, so the tests can still come from the build cache.
-    jvmArgumentProviders.add(objects.newInstance(FilesSystemProperty).tap {
-        name = 'unruly.module-path'
+    jvmArgumentProviders.add(objects.newInstance<FilesSystemProperty>().apply {
+        name = "unruly.module-path"
         files.from(modulePathTestJars)
     })
     // Read by PackageDependencyTest.
-    jvmArgumentProviders.add(objects.newInstance(FilesSystemProperty).tap {
-        name = 'unruly.main.sources'
-        files.from(layout.settingsDirectory.dir('core/src/main/java'), layout.projectDirectory.dir('src/main/java'),
-                layout.settingsDirectory.dir('test-kit/src/main/java'))
+    jvmArgumentProviders.add(objects.newInstance<FilesSystemProperty>().apply {
+        name = "unruly.main.sources"
+        files.from(layout.settingsDirectory.dir("core/src/main/java"), layout.projectDirectory.dir("src/main/java"),
+                layout.settingsDirectory.dir("test-kit/src/main/java"))
     })
 }

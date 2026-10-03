@@ -38,7 +38,7 @@ packages.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
-| 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their `build.gradle` files, and `core/src/testFixtures/resources/junit-platform.properties` |
+| 🧪 **Tests** | The JUnit suite, on the class path, in three source sets, plus the benchmarks' workload test | `core/src/test`, `mvel/src/test`, `test-kit/src/test`, `benchmarks/src/test`, their build scripts, and `core/src/testFixtures/resources/junit-platform.properties` |
 | 📏 **Checkstyle** | Main and test sources: UTF-8, lines of at most 120 columns, no tabs, a final newline, `AvoidStarImport`, `UnusedImports`, `NeedBraces`, `LeftCurly`, `RightCurly`, `EmptyBlock` | `config/checkstyle/checkstyle.xml` |
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/groovy/unruly.java-conventions.gradle` |

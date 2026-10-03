@@ -123,7 +123,7 @@ expression language`. The paths below are relative to `java/io/github/brantunger
 | The MVEL language | `mvel/src/test`, under `mvel/` | Everything that is only true of MVEL stays in the `mvel` package |
 | The test kit | `test-kit/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test's checks | These tests use `core`'s toy and stub languages, never MVEL, and a case that needs MVEL stays in `mvel/src/test`, as `test/LanguageTestContextsMvelTest` does. They can't go in `core`, because `test-kit` depends on `core` |
 | What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` in `mvel/src/test`, and for a toy language through `api/language/ToyExpressionLanguageContractTest` in `test-kit/src/test` |
-| A helper more than one source set needs | `core/src/testFixtures`, the same package | `core`'s tests see it, and `mvel` and `test-kit` get it with `testImplementation testFixtures(project(':core'))`, so it can't drift into copies |
+| A helper more than one source set needs | `core/src/testFixtures`, the same package | `core`'s tests see it, and `mvel` and `test-kit` get it with `testImplementation(testFixtures(project(":core")))`, so it can't drift into copies |
 | Module-path behaviour | A sample application under `mvel/src/test/resources/module-path/` | `ModulePathTest` compiles each one against the built jars and runs it in a new JVM |
 
 ## 🧪 Prove your test fails first
@@ -197,7 +197,7 @@ described in [Build and gates](docs/contributing/build-and-gates.md).
 | `javadoc` | The console | Every public member needs a comment with `@param`, `@return` and `@throws`, and every `{@link}` must resolve |
 | `japicmp` | `<project>/build/reports/japicmp/report.html` | See [API compatibility](docs/contributing/api-compatibility.md) |
 | `:core:japicmpTestKitLinkage` | The console, and `core/build/reports/japicmp/test-kit-linkage.html` | A `core` constructor the test kit calls was removed or changed: keep the old one. Or a line of `config/japicmp/test-kit-linkage.txt` matches no member: fix or delete it. See [The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core) |
-| `names config/japicmp/test-kit-linkage.txt as apiCheck.testKitLinkage, but there is no such file` | The console | The linkage file is missing: restore it, or fix the path in `core/build.gradle` |
+| `names config/japicmp/test-kit-linkage.txt as apiCheck.testKitLinkage, but there is no such file` | The console | The linkage file is missing: restore it, or fix the path in `core/build.gradle.kts` |
 | `TestKitLinkageTest` | The test report | The test kit's references into `core` and `config/japicmp/test-kit-linkage.txt` differ: add or delete the line |
 | `PackageDependencyTest` | The test report | A package used one it may not; `PackageDependencyTest` lists what each package may use |
 | `EngineApiShapeTest`, `SealedContextsTest`, `NullnessAnnotationsTest`, `EngineVisibilityTest`, `ClassFileVersionTest` | The test report | A public type changed shape, or a class targets a newer Java; read the test's `@DisplayName` for the rule it protects |

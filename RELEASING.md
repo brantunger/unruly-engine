@@ -312,5 +312,5 @@ ls ~/.m2/repository/io/github/brantunger/unruly-engine{,-core,-test,-bom}/<versi
 
 Expect `.jar`, `-sources.jar`, `-javadoc.jar`, `.module` and `.pom` files in each (the BOM only the last two), each with
 a matching `.asc` signature, and nothing else. `core` builds test fixtures for this build's own tests, so check in
-particular that `unruly-engine-core` has no `-test-fixtures*` file: `core/build.gradle` keeps all three of their
+particular that `unruly-engine-core` has no `-test-fixtures*` file: `core/build.gradle.kts` keeps all three of their
 variants out of the publication, and Maven Central can't take one back.
