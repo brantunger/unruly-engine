@@ -39,6 +39,23 @@ VERDICTS = {
     'inline-link': (
         [':3: no-such-plain.md: no file docs/probe/no-such-plain.md'],
         [': 7 words of prose']),
+    'link-forms': (
+        [':3: no-such-control.md: no file docs/probe/no-such-control.md',
+         ':5: no-such-spaced.md: no file docs/probe/no-such-spaced.md',
+         ':7: no-such spaced angle.md: no file docs/probe/no-such spaced angle.md',
+         ':9: no-such-spaced-title.md: no file docs/probe/no-such-spaced-title.md',
+         ':11: no-such angle title.md: no file docs/probe/no-such angle title.md',
+         ':13: no-such-reference.md: no file docs/probe/no-such-reference.md',
+         ':15: no-such angle reference.md: no file docs/probe/no-such angle reference.md',
+         ':18: no-such-double.md: no file docs/probe/no-such-double.md',
+         ':20: no-such-single.md: no file docs/probe/no-such-single.md',
+         ':22: no-such-unquoted.md: no file docs/probe/no-such-unquoted.md',
+         ':24: no-such-unquoted-2.md: no file docs/probe/no-such-unquoted-2.md',
+         ':26: no-such-double.svg: no file docs/probe/no-such-double.svg',
+         ':28: no-such-single.svg: no file docs/probe/no-such-single.svg',
+         ':30: no-such-unquoted.svg: no file docs/probe/no-such-unquoted.svg',
+         ':32: no-such-unquoted-2.svg: no file docs/probe/no-such-unquoted-2.svg'],
+        [': 107 words of prose']),
     'link-titles-and-html': (
         [':3: no-such-page.md: no file docs/probe/no-such-page.md',
          ':5: no-such-page-2.md: no file docs/probe/no-such-page-2.md',

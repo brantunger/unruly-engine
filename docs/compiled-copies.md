@@ -217,6 +217,9 @@ A run that stopped while waiting for a copy holds none, so a run started from it
 rule, but it doesn't wait either: it inherits that run's passed deadline, or sees the same interrupt, so it takes a
 free copy or fails at once.
 
+A run whose facts are rejected holds no copy, so a run started from its callbacks can wait, though nested,
+unless a run on its thread holds or is getting one.
+
 **A run that has waited five seconds without one single copy being given back.** That's what waiting for a run of
 this engine on *another* thread looks like: a fan-out from an action, `executor.submit(engine::run).get()`, or two
 engines whose actions run each other. A rule slower than the wait does it too, because a copy it holds comes back
@@ -251,8 +254,7 @@ other engine has its own limit. See [Memory sizing](#memory-sizing).
 
 ### Does memory shrink after a traffic spike?
 
-No. Kept copies stay until the next `load()` or `close()`. A periodic reload releases them, and the next runs pay to
-build new ones.
+No. Kept copies stay until the next `load()` or `close()`; see [Memory sizing](#memory-sizing).
 
 ### Should I make the copies at load?
 
@@ -263,8 +265,7 @@ in one benchmark, without changing throughput. See [Making copies at load](#maki
 
 ### Does waiting for a copy show up in my listener timings?
 
-Not when the run gets a copy: the wait happens before `beforeRun`, so measure around `run()`. A wait that ends in a
-stop calls `beforeRun` and then `onRunError`, with a run that never held a copy. See
+Not when the run gets a copy: the wait happens before `beforeRun`, so measure around `run()`. See
 [What a run waits for](#what-a-run-waits-for).
 
 ### My thread was interrupted earlier and I reuse it: why does every run fail?
