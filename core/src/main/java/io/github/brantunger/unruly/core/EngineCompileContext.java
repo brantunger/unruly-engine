@@ -126,7 +126,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         // The name isn't null, as checked above, and no name is reserved here, so the only problem it can have is
         // being blank.
         if (FactNames.check(name, Set.of()) != null) {
-            throw new IllegalArgumentException("fact name must not be blank");
+            throw new IllegalArgumentException(FactNames.BLANK_MESSAGE);
         }
     }
 

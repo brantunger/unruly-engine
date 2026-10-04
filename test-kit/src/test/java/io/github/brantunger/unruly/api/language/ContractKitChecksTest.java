@@ -2171,7 +2171,7 @@ class ContractKitChecksTest {
     void reservedFactNamesChecked() throws Throwable {
         runCheck(new ToyExpressionLanguage(), "reservedFactNamesRejected");
         runCheck(reserving(new ToyExpressionLanguage(), Set::of), "reservedFactNamesRejected");
-        runCheck(reserving(new ToyExpressionLanguage(), () -> Set.of("ctx", "x")), "reservedFactNamesRejected");
+        runCheck(reserving(new ToyExpressionLanguage(), () -> Set.of("ctx", "it")), "reservedFactNamesRejected");
 
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> runCheck(reserving(new ToyExpressionLanguage(), () -> null), "reservedFactNamesRejected"));
@@ -2195,13 +2195,16 @@ class ContractKitChecksTest {
     @DisplayName("a run that rejects a reserved fact name for another reason than its being reserved fails the"
             + " reserved-name check (#468)")
     void reservedNameRejectedForAnotherReasonFails() {
-        // Reserves ctx when the check asks, twice, and nothing when the engine asks, once it's built: the engine then
-        // doesn't reject ctx itself, and the language's own checkFactName does.
-        AtomicInteger asked = new AtomicInteger();
+        // Reserves ctx when the kit asks, however often, and nothing when the engine asks, once it's built: the engine
+        // then doesn't reject ctx itself, and the language's own checkFactName does. The engine asks from its core
+        // package.
         ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
             @Override
             public Set<String> reservedFactNames() {
-                return asked.incrementAndGet() <= 2 ? Set.of("ctx") : Set.of();
+                boolean engine = StackWalker.getInstance().walk(frames -> frames.skip(1).findFirst())
+                        .map(caller -> caller.getClassName().startsWith("io.github.brantunger.unruly.core."))
+                        .orElse(false);
+                return engine ? Set.of() : Set.of("ctx");
             }
 
             @Override
@@ -2222,6 +2225,146 @@ class ContractKitChecksTest {
 
         assertTrue(failure.getMessage().startsWith("reservedFactNames() returned 'ctx', but run() rejected a fact with"
                 + " that name for another reason: not a name: ctx"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that reserves other names once it's prepared fails the reserved-name check (#1011)")
+    void reservedFactNamesChangedByPrepareFails() {
+        // Reserves output before prepare() and output and ctx after: build() prepares the language, which the engine
+        // names, so a second engine built with this instance would reject ctx, and the first wouldn't.
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            private volatile boolean prepared;
+
+            @Override
+            public void prepare() {
+                super.prepare();
+                prepared = true;
+            }
+
+            @Override
+            public Set<String> reservedFactNames() {
+                return prepared ? Set.of("output", "ctx") : Set.of("output");
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "reservedFactNamesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() must return the same names after prepare() as"
+                + " before: the engine asks once, when it's built, and may prepare the language before or after"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that adds to the set it returned when it's prepared fails the reserved-name check (#1011)")
+    void reservedSetChangedByPrepareFails() {
+        // The engine copies the set before it prepares the language, so the first engine reserves output only, and
+        // a later one built with this instance output and ctx. The set is the same object each time.
+        Set<String> names = new HashSet<>(Set.of("output"));
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public void prepare() {
+                super.prepare();
+                names.add("ctx");
+            }
+
+            @Override
+            public Set<String> reservedFactNames() {
+                return names;
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "reservedFactNamesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() must return the same names after prepare() as"
+                + " before"), failure.getMessage());
+    }
+
+    /** Runs every one of the kit's checks on the contract test, and returns what each that failed said, by name. */
+    private static Map<String, String> failureMessages(ExpressionLanguageContractTest test) {
+        Map<String, String> failures = new HashMap<>();
+        for (Method check : ExpressionLanguageContractTest.class.getDeclaredMethods()) {
+            if (!check.isAnnotationPresent(Test.class)) {
+                continue;
+            }
+            try {
+                runCheck(test, check.getName());
+            } catch (TestAbortedException e) {
+                // Skipped by one of the toy's hooks, as it is in the toy's own contract test.
+            } catch (Throwable e) {
+                failures.put(check.getName(), String.valueOf(e.getMessage()));
+            }
+        }
+        return failures;
+    }
+
+    @Test
+    @DisplayName("a language that reserves x, y, applicant or nest, which the checks supply as facts, fails every"
+            + " check that builds an engine with one message, whatever the other names it reserves (#1011)")
+    void kitFactNameReservedFails() {
+        // In a HashMap of a run's facts, ctx comes before x, and it and name after it: before the early check, the
+        // reserved-name check passed with ctx and failed with the other two, as the run rejected x first.
+        List<List<String>> reservations = List.of(List.of("ctx", "x"), List.of("it", "x"), List.of("name", "x"),
+                List.of("ctx", "y"), List.of("ctx", "applicant"), List.of("ctx", "nest"));
+        Set<String> failedChecks = null;
+        for (List<String> reservation : reservations) {
+            String kitName = reservation.get(1);
+            ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+                @Override
+                protected ExpressionLanguage language() {
+                    return reserving(new ToyExpressionLanguage(), () -> Set.copyOf(reservation));
+                }
+
+                @Override
+                protected String unusableFactName() {
+                    // The toy accepts every name, so the fact-name check fails unless it never runs a rule.
+                    return "bad";
+                }
+            };
+
+            Map<String, String> failures = failureMessages(test);
+
+            String expected = "reservedFactNames() reserves [" + kitName + "], which the contract kit's checks supply"
+                    + " as facts: the kit can't check a language that reserves x, y, applicant or nest";
+            // The reserved-name check fails whatever the other name, and the fact-name check fails rather than pass
+            // on the engine's rejecting x.
+            assertTrue(failures.containsKey("reservedFactNamesRejected"), reservation + ": " + failures.keySet());
+            assertTrue(failures.containsKey("unusableFactNameRejected"), reservation + ": " + failures.keySet());
+            failures.forEach((check, message) -> assertTrue(message.startsWith(expected),
+                    reservation + ": " + check + ": " + message));
+            // The same checks fail whichever name is reserved: those that build an engine.
+            if (failedChecks == null) {
+                failedChecks = failures.keySet();
+            }
+            assertEquals(failedChecks, failures.keySet(), reservation.toString());
+        }
+        assertTrue(failedChecks.containsAll(List.of("conditionReadsFacts", "nestedRunInsideAnAction",
+                "missingPropertyFailsTheRun")), failedChecks.toString());
+        assertFalse(failedChecks.contains("evaluateAgreesWithDetail"), failedChecks.toString());
+    }
+
+    @Test
+    @DisplayName("a language that reserves several of the names the checks supply is told all of them, sorted (#1011)")
+    void kitFactNamesReservedListed() {
+        ExpressionLanguage language = reserving(new ToyExpressionLanguage(),
+                () -> Set.of("y", "output", "nest", "x", "applicant"));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "conditionReadsFacts"));
+
+        assertEquals("reservedFactNames() reserves [applicant, nest, x, y], which the contract kit's checks supply as"
+                + " facts: the kit can't check a language that reserves x, y, applicant or nest", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a check other than the reserved-name one, for a language whose reservedFactNames() returns null,"
+            + " fails with build()'s exception (#1011)")
+    void nullReservedNamesLeftToBuild() {
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> runCheck(reserving(new ToyExpressionLanguage(), () -> null), "conditionReadsFacts"));
+
+        assertEquals("The 'toy' expression language returned null from reservedFactNames()", thrown.getMessage());
     }
 
     @Test

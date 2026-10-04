@@ -90,7 +90,12 @@ and Surefire 3.5.4, Surefire supplies the test engine, so the block above is eno
 module: then see [A named module with Maven](beyond-the-contract-kit.md#a-named-module-with-maven).
 
 `ExpressionLanguageContractTest` checks the promises [Writing an expression language](custom.md) describes for any
-language. Extend it and supply expressions in your language, one method for each hook. Its twenty-eight checks:
+language. Extend it and supply expressions in your language, one method for each hook.
+
+The checks supply facts named `x`, `y`, `applicant` and `nest`, so your language must not reserve them. If it does,
+every check that builds an engine fails before building it, with `reservedFactNames() reserves [<names>], which the
+contract kit's checks supply as facts: the kit can't check a language that reserves x, y, applicant or nest`, where
+`<names>` are those of the four it reserves, sorted. The kit's twenty-eight checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -106,7 +111,7 @@ language. Extend it and supply expressions in your language, one method for each
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
 | `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
 | `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be blank or one your language reserves, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
-| `reservedFactNamesRejected` | `alwaysTrue`, `putFact` | No; an empty set passes with nothing to run | `reservedFactNames()` answers before `prepare()`, isn't `null`, holds no `null` and gives the same set a second time, and `run()` rejects a fact with each name, unless blank, with an `IllegalArgumentException` saying the name is reserved |
+| `reservedFactNamesRejected` | `alwaysTrue`, `putFact` | No; an empty set passes with nothing to run | `reservedFactNames()` answers before `prepare()`, isn't `null`, holds no `null`, gives the same set a second time and again once its engine has prepared the language, and `run()` rejects a fact with each name, unless blank, with an `IllegalArgumentException` saying the name is reserved |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `alwaysTrue`, `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, naming the rule, the second `CONDITION` |
@@ -199,6 +204,10 @@ a failed run must fail again with a `RuleExecutionException` and `CONDITION`, or
 session.
 
 The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
+
+`reservedFactNamesRejected` can miss a language that keeps whether it's prepared in a static field: once a check, or
+anything else earlier in the JVM, has prepared a language of that class, the check's first answers are already the
+prepared ones.
 
 `evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
 evaluates it in a session of its own, ending each fact's run with `LanguageTestContexts.endRun` before the session

@@ -44,7 +44,9 @@ the same. For `languageImports(...)`, use the
 The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is also a
 `Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a fact of
 another type fails the run before your language sees it. Declare `nest` as `Object` too, or as
-`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type.
+`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type. Your language
+must not reserve `x`, `y`, `applicant` or `nest`: every check that builds an engine
+[then fails](contract-kit.md#-testing-with-the-contract-kit).
 
 ```java
 @Override
@@ -89,7 +91,9 @@ A `null` argument other than `deadline` throws `NullPointerException` with `<par
 such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
 `type must not be null`. A fact's value may be `null`.
 
-The evaluation and action contexts don't check fact names. Like an engine, `compile()` rejects a fact declared with a
+As a run does, the evaluation and action contexts reject a `null` or blank fact name with `IllegalArgumentException`
+and the run's message, `fact name must not be null` or `fact name must not be blank`. They don't reject a reserved
+name: they have no engine, so no languages to ask. Like an engine, `compile()` rejects a fact declared with a
 blank or reserved name, a package import over the [size limits](mvel.md#-classes-and-imports), and a language import
 over 1,000 characters.
 

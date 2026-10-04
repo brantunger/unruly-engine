@@ -1,5 +1,10 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.Fact;
+import io.github.brantunger.unruly.api.FactMap;
+import io.github.brantunger.unruly.api.FactReference;
+import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ActionContext;
@@ -402,6 +407,58 @@ class LanguageTestContextsTest {
                 Set.of(), Set.of(), loader, Object.class, Map.of(), Map.of(" ", Integer.class), false));
 
         assertEquals("fact name must not be blank", ex.getMessage());
+    }
+
+    /** What a run of an engine with only the toy language throws for a fact named {@code name} beside {@code x}. */
+    private static String runRejection(String name) throws Exception {
+        try (var engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(new ToyExpressionLanguage()).build()) {
+            engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("put seen x").build()));
+            Map<String, FactReference<Object>> map = new HashMap<>();
+            map.put("x", new Fact<>("x", 1));
+            map.put(name, new Fact<>("n", 1));
+            // FactMap rejects a null name itself, so the run is given one through the map it reads the facts from.
+            FactStore<Object> facts = new FactMap<>() {
+                @Override
+                public Map<String, FactReference<Object>> asMap() {
+                    return map;
+                }
+            };
+            return assertThrows(IllegalArgumentException.class, () -> engine.run(facts)).getMessage();
+        }
+    }
+
+    @Test
+    @DisplayName("an evaluation or action context rejects a null or blank fact name with the message a run gives"
+            + " (#1018)")
+    void nullOrBlankFactNameRejected() throws Exception {
+        for (String name : Arrays.asList(null, "", " ")) {
+            String run = runRejection(name);
+            // A good name beside the bad one, so each is checked whatever the order of the map.
+            Map<String, Object> facts = new HashMap<>(Map.of("x", 1));
+            facts.put(name, 1);
+            Instant deadline = Instant.now().plusSeconds(60);
+
+            assertAll("fact name " + (name == null ? "null" : "'" + name + "'"),
+                    () -> assertEquals(name == null ? "fact name must not be null" : "fact name must not be blank",
+                            run),
+                    () -> assertEquals(run, assertThrows(IllegalArgumentException.class,
+                            () -> LanguageTestContexts.evaluation(facts)).getMessage()),
+                    () -> assertEquals(run, assertThrows(IllegalArgumentException.class,
+                            () -> LanguageTestContexts.evaluation(facts, deadline)).getMessage()),
+                    () -> assertEquals(run, assertThrows(IllegalArgumentException.class,
+                            () -> LanguageTestContexts.action(facts, new HashMap<>())).getMessage()),
+                    () -> assertEquals(run, assertThrows(IllegalArgumentException.class,
+                            () -> LanguageTestContexts.action(facts, new HashMap<>(), deadline)).getMessage()));
+        }
+    }
+
+    @Test
+    @DisplayName("an evaluation or action context accepts a fact name a language may reserve, as it has no engine to"
+            + " ask (#1018)")
+    void reservedFactNameNotChecked() {
+        assertEquals(Map.of("output", 1), LanguageTestContexts.evaluation(Map.of("output", 1)).facts());
+        assertEquals(Map.of("output", 1), LanguageTestContexts.action(Map.of("output", 1), new HashMap<>()).facts());
     }
 
     @Test

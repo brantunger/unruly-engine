@@ -138,10 +138,10 @@ final class FactIntake {
         }
         // Not a switch: the class javac makes for one is loaded by a run's first rejected name (see StackHeadroom).
         if (problem == FactNames.Problem.NULL) {
-            throw rejectedFact("fact name must not be null");
+            throw rejectedFact(FactNames.NULL_MESSAGE);
         }
         if (problem == FactNames.Problem.BLANK) {
-            throw rejectedFact("fact name must not be blank");
+            throw rejectedFact(FactNames.BLANK_MESSAGE);
         }
         // A language binds something of its own to this name, such as the output object, which would silently hide a
         // fact of the same name.

@@ -58,14 +58,17 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
     /**
      * Creates the context for a run that must stop at {@code deadline} on the system clock, as it is now: a step of
      * the system clock after that doesn't move when the context is cancelled. The test kit creates contexts with it.
-     * The context's run is its own, so no other context shares its values.
+     * The context's run is its own, so no other context shares its values. It rejects a fact name a run rejects
+     * whatever its languages: {@code null} or blank.
      *
      * @param facts    The run's facts
      * @param deadline When the run must stop, or {@code null} if it has none
-     * @throws NullPointerException if {@code facts} is {@code null}
+     * @throws NullPointerException     if {@code facts} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, which a run rejects with the same
+     *                                  message
      */
     public EngineEvaluationContext(Map<String, Object> facts, Instant deadline) {
-        this(facts, Deadline.at(deadline));
+        this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")), Deadline.at(deadline));
     }
 
     @Override

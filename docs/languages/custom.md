@@ -384,13 +384,13 @@ nothing: keep `checkFactName` cheap and thread-safe. The [contract kit](contract
 `unusableFactName()` and `usableFactNames()`.
 
 Override `reservedFactNames()` to name the facts your language binds to something of its own; by default it returns
-`output` (`ActionContext.OUTPUT_NAME`). It's asked once per `build()` for every language the engine has, before the
-engine prepares any, even one no rule uses, and each name is rejected for every rule: a declared fact at `build()`, a
-run's fact at `run()`.
+`output` (`ActionContext.OUTPUT_NAME`). Each `build()` asks every language once, before preparing any, even an unused
+one, and each name is rejected for every rule: a declared fact at `build()`, a run's fact at `run()`.
 
-Return a constant: the same names every time, never `null` and holding no `null`, which fail `build()` with
-`IllegalStateException`. What `reservedFactNames()` throws, `build()` throws unchanged. Return an empty set to reserve
-none.
+Return a constant, unchanged by `prepare()`, never `null` and holding no `null`, which fail `build()` with
+`IllegalStateException`. What `reservedFactNames()` throws, `build()` throws unchanged. An empty set reserves none. The
+[contract kit](contract-kit.md#-testing-with-the-contract-kit) fails a language reserving `x`, `y`, `applicant` or
+`nest`.
 
 ## ⏳ Stopping a run
 

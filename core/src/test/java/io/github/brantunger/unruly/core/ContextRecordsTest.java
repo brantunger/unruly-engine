@@ -96,6 +96,36 @@ class ContextRecordsTest {
     }
 
     @Test
+    @DisplayName("a context the test kit creates rejects a null or blank fact name with a run's message (#1018)")
+    void testKitContextsCheckFactNames() {
+        Map<String, String> messages = new HashMap<>();
+        messages.put(null, "fact name must not be null");
+        messages.put("", "fact name must not be blank");
+        messages.put(" ", "fact name must not be blank");
+        for (Map.Entry<String, String> name : messages.entrySet()) {
+            // A good name beside the bad one, so each is checked whatever the order of the map.
+            Map<String, Object> facts = new HashMap<>(Map.of("x", 1));
+            facts.put(name.getKey(), 1);
+
+            IllegalArgumentException evaluation = assertThrows(IllegalArgumentException.class,
+                    () -> new EngineEvaluationContext(facts, (Instant) null));
+            IllegalArgumentException action = assertThrows(IllegalArgumentException.class,
+                    () -> new EngineActionContext(facts, new HashMap<>(), (Instant) null));
+
+            assertEquals(name.getValue(), evaluation.getMessage());
+            assertEquals(name.getValue(), action.getMessage());
+        }
+        // The names are checked once the facts are known not to be null, with the message they had before.
+        assertEquals("facts must not be null", assertThrows(NullPointerException.class,
+                () -> new EngineEvaluationContext(null, (Instant) null)).getMessage());
+        assertEquals("facts must not be null", assertThrows(NullPointerException.class,
+                () -> new EngineActionContext(null, new HashMap<>(), (Instant) null)).getMessage());
+        // A name with no-break or zero-width spaces only isn't blank, as in a run.
+        assertEquals(Set.of("\u00A0", "\u200B"), new EngineEvaluationContext(Map.of("\u00A0", 1, "\u200B", 2),
+                (Instant) null).facts().keySet());
+    }
+
+    @Test
     @DisplayName("an evaluation or action context needs a deadline, which is Deadline.NONE for a run without one")
     void contextsNeedADeadline() {
         NullPointerException evaluation = assertThrows(NullPointerException.class,
