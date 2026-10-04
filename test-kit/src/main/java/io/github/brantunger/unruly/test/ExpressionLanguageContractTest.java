@@ -493,7 +493,9 @@ public abstract class ExpressionLanguageContractTest {
      * {@link #unusableFactName()} return as the {@code Integer} 1. So a language that declares them declares {@code x}
      * and {@code applicant} as {@link Object}, and {@code nest} as {@link Object} or {@link Nesting}: the engine fails
      * a run whose fact isn't an instance of its declared type with an {@link IllegalArgumentException}, before the
-     * language evaluates anything, and the check with it.
+     * language evaluates anything, and the check with it. Nor may the language reserve {@code x}, {@code y},
+     * {@code applicant} or {@code nest}, as {@link ExpressionLanguage#reservedFactNames()} returns them: every check
+     * that builds an engine then fails, before it builds one, with the one message that it reserves them.
      * </p>
      *
      * <p>
@@ -747,16 +749,40 @@ public abstract class ExpressionLanguageContractTest {
         return rule(OK, 2, alwaysTrue(), putFact(OK, fact));
     }
 
+    /** The facts the checks' expressions read, which a language the kit checks must not reserve. */
+    private static final Set<String> KIT_FACT_NAMES = Set.of("x", "y", APPLICANT, NEST);
+
     /**
      * Starts building the engine a check runs its rules with: an {@code allMatches} engine whose output is a
      * {@link HashMap}, with the language added and {@link #configure} applied. A check that needs a setting of its own
-     * sets it on what this returns, after {@code configure}, so that {@code configure} can't change it.
+     * sets it on what this returns, after {@code configure}, so that {@code configure} can't change it. It first fails
+     * the check if the language reserves a fact the checks supply (see {@link #kitFactNamesFree}).
      */
     private RulesEngineBuilder<Map<String, Object>> builder(ExpressionLanguage language) {
+        kitFactNamesFree(language);
         RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.<Map<String, Object>>allMatches(
                 HashMap::new).language(language);
         configure(builder);
         return builder;
+    }
+
+    /**
+     * Fails the check if the language reserves {@code x}, {@code y}, {@code applicant} or {@code nest}, which the
+     * checks supply as facts: the engine would reject a run for that name, and the check would fail, or pass, for a
+     * reason that has nothing to do with what it checks. Every check that builds an engine calls it, so each fails with
+     * this one message. A language whose {@code reservedFactNames()} returns {@code null} is left to
+     * {@code reservedFactNamesRejected} and {@code build()}, which report it.
+     */
+    private static void kitFactNamesFree(ExpressionLanguage language) {
+        Set<String> reserved = language.reservedFactNames();
+        if (reserved == null) {
+            return;
+        }
+        List<String> clashes = KIT_FACT_NAMES.stream().filter(reserved::contains).sorted().toList();
+        if (!clashes.isEmpty()) {
+            fail("reservedFactNames() reserves " + clashes + ", which the contract kit's checks supply as facts: the"
+                    + " kit can't check a language that reserves x, y, applicant or nest");
+        }
     }
 
     private RulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
@@ -1311,24 +1337,33 @@ public abstract class ExpressionLanguageContractTest {
         ExpressionLanguage language = language();
         // Asked before the engine is built, so before the language is prepared: an engine asks every language it has
         // when it's built, even one it prepares only when a rule list first uses it.
-        Set<String> reserved = assertDoesNotThrow(language::reservedFactNames,
+        Set<String> returned = assertDoesNotThrow(language::reservedFactNames,
                 "reservedFactNames() must answer before prepare() is called");
-        assertNotNull(reserved, "reservedFactNames() must not return null: return an empty set to reserve no name");
-        for (String name : reserved) {
+        assertNotNull(returned, "reservedFactNames() must not return null: return an empty set to reserve no name");
+        for (String name : returned) {
             assertNotNull(name, "reservedFactNames() must not return a set holding null");
         }
+        // A copy, as the engine keeps one: a language that adds to the set it returned, when it's prepared, would
+        // otherwise be compared with itself.
+        Set<String> reserved = Set.copyOf(returned);
         assertEquals(reserved, language.reservedFactNames(), "reservedFactNames() must return the same names every"
                 + " time: the engine asks once, when it's built");
         closing(engine(language), engine -> {
             engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
+            // build() has prepared the language, which the engine names, so it's asked again now: a later engine built
+            // with this instance asks it prepared. A language that keeps whether it's prepared in a static field is
+            // caught only if no earlier check prepared a language of its class.
+            assertEquals(reserved, language.reservedFactNames(), "reservedFactNames() must return the same names after"
+                    + " prepare() as before: the engine asks once, when it's built, and may prepare the language before"
+                    + " or after");
             for (String name : reserved) {
                 if (name.isBlank()) {
                     // The engine rejects a blank name whoever reserves it.
                     continue;
                 }
-                // The rule reads x, so x is supplied too, unless it's the reserved name itself.
-                FactStore<Object> facts = "x".equals(name) ? new FactMap<>(new Fact<>(name, 1))
-                        : new FactMap<>(new Fact<>("x", 1), new Fact<>(name, 1));
+                // The rule reads x, so x is supplied too. The language doesn't reserve x, or building the engine would
+                // have failed the check, so only the name itself can make the run throw for being reserved.
+                FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1), new Fact<>(name, 1));
 
                 IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
                         () -> engine.run(facts), "reservedFactNames() returned '" + name + "', but run() didn't"

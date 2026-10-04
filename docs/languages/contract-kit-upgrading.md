@@ -10,6 +10,24 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.23
+
+In 2.24.0 one check got stricter, and every check that builds an engine got a new failure:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| Every check that builds an engine | Returns `x`, `y`, `applicant` or `nest` from `reservedFactNames()` | The checks supply those facts, so the kit can't check the language; reserve other names |
+| `reservedFactNamesRejected` | Returns other names from `reservedFactNames()` once it's prepared, which the 2.23.2 kit passed | A later engine built with the same, prepared instance rejects other names; return a constant. A flag kept in a static field may go unnoticed (see [the limit](contract-kit.md#-testing-with-the-contract-kit)) |
+
+A language reserving `x`, `y` or `applicant` already failed the 2.23.2 kit: checks such as `conditionReadsFacts`
+failed with the engine's "is reserved" message or an unexpected exception. Now each check that builds an engine
+fails before building it, with one message naming the names. A language reserving `nest` whose `putFactProperty()`
+and `bothConditions()` both return `null` passed 2.23.2, and now fails.
+
+`LanguageTestContexts.evaluation` and `action` now reject a `null` or blank fact name with the run's
+`IllegalArgumentException`; see
+[Testing a compiler without an engine](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
+
 ## 🔼 Upgrading from 2.22
 
 In 2.23.0 `reservedFactNamesRejected` was added and `unusableFactNameRejected` got stricter. Both follow

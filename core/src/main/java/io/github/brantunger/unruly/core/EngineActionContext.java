@@ -52,15 +52,19 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
     /**
      * Creates the context for a run that must stop at {@code deadline} on the system clock, as it is now: a step of
      * the system clock after that doesn't move when the context is cancelled. The test kit creates contexts with it.
-     * The context's run is its own, so no other context shares its values.
+     * The context's run is its own, so no other context shares its values. It rejects a fact name a run rejects
+     * whatever its languages: {@code null} or blank.
      *
      * @param facts    The run's facts
      * @param output   The output object the action changes
      * @param deadline When the run must stop, or {@code null} if it has none
-     * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
+     * @throws NullPointerException     if {@code facts} or {@code output} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, which a run rejects with the same
+     *                                  message
      */
     public EngineActionContext(Map<String, Object> facts, Object output, Instant deadline) {
-        this(facts, output, Deadline.at(deadline));
+        this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")), output,
+                Deadline.at(deadline));
     }
 
     /**

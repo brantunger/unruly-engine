@@ -83,9 +83,9 @@ public interface ExpressionLanguage {
      * {@link java.util.ServiceLoader} included, before the engine prepares any language and whether or not a rule list
      * ever uses the language. So it must not need {@link #prepare()} to have been called, and should initialize no
      * class of the language's: return a constant. The engine keeps a copy of the set, so a later change to it changes
-     * nothing. It must return the same names every time. By default, {@value ActionContext#OUTPUT_NAME}, so a
-     * language written before this method existed keeps the engine's earlier rule; a language that binds the output
-     * object to no fact name can return an empty set.
+     * nothing. It must return the same names every time, before {@link #prepare()} and after. By default,
+     * {@value ActionContext#OUTPUT_NAME}, so a language written before this method existed keeps the engine's earlier
+     * rule; a language that binds the output object to no fact name can return an empty set.
      * </p>
      *
      * @return The names, never {@code null} and holding no {@code null}; an empty set if the language reserves none

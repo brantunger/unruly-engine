@@ -11,8 +11,10 @@ import java.util.TreeMap;
 
 /**
  * Checks a fact's name, before any language is asked about it: the builder checks each declared fact's, the engine
- * each declared fact's against the names its languages reserve, and a run each supplied fact's. Each says what's wrong
- * in its own words, with its own exception.
+ * each declared fact's against the names its languages reserve, and a run each supplied fact's, as do the test kit's
+ * evaluation and action contexts. Each throws its own exception. A run and the test kit's contexts reject a
+ * {@code null} name with {@link #NULL_MESSAGE}, and they and the builder a blank one with {@link #BLANK_MESSAGE}; a
+ * reserved name is rejected with {@link #reservedMessage}'s.
  */
 final class FactNames {
 
@@ -33,6 +35,18 @@ final class FactNames {
         RESERVED
     }
 
+    /**
+     * The message a fact named {@code null} is rejected with, by a run and by the test kit's evaluation and action
+     * contexts.
+     */
+    static final String NULL_MESSAGE = "fact name must not be null";
+
+    /**
+     * The message a fact with a blank name is rejected with, by a run, by the builder for a declared fact, and by the
+     * test kit's contexts.
+     */
+    static final String BLANK_MESSAGE = "fact name must not be blank";
+
     private FactNames() {
     }
 
@@ -52,6 +66,28 @@ final class FactNames {
         }
         // Only now: an unmodifiable set throws NullPointerException when asked whether it holds null.
         return reserved.contains(name) ? Problem.RESERVED : null;
+    }
+
+    /**
+     * Checks the names of the facts the test kit creates a context with, as a run checks the names of its facts, with
+     * the run's message. No name is reserved here: the context has no engine, and so no languages to ask.
+     *
+     * @param facts The facts by name
+     * @return {@code facts}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank
+     */
+    static Map<String, Object> requireRunNames(Map<String, Object> facts) {
+        for (String name : facts.keySet()) {
+            Problem problem = check(name, Set.of());
+            // No name is reserved, so a name has no other problem.
+            if (problem == Problem.NULL) {
+                throw new IllegalArgumentException(NULL_MESSAGE);
+            }
+            if (problem == Problem.BLANK) {
+                throw new IllegalArgumentException(BLANK_MESSAGE);
+            }
+        }
+        return facts;
     }
 
     /**

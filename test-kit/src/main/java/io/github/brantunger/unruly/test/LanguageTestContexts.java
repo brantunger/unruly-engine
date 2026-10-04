@@ -19,8 +19,10 @@ import java.util.Set;
 /**
  * Creates the contexts the engine passes to an expression language, for unit tests of a language's compiler and
  * compiled expressions. The context interfaces are sealed, so a test can't implement them. These are the engine's own
- * implementations, and behave as they do in a run: for example, writing to the facts fails with the engine's message.
- * Each context from {@code evaluation} or {@code action} is for a run of its own, so the values it keeps with
+ * implementations, and behave as they do in a run: for example, writing to the facts fails with the engine's message,
+ * and the evaluation and action contexts reject a fact with a {@code null} or blank name with a run's message, though
+ * not one with a name a language reserves: they have no engine, and so no languages to ask. Each context from
+ * {@code evaluation} or {@code action} is for a run of its own, so the values it keeps with
  * {@link EvaluationContext#runScoped} aren't shared with another context; {@link #actionInRun} creates one in the run
  * of another context, and shares its values. No run ends by itself, so {@link #endRun} closes the values a context
  * keeps with {@link EvaluationContext#runScopedClosing}, as the end of a run does.
@@ -187,7 +189,9 @@ public final class LanguageTestContexts {
      * @param facts The facts by name, whose values can be {@code null}; copied
      * @return The context. Its facts are read-only, and a write fails with the message the engine uses for a condition.
      *         It equals only itself, as in a run, so two created from the same facts aren't equal.
-     * @throws NullPointerException if {@code facts} is {@code null}
+     * @throws NullPointerException     if {@code facts} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, which a run rejects with the same
+     *                                  message
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts) {
         return evaluation(facts, null);
@@ -208,7 +212,9 @@ public final class LanguageTestContexts {
      * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run: {@code true} once
      *         the deadline has passed, measured with a monotonic clock from when the context was created, or while
      *         the calling thread's interrupt status is set. It equals only itself, as in a run.
-     * @throws NullPointerException if {@code facts} is {@code null}
+     * @throws NullPointerException     if {@code facts} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, which a run rejects with the same
+     *                                  message
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
                                                @Nullable Instant deadline) {
@@ -223,7 +229,9 @@ public final class LanguageTestContexts {
      * @param output The output object, which the action changes in place
      * @return The context. Its facts are read-only, and a write fails with the message the engine uses for an action.
      *         It equals only itself, as in a run, so two created from the same facts and output aren't equal.
-     * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
+     * @throws NullPointerException     if {@code facts} or {@code output} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, which a run rejects with the same
+     *                                  message
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output) {
         return action(facts, output, null);
@@ -244,7 +252,9 @@ public final class LanguageTestContexts {
      *                 {@code runTimeout} gives it
      * @return The context. Its {@link EvaluationContext#isCancelled()} answers as it does in a run, and it equals only
      *         itself.
-     * @throws NullPointerException if {@code facts} or {@code output} is {@code null}
+     * @throws NullPointerException     if {@code facts} or {@code output} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, which a run rejects with the same
+     *                                  message
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output,
                                        @Nullable Instant deadline) {
