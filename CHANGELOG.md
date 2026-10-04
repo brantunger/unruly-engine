@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.25.0](https://github.com/brantunger/unruly-engine/compare/v2.24.0...v2.25.0) (2026-10-04)
+
+
+### Features
+
+* name the missing mvel2 class on every call, and drop the MVEL module's unused SLF4J requirement ([#1027](https://github.com/brantunger/unruly-engine/issues/1027)) ([b465d1e](https://github.com/brantunger/unruly-engine/commit/b465d1e3c72417fc6fb303a7c744ca22772b1fce))
+
 ## [2.24.0](https://github.com/brantunger/unruly-engine/compare/v2.23.2...v2.24.0) (2026-10-04)
 
 
