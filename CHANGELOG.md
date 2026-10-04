@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.24.0](https://github.com/brantunger/unruly-engine/compare/v2.23.2...v2.24.0) (2026-10-04)
+
+
+### Features
+
+* let the contract kit name a language that reserves its own fact names, and check names in the kit's contexts ([#1025](https://github.com/brantunger/unruly-engine/issues/1025)) ([907ac87](https://github.com/brantunger/unruly-engine/commit/907ac870996f8ed85e1c64c2b22c9006396468f0))
+
 ## [2.23.2](https://github.com/brantunger/unruly-engine/compare/v2.23.1...v2.23.2) (2026-10-04)
 
 
