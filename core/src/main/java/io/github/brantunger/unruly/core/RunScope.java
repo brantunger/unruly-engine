@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 /**
@@ -16,12 +17,12 @@ import java.util.function.Supplier;
  * context and each of its action contexts share one scope, and a nested run has a scope of its own.
  *
  * <p>
- * {@link #get} isn't synchronized: a run evaluates one expression at a time. It makes its map the first time a value is
+ * {@link #get} takes no lock: a run evaluates one expression at a time. It makes its map the first time a value is
  * asked for, so a run whose languages keep nothing allocates no map. Only the run's contexts refer to it, so it goes
  * when the run returns. The values kept with {@code runScoped} aren't closed; those kept with {@code runScopedClosing}
  * are handed back by {@link #end()}, for the run to close, and none can be made after that. {@link #getClosing} and
- * {@link #end()} are synchronized with each other, so a value asked for on another thread while the run ends, such as
- * through a context a language kept, is either handed back to be closed or refused, never left open.
+ * {@link #end()} hold the scope's lock, so a value asked for on another thread while the run ends, such as through a
+ * context a language kept, is either handed back to be closed or refused, never left open.
  * </p>
  */
 final class RunScope {
@@ -34,6 +35,12 @@ final class RunScope {
     private Set<Object> closingKeys;
     private List<AutoCloseable> closing;
     private boolean ended;
+    // Held by getClosing and end(). A lock, not the scope's monitor: on JDK 21 to 23 a virtual thread that parks
+    // holding a monitor keeps its carrier thread, so inits that wait, such as for a pooled connection another run
+    // holds, could take every carrier and deadlock the runs.
+    private final ReentrantLock lock = new ReentrantLock();
+    // What releasing the lock threw as end() handed the values back, if anything.
+    private Throwable unlockFailure;
 
     /**
      * Returns the value kept under {@code key}, making it with {@code init} the first time. A supplier that throws
@@ -65,8 +72,14 @@ final class RunScope {
      *                               {@link #end()} has been called
      */
     // With end(): the init runs holding the lock, so a value is kept, or refused, wholly before or after the run ends.
-    synchronized <T extends AutoCloseable> T getClosing(Object key, Supplier<? extends T> init) {
-        return get(key, init, true);
+    // The lock is reentrant, so an init can ask for another closing key.
+    <T extends AutoCloseable> T getClosing(Object key, Supplier<? extends T> init) {
+        lock.lock();
+        try {
+            return get(key, init, true);
+        } finally {
+            lock.unlock();
+        }
     }
 
     private <T> T get(Object key, Supplier<? extends T> init, boolean closes) {
@@ -115,20 +128,55 @@ final class RunScope {
 
     /**
      * Ends the run's scope: hands back the values kept with {@link #getClosing}, for the caller to close, and makes
-     * {@link #getClosing} fail from now on. {@link #get} still works. It allocates nothing, so it can end a run that
-     * has run out of memory, and nothing can be added to the list it returns.
+     * {@link #getClosing} fail from now on. {@link #get} still works. It allocates nothing when no other thread is
+     * taking the scope's lock, so it can then end a run that has run out of memory. When another thread is, such as
+     * one running an init in {@link #getClosing}, it waits for it: a platform thread's wait can't fail for want of
+     * memory, but waiting on a virtual thread can throw {@link OutOfMemoryError}. Releasing the lock can fail too, once
+     * the lock is free, as waking a virtual thread that waits for it allocates: the values are still handed back, and
+     * what it threw is kept for {@link #endFailure()}, for the caller to throw once it has closed them. Nothing can be
+     * added to the list it returns.
      *
      * @return The values to close, in the order they were made: the caller closes them last first, so a value made
      *         from another is closed before it. Empty if none were kept, or this has been called before.
      */
+    // Waits for an init running on another thread, whose value is then handed back. Taking a free lock is one
+    // compare-and-set; the JDK's lock waits without a queue node when it can't allocate one.
     // A scope keeps no list of values to close once it has handed them back.
     @SuppressWarnings("PMD.NullAssignment")
-    synchronized List<AutoCloseable> end() {
-        ended = true;
-        List<AutoCloseable> toClose = closing;
-        // Its keys are kept, so asking for one with runScoped still fails as it did.
-        closing = null;
+    List<AutoCloseable> end() {
+        lock.lock();
+        List<AutoCloseable> toClose;
+        try {
+            ended = true;
+            // Only this call's, so calling it again hands back nothing and no failure.
+            unlockFailure = null;
+            toClose = closing;
+            // Its keys are kept, so asking for one with runScoped still fails as it did.
+            closing = null;
+        } finally {
+            unlockEnded();
+        }
         return toClose == null ? List.of() : toClose;
+    }
+
+    // Any Throwable: the values are handed back whatever releasing the lock threw. getClosing's own unlock() can fail
+    // the same way, but its value is kept by then, so end() hands it back.
+    private void unlockEnded() {
+        try {
+            lock.unlock();
+            Faults.at(Faults.Step.RUN_SCOPE_UNLOCKED);
+        } catch (Throwable t) {
+            unlockFailure = t;
+        }
+    }
+
+    /**
+     * Returns what releasing the scope's lock threw as the last call of {@link #end()} handed its values back.
+     *
+     * @return What it threw, or {@code null} if it threw nothing
+     */
+    Throwable endFailure() {
+        return unlockFailure;
     }
 
     /**

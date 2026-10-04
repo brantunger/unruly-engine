@@ -484,8 +484,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#runScopedClosing}, then gives back its copy of
      * the rules. It throws nothing: what closing the values or giving back the copy throws, as logging what a
      * {@code close()} threw can when it runs out of stack, is returned for the run to throw, and the copy is given back
-     * whatever closing the values threw. The values are handed over first, so none can be made once the run is ending.
-     * Each step's failure is only stored where it's caught, which can't fail again; they are combined last.
+     * whatever closing the values threw. The values are handed over first, so none can be made once the run is ending;
+     * what releasing the run scope's lock threw as they were is a failure taking them, and they're closed all the same
+     * (see {@link RunScope#end()}). Each step's failure is only stored where it's caught, which can't fail again; they
+     * are combined last.
      *
      * @param rules The rule set the run borrowed its copy from
      * @param copy  The run's copy, or {@code null} if its facts were rejected and it holds none
@@ -505,7 +507,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Throwable taking = null;
         List<AutoCloseable> values = List.of();
         try {
-            values = facts.evaluation().runScope().end();
+            RunScope scope = facts.evaluation().runScope();
+            values = scope.end();
+            // What releasing the scope's lock threw once it had handed the values over.
+            Failures.rethrowUnchecked(scope.endFailure());
             Faults.at(Faults.Step.RUN_VALUES_CLOSING);
         } catch (Throwable t) {
             // The values handed over are closed all the same.

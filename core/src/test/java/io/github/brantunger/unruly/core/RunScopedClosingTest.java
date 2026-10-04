@@ -13,13 +13,19 @@ import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -31,6 +37,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import static io.github.brantunger.unruly.TestSupport.await;
+import static io.github.brantunger.unruly.TestSupport.throwIfSet;
 import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -815,5 +823,152 @@ class RunScopedClosingTest {
             assertInstanceOf(IllegalStateException.class, stopped.get(), () -> String.valueOf(stopped.get()));
             assertEquals(made, handedBack, "a value made on the other thread was neither handed back nor refused");
         }
+    }
+
+    @Test
+    @DisplayName("#1009: a virtual thread whose closing init waits isn't pinned to its carrier while it waits")
+    void initWaitingOnAVirtualThreadIsNotPinned(@TempDir Path dir) throws Exception {
+        RunScope scope = new RunScope();
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Value> made = new AtomicReference<>();
+        AtomicReference<Throwable> failed = new AtomicReference<>();
+        List<RecordedEvent> pinned;
+
+        // Closed however the test ends, so no recording is left running for the tests after it.
+        try (Recording recording = new Recording()) {
+            // Every pinned park, however short; the recording is the JVM's, so only this test's thread is counted.
+            recording.enable("jdk.VirtualThreadPinned").withThreshold(Duration.ZERO);
+            recording.start();
+            Thread waiter = Thread.ofVirtual().start(() -> {
+                try {
+                    made.set(scope.getClosing("connection", () -> {
+                        try {
+                            // Waits as an init taking a pooled connection would, until the test sees it waiting.
+                            assertTrue(release.await(10, TimeUnit.SECONDS), "never released");
+                        } catch (InterruptedException e) {
+                            throw new AssertionError(e);
+                        }
+                        return new Value("connection");
+                    }));
+                } catch (Throwable e) {
+                    failed.set(e);
+                }
+            });
+            try {
+                await(() -> waiter.getState() == Thread.State.TIMED_WAITING, 10, "the init waits");
+            } finally {
+                release.countDown();
+                waiter.join(TimeUnit.SECONDS.toMillis(10));
+            }
+            recording.stop();
+            Path file = dir.resolve("pinned.jfr");
+            recording.dump(file);
+            assertFalse(waiter.isAlive(), "the init never returned");
+            long id = waiter.threadId();
+            pinned = RecordingFile.readAllEvents(file).stream()
+                    .filter(event -> event.getThread() != null && event.getThread().getJavaThreadId() == id)
+                    .toList();
+        }
+
+        throwIfSet(failed.get());
+        assertEquals(List.of(), pinned, "the init's wait pinned its virtual thread");
+        assertEquals(List.of(made.get()), scope.end());
+    }
+
+    @Test
+    @DisplayName("#1009: ending the run while another thread's init runs waits for it, and hands back its value")
+    void endWaitsForAnInitOnAnotherThread() throws Exception {
+        RunScope scope = new RunScope();
+        CountDownLatch initRuns = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Value> made = new AtomicReference<>();
+        AtomicReference<List<AutoCloseable>> handedBack = new AtomicReference<>();
+        Thread maker = new Thread(() -> made.set(scope.getClosing("key", () -> {
+            initRuns.countDown();
+            TestSupport.await(release);
+            return new Value("made");
+        })));
+        maker.setDaemon(true);
+        maker.start();
+        TestSupport.await(initRuns);
+        Thread ender = new Thread(() -> handedBack.set(scope.end()));
+        ender.setDaemon(true);
+        ender.start();
+        try {
+            // Blocked on a monitor, or waiting for a lock.
+            await(() -> ender.getState() == Thread.State.BLOCKED || ender.getState() == Thread.State.WAITING, 10,
+                    "end() waits for the init");
+            assertNull(handedBack.get(), "end() returned while the init ran");
+        } finally {
+            release.countDown();
+            maker.join(TimeUnit.SECONDS.toMillis(10));
+            ender.join(TimeUnit.SECONDS.toMillis(10));
+        }
+
+        assertFalse(maker.isAlive(), "the init never returned");
+        assertFalse(ender.isAlive(), "end() never returned");
+        assertEquals(List.of(made.get()), handedBack.get());
+    }
+
+    @Test
+    @DisplayName("#1009: a closing key asked for on another thread while its init runs waits, and gets the same value")
+    void sameKeyOnAnotherThreadWaitsForTheInit() throws Exception {
+        RunScope scope = new RunScope();
+        CountDownLatch initRuns = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Value> first = new AtomicReference<>();
+        AtomicReference<Value> second = new AtomicReference<>();
+        List<String> inits = new CopyOnWriteArrayList<>();
+        Thread maker = new Thread(() -> first.set(scope.getClosing("key", () -> {
+            inits.add("first");
+            initRuns.countDown();
+            TestSupport.await(release);
+            return new Value("first");
+        })));
+        maker.setDaemon(true);
+        maker.start();
+        TestSupport.await(initRuns);
+        Thread asker = new Thread(() -> second.set(scope.getClosing("key", () -> {
+            inits.add("second");
+            return new Value("second");
+        })));
+        asker.setDaemon(true);
+        asker.start();
+        try {
+            await(() -> asker.getState() == Thread.State.BLOCKED || asker.getState() == Thread.State.WAITING, 10,
+                    "the other thread waits for the init");
+        } finally {
+            release.countDown();
+            maker.join(TimeUnit.SECONDS.toMillis(10));
+            asker.join(TimeUnit.SECONDS.toMillis(10));
+        }
+
+        assertFalse(maker.isAlive(), "the init never returned");
+        assertFalse(asker.isAlive(), "the other thread never got the value");
+        assertEquals(List.of("first"), inits);
+        assertSame(first.get(), second.get());
+        assertEquals(List.of(first.get()), scope.end());
+    }
+
+    @Test
+    @DisplayName("#1009: a closing init that throws lets another thread ask for a value and end the run")
+    void initThatThrowsLetsOtherThreadsIn() throws Exception {
+        RunScope scope = new RunScope();
+        IllegalStateException failure = new IllegalStateException("no connection");
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> scope.getClosing("key", () -> {
+            throw failure;
+        })));
+        AtomicReference<Value> made = new AtomicReference<>();
+        AtomicReference<List<AutoCloseable>> handedBack = new AtomicReference<>();
+        Thread other = new Thread(() -> {
+            made.set(scope.getClosing("key", () -> new Value("made")));
+            handedBack.set(scope.end());
+        });
+        other.setDaemon(true);
+        other.start();
+        other.join(TimeUnit.SECONDS.toMillis(10));
+
+        assertFalse(other.isAlive(), "the init that threw left the scope locked");
+        assertEquals(List.of(made.get()), handedBack.get());
     }
 }

@@ -44,6 +44,11 @@ final class Faults {
         SETTLING,
         /** A run that stopped setting its thread's interrupt status again, before it has. */
         INTERRUPT_KEPT,
+        /**
+         * A run's scope that has released its lock as it handed back the values to close, as releasing it can fail
+         * once the lock is free.
+         */
+        RUN_SCOPE_UNLOCKED,
         /** A run that has taken the values its languages kept to be closed, before it has closed any. */
         RUN_VALUES_CLOSING,
         /**

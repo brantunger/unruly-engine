@@ -145,8 +145,12 @@ assertSame(evaluation.runScoped("key", Object::new), action.runScoped("key", Obj
 No engine runs in these tests, so nothing closes a context's `runScopedClosing` values for you. Since 2.20.0,
 `endRun(context)` closes them as a run's end would, newest first, but rethrows the first failure, so your test sees
 a `close()` that throws. Each other failure is in its `getSuppressed()` once, unless it already carries the first or
-the first carries it. A second call does nothing. After it, `runScopedClosing` throws `IllegalStateException`
-through any context of that run, as after a real run.
+the first carries it.
+
+If releasing the run's lock threw, such as an `OutOfMemoryError` while waking a virtual thread that waited for it,
+`endRun` throws that instead, once every value is closed, with each `close()` failure suppressed on it. A second call
+does nothing. After it, `runScopedClosing` throws `IllegalStateException` through any context of that run, as after a
+real run.
 
 ```java
 EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1));
