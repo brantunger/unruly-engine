@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.23.2](https://github.com/brantunger/unruly-engine/compare/v2.23.1...v2.23.2) (2026-10-04)
+
+
+### Bug Fixes
+
+* name the cause when a first MVEL load runs out of stack, and keep ExceptionInInitializerError usable ([#1023](https://github.com/brantunger/unruly-engine/issues/1023)) ([a4e3f65](https://github.com/brantunger/unruly-engine/commit/a4e3f6524d39ac8546ba68be29436b34ce93dbe2))
+
 ## [2.23.1](https://github.com/brantunger/unruly-engine/compare/v2.23.0...v2.23.1) (2026-10-04)
 
 
