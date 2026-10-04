@@ -16,9 +16,6 @@ base {
 dependencies {
     api(project(":core"))
     implementation(libs.mvel2)
-    // MVEL says at DEBUG when it can't compile a rule list against the engine's declared facts. SLF4J is already a
-    // runtime dependency through core, so this adds no artifact for users.
-    implementation(libs.slf4j.api)
 
     testImplementation(project(":test-kit"))
     // TestEngines, TestLogs and the test languages, shared with core's own tests.
@@ -31,6 +28,9 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // LanguageDiscoveryTest finds slf4j-api's jar through Logger.class to build its class loaders, as
+    // MissingMvelTest does.
+    testImplementation(libs.slf4j.api)
     testRuntimeOnly(libs.slf4j.simple)
 }
 
