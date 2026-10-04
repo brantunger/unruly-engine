@@ -172,11 +172,33 @@ class CompileFailureTest {
         StackOverflowError overflow = new StackOverflowError();
         ExpressionLanguage language = language(throwing(overflow), NO_OP);
 
+        // Loaded at the top of the test's own stack, which leaves room for the check that tells why it overflowed.
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
 
         assertEquals("Condition for rule 'r' failed to compile: the expression is too long or too deeply nested to "
                 + "compile",
                 ex.getMessage());
+        assertSame(overflow, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("a StackOverflowError a compiler throws with too little stack left for the check is reported as the "
+            + "stack running out, with what the compiler threw as the cause (#1013)")
+    void compilerThrowsStackOverflowErrorDeep() {
+        StackOverflowError overflow = new StackOverflowError();
+        ExpressionLanguage language = language(throwing(overflow), NO_OP);
+        // The check fails as it does deep in a stack, which DeepCompileOverflowTest shows in a JVM of its own.
+        Faults.inject(Faults.Step.OVERFLOW_ROOM_CHECKED, 1, new StackOverflowError());
+
+        RuleCompilationException ex;
+        try {
+            ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
+        } finally {
+            Faults.clear();
+        }
+
+        assertEquals("Condition for rule 'r' failed to compile: the stack ran out: it was compiled too deep in the "
+                + "stack, or on a thread whose stack is too small", ex.getMessage());
         assertSame(overflow, ex.getCause());
     }
 

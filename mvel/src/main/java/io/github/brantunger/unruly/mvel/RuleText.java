@@ -71,12 +71,18 @@ final class RuleText {
 
     /**
      * Counts a name's dot-separated parts: one more than its dots, so a name without one has one part, and the empty
-     * parts of {@code a..b} count too.
+     * parts of {@code a..b} count too. Counted with a loop rather than a stream, as a load that reads a property
+     * calls it, and a stream's first use would initialize the JDK's classes for it there, maybe deep in a stack
+     * (#1012).
      *
      * @param name The name
      * @return How many dot-separated parts it has
      */
     static long dottedParts(String name) {
-        return name.chars().filter(c -> c == '.').count() + 1;
+        long parts = 1;
+        for (int dot = name.indexOf('.'); dot >= 0; dot = name.indexOf('.', dot + 1)) {
+            parts++;
+        }
+        return parts;
     }
 }

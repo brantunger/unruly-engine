@@ -455,8 +455,10 @@ final class RuleListCompiler {
     /**
      * Compiles one condition or action. An expression the language rejects is reported with the language's reason and
      * issues, or with none if its exception can't give them (see {@link Failures#issuesOf}); anything else the
-     * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A fatal
-     * {@link Error}, also one the language wraps in its own exception, is logged like any failure and then rethrown.
+     * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A
+     * {@link StackOverflowError}, also as the root of what the language threw, is reported by its cause, which the room
+     * left on the stack where it was caught tells (see {@link #overflowReason()}). A fatal {@link Error}, also one the
+     * language wraps in its own exception, is logged like any failure and then rethrown.
      *
      * @param source      The expression to compile
      * @param compilation Compiles it with the rule's language
@@ -476,9 +478,10 @@ final class RuleListCompiler {
             throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(),
                     Failures.issuesOf(e));
         } catch (Throwable e) {
-            // MVEL's parser recurses once per operator, so a very long expression overflows the stack.
-            String reason = Failures.rootCause(e) instanceof StackOverflowError
-                    ? "the expression is too long or too deeply nested to compile"
+            // MVEL's parser recurses once per operator, so a very long expression overflows the stack; so does any
+            // expression compiled with too little stack left, such as by a load called deep in a stack or on a thread
+            // with a small one (#1013).
+            String reason = Failures.rootCause(e) instanceof StackOverflowError ? overflowReason()
                     : Failures.describe(e);
             throw compilationFailure(expression + " failed to compile: " + reason, e, source.ruleName(), source.kind(),
                     List.of());
@@ -488,5 +491,27 @@ final class RuleListCompiler {
                     source.ruleName(), source.kind(), List.of());
         }
         return compiled;
+    }
+
+    /**
+     * Tells why compiling an expression overflowed the stack, from the room left where the overflow was caught, a few
+     * frames below {@code load()} or {@code validate()}. Room there for {@link StackHeadroom#checkInitializing()}, far
+     * more than a compile needs before it reaches the expression, means the expression itself took the stack: it is too
+     * long or too deeply nested. Too little means the call that compiled it started too deep in the stack, where a
+     * short, valid expression can overflow too, as a language's first load does while it loads its classes, or on a
+     * thread whose whole stack is smaller than that room, where a long expression that overflows is reported so too.
+     * Nothing but the check runs on the way, which gives its stack back before this returns, and an overflow in it is
+     * caught here, so what the language threw stays the failure's cause.
+     *
+     * @return The reason, for the failure's message
+     */
+    private static String overflowReason() {
+        try {
+            Faults.at(Faults.Step.OVERFLOW_ROOM_CHECKED);
+            StackHeadroom.checkInitializing();
+            return "the expression is too long or too deeply nested to compile";
+        } catch (StackOverflowError e) {
+            return "the stack ran out: it was compiled too deep in the stack, or on a thread whose stack is too small";
+        }
     }
 }

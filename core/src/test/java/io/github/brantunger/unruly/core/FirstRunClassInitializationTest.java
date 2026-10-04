@@ -40,7 +40,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * with a static initializer at all, the engine's, the JDK's or a library's, with two exceptions. One is the scenario's
  * own classes, which stand for an application's. The other is the hidden classes the JDK makes for method handles
  * when they are first needed, such as {@code java/lang/invoke/LambdaForm$MH+0x...}, which have no name to initialize
- * ahead of time.
+ * ahead of time. That is with the engine's logging off. With it on, the first message the engine logs initializes
+ * SLF4J's {@code Level} and {@code FormattingTuple}, which building an engine leaves to it, and a test shows that with
+ * slf4j-simple, and that it initializes nothing else (#1012).
  * </p>
  */
 @DisplayName("building an engine initializes the classes with static initializers engines use, before anything else "
@@ -84,7 +86,7 @@ class FirstRunClassInitializationTest {
             "java.lang.invoke.ClassSpecializer$Factory$1Var", "java.lang.ClassValue$RemovalToken",
             "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
             "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
-            "java.lang.invoke.DirectMethodHandle$Interface");
+            "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError");
 
     @Test
     @DisplayName("the scenario's first loads and runs initialize no class with a static initializer but the JDK's "
@@ -98,6 +100,20 @@ class FirstRunClassInitializationTest {
         assertEquals(List.of(), notInitializedBy(lines.subList(0, lines.indexOf(FirstRunScenario.BUILT)),
                 Stream.concat(ENGINE_CLASSES.stream(), jdkClasses.stream()).toList()),
                 "not initialized when the first engine was built");
+    }
+
+    @Test
+    @DisplayName("with the engine logging, the first message it logs initializes SLF4J's Level and FormattingTuple, "
+            + "and the scenario's first loads and runs nothing else")
+    void initializedWhenBuiltWithLogging(@TempDir Path dir) throws IOException, InterruptedException {
+        // As an application's SLF4J provider may: this test's logs at INFO and above. The first message logged is the
+        // first failing load's.
+        List<String> lines = scenario(dir, "-Dorg.slf4j.simpleLogger.defaultLogLevel=info");
+        String firstLogged = "a load that fails to compile, with an exception and with an invalid expression: ";
+
+        assertEquals(List.of(firstLogged + "org/slf4j/event/Level", firstLogged + "org/slf4j/helpers/FormattingTuple"),
+                classesIn(initializedBy(lines.subList(lines.indexOf(FirstRunScenario.BUILT),
+                        lines.indexOf(FirstRunScenario.RAN)))), "initialized by first loads and runs");
     }
 
     @Test
@@ -168,6 +184,14 @@ class FirstRunClassInitializationTest {
             }
         }
         return initialized;
+    }
+
+    // Each of initializedBy's lines as its step and the class's name alone, without the address that changes each run.
+    private static List<String> classesIn(List<String> initialized) {
+        return initialized.stream().map(line -> {
+            int name = line.indexOf(INITIALIZING) + INITIALIZING.length();
+            return line.substring(1, line.indexOf(INITIALIZING)) + line.substring(name, line.indexOf('\'', name));
+        }).toList();
     }
 
     private static List<String> notInitializedBy(List<String> lines, List<String> classNames) {

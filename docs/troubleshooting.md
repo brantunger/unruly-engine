@@ -44,12 +44,13 @@ flowchart TD
     classDef yours    fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-dasharray:4 3
 ```
 
-In words: if `run()` threw, read [An exception from run()](#-an-exception-from-run). If it returned `null` or a
-result, check whether the condition is true for these facts; if not, check the fact's name and value (in MVEL, an
-enum compared with a string is `false`). If it is true and the engine is first-match, a higher-priority match fires
-instead of your rule. If the engine is all-matches, a lower-priority action may have overwritten the output. Otherwise
-check the rules are loaded: `engine.rules().rules()` lists them, and an empty list returns `null`. A loaded rule the
-run skipped reads `SKIPPED` in `runWithResult(facts).evaluations()`; see
+In words: if `run()` threw, read [An exception from run()](#-an-exception-from-run). If it didn't, check whether the
+condition is true for these facts; if not, check the fact's name and value (in MVEL, an enum compared with a string
+is `false`). If it is true and the engine is first-match, a higher-priority match fires instead. If the engine is
+all-matches, a lower-priority action may have overwritten the output.
+
+Otherwise check the rules are loaded: `engine.rules().rules()` lists them, and an empty list returns `null`. A loaded
+rule the run skipped reads `SKIPPED` in `runWithResult(facts).evaluations()`; see
 [A rule's outcome is SKIPPED](#a-rules-outcome-is-skipped).
 
 ### run() returns null
@@ -93,9 +94,9 @@ Read `runWithResult(facts).evaluations()`: one outcome for every loaded rule. Se
 
 ### A rule's outcome is SKIPPED
 
-The run didn't use the rule, and didn't evaluate its condition: the rule is disabled, the run started outside its
+The run didn't evaluate the rule: the rule is disabled, the run started outside its
 validity window by the engine's clock, or the run was given tags and the rule carries none of them. A rule with no
-tags is skipped by every run given tags, and tags are compared case included. To tell which reason applied, compare
+tags is skipped by every run given tags, and tags are compared case included. To tell which, compare
 the rule's `isEnabled()`, `getValidFrom()`, `getValidTo()` and `getTags()` with `result.startedAt()` and
 `result.tags()`. See [Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
 
@@ -131,8 +132,7 @@ a rule that uses a class from it fails at `run()` as if the import were missing;
 language that can't create its compiler and a rejected [declared fact](glossary.md#declared-fact) name are listed with
 them. The previous rules stay loaded. `validate(rules)` returns the same problems without loading anything, except a
 language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
-[Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it) and
-[Exceptions by method](exceptions-by-method.md).
+[Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it).
 
 | Message contains | Fix |
 | --- | --- |
@@ -140,9 +140,9 @@ language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 | `Duplicate rule name '` | Two rules share a name. Thrown before anything compiles; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `has a blank condition expression`, `has a blank action expression` | Fill in the expression; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `is written in '...', which isn't one of the engine's expression languages` | The rule's `language` names one the engine doesn't have; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
-| `failed to compile` | A syntax error. In MVEL, `unknown class or illegal statement` is usually a missing import; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load) |
+| `failed to compile` | A syntax error. In MVEL, `unknown class or illegal statement` is usually a missing import; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load). For `too deeply nested to compile` or `the stack ran out`, see [Compile time](languages/mvel-gotchas.md#-compile-time) |
 | `contains an assignment ('`, `uses import_static` | In MVEL, a condition that assigns or declares, reported `at line L, column C`; see [Conditions can't assign](writing-rules.md#conditions-cant-assign) |
-| `expression language failed to create a compiler` | In MVEL, an unknown option, `strongTyping` when it can't apply, or any `languageImports(...)`; see [Strong typing](languages/mvel.md#-strong-typing) |
+| `expression language failed to create a compiler` | In MVEL, an unknown option, `strongTyping` when it can't apply, or any `languageImports(...)`; see [Strong typing](languages/mvel.md#-strong-typing). With `StackOverflowError`, MVEL's first load ran [too deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack) |
 | `Declared fact '...' can't be used` | A declared fact has a name the rules' languages reject; see [Declaring facts](facts.md#-declaring-facts) and [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
 
 > [!NOTE]
@@ -198,22 +198,27 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 - **The application fails to start with `FindException: Module mvel2 not found`**, or a rule fails on its first run
   with `could not access field`, or after about 50 runs with `IllegalAccessError`: the module path needs MVEL's module
   name and an export without a `to` clause; see [Installation](../README.md#-installation).
+
 - **No log output:** there's no SLF4J provider on the class path; see
   [Logging setup](listeners-and-logging.md#-logging-setup).
-- **Rules pass on the JVM but fail in a native image:** MVEL's JIT is on, or the image doesn't register a class or
-  method the rules use; see [Errors and what they mean](native-image.md#-errors-and-what-they-mean).
+
+- **Rules pass on the JVM but fail in a native image:** MVEL's JIT is on, or a class or method the rules use isn't
+  registered; see [Errors and what they mean](native-image.md#-errors-and-what-they-mean).
 
 ### Under load, or at shutdown
 
 - **Runs on virtual threads wait:** the default [copy limit](glossary.md#copy-limit) applies to them; see
   [Limiting the copies](compiled-copies.md#-limiting-the-copies). With `unlimitedCopies()`, a run that finds no idle
   copy waits for a build slot; see [Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot).
+
 - **Every run on one pool thread fails at its first rule:** its interrupt status is still set; see
   [Gotchas](stopping-runs.md#-gotchas).
+
 - **Runs fail with `The engine is closed` during shutdown:** the engine bean was closed before the work stopped; see
   [Shutting down](spring-boot.md#-shutting-down).
-- **Metaspace or the class-loader count climbs across redeploys, plugin or tenant reloads:** the old loaders are
-  not collected, because in MVEL the dynamic optimizer holds them; see
+
+- **Metaspace or the class-loader count climbs across redeploys, plugin or tenant reloads:** MVEL's dynamic
+  optimizer holds the old loaders; see
   [MVEL's dynamic optimizer](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
 
 ### With facts the tests never used
