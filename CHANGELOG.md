@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.23.1](https://github.com/brantunger/unruly-engine/compare/v2.23.0...v2.23.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* stop runScopedClosing pinning a virtual thread while its init waits ([#1021](https://github.com/brantunger/unruly-engine/issues/1021)) ([6405973](https://github.com/brantunger/unruly-engine/commit/6405973f030189006ef9920be1abb46252532ba6))
+
 ## [2.23.0](https://github.com/brantunger/unruly-engine/compare/v2.22.7...v2.23.0) (2026-10-03)
 
 
