@@ -156,15 +156,15 @@ The engine is built and tested on Java 21; its tests also run on 25 and 26.
 **Who is affected:** builds that list jars by hand instead of resolving dependencies, builds that exclude the
 library's transitive dependencies, and applications on the module path.
 
-From 2.0.0 each published jar also carries a GitHub build provenance attestation, which names the workflow and the
-commit it was built from. [Checking a release by hand](../RELEASING.md#-checking-a-release-by-hand) shows how to
-verify a downloaded jar; releases before 2.0.0 have none.
+From 2.0.0 each published jar also carries a GitHub build provenance attestation.
+[Checking a release by hand](../RELEASING.md#-checking-a-release-by-hand) shows how to verify a downloaded jar;
+releases before 2.0.0 have none.
 
 ### The library is three artifacts
 
 `unruly-engine-core` is the engine and its API, and `unruly-engine` is the MVEL language, which depends on
-`unruly-engine-core`. A third, `unruly-engine-test`, is the contract test kit for language authors and is needed only
-by them. Package and class names didn't change. With only `unruly-engine-<version>.jar`, the API classes are missing.
+`unruly-engine-core`. A third, `unruly-engine-test`, is the contract test kit, needed only by language authors.
+Package and class names didn't change. With only `unruly-engine-<version>.jar`, the API classes are missing.
 
 Usually nothing to change: a Maven or Gradle dependency on `unruly-engine` brings `unruly-engine-core` with it. An
 application whose rules all name other languages can depend on `unruly-engine-core` alone; see
@@ -174,11 +174,11 @@ application whose rules all name other languages can depend on `unruly-engine-co
 
 `unruly-engine` is still the module `io.github.brantunger.unruly`, and `unruly-engine-core` is the module
 `io.github.brantunger.unruly.core`. They export only the API packages, not `io.github.brantunger.unruly.core`, which
-only the test kit can read, and they require SLF4J and MVEL themselves. 1.x declared no module at all: it shipped an
-`Automatic-Module-Name`, which required nothing of anyone.
+only the test kit can read. `unruly-engine-core` requires SLF4J, and `unruly-engine` requires MVEL. 1.x declared no
+module, only an `Automatic-Module-Name`, which requires nothing.
 
-So a Gradle application on the module path now fails to start, because Gradle puts MVEL's unnamed jar on the class
-path and nothing there can satisfy the engine's `requires mvel2`:
+So a Gradle application on the module path now fails to start, as Gradle puts MVEL's unnamed jar on the class
+path, where nothing satisfies the engine's `requires mvel2`:
 
 ```text
 java.lang.module.FindException: Module mvel2 not found, required by io.github.brantunger.unruly
@@ -199,12 +199,13 @@ without a `language` is written in the default language, which is MVEL when MVEL
 
 **Who is affected:**
 
-- **Class paths with another language listed in such a file.** That language can now be used by rules without being
-  given to the engine. With MVEL and another language found, `build()` fails until `defaultLanguage(...)` names the
-  language of rules without one.
-- **Applications repackaged into one jar** (a shaded or "uber" jar) that keep only one of several `META-INF/services`
-  files with the same name.
-- **Class paths without `mvel2`.** Building an engine now succeeds, and loading MVEL rules fails instead.
+- **Class paths with another language in such a file.** Rules can use that language without it being given to the
+  engine. With MVEL also found, `build()` fails until `defaultLanguage(...)` is set.
+- **Applications repackaged into one shaded ("uber") jar** that keep only one of several same-named
+  `META-INF/services` files.
+- **Class paths without `mvel2`.** `build()` throws `NoClassDefFoundError: org/mvel2/util/ErrorUtil` when the
+  builder names MVEL. Otherwise a `load()` of MVEL rules fails with `RuleCompilationException`, and with MVEL the
+  default every `load()` does, even of an empty list; `validate()` returns the failure.
 
 When MVEL's service entry is lost and no other language is found, building an engine fails:
 

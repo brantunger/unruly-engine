@@ -85,7 +85,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     public ExpressionCompiler newCompiler(CompileContext context) {
         Objects.requireNonNull(context, "context must not be null");
         rejectLanguageImports(context.languageImports());
-        ErrorReporting.initialize();
+        initializeErrorReporting();
         return new MvelExpressionCompiler(new Imports(Set.copyOf(context.packageImports()),
                 Set.copyOf(context.classImports()), context.classLoader(), DeclaredTypes.inputsFor(context)));
     }
@@ -121,7 +121,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         if (prepared) {
             return;
         }
-        ErrorReporting.initialize();
+        initializeErrorReporting();
         initialize(MethodHandles.lookup(), List.of(ExactNameClassLoader.class, ExceptionReads.class, FactNames.class,
                 SplittableRandom.class, AbstractParser.class, ConditionAssignments.class, MvelAnalysis.class,
                 MvelExpression.class, MVEL.class, ParseTools.class, OperatorNode.class, Operator.class,
@@ -172,6 +172,17 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     }
 
     /**
+     * Initializes {@link ErrorReporting}, after resolving ErrorUtil. Without mvel2, resolving it fails with
+     * {@link NoClassDefFoundError} naming the missing class, and the JVM fails every later resolution the same way, so
+     * every call names it. Initializing the holder first would name it only the first time: the holder's failed static
+     * initializer leaves it unusable, and every later call would only say that it couldn't be initialized.
+     */
+    private static void initializeErrorReporting() {
+        Objects.requireNonNull(ErrorUtil.class);
+        ErrorReporting.initialize();
+    }
+
+    /**
      * Rejects imports given to MVEL alone: its imports are Java packages and classes, which every language of an engine
      * is given from {@code imports(...)}, so one given to it alone is a mistake rather than something to ignore.
      *
@@ -197,7 +208,9 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * {@link java.util.ServiceLoader} may never use it. It also installs
      * {@link MvelWarningFilter} on MVEL's logger, once for each class loader that loads this module, before any rule
      * runs, for the same reason: a run would otherwise initialize it first, possibly deep in the stack of a run nested
-     * in an action, where a stack overflow would leave it unusable and fail every later run.
+     * in an action, where a stack overflow would leave it unusable and fail every later run. It's only initialized
+     * through {@link #initializeErrorReporting()}, which resolves ErrorUtil first, so a missing mvel2 is named on every
+     * call rather than only the first.
      */
     private static final class ErrorReporting {
 

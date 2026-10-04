@@ -116,6 +116,21 @@ class ModulePathTest {
     }
 
     @Test
+    @DisplayName("only the core module requires SLF4J, as only its classes log with it")
+    void onlyCoreRequiresSlf4j() {
+        ModuleFinder finder = ModuleFinder.of(MODULE_PATH.toArray(Path[]::new));
+
+        for (String module : List.of("io.github.brantunger.unruly.core", "io.github.brantunger.unruly",
+                "io.github.brantunger.unruly.test")) {
+            List<String> requires = finder.find(module).orElseThrow().descriptor().requires().stream()
+                    .map(ModuleDescriptor.Requires::name)
+                    .toList();
+
+            assertEquals(module.endsWith(".core"), requires.contains("org.slf4j"), module + " requires " + requires);
+        }
+    }
+
+    @Test
     @DisplayName("a module that requires only io.github.brantunger.unruly runs MVEL rules on its own exported classes")
     void withMvel() throws Exception {
         String output = run("withMvel", "com.example.withmvel", MODULE_PATH);

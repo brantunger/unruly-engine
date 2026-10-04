@@ -116,12 +116,12 @@ in `unruly-engine-core`, a third-party language included, so core stays at the e
 <summary><b>On the module path</b></summary>
 
 On the module path, `unruly-engine` is the module `io.github.brantunger.unruly`, and `unruly-engine-core` is
-`io.github.brantunger.unruly.core`. Require one of them: it requires SLF4J, and MVEL for `unruly-engine`. Two modules
-then read your classes: the engine, `io.github.brantunger.unruly.core`, reads the facts and writes the output, and the
-language's module reads whatever its expressions reach. So export or open every package whose classes rules use: fact
-types, the output type, the types of properties rules reach through them, and imported classes. An export without a
-`to` clause works for every language; [Packaging](docs/languages/packaging.md) shows the narrower export an
-application can use when its language doesn't reflect on facts itself.
+`io.github.brantunger.unruly.core`. Require one of them: `unruly-engine-core` requires SLF4J, and `unruly-engine`
+requires MVEL. Two modules then read your classes: the engine, `io.github.brantunger.unruly.core`, reads the facts
+and writes the output, and the language's module reads whatever its expressions reach. So export or open every
+package whose classes rules use: fact types, the output type, the types of properties rules reach through them, and
+imported classes. An export without a `to` clause works for every language; [Packaging](docs/languages/packaging.md)
+shows the narrower export an application can use when its language doesn't reflect on facts itself.
 
 ```java
 module com.example.app {
