@@ -131,19 +131,23 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * Ends the run of a context the test kit created, as a run ends: closes the values kept with
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, each whatever the others
      * throw, and fails any later request for one. Unlike a run, it throws what a {@code close()} threw: the first, with
-     * the others suppressed on it. Calling it again does nothing. <b>Internal:</b> public only for the test kit.
+     * the others suppressed on it, or what releasing the run's lock threw (see {@link RunScope#end()}), with what each
+     * {@code close()} threw suppressed on it. Calling it again does nothing. <b>Internal:</b> public only for the test
+     * kit.
      *
      * @param context A context the engine created: this record, or an {@link EngineActionContext}
      * @throws NullPointerException if {@code context} is {@code null}
-     * @throws Exception            the first thing a value's {@code close()} threw, as it is, with what the others
-     *                              threw suppressed on it: each once, and none it already carries or that carries it
-     *                              (see {@link Failures#keepAlso})
+     * @throws Exception            what releasing the run's lock threw, or else the first thing a value's
+     *                              {@code close()} threw, as it is, with what the others threw suppressed on it: each
+     *                              once, and none it already carries or that carries it (see {@link Failures#keepAlso})
      */
     // Any Throwable: each value is closed whatever the one before threw, and what the first threw is thrown as it is.
     public static void endRun(EvaluationContext context) throws Exception {
         Objects.requireNonNull(context, "context must not be null");
-        List<AutoCloseable> values = runScopeOf(context).end();
-        Throwable first = null;
+        RunScope scope = runScopeOf(context);
+        List<AutoCloseable> values = scope.end();
+        // What releasing the scope's lock threw once it had handed the values over, which are closed all the same.
+        Throwable first = scope.endFailure();
         for (int i = values.size() - 1; i >= 0; i--) {
             try {
                 values.get(i).close();

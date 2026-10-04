@@ -63,19 +63,19 @@ Some details behind the table:
 Checkstyle doesn't read. `FileTabCharacter` fails a tab, and `NewlineAtEndOfFile` a file without a final newline.
 Checkstyle reads every file as UTF-8.
 
-**PMD's multithreading** rule set runs without five of its rules. `config/pmd/ruleset.xml` says why next to each:
+**PMD's multithreading** rule set runs without four of its rules. `config/pmd/ruleset.xml` says why next to each:
 
 | Excluded rule | Why |
 | --- | --- |
 | `DoNotUseThreads` | A run reads its thread's interrupt flag, sets it again after catching an `InterruptedException`, and reads whether the thread is virtual; the contract kit runs a language on a thread pool |
 | `UseConcurrentHashMap` | Each flagged map is used by one thread; or built before another thread sees it and only read after; or is an MVEL session's compiled expressions, which one run at a time uses, handed on through a concurrent queue |
 | `AvoidUsingVolatile` | The engine's and a rule list's shared fields are written by `load()`, `close()` or the run that finds no language keeps state, and read by every run without a lock |
-| `AvoidSynchronizedStatement` | Only `load()` and `close()` lock the engine's private monitor, so runs never wait on it or pin their virtual threads |
-| `AvoidSynchronizedAtMethodLevel` | No method is synchronized today; excluded with `AvoidSynchronizedStatement`, because what matters is whether runs wait on the monitor |
+| `AvoidSynchronizedStatement` | Every synchronized block is short and never parks, so no run waits long on a monitor or pins its virtual thread while parked |
 
-**The build never runs PMD on test sources, by decision.** On them this rule set finds 2,885 violations (measured at
+**The build never runs PMD on test sources, by decision.** On them the rule set found 2,885 violations (measured at
 `0367bb2`), 2,576 of them an assertion without a message, a test with several assertions, or a resource a test doesn't
-close. The seven multithreading rules it keeps find none. The decision is recorded in
+close. Its multithreading rules found none, but `AvoidSynchronizedAtMethodLevel`, excluded then, would flag the tests'
+`synchronized getCause()` overrides. The decision is recorded in
 `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`, and `check` runs `pmdMain` only.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),

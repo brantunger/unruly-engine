@@ -283,7 +283,10 @@ public final class LanguageTestContexts {
      * @throws NullPointerException if {@code context} is {@code null}
      * @throws Exception            the first {@link Throwable} a value's {@code close()} threw, as it is, with what
      *                              the others threw suppressed on it, each once, leaving out any that it already
-     *                              carries or that carries it
+     *                              carries or that carries it. If releasing the run's lock threw, such as an
+     *                              {@link OutOfMemoryError} while waking a virtual thread that waited for it, that
+     *                              is thrown instead, once every value is closed, with every {@code close()} failure
+     *                              suppressed on it
      */
     public static void endRun(EvaluationContext context) throws Exception {
         EngineEvaluationContext.endRun(context);

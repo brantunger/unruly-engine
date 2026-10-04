@@ -20,12 +20,12 @@
              by load(), close() or the run that finds no language keeps state, and read by every run on other
              threads without taking a lock. -->
         <exclude name="AvoidUsingVolatile"/>
-        <!-- Only load() and close() lock the engine's private monitor, never a run: they hold it to check or set the
-             closed flag and swap the rule set, so runs never wait for it and never pin their virtual threads on it. -->
+        <!-- Every synchronized block is short and never parks: load() and close() hold the engine's private monitor
+             to check or set the closed flag, swap the rule set and track the rule sets still to retire; runs hold
+             ReportedFailure's and FactNames' locks only for a bounded update of a field, an array or a cache; and
+             MvelWarningFilter holds MVEL's logger's monitor once, at class init. So no run waits long on a monitor
+             or pins its virtual thread while parked. -->
         <exclude name="AvoidSynchronizedStatement"/>
-        <!-- No method is synchronized today. Excluded with AvoidSynchronizedStatement, because what matters for
-             either is whether runs wait on the monitor, not whether a method or a block holds it. -->
-        <exclude name="AvoidSynchronizedAtMethodLevel"/>
     </rule>
     <rule ref="category/java/errorprone.xml">
         <!-- The engine runs languages, listeners and setters it doesn't know, and turns anything they throw into a
