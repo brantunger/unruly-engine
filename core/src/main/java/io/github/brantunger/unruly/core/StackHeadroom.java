@@ -30,7 +30,9 @@ package io.github.brantunger.unruly.core;
  * remembered: its next use tries again. On JDK 25 and later, one while a string concatenation of several values is
  * first linked is: that concatenation fails for good. So the engine is compiled to build its strings without the JDK's
  * string concatenation (#965). The hidden classes the JDK makes for method handles when they are first needed can't be
- * named, so a run may still initialize those.
+ * named, so a run may still initialize those. One whose initialization overflows is left unusable, and HotSpot records
+ * that with an {@link ExceptionInInitializerError}, whose own static initializer would overflow too and leave it
+ * unusable for every class in the JVM, so {@code RunClasses} initializes that class as well (#1010).
  * </p>
  */
 final class StackHeadroom {

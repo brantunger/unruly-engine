@@ -252,7 +252,14 @@ final class MvelCompileErrors {
      */
     private static Position positionOf(String text, int offset) {
         String before = text.substring(0, offset);
-        int line = 1 + (int) before.chars().filter(ch -> ch == NEW_LINE).count();
+        // A loop rather than a stream, whose first use, here in a failing load, would initialize the JDK's classes
+        // for it, maybe deep in a stack (#1012).
+        int line = 1;
+        for (int i = 0; i < before.length(); i++) {
+            if (before.charAt(i) == NEW_LINE) {
+                line++;
+            }
+        }
         int column = offset - (before.lastIndexOf(NEW_LINE) + 1) + 1;
         return new Position(line, column);
     }

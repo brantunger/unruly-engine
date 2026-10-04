@@ -27,9 +27,10 @@ public final class ChildJvm {
     }
 
     /**
-     * Runs {@code main} in a new JVM, with this JVM's class path, the options given and the engine's logging off, and
-     * waits for it at most {@link #TIMEOUT}. Its temporary directory is {@code dir}, so what it creates there is
-     * deleted with {@code dir}, unless the options give it another.
+     * Runs {@code main} in a new JVM, with this JVM's class path, the options given and the engine's logging off,
+     * unless the options set {@code org.slf4j.simpleLogger.defaultLogLevel}, and waits for it at most {@link #TIMEOUT}.
+     * Its temporary directory is {@code dir}, so what it creates there is deleted with {@code dir}, unless the options
+     * give it another.
      *
      * @param dir     A directory for the class path's argument file, the output and the JVM's temporary files
      * @param main    The class whose {@code main} runs
@@ -42,11 +43,14 @@ public final class ChildJvm {
         Path arguments = dir.resolve("classpath.args");
         Files.writeString(arguments, "-cp \"" + System.getProperty("java.class.path").replace("\\", "\\\\") + "\"",
                 Charset.forName(System.getProperty("native.encoding")));
-        // The child writes its output in UTF-8, as it is read here, whatever the platform's encoding.
+        // The child writes its output in UTF-8, as it is read here, whatever the platform's encoding. Its logging is
+        // turned off before the options, so an option that sets the level again wins: of two -D options for one
+        // property, the JVM keeps the last.
         List<String> command = new ArrayList<>(List.of("@" + arguments, "-Dstdout.encoding=UTF-8",
-                "-Dstderr.encoding=UTF-8", "-Djava.io.tmpdir=" + dir.toAbsolutePath()));
+                "-Dstderr.encoding=UTF-8", "-Djava.io.tmpdir=" + dir.toAbsolutePath(),
+                "-Dorg.slf4j.simpleLogger.defaultLogLevel=off"));
         command.addAll(List.of(options));
-        command.addAll(List.of("-Dorg.slf4j.simpleLogger.defaultLogLevel=off", main.getName()));
+        command.add(main.getName());
         return run(dir, TIMEOUT, command);
     }
 

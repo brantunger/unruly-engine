@@ -59,7 +59,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             if (MvelCompileErrors.looped(e)) {
                 throw MvelCompileErrors.analysisLoop(e);
             }
-            // The engine reports an expression too long for MVEL's recursive parser as such.
+            // The engine reports an overflow by its cause: an expression too long for MVEL's recursive parser, or a
+            // compile called too deep in the stack or on a thread with a small one.
             if (ExceptionReads.rootCause(e) instanceof StackOverflowError) {
                 throw e;
             }

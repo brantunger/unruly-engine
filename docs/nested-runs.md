@@ -21,10 +21,11 @@ failure is logged.
 ## 🧭 What counts as nested
 
 A nested run is a run started on the same thread while another run is in progress: from a condition, an action, the
-output supplier, or a listener callback up to and including `afterRun` and `onRunError`. A run started before or after
-those also inherits the outer run's deadline, but its `parent()` doesn't name the outer run: it names the outer run's
-own parent, if it has one. That is a run started from a fact's `getValue()` while the outer run reads its facts, a
-language's `newSession()` while it gets its compiled copy, or a session's `close()` while it gives the copy back.
+output supplier, or a listener callback up to and including `afterRun` and `onRunError`.
+
+A run started from a fact's `getValue()` while the outer run reads its facts, a language's `newSession()` while it gets
+its compiled copy, or a session's `close()` while it gives the copy back also inherits the outer run's deadline, but
+its `parent()` names the outer run's own parent, if any, not the outer run.
 
 That includes the `beforeRun` and `onRunError` of a run that stopped while waiting for a compiled copy, or while reading
 the engine's rules again: it never ran a rule, but a run started from its callbacks inherits its deadline, if it had
@@ -61,12 +62,12 @@ fails with `a nested run() failed: ...`, with the nested failure in its cause ch
 A nested run or load can start deep in a stack. A `StackOverflowError` inside a class's static initializer leaves the
 class unusable for the JVM's life: every later use throws `NoClassDefFoundError`.
 
-**The JVM's first `build()` checks the room first, then initializes the classes engines use:** the engine's, SLF4J's and
-the JDK's, such as the clock, the SHA-256 digest and streams, that building, loading, validating, running or closing
-uses. Without room, `build()` throws `StackOverflowError` before it touches any of them or checks any setting, even a
-wrong one. The next `build()` checks again.
+**The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
+the JDK's, such as the clock, the SHA-256 digest and streams, that an engine's calls use. Without room, `build()`
+throws `StackOverflowError` before it touches any of them or checks any setting, even a wrong one. The next `build()`
+checks again.
 
-The check takes about 160 KB on x64, so a first build's thread needs more: about 200 KB on Windows x64, more on macOS,
+The check takes about 160 KB on x64, so a first build's thread needs about 200 KB on Windows x64, more on macOS,
 where 256 KB can be too small.
 
 **A language initializes its own classes in [`prepare()`](languages/custom.md#preparing-the-languages-classes),** after
@@ -78,26 +79,30 @@ the same check, made once per language class:
 | Found by `ServiceLoader`, unnamed, even as the only language: the usual MVEL setup | Once, at the first `load()` or `validate()` that uses it, an empty list using the default |
 
 A language's first use too deep throws `StackOverflowError` from the check, unlogged, with the language untouched; the
-rules loaded before stay loaded. What `prepare()` throws fails `build()` unchanged. At a first use, it fails that
-language's rules, like a failing `newCompiler()`, with `The '<name>' expression language failed to prepare: ...`; the
-next use prepares it again.
+rules loaded before stay loaded; for what `prepare()` throws, see
+[its contract](languages/custom.md#preparing-the-languages-classes).
 
 > [!TIP]
-> To have the room checked at `build()` rather than at a deep first `load()`, name the language, such as
-> `.defaultLanguage("mvel")`, and build the JVM's first engine near the top of a stack.
+> To check the room at `build()` rather than at a deep first `load()`, name the language, such as
+> `.defaultLanguage("mvel")`, and build the JVM's first engine near the top of a stack. MVEL's first `load()` needs
+> more stack than its check: load once near the top too; see
+> [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
 
 Not covered: a name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the
 problem before any check; another instance of a prepared language class, such as a wrapper around another language,
 which gets no check, nor at a first use `prepare()`; and listeners' or your code's classes and javac-default
 concatenations: the JVM's first, or on JDK 25 and later one of several values, fails for good if linked too deep.
 
-Tests in a new JVM cover first builds, loads and runs across outputs, facts, listener callbacks, failing conditions and
-loads, nested runs, `validate()`, `close()`, and MVEL's first steps, JIT on and off. They fail if a first load or run,
-or a first build before its check, initializes a class with a static initializer, other than the application's and the
-JDK's nameless hidden method-handle classes.
+Tests in new JVMs cover the engine's and MVEL's first builds, loads and runs: outputs, facts, listeners, failures,
+nested runs, `validate()` and `close()`. They fail if a first load or run, or a first build before its check,
+initializes a class with a static initializer, other than the application's, the JDK's hidden method-handle classes, and
+the documented ones below. HotSpot records an overflow initializing one with an `ExceptionInInitializerError`, which the
+first build initializes, keeping it usable.
 
-A path they don't take may still initialize one, as may a JDK other than 21 and 25, whose classes the engine names,
-skipping missing ones. A native image names none, leaving them to it.
+A path they don't take may initialize one, as may a JDK other than 21 and 25, whose classes the engine names, skipping
+missing ones; a native image names none. Nothing prepares MVEL's JIT, a rule's first inline list or map, `new` or
+`soundslike` ([MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack)), or the logging
+classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`.
 
 ## 🪵 What is logged
 
@@ -109,13 +114,13 @@ it says `a nested run() failed: <innermost failure>` or `a nested load() failed:
 The thread remembers 32 failures nested runs threw as is, 32 rule failures that runs threw, and 32 fatal `Error`s,
 until its outermost run, `load()`, `validate()` or `close()` ends. Then, or past 32, one thrown as is may be logged
 again. A rule's failure that `run()` threw as a `RuleExecutionException` is never logged again, but past 32 in the same
-outermost run a wrapper notes it as a nested run's, as described below. A `RuleExecutionException` your own code builds
+outermost run a wrapper notes it as a nested run's. A `RuleExecutionException` your own code builds
 is news, so it's logged.
 
 A run on another thread, such as one an action hands to an executor and waits for, isn't nested: it logs its failure on
 its own thread. A rule's failure, which `run()` throws as a `RuleExecutionException`, isn't logged again. The waiting
 rule's message still reads `a nested run() failed: <innermost failure>`: the engine recognizes a failure `run()`
-threw, whichever thread threw it, and always reads such a failure from another thread as a nested run's.
+threw on any thread.
 
 What `run()` throws as is, a fatal `Error` or an `IllegalArgumentException` for rejected facts, for example, is logged
 again as the waiting rule's failure. When the action lets the `ExecutionException` from `Future.get()` through, the line

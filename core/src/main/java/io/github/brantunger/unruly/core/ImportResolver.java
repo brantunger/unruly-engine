@@ -77,7 +77,11 @@ final class ImportResolver {
      */
     static void checkSize(String name) {
         checkLength(name);
-        long parts = name.chars().filter(c -> c == '.').count() + 1;
+        // Counted as mvel.Imports' copy counts them, with a loop rather than a stream (#1012).
+        long parts = 1;
+        for (int dot = name.indexOf('.'); dot >= 0; dot = name.indexOf('.', dot + 1)) {
+            parts++;
+        }
         if (parts > MAX_IMPORT_PARTS) {
             throw new IllegalArgumentException("Can't import '" + Failures.quote(name) + "': it has " + parts
                     + " dot-separated parts, and an import may have at most " + MAX_IMPORT_PARTS);

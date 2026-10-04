@@ -119,17 +119,21 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a condition too long to compile gets a short message")
     void expressionTooLongToCompile() throws InterruptedException {
-        String condition = String.join(" || ", Collections.nCopies(20_000, "a == 1"));
+        // Far more terms than a thread of 1 MB holds: 20,000 overflowed one of 1 MB, and fitted in one of 4 MB.
+        String condition = String.join(" || ", Collections.nCopies(200_000, "a == 1"));
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         AtomicReference<Throwable> thrown = new AtomicReference<>();
-        // A small stack makes MVEL's recursive parser overflow however much stack the test JVM gives its threads.
+        // A stack of its own makes MVEL's recursive parser overflow however much stack the test JVM gives its threads.
+        // Not a small one: once the parser's frames are gone, the engine checks for room to tell an expression too
+        // long from a load called too deep in the stack (#1013), about 160 KB interpreted, which a thread of 256 KB,
+        // less the guard zones the JVM keeps at its end, larger on some platforms, such as macOS, may not have.
         Thread compiler = new Thread(null, () -> {
             try {
                 engine.load(List.of(rule("long", condition, "output.put('k', 1)")));
             } catch (RuntimeException e) {
                 thrown.set(e);
             }
-        }, "small-stack", 256 * 1024);
+        }, "one-megabyte-stack", 1024 * 1024);
         compiler.start();
         compiler.join();
 

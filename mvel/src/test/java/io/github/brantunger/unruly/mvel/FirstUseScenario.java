@@ -15,12 +15,15 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds an engine
- * that finds MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language so
- * the build prepares it, and prints {@link #BUILT}. It then
- * takes MVEL's first steps, each begun with a {@link #STEP} line: a load, a run, a load that fails nested in a run's
- * action, a {@code validate()} that fails, and a run whose condition calls a method that throws. It prints
- * {@link #RAN} if each ended as it should, or else {@link #UNEXPECTED} and the steps that didn't.
+ * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds two engines
+ * that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language so
+ * the build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a {@link #STEP}
+ * line: a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of an inline list, of
+ * {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a {@code validate()} that fails,
+ * a run whose condition calls a method that throws, and last, {@value #JIT_RUNS} more runs of the rule that reads a
+ * property, enough for MVEL's JIT, if it's on, to compile the property's accessor: MVEL compiles one once more than
+ * 50 runs have used it within 100 ms. It prints {@link #RAN} if each ended as it should, or else {@link #UNEXPECTED}
+ * and the steps that didn't.
  */
 final class FirstUseScenario {
 
@@ -29,6 +32,20 @@ final class FirstUseScenario {
     static final String UNEXPECTED = "SCENARIO unexpected: ";
     /** What the line that comes before each step begins with; the step's description follows. */
     static final String STEP = "SCENARIO step: ";
+    /** The step whose run is the first to read a property through its getter. */
+    static final String PROPERTY_RUN = "a first run of the rule that reads a property";
+    /** The step that loads and runs the first inline list. */
+    static final String INLINE_LIST = "a load and a run of an inline list";
+    /** The step that loads and runs the first new. */
+    static final String NEW_OBJECT = "a load and a run of new";
+    /** The step that loads and runs the first soundslike. */
+    static final String SOUNDSLIKE = "a load and a run of soundslike";
+    /** The step whose failing load is the first to log a message, if the engine logs. */
+    static final String FAILING_NESTED_LOAD = "a load that fails, nested in a run's action";
+    /** The last step's description: the runs that MVEL's JIT, if it's on, compiles the property's accessor in. */
+    static final String JIT = "runs of the rule that reads a property, enough for MVEL's JIT";
+    /** How many runs the last step makes: many more than the 51 that MVEL's JIT compiles an accessor after. */
+    static final int JIT_RUNS = 2_000;
 
     private FirstUseScenario() {
     }
@@ -52,6 +69,18 @@ final class FirstUseScenario {
         }
     }
 
+    /** A fact with a property, which a rule reads through its getter. */
+    public static final class Applicant {
+        /**
+         * Returns the applicant's age.
+         *
+         * @return 30
+         */
+        public int getAge() {
+            return 30;
+        }
+    }
+
     /** A fact whose method a condition calls, which throws. */
     public static final class Failing {
         /**
@@ -68,6 +97,9 @@ final class FirstUseScenario {
         Supplier<Map<String, Object>> maps = HashMap::new;
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.firstMatch(maps)
                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME).build();
+        // The engine the rule that reads a property stays loaded in, for the last step.
+        RulesEngine<Map<String, Object>> reads = RulesEngineBuilder.firstMatch(maps)
+                .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME).build();
         RulesEngine<Map<String, Object>> nested = RulesEngineBuilder.firstMatch(maps).build();
         NestedLoad nestedLoad = new NestedLoad(nested);
         mark(BUILT);
@@ -81,7 +113,21 @@ final class FirstUseScenario {
             unexpected.add("a run");
         }
 
-        mark(STEP + "a load that fails, nested in a run's action");
+        mark(STEP + "a load of a rule that reads a property");
+        reads.load(List.of(rule("adult", "ap.age > 18", "output.put('k', ap.age);")));
+        mark(STEP + PROPERTY_RUN);
+        FactMap<Applicant> applicant = new FactMap<>(new Fact<>("ap", new Applicant()));
+        if (!Map.of("k", 30).equals(reads.run(applicant))) {
+            unexpected.add("a run of a rule that reads a property");
+        }
+        mark(STEP + INLINE_LIST);
+        loadAndRun(engine, rule("list", "[1, 2, 3].size() == 3", "output.put('k', 1);"), unexpected);
+        mark(STEP + NEW_OBJECT);
+        loadAndRun(engine, rule("new", "new java.util.ArrayList().isEmpty()", "output.put('k', 1);"), unexpected);
+        mark(STEP + SOUNDSLIKE);
+        loadAndRun(engine, rule("sound", "'robert' soundslike 'rupert'", "output.put('k', 1);"), unexpected);
+
+        mark(STEP + FAILING_NESTED_LOAD);
         engine.load(List.of(Rule.builder().ruleName("loads").condition("true").action("nested.load();").build()));
         engine.run(new FactMap<>(new Fact<>("nested", nestedLoad)));
         if (!nestedLoad.failed) {
@@ -102,9 +148,28 @@ final class FirstUseScenario {
         } catch (RuleExecutionException expected) {
             // As it should.
         }
+
+        // Last, so the property's accessor is the one its first run made, and only the JIT is left to initialize.
+        mark(STEP + JIT);
+        for (int i = 0; i < JIT_RUNS; i++) {
+            reads.run(applicant);
+        }
         mark(unexpected.isEmpty() ? RAN : UNEXPECTED + unexpected);
         engine.close();
+        reads.close();
         nested.close();
+    }
+
+    private static Rule rule(String name, String condition, String action) {
+        return Rule.builder().ruleName(name).condition(condition).action(action).build();
+    }
+
+    // Loads the rule and runs it with no facts, and records it unless it put 1 under k.
+    private static void loadAndRun(RulesEngine<Map<String, Object>> engine, Rule rule, List<String> unexpected) {
+        engine.load(List.of(rule));
+        if (!Map.of("k", 1).equals(engine.run(new FactMap<>()))) {
+            unexpected.add(rule.getRuleName());
+        }
     }
 
     // Flushed, so the line comes before what the JVM logs next.

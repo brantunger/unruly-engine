@@ -60,6 +60,8 @@ final class Faults {
         RUN_VALUES_CLOSED,
         /** A run that has closed its values and given back its copy, before it combines what they threw. */
         RUN_ENDING_COMBINED,
+        /** A compile that overflowed the stack, checking the room left to tell why, before it has. */
+        OVERFLOW_ROOM_CHECKED,
         /**
          * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
          * failed (see {@link #reached(Step)}).

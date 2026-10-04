@@ -36,17 +36,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * here depends on what a method of the class does, except for the few a method call initializes, which say why.
  * {@code FirstRunClassInitializationTest} checks the lists against the first builds, loads and runs of the engines its
  * scenario builds in a new JVM: map and bean outputs, declared facts, a fact of the wrong type and a missing one, a
- * rejected fact name, every listener callback, a failing condition, a write to read-only facts, nested runs that
- * throw a fatal error or pass their deadline, a failing load, a rule with a validity window, {@code validate()} and
+ * rejected fact name, every listener callback, a failing condition, a write to read-only facts, nested runs that throw
+ * a fatal error or pass their deadline, a failing load, a rule with a validity window, {@code validate()} and
  * {@code close()}. It fails if those initialize any class with a static initializer, the engine's, the JDK's or a
  * library's, other than the hidden classes the JDK makes for method handles, and if the first build initializes one
- * before this class does, other than the application's own. A path the scenario doesn't take may still initialize
- * one. This class has no static initializer of its own, which an engine built deep in a stack could break, as the
- * lists are built only once the room is checked. What a builder's settings reject may still initialize classes before
- * any check, maybe deep in a stack, though nothing a builder accepts does: {@code language()} initializes
- * {@link LanguageNames.Problem} when it rejects a language's name, and {@code fact()} and {@code facts()} initialize
- * {@link FactNames.Problem} when they reject a fact's name. The message of a setting a builder rejects isn't the
- * JVM's first use of the JDK's string concatenation, as the engine is compiled to build its strings without it (#965).
+ * before this class does, other than the application's own. A path the scenario doesn't take may still initialize one,
+ * and so does the first message the engine logs, with a provider that logs: with slf4j-simple, it initializes SLF4J's
+ * {@code Level} and {@code FormattingTuple}, which aren't initialized here. This class has no static initializer of its
+ * own, which an engine built deep in a stack could break, as the lists are built only once the room is checked. What a
+ * builder's settings reject may still initialize classes before any check, maybe deep in a stack, though nothing a
+ * builder accepts does: {@code language()} initializes {@link LanguageNames.Problem} when it rejects a language's name,
+ * and {@code fact()} and {@code facts()} initialize {@link FactNames.Problem} when they reject a fact's name. The
+ * message of a setting a builder rejects isn't the JVM's first use of the JDK's string concatenation, as the engine is
+ * compiled to build its strings without it (#965).
  * </p>
  */
 final class RunClasses {
@@ -220,7 +222,12 @@ final class RunClasses {
     // load's first method reference to a compiler's method makes. None is the JDK's string concatenation's: the engine
     // is compiled to build its strings without it (#965). A class that isn't there, as in a JDK release that has none
     // of the name, is skipped, and in a native image none is named. The method handles' hidden classes, which the JDK
-    // makes when they are first needed, can't be named.
+    // makes when they are first needed, can't be named. Last, ExceptionInInitializerError, which no load or run uses,
+    // but which HotSpot creates to record that a class's static initializer failed: a load whose first initialization
+    // of a hidden class overflowed deep in a stack overflowed in its static initializer too, which left it unusable for
+    // the life of the JVM, so that every class's static initializer that throws, anywhere in the JVM, was reported as
+    // NoClassDefFoundError: Could not initialize class java.lang.ExceptionInInitializerError, without its cause
+    // (#1010).
     private static List<String> namedClasses() {
         return List.of("java.util.stream.MatchOps$MatchKind", "java.util.stream.Collectors",
                 "java.util.stream.Collector$Characteristics", "java.lang.ClassValue$ClassValueMap",
@@ -229,7 +236,7 @@ final class RunClasses {
                 "sun.invoke.util.ValueConversions$1", "java.lang.invoke.ClassSpecializer$Factory$1Var",
                 "java.lang.ClassValue$RemovalToken", "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
                 "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
-                "java.lang.invoke.DirectMethodHandle$Interface");
+                "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError");
     }
 
     /**

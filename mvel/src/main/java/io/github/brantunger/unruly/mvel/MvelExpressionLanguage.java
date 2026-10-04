@@ -11,6 +11,7 @@ import org.mvel2.ast.OperatorNode;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.integration.PropertyHandlerFactory;
 import org.mvel2.math.MathProcessor;
+import org.mvel2.optimizers.impl.refl.nodes.GetterAccessor;
 import org.mvel2.util.ErrorUtil;
 import org.mvel2.util.ParseTools;
 
@@ -98,9 +99,20 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * room for it: when it builds an engine whose builder names MVEL, as its default language or otherwise, or else
      * when a rule list first uses MVEL. They're initialized in the order a first load and run initialize them, so
      * MVEL's optimizer sets up as {@link MvelExpression} sets it up, and only those that this module's code uses
-     * directly: each initializes what it needs itself, which depends on MVEL's settings, such as whether its JIT is
-     * on. Once it has succeeded, in the class loader that loaded this module, later calls return at once; calls made
-     * before that, such as two first calls at once, each do the work.
+     * directly: each initializes what it needs itself, which depends on MVEL's settings, such as whether its JIT is on;
+     * and MVEL's {@code GetterAccessor}, which a rule's first read of a property through its getter initializes. Its
+     * static initializer creates the empty array that MVEL's calls of a method or a constructor with no arguments read,
+     * which catch no {@link Error}, so one left unusable would fail every such call and every {@code new} without
+     * arguments, in every MVEL engine for the life of the JVM. Not those of MVEL's other features: a rule's first
+     * inline list or map, {@code new} or {@code soundslike} initializes MVEL classes of its own, which this doesn't, so
+     * that first use, like the JIT's first compile, can overflow in one of them deep in a stack, which leaves only that
+     * feature unusable. Nor those of MVEL's JIT, which compiles an accessor with ASM once more than 50 runs have used
+     * it within 100 ms: its first compile initializes ASM's classes and the JDK's that it uses. MVEL marks an accessor
+     * compiled before it compiles it, so a compile that fails, such as one that overflows deep in a stack, fails that
+     * run and isn't tried again: the accessor stays reflective, slower but correct. If the overflow strikes a class's
+     * static initializer, of ASM's or the JDK's, that class stays unusable for the JVM's life, and every other
+     * accessor's first compile fails one run the same way. Once it has succeeded, in the class loader that loaded this
+     * module, later calls return at once; calls made before that, such as two first calls at once, each do the work.
      */
     @Override
     public void prepare() {
@@ -114,7 +126,16 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
                 SplittableRandom.class, AbstractParser.class, ConditionAssignments.class, MvelAnalysis.class,
                 MvelExpression.class, MVEL.class, ParseTools.class, OperatorNode.class, Operator.class,
                 AtomicReference.class, CallSites.class, MathProcessor.class, DataConversion.class,
-                PropertyHandlerFactory.class, CalledCodeFailures.class, MvelCompileErrors.class));
+                PropertyHandlerFactory.class, GetterAccessor.class, CalledCodeFailures.class, MvelCompileErrors.class));
+        // A rule's first use of one of the JDK's classes by its name, such as new java.util.ArrayList(), looks its
+        // class file up first (see FactNames.mayBeClass), which on JDK 25 initializes the JDK's class that finds the
+        // files of its own modules, so this looks one up. Through this module's own class loader, which needs no
+        // permission under a security manager, as the system class loader may; or, were this module loaded by the
+        // boot class loader, which has no object, the system class loader, which needs none from there either.
+        @SuppressWarnings("PMD.UseProperClassLoader")
+        ClassLoader own = MvelExpressionLanguage.class.getClassLoader();
+        FactNames.mayBeClass(Objects.requireNonNullElseGet(own, ClassLoader::getSystemClassLoader),
+                Object.class.getName());
         // A run whose rule calls code that throws reads the stack trace of what it threw, which initializes the JDK's
         // classes that describe a frame of one of its modules, so this reads one created in a method of the JDK's.
         ExceptionReads.stackTraceOf(Optional.<Throwable>empty().orElseGet(Throwable::new));

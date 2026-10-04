@@ -1,7 +1,8 @@
 # 🚧 MVEL gotchas
 
 Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, why a rule can
-start failing after about 50 runs, what compiles slowly, and what MVEL logs itself.
+start failing after about 50 runs, what compiles slowly, what a first load deep in a stack needs, and what MVEL logs
+itself.
 
 **Who it's for:** rule authors, and application developers who configure logging or deploy rules.
 **You'll be able to:** spot a condition that matches, or doesn't, only because of how MVEL compares, write an
@@ -15,6 +16,7 @@ action that stores exactly the value you meant, and turn off what MVEL logs itse
 - [Calling Java code](#-calling-java-code)
 - [A rule failing for ever after about 50 quick runs](#-a-rule-failing-for-ever-after-about-50-quick-runs)
 - [Compile time](#-compile-time)
+- [A first load or run deep in a stack](#-a-first-load-or-run-deep-in-a-stack)
 - [MVEL's own logging](#-mvels-own-logging)
 
 ---
@@ -77,7 +79,12 @@ optimizer takes over the rule's accessors; see
 
 MVEL's compile time about doubles with each level of `new` nested inside `new`, or of `in` nested inside `in`. With
 MVEL 2.5.4.Final, a condition of 17 nested `new Integer(` took about 400 ms to load, and one of 17 nested `(1 in [`
-about 700 ms. Nothing bounds the time: only a stack overflow fails `load()`, as too deeply nested to compile.
+about 700 ms. Nothing bounds the time: only a stack overflow fails `load()`.
+
+A stack overflow reads `the expression is too long or too deeply nested to compile`. With under about 48 KB of stack
+left where the engine caught it, or 160 KB before the JIT compiles the engine's check, it reads
+`the stack ran out: it was compiled too deep in the stack, or on a thread whose stack is too small`
+instead. So a long expression on a small thread, such as one of 256 KB on macOS, can get it too.
 
 Who pays it:
 
@@ -89,6 +96,31 @@ Who pays it:
 Split a deep construction into local variables in an action, or move it into a Java method the rule calls; a
 condition can't assign, so use a method there. An action with 16 nested `new Integer(` took 311 ms to load, and the
 same value built in two steps of 8 took 5 ms.
+
+## 🪜 A first load or run deep in a stack
+
+An engine whose builder names MVEL prepares it at `build()`: it initializes the MVEL classes a first load or run uses;
+see [A first build or load deep in a stack](../nested-runs.md#-a-first-build-or-load-deep-in-a-stack). Some first
+steps still need more stack than the engine checks for.
+
+**MVEL's first `load()` in the JVM** loads its compiler's classes, which takes more stack than the load's own check.
+Called too deep, it fails with a `StackOverflowError`, or with a `RuleCompilationException` such as
+`The 'mvel' expression language failed to create a compiler: java.lang.StackOverflowError` or
+`Condition for rule 'r' failed to compile: the stack ran out: ...`, as in [Compile time](#-compile-time).
+
+Only that call fails. Load once near the top of a stack first, with any MVEL engine, and later loads don't pay it.
+
+**A rule's first inline list or map, `new` or `soundslike`** initializes an MVEL class of its own that `prepare()`
+doesn't, so, like the JIT's first compile below, it can overflow deep in a stack. The
+engine's tests record which classes these initialize rather than cover them.
+
+**MVEL's JIT isn't prepared.** It compiles an accessor with ASM once more than 50 runs have used it within 100 ms, and
+its first compile initializes ASM's classes and some of the JDK's. MVEL marks the accessor compiled before it compiles
+it, so a compile that overflows deep in a stack fails that run and isn't tried again: the accessor stays on MVEL's
+slower reflective path, still correct.
+
+If the overflow strikes a class's static initializer, that class stays unusable for the JVM's life: every later use
+of that feature fails, and after the JIT's, every other accessor's first compile fails one run the same way.
 
 ## 🪵 MVEL's own logging
 

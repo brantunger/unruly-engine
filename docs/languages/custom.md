@@ -252,14 +252,13 @@ public void prepare() {
 ## 🚨 Errors when rules load
 
 What your compiler throws or returns decides what `load()` throws and logs and `validate()` returns: `validate()`
-compiles the same way but logs only a fatal error, not your warnings or the failures. Every row but the session one
-applies to both:
+compiles the same way but logs only a fatal error. Every row but the session one applies to both:
 
 | You throw or return | The user sees | Reported |
 | --- | --- | --- |
 | `InvalidExpressionException(message, issues)` | `Condition for rule 'prime-rate' ` + your message, with your issues; your exception as the cause | Per rule, with every other broken rule |
 | Any other exception | `Condition for rule 'prime-rate' failed to compile: ` + its description; no issues; your exception as the cause | Per rule |
-| Anything with a `StackOverflowError` as a cause | `... failed to compile: the expression is too long or too deeply nested to compile` | Per rule |
+| A `StackOverflowError` as the root cause of anything but an `InvalidExpressionException` | `... failed to compile: the expression is too long or too deeply nested to compile`, or, low on stack, `the stack ran out: it was compiled too deep in the stack, or on a thread whose stack is too small` | Per rule |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; its rules aren't compiled |
 | An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
@@ -281,7 +280,7 @@ The `RuleCompilationException` carries the same issues; for several rules its me
 <first>; <second>`, its name, kind and issues are the first failure's, and `failures()` has each rule's.
 
 - **Order.** Rules compile in priority order, highest first, `null` last and equal priorities in list order, and
-  so is `failures()`. The condition compiles before the action.
+  so is `failures()`.
 - **What the engine rejects first.** A blank condition or action
   (`Rule 'prime-rate' has a blank condition expression`) and a language the engine doesn't have
   (`Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: [mvel]`, with no
@@ -543,7 +542,6 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 | **A stateless session of your own** | `new MySession()` still gets copies and the copy limit | Return `Session.none()` |
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
-| **A condition that doesn't compile** | Its action's errors appear only after the next `load()` | Expect a second failure after fixing it |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
