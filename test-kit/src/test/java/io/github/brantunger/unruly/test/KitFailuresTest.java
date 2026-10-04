@@ -124,6 +124,18 @@ class KitFailuresTest {
     }
 
     @Test
+    @DisplayName("#1019: of two fatal errors suppressed on what a language threw, the first is thrown on, as the engine"
+            + " throws it")
+    void firstOfTwoFatalErrorsSuppressed() {
+        OutOfMemoryError first = new OutOfMemoryError("first");
+        InternalError second = new InternalError("second");
+        IllegalStateException body = bodyFailed(first);
+        body.addSuppressed(second);
+
+        assertSame(first, rethrown(body));
+    }
+
+    @Test
     @DisplayName("a fatal error suppressed on a cause of what a language threw is thrown on (#894)")
     void fatalErrorSuppressedOnACause() {
         OutOfMemoryError oom = new OutOfMemoryError("OOM in close()");

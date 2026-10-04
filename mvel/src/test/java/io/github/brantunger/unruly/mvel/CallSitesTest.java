@@ -14,8 +14,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -348,5 +350,30 @@ class CallSitesTest {
         }
         assertStoppedAtTheLimitForOnePlace(calls + 1, 78_005);
         assertEquals(calls + 1, count.calls());
+    }
+
+    // The gaps are drawn from the same start for every count, so the same ones are drawn each time.
+    @Test
+    @DisplayName("#1019: the gaps between walks of the stack are from 1 call to the longest, some longer than "
+            + CallSites.SAMPLED_EVERY)
+    void gapsBetweenWalks() {
+        CallSites count = new CallSites(false, Long.MAX_VALUE);
+        List<Long> walked = new ArrayList<>();
+        for (int call = 0; call < 10_000; call++) {
+            assertFalse(count.countedAt(() -> {
+                walked.add(count.calls());
+                return 7;
+            }));
+        }
+
+        long longest = 0;
+        long last = CallSites.UNCOUNTED_CALLS;
+        for (long walk : walked) {
+            long gap = walk - last;
+            assertTrue(gap >= 1 && gap <= LONGEST_GAP, () -> "a gap of " + gap);
+            longest = Math.max(longest, gap);
+            last = walk;
+        }
+        assertTrue(longest > CallSites.SAMPLED_EVERY, "the longest gap is " + longest);
     }
 }

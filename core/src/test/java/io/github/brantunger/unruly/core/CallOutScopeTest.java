@@ -372,6 +372,31 @@ class CallOutScopeTest {
                 + ", already logged)"), outcome.lines("WARN"), outcome.logs());
     }
 
+    /**
+     * A listener's fatal {@link Error} is described once every listener has had the callback, from the call-out of the
+     * listener that threw it, not from the start of the run: a rule's call-out before it is still an earlier one.
+     */
+    @Test
+    @DisplayName("#1019: a fatal Error a rule's nested run logged, wrapped by a listener, is noted as logged already")
+    void fatalKeptByARuleWrappedByAListener() {
+        Runnable throwing = throwingKept("with words of its own");
+        RulesEngine<Map<String, Object>> engine = loaded(RulesEngineBuilder.<Map<String, Object>>firstMatch(
+                HashMap::new).language(new StubExpressionLanguage().action(doing(keeping(fatalRun()))))
+                .listener(new RuleListener() {
+                    @Override
+                    public void afterExecute(Rule rule, Object output) {
+                        throwing.run();
+                    }
+                }), "r");
+
+        Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
+
+        assertSame(oom, outcome.thrown(), outcome.logs());
+        assertEquals(List.of(INNER_FATAL, "A listener threw java.lang.OutOfMemoryError in afterExecute for rule 'r': "
+                + OWN_WORDS + " (caused by " + OOM_TEXT + ", already logged)"), outcome.lines("ERROR"),
+                outcome.logs());
+    }
+
     @Test
     @DisplayName("#961: a failure a condition's nested run logged, wrapped by the output supplier, is noted as logged"
             + " already")

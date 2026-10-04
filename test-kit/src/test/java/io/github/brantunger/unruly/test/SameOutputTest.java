@@ -5,8 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
 import java.math.BigDecimal;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -327,6 +329,17 @@ class SameOutputTest {
     }
 
     @Test
+    @DisplayName("#1019: an expected list longer than the output that prints the same is described with the lists'"
+            + " classes")
+    void expectedListLongerThatPrintsTheSame() {
+        List<String> expected = List.of("a", "b", "c");
+        List<String> actual = new ArrayList<>(List.of("a", "b, c"));
+
+        assertEquals("expected: <[a, b, c]> but was: <[a, b, c]>, and expected [a, b, c] (" + expected.getClass()
+                .getName() + ") but was [a, b, c] (java.util.ArrayList)", SameOutput.mismatch(expected, actual));
+    }
+
+    @Test
     @DisplayName("an output key whose equals throws makes the output not the same, and the check fails with its own"
             + " message")
     void outputKeyWhoseEqualsThrows() {
@@ -494,6 +507,50 @@ class SameOutputTest {
         });
         assertEquals("refused",
                 assertThrows(OutOfMemoryError.class, () -> SameOutput.mismatch(Map.of(7, 1), fatal)).getMessage());
+    }
+
+    @Test
+    @DisplayName("#1019: an output map whose keys throw part way through being read has none of them paired with an"
+            + " expected key")
+    void mapWhoseKeysThrowPartWay() {
+        Map<Object, Object> actual = new LinkedHashMap<>() {
+            @Override
+            public Set<Object> keySet() {
+                Set<Object> keys = super.keySet();
+                return new AbstractSet<>() {
+                    @Override
+                    public Iterator<Object> iterator() {
+                        Iterator<Object> each = keys.iterator();
+                        return new Iterator<>() {
+                            private boolean read;
+
+                            @Override
+                            public boolean hasNext() {
+                                return each.hasNext();
+                            }
+
+                            @Override
+                            public Object next() {
+                                if (read) {
+                                    throw new IllegalStateException("refused");
+                                }
+                                read = true;
+                                return each.next();
+                            }
+                        };
+                    }
+
+                    @Override
+                    public int size() {
+                        return keys.size();
+                    }
+                };
+            }
+        };
+        actual.put("1", "a");
+        actual.put("y", "b");
+
+        assertEquals("expected: <{1=a}> but was: <{1=a, y=b}>", SameOutput.mismatch(Map.of(1, "a"), actual));
     }
 
     @Test

@@ -851,6 +851,121 @@ class LoggedFailuresTest {
         }
     }
 
+    /**
+     * A failure a run that had ended logged deeper isn't below a later sibling past the bound of
+     * {@value LoggedFailures#MARKED_DEPTHS} when the parent logged failures of its own in between, at its shallower
+     * depth: the parent's logging keeps the deepest depth a failure was logged at, rather than lowering it to its own,
+     * so the later sibling's {@link LoggedFailures#enter} still finds a failure logged deeper than it starts, and
+     * lowers that failure's depth to its own.
+     *
+     * @param depth How deep the later run is
+     */
+    @ParameterizedTest(name = "a run {0} deep, the parent logging in between")
+    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS, LoggedFailures.MARKED_DEPTHS + 1,
+        LoggedFailures.MARKED_DEPTHS + 2})
+    @DisplayName("#1019: a failure a run that had ended logged deeper isn't below a later sibling past the bound, when"
+            + " the parent logged failures of its own in between")
+    void parentLogsBetweenPastTheBound(int depth) {
+        InternalError fatal = new InternalError("by a nested run of an earlier sibling");
+        IllegalArgumentException rejection = new IllegalArgumentException("rejected by a nested run");
+        ReportedFailure reported;
+        LoggedFailures.enter();
+        for (int i = 2; i < depth; i++) {
+            LoggedFailures.enter();
+        }
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    assertTrue(LoggedFailures.unloggedFatal(fatal));
+                    LoggedFailures.loggedByRun(rejection);
+                    reported = new ReportedFailure("reported by a nested run", null);
+                } finally {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertTrue(LoggedFailures.unloggedFatal(new InternalError("the parent's own")));
+            LoggedFailures.loggedByRun(new IllegalStateException("the parent's own"));
+            new ReportedFailure("the parent's own", null);
+            LoggedFailures.enter();
+            try {
+                assertBelow(false, fatal, rejection, reported, "a later sibling");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            for (int i = 1; i < depth; i++) {
+                LoggedFailures.leave();
+            }
+        }
+    }
+
+    /**
+     * A failure a run that had ended only reported, logging nothing, isn't below a later sibling past the bound of
+     * {@value LoggedFailures#MARKED_DEPTHS} either: reporting it records the depth it was built at, as logging does.
+     *
+     * @param depth How deep the later run is
+     */
+    @ParameterizedTest(name = "only reported, a run {0} deep")
+    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS, LoggedFailures.MARKED_DEPTHS + 1})
+    @DisplayName("#1019: a failure a run that had ended only reported isn't below a later sibling past the bound")
+    void onlyReportedPastTheBound(int depth) {
+        ReportedFailure reported;
+        LoggedFailures.enter();
+        for (int i = 2; i < depth; i++) {
+            LoggedFailures.enter();
+        }
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.enter();
+                try {
+                    reported = new ReportedFailure("reported by a nested run", null);
+                } finally {
+                    LoggedFailures.leave();
+                }
+            } finally {
+                LoggedFailures.leave();
+            }
+            LoggedFailures.enter();
+            try {
+                assertFalse(LoggedFailures.loggedBelow(reported), "a later sibling: a run's failure");
+            } finally {
+                LoggedFailures.leave();
+            }
+        } finally {
+            for (int i = 1; i < depth; i++) {
+                LoggedFailures.leave();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("#1019: a load() nested exactly as deep as a long has bits for counts as a run")
+    void loadAtTheBoundCountsAsRun() {
+        InternalError fatal = new InternalError("by a load " + LoggedFailures.MARKED_DEPTHS + " deep");
+        LoggedFailures.enter();
+        for (int i = 2; i < LoggedFailures.MARKED_DEPTHS; i++) {
+            LoggedFailures.enter();
+        }
+        try {
+            LoggedFailures.enterLoad();
+            try {
+                assertTrue(LoggedFailures.unloggedFatal(fatal));
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
+        } finally {
+            for (int i = 1; i < LoggedFailures.MARKED_DEPTHS; i++) {
+                LoggedFailures.leave();
+            }
+        }
+    }
+
     private static void assertBelow(boolean below, InternalError fatal, IllegalArgumentException rejection,
                                     ReportedFailure reported, String where) {
         assertEquals(below ? LoggedFailures.LoggedAt.NESTED_RUN : LoggedFailures.LoggedAt.NOT_BELOW,

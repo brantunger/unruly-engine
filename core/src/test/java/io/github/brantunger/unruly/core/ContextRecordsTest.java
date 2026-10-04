@@ -41,6 +41,19 @@ class ContextRecordsTest {
     }
 
     @Test
+    @DisplayName("#1019: a compile context keeps an unmodifiable copy of the reserved fact names")
+    void compileContextCopiesReservedFactNames() {
+        Set<String> reserved = new HashSet<>(Set.of("ctx"));
+
+        EngineCompileContext context = new EngineCompileContext(Set.of(), Set.of(), loader, Object.class, Map.of(),
+                Map.of(), false, true, List.of(), reserved);
+        reserved.add("late");
+
+        assertEquals(Set.of("ctx"), context.reservedFactNames());
+        assertThrows(UnsupportedOperationException.class, () -> context.reservedFactNames().add("late"));
+    }
+
+    @Test
     @DisplayName("a compile context needs a class loader")
     void compileContextNeedsClassLoader() {
         NullPointerException ex = assertThrows(NullPointerException.class,

@@ -35,9 +35,10 @@ final class FactIntake {
 
     /**
      * Creates the fact intake of an engine. Built with the engine, so {@code FactIntake} itself is loaded then, not by
-     * a run, which may be nested deep in another run's stack (see StackHeadroom). {@link FactNames} and
-     * {@link FactNames.Problem} are loaded then too, and {@code FactIntake} itself neither loads a class nor bootstraps
-     * a lambda the first time a run's fact name is rejected or a run's fact declared with a primitive type is widened.
+     * a run, which may be nested deep in another run's stack (see StackHeadroom). The build loads {@link FactNames}
+     * before this, with {@link FactNames#reserved}, and initializes {@link FactNames.Problem} with the classes engines
+     * use (see RunClasses), and {@code FactIntake} itself neither loads a class nor bootstraps a lambda the first time
+     * a run's fact name is rejected or a run's fact declared with a primitive type is widened.
      *
      * @param log              The engine's logger
      * @param declaredFacts     The declared type of each fact, by name
@@ -47,10 +48,6 @@ final class FactIntake {
      */
     FactIntake(Logger log, Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
                Map<String, String> reservedFactNames) {
-        // FactNames and FactNames.Problem are initialized here, when the engine is built, so checking a run's first
-        // fact name never loads them: the run may be nested deep in another run's stack (see StackHeadroom). A null
-        // name is checked because it returns at once, with Problem.NULL.
-        FactNames.check(null, Set.of());
         this.log = log;
         this.declaredFacts = declaredFacts;
         this.allFactsDeclared = allFactsDeclared;

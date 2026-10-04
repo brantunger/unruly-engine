@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * #945: the JVM's first build checks that its stack has room for initializing the classes engines use before anything
  * else, its settings included, so a first build deep in a stack throws {@link StackOverflowError} before any class is
  * touched rather than leaving one unusable; and a build checks the room for preparing a language of a class no engine
- * has prepared before it prepares it. Each runs {@link DeepFirstBuildScenario} in a new JVM, so the build is the JVM's
- * first.
+ * has prepared before it prepares it. A later build, with a language of a class prepared already, checks neither
+ * (#1019). Each runs {@link DeepFirstBuildScenario} in a new JVM, so the build is the JVM's first.
  */
 @DisplayName("a first build deep in a stack checks the room for initializing classes before anything else (#945)")
 class DeepFirstBuildTest {
@@ -53,6 +53,25 @@ class DeepFirstBuildTest {
                 "times builds the check failed prepared the language:\n" + String.join("\n", lines));
         assertEquals("1", value(lines, DeepFirstBuildScenario.PREPARED),
                 "times the language was prepared:\n" + String.join("\n", lines));
+    }
+
+    /**
+     * The engines built deep are closed, and {@code close()}'s own check of the stack's room overflows at some depths:
+     * those overflows are counted apart, so they can't pass for a build's check, nor hide that a build made one. The
+     * first build that doesn't overflow, closed too, throws nothing.
+     */
+    @Test
+    @DisplayName("#1019: once an engine has been built, a build deep in a stack, with a language of a class prepared"
+            + " already, checks no room for initializing classes")
+    void laterBuildChecksNoRoom(@TempDir Path dir) throws IOException, InterruptedException {
+        List<String> lines = scenario(dir, "again");
+
+        assertEquals("0", value(lines, DeepFirstBuildScenario.CHECKS_FAILED),
+                "builds the check failed:\n" + String.join("\n", lines));
+        assertTrue(Integer.parseInt(value(lines, DeepFirstBuildScenario.OTHER_CHECKS_FAILED)) > 0,
+                "times close()'s check overflowed:\n" + String.join("\n", lines));
+        assertEquals("null", value(lines, DeepFirstBuildScenario.DEEP),
+                "what the first build that didn't overflow threw:\n" + String.join("\n", lines));
     }
 
     private static List<String> scenario(Path dir, String mode) throws IOException, InterruptedException {
