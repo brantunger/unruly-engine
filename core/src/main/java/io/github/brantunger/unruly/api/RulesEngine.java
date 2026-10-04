@@ -275,9 +275,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      * unless another run is still waiting for a copy of the same rules and takes them, and their compilers once the
      * last run has left and this method has closed the idle sessions. Afterwards, {@link #run(FactStore)} and
      * {@link #load(List)} throw {@link IllegalStateException} — as does a run that had read the rules but had not yet
-     * begun to borrow a copy when this method closed them, because it reads them again and finds a closed engine. A
-     * {@code load()} that found the engine open before this method closed it isn't stopped. If it fails, it throws what
-     * it would on an open engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules
+     * begun to borrow a copy when this method closed the engine, unless another run is still using the rules when it
+     * borrows: then it uses them, as a run that read rules a reload replaced does, and its rules may run after this
+     * method has returned. Otherwise it reads the rules again and finds a closed engine. A {@code load()} that found
+     * the engine open before this method closed it isn't stopped. If it fails, it throws what it would on an open
+     * engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules
      * in first, and this method closes them like any others, or it finds the engine closed, closes its rules rather
      * than swapping them in, and throws {@link IllegalStateException}. A failure that stops this method closing rules
      * part way, as running out of stack in the engine's own steps can, is thrown, fatal or not, and the engine is

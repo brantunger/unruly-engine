@@ -63,11 +63,12 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `name()` | Once: in `language(...)`, or when `ServiceLoader` finds it | The building thread | Keep it constant |
 | `reservedFactNames()` | Once per `build()`, for every language, before any is prepared | The building thread | Keep it constant |
+| `prepare()` | Each `build()` naming it; else before its class's first `newCompiler` | The calling thread | Yes: concurrent builds and first uses |
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
 | `checkFactName` | Each declared fact, once every rule has compiled or failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
 | `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled. Return `Session.none()` or a new session each time | The run's thread, or the `load()` thread | Yes |
-| `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it. Never for `Session.none()`, a session a run creates, or `validate()` | The `load()` thread | No |
+| `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it | The `load()` thread | No |
 | `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
 | `close()` of a [`runScopedClosing`](#-reading-facts) value | After its run's last listener call | The run's thread | Only with other runs' values |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
@@ -93,7 +94,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 | Interface | You implement | It returns |
 | --- | --- | --- |
-| `ExpressionLanguage` | `name()`, `newCompiler(CompileContext)`, optionally `prepare()` | A new compiler for each rule list |
+| `ExpressionLanguage` | `name()`, `newCompiler(CompileContext)`, optionally `prepare()` and `reservedFactNames()` | A new compiler for each rule list |
 | `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
@@ -152,8 +153,7 @@ public final class MyLanguage implements ExpressionLanguage {
 never-blank `text()`.
 
 **Facts and output.** `facts()` is a read-only map of fact values by name, whose values can be `null`; writing to it
-throws `UnsupportedOperationException`. `output()` is the output object, MVEL's `output`. The engine rejects a name
-any language's `reservedFactNames()` returns: by default, `output`.
+throws `UnsupportedOperationException`. `output()` is the output object, MVEL's `output`.
 
 **Errors while running.** An exception from `evaluate`, `evaluateWithDetail` or `execute` becomes a
 `RuleExecutionException` naming the rule; a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even
@@ -485,7 +485,7 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 | --- | --- |
 | Your `ExpressionLanguage` instance | May serve several engines and concurrent `load()` calls at once: keep it stateless, with a constant `name()` |
 | `compileCondition`, `compileAction` | Called on one thread, the `load()` caller, and all finish before any run sees the compiler |
-| `warmUp` | Called on the `load()` thread, one session at a time, after every compile call and before any run sees the compiler |
+| `warmUp` | Called on the `load()` thread, one session at a time; see [Warming up a session](#warming-up-a-session) |
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |

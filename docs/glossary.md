@@ -109,8 +109,7 @@ too, and under the default limit can be more than it. See
 ### Deadline
 
 The instant a run must stop, taken from its [timeout](#timeout) when `run()` is called. A [nested run](#nested-run)
-stops at whichever comes first, its own deadline or the outer run's. See
-[Nested runs](nested-runs.md).
+also stops at the outer run's. See [Nested runs](nested-runs.md).
 
 ### Declared fact
 
@@ -139,9 +138,9 @@ is one; an engine finds languages with `ServiceLoader` unless you give it some w
 
 ### Extra copy
 
-A [compiled copy](#compiled-copy) taken above the [copy limit](#copy-limit) for a run that doesn't wait: a
-[nested run](#nested-run), or a run that waited five seconds without any copy being given back. It isn't kept: its
-sessions are closed when the run ends. See [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
+A [compiled copy](#compiled-copy) taken above the [copy limit](#copy-limit) by a [nested run](#nested-run) whose
+thread holds or is getting a copy, or a run that gave up after five seconds with no copy coming back. Its sessions are
+closed when the run ends, not kept. See [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
 ### Fact
 
@@ -223,10 +222,10 @@ decides for itself. See [Null and missing facts](facts.md#-null-and-missing-fact
 
 ### Nested run
 
-A run started on the same thread from inside another run, such as from an action or a listener, on any engine. It never
-waits for a compiled copy or a [build slot](#build-slot), and it stops at the outer run's deadline if that comes first.
-On the same engine, `RunContext.parent()` names the outer run. See [Nested runs](nested-runs.md) and
-[Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
+A run started on the same thread from inside another run, such as from an action or a listener, on any engine. It also
+stops at the outer run's deadline, and never waits for a compiled copy or a [build slot](#build-slot) while a run on
+its thread [holds or is getting a copy](compiled-copies.md#runs-that-dont-wait). On the same engine,
+`RunContext.parent()` names the outer run. See [Nested runs](nested-runs.md).
 
 ### Null reference
 

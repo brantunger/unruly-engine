@@ -1,0 +1,32 @@
+# Link forms
+
+[control](no-such-control.md) and [fine](inline-link.md)
+
+[spaced]( no-such-spaced.md ) and [fine]( inline-link.md )
+
+[spaced angle]( <no-such spaced angle.md> ) and [fine]( <inline-link.md> )
+
+[spaced title]( no-such-spaced-title.md "title" ) and [fine]( inline-link.md 'title' )
+
+[angle title](<no-such angle title.md> (title)) and [fine](<inline-link.md> (title))
+
+[reference]: no-such-reference.md
+[fine reference]: inline-link.md
+[angle reference]: <no-such angle reference.md>
+[fine angle reference]: <inline-link.md>
+
+<a href="no-such-double.md">double</a> and <a href="inline-link.md">fine</a>
+
+<a href='no-such-single.md'>single</a> and <a href='inline-link.md'>fine</a>
+
+<a href=no-such-unquoted.md>unquoted</a> and <a href=inline-link.md>fine</a>
+
+<a title="t" href=no-such-unquoted-2.md title="t">unquoted</a> and <a title="t" href=inline-link.md title="t">fine</a>
+
+<img src="no-such-double.svg" alt="double"> and <img src="inline-link.md" alt="fine">
+
+<img src='no-such-single.svg' alt='single'> and <img src='inline-link.md' alt='fine'>
+
+<img src=no-such-unquoted.svg alt="unquoted"> and <img src=inline-link.md alt="fine">
+
+<img alt="unquoted" src=no-such-unquoted-2.svg> and <img alt="fine" src=inline-link.md>

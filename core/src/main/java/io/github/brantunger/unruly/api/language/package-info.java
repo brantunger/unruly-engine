@@ -6,7 +6,11 @@
  * <p><b>Writing a language:</b></p>
  * <ol>
  *   <li>Implement {@link io.github.brantunger.unruly.api.language.ExpressionLanguage}: a name, and a new
- *   {@link io.github.brantunger.unruly.api.language.ExpressionCompiler} for each rule list.</li>
+ *   {@link io.github.brantunger.unruly.api.language.ExpressionCompiler} for each rule list. Optionally, also
+ *   {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#prepare()}, to initialize the language's
+ *   classes before a first compile or run deep in a stack, and
+ *   {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()}, the fact names it
+ *   reserves: {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME} by default.</li>
  *   <li>In the compiler, compile each {@link io.github.brantunger.unruly.api.language.Expression} into a
  *   {@link io.github.brantunger.unruly.api.language.CompiledCondition} or a
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction}, and throw
@@ -60,11 +64,13 @@
  * </p>
  *
  * <p>
- * <b>Threads:</b> a language instance may serve several engines at once. Each {@code load()} or {@code validate()}
- * creates its own compiler and calls its compile methods on the thread that called it, so two loads at once compile
- * on two threads; {@code checkFactName} is called on that thread for each declared fact, and by runs on many threads
- * at once; {@code newSession} is called by runs on many threads at once. Compiled conditions and actions are shared
- * by every run, each with its own session, which one run uses at a time.
+ * <b>Threads:</b> a language instance may serve several engines at once. {@code prepare()} may be called on several
+ * threads at once, by engines built, or rule lists first loaded or validated, at the same time, so it must be safe to
+ * call concurrently. Each {@code load()} or {@code validate()} creates its own compiler and calls its compile methods
+ * on the thread that called it, so two loads at once compile on two threads; {@code checkFactName} is called on that
+ * thread for each declared fact, and by runs on many threads at once; {@code newSession} is called by runs on many
+ * threads at once. Compiled conditions and actions are shared by every run, each with its own session, which one run
+ * uses at a time.
  * </p>
  *
  * <p>Types in this package are non-null unless annotated {@link org.jspecify.annotations.Nullable}.</p>

@@ -1,7 +1,7 @@
 # Checks every Markdown page in the repository, and the Javadoc's links to them:
 # - a relative link whose file doesn't exist, or whose #anchor matches no heading of the page it points to: an inline
-#   link, with or without <> around its destination and with or without a title, a reference definition
-#   ([name]: target) and an HTML <a href="...">;
+#   link, with or without <> around its destination, spaces inside its parentheses or a title, a reference
+#   definition ([name]: target), and an HTML <a href> or <img src>, its value quoted or not;
 # - a link to https://github.com/brantunger/unruly-engine/blob/main/<page>.md#<anchor>, from a page, a .java file or
 #   the Javadoc overview, whose page or anchor doesn't exist on this branch;
 # - a table row holding `||` outside code, which is two rows joined into one line.
@@ -84,11 +84,12 @@ for page in pages:
         line = re.sub(r'`[^`]*`', '', line)
         check_absolute(page, i, line)
         links = [a or b for a, b in
-                 re.findall(r'''\]\((?:<([^<>]+)>|([^)\s<]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)''', line)]
+                 re.findall(r'''\]\(\s*(?:<([^<>]+)>|([^)\s<]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)''', line)]
         m = re.match(r'^\s{0,3}\[(?!\^)[^\]]+\]:\s*(?:<([^<>]+)>|(\S+))', line)  # not a footnote: [^1]: text
         if m:
             links.append(m.group(1) or m.group(2))
-        links += re.findall(r'''<a\s[^>]*href=["']([^"']+)["']''', line)
+        links += [a or b for a, b in
+                  re.findall(r'''<(?:a|img)\s[^>]*(?:href|src)=(?:["']([^"']+)["']|([^\s>]+))''', line)]
         for link in links:
             if link.startswith(('http:', 'https:', 'mailto:')):
                 continue

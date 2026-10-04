@@ -119,9 +119,11 @@ sequenceDiagram
 - A **nested run** started from an action or a listener of a run that is still going throws it too: it reads the
   engine's current rules, and a closed engine has none.
 
-A run that had read the engine's rules but not yet borrowed a copy of them when `close()` closed them reads them
-again, finds a closed engine, and throws the same `IllegalStateException`. One whose thread was interrupted, or whose
-deadline has passed, stops there instead, with a message saying the rules were closed by a reload or by `close()`; see
+A run that had read the engine's rules but not yet borrowed a copy of them when `close()` retired them may still use
+them, even after `close()` has returned, if a run of them is still going when it borrows, as after a
+[reload](#-reloading-rules-while-running). Otherwise it reads them again, finds a closed engine, and throws the same
+`IllegalStateException`. One whose thread was interrupted, or whose deadline has passed, stops there instead, with a
+message saying the rules were closed by a reload or by `close()`; see
 [What stops a run](stopping-runs.md#-what-stops-a-run).
 
 A `load()` that found the engine still open isn't stopped by `close()`. If it fails, it throws what it would on an open
@@ -283,18 +285,17 @@ are in [The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-o
 
 ### What happens to runs in progress when I close the engine?
 
-They finish and return their results. `close()` returns at once and waits for nothing. See [Closing](#closing).
+They finish and return their results. `close()` returns at once. See [Closing](#closing).
 
 ### Can I call `load()` while runs are happening, or from two threads at once?
 
-Yes to both. Runs in progress keep their rules, and of two concurrent loads the one that finishes last wins: the last
-to swap in its rules, after making any copies at load.
-See [Reloading rules while running](#-reloading-rules-while-running).
+Yes to both. Runs in progress keep their rules, and of two concurrent loads the one that finishes last wins. See
+[Reloading rules while running](#-reloading-rules-while-running).
 
 ### Can a run start before the first `load()` finishes?
 
 No. It throws `IllegalStateException("load() must be called before run()")` straight away, rather than waiting for the
-load. Load the rules before the application accepts traffic.
+load.
 
 ### Can an action call `load()` or `close()` on its own engine?
 
