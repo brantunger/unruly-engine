@@ -40,7 +40,8 @@ class ClassFileLookupTest {
     }
 
     private static ParserConfiguration configuration(ResourceRecordingLoader loader, Set<String> packages) {
-        return new Imports(packages, Set.of(), loader, ConcurrentHashMap.newKeySet(), Map.of()).newConfiguration();
+        return new Imports(packages, Set.of(), loader, ConcurrentHashMap.newKeySet(), Map.of(), new ClassNameRoots())
+                .newConfiguration();
     }
 
     // Review of #701: MVEL asks for a name more than once, and only a rule list's own imports remembered a miss.

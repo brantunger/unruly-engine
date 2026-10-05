@@ -22,6 +22,9 @@ import java.util.stream.Collectors;
  *     {@code with}</li>
  *     <li>names MVEL resolves to a class: its built-in class names such as {@code Math} or {@code String}, and
  *     classes the engine imports, on their own or in a package</li>
+ *     <li>the first part of the name of a class the rule list's expressions use, such as {@code java} for
+ *     {@code java.lang.Integer.MAX_VALUE}, as MVEL would read the fact in the class's place (see
+ *     {@link ClassNameRoots})</li>
  * </ul>
  */
 final class FactNames {
@@ -72,6 +75,7 @@ final class FactNames {
     private static final Set<String> RESERVED = reservedWords();
 
     private final Set<String> importedClassNames;
+    private final ClassNameRoots classNameRoots;
     private final List<String> packages;
     private final ClassLoader classLoader;
     // Names found to be classes in an imported package. Bounded by the classes in those packages.
@@ -90,7 +94,8 @@ final class FactNames {
     /**
      * Creates a check for the imports a rule list was compiled with.
      *
-     * @param ruleImports The packages and classes the engine imports, and their class loader
+     * @param ruleImports The packages and classes the engine imports, their class loader, and the first parts of the
+     *                    names of the classes found while the rule list compiled
      */
     FactNames(Imports ruleImports) {
         this(ruleImports, new SplittableRandom());
@@ -100,13 +105,15 @@ final class FactNames {
      * Creates a check for the imports a rule list was compiled with, which evicts the names it picks with
      * {@code evictions}, so a test can seed it.
      *
-     * @param ruleImports The packages and classes the engine imports, and their class loader
+     * @param ruleImports The packages and classes the engine imports, their class loader, and the first parts of the
+     *                    names of the classes found while the rule list compiled
      * @param evictions   Picks the name to evict when the cache is full; used only under a lock
      */
     FactNames(Imports ruleImports, SplittableRandom evictions) {
         importedClassNames = ruleImports.classes().stream()
                 .map(Class::getSimpleName)
                 .collect(Collectors.toUnmodifiableSet());
+        classNameRoots = ruleImports.classNameRoots();
         packages = List.copyOf(ruleImports.packages());
         classLoader = ruleImports.classLoader();
         slots = new String[packages.isEmpty() ? 0 : MAX_CACHED_MISSES];
@@ -123,6 +130,14 @@ final class FactNames {
         if (!isIdentifier(name)) {
             throw rejected(name, "' is not a valid fact name: rules can only refer to a fact named with a Java "
                     + "identifier");
+        }
+        if (classNameRoots.contains(name)) {
+            // The other way round: MVEL would read the fact where the rules mean the class. Checked first, so a name
+            // that is also a class MVEL resolves gets this reason. The name is quoted twice, each within the room the
+            // other leaves.
+            throw new IllegalArgumentException(quotedWithClass("'", name, "' cannot be used as a fact name: the rules "
+                    + "use a class whose package starts with '", name, "', and MVEL would read the fact in the "
+                    + "class's place"));
         }
         if (RESERVED.contains(name) || importedClassNames.contains(name) || isPackageClass(name)) {
             throw rejected(name, "' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules "

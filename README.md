@@ -337,10 +337,12 @@ and `language`, and `enabled`, `validFrom`, `validTo` and `tags`, which choose t
 ### Facts
 
 Facts are the inputs. Put them in a `FactStore`, such as the built-in `FactMap`; each fact's name is the variable rules
-use. A fact name can't be blank or one a language reserves, such as MVEL's `output`, and must be one the rules'
-languages can refer to: in MVEL, a Java identifier that isn't a reserved word such as `empty` or `in`, or a class name
-MVEL resolves, such as `Math`. `run()` throws `IllegalArgumentException` for a name breaking these rules. Build a new
-store for each request. See [Naming rules](docs/facts.md#-naming-rules).
+use. A fact name can't be blank or one a language reserves, such as MVEL's `output`, and must suit the rules'
+languages: in MVEL, a Java identifier other than a reserved word such as `empty`, a class name MVEL resolves, such
+as `Math`, or the first part of the package of a class the rules use (`java`).
+
+`run()` throws `IllegalArgumentException` for a name breaking these rules. Build a new store for each request. See
+[Naming rules](docs/facts.md#-naming-rules).
 
 ### The output object
 
