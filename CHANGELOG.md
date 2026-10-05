@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.26.0](https://github.com/brantunger/unruly-engine/compare/v2.25.3...v2.26.0) (2026-10-05)
+
+
+### Features
+
+* contract kit checks unreserved output and concurrent prepare() calls ([#1055](https://github.com/brantunger/unruly-engine/issues/1055)) ([e7a932e](https://github.com/brantunger/unruly-engine/commit/e7a932e9e20290fe3c0a58633a17649e67f3d9a9))
+
 ## [2.25.3](https://github.com/brantunger/unruly-engine/compare/v2.25.2...v2.25.3) (2026-10-05)
 
 
