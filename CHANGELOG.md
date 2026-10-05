@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.25.2](https://github.com/brantunger/unruly-engine/compare/v2.25.1...v2.25.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* reject fact names that MVEL rules resolve as something else ([#1049](https://github.com/brantunger/unruly-engine/issues/1049)) ([0fcbff3](https://github.com/brantunger/unruly-engine/commit/0fcbff3c065309a598a3095ce8f7592738356826))
+
 ## [2.25.1](https://github.com/brantunger/unruly-engine/compare/v2.25.0...v2.25.1) (2026-10-05)
 
 
