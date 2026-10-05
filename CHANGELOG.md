@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.25.3](https://github.com/brantunger/unruly-engine/compare/v2.25.2...v2.25.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* keep a run's scope sound after a stack overflow and across threads ([#1051](https://github.com/brantunger/unruly-engine/issues/1051)) ([3cf0108](https://github.com/brantunger/unruly-engine/commit/3cf0108e516609ed7bcfb7d9225768bf655c1b04))
+
 ## [2.25.2](https://github.com/brantunger/unruly-engine/compare/v2.25.1...v2.25.2) (2026-10-05)
 
 
