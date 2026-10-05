@@ -1,13 +1,13 @@
 package io.github.brantunger.unruly.core;
 
-import java.util.ArrayList;
+import java.util.AbstractList;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.RandomAccess;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 
 /**
@@ -17,44 +17,95 @@ import java.util.function.Supplier;
  * context and each of its action contexts share one scope, and a nested run has a scope of its own.
  *
  * <p>
- * {@link #get} takes no lock: a run evaluates one expression at a time. It makes its map the first time a value is
- * asked for, so a run whose languages keep nothing allocates no map. Only the run's contexts refer to it, so it goes
- * when the run returns. The values kept with {@code runScoped} aren't closed; those kept with {@code runScopedClosing}
- * are handed back by {@link #end()}, for the run to close, and none can be made after that. {@link #getClosing} and
- * {@link #end()} hold the scope's lock, so a value asked for on another thread while the run ends, such as through a
- * context a language kept, is either handed back to be closed or refused, never left open. A value whose init ends the
- * run itself, on its own thread, is closed and refused.
+ * {@link #get} and {@link #getClosing} decide in short sections synchronized on the scope, which never wait and never
+ * run an init, so another thread can ask for a value too, such as through a context a language kept. A request for a
+ * key whose init is running on its own thread fails, and so does a {@link #get}, or a {@link #getClosing} for a
+ * {@code runScoped} key, while the init runs on another thread; a {@link #getClosing} on another thread waits for a
+ * running closing init (below). The scope makes its map the first time a value is asked for, so a run whose
+ * languages keep nothing allocates no map. Only the run's contexts refer to it, so it goes when the run returns. The
+ * values kept with {@code runScoped} aren't closed; those kept with {@code runScopedClosing} are handed back by
+ * {@link #end()}, for the run to close, and none can be made after that.
+ * </p>
+ *
+ * <p>
+ * Closing inits run one at a time: a thread takes the scope's turn before one runs, and gives it back after. The turn
+ * is re-entrant, so an init can ask for another closing key. A closing request on another thread, and {@link #end()},
+ * wait for the turn, so a value asked for on another thread while the run ends, such as through a context a language
+ * kept, is either handed back to be closed or refused, never left open. A value whose init ends the run itself, on its
+ * own thread, is closed and refused.
  * </p>
  */
+// Nothing that keeps a value or gives the turn back enters a monitor or calls a method, either of which can overflow
+// the stack, as a language that catches StackOverflowError would go on from: a made value is never left unkept, a key
+// never left being made, and the turn never left taken.
 final class RunScope {
 
-    private Map<Object, Object> values;
-    // The keys whose init is running, so an init that asks for its own key fails rather than recursing.
-    private Set<Object> making;
-    // The keys kept with runScopedClosing, and their values in the order they were made, which end() hands back; made
-    // when the first such value is.
-    private Set<Object> closingKeys;
-    private List<AutoCloseable> closing;
-    private boolean ended;
-    // Held by getClosing and end(). A lock, not the scope's monitor: on JDK 21 to 23 a virtual thread that parks
-    // holding a monitor keeps its carrier thread, so inits that wait, such as for a pooled connection another run
-    // holds, could take every carrier and deadlock the runs.
-    private final ReentrantLock lock = new ReentrantLock();
-    // What releasing the lock threw as end() handed the values back, if anything.
-    private Throwable unlockFailure;
+    // How long a thread waiting for the turn parks before it looks again, 10 ms: it polls, holding no monitor, so a
+    // virtual thread never parks pinned to its carrier, as it would in Object.wait() on JDK 21 to 23.
+    private static final long POLL_NANOS = 10_000_000L;
+    // What closing holds once end() has handed the values back, so the run having ended takes no field of its own.
+    // RunClasses initializes it with the engine's other classes, as runs use it.
+    @SuppressWarnings("PMD.LooseCoupling")
+    private static final ClosingValues ENDED = new ClosingValues();
+
+    // Each key's slot, made the first time a value is asked for.
+    private Map<Object, Slot> values;
+    // The values kept with getClosing, made with the first: the class itself, whose array keeping one stores into.
+    @SuppressWarnings("PMD.LooseCoupling")
+    private ClosingValues closing;
+    // The thread whose getClosing calls are running, and how many are: one thread's closing inits at a time. Taken
+    // under the monitor, and given back by the thread that holds it with plain stores.
+    private volatile Thread owner;
+    private volatile int holds;
+    // Set by end() before it waits for the turn: only the turn's owner can make another closing value meanwhile.
+    private boolean ending;
+
+    /** One key's entry: being made by {@code maker}, kept once {@code value} is set, or let go when neither is. */
+    private static final class Slot {
+        private final boolean closes;
+        // Cleared once the init has returned or thrown, after value is set, so a reader that sees no maker sees the
+        // value if one was kept.
+        private volatile Thread maker;
+        private volatile Object value;
+
+        Slot(boolean closes, Thread maker) {
+            this.closes = closes;
+            this.maker = maker;
+        }
+    }
+
+    /** The values kept with {@link #getClosing}, in the order they were made, which {@link #end()} hands back. */
+    // A list over its array, not an ArrayList: keeping a value is an array store, with room made before the init runs.
+    private static final class ClosingValues extends AbstractList<AutoCloseable> implements RandomAccess {
+        // Objects, cast as they're read, so keeping a value casts nothing.
+        private Object[] items = new Object[4];
+        private int count;
+
+        @Override
+        public AutoCloseable get(int index) {
+            Objects.checkIndex(index, count);
+            return (AutoCloseable) items[index];
+        }
+
+        @Override
+        public int size() {
+            return count;
+        }
+    }
 
     /**
-     * Returns the value kept under {@code key}, making it with {@code init} the first time. A supplier that throws
-     * keeps nothing, so the next call for the key calls a supplier again. The supplier can ask for other keys: the
-     * value is kept only once it returns. It can't ask for its own key.
+     * Returns the value kept under {@code key}, making it with {@code init} the first time. A supplier that throws, or
+     * returns {@code null}, keeps nothing, so the next call for the key calls a supplier again. The supplier can ask
+     * for other keys: the value is kept only once it returns. It can't ask for its own key, nor can another thread
+     * while it runs.
      *
      * @param key  The key
      * @param init Makes the value
      * @param <T>  The value's type
      * @return The value
      * @throws NullPointerException  if {@code key}, {@code init} or what {@code init} returns is {@code null}
-     * @throws IllegalStateException if the init of {@code key} is running, or {@code key} is kept with
-     *                               {@link #getClosing}
+     * @throws IllegalStateException if the init of {@code key} is running, on this thread or another, or {@code key}
+     *                               is kept with {@link #getClosing}
      */
     <T> T get(Object key, Supplier<? extends T> init) {
         return get(key, init, false);
@@ -62,10 +113,14 @@ final class RunScope {
 
     /**
      * Returns the value kept under {@code key}, as {@link #get} does, and keeps it to be handed back by
-     * {@link #end()} when the value is made. If {@code init} ends the scope and returns a value, nothing is kept under
-     * {@code key}: the value is closed, and refused as one asked for after the scope ended is. What its {@code close()}
-     * throws is suppressed on the {@link IllegalStateException}, unless that is or carries a fatal {@link Error}
-     * (see {@link Failures#fatalFirst}), which is thrown in its place, carrying the {@link IllegalStateException}.
+     * {@link #end()} when the value is made. It takes the scope's turn first, waiting while another thread holds it,
+     * so a key asked for on another thread while its init runs gets the value it made, or, if that init threw or
+     * returned {@code null}, makes its own. If {@code init} ends the scope
+     * and returns a value, nothing is kept under {@code key}: the value is closed, and refused as one asked for after
+     * the scope ended is. What its {@code close()} throws is suppressed on the {@link IllegalStateException}, unless
+     * that is or carries a fatal {@link Error} (see {@link Failures#fatalFirst}), which is thrown in its place,
+     * carrying the {@link IllegalStateException}. The wait is uninterruptible: an interrupt meanwhile is set again once
+     * it ends.
      *
      * @param key  The key
      * @param init Makes the value
@@ -73,64 +128,134 @@ final class RunScope {
      * @return The value
      * @throws NullPointerException  if {@code key}, {@code init} or what {@code init} returns is {@code null}
      * @throws IllegalStateException if the init of {@code key} is running, {@code key} is kept with {@link #get}, or
-     *                               {@link #end()} has been called, including by {@code init}
+     *                               {@link #end()} has been called, including by {@code init}, or, when this thread
+     *                               doesn't hold the turn, is waiting for another thread to give it back
      */
-    // With end(): the init runs holding the lock, so a value is kept, or refused, wholly before or after the run ends;
+    // With end(): the init runs holding the turn, so a value is kept, or refused, wholly before or after the run ends;
     // only the init itself can end it meanwhile, and its value is then closed and refused.
-    // The lock is reentrant, so an init can ask for another closing key.
     <T extends AutoCloseable> T getClosing(Object key, Supplier<? extends T> init) {
-        lock.lock();
-        try {
-            return get(key, init, true);
-        } finally {
-            lock.unlock();
-        }
+        return get(key, init, true);
     }
 
+    // Any Throwable: the turn is given back, and the slot kept or let go, however the init ends.
+    @SuppressWarnings({"unchecked", "PMD.CompareObjectsWithEquals", "PMD.NullAssignment"})
     private <T> T get(Object key, Supplier<? extends T> init, boolean closes) {
         Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(init, "init must not be null");
         String method = closes ? "runScopedClosing" : "runScoped";
-        if (closes && ended) {
-            throw endedFailure(method, key);
-        }
-        if (values == null) {
-            values = new HashMap<>();
-            making = new HashSet<>();
-        }
-        Object value = values.get(key);
-        if (value != null && closes != (closingKeys != null && closingKeys.contains(key))) {
-            throw new IllegalStateException(method + " was called for a key (" + key.getClass().getName()
-                    + ") that " + (closes ? "runScoped" : "runScopedClosing") + " keeps a value under");
+        Thread me = Thread.currentThread();
+        boolean turn = false;
+        Slot slot = null;
+        Object value = null;
+        boolean kept = false;
+        try {
+            boolean interrupted = false;
+            try {
+                for (;;) {
+                    synchronized (this) {
+                        if (closes) {
+                            // Once end() has begun, only the thread it waits for can make another closing value.
+                            if (closing == ENDED || ending && owner != me) {
+                                throw endedFailure(method, key);
+                            }
+                            if (owner == null || owner == me) {
+                                owner = me;
+                                holds++;
+                                turn = true;
+                            }
+                        }
+                        if (turn || !closes) {
+                            if (values == null) {
+                                Faults.reached(Faults.Step.RUN_SCOPE_MAP_MAKING);
+                                values = new HashMap<>();
+                            }
+                            Slot found = values.get(key);
+                            if (found != null) {
+                                // The maker before the value: a maker seen gone means its value, if kept, is seen too.
+                                Thread maker = found.maker;
+                                Object made = found.value;
+                                if (made != null) {
+                                    if (found.closes != closes) {
+                                        throw new IllegalStateException(method + " was called for a key ("
+                                                + key.getClass().getName() + ") that "
+                                                + (closes ? "runScoped" : "runScopedClosing")
+                                                + " keeps a value under");
+                                    }
+                                    return (T) made;
+                                }
+                                // Its own init asked for it, or another thread's is making it: a runScoped value, as
+                                // only the turn's owner makes a closing one. Not computeIfAbsent, which would recurse.
+                                if (maker != null) {
+                                    throw new IllegalStateException(method + " was called for a key ("
+                                            + key.getClass().getName() + ") while that key's init is running");
+                                }
+                                // Else its init threw or returned null, and this slot replaces it.
+                            }
+                            if (closes) {
+                                makeRoom();
+                            }
+                            slot = new Slot(closes, me);
+                            values.put(key, slot);
+                            break;
+                        }
+                    }
+                    interrupted |= pause();
+                }
+            } finally {
+                if (interrupted) {
+                    me.interrupt();
+                }
+            }
+            value = init.get();
+        } finally {
+            // Only the turn's owner keeps a closing value, and only it can end the run meanwhile, so it reads closing
+            // alone; the volatile stores to the slot and to owner publish the value to the thread that hands it back.
+            if (slot != null) {
+                if (value != null && (!closes || closing != ENDED)) {
+                    if (closes) {
+                        int at = closing.count;
+                        closing.items[at] = value;
+                        closing.count = at + 1;
+                    }
+                    slot.value = value;
+                    kept = true;
+                }
+                slot.maker = null;
+            }
+            if (turn) {
+                int left = holds - 1;
+                holds = left;
+                if (left == 0) {
+                    owner = null;
+                }
+            }
         }
         if (value == null) {
-            // Not computeIfAbsent: a supplier that asks for another key would change the map while it computes.
-            if (!making.add(key)) {
-                throw new IllegalStateException(method + " was called for a key (" + key.getClass().getName()
-                        + ") while that key's init is running");
-            }
-            try {
-                value = Objects.requireNonNull(init.get(), "init must not return null");
-            } finally {
-                making.remove(key);
-            }
-            if (closes && ended) {
-                // Its init ended the run, on this thread: end() has handed back the values, so this one is closed.
-                throw refused(method, key, (AutoCloseable) value);
-            }
-            values.put(key, value);
-            if (closes) {
-                if (closing == null) {
-                    closingKeys = new HashSet<>();
-                    closing = new ArrayList<>();
-                }
-                closingKeys.add(key);
-                closing.add((AutoCloseable) value);
-            }
+            throw new NullPointerException("init must not return null");
         }
-        @SuppressWarnings("unchecked")
-        T typed = (T) value;
-        return typed;
+        if (!kept) {
+            // Its init ended the run, on this thread: end() has handed back the values, so this one is closed.
+            throw refused(method, key, (AutoCloseable) value);
+        }
+        return (T) value;
+    }
+
+    // Room for the value of every closing init running, all on the turn's owner's thread, this one included, so
+    // keeping one is an array store. Each init made room for its own, so one more slot is ever needed.
+    private void makeRoom() {
+        if (closing == null) {
+            closing = new ClosingValues();
+        }
+        if (closing.count + holds > closing.items.length) {
+            closing.items = Arrays.copyOf(closing.items, closing.items.length * 2);
+        }
+    }
+
+    // Parks a while, holding no monitor, and tells whether the thread was interrupted, clearing that so the next park
+    // isn't cut short: the caller sets it again once it stops waiting.
+    private boolean pause() {
+        LockSupport.parkNanos(this, POLL_NANOS);
+        return Thread.interrupted();
     }
 
     // The key's class, not its toString(), which a key needn't have and could leak what it holds.
@@ -140,7 +265,7 @@ final class RunScope {
     }
 
     // Closes a value whose init ended the run, and returns the failure to throw. Any Throwable: what close() threw is
-    // suppressed on it, but a fatal Error is thrown itself, carrying it. The caller's lock is released by getClosing.
+    // suppressed on it, but a fatal Error is thrown itself, carrying it. The turn has been given back by then.
     private static IllegalStateException refused(String method, Object key, AutoCloseable value) {
         IllegalStateException refused = endedFailure(method, key);
         Throwable thrown = refused;
@@ -158,64 +283,49 @@ final class RunScope {
 
     /**
      * Ends the run's scope: hands back the values kept with {@link #getClosing}, for the caller to close, and makes
-     * {@link #getClosing} fail from now on. {@link #get} still works. It allocates nothing when no other thread is
-     * taking the scope's lock, so it can then end a run that has run out of memory. When another thread is, such as
-     * one running an init in {@link #getClosing}, it waits for it: a platform thread's wait can't fail for want of
-     * memory, but waiting on a virtual thread can throw {@link OutOfMemoryError}. Releasing the lock can fail too, once
-     * the lock is free, as waking a virtual thread that waits for it allocates: the values are still handed back, and
-     * what it threw is kept for {@link #endFailure()}, for the caller to throw once it has closed them. Nothing can be
-     * added to the list it returns.
+     * {@link #getClosing} fail from now on. {@link #get} still works. While another thread holds the scope's turn,
+     * such as one running an init in {@link #getClosing}, it waits for it, and refuses a closing value to any other
+     * thread meanwhile; that init's value is then handed back. The wait is uninterruptible: an interrupt meanwhile is
+     * set again once it ends. Called on the thread that holds the turn, from an init, it doesn't wait. It allocates
+     * nothing, so it can end a run that has run out of memory. Nothing can be added to the list it returns.
      *
      * @return The values to close, in the order they were made: the caller closes them last first, so a value made
      *         from another is closed before it. Empty if none were kept, or this has been called before.
      */
-    // Waits for an init running on another thread, whose value is then handed back. Taking a free lock is one
-    // compare-and-set; the JDK's lock waits without a queue node when it can't allocate one.
-    // A scope keeps no list of values to close once it has handed them back.
-    @SuppressWarnings("PMD.NullAssignment")
+    // Any Throwable: the interrupt is set again however the wait ends, as a virtual thread's park can fail for memory.
+    @SuppressWarnings({"PMD.CompareObjectsWithEquals", "PMD.LooseCoupling"})
     List<AutoCloseable> end() {
-        lock.lock();
-        List<AutoCloseable> toClose;
+        Thread me = Thread.currentThread();
+        boolean interrupted = false;
+        ClosingValues handedBack;
         try {
-            ended = true;
-            // Only this call's, so calling it again hands back nothing and no failure.
-            unlockFailure = null;
-            toClose = closing;
-            // Its keys are kept, so asking for one with runScoped still fails as it did.
-            closing = null;
+            for (;;) {
+                synchronized (this) {
+                    ending = true;
+                    if (owner == null || owner == me) {
+                        handedBack = closing;
+                        closing = ENDED;
+                        break;
+                    }
+                }
+                interrupted |= pause();
+            }
         } finally {
-            unlockEnded();
+            if (interrupted) {
+                me.interrupt();
+            }
         }
-        return toClose == null ? List.of() : toClose;
-    }
-
-    // Any Throwable: the values are handed back whatever releasing the lock threw. getClosing's own unlock() can fail
-    // the same way, but nothing leaks: its value is kept by then, so end() hands it back, or, when its init ended the
-    // run, already closed, and what unlock() threw replaces the IllegalStateException refusing it.
-    private void unlockEnded() {
-        try {
-            lock.unlock();
-            Faults.at(Faults.Step.RUN_SCOPE_UNLOCKED);
-        } catch (Throwable t) {
-            unlockFailure = t;
-        }
-    }
-
-    /**
-     * Returns what releasing the scope's lock threw as the last call of {@link #end()} handed its values back.
-     *
-     * @return What it threw, or {@code null} if it threw nothing
-     */
-    Throwable endFailure() {
-        return unlockFailure;
+        return handedBack == null || handedBack == ENDED ? List.of() : handedBack;
     }
 
     /**
      * Tells whether a value was ever asked for, and so whether the scope has made its map.
      *
-     * @return {@code true} once {@link #get} has been called
+     * @return {@code true} once {@link #get} or {@link #getClosing} has been called
      */
     boolean allocated() {
-        return values != null;
+        synchronized (this) {
+            return values != null;
+        }
     }
 }

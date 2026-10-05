@@ -205,11 +205,14 @@ class CloseOrderTest {
     void watchedAndFailedStepsAreKeptApart() {
         IllegalArgumentException injected = assertThrows(IllegalArgumentException.class,
                 () -> Faults.inject(Faults.Step.CLOSE_MARKED, 1, new StackOverflowError()));
+        IllegalArgumentException following = assertThrows(IllegalArgumentException.class,
+                () -> Faults.injectThen(Faults.Step.RUN_SCOPE_MAP_MAKING, new StackOverflowError()));
         IllegalArgumentException watched = assertThrows(IllegalArgumentException.class,
                 () -> Faults.watch(Faults.Step.SETTLING, () -> {
                 }));
 
         assertEquals("CLOSE_MARKED can only be watched", injected.getMessage());
+        assertEquals("RUN_SCOPE_MAP_MAKING can only be watched", following.getMessage());
         assertEquals("SETTLING is made to fail, not watched", watched.getMessage());
     }
 

@@ -282,7 +282,8 @@ public final class LanguageTestContexts {
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, so a language's test can
      * check that it releases what it opened for the run. Every value is closed, whatever the others throw, and from
      * then on asking for one with {@code runScopedClosing}, through any context of the run, throws
-     * {@link IllegalStateException}, as it does once a run has ended. Calling it again does nothing.
+     * {@link IllegalStateException}, as it does once a run has ended. Calling it again does nothing. It first waits,
+     * with no limit, for a {@code runScopedClosing} init running on another thread.
      *
      * <p>
      * Called from a {@code runScopedClosing} init that goes on to return a value, it closes the run's values, and
@@ -300,10 +301,7 @@ public final class LanguageTestContexts {
      * @throws NullPointerException if {@code context} is {@code null}
      * @throws Exception            the first {@link Throwable} a value's {@code close()} threw, as it is, with what
      *                              the others threw suppressed on it, each once, leaving out any that it already
-     *                              carries or that carries it. If releasing the run's lock threw, such as an
-     *                              {@link OutOfMemoryError} while waking a virtual thread that waited for it, that
-     *                              is thrown instead, once every value is closed, with every {@code close()} failure
-     *                              suppressed on it
+     *                              carries or that carries it
      */
     public static void endRun(EvaluationContext context) throws Exception {
         EngineEvaluationContext.endRun(context);

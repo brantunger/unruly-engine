@@ -151,10 +151,9 @@ No engine runs in these tests, so nothing closes a context's `runScopedClosing` 
 a `close()` that throws. Each other failure is in its `getSuppressed()` once, unless it already carries the first or
 the first carries it.
 
-If releasing the run's lock threw, such as an `OutOfMemoryError` while waking a virtual thread that waited for it,
-`endRun` throws that instead, once every value is closed, with each `close()` failure suppressed on it. A second call
-does nothing. After it, `runScopedClosing` throws `IllegalStateException` through any context of that run, as after a
-real run.
+Like a run's end, `endRun` first waits, with no limit, for a `runScopedClosing` init running on another thread. A
+second call does nothing. After the first, `runScopedClosing` throws `IllegalStateException` through any context of
+that run, as after a real run.
 
 When a `runScopedClosing` init calls `endRun` itself and returns a value, that `runScopedClosing` call throws the
 same exception. The value isn't kept but closed, and what its `close()` throws is suppressed on the exception. A

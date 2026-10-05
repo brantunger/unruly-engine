@@ -333,10 +333,10 @@ Map<String, Object> data =
 // {applicant={creditScore=750}, score=750}
 ```
 
-Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first expression to ask makes the map, the
-others share it. Key it with the compiler (`this`), not each expression. Nested and later runs make their own. The map
-misses a fact that Java code changes after it's made, and the engine drops it, unclosed, when the run returns: keep a
-resource with `runScopedClosing`.
+Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first expression to ask makes the map, and the
+others share it, though asking on another thread while it's being made throws (see below). Key it with the compiler
+(`this`), not each expression. Nested and later runs make their own. The map misses a fact that Java code changes after
+it's made, and the engine drops it, unclosed, when the run returns: keep a resource with `runScopedClosing`.
 
 ```java
 // MyInterpreter stands for your runtime's AutoCloseable context; a nested run makes and closes its own
@@ -348,6 +348,11 @@ newest first. A `close()` that throws is logged at WARN; a fatal error is then t
 isn't fatal, but a fatal run failure wins. Using both methods on one key, or `runScopedClosing` once closing began,
 throws `IllegalStateException`. A value asked for on another thread as the run ends is closed with the others or
 refused.
+
+Either method may be called from another thread, such as a worker. Asking for a key whose init is running on the same
+thread, or with `runScoped` while it runs on another, throws `IllegalStateException`. Closing inits run one at a time: a
+`runScopedClosing` request from another thread waits, uninterruptibly and keeping the interrupt status, then gets the
+value made for its key or makes its own. The run's end waits too, with no limit, then closes the values.
 
 ## 📤 Actions and results
 
@@ -543,7 +548,8 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
-| **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN | Evaluate, or at least poll `isCancelled()`, on the run's thread |
+| **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN. `runScoped` and `runScopedClosing` work there, with the limits in [Reading facts](#-reading-facts) | Evaluate, or at least poll `isCancelled()`, on the run's thread |
+| **A closing init that waits for a worker** | The worker's `runScopedClosing` waits for that init to finish, so both threads hang for good: an interrupt doesn't free them, and the run never ends | Get the value before handing work off, and pass it to the worker |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
 | **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
 | **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](#-thread-safety) fail it |
