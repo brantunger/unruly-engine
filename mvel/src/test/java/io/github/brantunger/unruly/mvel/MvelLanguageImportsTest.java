@@ -118,6 +118,26 @@ class MvelLanguageImportsTest {
         assertEquals(REJECTED + quoted + ", " + quoted + ", and 6 more", thrown.getMessage());
     }
 
+    // The message before the names is 69 characters, which leaves 931 for them: four names of 200 characters quote to
+    // 814 with the commas between them, and a last of 113 to the 117 left, with its comma and quotes.
+    @Test
+    @DisplayName("#1019: names that fill the 1,000 characters exactly are all listed")
+    void namesThatFitExactlyAllListed() {
+        String name = "m".repeat(200);
+        String last = "m".repeat(113);
+        RulesEngine<Map<String, Object>> engine = builder().languageImports("mvel", name, name, name, name, last)
+                .build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(MVEL_RULE)));
+
+        String quoted = "'" + name + "'";
+        String cause = thrown.getCause().getMessage();
+        assertEquals(FactNames.MAX_DESCRIPTION_LENGTH, cause.length(), cause);
+        assertEquals(REJECTED + String.join(", ", quoted, quoted, quoted, quoted, "'" + last + "'"),
+                thrown.getMessage());
+    }
+
     // A name is listed only when the count of the names after it fits too: a fifth name of 110 characters fits on its
     // own, but not with ", and 1 more" after it.
     @Test

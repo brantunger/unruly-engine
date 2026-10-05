@@ -22,7 +22,19 @@ import java.util.function.Supplier;
  *     no engine has prepared. It prints {@link #CHECKS_FAILED} and how many builds the check failed,
  *     {@link #PREPARED_WHEN_CHECK_FAILED} and how many times those builds prepared the language, and {@link #PREPARED}
  *     and how many times all of them did, the one that got through included.</li>
+ *     <li>{@code again}: once an engine has been built at the top of the stack, an engine with the same language, of a
+ *     class prepared already, so a build checks no room, and closed. It prints {@link #CHECKS_FAILED} and how many
+ *     builds the check failed, {@link #OTHER_CHECKS_FAILED} and how many times another check of the stack's room
+ *     overflowed, such as the one {@code close()} makes, then {@link #DEEP} and what the first build that didn't
+ *     overflow threw.</li>
  * </ul>
+ *
+ * <p>
+ * The check each mode counts is the one a build makes before it initializes classes or prepares a language,
+ * {@link StackHeadroom#checkInitializing()}. {@code close()}, a load, a run and {@code validate()} check the room for a
+ * step of their own with {@link StackHeadroom#check()}, which recurses the same way, so an overflow is told to be the
+ * build's by the method below the recursion's frames, not by the class of the frame it was thrown in.
+ * </p>
  */
 final class DeepFirstBuildScenario {
 
@@ -33,6 +45,7 @@ final class DeepFirstBuildScenario {
     static final String DEEP = "SCENARIO deep: ";
     static final String SHALLOW = "SCENARIO shallow: ";
     static final String CHECKS_FAILED = "SCENARIO checks failed: ";
+    static final String OTHER_CHECKS_FAILED = "SCENARIO other checks failed: ";
     static final String PREPARED_WHEN_CHECK_FAILED = "SCENARIO prepared when the check failed: ";
     static final String PREPARED = "SCENARIO prepared: ";
 
@@ -56,8 +69,11 @@ final class DeepFirstBuildScenario {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        if ("prepare".equals(System.getProperty(MODE))) {
+        String mode = System.getProperty(MODE);
+        if ("prepare".equals(mode)) {
             prepare();
+        } else if ("again".equals(mode)) {
+            again();
         } else {
             settings();
         }
@@ -112,6 +128,24 @@ final class DeepFirstBuildScenario {
         System.out.println(PREPARED + language.prepared());
     }
 
+    private static void again() throws InterruptedException {
+        ToyExpressionLanguage toy = new ToyExpressionLanguage();
+        RulesEngineBuilder.firstMatch(OUTPUT).language(toy).build().close();
+        build = () -> RulesEngineBuilder.firstMatch(OUTPUT).language(toy).build().close();
+        AtomicInteger checksFailed = new AtomicInteger();
+        AtomicInteger otherChecksFailed = new AtomicInteger();
+        Throwable got = fromTheEnd(overflow -> {
+            if (thrownByCheck(overflow)) {
+                checksFailed.incrementAndGet();
+            } else if (headroomCheck(overflow) != null) {
+                otherChecksFailed.incrementAndGet();
+            }
+        });
+        System.out.println(CHECKS_FAILED + checksFailed);
+        System.out.println(OTHER_CHECKS_FAILED + otherChecksFailed);
+        System.out.println(DEEP + got);
+    }
+
     /** What a build that overflowed is shown to. */
     private interface Overflows {
         void overflowed(StackOverflowError overflow);
@@ -154,9 +188,30 @@ final class DeepFirstBuildScenario {
         return got[0];
     }
 
+    /** Whether an overflow was thrown in the check a build makes of the room for initializing classes. */
     private static boolean thrownByCheck(Throwable e) {
-        StackTraceElement[] frames = e.getStackTrace();
-        return frames.length > 0 && frames[0].getClassName().equals(StackHeadroom.class.getName());
+        return "checkInitializing".equals(headroomCheck(e));
+    }
+
+    /**
+     * Names the check of {@link StackHeadroom} an overflow was thrown in: the method below the frames of the recursion
+     * every check shares. The longest check recurses 960 frames, fewer than the 1,024 the JVM keeps of a stack trace,
+     * so the method is in it. A mode whose check is renamed counts no failed check, which the settings and prepare
+     * tests fail on.
+     *
+     * @param e The overflow
+     * @return The check's name, or {@code null} if the overflow wasn't thrown in one
+     */
+    private static String headroomCheck(Throwable e) {
+        for (StackTraceElement frame : e.getStackTrace()) {
+            if (!frame.getClassName().equals(StackHeadroom.class.getName())) {
+                return null;
+            }
+            if (!"descend".equals(frame.getMethodName())) {
+                return frame.getMethodName();
+            }
+        }
+        return null;
     }
 
     // Recurses to the end of the stack, recording how deep it got, or to the target depth, where it builds.

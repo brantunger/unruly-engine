@@ -314,6 +314,23 @@ class OwnMessageCutTest {
                 + "java.lang.IllegalStateException: ROOT\\u)", message);
     }
 
+    /**
+     * A backslash and {@code u} the limit falls after start an escape only with four hex digits after them: with three
+     * and then another character, the text is raw, and is cut where the limit falls.
+     */
+    @Test
+    @DisplayName("#1019: raw text that only starts like an escape where the limit falls, three hex digits and no"
+            + " fourth, is cut where the limit falls")
+    void threeHexDigitsAreNoEscape() {
+        String text = "x".repeat(994) + "ROOT\\uabcZ" + "y".repeat(10);
+
+        String message = outerFailure(outer(() -> {
+            throw new IllegalArgumentException(text);
+        }));
+
+        assertEquals(OUTER_ACTION + "x".repeat(994) + "ROOT\\u... (14 more characters)", message);
+    }
+
     @Test
     @DisplayName("a root cause found only in the escape the output factory's failure was cut before is named")
     void rootCauseInTheEscapeLeftOutWithClass() {

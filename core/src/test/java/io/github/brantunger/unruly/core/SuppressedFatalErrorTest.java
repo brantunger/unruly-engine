@@ -363,6 +363,19 @@ class SuppressedFatalErrorTest {
         assertEquals(0, winner.getSuppressed().length);
     }
 
+    @Test
+    @DisplayName("#1019: a run's failure the engine kept a fatal error on is found to reach it, so the two aren't kept"
+            + " on each other")
+    void reachedThroughWhatTheEngineKept() {
+        OutOfMemoryError winner = new OutOfMemoryError("winner");
+        ReportedFailure loser = new ReportedFailure("loser", null);
+        loser.addSuppressedByEngine(winner);
+
+        Failures.keepAlso(winner, loser);
+
+        assertEquals(0, winner.getSuppressed().length);
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"found as the last exception read", "missed one past the last exception read"})
     @DisplayName("a fatal error is found as the last exception the engine reads, and not past it")

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -107,6 +108,20 @@ class ReservedFactNamesTest {
                 thrown.getMessage());
     }
 
+    // The engine is given its languages in an order that changes from one JVM to the next, so this fixes the order:
+    // the reverse of the names'.
+    @Test
+    @DisplayName("#1019: a name several languages reserve is reserved by the first of them by name, whatever order"
+            + " they're given in")
+    void reservedBySeveralInAnyOrder() {
+        Map<String, ExpressionLanguage> languages = new LinkedHashMap<>();
+        languages.put("zed", reserving("zed", Set.of("ctx")));
+        languages.put("mid", reserving("mid", Set.of("ctx")));
+        languages.put("alpha", reserving("alpha", Set.of("ctx")));
+
+        assertEquals(Map.of("ctx", "alpha"), FactNames.reserved(languages));
+    }
+
     @Test
     @DisplayName("a language whose reservedFactNames() returns null, or a set holding null, fails build(), named")
     void nullAnswerFailsBuild() {
@@ -161,6 +176,29 @@ class ReservedFactNamesTest {
 
             assertEquals(1, asked.size());
         }
+    }
+
+    @Test
+    @DisplayName("#1019: the compile context a language's compiler is given has every name the engine's languages"
+            + " reserve, which it can't change")
+    void compilerGivenTheReservedNames() {
+        List<CompileContext> contexts = new ArrayList<>();
+        ExpressionLanguage language = new ForwardingExpressionLanguage(reserving("toy", Set.of("ctx"))) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                contexts.add(context);
+                return super.newCompiler(context);
+            }
+        };
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(language).language(reserving("other", Set.of("env"))).defaultLanguage("toy")
+                .build()) {
+            engine.load(List.of(rule("toy", "put seen x")));
+        }
+
+        Set<String> reserved = assertInstanceOf(EngineCompileContext.class, contexts.get(0)).reservedFactNames();
+        assertEquals(Set.of("ctx", "env"), reserved);
+        assertThrows(UnsupportedOperationException.class, () -> reserved.add("late"));
     }
 
     @Test
