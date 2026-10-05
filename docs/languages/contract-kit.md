@@ -95,7 +95,7 @@ language. Extend it and supply expressions in your language, one method for each
 The checks supply facts named `x`, `y`, `applicant` and `nest`, so your language must not reserve them. If it does,
 every check that builds an engine fails before building it, with `reservedFactNames() reserves [<names>], which the
 contract kit's checks supply as facts: the kit can't check a language that reserves x, y, applicant or nest`, where
-`<names>` are those of the four it reserves, sorted. The kit's twenty-eight checks:
+`<names>` are those of the four it reserves, sorted. The kit's thirty checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -110,8 +110,9 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
 | `syntaxErrorAtLoad` | `syntaxError`, `putFact` | No | `load()` throws, naming the rule and `CONDITION` |
 | `syntaxErrorInActionAtLoad` | `alwaysTrue`, `actionSyntaxError` | No | `load()` throws, naming the rule and `ACTION` |
-| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException`. The name mustn't be blank or one your language reserves, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
+| `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException` from your `checkFactName`; a rejection for another reason, such as the name declared in `configure` with another type, fails. The name mustn't be blank or one your language reserves, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
 | `reservedFactNamesRejected` | `alwaysTrue`, `putFact` | No; an empty set passes with nothing to run | `reservedFactNames()` answers before `prepare()`, isn't `null`, holds no `null`, gives the same set a second time and again once its engine has prepared the language, and `run()` rejects a fact with each name, unless blank, with an `IllegalArgumentException` saying the name is reserved |
+| `unreservedOutputReadAsFact` | `alwaysTrue`, `factEquals`, `putFact` | `reservedFactNames()` returns `output` | A run given a fact `output` throws from your `checkFactName`, or a rule reading `output` loads and puts the fact's value, not the output object |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `alwaysTrue`, `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, naming the rule, the second `CONDITION` |
@@ -123,6 +124,7 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `conditionDetail` | `factEquals`, `putFact` | No | For a rule that matches and one that doesn't, the detail isn't a session `newSession()` returned, and its `toString()` gives the same text after another run and after `close()` |
 | `evaluateAgreesWithDetail` | `factEquals` | No | For `x` = 1, 2, `1L`, `2L`, `(short) 1` and `BigDecimal.ONE`, a compiled condition's `evaluate` returns the value `evaluateWithDetail` reports, or both throw |
 | `concurrentRuns` | `factEquals`, `putFact`, `copyThroughVariable` | No; a `null` from `copyThroughVariable()` leaves the action variables out | 8 threads, 200 runs each, all see their own facts and action variables, and `newSession()` never returns one session twice, unless it's `Session.none()` |
+| `concurrentPrepares` | `factEquals`, `putFact` | No | 8 threads, released together, each call `prepare()` on one shared instance, then build an engine with it and load and run one rule, all putting `x`'s value within 30 seconds |
 | `nestedRunInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null` | A run that a getter starts inside an action, on the same thread, and the outer run each give their own output |
 | `nestedRunInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null` | A run that a getter starts inside a condition, on the same thread, and the outer run each give their own output |
 | `nestedRunFailsInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still fires its rule |
@@ -139,7 +141,8 @@ Only the thirteen `@Nullable` hooks may return `null`: `assignment`, `declareVar
 - A language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`, not a syntax
   error.
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
-- `language()` is called for each check and for each engine a check builds, so return a new instance.
+- `language()` is called for each check and, except in `unreservedOutputReadAsFact` and `concurrentPrepares`, for
+  each engine a check builds, so return a new instance.
 
 `putVariable(key, variable)` and `variableEquals(variable, value)` default to `putFact` and `factEquals`. Override
 them if your variables have a namespace of their own, such as SpEL's `#y`: otherwise the variable checks read a fact
@@ -152,75 +155,8 @@ own, so per-thread state left there can't reach later checks.
 
 For `usableFactNamesAccepted`, return the names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
-Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
-[`configure(builder)`](beyond-the-contract-kit.md#-a-language-that-needs-declared-facts-imports-or-options), which
-adds nothing by default, and closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add
-`copiesAtLoad(2)`, and `compilerClosed` adds `copiesAtLoad(1)`.
-
-`sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
-`maxCopies(1)`. `conditionDetail`, `failedActionVariablesStayLocal`, `sharedStateStaysLocal`, the later-run parts of
-`actionVariablesStayLocal`, `conditionAssignmentRejected`, `conditionWritesRejected`, `outputNotReplaceable` and
-`missingPropertyFailsTheRun` add the same two, so each later run gets the copy, and the sessions, the run before it
-used.
-
-`compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks (`sessionsClosed`,
-`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`) wrap your language to watch its compiler or
-sessions. The wrappers forward `warmUp`, so copies made at load warm up as they do without the kit.
-
-`factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
-`Double` whole numbers pass. When an output differs only in a value's type, such as the `Integer` 1 and the `String`
-"1", which print the same, the failure says so. Except in `usableFactNamesAccepted`, a failure that compares outputs
-also carries both, for your IDE's diff view.
-
-`compilerClosed`, `concurrentRuns`, the three session checks and `evaluateAgreesWithDetail` show a session or exception
-whose `toString()` or `getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
-
-The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
-decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
-shares one copy, calls `newSession()` once and warms nothing up. A `null` from `newSession()` isn't watched, so the
-engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, and at the first run in
-`conditionDetail`, `concurrentRuns`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
-
-`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too, but still
-compare output.
-
-In `sessionClosedWhileAnotherRuns`, a listener starts a nested run. The check's run holds the only kept copy, so the
-nested run gets an [extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run
-still has a rule to run. For any other language, the check fails if no session was closed during its run, if a
-`close()` threw, or if either run failed or gave the wrong output.
-
-`conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
-catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
-there, but a detail whose text changes after another run or after `close()` fails: its `toString()` reads the
-session's state. A language that gives no detail passes it with nothing to check.
-
-`conditionAssignmentRejected` and `conditionWritesRejected` accept a rejection at either step, as
-`outputNotReplaceable` does: `load()` may reject the condition, or `run()` may fail it, for example by writing to the
-read-only `facts()`, or by evaluating to the assigned value, not a boolean. A condition that assigns and evaluates to
-`true` or `false` without throwing fails the check.
-
-These three checks and `missingPropertyFailsTheRun` run a valid rule `ok` first. Each failure must name rule `r`, and
-a failed run must fail again with a `RuleExecutionException` and `CONDITION`, or `ACTION`: a failure mustn't break the
-session.
-
-The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
-
-`reservedFactNamesRejected` can miss a language that keeps whether it's prepared in a static field: once a check, or
-anything else earlier in the JVM, has prepared a language of that class, the check's first answers are already the
-prepared ones.
-
-`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
-evaluates it in a session of its own, ending each fact's run with `LanguageTestContexts.endRun` before the session
-closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
-that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
-language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
-
-In the table, "both throw" means an exception or a non-fatal `Error` from each. A fatal one, any `VirtualMachineError`
-but `StackOverflowError`, is thrown on, even as a cause or suppressed. Anything else a `close()` throws passes:
-`compilerClosed` and the three session checks own that.
-
-`evaluateAgreesWithDetail` tries four number types: an `evaluate` that compares by type and an `evaluateWithDetail`
-that compares by value agree only for an `Integer`.
+How each check builds its engines, what it wraps, and its limits: see
+[How each check runs](beyond-the-contract-kit.md#-how-each-check-runs).
 
 ### Upgrading the kit
 
@@ -229,8 +165,8 @@ stricter, and what each new failure means.
 
 ### Beyond the kit
 
-[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, a language that needs
-declared facts, imports or options, `LanguageTestContexts`, and a named module with Maven.
+[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, how each check runs, a
+language that needs declared facts, imports or options, `LanguageTestContexts`, and a named module with Maven.
 
 ## 🚧 Gotchas
 

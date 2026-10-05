@@ -26,14 +26,16 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 public final class Main {
 
     /** The kit's checks. */
-    private static final int CHECKS = 28;
+    private static final int CHECKS = 30;
 
     /**
      * The checks MvelContractTest skips. MVEL has no built-in object or global of its own for sharedStateStaysLocal to
      * change. Its actions can still change a class's static state, named by the class's full name, since MVEL runs
-     * them without a sandbox, and that check doesn't cover it.
+     * them without a sandbox, and that check doesn't cover it. MVEL reserves output, the name its actions bind the
+     * output object to, so the engine rejects a fact by that name itself, and unreservedOutputReadAsFact has nothing to
+     * check.
      */
-    private static final Set<String> SKIPPED = Set.of("sharedStateStaysLocal");
+    private static final Set<String> SKIPPED = Set.of("sharedStateStaysLocal", "unreservedOutputReadAsFact");
 
     private Main() {
     }
