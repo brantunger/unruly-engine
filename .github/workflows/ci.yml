@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 # A new push to a pull request cancels the run it supersedes. A run on main is never cancelled once it has started:
-# the next push to main waits for it, so a run that starts gets to its cache save and its coverage upload. It isn't
-# a queue, though. GitHub keeps only one waiting run per concurrency group, so a push to main that lands while an
-# earlier one is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
+# the next push to main waits for it, so a run that starts gets to its cache save. It isn't a queue, though. GitHub
+# keeps only one waiting run per concurrency group, so a push to main that lands while an earlier one is still
+# waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   # Says whether a pull request changes anything besides documentation: Markdown files outside src/, or files under
   # docs/. The build and native-image jobs skip a documentation-only pull request; docs-and-hygiene checks it. A push's
-  # run always runs everything, so main keeps its caches and coverage.
+  # run always runs everything, so main keeps its caches and its JDK 21 legs run the coverage gate.
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -55,10 +55,8 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    # id-token lets the Codecov step authenticate with OIDC instead of a stored token.
     permissions:
       contents: read
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -192,20 +190,6 @@ jobs:
             mvel/hs_err_pid*.log
             test-kit/hs_err_pid*.log
             **/replay_pid*.log
-
-      # Codecov gets one report per run, from Linux, and a failed upload fails the job. The upload authenticates
-      # with the job's OIDC token, which GitHub doesn't issue to a pull request from a fork or to any run Dependabot
-      # triggers (a pull request, or a push when it merges one), so those runs skip the upload rather than fail.
-      - name: Upload Coverage to Codecov
-        if: >-
-          matrix.java-version == '21' && matrix.os == 'ubuntu-latest' && github.actor != 'dependabot[bot]'
-          && (github.event_name == 'push'
-          || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          files: build/reports/jacoco/report.xml
-          use_oidc: true
-          fail_ci_if_error: true
 
   # Builds the native-smoke application into a GraalVM native image and runs it (docs/native-image.md), with only the
   # reflection metadata the mvel jar ships and the application's own, and without Flight Recorder support, which is

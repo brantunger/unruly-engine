@@ -7,7 +7,6 @@
 [![CI](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/brantunger/unruly-engine/actions/workflows/ci.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.brantunger/unruly-engine?color=blue)](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
 [![Javadoc](https://img.shields.io/badge/javadoc-reference-5c6bc0)](https://brantunger.github.io/unruly-engine/latest/)
-[![Coverage](https://codecov.io/gh/brantunger/unruly-engine/branch/main/graph/badge.svg)](https://codecov.io/gh/brantunger/unruly-engine)
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
