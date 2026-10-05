@@ -1,11 +1,12 @@
 # 🔬 Testing beyond the contract kit
 
-What the contract kit's checks leave untested, how to give them declared facts, imports or options, and how to test a
-compiler or a compiled expression without an engine.
+What the contract kit's checks leave untested, how each runs, how to give them declared facts, imports or options,
+and how to test a compiler or a compiled expression without an engine.
 
 **Who it's for:** language authors.
-**You'll be able to:** tell what passing the kit doesn't prove, configure its checks for your language, test a
-compiled expression with `LanguageTestContexts`, and run those tests from a named module with Maven.
+**You'll be able to:** tell what passing the kit doesn't prove, read how each check runs, configure its checks for
+your language, test a compiled expression with `LanguageTestContexts`, and run those tests from a named module with
+Maven.
 **Before you start:** [The contract test kit](contract-kit.md).
 
 [← Documentation index](../README.md)
@@ -61,6 +62,10 @@ protected CompileContext compileContext() {
 }
 ```
 
+If your language compiles only against declared facts and doesn't reserve or reject `output`, declare it as `Object` in
+`configure` too: `unreservedOutputReadAsFact` runs a rule that reads a fact by that name. A language that reserves it
+mustn't, since `build()` then fails.
+
 `configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
 `runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
 checks could fail for reasons unrelated to your language. Nor may it declare a name your language
@@ -68,6 +73,103 @@ checks could fail for reasons unrelated to your language. Nor may it declare a n
 checks declared names with your language, which rejects it. A `copiesAtLoad` or `maxCopies` it sets doesn't change
 the checks that set their own. A `maxCopies(2)` keeps `concurrentRuns` to two sessions, so it can't catch a repeat
 after the second.
+
+## 📋 How each check runs
+
+What each check of the [contract kit](contract-kit.md#-testing-with-the-contract-kit) does beyond its row in the
+checks table, and where each falls short.
+
+Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
+[`configure(builder)`](#-a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
+closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, and
+`compilerClosed` adds `copiesAtLoad(1)`.
+
+`concurrentPrepares` builds eight engines with one instance of your language. It makes the eight builders, calling
+`configure` for each, on the test's thread, then releases eight threads together. Each calls `prepare()`, builds its
+engine, which prepares the instance again, and loads and runs one rule. The engines are closed together once the
+threads are stopped, waiting up to 5 seconds. The failure names every thread that failed, or hadn't finished within
+30 seconds of the release, and the step it was at, with what each threw attached.
+
+`sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
+`maxCopies(1)`. `conditionDetail`, `failedActionVariablesStayLocal`, `sharedStateStaysLocal`, the later-run parts of
+`actionVariablesStayLocal`, `conditionAssignmentRejected`, `conditionWritesRejected`, `outputNotReplaceable` and
+`missingPropertyFailsTheRun` add the same two, so each later run gets the copy, and the sessions, the run before it
+used.
+
+`compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks (`sessionsClosed`,
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`) wrap your language to watch its compiler or
+sessions, and `unusableFactNameRejected` and `unreservedOutputReadAsFact` to watch its `checkFactName`. The wrappers
+forward `warmUp`, so copies made at load warm up as they do without the kit.
+
+`factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
+`Double` whole numbers pass. When an output differs only in a value's type, such as the `Integer` 1 and the `String`
+"1", which print the same, the failure says so. Except in `usableFactNamesAccepted`, a failure that compares outputs
+also carries both, for your IDE's diff view.
+
+`compilerClosed`, `concurrentRuns`, `concurrentPrepares`, the three session checks and `evaluateAgreesWithDetail` show
+a session or exception whose `toString()` or `getMessage()` throws as `<class> (message unavailable: <thrown class>)`.
+
+The engine closes each session itself, so `sessionsClosed` doesn't count closes: it checks what only your language
+decides. A language whose `newSession()` returns `Session.none()` passes it with nothing to check: the engine then
+shares one copy, calls `newSession()` once and warms nothing up. A `null` from `newSession()` isn't watched, so the
+engine rejects it as it would without the kit: at `load()` in `sessionsClosed`, and at the first run in
+`conditionDetail`, `concurrentRuns`, `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`.
+
+`sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread` pass a `Session.none()` language too, but still
+compare output.
+
+In `sessionClosedWhileAnotherRuns`, a listener starts a nested run. The check's run holds the only kept copy, so the
+nested run gets an [extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run
+still has a rule to run. For any other language, the check fails if no session was closed during its run, if a
+`close()` threw, or if either run failed or gave the wrong output.
+
+`conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
+catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
+there, but a detail whose text changes after another run or after `close()` fails: its `toString()` reads the
+session's state. A language that gives no detail passes it with nothing to check.
+
+`conditionAssignmentRejected` and `conditionWritesRejected` accept a rejection at either step, as
+`outputNotReplaceable` does: `load()` may reject the condition, or `run()` may fail it, for example by writing to the
+read-only `facts()`, or by evaluating to the assigned value, not a boolean. A condition that assigns and evaluates to
+`true` or `false` without throwing fails the check.
+
+These three checks and `missingPropertyFailsTheRun` run a valid rule `ok` first. Each failure must name rule `r`, and
+a failed run must fail again with a `RuleExecutionException` and `CONDITION`, or `ACTION`: a failure mustn't break the
+session.
+
+The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
+
+`reservedFactNamesRejected` can miss a language that keeps whether it's prepared in a static field: once a check, or
+anything else earlier in the JVM, has prepared a language of that class, the check's first answers are already the
+prepared ones.
+
+`concurrentPrepares` has the same blind spot: a runtime your language sets up in a static field or a static
+initializer is checked only if nothing earlier in the JVM prepared a language of its class. And a race is likely, not
+certain, to show: a window a few instructions wide may close before a second thread reaches it. Nor does it check
+that `prepare()` is cheap once it has done its work.
+
+`unreservedOutputReadAsFact` checks `output` only. A name your expressions bind to a context or helper object of your
+own is yours to [reserve](custom.md#-fact-names), or reject in `checkFactName`: no check finds it.
+
+The check first runs a rule that doesn't name `output`, with facts `x` and `output`. It passes there if your
+`checkFactName` rejects `output`, so a language that can't compile a rule naming it needn't, and fails on a rejection
+for another reason, such as `output` declared in `configure` with another type. Otherwise a second engine loads a rule
+that reads `output`. If it fails to load, the failure says to reserve `output`, reject it in `checkFactName`, or
+declare it as `Object` in `configure`.
+
+`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
+evaluates it in a session of its own, ending each fact's run with `LanguageTestContexts.endRun` before the session
+closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
+that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
+language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
+
+In the `evaluateAgreesWithDetail` row of [the checks table](contract-kit.md#-testing-with-the-contract-kit), "both
+throw" means an exception or a non-fatal `Error` from each. A fatal one, any `VirtualMachineError`
+but `StackOverflowError`, is thrown on, even as a cause or suppressed. Anything else a `close()` throws passes:
+`compilerClosed` and the three session checks own that.
+
+`evaluateAgreesWithDetail` tries four number types: an `evaluate` that compares by type and an `evaluateWithDetail`
+that compares by value agree only for an `Integer`.
 
 ## 🧪 Testing a compiler without an engine
 

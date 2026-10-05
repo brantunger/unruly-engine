@@ -87,7 +87,11 @@ public interface ExpressionLanguage {
      * class of the language's: return a constant. The engine keeps a copy of the set, so a later change to it changes
      * nothing. It must return the same names every time, before {@link #prepare()} and after. By default,
      * {@value ActionContext#OUTPUT_NAME}, so a language written before this method existed keeps the engine's earlier
-     * rule; a language that binds the output object to no fact name can return an empty set.
+     * rule; a language that binds the output object to no fact name can return an empty set. A language whose
+     * expressions bind a name to something other than a fact, such as {@code output} to the output object, or a name
+     * to a context or helper object of its own, must return that name, or reject it in
+     * {@link ExpressionCompiler#checkFactName(String)}: otherwise the engine accepts a fact by that name, and a rule
+     * reads whichever of the two the language finds first.
      * </p>
      *
      * @return The names, never {@code null} and holding no {@code null}; an empty set if the language reserves none

@@ -37,6 +37,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -2113,6 +2115,34 @@ class ContractKitChecksTest {
     }
 
     @Test
+    @DisplayName("a language whose checkFactName accepts the name its contract test says it rejects fails the"
+            + " fact-name check when configure() declares the name with a type the check's fact doesn't have, rather"
+            + " than pass on the engine's rejecting the fact's type")
+    void unusableFactNameRejectedByTypeFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String unusableFactName() {
+                return "bad";
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.fact(unusableFactName(), String.class);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unusableFactNameRejected"));
+
+        assertTrue(failure.getMessage().startsWith("unusableFactName() returned 'bad', but run() rejected a fact with"
+                + " that name for another reason than the language's checkFactName: Fact 'bad' was declared as"
+                + " java.lang.String"), failure.getMessage());
+        assertTrue(failure.getMessage().endsWith("; check the language's checkFactName, and don't declare the name in"
+                + " configure()"), failure.getMessage());
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+    }
+
+    @Test
     @DisplayName("a contract test that names x as the fact name its language rejects fails the fact-name check (#618)")
     void xAsUnusableNameFails() {
         // The check's rule reads x and the run supplies it, so without the guard the check would build facts with x
@@ -2279,6 +2309,195 @@ class ContractKitChecksTest {
 
         assertTrue(failure.getMessage().startsWith("reservedFactNames() must return the same names after prepare() as"
                 + " before"), failure.getMessage());
+    }
+
+    /**
+     * Wraps a language so that an action {@code put KEY output} puts the output object itself, as MVEL's actions read
+     * {@code output}, and so that it reserves what {@code reserved} supplies.
+     */
+    private static ExpressionLanguage bindingOutput(ExpressionLanguage language, Supplier<Set<String>> reserved) {
+        return new ForwardingExpressionLanguage(reserving(language, reserved)) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    @SuppressWarnings("unchecked")
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        if (tokens.length != 3 || !ActionContext.OUTPUT_NAME.equals(tokens[2])) {
+                            return compiler.compileAction(expression);
+                        }
+                        return (actionContext, session) -> {
+                            ((Map<String, Object>) actionContext.output()).put(tokens[1], actionContext.output());
+                            return ActionResult.done();
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("a language whose actions bind output to the output object, and that doesn't reserve the name, fails"
+            + " the unreserved-output check (#1039)")
+    void unreservedBoundOutputFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(bindingOutput(new ToyExpressionLanguage(), Set::of), "unreservedOutputReadAsFact"));
+
+        assertEquals("reservedFactNames() doesn't return 'output', but a rule didn't read a fact named 'output':"
+                + " expected: <{seen=1}> but was: <{seen=(this Map)}>; reserve the name the language binds the output"
+                + " object to, or reject it in checkFactName", failure.getMessage());
+        // A set that leaves output out, whatever else it reserves, is the same.
+        failure = assertThrows(AssertionFailedError.class, () -> runCheck(bindingOutput(new ToyExpressionLanguage(),
+                () -> Set.of("Output")), "unreservedOutputReadAsFact"));
+        assertTrue(failure.getMessage().startsWith("reservedFactNames() doesn't return 'output'"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that binds output and reserves it skips the unreserved-output check, and one that rejects"
+            + " output in checkFactName, or binds nothing to it, passes it (#1039)")
+    void reservedOrRejectedOutputPasses() throws Throwable {
+        // The engine rejects a reserved name itself, which reservedFactNamesRejected checks.
+        assertThrows(TestAbortedException.class, () -> runCheck(bindingOutput(new ToyExpressionLanguage(),
+                () -> Set.of("output")), "unreservedOutputReadAsFact"));
+        assertThrows(TestAbortedException.class, () -> runCheck(new ToyExpressionLanguage(),
+                "unreservedOutputReadAsFact"));
+
+        ExpressionLanguage rejecting = new ForwardingExpressionLanguage(bindingOutput(new ToyExpressionLanguage(),
+                Set::of)) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(super.newCompiler(context)) {
+                    @Override
+                    public void checkFactName(String name) {
+                        if (ActionContext.OUTPUT_NAME.equals(name)) {
+                            throw new IllegalArgumentException("output is the output object");
+                        }
+                    }
+                };
+            }
+        };
+        runCheck(rejecting, "unreservedOutputReadAsFact");
+        // The toy reads output as a fact like any other.
+        runCheck(reserving(new ToyExpressionLanguage(), Set::of), "unreservedOutputReadAsFact");
+    }
+
+    @Test
+    @DisplayName("a language that compiles only against declared facts and doesn't reserve output fails the"
+            + " unreserved-output check with what to do, and passes it once its contract test declares output (#1039)")
+    void undeclaredUnreservedOutputFails() throws Throwable {
+        // Compiles a condition that names output only when output was declared, as a statically typed language does.
+        ExpressionLanguage typed = new ForwardingExpressionLanguage(reserving(new ToyExpressionLanguage(), Set::of)) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = super.newCompiler(context);
+                boolean declared = context.declaredFacts().containsKey(ActionContext.OUTPUT_NAME);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        if (!declared && expression.text().contains(ActionContext.OUTPUT_NAME)) {
+                            throw new IllegalArgumentException("fact 'output' has no declared type");
+                        }
+                        return compiler.compileCondition(expression);
+                    }
+                };
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(typed, "unreservedOutputReadAsFact"));
+
+        assertTrue(failure.getMessage().startsWith("a rule that reads a fact named 'output' failed to load: "),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("fact 'output' has no declared type"), failure.getMessage());
+        assertTrue(failure.getMessage().endsWith("; reservedFactNames() doesn't return 'output', so the engine accepts"
+                + " a fact by that name: reserve it if the language binds 'output' to the output object, reject it in"
+                + " checkFactName if rules can't refer to it, or declare it as Object in configure() if the language"
+                + " compiles only against declared facts"), failure.getMessage());
+        assertInstanceOf(RuleCompilationException.class, failure.getCause());
+
+        runCheck(new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return typed;
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.fact(ActionContext.OUTPUT_NAME, Object.class);
+            }
+        }, "unreservedOutputReadAsFact");
+    }
+
+    @Test
+    @DisplayName("a language that rejects output in checkFactName, and can't compile a rule that names it, passes the"
+            + " unreserved-output check (#1039)")
+    void rejectedUncompilableOutputPasses() {
+        // As a language whose keyword output can't be a fact's name would: the check must not need such a rule.
+        ExpressionLanguage keyword = new ForwardingExpressionLanguage(reserving(new ToyExpressionLanguage(), Set::of)) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = super.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        if (expression.text().contains(ActionContext.OUTPUT_NAME)) {
+                            throw new IllegalArgumentException("output is a keyword");
+                        }
+                        return compiler.compileCondition(expression);
+                    }
+
+                    @Override
+                    public void checkFactName(String name) {
+                        if (ActionContext.OUTPUT_NAME.equals(name)) {
+                            throw new IllegalArgumentException("output is a keyword");
+                        }
+                    }
+                };
+            }
+        };
+
+        assertDoesNotThrow(() -> runCheck(keyword, "unreservedOutputReadAsFact"));
+    }
+
+    @Test
+    @DisplayName("a language that binds output and doesn't reserve it fails the unreserved-output check when its"
+            + " contract test declares output with a type the check's fact doesn't have, rather than pass on the"
+            + " engine's rejecting the fact's type (#1039)")
+    void outputDeclaredWithAnotherTypeFails() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return bindingOutput(new ToyExpressionLanguage(), Set::of);
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.fact(ActionContext.OUTPUT_NAME, String.class);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "unreservedOutputReadAsFact"));
+
+        assertTrue(failure.getMessage().startsWith("run() rejected a fact named 'output', but the language's"
+                + " checkFactName didn't: Fact 'output' was declared as java.lang.String"), failure.getMessage());
+        assertTrue(failure.getMessage().endsWith("; reservedFactNames() doesn't return 'output', so a rule must read a"
+                + " fact by that name: declare it as Object in configure(), if the language compiles only against"
+                + " declared facts"), failure.getMessage());
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("the unreserved-output check, for a language whose reservedFactNames() returns null, fails with"
+            + " build()'s exception (#1039)")
+    void nullReservedNamesFailUnreservedOutputCheck() {
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> runCheck(reserving(new ToyExpressionLanguage(), () -> null), "unreservedOutputReadAsFact"));
+
+        assertEquals("The 'toy' expression language returned null from reservedFactNames()", thrown.getMessage());
     }
 
     /** Runs every one of the kit's checks on the contract test, and returns what each that failed said, by name. */
@@ -2667,6 +2886,139 @@ class ContractKitChecksTest {
         assertDoesNotThrow(() -> runCheck(overlapping(withSessions(new ToyExpressionLanguage(), () -> new Session() {
         }), 4, true), "concurrentRuns"));
         assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "concurrentRuns"));
+    }
+
+    /**
+     * Wraps a language so that its first {@code prepare()} sets up a runtime it shares with check-then-act and no
+     * lock, and throws when another thread is setting it up already. The thread setting it up waits, for up to ten
+     * seconds, until a second thread has come in, so two calls at once always find each other. With {@code guard},
+     * the calls take a lock, never meet, and don't wait.
+     */
+    private static ExpressionLanguage racyPrepare(ExpressionLanguage language, boolean guard) {
+        return new ForwardingExpressionLanguage(language) {
+            private final Lock lock = new ReentrantLock();
+            private final AtomicInteger preparing = new AtomicInteger();
+            private final CountDownLatch second = new CountDownLatch(1);
+            private volatile boolean ready;
+
+            @Override
+            public void prepare() {
+                if (guard) {
+                    lock.lock();
+                }
+                try {
+                    if (!ready) {
+                        if (preparing.incrementAndGet() > 1) {
+                            second.countDown();
+                            throw new IllegalStateException("the runtime is half set up by another thread");
+                        }
+                        if (!guard) {
+                            await(second);
+                        }
+                        ready = true;
+                    }
+                } finally {
+                    if (guard) {
+                        lock.unlock();
+                    }
+                }
+                super.prepare();
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that only its first {@code prepare()} sets up the runtime its actions read, with
+     * check-then-act and no lock: a second call returns at once, before the runtime is ready, and an action run by then
+     * puts {@code null} where it should put a fact. The thread setting the runtime up waits, for up to ten seconds,
+     * until an action has read it before it was ready.
+     */
+    private static ExpressionLanguage halfPrepared(ExpressionLanguage language) {
+        return new ForwardingExpressionLanguage(language) {
+            private final AtomicBoolean started = new AtomicBoolean();
+            private final CountDownLatch readEarly = new CountDownLatch(1);
+            private volatile boolean ready;
+
+            @Override
+            public void prepare() {
+                if (!started.getAndSet(true)) {
+                    await(readEarly);
+                    ready = true;
+                }
+                super.prepare();
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = super.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    @SuppressWarnings("unchecked")
+                    public CompiledAction compileAction(Expression expression) {
+                        String[] tokens = expression.text().trim().split("\\s+");
+                        return (actionContext, session) -> {
+                            boolean early = !ready;
+                            if (early) {
+                                readEarly.countDown();
+                            }
+                            Map<String, Object> facts = actionContext.facts();
+                            ((Map<String, Object>) actionContext.output()).put(tokens[1],
+                                    early ? null : facts.get(tokens[2]));
+                            return ActionResult.done();
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /** Waits up to ten seconds for a latch, keeping the thread interrupted if it's interrupted. */
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
+    @DisplayName("a language whose prepare() throws when another thread is preparing it fails the concurrent-prepare"
+            + " check, naming each thread that failed (#1045)")
+    void racyPrepareFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(racyPrepare(new ToyExpressionLanguage(), false), "concurrentPrepares"));
+
+        String message = failure.getMessage();
+        assertTrue(message.startsWith("prepare() must be safe to call on several threads at once, as the engine calls"
+                + " it without a lock from concurrent build()s and first loads, but "), message);
+        assertTrue(message.contains(" of 8 threads that prepared one instance of the language at once failed: thread "),
+                message);
+        assertTrue(message.contains(", in prepare(), threw java.lang.IllegalStateException: the runtime is half set up"
+                + " by another thread"), message);
+        // Each thread's exception is attached; all but the one that set the runtime up failed.
+        assertTrue(failure.getSuppressed().length >= 1, message);
+        assertEquals(failure.getSuppressed().length, message.split("; ").length, message);
+        assertTrue(Arrays.stream(failure.getSuppressed()).allMatch(IllegalStateException.class::isInstance), message);
+    }
+
+    @Test
+    @DisplayName("a language whose prepare() returns before another thread has set its runtime up fails the"
+            + " concurrent-prepare check, naming what the rule put (#1045)")
+    void halfPreparedFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(halfPrepared(new ToyExpressionLanguage()), "concurrentPrepares"));
+
+        String message = failure.getMessage();
+        assertTrue(message.contains(" ran its rule, which expected: <{seen=1}> but was: <{seen=null}>"), message);
+        assertEquals(0, failure.getSuppressed().length, message);
+    }
+
+    @Test
+    @DisplayName("a language whose prepare() takes a lock, or prepares nothing, passes the concurrent-prepare check"
+            + " (#1045)")
+    void guardedPreparePasses() {
+        assertDoesNotThrow(() -> runCheck(racyPrepare(new ToyExpressionLanguage(), true), "concurrentPrepares"));
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguage(), "concurrentPrepares"));
     }
 
     @Test

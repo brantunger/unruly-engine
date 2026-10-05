@@ -388,14 +388,13 @@ or the default language for an empty list. The engine rejects `null`, blank and 
 nothing: keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) tests it both ways:
 `unusableFactName()` and `usableFactNames()`.
 
-Override `reservedFactNames()` to name the facts your language binds to something of its own; by default it returns
-`output` (`ActionContext.OUTPUT_NAME`). Each `build()` asks every language once, before preparing any, even an unused
-one, and each name is rejected for every rule: a declared fact at `build()`, a run's fact at `run()`.
+Override `reservedFactNames()` to return each name your expressions bind to something other than a fact, such as
+`output` to the output object, or reject it in `checkFactName`: otherwise a rule given such a fact reads whichever
+your language finds first. The default is `output` (`ActionContext.OUTPUT_NAME`). Each `build()` asks every language
+once, even an unused one, and rejects each name for every rule: a declared fact at `build()`, a run's fact at `run()`.
 
 Return a constant, unchanged by `prepare()`, never `null` and holding no `null`, which fail `build()` with
-`IllegalStateException`. What `reservedFactNames()` throws, `build()` throws unchanged. An empty set reserves none. The
-[contract kit](contract-kit.md#-testing-with-the-contract-kit) fails a language reserving `x`, `y`, `applicant` or
-`nest`.
+`IllegalStateException`. What `reservedFactNames()` throws, `build()` throws unchanged. An empty set reserves none.
 
 ## ⏳ Stopping a run
 
@@ -551,7 +550,7 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN. `runScoped` and `runScopedClosing` work there, with the limits in [Reading facts](#-reading-facts) | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **A closing init that waits for a worker** | The worker's `runScopedClosing` waits for that init to finish, so both threads hang for good: an interrupt doesn't free them, and the run never ends | Get the value before handing work off, and pass it to the worker |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
-| **A lambda that wraps a condition** | It implements only `evaluate`, so the wrapped condition's detail is dropped, and `detail()` is `null` | Override `evaluateWithDetail` and forward it; see [Explaining a condition's result](#explaining-a-conditions-result) |
+| **A lambda that wraps a condition** | The wrapped condition's detail is dropped: `detail()` is `null` | Forward `evaluateWithDetail`; see [Explaining a condition's result](#explaining-a-conditions-result) |
 | **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](#-thread-safety) fail it |
 
 ## ❓ Questions you might not think to ask

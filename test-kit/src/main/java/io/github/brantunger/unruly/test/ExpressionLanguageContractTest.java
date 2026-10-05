@@ -12,6 +12,7 @@ import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.UnrulyException;
+import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ConditionResult;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -55,6 +57,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.test.CompilerCloseCounter.countingCloses;
+import static io.github.brantunger.unruly.test.FactNameWatch.watchingRejection;
 import static io.github.brantunger.unruly.test.KitFailures.describe;
 import static io.github.brantunger.unruly.test.KitFailures.message;
 import static io.github.brantunger.unruly.test.KitFailures.outerRunFailed;
@@ -1298,14 +1301,23 @@ public abstract class ExpressionLanguageContractTest {
         assertFalse(name.isBlank(), "unusableFactName() must return a name the language itself rejects");
         // The check's rule reads x, which the run supplies alongside the name, so x can't be the name as well.
         assertNotEquals("x", name, "unusableFactName() must not be x, which the check's rule reads");
-        closing(engine(language), engine -> {
+        AtomicBoolean rejected = new AtomicBoolean();
+        closing(engine(watchingRejection(language, name, rejected)), engine -> {
             engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
-            // The rule reads x, so x is supplied too: then only checkFactName can make the run throw.
+            // The rule reads x, so x is supplied too: then only checkFactName, or a type the name was declared with in
+            // configure(), can make the run throw.
             FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1), new Fact<>(name, 1));
 
-            assertThrows(IllegalArgumentException.class, () -> engine.run(facts),
+            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> engine.run(facts),
                     "unusableFactName() returned '" + name + "', but run() didn't throw an IllegalArgumentException"
                             + " for a fact with that name: check the language's checkFactName");
+            // The engine asks the language about a name only once the facts' declared types have passed, so a
+            // rejection the language made is the one run() threw.
+            if (!rejected.get()) {
+                fail("unusableFactName() returned '" + name + "', but run() rejected a fact with that name for another"
+                        + " reason than the language's checkFactName: " + message(thrown) + "; check the language's"
+                        + " checkFactName, and don't declare the name in configure()", thrown);
+            }
         });
     }
 
@@ -1374,6 +1386,80 @@ public abstract class ExpressionLanguageContractTest {
                 assertTrue(thrown.getMessage() != null && thrown.getMessage().startsWith(reservedBy),
                         "reservedFactNames() returned '" + name + "', but run() rejected a fact with that name for"
                                 + " another reason: " + thrown.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Runs a rule that reads a fact named {@value ActionContext#OUTPUT_NAME} and puts its value, when the language
+     * doesn't reserve that name, and checks that the rule reads the fact. A language whose expressions bind
+     * {@code output} to the output object, as MVEL's actions do, must reserve it, or reject it in
+     * {@code checkFactName}: otherwise the engine accepts a fact by that name, and a rule reads the output object
+     * where it means the fact, or the fact where it means the output object, and no error is raised. It's skipped for
+     * a language that reserves {@code output}, which the engine rejects itself.
+     *
+     * <p>
+     * It first runs a rule that doesn't name {@code output}, as {@code unusableFactNameRejected} does, with a fact
+     * {@code output} supplied beside {@code x}, and passes when the language's {@code checkFactName} rejects the name:
+     * such a language needn't compile a rule that names it. A run that the engine rejects for another reason, such as
+     * an {@code output} declared in {@link #configure} with a type other than {@link Object}, fails the check. Only
+     * then does it load the rule that reads {@code output}, on a second engine, which must put the fact's value.
+     * </p>
+     *
+     * <p>
+     * Two limits. It checks {@code output} only: a name the language binds to something else of its own, such as a
+     * context or helper object, is the language's to reserve, and no check can find it. And a language that compiles
+     * only against declared facts fails it, its rule unable to load, unless {@link #configure} declares
+     * {@code output} as {@link Object}; the failure says so.
+     * </p>
+     */
+    @Test
+    @DisplayName("a fact named output, when the language doesn't reserve the name, is read as that fact, unless the"
+            + " language's checkFactName rejects it")
+    void unreservedOutputReadAsFact() throws Exception {
+        ExpressionLanguage language = language();
+        Set<String> reserved = language.reservedFactNames();
+        // A language whose reservedFactNames() returns null fails build(), as it does every other check that builds
+        // an engine; reservedFactNamesRejected reports it.
+        assumeTrue(reserved == null || !reserved.contains(ActionContext.OUTPUT_NAME),
+                "the language reserves output, so the engine rejects a fact by that name itself");
+        AtomicBoolean rejected = new AtomicBoolean();
+        closing(engine(watchingRejection(language, ActionContext.OUTPUT_NAME, rejected)), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
+            FactStore<Object> facts = new FactMap<>(new Fact<>("x", 1), new Fact<>(ActionContext.OUTPUT_NAME, 1));
+            try {
+                engine.run(facts);
+            } catch (IllegalArgumentException e) {
+                // The engine asks the language about a name only once the facts' declared types have passed, so a
+                // rejection the language made is the one run() threw.
+                if (!rejected.get()) {
+                    fail("run() rejected a fact named 'output', but the language's checkFactName didn't: " + message(e)
+                            + "; reservedFactNames() doesn't return 'output', so a rule must read a fact by that name:"
+                            + " declare it as Object in configure(), if the language compiles only against declared"
+                            + " facts", e);
+                }
+            }
+        });
+        if (rejected.get()) {
+            // No fact can take the place of what the language binds to the name.
+            return;
+        }
+        closing(engine(language), engine -> {
+            try {
+                engine.load(List.of(rule("r", 1, factEquals(ActionContext.OUTPUT_NAME, 1),
+                        putFact(SEEN, ActionContext.OUTPUT_NAME))));
+            } catch (RuleCompilationException e) {
+                fail("a rule that reads a fact named 'output' failed to load: " + message(e) + "; reservedFactNames()"
+                        + " doesn't return 'output', so the engine accepts a fact by that name: reserve it if the"
+                        + " language binds 'output' to the output object, reject it in checkFactName if rules can't"
+                        + " refer to it, or declare it as Object in configure() if the language compiles only against"
+                        + " declared facts", e);
+            }
+            Map<String, Object> output = engine.run(new FactMap<>(new Fact<>(ActionContext.OUTPUT_NAME, 1)));
+            if (!sameValue(Map.of(SEEN, 1), output)) {
+                fail("reservedFactNames() doesn't return 'output', but a rule didn't read a fact named 'output': "
+                        + mismatch(Map.of(SEEN, 1), output) + "; reserve the name the language binds the output"
+                        + " object to, or reject it in checkFactName");
             }
         });
     }
@@ -1815,6 +1901,121 @@ public abstract class ExpressionLanguageContractTest {
                 stop(workers);
             }
         });
+    }
+
+    /**
+     * Prepares one instance of the language on eight threads at once, as engines built, or rule lists first loaded, on
+     * several threads at once do: the engine calls {@link ExpressionLanguage#prepare()} without a lock. The threads
+     * wait at a latch and are released together; each then calls {@code prepare()}, builds an engine with the
+     * instance, which prepares it again, and loads and runs one rule, which must put {@code x}'s value under
+     * {@code seen}. So the check fails
+     * when {@code prepare()} throws on a thread, as one that sets up a shared runtime with check-then-act on a plain
+     * field may when another thread is setting it up, and when it returns before the runtime is ready, so that a build,
+     * a load or a run fails, or the rule puts something else. The failure names every thread that failed, or hadn't
+     * finished within 30 seconds of the threads' release, and what it was doing, and carries what each threw. The
+     * builders are made, and {@link #configure} called, on the test's own
+     * thread.
+     *
+     * <p>
+     * Two limits. A race is likely, not certain, to show: a window as short as a few instructions may close before a
+     * second thread reaches it. And a language that prepares a runtime it keeps in a static field, or in a static
+     * initializer, is checked only if no earlier check, or anything else in the JVM, prepared a language of its class
+     * first: by then the runtime is set up, and every thread finds it ready. Nor does the check time
+     * {@code prepare()}: that it is cheap once it has done its work is left unchecked.
+     * </p>
+     */
+    @Test
+    @DisplayName("prepare() called on several threads at once, as concurrent builds call it, leaves each engine"
+            + " built with the language loading and running its rules")
+    void concurrentPrepares() throws Exception {
+        ExpressionLanguage language = language();
+        List<RulesEngineBuilder<Map<String, Object>>> builders = new ArrayList<>();
+        for (int t = 0; t < 8; t++) {
+            builders.add(builder(language));
+        }
+        List<Rule> rules = List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")));
+        // Built on the workers, and closed together once they have stopped, however the check ends.
+        List<RulesEngine<Map<String, Object>>> engines = new CopyOnWriteArrayList<>();
+        closing((AutoCloseable) () -> closeAll(engines, 0), all -> {
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService workers = Executors.newFixedThreadPool(8);
+            try {
+                List<AtomicReference<String>> steps = new ArrayList<>();
+                List<Future<Map<String, Object>>> results = new ArrayList<>();
+                for (RulesEngineBuilder<Map<String, Object>> builder : builders) {
+                    AtomicReference<String> step = new AtomicReference<>("prepare()");
+                    steps.add(step);
+                    results.add(workers.submit(() -> {
+                        start.await();
+                        language.prepare();
+                        step.set("build()");
+                        RulesEngine<Map<String, Object>> engine = builder.build();
+                        engines.add(engine);
+                        step.set("load()");
+                        engine.load(rules);
+                        step.set("run()");
+                        return engine.run(new FactMap<>(new Fact<>("x", 1)));
+                    }));
+                }
+                start.countDown();
+
+                assertNoThreadFailed(results, steps, Duration.ofSeconds(30));
+            } finally {
+                stop(workers);
+            }
+        });
+    }
+
+    /**
+     * Fails {@code concurrentPrepares} when any of its threads failed, put something other than {@code {seen=1}}, or
+     * hadn't finished within {@code bound} of the threads' release, naming each such thread and the step it was at, as
+     * {@code steps} records it, with what each threw attached. Every thread is looked at, each for whatever is left of
+     * the bound, so one that hangs doesn't hide another's failure.
+     *
+     * @param results What each thread's run returned
+     * @param steps   The step each thread is at, or was at when it failed
+     * @param bound   How long the threads have, together, from when this is called
+     * @throws InterruptedException if the thread is interrupted while it waits
+     */
+    static void assertNoThreadFailed(List<Future<Map<String, Object>>> results, List<AtomicReference<String>> steps,
+                                     Duration bound) throws InterruptedException {
+        long deadline = System.nanoTime() + bound.toNanos();
+        List<String> failed = new ArrayList<>();
+        List<Throwable> thrown = new ArrayList<>();
+        for (int t = 0; t < results.size(); t++) {
+            try {
+                Map<String, Object> output = results.get(t).get(Math.max(0, deadline - System.nanoTime()),
+                        TimeUnit.NANOSECONDS);
+                if (!sameValue(Map.of(SEEN, 1), output)) {
+                    failed.add("thread " + t + " ran its rule, which " + mismatch(Map.of(SEEN, 1), output));
+                }
+            } catch (ExecutionException e) {
+                failed.add("thread " + t + ", in " + steps.get(t).get() + ", threw " + describe(e.getCause()));
+                thrown.add(e.getCause());
+            } catch (TimeoutException e) {
+                failed.add("thread " + t + ", in " + steps.get(t).get() + ", hadn't finished after "
+                        + bound.toMillis() + " ms");
+            }
+        }
+        if (!failed.isEmpty()) {
+            AssertionFailedError failure = new AssertionFailedError("prepare() must be safe to call on several threads"
+                    + " at once, as the engine calls it without a lock from concurrent build()s and first loads, but "
+                    + failed.size() + " of " + results.size() + " threads that prepared one instance of the language at"
+                    + " once failed: " + String.join("; ", failed));
+            suppressAll(failure, thrown);
+            throw failure;
+        }
+    }
+
+    /**
+     * Closes the engines from {@code from} on, each as {@link KitResources#closing} closes one, so that every engine
+     * is closed even when closing another throws: the first failure is thrown, with what closing the others threw
+     * attached.
+     */
+    private static void closeAll(List<RulesEngine<Map<String, Object>>> engines, int from) throws Exception {
+        if (from < engines.size()) {
+            closing(engines.get(from), engine -> closeAll(engines, from + 1));
+        }
     }
 
     /**
