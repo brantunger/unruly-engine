@@ -98,6 +98,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code Object}, such as {@code java.lang.Object$p7} for {@code f.p7}, leaves no lock object (#807). A class a rule
  * creates with {@code new} is still asked of the running thread's context class loader when the rule runs.
  * </p>
+ *
+ * <p>
+ * The name of each class the application's class loader loads through this one, by a name looked up with this loader
+ * itself, is given to the rule list's {@link ClassNameRoots}, which records its first part while an expression
+ * compiles: a fact can't then have that name (see {@link FactNames}).
+ * </p>
  */
 final class ExactNameClassLoader extends ClassLoader {
 
@@ -170,6 +176,10 @@ final class ExactNameClassLoader extends ClassLoader {
 
     private final int mostClasses;
 
+    // Told the name of each class the application's class loader loads through this one, and records the first part
+    // of it while an expression compiles.
+    private final ClassNameRoots roots;
+
     /**
      * Creates a class loader that asks {@code parent} for every class a name may be, apart from those MVEL's own
      * class loader has when the JVM links an accessor MVEL's JIT compiled.
@@ -177,7 +187,18 @@ final class ExactNameClassLoader extends ClassLoader {
      * @param parent The application's class loader
      */
     ExactNameClassLoader(ClassLoader parent) {
-        this(parent, MAX_CACHED_CLASSES);
+        this(parent, new ClassNameRoots());
+    }
+
+    /**
+     * Creates a class loader that asks {@code parent} for every class a name may be, and tells {@code roots} the name
+     * of each class it loads.
+     *
+     * @param parent The application's class loader
+     * @param roots  Records the first part of the name of each class loaded while an expression compiles
+     */
+    ExactNameClassLoader(ClassLoader parent, ClassNameRoots roots) {
+        this(parent, MAX_CACHED_CLASSES, Imports.isJdkLoader(parent), roots);
     }
 
     /**
@@ -201,9 +222,14 @@ final class ExactNameClassLoader extends ClassLoader {
      *                       own loaders
      */
     ExactNameClassLoader(ClassLoader parent, int mostClasses, boolean classFileFirst) {
+        this(parent, mostClasses, classFileFirst, new ClassNameRoots());
+    }
+
+    private ExactNameClassLoader(ClassLoader parent, int mostClasses, boolean classFileFirst, ClassNameRoots roots) {
         super(parent);
         this.classFileFirst = classFileFirst;
         this.mostClasses = mostClasses;
+        this.roots = roots;
     }
 
     /**
@@ -233,6 +259,7 @@ final class ExactNameClassLoader extends ClassLoader {
         }
         try {
             Class<?> loaded = getParent().loadClass(name);
+            roots.loaded(name);
             if (classFileFirst && classes.size() < mostClasses) {
                 classes.add(name);
             }

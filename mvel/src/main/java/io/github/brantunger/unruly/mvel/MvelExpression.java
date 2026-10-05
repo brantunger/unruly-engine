@@ -186,11 +186,17 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     private static MvelExpression compile(MvelAnalysis analysis, long callsPerRun) {
         // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
         // run(). The analysis pass catches more of it up front.
-        return withClassLoader(analysis.compiledImports().classLoader(), () -> {
+        Imports imports = analysis.compiledImports();
+        return imports.classNameRoots().recordWhile(() -> withClassLoader(imports.classLoader(), () -> {
             analysis.compile();
-            return new MvelExpression(analysis.sourceText(), analysis.compiledImports(), callsPerRun,
-                    newCopy(analysis.sourceText(), analysis.compiledImports(), callsPerRun));
-        });
+            MvelExpression expression = new MvelExpression(analysis.sourceText(), imports, callsPerRun,
+                    newCopy(analysis.sourceText(), imports, callsPerRun));
+            // The classes MVEL looks up only as the expression runs count as well.
+            ParserConfiguration lookups = imports.newConfiguration();
+            imports.classNameRoots().lookUpDottedNames(analysis.sourceText(), imports.classLoader(),
+                    lookups::hasImport);
+            return expression;
+        }));
     }
 
     @Override

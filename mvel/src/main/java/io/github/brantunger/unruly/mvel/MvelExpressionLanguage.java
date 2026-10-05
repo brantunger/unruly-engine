@@ -36,7 +36,9 @@ import java.util.concurrent.atomic.AtomicReference;
  *     {@code claim.setApproved(true)}, can't be detected.</li>
  *     <li>Variables an action declares stay local to that action, and assigning to {@code output} fails.</li>
  *     <li>A fact name must be a Java identifier that isn't one of MVEL's reserved words, such as {@code empty} or
- *     {@code in}, and isn't a class name MVEL resolves instead, such as {@code Math} or an imported class.</li>
+ *     {@code in}, and isn't a class name MVEL resolves instead, such as {@code Math} or an imported class, nor the
+ *     first part of the name of a class the rule list's expressions name with its package, such as {@code java} for
+ *     {@code java.lang.Integer.MAX_VALUE}, or find through an import.</li>
  *     <li>MVEL caches accessors in a compiled expression without synchronization, so each session, which one run
  *     uses at a time, runs its own compiled copy of each expression.</li>
  *     <li>MVEL's imports are Java packages and classes, given with

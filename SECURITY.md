@@ -45,7 +45,7 @@ returns. What a rule in another expression language can reach depends on that la
 
 ### In scope
 
-- A way for the **value of a fact** to be executed as code, or to change which rule logic runs.
+- A way for the **name or value of a fact** to be executed as code, or to change which rule logic runs.
 - A bypass of a documented guarantee, such as a condition assignment that `load()` should reject, or an
   action's local variables leaking into another rule, where that leads to a security impact.
 - A vulnerability in a dependency (MVEL, SLF4J) that is reachable through the engine's API.

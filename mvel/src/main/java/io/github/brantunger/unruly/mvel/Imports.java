@@ -16,18 +16,22 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * The imports a rule list is compiled with: whole packages ({@code java.util}) and single classes
  * ({@code java.time.LocalDate}), the class loader their classes are looked up with, and the names every compilation of
- * the rule list has found not to be classes.
+ * the rule list has found not to be classes, and the first parts of the names of the classes its compilations found.
  *
- * @param packages    Package names, imported with all their classes
- * @param classes     Classes imported one by one
- * @param classLoader The class loader that finds the classes in {@code packages}, as an {@link ExactNameClassLoader}
- * @param notClasses  Names found not to be a class in any of {@code packages}, shared by the configurations created
- *                    with {@link #newConfiguration()}
- * @param inputs      The type of each name an expression may refer to, for compiling with strong typing, or an empty
- *                    map to compile as MVEL does by default. See {@link DeclaredTypes}.
+ * @param packages       Package names, imported with all their classes
+ * @param classes        Classes imported one by one
+ * @param classLoader    The class loader that finds the classes in {@code packages}, as an
+ *                       {@link ExactNameClassLoader}
+ * @param notClasses     Names found not to be a class in any of {@code packages}, shared by the configurations
+ *                       created with {@link #newConfiguration()}
+ * @param inputs         The type of each name an expression may refer to, for compiling with strong typing, or an
+ *                       empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
+ * @param classNameRoots The first part of the name of each class {@code classLoader} found while the rule list's
+ *                       expressions compiled, such as {@code java} for {@code java.lang.Integer}, which
+ *                       {@link FactNames} rejects as a fact's name
  */
 record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
-               Map<String, Class<?>> inputs) {
+               Map<String, Class<?>> inputs, ClassNameRoots classNameRoots) {
 
     // The most characters and dot-separated parts an import in an expression's own text may have, as the engine's
     // core.ImportResolver allows an engine's imports, which the mvel package may not use. ExactNameClassLoader bounds
@@ -59,8 +63,14 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * @param inputs      The type of each name an expression may refer to, or an empty map for no strong typing
      */
     Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Map<String, Class<?>> inputs) {
-        this(packages, classes, new ExactNameClassLoader(classLoader), ConcurrentHashMap.newKeySet(),
-                Map.copyOf(inputs));
+        this(packages, classes, classLoader, inputs, new ClassNameRoots());
+    }
+
+    // The class loader is wrapped with the class name roots it records into, which the imports keep too.
+    private Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Map<String, Class<?>> inputs,
+                    ClassNameRoots classNameRoots) {
+        this(packages, classes, new ExactNameClassLoader(classLoader, classNameRoots), ConcurrentHashMap.newKeySet(),
+                Map.copyOf(inputs), classNameRoots);
     }
 
     /**
@@ -663,7 +673,8 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
     // ObjectMethods does.
     @Override
     public final boolean equals(@Nullable Object other) {
-        return this == other || other instanceof Imports that && Objects.equals(inputs, that.inputs)
+        return this == other || other instanceof Imports that && Objects.equals(classNameRoots, that.classNameRoots)
+                && Objects.equals(inputs, that.inputs)
                 && Objects.equals(notClasses, that.notClasses) && Objects.equals(classLoader, that.classLoader)
                 && Objects.equals(classes, that.classes) && Objects.equals(packages, that.packages);
     }
@@ -674,12 +685,13 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         hash = hash * 31 + Objects.hashCode(classes);
         hash = hash * 31 + Objects.hashCode(classLoader);
         hash = hash * 31 + Objects.hashCode(notClasses);
-        return hash * 31 + Objects.hashCode(inputs);
+        hash = hash * 31 + Objects.hashCode(inputs);
+        return hash * 31 + Objects.hashCode(classNameRoots);
     }
 
     @Override
     public final String toString() {
         return "Imports[packages=" + packages + ", classes=" + classes + ", classLoader=" + classLoader
-                + ", notClasses=" + notClasses + ", inputs=" + inputs + "]";
+                + ", notClasses=" + notClasses + ", inputs=" + inputs + ", classNameRoots=" + classNameRoots + "]";
     }
 }
