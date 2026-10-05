@@ -55,6 +55,8 @@ class RunScopedClosingTest {
 
     private static final List<Rule> RULES = List.of(Rule.builder().ruleName("r").condition("c").action("a").build());
     private static final String WARN_PREFIX = "A value a language kept for the run failed to close: ";
+    private static final String ENDED = "runScopedClosing was called for a key (java.lang.String) after the run ended,"
+            + " when its value would never be closed";
 
     // What happened, in order: listener calls, values closed and sessions closed.
     private final List<String> events = new CopyOnWriteArrayList<>();
@@ -832,30 +834,38 @@ class RunScopedClosingTest {
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Value> made = new AtomicReference<>();
         AtomicReference<Throwable> failed = new AtomicReference<>();
-        List<RecordedEvent> pinned;
 
+        List<RecordedEvent> pinned = pinnedParks(dir, release, "the init", () -> {
+            try {
+                made.set(scope.getClosing("connection", () -> {
+                    // Waits as an init taking a pooled connection would, until the test sees it waiting.
+                    awaitRelease(release);
+                    return new Value("connection");
+                }));
+            } catch (Throwable e) {
+                failed.set(e);
+            }
+        });
+
+        throwIfSet(failed.get());
+        assertEquals(List.of(), pinned, "the init's wait pinned its virtual thread");
+        assertEquals(List.of(made.get()), scope.end());
+    }
+
+    /**
+     * Runs {@code body} on a virtual thread until it waits on {@code release}, then lets it go, and returns the pinned
+     * parks the JVM recorded for that thread.
+     */
+    private static List<RecordedEvent> pinnedParks(Path dir, CountDownLatch release, String what, Runnable body)
+            throws Exception {
         // Closed however the test ends, so no recording is left running for the tests after it.
         try (Recording recording = new Recording()) {
             // Every pinned park, however short; the recording is the JVM's, so only this test's thread is counted.
             recording.enable("jdk.VirtualThreadPinned").withThreshold(Duration.ZERO);
             recording.start();
-            Thread waiter = Thread.ofVirtual().start(() -> {
-                try {
-                    made.set(scope.getClosing("connection", () -> {
-                        try {
-                            // Waits as an init taking a pooled connection would, until the test sees it waiting.
-                            assertTrue(release.await(10, TimeUnit.SECONDS), "never released");
-                        } catch (InterruptedException e) {
-                            throw new AssertionError(e);
-                        }
-                        return new Value("connection");
-                    }));
-                } catch (Throwable e) {
-                    failed.set(e);
-                }
-            });
+            Thread waiter = Thread.ofVirtual().start(body);
             try {
-                await(() -> waiter.getState() == Thread.State.TIMED_WAITING, 10, "the init waits");
+                await(() -> waiter.getState() == Thread.State.TIMED_WAITING, 10, what + " waits");
             } finally {
                 release.countDown();
                 waiter.join(TimeUnit.SECONDS.toMillis(10));
@@ -863,16 +873,21 @@ class RunScopedClosingTest {
             recording.stop();
             Path file = dir.resolve("pinned.jfr");
             recording.dump(file);
-            assertFalse(waiter.isAlive(), "the init never returned");
+            assertFalse(waiter.isAlive(), what + " never returned");
             long id = waiter.threadId();
-            pinned = RecordingFile.readAllEvents(file).stream()
+            return RecordingFile.readAllEvents(file).stream()
                     .filter(event -> event.getThread() != null && event.getThread().getJavaThreadId() == id)
                     .toList();
         }
+    }
 
-        throwIfSet(failed.get());
-        assertEquals(List.of(), pinned, "the init's wait pinned its virtual thread");
-        assertEquals(List.of(made.get()), scope.end());
+    /** Waits, timed, until the test lets go of {@code release}. */
+    private static void awaitRelease(CountDownLatch release) {
+        try {
+            assertTrue(release.await(10, TimeUnit.SECONDS), "never released");
+        } catch (InterruptedException e) {
+            throw new AssertionError(e);
+        }
     }
 
     @Test
@@ -970,5 +985,255 @@ class RunScopedClosingTest {
 
         assertFalse(other.isAlive(), "the init that threw left the scope locked");
         assertEquals(List.of(made.get()), handedBack.get());
+    }
+
+    @Test
+    @DisplayName("#1020: a closing init that ends the run keeps nothing: its value is closed with the run's, and"
+            + " refused as one asked for after the run is")
+    void initThatEndsTheRunHasItsValueClosedAndRefused() {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        context.runScopedClosing("early", () -> new Value("early"));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> context.runScopedClosing("key", () -> {
+                    endRun(context);
+                    return new Value("key");
+                }));
+
+        assertEquals(ENDED, ex.getMessage());
+        assertEquals(0, ex.getSuppressed().length);
+        assertClosedOnce("early", "key");
+        IllegalStateException again = assertThrows(IllegalStateException.class,
+                () -> context.runScopedClosing("key", () -> new Value("not made")));
+        assertEquals(ENDED, again.getMessage());
+        assertClosedOnce("early", "key");
+        // Nothing is kept under the key, so runScoped makes its own value rather than handing back the closed one.
+        Object marker = new Object();
+        assertSame(marker, context.runScoped("key", () -> marker));
+    }
+
+    @Test
+    @DisplayName("#1020: when a nested closing init ends the run, each level's value is closed and refused")
+    void nestedInitsThatEndTheRunAreEachClosedAndRefused() {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        AtomicReference<IllegalStateException> inner = new AtomicReference<>();
+
+        IllegalStateException outer = assertThrows(IllegalStateException.class,
+                () -> context.runScopedClosing("a", () -> {
+                    try {
+                        context.runScopedClosing("b", () -> {
+                            endRun(context);
+                            return new Value("b");
+                        });
+                    } catch (IllegalStateException e) {
+                        inner.set(e);
+                    }
+                    return new Value("a");
+                }));
+
+        assertEquals(ENDED, inner.get().getMessage());
+        assertEquals(ENDED, outer.getMessage());
+        assertClosedOnce("a", "b");
+        assertEquals(List.of(), EngineEvaluationContext.runScopeOf(context).end());
+
+        // An init that lets the refusal through makes no value of its own.
+        EvaluationContext other = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        IllegalStateException through = assertThrows(IllegalStateException.class,
+                () -> other.runScopedClosing("outer", () -> other.runScopedClosing("inner", () -> {
+                    endRun(other);
+                    return new Value("inner");
+                })));
+
+        assertEquals(ENDED, through.getMessage());
+        assertClosedOnce("a", "b", "inner");
+        assertEquals(List.of(), EngineEvaluationContext.runScopeOf(other).end());
+    }
+
+    @Test
+    @DisplayName("#1020: what the close() of a value refused for its init ending the run throws is suppressed on the"
+            + " refusal, and the scope's lock is let go")
+    void closeFailureOfAValueRefusedForEndingTheRunIsSuppressed() throws Exception {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        IOException failure = new IOException("close failed");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> context.runScopedClosing("key", () -> {
+                    endRun(context);
+                    return new Value("key", failure);
+                }));
+
+        assertEquals(ENDED, ex.getMessage());
+        assertArrayEquals(new Throwable[] {failure}, ex.getSuppressed());
+        assertEquals(List.of("key closed"), events);
+        assertEquals(List.of(), endOnAnotherThread(EngineEvaluationContext.runScopeOf(context)));
+    }
+
+    @Test
+    @DisplayName("#1020: a fatal error from the close() of a value refused for its init ending the run is thrown"
+            + " itself, carrying the refusal, and the scope's lock is let go")
+    void fatalCloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        OutOfMemoryError fatal = new OutOfMemoryError("close failed");
+
+        OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class,
+                () -> context.runScopedClosing("key", () -> {
+                    endRun(context);
+                    return new Value("key", fatal);
+                }));
+
+        assertSame(fatal, thrown);
+        assertEquals(1, fatal.getSuppressed().length);
+        IllegalStateException refused = assertInstanceOf(IllegalStateException.class, fatal.getSuppressed()[0]);
+        assertEquals(ENDED, refused.getMessage());
+        assertEquals(0, refused.getSuppressed().length);
+        assertEquals(List.of("key closed"), events);
+        assertEquals(List.of(), endOnAnotherThread(EngineEvaluationContext.runScopeOf(context)));
+    }
+
+    @Test
+    @DisplayName("#1020: a fatal error carried by what the close() of a value refused for its init ending the run"
+            + " throws is thrown itself, carrying the refusal, and the scope's lock is let go")
+    void fatalErrorCarriedByACloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        OutOfMemoryError fatal = new OutOfMemoryError("close ran out");
+        IOException failure = new IOException("close failed", fatal);
+
+        OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class,
+                () -> context.runScopedClosing("key", () -> {
+                    endRun(context);
+                    return new Value("key", failure);
+                }));
+
+        assertSame(fatal, thrown);
+        // The IOException isn't kept on the error it wraps, which would make a loop of causes.
+        assertEquals(1, fatal.getSuppressed().length);
+        IllegalStateException refused = assertInstanceOf(IllegalStateException.class, fatal.getSuppressed()[0]);
+        assertEquals(ENDED, refused.getMessage());
+        assertEquals(0, refused.getSuppressed().length);
+        assertEquals(List.of("key closed"), events);
+        assertEquals(List.of(), endOnAnotherThread(EngineEvaluationContext.runScopeOf(context)));
+    }
+
+    @Test
+    @DisplayName("#1020: once a closing init has ended the run, a closing key kept before it is still refused to"
+            + " runScoped")
+    void closingKeysKeptWhenAnInitEndsTheRun() {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        context.runScopedClosing("early", () -> new Value("early"));
+        IllegalStateException refused = endTheRunFromAnInit(context);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> context.runScoped("early", Object::new));
+
+        assertEquals("runScoped was called for a key (java.lang.String) that runScopedClosing keeps a value under",
+                ex.getMessage());
+        assertNotNull(refused, "the init's value was kept");
+    }
+
+    @Test
+    @DisplayName("#1020: once a closing init has ended the run, ending it again closes nothing")
+    void endingAgainAfterAnInitEndedTheRunDoesNothing() throws Exception {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        context.runScopedClosing("early", () -> new Value("early"));
+        IllegalStateException refused = endTheRunFromAnInit(context);
+        List<String> closedByTheInit = List.copyOf(events);
+
+        EngineEvaluationContext.endRun(context);
+
+        assertEquals(closedByTheInit, events, "ending the run again closed a value");
+        assertEquals(List.of(), EngineEvaluationContext.runScopeOf(context).end());
+        assertClosedOnce("early", "key");
+        assertNotNull(refused, "the init's value was kept");
+    }
+
+    @Test
+    @DisplayName("#1009, #1020: a virtual thread whose init ends the run isn't pinned while its value's close() waits")
+    void closeOfARefusedValueWaitingOnAVirtualThreadIsNotPinned(@TempDir Path dir) throws Exception {
+        RunScope scope = new RunScope();
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Throwable> failed = new AtomicReference<>();
+
+        List<RecordedEvent> pinned = pinnedParks(dir, release, "close()", () -> {
+            try {
+                scope.getClosing("connection", () -> {
+                    scope.end();
+                    return new Value("connection") {
+                        @Override
+                        public void close() throws IOException {
+                            super.close();
+                            // Waits as giving back a pooled connection could, until the test sees it waiting.
+                            awaitRelease(release);
+                        }
+                    };
+                });
+            } catch (Throwable e) {
+                failed.set(e);
+            }
+        });
+
+        IllegalStateException refused = assertInstanceOf(IllegalStateException.class, failed.get());
+        assertEquals(ENDED, refused.getMessage());
+        assertEquals(List.of(), pinned, "close()'s wait pinned its virtual thread");
+        assertEquals(List.of("connection closed"), events);
+    }
+
+    @Test
+    @DisplayName("#1020: in a run, a closing init that ends its own run gets its value closed and refused, so its rule"
+            + " fails")
+    void initThatEndsItsEngineRunFailsItsRule() {
+        try (RulesEngine<Map<String, Object>> engine = engine(context -> context.runScopedClosing("key", () -> {
+            endRun(context);
+            return new Value("key");
+        }))) {
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class,
+                    () -> engine.run(new FactMap<>()));
+
+            assertEquals("r", ex.getRuleName());
+            IllegalStateException refused = assertInstanceOf(IllegalStateException.class, ex.getCause());
+            assertEquals(ENDED, refused.getMessage());
+            assertEquals(List.of("key closed", "onRunError"), events);
+        }
+    }
+
+    /** Asserts each value named was closed once, and no other, whatever the order. */
+    private void assertClosedOnce(String... names) {
+        assertEquals(Arrays.stream(names).map(name -> name + " closed").sorted().toList(),
+                events.stream().sorted().toList());
+    }
+
+    /**
+     * Asks for a closing value under {@code "key"} whose init ends the run, and returns what that threw, or
+     * {@code null} if the value was kept.
+     */
+    private IllegalStateException endTheRunFromAnInit(EvaluationContext context) {
+        try {
+            context.runScopedClosing("key", () -> {
+                endRun(context);
+                return new Value("key");
+            });
+        } catch (IllegalStateException e) {
+            return e;
+        }
+        return null;
+    }
+
+    /** Ends the run of {@code context} as the test kit does, from an init, which can't throw a checked exception. */
+    private static void endRun(EvaluationContext context) {
+        try {
+            EngineEvaluationContext.endRun(context);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /** Ends a scope on another thread, which fails if this thread still holds the scope's lock. */
+    private static List<AutoCloseable> endOnAnotherThread(RunScope scope) throws InterruptedException {
+        AtomicReference<List<AutoCloseable>> handedBack = new AtomicReference<>();
+        Thread other = new Thread(() -> handedBack.set(scope.end()));
+        other.setDaemon(true);
+        other.start();
+        other.join(TimeUnit.SECONDS.toMillis(10));
+        assertFalse(other.isAlive(), "the scope's lock was left held");
+        return handedBack.get();
     }
 }

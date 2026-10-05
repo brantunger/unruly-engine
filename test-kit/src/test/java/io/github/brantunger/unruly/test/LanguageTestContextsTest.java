@@ -232,6 +232,44 @@ class LanguageTestContextsTest {
     }
 
     @Test
+    @DisplayName("#1020: a closing init that ends its run gets its value closed and refused, and nothing is left open")
+    void endRunFromAnInitClosesAndRefusesItsValue() throws Exception {
+        List<String> closed = new ArrayList<>();
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of());
+        Closeable early = evaluation.runScopedClosing("early", () -> new Closeable("early", closed));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> evaluation.runScopedClosing("key", () -> {
+                    endRun(evaluation);
+                    return new Closeable("key", closed);
+                }));
+
+        assertEquals("runScopedClosing was called for a key (java.lang.String) after the run ended, when its value"
+                + " would never be closed", ex.getMessage());
+        // Each closed once; the order isn't part of the contract.
+        assertEquals(List.of("early", "key"), closed.stream().sorted().toList());
+        LanguageTestContexts.endRun(evaluation);
+        assertEquals(List.of("early", "key"), closed.stream().sorted().toList());
+        IllegalStateException asPlain = assertThrows(IllegalStateException.class,
+                () -> evaluation.runScoped("early", () -> early));
+        assertEquals("runScoped was called for a key (java.lang.String) that runScopedClosing keeps a value under",
+                asPlain.getMessage());
+        // Nothing is kept under the refused key, so runScoped makes its own value rather than handing back the closed
+        // one.
+        Object marker = new Object();
+        assertSame(marker, evaluation.runScoped("key", () -> marker));
+    }
+
+    /** Ends a run from an init, which can't throw a checked exception. */
+    private static void endRun(EvaluationContext context) {
+        try {
+            LanguageTestContexts.endRun(context);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @Test
     @DisplayName("ending a run closes every value, and throws what the first close() threw, with the others suppressed")
     void endRunThrowsTheFirstFailure() {
         List<String> closed = new ArrayList<>();

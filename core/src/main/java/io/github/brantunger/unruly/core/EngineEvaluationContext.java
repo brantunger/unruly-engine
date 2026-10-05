@@ -135,8 +135,9 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, each whatever the others
      * throw, and fails any later request for one. Unlike a run, it throws what a {@code close()} threw: the first, with
      * the others suppressed on it, or what releasing the run's lock threw (see {@link RunScope#end()}), with what each
-     * {@code close()} threw suppressed on it. Calling it again does nothing. <b>Internal:</b> public only for the test
-     * kit.
+     * {@code close()} threw suppressed on it. Calling it again does nothing. Called from a {@code runScopedClosing}
+     * init, it closes the run's values made so far, and that init's own value is closed and refused too (see
+     * {@link RunScope#getClosing}). <b>Internal:</b> public only for the test kit.
      *
      * @param context A context the engine created: this record, or an {@link EngineActionContext}
      * @throws NullPointerException if {@code context} is {@code null}
