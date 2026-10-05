@@ -156,6 +156,10 @@ If releasing the run's lock threw, such as an `OutOfMemoryError` while waking a 
 does nothing. After it, `runScopedClosing` throws `IllegalStateException` through any context of that run, as after a
 real run.
 
+When a `runScopedClosing` init calls `endRun` itself and returns a value, that `runScopedClosing` call throws the
+same exception. The value isn't kept but closed, and what its `close()` throws is suppressed on the exception. A
+[fatal error](../glossary.md#fatal-error) from that `close()` is thrown instead, carrying the exception.
+
 ```java
 EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1));
 MyInterpreter interpreter = evaluation.runScopedClosing(MyInterpreter.class, MyInterpreter::new);

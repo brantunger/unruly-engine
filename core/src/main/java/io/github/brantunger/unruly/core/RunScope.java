@@ -22,7 +22,8 @@ import java.util.function.Supplier;
  * when the run returns. The values kept with {@code runScoped} aren't closed; those kept with {@code runScopedClosing}
  * are handed back by {@link #end()}, for the run to close, and none can be made after that. {@link #getClosing} and
  * {@link #end()} hold the scope's lock, so a value asked for on another thread while the run ends, such as through a
- * context a language kept, is either handed back to be closed or refused, never left open.
+ * context a language kept, is either handed back to be closed or refused, never left open. A value whose init ends the
+ * run itself, on its own thread, is closed and refused.
  * </p>
  */
 final class RunScope {
@@ -61,7 +62,10 @@ final class RunScope {
 
     /**
      * Returns the value kept under {@code key}, as {@link #get} does, and keeps it to be handed back by
-     * {@link #end()} when the value is made.
+     * {@link #end()} when the value is made. If {@code init} ends the scope and returns a value, nothing is kept under
+     * {@code key}: the value is closed, and refused as one asked for after the scope ended is. What its {@code close()}
+     * throws is suppressed on the {@link IllegalStateException}, unless that is or carries a fatal {@link Error}
+     * (see {@link Failures#fatalFirst}), which is thrown in its place, carrying the {@link IllegalStateException}.
      *
      * @param key  The key
      * @param init Makes the value
@@ -69,9 +73,10 @@ final class RunScope {
      * @return The value
      * @throws NullPointerException  if {@code key}, {@code init} or what {@code init} returns is {@code null}
      * @throws IllegalStateException if the init of {@code key} is running, {@code key} is kept with {@link #get}, or
-     *                               {@link #end()} has been called
+     *                               {@link #end()} has been called, including by {@code init}
      */
-    // With end(): the init runs holding the lock, so a value is kept, or refused, wholly before or after the run ends.
+    // With end(): the init runs holding the lock, so a value is kept, or refused, wholly before or after the run ends;
+    // only the init itself can end it meanwhile, and its value is then closed and refused.
     // The lock is reentrant, so an init can ask for another closing key.
     <T extends AutoCloseable> T getClosing(Object key, Supplier<? extends T> init) {
         lock.lock();
@@ -87,9 +92,7 @@ final class RunScope {
         Objects.requireNonNull(init, "init must not be null");
         String method = closes ? "runScopedClosing" : "runScoped";
         if (closes && ended) {
-            // The key's class, not its toString(), which a key needn't have and could leak what it holds.
-            throw new IllegalStateException(method + " was called for a key (" + key.getClass().getName()
-                    + ") after the run ended, when its value would never be closed");
+            throw endedFailure(method, key);
         }
         if (values == null) {
             values = new HashMap<>();
@@ -111,6 +114,10 @@ final class RunScope {
             } finally {
                 making.remove(key);
             }
+            if (closes && ended) {
+                // Its init ended the run, on this thread: end() has handed back the values, so this one is closed.
+                throw refused(method, key, (AutoCloseable) value);
+            }
             values.put(key, value);
             if (closes) {
                 if (closing == null) {
@@ -124,6 +131,29 @@ final class RunScope {
         @SuppressWarnings("unchecked")
         T typed = (T) value;
         return typed;
+    }
+
+    // The key's class, not its toString(), which a key needn't have and could leak what it holds.
+    private static IllegalStateException endedFailure(String method, Object key) {
+        return new IllegalStateException(method + " was called for a key (" + key.getClass().getName()
+                + ") after the run ended, when its value would never be closed");
+    }
+
+    // Closes a value whose init ended the run, and returns the failure to throw. Any Throwable: what close() threw is
+    // suppressed on it, but a fatal Error is thrown itself, carrying it. The caller's lock is released by getClosing.
+    private static IllegalStateException refused(String method, Object key, AutoCloseable value) {
+        IllegalStateException refused = endedFailure(method, key);
+        Throwable thrown = refused;
+        try {
+            value.close();
+        } catch (Throwable t) {
+            // The refusal, carrying t, or the fatal Error in t, carrying the refusal but not t, which is or reaches it.
+            thrown = Failures.fatalFirst(refused, t);
+        }
+        if (thrown instanceof Error fatal) {
+            throw fatal;
+        }
+        return refused;
     }
 
     /**
@@ -160,7 +190,8 @@ final class RunScope {
     }
 
     // Any Throwable: the values are handed back whatever releasing the lock threw. getClosing's own unlock() can fail
-    // the same way, but its value is kept by then, so end() hands it back.
+    // the same way, but nothing leaks: its value is kept by then, so end() hands it back, or, when its init ended the
+    // run, already closed, and what unlock() threw replaces the IllegalStateException refusing it.
     private void unlockEnded() {
         try {
             lock.unlock();

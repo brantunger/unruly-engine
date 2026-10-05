@@ -285,6 +285,13 @@ public final class LanguageTestContexts {
      * {@link IllegalStateException}, as it does once a run has ended. Calling it again does nothing.
      *
      * <p>
+     * Called from a {@code runScopedClosing} init that goes on to return a value, it closes the run's values, and
+     * that value is closed too, and refused: {@code runScopedClosing} throws the same {@link IllegalStateException},
+     * with what that {@code close()} threw suppressed on it, unless that is or carries a fatal {@link Error}, which
+     * it throws in its place, carrying the {@link IllegalStateException}. So a value is never left open.
+     * </p>
+     *
+     * <p>
      * It differs from a run in one way: a run logs what a {@code close()} throws at WARN, and throws only a fatal
      * {@link Error}, but this throws whatever was thrown, so the test sees it.
      * </p>

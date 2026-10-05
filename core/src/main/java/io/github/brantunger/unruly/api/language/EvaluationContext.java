@@ -153,8 +153,11 @@ public sealed interface EvaluationContext
      * through a context kept past its run, as that value would never be closed. Unlike {@link #runScoped}, this method
      * can be called from another thread while the run ends: the value is then either closed with the run's others, or
      * refused with {@link IllegalStateException}, and never left open. A language's unit tests close a test context's
-     * values with {@code io.github.brantunger.unruly.test.LanguageTestContexts.endRun}. Otherwise the values behave as
-     * {@link #runScoped} describes.
+     * values with {@code io.github.brantunger.unruly.test.LanguageTestContexts.endRun}. If an {@code init} ends the run
+     * that way itself and returns a value, nothing is kept under {@code key}: the value is closed, and refused with the
+     * {@link IllegalStateException} a later call gets, which carries what that {@code close()} threw as a suppressed
+     * exception, unless that is or carries a fatal {@link Error}. The error is thrown in its place, carrying the
+     * {@link IllegalStateException}. Otherwise the values behave as {@link #runScoped} describes.
      * </p>
      *
      * @param key  The key, compared with {@link Object#equals(Object)}
@@ -165,7 +168,7 @@ public sealed interface EvaluationContext
      *                               {@code null}
      * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key, the
      *                               run keeps a value under {@code key} with {@link #runScoped}, or the run's values
-     *                               are being or have been closed
+     *                               are being or have been closed, including when {@code init} itself ended the run
      */
     default <T extends AutoCloseable> T runScopedClosing(Object key, Supplier<? extends T> init) {
         return io.github.brantunger.unruly.core.EngineEvaluationContext.runScopedClosing(this, key, init);
