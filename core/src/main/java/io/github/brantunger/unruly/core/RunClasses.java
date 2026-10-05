@@ -212,7 +212,7 @@ final class RunClasses {
                 FlightRecorderEvents.class, Cancellation.class, Cancellation.Reason.class, Deadline.class,
                 RuleSet.Kind.class, RuleSet.Held.class, RuleSet.Source.class, RuleSet.Warning.class, Closing.class,
                 Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
-                ConditionResult.class, ActionResult.class, FactProperties.class);
+                ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class);
     }
 
     // Initialized by name, as this package can't name them: the JDK's that a load or a run may be the first to use.

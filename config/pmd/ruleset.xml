@@ -22,7 +22,8 @@
         <exclude name="AvoidUsingVolatile"/>
         <!-- Every synchronized block is short and never parks: load() and close() hold the engine's private monitor
              to check or set the closed flag, swap the rule set and track the rule sets still to retire; runs hold
-             ReportedFailure's and FactNames' locks only for a bounded update of a field, an array or a cache; and
+             ReportedFailure's and FactNames' locks only for a bounded update of a field, an array or a cache, and a
+             run's scope's only to decide who makes a value, never running its init or waiting under it; and
              MvelWarningFilter holds MVEL's logger's monitor once, at class init. So no run waits long on a monitor
              or pins its virtual thread while parked. -->
         <exclude name="AvoidSynchronizedStatement"/>

@@ -139,6 +139,10 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 - **Another thread isn't covered.** Work an action hands to another thread gets neither the deadline nor the
   interrupt.
 
+A run's end also waits, with no limit, for a language's
+[`runScopedClosing`](languages/custom.md#-reading-facts) init still running on another thread; neither `runTimeout`
+nor an interrupt cuts that wait short.
+
 ## 👂 What listeners see
 
 A [stop](glossary.md#stop) reaches `onRunError` like a failure that belongs to no rule. What else a listener gets

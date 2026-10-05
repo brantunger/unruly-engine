@@ -375,6 +375,25 @@ class RunScopedClosingTest {
     }
 
     @Test
+    @DisplayName("#1038: a closing init that asks for another key once the scope holds three values keeps both, the"
+            + " inner one first")
+    void nestedClosingInitsKeepEveryValue() {
+        RunScope scope = new RunScope();
+        Value a = scope.getClosing("a", () -> new Value("a"));
+        Value b = scope.getClosing("b", () -> new Value("b"));
+        Value c = scope.getClosing("c", () -> new Value("c"));
+        AtomicReference<Value> e = new AtomicReference<>();
+
+        // Room was made for d alone when its init started; e, asked for inside it, needs room for both.
+        Value d = scope.getClosing("d", () -> {
+            e.set(scope.getClosing("e", () -> new Value("e")));
+            return new Value("d");
+        });
+
+        assertEquals(List.of(a, b, c, e.get(), d), scope.end());
+    }
+
+    @Test
     @DisplayName("an init that asks for its own closing key fails, rather than recursing or making the value twice")
     void closingInitAskingForItsOwnKeyFails() {
         EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
@@ -771,6 +790,22 @@ class RunScopedClosingTest {
     }
 
     @Test
+    @DisplayName("#1048: when combining what ending the run threw fails, a fatal Error taking the run's values is"
+            + " thrown in its place")
+    void combiningTheEndingFailsKeepsAFatalErrorTakingTheValues() {
+        OutOfMemoryError taking = new OutOfMemoryError("taking ran out");
+        StackOverflowError combining = new StackOverflowError("combining");
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("a", () -> new Value("a")))) {
+            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, taking);
+            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+
+            assertSame(taking, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertEquals(List.of("afterRun", "a closed"), events);
+        }
+    }
+
+    @Test
     @DisplayName("#850: an Error taking a run's values to close is thrown once they're closed, unless a fatal Error"
             + " closing one comes after it")
     void errorTakingTheValuesIsThrown() {
@@ -910,8 +945,9 @@ class RunScopedClosingTest {
         ender.setDaemon(true);
         ender.start();
         try {
-            // Blocked on a monitor, or waiting for a lock.
-            await(() -> ender.getState() == Thread.State.BLOCKED || ender.getState() == Thread.State.WAITING, 10,
+            // Blocked on a monitor, waiting for a lock, or polling for the scope's turn.
+            await(() -> ender.getState() == Thread.State.BLOCKED || ender.getState() == Thread.State.WAITING
+                    || ender.getState() == Thread.State.TIMED_WAITING, 10,
                     "end() waits for the init");
             assertNull(handedBack.get(), "end() returned while the init ran");
         } finally {
@@ -950,7 +986,8 @@ class RunScopedClosingTest {
         asker.setDaemon(true);
         asker.start();
         try {
-            await(() -> asker.getState() == Thread.State.BLOCKED || asker.getState() == Thread.State.WAITING, 10,
+            await(() -> asker.getState() == Thread.State.BLOCKED || asker.getState() == Thread.State.WAITING
+                    || asker.getState() == Thread.State.TIMED_WAITING, 10,
                     "the other thread waits for the init");
         } finally {
             release.countDown();
@@ -983,7 +1020,7 @@ class RunScopedClosingTest {
         other.start();
         other.join(TimeUnit.SECONDS.toMillis(10));
 
-        assertFalse(other.isAlive(), "the init that threw left the scope locked");
+        assertFalse(other.isAlive(), "the init that threw kept the scope's turn");
         assertEquals(List.of(made.get()), handedBack.get());
     }
 
@@ -1051,7 +1088,7 @@ class RunScopedClosingTest {
 
     @Test
     @DisplayName("#1020: what the close() of a value refused for its init ending the run throws is suppressed on the"
-            + " refusal, and the scope's lock is let go")
+            + " refusal, and the scope's turn is let go")
     void closeFailureOfAValueRefusedForEndingTheRunIsSuppressed() throws Exception {
         EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
         IOException failure = new IOException("close failed");
@@ -1070,7 +1107,7 @@ class RunScopedClosingTest {
 
     @Test
     @DisplayName("#1020: a fatal error from the close() of a value refused for its init ending the run is thrown"
-            + " itself, carrying the refusal, and the scope's lock is let go")
+            + " itself, carrying the refusal, and the scope's turn is let go")
     void fatalCloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
         EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
         OutOfMemoryError fatal = new OutOfMemoryError("close failed");
@@ -1091,8 +1128,29 @@ class RunScopedClosingTest {
     }
 
     @Test
+    @DisplayName("#1048: a fatal error other than OutOfMemoryError from the close() of a value refused for its init"
+            + " ending the run is thrown itself too, carrying the refusal")
+    void otherFatalCloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        InternalError fatal = new InternalError("close hit an internal error");
+
+        InternalError thrown = assertThrows(InternalError.class,
+                () -> context.runScopedClosing("key", () -> {
+                    endRun(context);
+                    return new Value("key", fatal);
+                }));
+
+        assertSame(fatal, thrown);
+        assertEquals(1, fatal.getSuppressed().length);
+        IllegalStateException refused = assertInstanceOf(IllegalStateException.class, fatal.getSuppressed()[0]);
+        assertEquals(ENDED, refused.getMessage());
+        assertEquals(List.of("key closed"), events);
+        assertEquals(List.of(), endOnAnotherThread(EngineEvaluationContext.runScopeOf(context)));
+    }
+
+    @Test
     @DisplayName("#1020: a fatal error carried by what the close() of a value refused for its init ending the run"
-            + " throws is thrown itself, carrying the refusal, and the scope's lock is let go")
+            + " throws is thrown itself, carrying the refusal, and the scope's turn is let go")
     void fatalErrorCarriedByACloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
         EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
         OutOfMemoryError fatal = new OutOfMemoryError("close ran out");
@@ -1226,14 +1284,14 @@ class RunScopedClosingTest {
         }
     }
 
-    /** Ends a scope on another thread, which fails if this thread still holds the scope's lock. */
+    /** Ends a scope on another thread, which fails if this thread still holds the scope's turn. */
     private static List<AutoCloseable> endOnAnotherThread(RunScope scope) throws InterruptedException {
         AtomicReference<List<AutoCloseable>> handedBack = new AtomicReference<>();
         Thread other = new Thread(() -> handedBack.set(scope.end()));
         other.setDaemon(true);
         other.start();
         other.join(TimeUnit.SECONDS.toMillis(10));
-        assertFalse(other.isAlive(), "the scope's lock was left held");
+        assertFalse(other.isAlive(), "the scope's turn was left held");
         return handedBack.get();
     }
 }

@@ -71,7 +71,8 @@ class FirstRunClassInitializationTest {
                     FlightRecorderEvents.class, RunEvent.class, RuleEvent.class, Cancellation.class,
                     Cancellation.Reason.class, Deadline.class, RuleSet.Kind.class, RuleSet.Held.class, Closing.class,
                     Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
-                    ConditionResult.class, ActionResult.class, FactProperties.class).map(Class::getName),
+                    ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class)
+                    .map(Class::getName),
             Stream.of(RuleSet.class.getName() + "$Source", RuleSet.class.getName() + "$Warning",
                     "io.github.brantunger.unruly.api.language.NoSession",
                     EngineCompileContext.class.getName() + "$Warnings", RunClasses.class.getName() + "$Prepared"))

@@ -44,11 +44,6 @@ final class Faults {
         SETTLING,
         /** A run that stopped setting its thread's interrupt status again, before it has. */
         INTERRUPT_KEPT,
-        /**
-         * A run's scope that has released its lock as it handed back the values to close, as releasing it can fail
-         * once the lock is free.
-         */
-        RUN_SCOPE_UNLOCKED,
         /** A run that has taken the values its languages kept to be closed, before it has closed any. */
         RUN_VALUES_CLOSING,
         /**
@@ -66,7 +61,12 @@ final class Faults {
          * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
          * failed (see {@link #reached(Step)}).
          */
-        CLOSE_MARKED(true);
+        CLOSE_MARKED(true),
+        /**
+         * A run's scope making its map for the first value asked for, before it has, holding the scope's monitor.
+         * Watched only, never failed (see {@link #reached(Step)}).
+         */
+        RUN_SCOPE_MAP_MAKING(true);
 
         // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
         private final boolean watchOnly;
@@ -89,6 +89,10 @@ final class Faults {
     private static int reaches;
     private static int failures;
     private static Error error;
+    // The fault that follows once that one has failed for the last time, on the same thread: the step that fails the
+    // next time the thread reaches it, once, and what it throws.
+    private static Step then;
+    private static Error thenError;
     // The step that is watched, the thread it is watched on, and what that thread runs the next time it reaches it.
     // Set as a fault is, the step last: it's volatile, so a thread that reads the step sees the thread and the action
     // set with it, never those of an earlier watch.
@@ -146,6 +150,23 @@ final class Faults {
     }
 
     /**
+     * Makes {@code step} throw {@code thrown} the next time the thread of the fault set last reaches it once that
+     * fault has failed for the last time, once: so one run can fail at two steps. Call it after that fault is set,
+     * before its thread reaches it; {@link #clear()} takes it back with that fault.
+     *
+     * @param step   The step, which the thread reaches after the step of the fault set last
+     * @param thrown What it throws
+     * @throws IllegalArgumentException if the step can only be watched
+     */
+    static void injectThen(Step step, Error thrown) {
+        if (step.watchOnly) {
+            throw new IllegalArgumentException(step + " can only be watched");
+        }
+        thenError = thrown;
+        then = step;
+    }
+
+    /**
      * Makes the current thread run {@code action} the next time it reaches {@code step}, once.
      *
      * @param step   The step, one the code reaches with {@link #reached(Step)}
@@ -168,6 +189,8 @@ final class Faults {
         failing = null;
         thread = null;
         error = null;
+        then = null;
+        thenError = null;
         watched = null;
         watching = null;
         onReach = null;
@@ -187,10 +210,16 @@ final class Faults {
                 // The next time fails too, while failures are left.
                 reaches = 1;
                 failures--;
+                Error thrown = error;
                 if (failures == 0) {
-                    failing = null;
+                    // The fault that follows, if one was set, fails the next time this thread reaches its step.
+                    failing = then;
+                    error = thenError;
+                    failures = 1;
+                    then = null;
+                    thenError = null;
                 }
-                throw error;
+                throw thrown;
             }
         }
     }

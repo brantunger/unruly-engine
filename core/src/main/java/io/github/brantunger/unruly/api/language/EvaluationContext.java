@@ -108,10 +108,12 @@ public sealed interface EvaluationContext
      * The value is made when it is first asked for, and isn't made again during the run, so it doesn't see a change
      * that Java code makes to a fact later in the run. The engine keeps the values until the run returns, and then lets
      * them go without closing them: a resource a language opens for one run belongs in {@link #runScopedClosing},
-     * which closes it when the run ends, and one it keeps from run to run in its {@link Session}. The values aren't
-     * synchronized, as a run evaluates one expression at a time. If {@code init} throws, nothing is kept, and the next
-     * call for the key calls its {@code init} again. An {@code init} can ask for other keys, but not for its own: that
-     * throws {@link IllegalStateException}, rather than recursing or making the value twice.
+     * which closes it when the run ends, and one it keeps from run to run in its {@link Session}. Another thread can
+     * ask for a value too, such as a script the language runs on another thread: a request for a key whose
+     * {@code init} is running on another thread throws {@link IllegalStateException} rather than waiting for it. If
+     * {@code init} throws, nothing is kept, and the next call for the key calls its {@code init} again. An
+     * {@code init} can ask for other keys, but not for its own: that throws {@link IllegalStateException}, rather than
+     * recursing or making the value twice.
      * </p>
      *
      * @param key  The key, compared with {@link Object#equals(Object)}
@@ -120,8 +122,9 @@ public sealed interface EvaluationContext
      * @return The value kept under {@code key}, never {@code null}
      * @throws NullPointerException  if {@code key} or {@code init} is {@code null}, or {@code init} returns
      *                               {@code null}
-     * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key, or
-     *                               the run keeps a value under {@code key} with {@link #runScopedClosing}
+     * @throws IllegalStateException if the {@code init} of {@code key} is running, so it asked for its own key or is
+     *                               running on another thread, or the run keeps a value under {@code key} with
+     *                               {@link #runScopedClosing}
      */
     default <T> T runScoped(Object key, Supplier<? extends T> init) {
         return io.github.brantunger.unruly.core.EngineEvaluationContext.runScoped(this, key, init);
@@ -150,11 +153,15 @@ public sealed interface EvaluationContext
      * A key is either closing or not: asking with this method for a key that the run keeps a value under with
      * {@link #runScoped}, or the other way round, throws {@link IllegalStateException}. So does asking for a value
      * with this method once the run's values are being closed, or have been, such as from a value's {@code close()} or
-     * through a context kept past its run, as that value would never be closed. Unlike {@link #runScoped}, this method
-     * can be called from another thread while the run ends: the value is then either closed with the run's others, or
-     * refused with {@link IllegalStateException}, and never left open. A language's unit tests close a test context's
-     * values with {@code io.github.brantunger.unruly.test.LanguageTestContexts.endRun}. If an {@code init} ends the run
-     * that way itself and returns a value, nothing is kept under {@code key}: the value is closed, and refused with the
+     * through a context kept past its run, as that value would never be closed. This method can be called from another
+     * thread while the run ends: the value is then either closed with the run's others, or refused with
+     * {@link IllegalStateException}, and never left open. The {@code init}s of closing values run one at a time: a call
+     * on another thread while one runs waits for it, then gets the value made for its key, or, if that {@code init}
+     * threw, makes its own. The wait has no limit and ignores interrupts, keeping the interrupt status; the run's end
+     * waits the same way, and a waiting call is refused once the run begins to end. So an {@code init} that waits for
+     * another thread which itself calls this method hangs both. A language's unit tests close a test context's values
+     * with {@code io.github.brantunger.unruly.test.LanguageTestContexts.endRun}. If an {@code init} ends the run that
+     * way itself and returns a value, nothing is kept under {@code key}: the value is closed, and refused with the
      * {@link IllegalStateException} a later call gets, which carries what that {@code close()} threw as a suppressed
      * exception, unless that is or carries a fatal {@link Error}. The error is thrown in its place, carrying the
      * {@link IllegalStateException}. Otherwise the values behave as {@link #runScoped} describes.
