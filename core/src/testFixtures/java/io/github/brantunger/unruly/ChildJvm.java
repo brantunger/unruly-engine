@@ -56,11 +56,12 @@ public final class ChildJvm {
 
     /**
      * Runs a new JVM with the arguments given, such as a module path and the module to run, and waits for it at most
-     * {@code timeout}. A JVM that hasn't finished by then is killed, with the processes it started.
+     * {@code timeout}. A JVM that hasn't finished by then is killed, with the processes it started. The JVM has the
+     * stack shadow zone of 20 pages core's test JVM has, before the arguments, so an argument that sets it again wins.
      *
      * @param dir       A directory for the output
      * @param timeout   How long to wait for the JVM to finish
-     * @param arguments The whole command after {@code java}
+     * @param arguments The command after {@code java} and the shadow zone's option
      * @return What the JVM printed, standard output and error together, read as UTF-8
      */
     public static String run(Path dir, Duration timeout, List<String> arguments)
@@ -68,7 +69,11 @@ public final class ChildJvm {
         Path java = Path.of(System.getProperty("java.home"), "bin", "java");
         // Output to a file, so waiting is bounded by waitFor and not by the child closing a pipe.
         Path log = dir.resolve("scenario.log");
-        List<String> command = new ArrayList<>(List.of(java.toString()));
+        // The shadow zone is 20 pages on every 64-bit platform except Windows on x64, where it is 8. JVMs running
+        // scenarios that overflow their stack at every depth near the end died in Windows CI with STATUS_STACK_OVERFLOW
+        // (0xC00000FD), as core's test JVM had (see core/build.gradle.kts), printing at most their first line. The
+        // smaller zone is the suspected cause (#1085), not reproduced locally.
+        List<String> command = new ArrayList<>(List.of(java.toString(), "-XX:StackShadowPages=20"));
         command.addAll(arguments);
         Process process = new ProcessBuilder(command)
                 .redirectErrorStream(true)

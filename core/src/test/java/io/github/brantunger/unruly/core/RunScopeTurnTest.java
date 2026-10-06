@@ -98,8 +98,9 @@ class RunScopeTurnTest {
                 "-XX:CompileCommand=exclude,java.util.HashSet::remove").lines().toList();
     }
 
-    // A scan makes about 4,000 values a round, 480,000 to 540,000 in all on JDK 21 and 26 with a shadow zone of 8 or
-    // 20 pages: far fewer means it stopped recursing, or overflowed before it asked.
+    // A scan makes about 4,000 values a round: with the shadow zone of 20 pages ChildJvm gives its JVM, 480,495 to
+    // 483,480 in all on JDK 21, 25 and 26 on Windows. Far fewer means it stopped recursing, or overflowed before it
+    // asked.
     private static void assertScanned(List<String> lines) {
         int made = Integer.parseInt(value(lines, DeepRunScopeScenario.MADE));
         assertTrue(made >= 100_000, made + " values made\n" + String.join("\n", lines));
