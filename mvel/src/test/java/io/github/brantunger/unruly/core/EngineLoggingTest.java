@@ -61,7 +61,7 @@ class EngineLoggingTest {
     @DisplayName("a fact run rejects is logged")
     void rejectedFactLogged(String name) {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
-        engine.load(List.of(rule("a", "true", "output.put('k', 1)")));
+        engine.load(List.of(rule("a", name + " != null", "output.put('k', 1)")));
 
         assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
     }

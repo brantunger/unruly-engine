@@ -14,7 +14,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("facts are validated even when the rule list is empty")
+/**
+ * An empty rule list compiles no MVEL expression, so MVEL, its default language, checks no fact's name against its
+ * rules: only the name it reserves, {@code output}, is rejected.
+ */
+@DisplayName("facts are validated even when the rule list is empty, against the names MVEL reserves")
 class EmptyRuleListFactValidationTest {
 
     private static RulesEngine<Map<String, Object>> withNoRules(RulesEngine<Map<String, Object>> engine) {
@@ -23,7 +27,7 @@ class EmptyRuleListFactValidationTest {
     }
 
     @ParameterizedTest(name = "stateless: {0}")
-    @ValueSource(strings = {"output", "my-fact", "empty"})
+    @ValueSource(strings = {"output"})
     void statelessRejectsInvalidFact(String name) {
         RulesEngine<Map<String, Object>> engine = withNoRules(TestEngines.firstMatch(HashMap::new));
 
@@ -31,11 +35,19 @@ class EmptyRuleListFactValidationTest {
     }
 
     @ParameterizedTest(name = "stateful: {0}")
-    @ValueSource(strings = {"output", "my-fact", "empty"})
+    @ValueSource(strings = {"output"})
     void statefulRejectsInvalidFact(String name) {
         RulesEngine<Map<String, Object>> engine = withNoRules(TestEngines.allMatches(HashMap::new));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"my-fact", "empty"})
+    @DisplayName("a name MVEL checks only where its rules name it, such as a keyword, is accepted, as no rule does")
+    void namesNoRuleNamesAccepted(String name) {
+        assertNull(withNoRules(TestEngines.firstMatch(HashMap::new)).run(new FactMap<>(new Fact<>(name, 1))));
+        assertNull(withNoRules(TestEngines.allMatches(HashMap::new)).run(new FactMap<>(new Fact<>(name, 1))));
     }
 
     @Test

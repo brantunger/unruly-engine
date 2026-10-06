@@ -81,6 +81,14 @@ class ClassNameRootFactTest {
         return Rule.builder().ruleName("r").condition(condition).action(action).build();
     }
 
+    /**
+     * An action that puts 1 in the output, after a comment that names {@code name}: MVEL checks only the names its
+     * rules' text holds, so where a class comes only through an import, a rule names the fact for MVEL to check it.
+     */
+    static String naming(String name) {
+        return "// " + name + "\noutput.put('r', 1)";
+    }
+
     static FactMap<Object> amount() {
         return new FactMap<>(new Fact<>("amount", 5));
     }
@@ -121,7 +129,7 @@ class ClassNameRootFactTest {
     void importedPackageRootRejected() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("acme.orders").build();
-        engine.load(List.of(rule("amount < Order.LIMIT", "output.put('r', 1)")));
+        engine.load(List.of(rule("amount < Order.LIMIT", naming("acme"))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(withFact("acme", 1)));
@@ -135,7 +143,7 @@ class ClassNameRootFactTest {
     void nestedClassOfAClassImportRootRejected() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("java.util.Map").build();
-        engine.load(List.of(rule("Map.Entry.comparingByKey() != null", "output.put('r', 1)")));
+        engine.load(List.of(rule("Map.Entry.comparingByKey() != null", naming("java"))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(withFact("java", 1)));
@@ -161,7 +169,7 @@ class ClassNameRootFactTest {
     void packageRootAndClassNameGetsThePackageReason() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("acme.orders", "acme.both").build();
-        engine.load(List.of(rule("amount < Order.LIMIT", "output.put('r', 1)")));
+        engine.load(List.of(rule("amount < Order.LIMIT", naming("acme"))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(withFact("acme", 1)));
@@ -174,13 +182,26 @@ class ClassNameRootFactTest {
     void classNameOnlyKeepsTheClassReason() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("acme.both").build();
-        engine.load(List.of(rule("amount > 1", "output.put('r', 1)")));
+        engine.load(List.of(rule("amount > 1", naming("acme"))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(withFact("acme", 1)));
 
         assertEquals("'acme' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would "
                 + "never see the fact", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a root found only through an import is a fact's name where no rule names it, and the rule reads the"
+            + " class")
+    void rootNoRuleNamesAccepted() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .imports("acme.orders", "java.util.Map").build();
+        engine.load(List.of(rule("amount < Order.LIMIT && Map.Entry.comparingByKey() != null", "output.put('r', 1)")));
+
+        FactMap<Object> facts = withFact("acme", 1);
+        facts.setValue("java", 1);
+        assertEquals(Map.of("r", 1), engine.run(facts));
     }
 
     @Test

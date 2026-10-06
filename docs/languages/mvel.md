@@ -113,7 +113,7 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 - So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
 - A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
 - [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.
-- An imported class's name can't be a [fact name](#fact-names-mvel-rejects).
+- An imported class's name can't be a [fact name](mvel-fact-names.md) that a rule's text holds.
 - `build()` loads a single-class import with its thread's context class loader; a valid name it can't load is
   imported as a package.
 - `load()` looks up classes in imported packages with its thread's context class loader, and `run()` checks fact
@@ -142,49 +142,8 @@ A rule refers to a fact by its name, as a variable; see [Facts](../facts.md).
 misspelled property, or a private field with no getter, fails the run with
 `could not access: creditScor; in class: com.example.Applicant`.
 
-### Fact names MVEL rejects
-
-`run()` throws `IllegalArgumentException` for a fact whose name MVEL can't read as that fact. A declared one fails
-`load()` instead, with a `RuleCompilationException` (`Declared fact 'Math' can't be used: ...`); a blank one fails
-`fact()`.
-
-A name must be a Java identifier. `my-fact` would read as `my - fact`, so it, `2nd` and `first name` are rejected with:
-
-```text
-'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java identifier
-```
-
-MVEL reads these as something else before the facts, so they're rejected too:
-
-| Kind | Names |
-| --- | --- |
-| Literals | `true` `false` `null` `nil` `empty` |
-| Primitive type names | `boolean` `byte` `char` `double` `float` `int` `long` `short` |
-| Built-in class names | The 22 in [Classes and imports](#-classes-and-imports), such as `Math`, `String` and `Thread` |
-| Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
-| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")` |
-| Package roots | `java` once a rule uses `java.lang.Integer.MAX_VALUE`. Here MVEL would read the fact in the class's place; see below |
-
-```text
-'Math' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would never see the fact
-```
-
-- The check is case-sensitive: `date` is accepted with `imports("java.util")`, and `Date` when nothing imports it.
-- `$x`, `_` and `café` are accepted; `𝒜` (U+1D49C, beyond U+FFFF) isn't, though `imports(...)` accepts it in a
-  package name.
-- A class in an imported package that can't be loaded isn't read as a class name, so the fact keeps it, as in
-  MVEL's own lookup; a [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
-
-**Package roots** are per rule list: the first part of each class its rules use, named with its package
-outside strings and comments (`new java.util.ArrayList()`), from a package import (`acme` for `Order` with
-`imports("acme.orders")`), nested in an imported class (`Map.Entry`) or a rule's `import`.
-
-A field or method of a singly imported or built-in class, such as `Math.PI`, adds nothing, nor does an unused
-import. The message says why, even for a class name:
-
-```text
-'java' cannot be used as a fact name: the rules use a class whose package starts with 'java', and MVEL would read the fact in the class's place
-```
+Where a rule's text holds a fact's name, MVEL rejects one it can't read as that fact, such as `my-fact`, `in` or
+`Math`, and reserves `output` for its own rule lists. See [MVEL fact names](mvel-fact-names.md).
 
 ### Null and missing facts
 

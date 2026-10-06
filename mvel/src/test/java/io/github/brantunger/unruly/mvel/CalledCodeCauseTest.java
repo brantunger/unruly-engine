@@ -393,9 +393,9 @@ public class CalledCodeCauseTest {
     void nestedRunRejectionInAReflectiveCall() {
         RulesEngine<Map<String, Object>> engine = mixedEngine(
                 "x = new java.lang.StringBuilder(code.value); output.put('v', x)");
-        RulesEngine<Map<String, Object>> inner = engine("true", "output.put('v', 1)");
+        RulesEngine<Map<String, Object>> inner = engine("bad-name == 1", "output.put('v', 1)");
         FactStore<Object> badName = new FactMap<>();
-        badName.setValue("bad name", 1);
+        badName.setValue("bad-name", 1);
         IllegalArgumentException rejected = capture(IllegalArgumentException.class, () -> inner.run(badName)).thrown();
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class,

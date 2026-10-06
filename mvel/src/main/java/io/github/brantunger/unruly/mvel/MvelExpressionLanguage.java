@@ -38,7 +38,11 @@ import java.util.concurrent.atomic.AtomicReference;
  *     <li>A fact name must be a Java identifier that isn't one of MVEL's reserved words, such as {@code empty} or
  *     {@code in}, and isn't a class name MVEL resolves instead, such as {@code Math} or an imported class, nor the
  *     first part of the name of a class the rule list's expressions name with its package, such as {@code java} for
- *     {@code java.lang.Integer.MAX_VALUE}, or find through an import.</li>
+ *     {@code java.lang.Integer.MAX_VALUE}, or find through an import. MVEL checks a fact's name only where the text of
+ *     the rule list's MVEL expressions holds it, as a name or as a word, such as {@code my-fact} in
+ *     {@code my-fact == 1}. That is a best effort: a name glued to a minus sign, as in {@code my-fact-1}, which MVEL
+ *     reads as {@code my} minus {@code fact} minus 1, isn't checked, nor are some names MVEL reads whole that aren't
+ *     identifiers, such as {@code \a} in {@code 1-\a}.</li>
  *     <li>MVEL caches accessors in a compiled expression without synchronization, so each session, which one run
  *     uses at a time, runs its own compiled copy of each expression.</li>
  *     <li>MVEL's imports are Java packages and classes, given with
@@ -52,6 +56,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * </ul>
  *
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/mvel.md">MVEL</a>
+ * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/mvel-fact-names.md">MVEL fact
+ *      names</a>
  */
 public final class MvelExpressionLanguage implements ExpressionLanguage {
 
@@ -169,6 +175,19 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     @Override
     public Set<String> reservedFactNames() {
         return Set.of(ActionContext.OUTPUT_NAME);
+    }
+
+    /**
+     * Returns {@code false}: only MVEL's actions see the output object by {@value ActionContext#OUTPUT_NAME}, so the
+     * name is reserved only for a rule list with an MVEL rule, or with no rules while MVEL is the default language. A
+     * fact declared with it is then rejected by {@code load()} and {@code validate()} for such a rule list, rather
+     * than by {@code build()}.
+     *
+     * @return {@code false}
+     */
+    @Override
+    public boolean reservesForEveryRuleList() {
+        return false;
     }
 
     /**

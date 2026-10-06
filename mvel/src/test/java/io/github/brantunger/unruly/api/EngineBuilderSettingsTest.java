@@ -142,7 +142,8 @@ class EngineBuilderSettingsTest {
         }
 
         @Test
-        @DisplayName("an empty rule list checks fact names against the default language, not against MVEL")
+        @DisplayName("an empty rule list with MVEL as the default language rejects only output: no rule names a"
+                + " fact")
         void emptyListUsesDefaultLanguage() {
             RulesEngine<Map<String, Object>> toy = builder().language(new ToyExpressionLanguage()).build();
             RulesEngine<Map<String, Object>> mvel = builder().build();
@@ -150,7 +151,8 @@ class EngineBuilderSettingsTest {
             mvel.load(List.of());
 
             assertNull(toy.run(new FactMap<>(new Fact<>("empty", 1))));
-            assertThrows(IllegalArgumentException.class, () -> mvel.run(new FactMap<>(new Fact<>("empty", 1))));
+            assertNull(mvel.run(new FactMap<>(new Fact<>("empty", 1))));
+            assertThrows(IllegalArgumentException.class, () -> mvel.run(new FactMap<>(new Fact<>("output", 1))));
         }
     }
 
