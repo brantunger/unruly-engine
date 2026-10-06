@@ -50,15 +50,17 @@ class PackageDependencyTest {
      * uses it for the kinds and issues of expressions, and {@code core} only to seal its contexts to the engine's
      * records, to share how accessors are reached and to shorten and escape text as the engine does, so the SPI ships
      * with the engine in unruly-engine-core. {@code mvel} uses only the SPI packages, and {@code core} finds languages
-     * with ServiceLoader rather than using {@code mvel}, so the MVEL language is its own artifact. {@code test}, the
-     * test kit, uses the API and creates the engine's context records.
+     * with ServiceLoader rather than using {@code mvel}, so the MVEL language is its own artifact. {@code mvel.warmup},
+     * the value {@code mvel} evaluates MVEL on as it prepares, which the module exports only to MVEL, stands alone.
+     * {@code test}, the test kit, uses the API and creates the engine's context records.
      */
     private static final Map<String, Set<String>> ALLOWED = Map.of(
             "api", Set.of("api.exception", "api.language", "core"),
             "api.exception", Set.of(),
             "api.language", Set.of("api.exception", "core"),
             "core", Set.of("api", "api.exception", "api.language"),
-            "mvel", Set.of("api.exception", "api.language"),
+            "mvel", Set.of("api.exception", "api.language", "mvel.warmup"),
+            "mvel.warmup", Set.of(),
             "test", Set.of("api", "api.exception", "api.language", "core"));
 
     /** Dependencies that only the listed files may have. */

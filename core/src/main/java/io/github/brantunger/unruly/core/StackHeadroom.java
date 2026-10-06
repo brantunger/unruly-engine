@@ -73,6 +73,10 @@ final class StackHeadroom {
      * measured with it compiled at the first build, 640 frames left {@code FactNames} unusable at 29 of 1,500 depths,
      * and 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't swept
      * on its own: it prepares the language alone, without the engine's classes the measured build initialized too.
+     * The reserve was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after them
+     * that initializes no class with a static initializer, as MVEL's evaluation of a property read and a method call
+     * is: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow and skips the
+     * warm-up.
      */
     static final int INITIALIZING_FRAMES = 960;
 

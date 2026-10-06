@@ -253,7 +253,7 @@ jobs:
         run: |
           packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
           packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
-          packages=$packages,io.github.brantunger.unruly.mvel
+          packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
           native-image --no-fallback -H:+ReportExceptionStackTraces \
             -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
             -cp 'native-smoke/build/install/native-smoke/lib/*' -o native-smoke/build/native/native-smoke-strict \

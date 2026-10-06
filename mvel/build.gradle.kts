@@ -84,6 +84,14 @@ apiCheck {
     artifactId = artifact
 }
 
+// The Javadoc documents the API only. The warmup package is exported to MVEL alone, for the value
+// MvelExpressionLanguage.prepare() evaluates MVEL on, not to users.
+tasks.named<Javadoc>("javadoc") {
+    exclude("io/github/brantunger/unruly/mvel/warmup/**")
+    // Lets javadoc find the excluded classes that the documented ones use.
+    (options as StandardJavadocDocletOptions).addPathOption("-source-path").value = listOf(file("src/main/java"))
+}
+
 // The tests left here are the ones that need MVEL: those of the MVEL language itself, those that need its expression
 // syntax, its compile errors or its fact-name rules, those whose subject is MVEL being the default language, and
 // those of the test kit run against MVEL. The test kit's other tests run it against the toy or stub language and

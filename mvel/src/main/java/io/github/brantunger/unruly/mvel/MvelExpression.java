@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.mvel.warmup.WarmUpTarget;
 import org.jspecify.annotations.Nullable;
 import org.mvel2.MVEL;
 import org.mvel2.ParserConfiguration;
@@ -255,6 +256,20 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         ParserConfiguration configuration = imports.newRunConfiguration(callsPerRun,
                 MvelAnalysis.classLoaderCallsPerSite(source.length()));
         return new Copy(MVEL.compileExpression(source, newParserContext(imports, configuration)), configuration);
+    }
+
+    /**
+     * Compiles and runs a property read and a method call on a {@link WarmUpTarget}, once each, as a run runs an
+     * expression, for {@link MvelExpressionLanguage#prepare()}: a JVM's first read and first call load classes MVEL
+     * evaluates them with. With MVEL's own class loader as the thread's context class loader, as the static initializer
+     * sets MVEL's optimizer up, so the expressions MVEL compiles here, and drops, hold no caller's class loader.
+     */
+    static void warmUp() {
+        Map<String, Object> variables = Map.of("v", new WarmUpTarget());
+        withClassLoader(mvelClassLoader(), () -> {
+            MVEL.executeExpression(MVEL.compileExpression("v.ready"), (Object) null, variables);
+            return MVEL.executeExpression(MVEL.compileExpression("v.check()"), (Object) null, variables);
+        });
     }
 
     /**
