@@ -1,7 +1,8 @@
 # Runs check_docs.py and check_style.py on the pages in config/docs-checks/, each holding a case the scripts once got
 # wrong, and compares every line they print with the verdicts below: a missing line is a case they no longer catch, an
 # extra one a false report. The pages are stored as .md.txt, since check_docs.py would report their broken links
-# otherwise, and are copied as .md into a temporary git repository with a copy of the scripts.
+# otherwise, and are copied as .md into a temporary git repository with a copy of the scripts, and the .svg files
+# beside them, which the pages show, as they are.
 # Usage: python docs/scripts/check_fixtures.py [directory]  (from the repository root; the directory holding the
 # scripts to run, docs/scripts by default). Exit code 1 when a verdict differs.
 import glob
@@ -16,6 +17,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 FIXTURES = os.path.join(ROOT, 'config', 'docs-checks')
 PROBE = 'docs/probe/'
+SVG_RULE = '(style.md: role="img", a <title> and a <desc>, neither empty)'
 # Per page, what check_docs.py prints about it, then what check_style.py prints when given it alone.
 VERDICTS = {
     'angle-brackets': (
@@ -80,6 +82,11 @@ VERDICTS = {
     'repeated-h2': (
         [],
         [':3: 2 callouts under ## Notes (style.md: one at most)', ': 24 words of prose']),
+    'svg-accessibility': (
+        [':3: svg-untitled.svg: docs/probe/svg-untitled.svg lacks <title>, <desc> ' + SVG_RULE,
+         ':5: svg-no-role.svg: docs/probe/svg-no-role.svg lacks role="img" ' + SVG_RULE,
+         ':9: svg-comment-empty-desc.svg: docs/probe/svg-comment-empty-desc.svg lacks role="img", <desc> ' + SVG_RULE],
+        [': 48 words of prose']),
     'tilde-block-words': (
         [],
         [': 7 words of prose']),
@@ -130,6 +137,8 @@ try:
         f.write('# No page is listed: the fixtures are short.\n')
     for page in pages:
         shutil.copy(os.path.join(FIXTURES, page + '.md.txt'), os.path.join(repo, PROBE, page + '.md'))
+    for image in glob.glob(os.path.join(FIXTURES, '*.svg')):
+        shutil.copy(image, os.path.join(repo, PROBE))
 
     ok = True
     code, actual = run(repo, 'docs/scripts/check_docs.py')

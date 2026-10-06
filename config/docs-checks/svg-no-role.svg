@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" aria-labelledby="title desc">
+  <title id="title">No role</title>
+  <desc id="desc">The title and desc are here; role="img" is not on the svg tag</desc>
+  <rect width="10" height="10" fill="#0f172a"/>
+</svg>

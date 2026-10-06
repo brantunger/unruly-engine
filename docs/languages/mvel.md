@@ -1,8 +1,8 @@
 # ⚡ MVEL
 
-MVEL is the engine's default expression language: a rule is written in MVEL when its `language` is unset or
-`"mvel"`. MVEL looks like Java, with extra operators and looser typing; see
-[MVEL gotchas](mvel-gotchas.md).
+A rule is written in MVEL when its `language` is `"mvel"`, or unset and MVEL is the engine's
+[default language](../glossary.md#default-language). MVEL looks like Java, with extra operators and looser typing;
+see [MVEL gotchas](mvel-gotchas.md).
 
 [← Documentation index](../README.md)
 
@@ -53,7 +53,7 @@ Every example below was checked against the engine. For the full language, see t
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
 An action changes `output` in place, by calling a method, such as `output.setInterestRate(4.5)` or `output.put(...)`,
-or by assigning a property. An assignment such as `output.approved = true` isn't always the same as calling the
+or assigning a property. An assignment such as `output.approved = true` isn't always the same as calling the
 setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
 each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
 
@@ -64,8 +64,8 @@ So does setting a property the output has no setter or public field for, such as
 that isn't a `Map`: `output.approved = true` fails with `could not access property (approved) in: java.lang.Boolean`,
 which names the value's type, not the output's.
 
-Inside a `def` function, `output = ...` doesn't fail: it creates a variable local to the function, and later
-`output.put(...)` calls in that function change the discarded object.
+Inside a `def` function, `output = ...` doesn't fail: it creates a function-local variable, and the function's
+later `output.put(...)` calls change the discarded object.
 
 Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates a variable local to the action:
 the fact keeps its value, and later rules still see it.
@@ -137,7 +137,7 @@ rule; so does this one for a name over about 1,000 bytes
 
 ## 📁 Facts in MVEL
 
-A rule refers to a fact by its name, as a variable; see also [Facts](../facts.md).
+A rule refers to a fact by its name, as a variable; see [Facts](../facts.md).
 `applicant.creditScore` reads a public getter, a record accessor or a public field. A
 misspelled property, or a private field with no getter, fails the run with
 `could not access: creditScor; in class: com.example.Applicant`.
@@ -188,7 +188,7 @@ import. The message says why, even for a class name:
 
 ### Null and missing facts
 
-MVEL treats a fact whose value is `null` differently from a missing one:
+A fact set to `null` and a missing one differ:
 
 | Condition | Fact `x` is `null` | No fact `x` |
 | --- | --- | --- |
@@ -205,7 +205,7 @@ a `RuleExecutionException` whose message has one of these, the second when the r
 unable to resolve token: unable to resolve variable 'x'
 ```
 
-Check with `isdef` for a fact that may be left out, and for `null` before reading its property:
+Check with `isdef` for a fact that may be missing, and for `null` before reading its property:
 
 ```java
 .condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
@@ -218,11 +218,11 @@ A `Map` fact works the same way: a missing key is an error, not `null`, as it's 
 | `order.missing == null` | Fails the run: `could not access: missing; in class: java.util.HashMap` |
 | `order['missing'] == null` | `true` |
 | `order.containsKey('missing')` | `false` |
-| `order.note == null`, when `note` is in the map with the value `null` | `true` |
+| `order.note == null`, when the map holds `note` as `null` | `true` |
 
 ## 🦺 Strong typing
 
-MVEL can compile rules against the facts an engine declares, so a misspelled property or an unknown fact fails
+MVEL can compile rules against an engine's declared facts, so a misspelled property or an unknown fact fails
 `load()` with its line and column, not a run. Turn it on with MVEL's one option:
 
 ```java
@@ -281,7 +281,8 @@ both at line and column 0; `x == 1 && in` gets `malformed expression` at MVEL's 
 position keep its description, such as `illegal use of reserved word: in`.
 
 **MVEL shortens the description once**, never inside an escape: the escaped message from `failed to compile` on
-fits 1,000 characters. `(N more characters)` counts characters before escaping; an escape the text holds counts as
+fits 1,000 characters, as does each rejection of a fact name, an option's name or value, a declared or output
+type, or language imports. `(N more characters)` counts characters before escaping; an escape the text holds counts as
 written, as for a [nested failure](../nested-runs.md#-what-is-logged).
 
 **A description of `null` ends with the root cause**, unless MVEL's own parser failed. The first rule to use, by
@@ -304,7 +305,7 @@ or declare variables; use == to compare.`
 its class instead, such as Math.max(a, b).` See
 [What rules can change](../writing-rules.md#-what-rules-can-change).
 
-**A call through a class named with its package with something glued to it**, such as `java.lang.Math.abs(1)x`,
+**A call through a package-qualified class with something glued to it**, such as `java.lang.Math.abs(1)x`,
 fails `load()` with `MVEL's analysis went round in a loop, ...` at line and column 0 after MVEL asked for the
 class loader up to 2,132 + the expression's length times from one place: milliseconds, or 48 s for a 4,000-character
 argument 50 brackets deep.
@@ -341,11 +342,11 @@ A copy is built lazily:
 - The first session to run an expression takes the form `load()` compiled.
 - As it runs, MVEL generates accessor classes for that session alone.
 
-A copy an engine makes when the rules load, with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load), is
+A copy made at load, with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load), is
 different: `load()` compiles every condition and action into it, reached or not, and the first such copy takes the forms
 `load()` compiled. Its accessor classes are still generated as it runs.
 
-So an [extra copy](../glossary.md#extra-copy) pays that price and throws it away when the run ends. A rule that
+An [extra copy](../glossary.md#extra-copy) pays that price and throws it away when the run ends. A rule that
 keeps making them, by starting a run of the same engine on another thread under a full
 [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and regenerates accessors each time, churning
 CPU and metaspace.

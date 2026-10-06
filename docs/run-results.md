@@ -57,9 +57,9 @@ runs with the same tags are equal, because `startedAt()` is left out. Evaluation
 not their `detail()`.
 
 The output's own `equals` decides: an output class that doesn't override it makes results from two runs unequal,
-since the factory returns a new object each run, unless neither fired a rule. An array output compares by reference.
-A result's hash includes its output's, so don't change an output while its result is in a `HashSet` or is a
-`HashMap` key.
+since the output supplier returns a new object each run, unless neither fired a rule. An array output compares by
+reference. A result's hash includes its output's, so don't change an output while its result is in a `HashSet` or is
+a `HashMap` key.
 
 A run that fails throws, so there's never a partial result, and no evaluation is reported for a rule that failed.
 
