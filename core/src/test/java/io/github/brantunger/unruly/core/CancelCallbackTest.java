@@ -82,8 +82,37 @@ class CancelCallbackTest {
     /** Waits for an action registered for a deadline after every one the test registered before, to have run. */
     private static void awaitFence(Duration fromNow) {
         CountDownLatch fence = new CountDownLatch(1);
-        context(fromNow).onCancel(fence::countDown);
+        scheduled(fromNow, fence::countDown);
         await(fence);
+    }
+
+    /**
+     * Hands an action to the timer as onCancel does once it has found the deadline not yet passed, for a test of what
+     * the timer does rather than of that check: a deadline that has passed by then, on a slow machine, still leaves it
+     * to the timer, where onCancel would run it at once on the calling thread.
+     */
+    private static CancelRegistration scheduled(Duration fromNow, Runnable action) {
+        CancelTimer.Registration registration = CancelTimer.registration(action, Deadline.from(fromNow));
+        CancelTimer.schedule(registration);
+        return registration;
+    }
+
+    /**
+     * Holds the timer, once it has started an action of its own, until what this returns is run, so it starts no
+     * action meanwhile however slow the machine: what the test does in between happens before any deadline is acted
+     * on. A watch of the test's own can't be set until then. Running what it returns again does nothing more.
+     */
+    private static Runnable holdTimer() {
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        CountDownLatch release = new CountDownLatch(1);
+        Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(release));
+        CountDownLatch held = new CountDownLatch(1);
+        scheduled(Duration.ZERO, held::countDown);
+        await(held);
+        return () -> {
+            release.countDown();
+            keeper.close();
+        };
     }
 
     private static RulesEngine<Map<String, Object>> engine(CompiledAction action, Duration timeout) {
@@ -106,7 +135,7 @@ class CancelCallbackTest {
         AtomicReference<Thread> ranOn = new AtomicReference<>();
         long start = System.nanoTime();
 
-        try (CancelRegistration registration = context(Duration.ofMillis(200)).onCancel(() -> {
+        try (CancelRegistration registration = scheduled(Duration.ofMillis(200), () -> {
             ranOn.set(Thread.currentThread());
             runs.incrementAndGet();
             ran.countDown();
@@ -128,11 +157,11 @@ class CancelCallbackTest {
         CountDownLatch otherRan = new CountDownLatch(1);
         CountDownLatch blockerDone = new CountDownLatch(1);
         // Blocks until the action due after it has run: a timer that waited for it would never run that one.
-        context(Duration.ofMillis(50)).onCancel(() -> {
+        scheduled(Duration.ofMillis(50), () -> {
             await(otherRan);
             blockerDone.countDown();
         });
-        context(Duration.ofMillis(150)).onCancel(otherRan::countDown);
+        scheduled(Duration.ofMillis(150), otherRan::countDown);
 
         await(otherRan);
         await(blockerDone);
@@ -218,10 +247,18 @@ class CancelCallbackTest {
             + " nothing")
     void closedBeforeTheDeadline() throws InterruptedException {
         AtomicBoolean ran = new AtomicBoolean();
-        CancelRegistration registration = context(Duration.ofMillis(100)).onCancel(() -> ran.set(true));
+        // Held while it's closed, so its deadline can't be acted on first, however slow the machine; let go whatever
+        // happens, so a failure here leaves no timer held for the next test.
+        Runnable release = holdTimer();
+        CancelRegistration registration;
+        try {
+            registration = scheduled(Duration.ofMillis(100), () -> ran.set(true));
 
-        registration.close();
-        registration.close();
+            registration.close();
+            registration.close();
+        } finally {
+            release.run();
+        }
         awaitFence(Duration.ofMillis(300));
 
         assertFalse(ran.get(), "the action ran after its registration was closed");
@@ -236,7 +273,7 @@ class CancelCallbackTest {
         CountDownLatch registered = new CountDownLatch(1);
         CountDownLatch ran = new CountDownLatch(1);
         AtomicInteger runs = new AtomicInteger();
-        self.set(context(Duration.ofMillis(100)).onCancel(() -> {
+        self.set(scheduled(Duration.ofMillis(100), () -> {
             await(registered);
             runs.incrementAndGet();
             self.get().close();
@@ -254,19 +291,26 @@ class CancelCallbackTest {
     @DisplayName("closing a registration is safe from many threads at once")
     void closedFromManyThreads() throws InterruptedException {
         AtomicBoolean ran = new AtomicBoolean();
-        CancelRegistration registration = context(Duration.ofMillis(200)).onCancel(() -> ran.set(true));
-        Thread[] closers = new Thread[8];
-        CountDownLatch go = new CountDownLatch(1);
-        for (int i = 0; i < closers.length; i++) {
-            closers[i] = new Thread(() -> {
-                await(go);
-                registration.close();
-            });
-            closers[i].start();
-        }
-        go.countDown();
-        for (Thread closer : closers) {
-            closer.join(TimeUnit.SECONDS.toMillis(10));
+        // Held while it's closed, so its deadline can't be acted on first, however slowly the threads start; let go
+        // whatever happens, so a failure here leaves no timer held for the next test.
+        Runnable release = holdTimer();
+        try {
+            CancelRegistration registration = scheduled(Duration.ofMillis(200), () -> ran.set(true));
+            Thread[] closers = new Thread[8];
+            CountDownLatch go = new CountDownLatch(1);
+            for (int i = 0; i < closers.length; i++) {
+                closers[i] = new Thread(() -> {
+                    await(go);
+                    registration.close();
+                });
+                closers[i].start();
+            }
+            go.countDown();
+            for (Thread closer : closers) {
+                closer.join(TimeUnit.SECONDS.toMillis(10));
+            }
+        } finally {
+            release.run();
         }
 
         awaitFence(Duration.ofMillis(400));
@@ -344,7 +388,7 @@ class CancelCallbackTest {
         String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
                 + " deadline failed: java.lang.OutOfMemoryError: at the deadline";
 
-        String logs = LogsUntil.logsUntil(expected, () -> context(Duration.ofMillis(50)).onCancel(() -> {
+        String logs = LogsUntil.logsUntil(expected, () -> scheduled(Duration.ofMillis(50), () -> {
             ranOn.set(Thread.currentThread());
             throw new OutOfMemoryError("at the deadline");
         }));
@@ -500,7 +544,7 @@ class CancelCallbackTest {
             Thread.currentThread().setContextClassLoader(new ClassLoader(null) {
             });
             keeper.set(context(Duration.ofHours(1)).onCancel(() -> fail("ran early")));
-            context(Duration.ofMillis(50)).onCancel(() -> {
+            scheduled(Duration.ofMillis(50), () -> {
                 seen.set(tenant.get());
                 loader.set(Thread.currentThread().getContextClassLoader());
                 ran.countDown();
@@ -511,7 +555,7 @@ class CancelCallbackTest {
         // A later run's action, on a timer tenant A started.
         AtomicReference<String> seenLater = new AtomicReference<>("not run");
         CountDownLatch later = new CountDownLatch(1);
-        context(Duration.ofMillis(50)).onCancel(() -> {
+        scheduled(Duration.ofMillis(50), () -> {
             seenLater.set(tenant.get());
             later.countDown();
         });
@@ -533,12 +577,16 @@ class CancelCallbackTest {
         CountDownLatch ran = new CountDownLatch(1);
         AtomicReference<Thread> started = new AtomicReference<>();
         AtomicReference<Throwable> failed = new AtomicReference<>();
-        // Once the exiting timer has given up its place, from another thread, as a run's would be.
+        // Once the exiting timer has given up its place, from another thread, as a run's would be. The action reads
+        // which timer serves it: it is pending while it runs, so that timer can't exit before the read, as it can
+        // before a read after the registration.
         Faults.watch(exiting, Faults.Step.CANCEL_TIMER_EXITED, () -> {
             Thread registering = new Thread(() -> {
                 try {
-                    context(Duration.ofMillis(50)).onCancel(ran::countDown);
-                    started.set(CancelTimer.runningThread());
+                    scheduled(Duration.ofMillis(50), () -> {
+                        started.set(CancelTimer.runningThread());
+                        ran.countDown();
+                    });
                 } catch (Throwable t) {
                     failed.set(t);
                 }
