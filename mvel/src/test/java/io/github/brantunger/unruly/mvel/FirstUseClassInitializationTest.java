@@ -23,11 +23,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * instead. So {@link MvelExpressionLanguage#prepare()}, which the engine calls when it builds an engine with MVEL,
  * initializes them, then evaluates a property read and a method call once through MVEL's public API, which loads
  * classes MVEL evaluates them with ahead of a first run, so a first run deep in a stack has fewer to load (#1042);
- * those evaluations initialize no class with a static initializer that it hasn't, which the test says rather than
- * checks. The test runs {@link FirstUseScenario} in a new JVM, as this JVM's other tests have initialized them already,
- * and reads the {@code Initializing '...'} lines that {@code -Xlog:class+init} prints, which end in {@code (no method)}
- * for a class without a static initializer. With MVEL's JIT on and off, it checks that the classes without a static
- * initializer that MVEL's first run used to load for its read and its call are initialized before any step.
+ * when the engine prepares MVEL, at {@code build()} or a first load, those evaluations initialize no class with a
+ * static initializer that it hasn't, which the test says rather than checks. A bare {@code prepare()} call in an
+ * otherwise empty JVM may also initialize JDK classes the reflective call needs. The test runs
+ * {@link FirstUseScenario} in a new JVM, as this JVM's other tests have initialized them already, and reads the
+ * {@code Initializing '...'} lines that {@code -Xlog:class+init} prints, which end in {@code (no method)} for a class
+ * without a static initializer. With MVEL's JIT on and off, it checks that the classes without a static initializer
+ * that MVEL's first run used to load for its read and its call are initialized before any step.
  *
  * <p>
  * Once the engines are built, MVEL's first steps may initialize no class with a static initializer at all, this

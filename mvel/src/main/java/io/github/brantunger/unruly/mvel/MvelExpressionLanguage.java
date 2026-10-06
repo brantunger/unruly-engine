@@ -120,12 +120,13 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * evaluates them with, which takes more stack than the engine checks a run for, so a first run deep in a stack
      * can fail its rule; loading them here leaves that run fewer to load, so it needs less stack. Not nothing: a rule's
      * first call of a method makes the JDK build the method's reflective accessor, which for a signature of a shape no
-     * call has had yet generates classes, and deep in a stack that can still overflow and fail the rule. Those
-     * evaluations initialize no class with a static initializer that this hasn't, so if they overflow, nothing is left
-     * unusable: they're skipped, and tried again by the next call, which the engine makes only for an engine whose
-     * builder names MVEL. Anything else they throw is thrown. Once it has succeeded, in the class loader that loaded
-     * this module, later calls return at once; calls made before that, such as two first calls at once, each do the
-     * work.
+     * call has had yet generates classes, and deep in a stack that can still overflow and fail the rule. When the
+     * engine prepares MVEL, at {@code build()} or a first load, those evaluations initialize no class with a static
+     * initializer that it hasn't, so if they overflow, nothing is left unusable: they're skipped, and tried again by
+     * the next call, which the engine makes only for an engine whose builder names MVEL. A bare {@code prepare()} call
+     * in an otherwise empty JVM may also initialize JDK classes the reflective call needs. Anything else they throw is
+     * thrown. Once it has succeeded, in the class loader that loaded this module, later calls return at once; calls
+     * made before that, such as two first calls at once, each do the work.
      */
     @Override
     public void prepare() {
@@ -190,9 +191,11 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     /**
      * Runs the warm-up of {@link #prepare()}, and tells whether it finished. One that overflowed is skipped: a
      * {@link StackOverflowError} it throws, or one anywhere in the cause chain of what it throws, as MVEL wraps one
-     * thrown in a method it calls. Its evaluations initialize no class with a static initializer that {@code prepare()}
-     * hasn't, so an overflow in them leaves nothing unusable, and the JVM's first run loads the classes they load
-     * instead, as it would without them. Anything else it throws is thrown as it is, so {@code prepare()} fails.
+     * thrown in a method it calls. When the engine prepares MVEL, at {@code build()} or a first load, its evaluations
+     * initialize no class with a static initializer that it hasn't, so an overflow in them leaves nothing unusable,
+     * and the JVM's first run loads the classes they load instead, as it would without them. A bare {@code prepare()}
+     * call in an otherwise empty JVM may also initialize JDK classes the reflective call needs. Anything else it
+     * throws is thrown as it is, so {@code prepare()} fails.
      *
      * @param warmUp The warm-up
      * @return {@code true} if it finished, {@code false} if it overflowed

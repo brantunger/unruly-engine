@@ -263,13 +263,41 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * expression, for {@link MvelExpressionLanguage#prepare()}: a JVM's first read and first call load classes MVEL
      * evaluates them with. With MVEL's own class loader as the thread's context class loader, as the static initializer
      * sets MVEL's optimizer up, so the expressions MVEL compiles here, and drops, hold no caller's class loader.
+     *
+     * <p>
+     * Each expression is compiled with {@code v} declared as a {@link WarmUpTarget}. MVEL types a name it has no type
+     * for as {@code Object}, and looks names made from a property read through it up as classes: for {@code v.ready},
+     * {@code v.ready}, {@code v$ready}, {@code v} and {@code java.lang.Object$ready}. A native image built with strict
+     * metadata throws for each such name it is asked through a class loader's {@code loadClass}, which fails
+     * {@code prepare()}. A rule's expressions make those lookups too, but through the rule list's
+     * {@link ExactNameClassLoader}, which refuses a name with no class file before asking its parent when that is one
+     * of the JDK's class loaders, as an image's application class loader is, and otherwise passes it on to the parent,
+     * which reports it as a {@link ClassNotFoundException}; here MVEL would ask the context class loader itself.
+     * </p>
      */
     static void warmUp() {
+        warmUp(mvelClassLoader());
+    }
+
+    /**
+     * Runs the warm-up of {@link #warmUp()} with a class loader of the caller's as the thread's context class loader,
+     * in place of MVEL's own. Only for tests: the engine warms up with {@link #warmUp()}.
+     *
+     * @param loader The class loader to set while MVEL compiles and runs the expressions
+     */
+    static void warmUp(ClassLoader loader) {
         Map<String, Object> variables = Map.of("v", new WarmUpTarget());
-        withClassLoader(mvelClassLoader(), () -> {
-            MVEL.executeExpression(MVEL.compileExpression("v.ready"), (Object) null, variables);
-            return MVEL.executeExpression(MVEL.compileExpression("v.check()"), (Object) null, variables);
+        withClassLoader(loader, () -> {
+            warmUpEvaluate("v.ready", variables);
+            return warmUpEvaluate("v.check()", variables);
         });
+    }
+
+    // Compiles an expression of the warm-up, with v's type declared, in a context of its own, and runs it once.
+    private static Object warmUpEvaluate(String source, Map<String, Object> variables) {
+        ParserContext context = new ParserContext();
+        context.addInput("v", WarmUpTarget.class);
+        return MVEL.executeExpression(MVEL.compileExpression(source, context), (Object) null, variables);
     }
 
     /**

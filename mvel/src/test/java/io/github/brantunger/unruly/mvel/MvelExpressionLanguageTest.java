@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mvel2.MVEL;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -83,6 +84,21 @@ class MvelExpressionLanguageTest {
 
         assertTrue(MvelExpressionLanguage.warmedUp(MvelExpression::warmUp));
         assertSame(previous, thread.getContextClassLoader());
+    }
+
+    @Test
+    @DisplayName("prepare's warm-up looks up no class by a name made from its variable, which a native image built "
+            + "with strict metadata fails for (#1042)")
+    void warmUpLooksUpNoNameMadeFromItsVariable() {
+        RecordingClassLoader loader = new RecordingClassLoader();
+
+        MvelExpression.warmUp(loader);
+        // MVEL looked v.ready up as a class, then as v$ready, v and java.lang.Object$ready, until the warm-up declared
+        // v's type. In a native image the application's class loader throws for a name it has no metadata for.
+        assertEquals(List.of(), loader.loadedClasses.stream()
+                .filter(name -> loader.getParent().getResource(name.replace('.', '/') + ".class") == null)
+                .distinct()
+                .toList(), "names looked up that no class file has");
     }
 
     /** A value whose method overflows, as one called deep in a stack may. */
