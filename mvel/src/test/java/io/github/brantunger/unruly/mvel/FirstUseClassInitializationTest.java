@@ -21,15 +21,16 @@ import static org.junit.jupiter.api.Assertions.*;
  * first load that overflowed in this module's {@code FactNames} made every later MVEL engine fail, and a failing load
  * that overflowed in {@code MvelCompileErrors} made every later compile error report {@link NoClassDefFoundError}
  * instead. So {@link MvelExpressionLanguage#prepare()}, which the engine calls when it builds an engine with MVEL,
- * initializes them, then evaluates a property read and a method call once through MVEL's public API, which loads
- * classes MVEL evaluates them with ahead of a first run, so a first run deep in a stack has fewer to load (#1042);
+ * initializes them, then evaluates a property read, a method call and a method call with a literal argument once each
+ * through MVEL's public API, which loads classes MVEL evaluates them with ahead of a first run, so a first run deep in
+ * a stack has fewer to load (#1042, #1066);
  * when the engine prepares MVEL, at {@code build()} or a first load, those evaluations initialize no class with a
  * static initializer that it hasn't, which the test says rather than checks. A bare {@code prepare()} call in an
  * otherwise empty JVM may also initialize JDK classes the reflective call needs. The test runs
  * {@link FirstUseScenario} in a new JVM, as this JVM's other tests have initialized them already, and reads the
  * {@code Initializing '...'} lines that {@code -Xlog:class+init} prints, which end in {@code (no method)} for a class
  * without a static initializer. With MVEL's JIT on and off, it checks that the classes without a static initializer
- * that MVEL's first run used to load for its read and its call are initialized before any step.
+ * that MVEL's first run used to load for its read, its call and its literal argument are initialized before any step.
  *
  * <p>
  * Once the engines are built, MVEL's first steps may initialize no class with a static initializer at all, this
@@ -58,7 +59,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
-        + "features and the JIT it leaves to their first use (#945, #1012, #1042)")
+        + "features and the JIT it leaves to their first use (#945, #1012, #1042, #1066)")
 class FirstUseClassInitializationTest {
 
     private static final String INITIALIZING = "Initializing '";
@@ -84,10 +85,12 @@ class FirstUseClassInitializationTest {
     // Where whereInitialized says a class was initialized before the engines were built.
     private static final String WHEN_BUILT = "when built";
     // Classes without a static initializer that MVEL evaluates a property read and a method call with, which a JVM's
-    // first run initialized until prepare() evaluated one of each (#1042), with MVEL's JIT on and off. Some of them
-    // only: the evaluations initialize others too, such as DynamicGetAccessor with the JIT on, and the classes MVEL
-    // compiles the expressions with.
+    // first run initialized until prepare() evaluated one of each (#1042), and the class a call's literal argument is
+    // compiled to, which a JVM's first run with one loaded deep in a stack until prepare() made such a call (#1066),
+    // with MVEL's JIT on and off. Some of them only: the evaluations initialize others too, such as DynamicGetAccessor
+    // with the JIT on, and the classes MVEL compiles the expressions with.
     private static final List<String> BY_EVALUATING = List.of(
+            "org/mvel2/compiler/ExecutableLiteral",
             "org/mvel2/integration/impl/BaseVariableResolverFactory",
             "org/mvel2/integration/impl/CachingMapVariableResolverFactory",
             "org/mvel2/integration/impl/SimpleSTValueResolver",
@@ -125,14 +128,14 @@ class FirstUseClassInitializationTest {
 
     @Test
     @DisplayName("with MVEL's JIT on, building an engine with MVEL initializes these classes a first run evaluates a "
-            + "property read and a method call with (#1042)")
+            + "property read, a method call and a literal argument with (#1042, #1066)")
     void evaluatingClassesLoadedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
         assertEquals(whenBuilt(BY_EVALUATING), whereInitialized(dir, BY_EVALUATING, "-Dmvel2.disable.jit=false"));
     }
 
     @Test
     @DisplayName("with MVEL's JIT off, building an engine with MVEL initializes these classes a first run evaluates a "
-            + "property read and a method call with (#1042)")
+            + "property read, a method call and a literal argument with (#1042, #1066)")
     void evaluatingClassesLoadedWhenBuiltWithoutJit(@TempDir Path dir) throws IOException, InterruptedException {
         assertEquals(whenBuilt(BY_EVALUATING), whereInitialized(dir, BY_EVALUATING, "-Dmvel2.disable.jit=true"));
     }

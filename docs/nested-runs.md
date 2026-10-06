@@ -59,8 +59,9 @@ fails with `a nested run() failed: ...`, with the nested failure in its cause ch
 
 ## 🪜 A first build or load deep in a stack
 
-A nested run or load can start deep in a stack. A `StackOverflowError` inside a class's static initializer leaves the
-class unusable for the JVM's life: every later use throws `NoClassDefFoundError`.
+A nested run or load can start deep in a stack; a language's first runs [check more room](exceptions-by-method.md).
+A `StackOverflowError` inside a class's static initializer leaves the class unusable for the JVM's life: every later
+use throws `NoClassDefFoundError`.
 
 **The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
 the JDK's, such as the clock, the SHA-256 digest and streams, that an engine's calls use. Without room, `build()`
@@ -100,8 +101,8 @@ the documented ones below. HotSpot records an overflow initializing one with an 
 first build initializes, keeping it usable.
 
 A path they don't take may initialize one, as may a JDK other than 21 and 25, whose classes the engine names, skipping
-missing ones; a native image names none. Nothing prepares MVEL's JIT, a rule's first inline list or map, `new` or
-`soundslike` ([MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack)), or the logging
+missing ones; a native image names none. Nothing prepares
+[what MVEL leaves to first use](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack), or the logging
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`.
 
 ## 🪵 What is logged

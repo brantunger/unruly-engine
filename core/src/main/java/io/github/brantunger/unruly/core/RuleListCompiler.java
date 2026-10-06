@@ -347,6 +347,21 @@ final class RuleListCompiler {
         }
 
         /**
+         * Returns the languages the compiled rules are written in, whose first runs the runs of a loaded rule list
+         * make room for (see {@link RuleSet#firstRun()}): not the default language a rule list without rules is
+         * checked against, as no action of it can run.
+         *
+         * @return The languages, by name; empty for a rule list without rules
+         */
+        Map<String, ExpressionLanguage> usedLanguages() {
+            Map<String, ExpressionLanguage> usedLanguages = new HashMap<>();
+            for (CompiledRule rule : compiled) {
+                usedLanguages.put(rule.language(), languages.languages().get(rule.language()));
+            }
+            return usedLanguages;
+        }
+
+        /**
          * Returns the names of the facts the rules of each compiler read, for the compilers that can tell, which the
          * runs of a loaded rule list ask only about those names.
          *

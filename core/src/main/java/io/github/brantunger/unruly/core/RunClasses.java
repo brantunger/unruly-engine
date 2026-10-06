@@ -207,8 +207,9 @@ final class RunClasses {
     private static List<Class<?>> engineClasses() {
         return List.of(AbstractRulesEngine.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
-                EngineCompileContext.Warnings.class, Prepared.class, LoggedFailures.class, Faults.Step.class,
-                Failures.class, ExpressionKind.class, InvalidExpressionException.Issue.Severity.class, RuleSet.class,
+                EngineCompileContext.Warnings.class, Prepared.class, Ran.class, LoggedFailures.class,
+                Faults.Step.class, Failures.class, ExpressionKind.class,
+                InvalidExpressionException.Issue.Severity.class, RuleSet.class,
                 FlightRecorderEvents.class, Cancellation.class, Cancellation.Reason.class, Deadline.class,
                 RuleSet.Kind.class, RuleSet.Held.class, RuleSet.Source.class, RuleSet.Warning.class, Closing.class,
                 Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
@@ -256,6 +257,25 @@ final class RunClasses {
         };
 
         private Prepared() {
+        }
+    }
+
+    /**
+     * Whether a run has returned normally after running an action of a rule in a language of each class, which tells
+     * a run whether it needs the room for a language's first run (see {@link RuleSet#firstRun()}). A class value, so
+     * it keeps no class from being unloaded. In a class of its own, initialized with the engine's, as
+     * {@link Prepared} is.
+     */
+    static final class Ran {
+
+        static final ClassValue<AtomicBoolean> CLASSES = new ClassValue<>() {
+            @Override
+            protected AtomicBoolean computeValue(Class<?> type) {
+                return new AtomicBoolean();
+            }
+        };
+
+        private Ran() {
         }
     }
 }

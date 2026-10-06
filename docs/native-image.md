@@ -109,8 +109,8 @@ registers what MVEL itself needs with the JIT off: the no-argument constructor o
 `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer`, and `org.mvel2.asm.ClassWriter`, a class MVEL looks up
 when it starts. Without that entry, an image built with [strict metadata](#-strict-metadata) logs a `WARNING` with a
 stack trace there. It also registers `io.github.brantunger.unruly.mvel.warmup.WarmUpTarget`, the engine's own class that
-preparing MVEL reads a property of and calls a method on. `native-image` reads the file from the class path; you do
-nothing.
+preparing MVEL reads a property of and calls two methods on, one with a `String` argument. `native-image` reads the
+file from the class path; you do nothing.
 
 **What your application registers.** Everything your rules reach, in your own
 `src/main/resources/META-INF/native-image/<group>/<artifact>/reflect-config.json`, which `native-image` also finds on

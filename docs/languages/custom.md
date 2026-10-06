@@ -240,7 +240,8 @@ public void prepare() {
     // StackOverflowError and skip itself, as MVEL's does. A throw fails build() unchanged, or, at a first use, the
     // rules in this language, as a failing newCompiler() does: "The 'my' expression language failed to prepare: ...".
     // The next use prepares again. It runs on the thread of that build(), load() or validate(), and may run on several
-    // threads at once.
+    // threads at once. Until a run that fired an action of this language class's rules returns normally, the engine
+    // checks runs for more room, for the classes a first call may generate; that covers some first calls, not all.
     MethodHandles.Lookup lookup = MethodHandles.lookup();
     for (Class<?> type : List.of(MyParser.class, MyExpression.class)) {   // yours, and your libraries' classes
         try {

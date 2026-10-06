@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -132,6 +134,10 @@ final class RuleSet {
     // tell read, and the names the languages the rules use reserve only for the rule lists that use them.
     private final Map<String, Set<String>> namesRead;
     private final Map<String, String> reservedNames;
+    // Whether a run has finished with a language of each class these rules use, the flags of RunClasses.Ran, read
+    // once here so a run reads no class value: in a list for firstRun(), and by language name for ran().
+    private final List<AtomicBoolean> languagesRan;
+    private final Map<String, AtomicBoolean> ranByLanguage;
     // Identify these rules, and when they were loaded, for RulesEngine.rules() and every run's result.
     private final String ruleChecksum;
     private final Instant loadTime;
@@ -303,7 +309,7 @@ final class RuleSet {
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
             CopyPermits permits, long stallWindowMillis, Queue<Map<String, Session>> idle) {
-        this(compiledRules, compilers, Map.of(), Map.of(), limit, permits, stallWindowMillis, idle);
+        this(compiledRules, compilers, Map.of(), Map.of(), Map.of(), limit, permits, stallWindowMillis, idle);
     }
 
     /**
@@ -318,24 +324,32 @@ final class RuleSet {
      *                          that can tell; empty when none can
      * @param reservedFactNames The language that reserves each name, by name, of the languages the rules use that
      *                          reserve their names only for the rule lists that use them; empty when none does
+     * @param languages         The languages the rules use, by name, whose first runs {@link #firstRun()} tells of
      * @param limit             How many copies runs may hold at once, and which runs that applies to
      * @param permits           The permits for {@code limit}, which other rule sets may share
      * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
-            Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames, CopyLimit limit,
-            CopyPermits permits, long stallWindowMillis) {
-        this(compiledRules, compilers, namesRead, reservedFactNames, limit, permits, stallWindowMillis,
+            Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames,
+            Map<String, ExpressionLanguage> languages, CopyLimit limit, CopyPermits permits, long stallWindowMillis) {
+        this(compiledRules, compilers, namesRead, reservedFactNames, languages, limit, permits, stallWindowMillis,
                 new ConcurrentLinkedQueue<>());
     }
 
     private RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
-                    Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames, CopyLimit limit,
-                    CopyPermits permits, long stallWindowMillis, Queue<Map<String, Session>> idle) {
+                    Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames,
+                    Map<String, ExpressionLanguage> languages, CopyLimit limit, CopyPermits permits,
+                    long stallWindowMillis, Queue<Map<String, Session>> idle) {
         this.compiledRules = List.copyOf(compiledRules);
         this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
         this.namesRead = Map.copyOf(namesRead);
         this.reservedNames = Map.copyOf(reservedFactNames);
+        Map<String, AtomicBoolean> ran = new HashMap<>();
+        for (Map.Entry<String, ExpressionLanguage> language : languages.entrySet()) {
+            ran.put(language.getKey(), RunClasses.Ran.CLASSES.get(language.getValue().getClass()));
+        }
+        this.ranByLanguage = Map.copyOf(ran);
+        this.languagesRan = List.copyOf(ran.values());
         this.ruleChecksum = Checksums.ofRules(this.compiledRules);
         this.loadTime = Instant.now();
         this.copyLimit = limit;
@@ -390,6 +404,45 @@ final class RuleSet {
      */
     Map<String, Set<String>> factNamesRead() {
         return namesRead;
+    }
+
+    /**
+     * Tells whether a run of these rules needs the room for a language's first run, which
+     * {@link StackHeadroom#checkFirstRun()} checks: whether a language they use is of a class that no run has finished
+     * with yet in this JVM, as {@link #ran(List)} records it. A run that reads this while another records it may still
+     * find it {@code true}, and only checks more room than it needs. A rule list that uses a language none of whose
+     * actions ever completes in a run that returns (its rules never match, or its runs always throw) needs the room on
+     * every run.
+     *
+     * @return {@code true} if a language these rules use hasn't finished a run
+     */
+    boolean firstRun() {
+        for (AtomicBoolean ran : languagesRan) {
+            if (!ran.get()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Records that a run of these rules has finished for each of {@code languages}, so the runs of any rule list that
+     * uses a language of the same class no longer need the room for its first run (see {@link #firstRun()}). The
+     * engine calls it when a run that needed that room has returned normally, with the languages of the rules whose
+     * actions ran to completion. The room is for any first call the run makes, its conditions' too; an action that ran
+     * to completion is the sign taken that the run made its language's first calls. A run that threw, whatever it
+     * threw, records nothing, and a language none of whose actions the run ran isn't recorded. The run's first calls
+     * are those of the rules it ran, not every shape its language's rules call.
+     *
+     * @param languages The names of the languages; a name these rules don't use is ignored
+     */
+    void ran(List<String> languages) {
+        for (String language : languages) {
+            AtomicBoolean ran = ranByLanguage.get(language);
+            if (ran != null && !ran.get()) {
+                ran.set(true);
+            }
+        }
     }
 
     /**

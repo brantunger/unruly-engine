@@ -23,6 +23,12 @@
       {
         "name": "check",
         "parameterTypes": []
+      },
+      {
+        "name": "accepts",
+        "parameterTypes": [
+          "java.lang.String"
+        ]
       }
     ]
   }

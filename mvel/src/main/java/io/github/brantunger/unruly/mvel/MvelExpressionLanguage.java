@@ -121,23 +121,26 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * compiled before it compiles it, so a compile that fails, such as one that overflows deep in a stack, fails that
      * run and isn't tried again: the accessor stays reflective, slower but correct. If the overflow strikes a class's
      * static initializer, of ASM's or the JDK's, that class stays unusable for the JVM's life, and every other
-     * accessor's first compile fails one run the same way. Then it evaluates a property read and a method call once,
-     * through MVEL's public API, on a value of this module's own. A JVM's first read and first call load classes MVEL
-     * evaluates them with, which takes more stack than the engine checks a run for, so a first run deep in a stack
-     * can fail its rule; loading them here leaves that run fewer to load, so it needs less stack. Not nothing: a rule's
-     * first call of a method makes the JDK build the method's reflective accessor, which for a signature of a shape no
-     * call has had yet generates classes, and deep in a stack that can still overflow and fail the rule. When the
-     * engine prepares MVEL, at {@code build()} or a first load, those evaluations initialize no class with a static
-     * initializer that it hasn't, so if they overflow, nothing is left unusable: they're skipped, and tried again by
-     * the next call, which the engine makes only for an engine whose builder names MVEL. A bare {@code prepare()} call
-     * in an otherwise empty JVM may also initialize JDK classes the reflective call needs. Anything else they throw is
-     * thrown. Once it has succeeded, in the class loader that loaded this module, later calls return at once; calls
-     * made before that, such as two first calls at once, each do the work.
+     * accessor's first compile fails one run the same way. Then it evaluates a property read, a method call and a
+     * method call with a literal argument once each, through MVEL's public API, on a value of this module's own. A
+     * JVM's first read, first call and first literal argument load classes MVEL evaluates them with, which takes more
+     * stack than {@code run()}'s own check of the room makes sure of, so a first run deep in a stack can fail its rule;
+     * loading them here leaves that run fewer to load, so it needs less stack. Not nothing: a rule's first call of a
+     * method makes the JDK build the method's reflective accessor, which for a signature of a shape no call has had yet
+     * generates classes, and deep in a stack that can still overflow and fail the rule. Until a run returns normally
+     * having run an action of an MVEL rule, the engine checks runs for more room, which covered a first call of one
+     * method in the shapes measured, one with a {@code new} or a call among its arguments too, but not deeper nesting.
+     * When the engine prepares MVEL, at {@code build()} or a first load, those evaluations initialize no class with a
+     * static initializer that it hasn't, so if they overflow, nothing is left unusable: they're skipped, and tried
+     * again by the next call, which the engine makes only for an engine whose builder names MVEL. A bare
+     * {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes the reflective call needs.
+     * Anything else they throw is thrown. Once it has succeeded, in the class loader that loaded this module, later
+     * calls return at once; calls made before that, such as two first calls at once, each do the work.
      */
     @Override
     public void prepare() {
-        // Once: the last steps read a throwable's stack trace and compile and run two expressions, which cost more than
-        // finding a class initialized already, and an engine that names MVEL calls this on every build.
+        // Once: the last steps read a throwable's stack trace and compile and run three expressions, which cost more
+        // than finding a class initialized already, and an engine that names MVEL calls this on every build.
         if (prepared) {
             return;
         }
@@ -159,9 +162,9 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // A run whose rule calls code that throws reads the stack trace of what it threw, which initializes the JDK's
         // classes that describe a frame of one of its modules, so this reads one created in a method of the JDK's.
         ExceptionReads.stackTraceOf(Optional.<Throwable>empty().orElseGet(Throwable::new));
-        // A JVM's first property read and first method call load classes MVEL evaluates them with, which take more
-        // stack than a run's check makes sure of, so this evaluates one of each. Done only if it didn't overflow: the
-        // next call tries again.
+        // A JVM's first property read, first method call and first literal argument load classes MVEL evaluates them
+        // with, which take more stack than run()'s own check of the room makes sure of, so this evaluates one of each.
+        // Done only if it didn't overflow: the next call tries again.
         prepared = warmedUp(MvelExpression::warmUp);
     }
 
