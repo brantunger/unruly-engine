@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A comment before the root that holds a complete tag:
+<svg xmlns="http://www.w3.org/2000/svg" role="img"><title>Fake</title><desc>Fake</desc></svg> -->
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" aria-labelledby="title desc">
+  <title id="title">Comment before the root</title>
+  <desc id="desc">  </desc>
+  <rect width="10" height="10" fill="#0f172a"/>
+</svg>

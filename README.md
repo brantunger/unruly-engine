@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/banner.svg" alt="unruly-engine: a pure-Java rules engine powered by MVEL" width="100%">
+<img src="docs/images/banner.svg" alt="unruly-engine: a pure-Java rules engine for any language" width="100%">
 
 <br>
 

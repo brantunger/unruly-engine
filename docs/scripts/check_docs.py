@@ -6,7 +6,10 @@
 #   inside another attribute's value are never taken for a link (a tag split over two lines isn't checked);
 # - a link to https://github.com/brantunger/unruly-engine/blob/main/<page>.md#<anchor>, from a page, a .java file or
 #   the Javadoc overview, whose page or anchor doesn't exist on this branch;
-# - a table row holding `||` outside code, which is two rows joined into one line.
+# - a table row holding `||` outside code, which is two rows joined into one line;
+# - an SVG a link or <img src> points at whose root <svg> has no role="img", or no non-empty <title> or <desc> among
+#   its children (docs/contributing/style.md asks for all three). Not checked: an SVG shown only through
+#   <picture><source>, a raw.githubusercontent.com URL, or an <img> tag split over two lines.
 # Usage: python docs/scripts/check_docs.py  (from the repository root). Exit code 1 when anything is reported.
 import io
 import os
@@ -14,6 +17,7 @@ import re
 import subprocess
 import sys
 import unicodedata
+from xml.etree import ElementTree
 
 from fences import fence_flags
 
@@ -59,6 +63,7 @@ def outside_fences(path):
 
 pages = files('*.md')
 anchors = {}
+svg_gaps = {}
 for page in pages:
     seen, found = {}, set()
     for line in outside_fences(page):
@@ -71,11 +76,33 @@ for page in pages:
     anchors[page] = found
 
 
+def svg_problem(target):
+    """What is wrong with an SVG: "lacks" and what it lacks of role="img" on its root <svg> and a non-empty <title>
+    and <desc> among the root's children, or that it isn't well-formed XML; empty when nothing is. XML comments, the
+    XML declaration and a doctype are skipped, as a parser skips them."""
+    if target not in svg_gaps:
+        try:
+            root = ElementTree.parse(target).getroot()
+        except ElementTree.ParseError as e:
+            svg_gaps[target] = f"isn't well-formed XML: {e}"
+            return svg_gaps[target]
+        local = root.tag.rpartition('}')[2]
+        missing = [] if local == 'svg' and root.get('role') == 'img' else ['role="img"']
+        children = {child.tag.rpartition('}')[2]: ''.join(child.itertext()).strip() for child in reversed(root)
+                    if isinstance(child.tag, str)}
+        missing += [f'<{tag}>' for tag in ('title', 'desc') if not children.get(tag)]
+        svg_gaps[target] = 'lacks ' + ', '.join(missing) if missing else ''
+    return svg_gaps[target]
+
+
 def check_target(path, line, link, target, fragment):
     if not os.path.exists(target):
         report(path, line, f'{link}: no file {target}')
     elif fragment and target.endswith('.md') and fragment not in anchors.get(target, set()):
         report(path, line, f'{link}: no heading in {target} has the anchor #{fragment}')
+    elif target.lower().endswith('.svg') and svg_problem(target):
+        report(path, line, f'{link}: {target} {svg_problem(target)} (style.md: role="img", a <title> and a <desc>, '
+                           'neither empty)')
 
 
 def check_absolute(path, line, text):

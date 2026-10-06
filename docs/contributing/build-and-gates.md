@@ -148,12 +148,12 @@ so a second build reuses task outputs, including those of another branch, and th
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them; compilation stays on the Java 21 toolchain |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
-| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
+| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Passes only when `build` and `native-image` succeeded, or were skipped on a documentation-only pull request, and `docs-and-hygiene` succeeded. Any other result fails, such as that of a job cancelled before a runner took it; `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
-A pull request that changes only documentation skips the build matrix and `native-image`. That means every changed
-file is under `docs/` or ends in `.md`, and none is under a `src/` directory. The `changes` job decides that, on
+A pull request that changes only documentation skips the build matrix and `native-image`: every changed file is
+under `docs/` or ends in `.md`, and none is under a `src/` directory. The `changes` job decides that, on
 pull requests only. When it fails, the build and `native-image` run anyway, and a push never skips them.
 
 A new push to a pull request cancels the run it supersedes. A run on `main` is never cancelled once it has started:
@@ -175,7 +175,8 @@ actionlint                                        # needs shellcheck on the PATH
 ```
 
 `check_fixtures.py` checks both docs scripts' output and exit codes on the cases in `config/docs-checks/`. When you
-fix a script, add its case there as `<name>.md.txt` and the expected output to `VERDICTS` in `check_fixtures.py`.
+fix a script, add its case there as `<name>.md.txt`, with its SVGs, and the expected output to `VERDICTS` in
+`check_fixtures.py`.
 
 CI downloads a pinned actionlint release, which Dependabot doesn't update: to bump it, change `ACTIONLINT_VERSION` in
 `ci.yml`, and take `ACTIONLINT_SHA256` from the `linux_amd64` line of the release's checksums file.

@@ -58,9 +58,9 @@ description, and not the match policy. `RuleSetInfo.checksum()` gives the engine
 
 ### Close
 
-`RulesEngine.close()` marks the engine closed and returns at once, without waiting for runs in progress. Runs already
-going finish with the rules they have; their sessions are closed as each one returns, and the compilers after the last.
-Afterwards `run()`, `runWithResult()`, `load()` and `rules()` throw `IllegalStateException`. See
+`RulesEngine.close()` marks the engine closed and returns at once. Runs already going finish with the rules they
+have; their sessions are closed as each one returns, and the compilers after the last. Afterwards `run()`,
+`runWithResult()`, `load()`, `validate()` and `rules()` throw `IllegalStateException`. See
 [Thread safety](thread-safety.md#closing).
 
 ### Compiled copy
@@ -242,8 +242,8 @@ object](engines-and-runs.md#-the-output-object).
 ### Output supplier
 
 The `Supplier` given to `firstMatch(...)`, `allMatches(...)` or `uniqueMatch(...)` that creates the
-[output object](#output-object). It must return a new, non-`null` object on every call. Javadoc calls it the output
-factory. See
+[output object](#output-object). It must return a new, non-`null` object on every call. The parameter is
+`outputFactory`, and the engine's messages say `Output factory`. See
 [The output object](engines-and-runs.md#-the-output-object).
 
 ### Priority

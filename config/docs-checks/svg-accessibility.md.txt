@@ -1,0 +1,9 @@
+# SVG title, desc and role
+
+<img src="svg-untitled.svg" alt="An SVG with role=img but no title or desc">
+
+![An SVG with a title and a desc but no role](svg-no-role.svg)
+
+<img src="svg-complete.svg" alt="An SVG with all three">
+
+<img src="svg-comment-empty-desc.svg" alt="A comment before the root, no role and an empty desc">

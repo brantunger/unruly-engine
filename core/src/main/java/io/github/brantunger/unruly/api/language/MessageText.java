@@ -26,10 +26,10 @@ import java.util.Objects;
  * itself, and the count of what was left out of escaped text counts escaped characters.</b> Where the 1,000-character
  * limit falls inside an escape the engine writes, or inside text that reads as one (a backslash and {@code n},
  * {@code r} or {@code t}, or a backslash, {@code u} and four lowercase hex digits), the engine leaves it out whole, so
- * up to 5 fewer characters show. The MVEL language escapes the messages
- * of its compile errors, and of its rejections of a fact name, an option's name or value, a declared or output type,
- * or any language imports, itself, but fits each escaped message in 1,000 characters, so the engine never shortens
- * one it reports directly.
+ * up to 5 fewer characters show. An exception: a language may escape such a message itself, as the MVEL language
+ * does (see
+ * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/mvel.md#-errors-when-rules-load">Errors
+ * when rules load</a>), when the escaped message fits in 1,000 characters; the engine then never shortens it.
  * </p>
  *
  * <p>

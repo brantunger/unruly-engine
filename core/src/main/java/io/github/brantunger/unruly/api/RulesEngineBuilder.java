@@ -586,8 +586,9 @@ public final class RulesEngineBuilder<O> {
      * copies without bounding them: the copies still grow with the runs in progress, so rules that wait — on I/O, a
      * database or another service — can make many. In a language such as MVEL, each copy recompiles every expression
      * and generates its own accessor classes. For a hard bound, use {@link #maxCopies(int)} sized for the runs you
-     * want waiting at once; with MVEL on JDK 21 to 23, below the number of carriers, since a limit at or above it can
-     * deadlock every carrier there, and so can this.
+     * want waiting at once; on JDK 21 to 23, with a language whose expressions contend on a lock the whole JVM shares,
+     * such as MVEL, below the number of carriers, since a limit at or above it can deadlock every carrier there, and so
+     * can this.
      * </p>
      *
      * <p>
@@ -615,18 +616,20 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * Making a copy compiles the rules again, in each language that keeps state between runs, and prepares its
      * sessions with {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#warmUp(
-     * io.github.brantunger.unruly.api.language.Session) warmUp}: MVEL compiles every condition and action into it.
-     * {@code load()} makes the copies one after another on its own thread, after compiling the rules and before
-     * runs can see them, so runs go on using the rules it replaces meanwhile, and {@code load()} takes that much
-     * longer. For example, 16 copies of 21 MVEL rules added about 65 ms to a reload that otherwise took 15 ms. Rules
-     * whose languages all keep no state between runs get one set of sessions that every run shares, whatever
-     * {@code count} is.
+     * io.github.brantunger.unruly.api.language.Session) warmUp}: a language such as MVEL compiles every condition
+     * and action into each session. {@code load()} makes the copies one after another on its own thread, after
+     * compiling the rules and before runs can see them, so runs go on using the rules it replaces meanwhile, and
+     * {@code load()} takes that much longer: <a href=
+     * "https://github.com/brantunger/unruly-engine/blob/main/docs/compiled-copies.md#making-copies-at-load">Making
+     * copies at load</a> gives a measurement. Rules whose languages all keep no state between runs get one set of
+     * sessions that every run shares, whatever {@code count} is.
      * </p>
      *
      * <p>
      * It's for runs on virtual threads on JDK 24 and later, where a run that makes a copy can keep its carrier while
-     * MVEL loads the classes it compiles. It doesn't stop MVEL generating accessor classes during a copy's first
-     * runs, and a copy made during a run, such as one for a run nested in another, is made as before. See
+     * a language that loads classes as it compiles, such as MVEL, loads them. It doesn't move what a language does
+     * during a copy's first runs, such as MVEL generating accessor classes, and a copy made during a run, such as one
+     * for a run nested in another, is made as before. See
      * <a href=
      * "https://github.com/brantunger/unruly-engine/blob/main/docs/virtual-threads.md#-class-loading-pins-carriers">
      * Class loading pins carriers</a>.

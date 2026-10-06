@@ -284,8 +284,9 @@ public interface RulesEngine<O> extends AutoCloseable {
      * run holding a copy of the rules finishes normally, and so does one waiting for a copy, because a rule list can't
      * close under a run that has begun borrowing from it: the languages' sessions are closed as each run returns,
      * unless another run is still waiting for a copy of the same rules and takes them, and their compilers once the
-     * last run has left and this method has closed the idle sessions. Afterwards, {@link #run(FactStore)} and
-     * {@link #load(List)} throw {@link IllegalStateException} — as does a run that had read the rules but had not yet
+     * last run has left and this method has closed the idle sessions. Afterwards, {@link #run(FactStore)},
+     * {@link #runWithResult(FactStore)}, {@link #load(List)}, {@link #validate(List)} and {@link #rules()} throw
+     * {@link IllegalStateException} — as does a run that had read the rules but had not yet
      * begun to borrow a copy when this method closed the engine, unless another run is still using the rules when it
      * borrows: then it uses them, as a run that read rules a reload replaced does, and its rules may run after this
      * method has returned. Otherwise it reads the rules again and finds a closed engine. A run whose thread is

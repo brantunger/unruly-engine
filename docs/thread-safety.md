@@ -76,8 +76,9 @@ stateDiagram-v2
         "load() must be called before run()"
     end note
     note right of Closed
-        run(), load() and rules() throw
-        IllegalStateException "The engine is closed",
+        run(), runWithResult(), load(), validate()
+        and rules() throw IllegalStateException
+        "The engine is closed",
         at once. Runs already going finish.
     end note
 ```
