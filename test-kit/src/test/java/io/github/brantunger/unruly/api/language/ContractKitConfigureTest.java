@@ -206,7 +206,8 @@ class ContractKitConfigureTest {
             }
         }
 
-        assertEquals(31, checks.size(), "the kit's checks");
+        // A floor, not the count: a check added to the kit needs no edit here, and one lost from it fails.
+        assertTrue(checks.size() >= 31, () -> "the kit has only " + checks.size() + " checks");
         assertEquals(List.of(), unconfigured, "checks that compiled without configure() or compileContext()");
         assertEquals(List.of(), createdNothing, "checks that ran and created no compiler");
     }

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly;
 
+import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,6 +21,8 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -41,6 +44,17 @@ class ModulePathTest {
             .filter(entry -> !entry.isEmpty())
             .map(Path::of)
             .toList();
+
+    /** The test kit's checks, counted as JUnit finds them. */
+    private static final long CHECKS = Arrays.stream(ExpressionLanguageContractTest.class.getDeclaredMethods())
+            .filter(method -> method.isAnnotationPresent(Test.class)).count();
+
+    /**
+     * The checks MVEL's contract test skips, in any order, since withTestKit prints them sorted. Each is named, so that
+     * a check that starts being skipped fails.
+     */
+    private static final Set<String> SKIPPED = Set.of("factNamesReadHoldsTheFactsRead", "sharedStateStaysLocal",
+            "unreservedOutputReadAsFact");
 
     @TempDir
     private Path work;
@@ -161,9 +175,8 @@ class ModulePathTest {
     void withTestKit() throws Exception {
         String output = run("withTestKit", "com.example.withtestkit", MODULE_PATH);
 
-        assertTrue(output.contains("Module path with the test kit: 28 contract checks passed, and"
-                + " [factNamesReadHoldsTheFactsRead, sharedStateStaysLocal, unreservedOutputReadAsFact] skipped"),
-                output);
+        assertTrue(output.contains("Module path with the test kit: " + (CHECKS - SKIPPED.size())
+                + " contract checks passed, and " + List.copyOf(new TreeSet<>(SKIPPED)) + " skipped"), output);
     }
 
     @Test
