@@ -408,7 +408,7 @@ can do decides whether a running rule can be stopped:
 | Language | Can it stop inside an expression? |
 | --- | --- |
 | MVEL | No. It has no hook inside a loop, so `while (true) {}` runs for ever. |
-| JEXL 3 | Yes, with [`JexlBuilder.cancellable(true)`](https://commons.apache.org/proper/commons-jexl/apidocs/org/apache/commons/jexl3/JexlOptions.html), whose interpreter stops for an interrupt. For a timeout, also set the flag its context's `JexlContext.CancellationHandle` returns after `context.timeLeft()`. |
+| JEXL 3 | Yes, with [`JexlBuilder.cancellable(true)`](https://commons.apache.org/proper/commons-jexl/apidocs/org/apache/commons/jexl3/JexlOptions.html), whose interpreter stops for an interrupt. For a timeout, see the example below. |
 | CEL | Bounded by construction: the language isn't Turing-complete, and cel-java supports cost limits. |
 
 Both contexts tell an expression where it stands:
@@ -486,6 +486,10 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 }
 ```
 
+Since 2.26.2, `FactProperties` restores the interrupt status when an accessor it calls is interrupted, so a rule's own
+`try`/`catch` or `pcall` around a fact read leaves `isCancelled()` `true`, and the run stops when the expression
+returns. Around any other blocking call, your runtime must restore it, as above, or such a catch swallows the stop.
+
 ## 🧵 Thread safety
 
 | What | The rule |
@@ -549,7 +553,7 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 | **A stateless session of your own** | `new MySession()` still gets copies and the copy limit | Return `Session.none()` |
 | **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
 | **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
-| **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore the interrupt status, or throw with an `InterruptedException` cause, unless you cancelled it for the deadline |
+| **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore it as [Stopping a run](#-stopping-a-run) shows, unless you cancelled it for the deadline |
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN. `runScoped` and `runScopedClosing` work there, with the limits in [Reading facts](#-reading-facts) | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **A closing init that waits for a worker** | The worker's `runScopedClosing` waits for that init to finish, so both threads hang for good: an interrupt doesn't free them, and the run never ends | Get the value before handing work off, and pass it to the worker |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |

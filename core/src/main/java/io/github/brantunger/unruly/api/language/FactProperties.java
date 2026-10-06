@@ -139,7 +139,9 @@ public final class FactProperties {
      *                                  sorted map refuses a string key, and reported as no such property, though
      *                                  a map that fails that way for a reason of its own reads the same. Once
      *                                  {@code containsKey} has found the key, whatever {@code get} throws is the
-     *                                  map's own failure
+     *                                  map's own failure. When the accessor was interrupted, the thread is left
+     *                                  interrupted, unless the getter threw a {@link VirtualMachineError}, so a
+     *                                  caller that catches this doesn't lose the interrupt
      */
     public static @Nullable Object read(Object target, String property) {
         Objects.requireNonNull(target, NULL_TARGET);
@@ -192,7 +194,9 @@ public final class FactProperties {
      * @throws IllegalStateException if {@code target} is a map whose {@code containsKey} throws, with what it threw
      *                               as the cause, as {@link #read} wraps it. A {@link ClassCastException} or
      *                               {@link NullPointerException} from it is taken for the map refusing a key of
-     *                               that type, as {@link #read} takes it, and answers {@code false}
+     *                               that type, as {@link #read} takes it, and answers {@code false}. When
+     *                               {@code containsKey} was interrupted, the thread is left interrupted, as
+     *                               {@link #read} leaves it
      */
     public static boolean has(Object target, String property) {
         Objects.requireNonNull(target, NULL_TARGET);
@@ -258,7 +262,9 @@ public final class FactProperties {
      *         iteration order
      * @throws NullPointerException  if {@code target} is {@code null}
      * @throws IllegalStateException if {@code target} is a map whose {@code keySet} or its {@code forEach} throws,
-     *                               with what it threw as the cause, as {@code Reading the keys of a ... failed}
+     *                               with what it threw as the cause, as {@code Reading the keys of a ... failed}.
+     *                               When it was interrupted, the thread is left interrupted, as {@link #read}
+     *                               leaves it
      */
     public static Set<String> propertyNames(Object target) {
         Objects.requireNonNull(target, NULL_TARGET);
@@ -346,7 +352,9 @@ public final class FactProperties {
      *                                  collection's {@code size()} and {@code forEach} count as accessors, so what they
      *                                  throw is wrapped too, as
      *                                  {@code Reading the entries of a ... failed} or
-     *                                  {@code Reading the elements of a ... failed}
+     *                                  {@code Reading the elements of a ... failed}. When an accessor was interrupted,
+     *                                  the thread is left interrupted, as {@link #read} leaves it, unless a getter
+     *                                  threw a {@link VirtualMachineError}
      */
     public static Map<String, @Nullable Object> toData(Object target, int depth) {
         Objects.requireNonNull(target, NULL_TARGET);

@@ -86,8 +86,10 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     @Override
     public ExpressionCompiler newCompiler(CompileContext context) {
         Objects.requireNonNull(context, "context must not be null");
-        rejectLanguageImports(context.languageImports());
+        // ErrorUtil first, so a missing mvel2 is named on every call: rejecting language imports uses FactNames, whose
+        // static initializer needs mvel2, so after the first call it would only say FactNames couldn't be initialized.
         initializeErrorReporting();
+        rejectLanguageImports(context.languageImports());
         return new MvelExpressionCompiler(new Imports(Set.copyOf(context.packageImports()),
                 Set.copyOf(context.classImports()), context.classLoader(), DeclaredTypes.inputsFor(context)));
     }
