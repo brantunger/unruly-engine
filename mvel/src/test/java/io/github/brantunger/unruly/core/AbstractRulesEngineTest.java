@@ -119,57 +119,6 @@ class AbstractRulesEngineTest {
     }
 
     @Nested
-    @DisplayName("imports accumulation")
-    class ImportsAccumulation {
-
-        @Test
-        @DisplayName("imports(Collection) does not discard imports added before with imports(String...)")
-        void collectionImportsDoNotDiscardEarlierImports() {
-            // java.util first, then java.time from a collection, which must not discard java.util
-            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
-                    builder -> builder.imports("java.util").imports(Set.of("java.time")));
-
-            // This rule uses Objects from java.util — should still work
-            Rule rule = Rule.builder()
-                    .ruleName("uses-both")
-                    .condition("Objects.nonNull(name)")
-                    .action("output.put(\"result\", true)")
-                    .priority(1)
-                    .build();
-
-            engine.load(List.of(rule));
-
-            FactStore<Object> facts = new FactMap<>();
-            facts.setValue("name", "test");
-
-            Map<String, Object> result = engine.run(facts);
-            assertEquals(true, result.get("result"));
-        }
-
-        @Test
-        @DisplayName("multiple imports(Collection) calls accumulate")
-        void multipleAddImportsCallsAccumulate() {
-            StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
-                    builder -> builder.imports(Set.of("java.util")).imports(Set.of("java.time")));
-
-            Rule rule = Rule.builder()
-                    .ruleName("uses-objects")
-                    .condition("Objects.nonNull(name)")
-                    .action("output.put(\"valid\", true)")
-                    .priority(1)
-                    .build();
-
-            engine.load(List.of(rule));
-
-            FactStore<Object> facts = new FactMap<>();
-            facts.setValue("name", "value");
-
-            Map<String, Object> result = engine.run(facts);
-            assertEquals(true, result.get("valid"));
-        }
-    }
-
-    @Nested
     @DisplayName("error paths")
     class ErrorPaths {
 

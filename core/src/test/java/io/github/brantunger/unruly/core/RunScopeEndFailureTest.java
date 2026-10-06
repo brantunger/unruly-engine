@@ -47,7 +47,6 @@ class RunScopeEndFailureTest {
     @AfterEach
     void clearFaults() {
         Faults.clear();
-        Thread.interrupted();
     }
 
     /** A value a language keeps for a run, which records its close() and then throws what the test set, if anything. */

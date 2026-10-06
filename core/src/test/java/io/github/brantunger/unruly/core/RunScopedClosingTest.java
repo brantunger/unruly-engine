@@ -113,7 +113,6 @@ class RunScopedClosingTest {
     @AfterEach
     void clearFaults() {
         Faults.clear();
-        Thread.interrupted();
     }
 
     /**
