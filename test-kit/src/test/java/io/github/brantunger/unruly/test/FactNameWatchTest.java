@@ -8,11 +8,14 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -113,5 +116,47 @@ class FactNameWatchTest {
         assertEquals("not a name: a", thrown.getMessage());
         assertTrue(rejected.get(), "the rejection of the watched name wasn't recorded");
         assertEquals(List.of("prepare", "warmUp", "close"), language.calls);
+    }
+
+    /** A language that reserves its names only for the rule lists that use it, whose compiler reads {@code read}. */
+    private static ExpressionLanguage reading(Set<String> read) {
+        return new ForwardingExpressionLanguage(new Recording()) {
+            @Override
+            public boolean reservesForEveryRuleList() {
+                return false;
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(super.newCompiler(context)) {
+                    @Override
+                    public Set<String> factNamesRead() {
+                        return read;
+                    }
+                };
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("#1046: it forwards reservesForEveryRuleList(), and adds the watched name to the facts a compiler says"
+            + " its rules read, or records them unchanged")
+    void forwardsTheScopingMethods() {
+        ExpressionLanguage watched = FactNameWatch.watchingRejection(reading(Set.of("x")), "a", new AtomicBoolean());
+
+        assertFalse(watched.reservesForEveryRuleList());
+        assertEquals(Set.of("x", "a"), watched.newCompiler(LanguageTestContexts.compile()).factNamesRead());
+        assertNull(FactNameWatch.watchingRejection(reading(null), "a", new AtomicBoolean())
+                .newCompiler(LanguageTestContexts.compile()).factNamesRead());
+        assertTrue(FactNameWatch.watchingRejection(new Recording(), "a", new AtomicBoolean())
+                .reservesForEveryRuleList());
+
+        List<Set<String>> answers = new ArrayList<>();
+        ExpressionLanguage recording = FactNameWatch.recordingNamesRead(reading(Set.of("x")), answers);
+        assertFalse(recording.reservesForEveryRuleList());
+        assertEquals(Set.of("x"), recording.newCompiler(LanguageTestContexts.compile()).factNamesRead());
+        FactNameWatch.recordingNamesRead(reading(null), answers).newCompiler(LanguageTestContexts.compile())
+                .factNamesRead();
+        assertEquals(Arrays.asList(Set.of("x"), null), answers);
     }
 }

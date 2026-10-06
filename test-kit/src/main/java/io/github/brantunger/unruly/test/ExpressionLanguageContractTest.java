@@ -36,12 +36,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -57,6 +59,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.test.CompilerCloseCounter.countingCloses;
+import static io.github.brantunger.unruly.test.FactNameWatch.recordingNamesRead;
 import static io.github.brantunger.unruly.test.FactNameWatch.watchingRejection;
 import static io.github.brantunger.unruly.test.KitFailures.describe;
 import static io.github.brantunger.unruly.test.KitFailures.message;
@@ -509,7 +512,8 @@ public abstract class ExpressionLanguageContractTest {
      *     <li>{@code requireDeclaredFacts()}: each run supplies only the facts its check reads, so the engine fails
      *     it with an {@link IllegalArgumentException} before the language evaluates anything.</li>
      *     <li>A declaration of the name {@link #unusableFactName()} returns: {@code load()} checks every declared
-     *     name with the language, which rejects that one. Most checks then fail to load their rules, with a
+     *     name with the language, or, for a compiler whose {@code factNamesRead()} returns a set, every declared name
+     *     in it, and the language rejects that one. Most checks then fail to load their rules, with a
      *     {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and the checks that expect a
      *     load to fail then pass or fail for reasons unrelated to the language.</li>
      *     <li>{@code runTimeout(...)}: a run that outlasts it fails, and its check with it.</li>
@@ -1381,7 +1385,9 @@ public abstract class ExpressionLanguageContractTest {
                         () -> engine.run(facts), "reservedFactNames() returned '" + name + "', but run() didn't"
                                 + " throw an IllegalArgumentException for a fact with that name");
                 // The engine checks a name it reserves before the language checks it, and before a run that leaves
-                // out a declared fact or supplies an undeclared one fails, so no other rejection can come first.
+                // out a declared fact or supplies an undeclared one fails, so no other rejection can come first. A
+                // language that reserves its names only for the rule lists that use it has them checked once the
+                // run's facts have passed those checks, which these facts do, and still before the language's.
                 String reservedBy = "'" + MessageText.quote(name) + "' is reserved";
                 assertTrue(thrown.getMessage() != null && thrown.getMessage().startsWith(reservedBy),
                         "reservedFactNames() returned '" + name + "', but run() rejected a fact with that name for"
@@ -1460,6 +1466,44 @@ public abstract class ExpressionLanguageContractTest {
                 fail("reservedFactNames() doesn't return 'output', but a rule didn't read a fact named 'output': "
                         + mismatch(Map.of(SEEN, 1), output) + "; reserve the name the language binds the output"
                         + " object to, or reject it in checkFactName");
+            }
+        });
+    }
+
+    /**
+     * Loads rules that read the facts {@code x}, {@code y}, {@code applicant} and {@code nest}, and each name
+     * {@link #usableFactNames()} returns, and checks that the set the language's compiler returns from
+     * {@code factNamesRead()}, when it returns one, holds every one of them: the engine asks the language to check
+     * only the names in that set, so a fact a rule reads but the set leaves out is never checked, and a name the
+     * language can't refer to reaches its rules. A set may hold more names than the rules read. It's skipped for a
+     * compiler that returns {@code null}, whose language checks every fact.
+     */
+    @Test
+    @DisplayName("the fact names a compiler says its rules read hold every fact the rules read")
+    void factNamesReadHoldsTheFactsRead() throws Exception {
+        List<@Nullable Set<String>> answers = new CopyOnWriteArrayList<>();
+        List<Rule> rules = new ArrayList<>();
+        rules.add(rule("reads-x-and-y", 4, factEquals("x", 1), putFact(SEEN, "y")));
+        rules.add(rule("reads-applicant", 3, factProperty(APPLICANT, CREDIT_SCORE, 750), putFact(SEEN, APPLICANT)));
+        rules.add(rule("reads-nest", 2, factProperty(NEST, NEST_VALUE, 7), putFact(SEEN, NEST)));
+        Set<String> read = new HashSet<>(KIT_FACT_NAMES);
+        for (String name : usableFactNames()) {
+            rules.add(rule("reads-" + name, 1, factEquals(name, 1), putFact(SEEN, name)));
+            read.add(name);
+        }
+        closing(engine(recordingNamesRead(language(), answers)), engine -> {
+            engine.load(rules);
+
+            assertEquals(1, answers.size(), "the engine asks the language's compiler once which facts its rules"
+                    + " read, after every rule has compiled");
+            Set<String> answer = answers.get(0);
+            assumeTrue(answer != null, "the language's compiler can't tell which facts its rules read");
+            List<String> missing = read.stream().filter(name -> !answer.contains(name)).sorted().toList();
+            if (!missing.isEmpty()) {
+                fail("factNamesRead() returned " + new TreeSet<>(answer) + ", but the contract kit's rules read "
+                        + missing + " too: the engine asks the language's checkFactName only about the names in"
+                        + " that set, so a fact a rule reads that it leaves out is never checked; return null if the"
+                        + " compiler can't tell");
             }
         });
     }

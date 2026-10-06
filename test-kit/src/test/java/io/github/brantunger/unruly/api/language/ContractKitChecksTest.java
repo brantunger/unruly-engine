@@ -4272,4 +4272,123 @@ class ContractKitChecksTest {
         assertTrue(refused.getMessage().startsWith("actionVariablesLastTheRun() returns true, but load() refused the"
                 + " rule that reads the variable 'y' an earlier rule's action declares: "), refused.getMessage());
     }
+
+    /** Wraps a language so that its compiler's {@code factNamesRead()} returns what {@code read} gives. */
+    private static ExpressionLanguage readingOnly(ExpressionLanguage language, Supplier<Set<String>> read) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(language.newCompiler(context)) {
+                    @Override
+                    public Set<String> factNamesRead() {
+                        return read.get();
+                    }
+                };
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("the names-read check passes a compiler whose set holds every fact the kit's rules read, or more, and"
+            + " fails one whose set leaves one out (#1046)")
+    void namesReadMissingANameFails() throws Throwable {
+        runCheck(ToyScopedFactNamesContractTest.scoped(new ToyExpressionLanguage()), "factNamesReadHoldsTheFactsRead");
+        runCheck(readingOnly(new ToyExpressionLanguage(), () -> Set.of("x", "y", "applicant", "nest", "more")),
+                "factNamesReadHoldsTheFactsRead");
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                readingOnly(new ToyExpressionLanguage(), () -> Set.of("x", "y")), "factNamesReadHoldsTheFactsRead"));
+
+        assertEquals("factNamesRead() returned [x, y], but the contract kit's rules read [applicant, nest] too: the"
+                + " engine asks the language's checkFactName only about the names in that set, so a fact a rule reads"
+                + " that it leaves out is never checked; return null if the compiler can't tell", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the names-read check also needs the names usableFactNames() returns, and is skipped for a compiler"
+            + " that can't tell (#1046)")
+    void namesReadUsableNamesAndSkip() throws Throwable {
+        ToyExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return readingOnly(new ToyExpressionLanguage(), () -> Set.of("x", "y", "applicant", "nest"));
+            }
+
+            @Override
+            protected Collection<String> usableFactNames() {
+                return List.of("credit_score2");
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(test, "factNamesReadHoldsTheFactsRead"));
+
+        assertTrue(failure.getMessage().contains("but the contract kit's rules read [credit_score2] too"),
+                failure.getMessage());
+        assertThrows(TestAbortedException.class,
+                () -> runCheck(new ToyExpressionLanguage(), "factNamesReadHoldsTheFactsRead"));
+    }
+
+    @Test
+    @DisplayName("the fact-name checks still ask a compiler that says its rules read neither the unusable name nor"
+            + " output about them, and fail one that accepts the unusable name (#1046)")
+    void factNameChecksAskACompilerThatSaysWhatItReads() throws Throwable {
+        // The kit's rules read x, never end or output, which no correct set holds.
+        ExpressionLanguage scoped = readingOnly(ToyScopedFactNamesContractTest.scoped(new ToyExpressionLanguage()),
+                () -> Set.of("x"));
+        ToyExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return scoped;
+            }
+
+            @Override
+            protected String unusableFactName() {
+                return "end";
+            }
+        };
+        runCheck(test, "unusableFactNameRejected");
+        runCheck(test, "reservedFactNamesRejected");
+
+        // A language whose checkFactName rejects output, and whose set leaves it out, is still asked about it.
+        AtomicBoolean asked = new AtomicBoolean();
+        ExpressionLanguage rejectingOutput = new ForwardingExpressionLanguage(reserving(new ToyExpressionLanguage(),
+                Set::of)) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(super.newCompiler(context)) {
+                    @Override
+                    public void checkFactName(String name) {
+                        if ("output".equals(name)) {
+                            asked.set(true);
+                            throw new IllegalArgumentException("output is the output object");
+                        }
+                    }
+
+                    @Override
+                    public Set<String> factNamesRead() {
+                        return Set.of("x");
+                    }
+                };
+            }
+        };
+        runCheck(rejectingOutput, "unreservedOutputReadAsFact");
+        assertTrue(asked.get(), "the check passed without asking the language about output");
+
+        ToyExpressionLanguageContractTest accepting = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return readingOnly(new ToyExpressionLanguage(), () -> Set.of("x"));
+            }
+
+            @Override
+            protected String unusableFactName() {
+                return "end";
+            }
+        };
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(accepting, "unusableFactNameRejected"));
+        assertTrue(failure.getMessage().startsWith("unusableFactName() returned 'end', but run() didn't throw"),
+                failure.getMessage());
+    }
 }

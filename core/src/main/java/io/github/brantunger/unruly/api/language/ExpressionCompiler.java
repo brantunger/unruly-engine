@@ -1,5 +1,9 @@
 package io.github.brantunger.unruly.api.language;
 
+import org.jspecify.annotations.Nullable;
+
+import java.util.Set;
+
 /**
  * Compiles the conditions and actions of one rule list, checks the names of the facts they run against, and creates
  * the sessions they run with.
@@ -96,6 +100,11 @@ public interface ExpressionCompiler extends AutoCloseable {
      * language. The engine has already rejected {@code null} and blank names, and the names its languages reserve
      * (see {@link ExpressionLanguage#reservedFactNames()}). By default, every other name is accepted.
      *
+     * <p>
+     * The engine calls it for every fact of a run, and every declared fact, unless {@link #factNamesRead()} returns a
+     * set: then only for the facts named in it.
+     * </p>
+     *
      * @param name The fact's name
      * @throws IllegalArgumentException if rules can't refer to a fact with this name; {@code run()} throws it as is,
      *         unless a fatal {@link Error} is among its causes or their suppressed exceptions. Anything else this
@@ -105,6 +114,39 @@ public interface ExpressionCompiler extends AutoCloseable {
      */
     default void checkFactName(String name) {
         // Every name is accepted.
+    }
+
+    /**
+     * Returns the names of the facts the conditions and actions this compiler compiled can read, or {@code null} if it
+     * can't tell. By default, {@code null}, and the engine calls {@link #checkFactName(String)} for every fact, as a
+     * fact reaches every rule.
+     *
+     * <p>
+     * When it returns a set, the engine calls {@link #checkFactName(String)} only for the facts named in it: a fact
+     * that no rule of this compiler reads is never checked by this language, so a keyword of this language can still
+     * name a fact that only another language's rules read. It narrows nothing else: the names a language reserves
+     * (see {@link ExpressionLanguage#reservedFactNames()}) are still rejected for every fact. A name the set holds that
+     * is no fact's changes nothing, so a compiler that can tell only roughly returns more names, never fewer: a fact
+     * left out is one a rule may read under a name this language can't refer to, and no check says so. A compiler that
+     * can't tell for some expression, such as one that reads facts by a name it computes, returns {@code null}.
+     * </p>
+     *
+     * <p>
+     * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} and
+     * {@link io.github.brantunger.unruly.api.RulesEngine#validate(java.util.List)} call it once, on their own thread,
+     * after every rule of the list has compiled, and before they check the declared facts; not when a rule failed to
+     * compile. The engine keeps a copy of the set, so a later change to it changes nothing.
+     * </p>
+     *
+     * @return The names, holding no {@code null}, or {@code null} if this compiler can't tell which facts its rules
+     *         read. Throwing, or returning a set that holds {@code null}, fails {@code load()} with a
+     *         {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} naming the language, except
+     *         a fatal {@link Error}, which is rethrown unchanged.
+     */
+    // null says the compiler can't tell, which an empty set, a compiler whose rules read no fact, can't say.
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
+    default @Nullable Set<String> factNamesRead() {
+        return null;
     }
 
     /**

@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -127,6 +128,10 @@ final class RuleSet {
 
     private final List<CompiledRule> compiledRules;
     private final Map<String, ExpressionCompiler> compilers;
+    // What a run checks its facts' names against besides the compilers: the facts the rules of each language that can
+    // tell read, and the names the languages the rules use reserve only for the rule lists that use them.
+    private final Map<String, Set<String>> namesRead;
+    private final Map<String, String> reservedNames;
     // Identify these rules, and when they were loaded, for RulesEngine.rules() and every run's result.
     private final String ruleChecksum;
     private final Instant loadTime;
@@ -345,8 +350,38 @@ final class RuleSet {
      */
     RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
             CopyPermits permits, long stallWindowMillis, Queue<Map<String, Session>> idle) {
+        this(compiledRules, compilers, Map.of(), Map.of(), limit, permits, stallWindowMillis, idle);
+    }
+
+    /**
+     * Creates a rule set whose languages say which facts their rules read, or reserve names only for the rule lists
+     * that use them, whose limited runs take the given permits and give up waiting after {@code stallWindowMillis}.
+     * The engine loads its rule lists with it.
+     *
+     * @param compiledRules     The compiled rules, in the order they run
+     * @param compilers         The compilers of the languages the rules use, by language name
+     * @param namesRead         The names of the facts each compiler's rules read, by language name, for the compilers
+     *                          that can tell; empty when none can
+     * @param reservedFactNames The language that reserves each name, by name, of the languages the rules use that
+     *                          reserve their names only for the rule lists that use them; empty when none does
+     * @param limit             How many copies runs may hold at once, and which runs that applies to
+     * @param permits           The permits for {@code limit}, which other rule sets may share
+     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
+     */
+    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
+            Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames, CopyLimit limit,
+            CopyPermits permits, long stallWindowMillis) {
+        this(compiledRules, compilers, namesRead, reservedFactNames, limit, permits, stallWindowMillis,
+                new ConcurrentLinkedQueue<>());
+    }
+
+    private RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
+                    Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames, CopyLimit limit,
+                    CopyPermits permits, long stallWindowMillis, Queue<Map<String, Session>> idle) {
         this.compiledRules = List.copyOf(compiledRules);
         this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
+        this.namesRead = Map.copyOf(namesRead);
+        this.reservedNames = Map.copyOf(reservedFactNames);
         this.ruleChecksum = Checksums.ofRules(this.compiledRules);
         this.loadTime = Instant.now();
         this.copyLimit = limit;
@@ -391,6 +426,27 @@ final class RuleSet {
      */
     Map<String, ExpressionCompiler> factChecks() {
         return compilers;
+    }
+
+    /**
+     * Returns the names of the facts the rules of each language read, for the languages whose compilers can tell (see
+     * {@link ExpressionCompiler#factNamesRead()}): a run asks such a language to check only those names.
+     *
+     * @return An unmodifiable map of the names by language name; empty when no compiler can tell
+     */
+    Map<String, Set<String>> factNamesRead() {
+        return namesRead;
+    }
+
+    /**
+     * Returns the names that the languages these rules use reserve only for the rule lists that use them (see
+     * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()}), which no fact
+     * of a run of these rules may have.
+     *
+     * @return An unmodifiable map of the language that reserves each name, by name; empty when no language does
+     */
+    Map<String, String> reservedFactNames() {
+        return reservedNames;
     }
 
     /**

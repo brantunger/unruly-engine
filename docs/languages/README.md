@@ -85,9 +85,10 @@ language ...`, and so does an import over 1,000 characters, with `Can't import .
 
 **Fact names** are checked by every language the loaded rules use: `run()` rejects a name one of them can't refer to,
 and `load()` rejects a [declared fact](../facts.md#-declaring-facts) with such a name. A language no loaded rule uses
-isn't asked, and an empty rule list is checked against the default language. The names a language
-[reserves](custom.md#-fact-names) are the exception: the engine takes them from every language it has at `build()`.
-See [Naming rules](../facts.md#-naming-rules).
+isn't asked, and an empty rule list is checked against the default language. A language whose compiler
+[says which facts its rules read](custom.md#-fact-names) checks only those. The names a language
+[reserves](custom.md#-fact-names) are the exception: by default the engine rejects those of every language it has,
+for every rule list. See [Naming rules](../facts.md#-naming-rules).
 
 ## 🧭 How the engine picks a language
 
@@ -248,9 +249,16 @@ The default language: the one `defaultLanguage(...)` names, or else the engine's
 
 ### Does a language I gave the engine, but no loaded rule uses, check fact names?
 
-No. Only the languages the loaded rules use check them, or the default language when the rule list is empty. But the
-names it [reserves](custom.md#-fact-names), such as `output`, are rejected whatever rules are loaded: `build()` takes
-them from every language the engine has. See [Choosing a language per rule](#-choosing-a-language-per-rule).
+No. Only the languages the loaded rules use check them, or the default language when the rule list is empty. But by
+default the names it [reserves](custom.md#-fact-names), such as `output`, are rejected whatever rules are loaded:
+`build()` takes them from every language the engine has. Since 2.27.0, a language can reserve them only for rule
+lists using it, or empty ones if it's the default, and its compiler can say which facts its rules read, so it checks
+only those. See [Choosing a language per rule](#-choosing-a-language-per-rule).
+
+Take a Lua-style language that binds `self` and has the keyword `end`, beside MVEL rules that read a fact `end`, the
+end of a date range. By default, every rule list rejects a fact `self`, and a list with a rule in each language
+rejects `end`. If the language reserves `self` only where it's used, MVEL-only lists accept it; if its compiler says
+its rules read no fact `end`, mixed lists accept `end`.
 
 ### Can I add a language after `build()`?
 

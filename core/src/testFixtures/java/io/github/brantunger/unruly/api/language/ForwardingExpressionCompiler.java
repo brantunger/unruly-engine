@@ -1,5 +1,9 @@
 package io.github.brantunger.unruly.api.language;
 
+import org.jspecify.annotations.Nullable;
+
+import java.util.Set;
+
 /**
  * A compiler that forwards every method to another, for a test that needs a compiler that works like a real one except
  * for what it overrides.
@@ -46,6 +50,11 @@ public class ForwardingExpressionCompiler implements ExpressionCompiler {
     @Override
     public void checkFactName(String name) {
         compiler.checkFactName(name);
+    }
+
+    @Override
+    public @Nullable Set<String> factNamesRead() {
+        return compiler.factNamesRead();
     }
 
     @Override

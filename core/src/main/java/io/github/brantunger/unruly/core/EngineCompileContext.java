@@ -33,7 +33,9 @@ import java.util.Set;
  *                            {@link #languageImports(CompileContext)}
  * @param reservedFactNames   The fact names the engine's languages reserve (see
  *                            {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()}),
- *                            which the engine checked the declarations against before it created the context. For a
+ *                            which the engine checks the declarations against: those its languages reserve for every
+ *                            rule list, and those of the languages the rule list uses that reserve them only for the
+ *                            rule lists that use them. For a
  *                            context made outside an engine, the names the language reserves, for one made with
  *                            {@link #forLanguage}, or else the name the default reserves,
  *                            {@value ActionContext#OUTPUT_NAME}; each checks the declarations against them
@@ -113,7 +115,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * Checks a fact's declaration before the engine's languages are known. The builder and the engine then keep the
      * type as it was declared, a primitive type included, so a run can widen a boxed primitive to it. A name one of
      * the engine's languages reserves, such as {@value ActionContext#OUTPUT_NAME}, is rejected by {@code build()},
-     * once the languages are known.
+     * once the languages are known, or by {@code load()} of a rule list that uses a language that reserves it only for
+     * such rule lists.
      *
      * @param name The fact's name
      * @param type The type it was declared with

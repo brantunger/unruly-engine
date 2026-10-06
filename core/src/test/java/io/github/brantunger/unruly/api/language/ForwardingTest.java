@@ -81,12 +81,15 @@ class ForwardingTest {
 
     /**
      * A value of {@code type} to pass or return: a proxy that is only equal to itself for an interface that isn't
-     * sealed, and a fixed text for a {@code String}. {@code null} for any other type, such as the sealed
-     * {@link CompileContext}.
+     * sealed, a fixed text for a {@code String}, and {@code false} for a {@code boolean}, which no method returns by
+     * default. {@code null} for any other type, such as the sealed {@link CompileContext}.
      */
     private static Object sample(Class<?> type) {
         if (type == String.class) {
             return "sample";
+        }
+        if (type == boolean.class) {
+            return Boolean.FALSE;
         }
         if (type.isInterface() && !type.isSealed()) {
             return Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, arguments) ->

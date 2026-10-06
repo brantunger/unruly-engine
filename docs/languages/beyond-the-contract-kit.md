@@ -98,8 +98,8 @@ used.
 
 `compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks (`sessionsClosed`,
 `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`) wrap your language to watch its compiler or
-sessions, and `unusableFactNameRejected` and `unreservedOutputReadAsFact` to watch its `checkFactName`. The wrappers
-forward `warmUp`, so copies made at load warm up as they do without the kit.
+sessions, and `unusableFactNameRejected`, `unreservedOutputReadAsFact` and `factNamesReadHoldsTheFactsRead` to watch
+its fact names. The wrappers forward `warmUp`, so copies made at load warm up as without the kit.
 
 `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
 `Double` whole numbers pass. When an output differs only in a value's type, such as the `Integer` 1 and the `String`

@@ -95,7 +95,7 @@ language. Extend it and supply expressions in your language, one method for each
 The checks supply facts named `x`, `y`, `applicant` and `nest`, so your language must not reserve them. If it does,
 every check that builds an engine fails before building it, with `reservedFactNames() reserves [<names>], which the
 contract kit's checks supply as facts: the kit can't check a language that reserves x, y, applicant or nest`, where
-`<names>` are those of the four it reserves, sorted. The kit's thirty checks:
+`<names>` are those of the four it reserves, sorted. The kit's thirty-one checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -113,6 +113,7 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `unusableFactNameRejected` | `alwaysTrue`, `putFact`, `unusableFactName` | `unusableFactName()` returns `null` | `run()` throws `IllegalArgumentException` from your `checkFactName`; a rejection for another reason, such as the name declared in `configure` with another type, fails. The name mustn't be blank or one your language reserves, which the engine rejects before your language sees it, or `x`, which the check's rule reads |
 | `reservedFactNamesRejected` | `alwaysTrue`, `putFact` | No; an empty set passes with nothing to run | `reservedFactNames()` answers before `prepare()`, isn't `null`, holds no `null`, gives the same set a second time and again once its engine has prepared the language, and `run()` rejects a fact with each name, unless blank, with an `IllegalArgumentException` saying the name is reserved |
 | `unreservedOutputReadAsFact` | `alwaysTrue`, `factEquals`, `putFact` | `reservedFactNames()` returns `output` | A run given a fact `output` throws from your `checkFactName`, or a rule reading `output` loads and puts the fact's value, not the output object |
+| `factNamesReadHoldsTheFactsRead` | `factEquals`, `factProperty`, `putFact`, `usableFactNames` | `factNamesRead()` returns `null`, the default | `load()` asks your compiler once, and its set holds `x`, `y`, `applicant`, `nest` and each `usableFactNames()` name, which the rules read; extra names pass |
 | `usableFactNamesAccepted` | `usableFactNames`, `factEquals`, `putFact` | `usableFactNames()` returns an empty collection, the default | Each name works in a condition and an action |
 | `conditionReadsProperties` | `factProperty`, `putFact` | No | `applicant.creditScore == 750` matches a record, a bean and a map |
 | `missingPropertyFailsTheRun` | `alwaysTrue`, `missingFactProperty`, `putFact` | `missingFactProperty()` returns `null` | `creditScor` on a record fails `load()` or two `run()`s, naming the rule, the second `CONDITION` |
@@ -129,6 +130,9 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `nestedRunInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null` | A run that a getter starts inside a condition, on the same thread, and the outer run each give their own output |
 | `nestedRunFailsInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still fires its rule |
 | `nestedRunFailsInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still gets the action's value |
+
+When your compiler returns a set from `factNamesRead()`, `unusableFactNameRejected` and `unreservedOutputReadAsFact`
+add the name under test to it, so your `checkFactName` is still asked about it although no rule of theirs reads it.
 
 Only the thirteen `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
 `unusableFactName`, `missingFactProperty`, `copyThroughVariable`, `putFactProperty`, `propertyAssignment`,

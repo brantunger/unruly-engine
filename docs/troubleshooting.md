@@ -117,10 +117,10 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 | `An expression language's name must not be null or blank` | `language(...)` was given a language whose `name()` is `null` or blank | [Exceptions by method](exceptions-by-method.md) |
 | `The expression language ... found with ServiceLoader has a null or blank name` | A language jar on the class path has no name | [Exceptions by method](exceptions-by-method.md) |
 | `The expression languages ... found with ServiceLoader are both named '` | Two language jars on the class path use the same name | [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
-| `The '...' expression language returned null from reservedFactNames()`, or `returned a null name from` | A language broke the `reservedFactNames()` contract | Fix the language: return a set, empty to reserve no name; see [Fact names](languages/custom.md#-fact-names) |
+| `The '...' expression language returned null from reservedFactNames()`, or `returned a null name from reservedFactNames()` | A language broke the `reservedFactNames()` contract | Fix the language: return a set, empty to reserve no name; see [Fact names](languages/custom.md#-fact-names) |
 | `'...' is neither a class nor a valid package name` | An import such as `"java.util."`, or a module, such as `lodash/fp`, meant for `languageImports(...)` | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
 | `Can't import '...'` | An import is over 1,000 characters, or 64 dot-separated parts for `imports(...)`, or names a class missing a dependency | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
-| `'output' is reserved for the output object and cannot be declared as a fact`, or `'...' is reserved by the '...' expression language` | `fact(...)` or `facts(...)` declared a name one of the engine's languages reserves | Rename the fact; see [Naming rules](facts.md#-naming-rules) |
+| `'output' is reserved for the output object and cannot be declared as a fact`, or `'...' is reserved by the '...' expression language` | `fact(...)` or `facts(...)` declared a name one of the engine's languages reserves for every rule list | Rename the fact; see [Naming rules](facts.md#-naming-rules) |
 
 A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted by `build()` and `load()`. In MVEL,
 a rule that uses a class from it fails at `run()` as if the import were missing; see
@@ -129,9 +129,10 @@ a rule that uses a class from it fails at `run()` as if the import were missing;
 ## 🚨 An exception from load()
 
 `load()` throws one `RuleCompilationException` for the whole list. `failures()` has one entry per broken rule; a
-language that can't create its compiler and a rejected [declared fact](glossary.md#declared-fact) name are listed with
-them. The previous rules stay loaded. `validate(rules)` returns the same problems without loading anything, except a
-language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
+language that can't create its compiler or tell which facts its rules read, and a rejected
+[declared fact](glossary.md#declared-fact) name, are listed with them. The previous rules stay loaded.
+`validate(rules)` returns the same problems without loading anything, except a language that fails while `load()`
+makes the copies of `copiesAtLoad(n)`; see
 [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it).
 
 | Message contains | Fix |
@@ -144,12 +145,12 @@ language that fails while `load()` makes the copies of `copiesAtLoad(n)`; see
 | `contains an assignment ('`, `uses import_static` | In MVEL, a condition that assigns or declares, reported `at line L, column C`; see [Conditions can't assign](writing-rules.md#conditions-cant-assign) |
 | `expression language failed to create a compiler` | In MVEL, an unknown option, `strongTyping` when it can't apply, or any `languageImports(...)`; see [Strong typing](languages/mvel.md#-strong-typing). With `StackOverflowError`, MVEL's first load ran [too deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack) |
 | `Declared fact '...' can't be used` | A declared fact has a name the rules' languages reject; see [Declaring facts](facts.md#-declaring-facts) and [Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects) |
+| `cannot be declared as a fact` | A declared fact has a name that a language the rules use reserves only for the rule lists that use it. Rename the fact; see [Naming rules](facts.md#-naming-rules) |
+| `failed to tell which facts its rules read`, `returned a null name from factNamesRead()` | A bug in the language, not the rules: its compiler broke the `factNamesRead()` contract; see [Fact names](languages/custom.md#-fact-names) |
 
 > [!NOTE]
-> `load()` doesn't check fact or property names unless the engine [declares its facts](facts.md#-declaring-facts) and
+> `load()` checks fact and property names only when the engine [declares its facts](facts.md#-declaring-facts) and
 > its language can use them; see [Catching a typo when the rules load](facts.md#catching-a-typo-when-the-rules-load).
-> Otherwise a typo fails the first run. What `load()` catches is in
-> [Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running).
 
 ### NoClassDefFoundError: applicant (wrong name: Applicant)
 
@@ -202,9 +203,6 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 - **No log output:** there's no SLF4J provider on the class path; see
   [Logging setup](listeners-and-logging.md#-logging-setup).
 
-- **Rules pass on the JVM but fail in a native image:** MVEL's JIT is on, or a class or method the rules use isn't
-  registered; see [Errors and what they mean](native-image.md#-errors-and-what-they-mean).
-
 ### Under load, or at shutdown
 
 - **Runs on virtual threads wait:** the default [copy limit](glossary.md#copy-limit) applies to them; see
@@ -214,9 +212,6 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 - **Every run on one pool thread fails at its first rule:** its interrupt status is still set; see
   [Gotchas](stopping-runs.md#-gotchas).
 
-- **Runs fail with `The engine is closed` during shutdown:** the engine bean was closed before the work stopped; see
-  [Shutting down](spring-boot.md#-shutting-down).
-
 - **Metaspace or the class-loader count climbs across redeploys, plugin or tenant reloads:** MVEL's dynamic
   optimizer holds the old loaders; see
   [MVEL's dynamic optimizer](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
@@ -224,7 +219,7 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 ### With facts the tests never used
 
 **A rule that passed its tests fails on a fact or property name:** the production facts have another shape, such as
-a bean without the property or a `Map` without the key, and names are checked when a rule runs, not by `load()`,
-unless the facts are declared and the language checks rules against them; see
+a bean without the property or a `Map` without the key, and `load()` checks names only as
+[noted above](#-an-exception-from-load); see
 [Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running). Test each
 rule against facts shaped like production's; see [Testing rules](writing-rules.md#-testing-rules).
