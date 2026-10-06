@@ -39,18 +39,21 @@ import static org.junit.jupiter.api.Assertions.*;
 class ListenerLogLinesTest {
 
     private static final String LISTENER_LOGGER = "io.github.brantunger.unruly.api.LoggingRuleListener - ";
+    private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
-    /** A fact a condition calls to take longer than a short timeout. */
+    /** A fact a condition calls to take longer than {@link #TIMEOUT}. */
     public static final class Pause {
 
         /**
-         * Sleeps, then answers {@code true}. It is a getter, so a rule reads it as the property {@code pause.longer}.
+         * Sleeps for {@link #TIMEOUT} and a little more, then answers {@code true}. It is a getter, so a rule reads it
+         * as the property {@code pause.longer}. The run's deadline was set before its rule started, so the sleep ends
+         * past it.
          *
          * @return {@code true}
          * @throws InterruptedException if the thread is interrupted while sleeping
          */
         public boolean getLonger() throws InterruptedException {
-            Thread.sleep(600);
+            Thread.sleep(TIMEOUT.toMillis() + 200);
             return true;
         }
     }
@@ -205,7 +208,7 @@ class ListenerLogLinesTest {
     @DisplayName("LoggingRuleListener logs a rule the run stopped in as stopped")
     void stoppedRule() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
-                .language(new ToyExpressionLanguage()).runTimeout(Duration.ofMillis(200))
+                .language(new ToyExpressionLanguage()).runTimeout(TIMEOUT)
                 .listener(new LoggingRuleListener()).build();
         engine.load(List.of(rule("slow", "pause.longer")));
         FactStore<Object> facts = new FactMap<>();

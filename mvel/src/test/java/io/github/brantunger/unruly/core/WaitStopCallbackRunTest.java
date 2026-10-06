@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static io.github.brantunger.unruly.TestSupport.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -46,6 +47,8 @@ class WaitStopCallbackRunTest {
 
     private static final Duration SHORT = Duration.ofMillis(300);
     private static final long PAUSE_MILLIS = 900;
+    /** The holding run's own timeout: long enough that it takes the copy however slowly its thread gets going. */
+    private static final RunOptions HOLDING = RunOptions.withTimeoutOf(Duration.ofSeconds(30));
 
     /** A fact an action calls to hold the rules' only copy until the test lets it go. */
     public static final class Gate {
@@ -126,7 +129,7 @@ class WaitStopCallbackRunTest {
         facts.setValue("gate", gate);
         ExecutorService threads = Executors.newFixedThreadPool(2);
         try {
-            Future<?> holder = threads.submit(() -> engine.run(facts));
+            Future<?> holder = threads.submit(() -> engine.runWithResult(facts, HOLDING));
             assertTrue(gate.entered.await(30, TimeUnit.SECONDS), "the holder never took the copy");
 
             Future<?> waiter = threads.submit(() -> engine.runWithResult(new FactMap<>(), waiting));
@@ -135,11 +138,7 @@ class WaitStopCallbackRunTest {
                             () -> waiter.get(30, TimeUnit.SECONDS)).getCause());
             assertTrue(stop.getMessage().contains("while waiting for a compiled copy"), stop.getMessage());
             gate.release.countDown();
-            try {
-                holder.get(30, TimeUnit.SECONDS);
-            } catch (java.util.concurrent.ExecutionException expected) {
-                // The holder's action ran past its own deadline too.
-            }
+            holder.get(30, TimeUnit.SECONDS);
             return stop;
         } finally {
             gate.release.countDown();
@@ -196,6 +195,7 @@ class WaitStopCallbackRunTest {
         RulesEngine<Map<String, Object>> other = slowEngine();
         AtomicReference<Throwable> nested = new AtomicReference<>();
         AtomicBoolean once = new AtomicBoolean();
+        AtomicBoolean interrupted = new AtomicBoolean();
         CountDownLatch done = new CountDownLatch(1);
 
         stopWhileWaitingInterrupted(new RuleListener() {
@@ -203,7 +203,7 @@ class WaitStopCallbackRunTest {
             public void beforeRun(RunContext run) {
                 if (run.facts().isEmpty() && once.compareAndSet(false, true)) {
                     // A listener that swallows the interrupt, as blocking code often does, leaves only the deadline.
-                    Thread.interrupted();
+                    interrupted.set(Thread.interrupted());
                     try {
                         other.run(pauseFacts());
                         nested.set(new IllegalStateException("the nested run returned normally"));
@@ -216,6 +216,7 @@ class WaitStopCallbackRunTest {
             }
         }, done);
 
+        assertTrue(interrupted.get(), "the waiting run stopped at its deadline before the interrupt reached it");
         RuleExecutionException thrown = assertInstanceOf(RuleExecutionException.class, nested.get(),
                 "the run started from beforeRun didn't stop: " + nested.get());
         assertInstanceOf(TimeoutException.class, thrown.getCause(), String.valueOf(thrown.getCause()));
@@ -231,19 +232,18 @@ class WaitStopCallbackRunTest {
         facts.setValue("gate", gate);
         ExecutorService threads = Executors.newFixedThreadPool(2);
         try {
-            Future<?> holder = threads.submit(() -> engine.run(facts));
+            Future<?> holder = threads.submit(() -> engine.runWithResult(facts, HOLDING));
             assertTrue(gate.entered.await(30, TimeUnit.SECONDS), "the holder never took the copy");
 
             Future<?> waiter = threads.submit(() -> engine.run(new FactMap<>()));
-            Thread.sleep(50);
+            // Interrupted once it waits for the copy, so the interrupt ends that wait, not a task that never started. A
+            // run that has already stopped at its deadline doesn't keep this waiting: the test fails on it instead.
+            await(() -> ((AbstractRulesEngine<?>) engine).currentRules().waiters() == 1 || done.getCount() == 0, 30,
+                    "the waiting run waits for the copy");
             waiter.cancel(true);
             assertTrue(done.await(30, TimeUnit.SECONDS), "the waiting run's beforeRun started no run");
             gate.release.countDown();
-            try {
-                holder.get(30, TimeUnit.SECONDS);
-            } catch (java.util.concurrent.ExecutionException expected) {
-                // The holder's action ran past its own deadline too.
-            }
+            holder.get(30, TimeUnit.SECONDS);
         } finally {
             gate.release.countDown();
             threads.shutdownNow();
