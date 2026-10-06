@@ -658,10 +658,12 @@ public final class RulesEngineBuilder<O> {
      * of the rules counts towards it. The engine checks it before each condition and each action, again when each
      * one returns, and once the {@link OutputWriter} has set the properties an action returned, so a run whose last
      * condition or action returns past its deadline fails even though that rule finished. It doesn't stop an
-     * expression that is already running; only a language that checks
-     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()} can stop inside one. A run
-     * past its deadline throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} caused by
-     * a {@link java.util.concurrent.TimeoutException}.
+     * expression that is already running, nor interrupt the thread; only a language that checks
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}, or registers an action with
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)} that stops its runtime at
+     * the deadline, can stop inside one. A run past its deadline throws a
+     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} caused by a
+     * {@link java.util.concurrent.TimeoutException}.
      * </p>
      *
      * @param timeout How long a run may take; positive. {@link RunOptions#withTimeoutOf(Duration)} gives a single run

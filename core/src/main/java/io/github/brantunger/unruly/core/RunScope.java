@@ -24,7 +24,9 @@ import java.util.function.Supplier;
  * running closing init (below). The scope makes its map the first time a value is asked for, so a run whose
  * languages keep nothing allocates no map. Only the run's contexts refer to it, so it goes when the run returns. The
  * values kept with {@code runScoped} aren't closed; those kept with {@code runScopedClosing} are handed back by
- * {@link #end()}, for the run to close, and none can be made after that.
+ * {@link #end()}, for the run to close, and none can be made after that. The actions a language registered with
+ * {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)} are closed by {@link #end()},
+ * and none can be registered after that; one the timer had already started as the run ended may still run.
  * </p>
  *
  * <p>
@@ -43,6 +45,8 @@ final class RunScope {
     // How long a thread waiting for the turn parks before it looks again, 10 ms: it polls, holding no monitor, so a
     // virtual thread never parks pinned to its carrier, as it would in Object.wait() on JDK 21 to 23.
     private static final long POLL_NANOS = 10_000_000L;
+    // The most closing inits one thread can have running at once on one scope: what holds counts up to.
+    static final char MAX_HOLDS = Character.MAX_VALUE;
     // What closing holds once end() has handed the values back, so the run having ended takes no field of its own.
     // RunClasses initializes it with the engine's other classes, as runs use it.
     @SuppressWarnings("PMD.LooseCoupling")
@@ -54,11 +58,18 @@ final class RunScope {
     @SuppressWarnings("PMD.LooseCoupling")
     private ClosingValues closing;
     // The thread whose getClosing calls are running, and how many are: one thread's closing inits at a time. Taken
-    // under the monitor, and given back by the thread that holds it with plain stores.
+    // under the monitor, and given back by the thread that holds it with plain stores. A char, not an int, so the
+    // scope's fields still fit the 32 bytes they took before cancels was added: a run that registers no cancel action
+    // allocates no more than it did. Taking the turn more than MAX_HOLDS times at once fails rather than wraps.
     private volatile Thread owner;
-    private volatile int holds;
+    private volatile char holds;
     // Set by end() before it waits for the turn: only the turn's owner can make another closing value meanwhile.
     private boolean ending;
+    // The cancel actions the run registered and may have to close, the last first, each linking to the one before.
+    // Kept once end() has taken them, so an end() called again closes them again, which does nothing to one closed.
+    private CancelTimer.Registration cancels;
+    // Whether end() has taken the cancel actions to close, after which none can be registered.
+    private boolean cancelsTaken;
 
     /** One key's entry: being made by {@code maker}, kept once {@code value} is set, or let go when neither is. */
     private static final class Slot {
@@ -159,6 +170,12 @@ final class RunScope {
                                 throw endedFailure(method, key);
                             }
                             if (owner == null || owner == me) {
+                                if (holds == MAX_HOLDS) {
+                                    throw new IllegalStateException(method + " was refused for a key ("
+                                            + key.getClass().getName() + "): " + (int) MAX_HOLDS
+                                            + " runScopedClosing inits are already running on its thread, the most"
+                                            + " there can be");
+                                }
                                 owner = me;
                                 holds++;
                                 turn = true;
@@ -224,7 +241,7 @@ final class RunScope {
             }
             if (turn) {
                 int left = holds - 1;
-                holds = left;
+                holds = (char) left;
                 if (left == 0) {
                     owner = null;
                 }
@@ -300,14 +317,15 @@ final class RunScope {
     }
 
     /**
-     * Ends the run's scope: hands back the values kept with {@link #getClosing}, for the caller to close, and makes
-     * {@link #getClosing} fail from now on. {@link #get} still works. While another thread holds the scope's turn,
-     * such as one running an init in {@link #getClosing}, it waits for it, and refuses a closing value to any other
-     * thread meanwhile; that init's value is then handed back. The wait is uninterruptible: an interrupt meanwhile is
-     * set again once it ends. Called on the thread that holds the turn, from an init, it doesn't wait. It allocates
-     * nothing, so it can end a run that has run out of memory. A call that throws, as waiting can when the stack or the
-     * heap runs out, hands nothing back, and leaves the values to the next call. Nothing can be added to the list it
-     * returns.
+     * Ends the run's scope: closes the cancel actions the run registered, hands back the values kept with
+     * {@link #getClosing}, for the caller to close, and makes {@link #getClosing} and {@link #addCancel} fail from now
+     * on. {@link #get} still works. While another thread holds the scope's turn, such as one running an init in
+     * {@link #getClosing}, it waits for it, and refuses a closing value to any other thread meanwhile; that init's
+     * value is then handed back, and a cancel action it registered is closed. The wait is uninterruptible: an interrupt
+     * meanwhile is set again once it ends. Called on the thread that holds the turn, from an init, it doesn't wait. It
+     * allocates nothing, so it can end a run that has run out of memory. A call that throws, as waiting can when the
+     * stack or the heap runs out, hands nothing back, and leaves the values to the next call, which closes the cancel
+     * actions again, doing nothing to those already closed. Nothing can be added to the list it returns.
      *
      * @return The values to close, in the order they were made: the caller closes them last first, so a value made
      *         from another is closed before it. Empty if none were kept, or a call before this one has handed them
@@ -318,7 +336,7 @@ final class RunScope {
     // for the next. Once ending is set and the turn is free, or this thread's, no other thread can take the turn, nor
     // so make or keep a closing value; but another can end the scope too, so they're taken, and closing marked ended,
     // in one section synchronized on the scope, and only one call hands them back.
-    @SuppressWarnings({"PMD.CompareObjectsWithEquals", "PMD.LooseCoupling"})
+    @SuppressWarnings({"PMD.CompareObjectsWithEquals", "PMD.LooseCoupling", "PMD.CloseResource"})
     List<AutoCloseable> end() {
         Thread me = Thread.currentThread();
         boolean interrupted = false;
@@ -339,6 +357,17 @@ final class RunScope {
                 me.interrupt();
             }
         }
+        // The cancel actions first, so none the timer hasn't started yet starts while the values it may reach are
+        // closed; one it started as the run ended may still run. Taken once the turn is free, so one an init registered
+        // meanwhile is among them; closing them allocates nothing.
+        CancelTimer.Registration cancel;
+        synchronized (this) {
+            cancelsTaken = true;
+            cancel = cancels;
+        }
+        for (; cancel != null; cancel = cancel.before()) {
+            cancel.close();
+        }
         ClosingValues handedBack;
         synchronized (this) {
             handedBack = closing;
@@ -346,6 +375,58 @@ final class RunScope {
             closing = ENDED;
         }
         return handedBack == null || handedBack == ENDED ? List.of() : handedBack;
+    }
+
+    /**
+     * Records a cancel action the run registered, for {@link #end()} to close, and hands it to the timer.
+     *
+     * @param action   What to run when the deadline passes
+     * @param deadline The run's deadline; set, and not passed
+     * @return The registration
+     * @throws IllegalStateException if {@link #end()} has taken the run's cancel actions to close
+     */
+    // Closed by end(), not here: the registration lives as long as the run.
+    @SuppressWarnings("PMD.CloseResource")
+    CancelTimer.Registration addCancel(Runnable action, Deadline deadline) {
+        CancelTimer.Registration registration;
+        synchronized (this) {
+            if (cancelsTaken) {
+                throw cancelsEnded();
+            }
+            CancelTimer.Registration earlier = cancels;
+            registration = CancelTimer.registration(action, deadline);
+            // Those registered last that have finished are let go, so a language that closes each one before it
+            // registers the next keeps one, however many expressions the run evaluates.
+            while (earlier != null && earlier.finished()) {
+                earlier = earlier.before();
+            }
+            registration.before(earlier);
+            cancels = registration;
+        }
+        // Outside the scope's monitor, which the timer's lock is never taken inside. An end() meanwhile closes it,
+        // and the timer then leaves it closed.
+        CancelTimer.schedule(registration);
+        return registration;
+    }
+
+    /**
+     * Checks that a cancel action could still be registered, for a call to
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)} that registers none, as
+     * its run has no deadline or has passed it, so it fails after the run as one that registers does.
+     *
+     * @throws IllegalStateException if {@link #end()} has taken the run's cancel actions to close
+     */
+    void requireCancelsOpen() {
+        synchronized (this) {
+            if (cancelsTaken) {
+                throw cancelsEnded();
+            }
+        }
+    }
+
+    private static IllegalStateException cancelsEnded() {
+        return new IllegalStateException("onCancel was called after the run ended, when its action could run into"
+                + " whatever runs next");
     }
 
     /**

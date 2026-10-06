@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.language.CancelRegistration;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 
 import java.time.Duration;
@@ -131,15 +132,47 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
     }
 
     /**
-     * Ends the run of a context the test kit created, as a run ends: closes the values kept with
+     * Has an action run when a context's run passes its deadline, as {@link EvaluationContext#onCancel} describes it.
+     * <b>Internal:</b> public only so that method's default, in another package, can reach the run's deadline and
+     * values, which only the engine's own context records have.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @param action  What to run when the run passes its deadline
+     * @return The registration: one that does nothing when closed if the run has no deadline, or had passed it, so
+     *         the action has run
+     * @throws NullPointerException  if {@code action} is {@code null}
+     * @throws IllegalStateException if the run has ended
+     * @throws Error                 the fatal error an action run at once threw, as {@link CancelTimer#fire} throws it;
+     *                               or what starting the cancel timer's thread threw, as {@link CancelTimer#schedule}
+     *                               throws it, in which case nothing is registered
+     */
+    public static CancelRegistration onCancel(EvaluationContext context, Runnable action) {
+        Objects.requireNonNull(action, "action must not be null");
+        Deadline deadline = runDeadlineOf(context);
+        RunScope scope = runScopeOf(context);
+        if (!deadline.isSet()) {
+            scope.requireCancelsOpen();
+            return CancelTimer.NOTHING;
+        }
+        if (deadline.hasPassed()) {
+            scope.requireCancelsOpen();
+            CancelTimer.fire(action);
+            return CancelTimer.NOTHING;
+        }
+        return scope.addCancel(action, deadline);
+    }
+
+    /**
+     * Ends the run of a context the test kit created, as a run ends: closes the actions registered with
+     * {@link EvaluationContext#onCancel} that haven't started, then the values kept with
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, each whatever the others
-     * throw, and fails any later request for one (see {@link RunScope#end()}). Unlike a run, it throws what a
-     * {@code close()} threw: the first, with the others suppressed on it. A second call does nothing, unless both waits
-     * failed (below): it then closes the values left open. Called from a {@code runScopedClosing} init, it closes the
-     * run's values made so far, and that init's own value is closed and refused too, unless both of this call's waits
-     * failed (see {@link RunScope#getClosing}). If waiting for an init on another thread fails, as it can when the
-     * stack or the heap runs out, it tries once more, as a run does, closes what that hands over, and throws what the
-     * wait threw. <b>Internal:</b> public only for the test kit.
+     * throw, and fails any later request for one, or registration (see {@link RunScope#end()}). Unlike a run, it throws
+     * what a {@code close()} threw: the first, with the others suppressed on it. A second call does nothing, unless
+     * both waits failed (below): it then closes the values left open. Called from a {@code runScopedClosing} init, it
+     * closes the run's values made so far, and that init's own value is closed and refused too, unless both of this
+     * call's waits failed (see {@link RunScope#getClosing}). If waiting for an init on another thread fails, as it can
+     * when the stack or the heap runs out, it tries once more, as a run does, closes what that hands over, and throws
+     * what the wait threw. <b>Internal:</b> public only for the test kit.
      *
      * @param context A context the engine created: this record, or an {@link EngineActionContext}
      * @throws NullPointerException if {@code context} is {@code null}

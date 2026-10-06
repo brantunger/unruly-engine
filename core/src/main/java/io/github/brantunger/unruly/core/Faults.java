@@ -71,6 +71,20 @@ final class Faults {
         TEST_RUN_FAILURE_KEPT,
         /** A compile that overflowed the stack, checking the room left to tell why, before it has. */
         OVERFLOW_ROOM_CHECKED,
+        /** Registering a cancel action that has to start the cancel timer, before it starts the timer's thread. */
+        CANCEL_TIMER_STARTING,
+        /**
+         * The cancel timer logging at WARN: what an action threw, that one is slow or couldn't be started, or why the
+         * timer failed, before it has.
+         */
+        CANCEL_FAILURE_LOGGED,
+        /** The cancel timer starting an action whose deadline has passed, before it makes the action's thread. */
+        CANCEL_ACTION_STARTING,
+        /**
+         * The cancel timer starting an action on a platform thread, as it couldn't start it on a virtual one, before it
+         * starts the thread.
+         */
+        CANCEL_ACTION_FALLING_BACK,
         /**
          * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
          * failed (see {@link #reached(Step)}).
@@ -85,7 +99,22 @@ final class Faults {
          * {@link RunScope#end()} taking the values to hand back, once it has read them, before it marks the scope
          * ended, holding the scope's monitor. Watched only, never failed (see {@link #reached(Step)}).
          */
-        RUN_SCOPE_VALUES_TAKING(true);
+        RUN_SCOPE_VALUES_TAKING(true),
+        /**
+         * The cancel timer's thread exiting as no action is pending, once it has given up its place, so a registration
+         * now starts another, outside the timer's lock. Watched only, never failed (see {@link #reached(Step)}).
+         */
+        CANCEL_TIMER_EXITED(true),
+        /**
+         * The cancel timer having started an action whose deadline has passed, before it looks for the next, outside
+         * the timer's lock. Watched only, never failed (see {@link #reached(Step)}).
+         */
+        CANCEL_ACTION_HANDED_OFF(true),
+        /**
+         * The cancel timer about to wait for the next action due, holding the timer's lock. Watched only, never failed
+         * (see {@link #reached(Step)}).
+         */
+        CANCEL_TIMER_WAITING(true);
 
         // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
         private final boolean watchOnly;
@@ -193,10 +222,23 @@ final class Faults {
      * @throws IllegalArgumentException if the step is one a test makes fail, which is never watched
      */
     static void watch(Step step, Runnable action) {
+        watch(Thread.currentThread(), step, action);
+    }
+
+    /**
+     * Makes {@code on} run {@code action} the next time it reaches {@code step}, once, for a step only a thread the
+     * engine owns reaches. Call it while {@code on} hasn't reached the step yet.
+     *
+     * @param on     The thread that runs it
+     * @param step   The step, one the code reaches with {@link #reached(Step)}
+     * @param action What the thread runs there
+     * @throws IllegalArgumentException if the step is one a test makes fail, which is never watched
+     */
+    static void watch(Thread on, Step step, Runnable action) {
         if (!step.watchOnly) {
             throw new IllegalArgumentException(step + " is made to fail, not watched");
         }
-        watching = Thread.currentThread();
+        watching = on;
         onReach = action;
         watched = step;
     }

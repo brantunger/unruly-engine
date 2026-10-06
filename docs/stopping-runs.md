@@ -118,13 +118,14 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 ## 🐢 What a timeout doesn't do
 
 > [!WARNING]
-> A timeout never interrupts the thread, and it can't stop an expression that is already running. A rule that blocks
-> or loops still holds the thread until it returns.
+> A timeout never interrupts the thread, and it stops an expression that is already running only if the expression's
+> language can. Otherwise a rule that blocks or loops still holds the thread until it returns.
 
 - **A blocked rule isn't woken.** A condition in `Thread.sleep` or a blocking call runs to its end, and the run stops
   when it returns.
 - **An expression is stopped part-way only if its language checks.** A language can poll
-  `EvaluationContext.isCancelled()` and give up; see [Writing a language](languages/custom.md#-stopping-a-run).
+  `EvaluationContext.isCancelled()` and give up, or, since 2.28.0, register an action with `onCancel` that stops its
+  runtime at the deadline; see [Writing a language](languages/custom.md#-stopping-a-run).
   In MVEL there is no such hook, so `while (true) {}` blocks the thread for ever. Run rules you don't trust in a
   process of their own.
 - **Nothing is checked after the last condition returns or the last action's properties are set.** Time spent in a
@@ -142,6 +143,16 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
 A run's end also waits, with no limit, for a language's
 [`runScopedClosing`](languages/custom.md#-reading-facts) init still running on another thread; neither `runTimeout`
 nor an interrupt cuts that wait short.
+
+The engine runs the actions languages register with `onCancel` from one daemon thread, `unruly-cancel-timer`, shared by
+every engine in the JVM, or at once on the registering thread if the deadline has already passed. The timer starts when
+a run registers one before its deadline and exits once none is pending, so it never starts if no language calls
+`onCancel`.
+
+The timer starts each action on a short-lived thread of its own, `unruly-cancel-action`, virtual where it can be, and
+logs at WARN an action that fails, can't be started or runs past a second. A run's end closes its actions that haven't
+started. An engine's `close()` doesn't, so the actions of a run still going then still run at its deadline. Only a
+deadline runs an action: never an interrupt, and never in a run without a deadline.
 
 ## 👂 What listeners see
 

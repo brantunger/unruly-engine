@@ -25,7 +25,8 @@ import java.util.Set;
  * {@code evaluation} or {@code action} is for a run of its own, so the values it keeps with
  * {@link EvaluationContext#runScoped} aren't shared with another context; {@link #actionInRun} creates one in the run
  * of another context, and shares its values. No run ends by itself, so {@link #endRun} closes the values a context
- * keeps with {@link EvaluationContext#runScopedClosing}, as the end of a run does.
+ * keeps with {@link EvaluationContext#runScopedClosing}, and the actions it registered with
+ * {@link EvaluationContext#onCancel(Runnable)} that haven't started, as the end of a run does.
  *
  * <p>
  * To check a language against everything the engine promises for its rules, extend
@@ -278,15 +279,16 @@ public final class LanguageTestContexts {
     }
 
     /**
-     * Ends the run of a context, as the engine ends a run: closes the values the run keeps with
+     * Ends the run of a context, as the engine ends a run: closes the actions the run registered with
+     * {@link EvaluationContext#onCancel(Runnable)} that haven't started, then the values the run keeps with
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, so a language's test can
      * check that it releases what it opened for the run. Every value is closed, whatever the others throw, unless both
-     * waits below fail, and from then on asking for one with {@code runScopedClosing}, through any context of the run,
-     * throws {@link IllegalStateException}, as it does once a run has ended. It first waits, with no limit, for a
-     * {@code runScopedClosing} init running on another thread. If that wait fails, as it can when the stack or the
-     * heap runs out, it waits once more, as a run does, and closes what that hands over; if that fails too, it closes
-     * nothing, and the run hasn't ended. A second call does nothing, unless both waits failed: it then closes the
-     * values left open.
+     * waits below fail, and from then on asking for one with {@code runScopedClosing}, or registering an action with
+     * {@code onCancel}, through any context of the run, throws {@link IllegalStateException}, as it does once a run has
+     * ended. It first waits, with no limit, for a {@code runScopedClosing} init running on another thread. If that wait
+     * fails, as it can when the stack or the heap runs out, it waits once more, as a run does, and closes what that
+     * hands over; if that fails too, it closes nothing, closes no action, and the run hasn't ended. A second call does
+     * nothing, unless both waits failed: it then closes the values left open.
      *
      * <p>
      * Called from a {@code runScopedClosing} init that goes on to return a value, it closes the run's values, and

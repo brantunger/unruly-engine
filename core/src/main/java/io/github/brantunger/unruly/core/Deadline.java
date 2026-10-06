@@ -131,6 +131,17 @@ final class Deadline {
     }
 
     /**
+     * Returns the {@link System#nanoTime()} value at which the deadline passes, for {@link CancelTimer}, which waits
+     * for it. Like the field, it is only ever compared with a {@code nanoTime()} reading, by subtracting that, and
+     * never subtracted from another deadline's.
+     *
+     * @return The value; meaningless for {@link #NONE}
+     */
+    long passesAt() {
+        return nanos;
+    }
+
+    /**
      * Returns how many nanoseconds are left before the deadline, without allocating.
      *
      * @return The nanoseconds left, zero or negative once it has passed, and {@link Long#MAX_VALUE} without a deadline

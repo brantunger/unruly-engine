@@ -53,8 +53,8 @@ class ModulePathTest {
      * The checks MVEL's contract test skips, in any order, since withTestKit prints them sorted. Each is named, so that
      * a check that starts being skipped fails.
      */
-    private static final Set<String> SKIPPED = Set.of("factNamesReadHoldsTheFactsRead", "sharedStateStaysLocal",
-            "unreservedOutputReadAsFact");
+    private static final Set<String> SKIPPED = Set.of("endlessActionStopsAtTimeout", "factNamesReadHoldsTheFactsRead",
+            "sharedStateStaysLocal", "unreservedOutputReadAsFact");
 
     @TempDir
     private Path work;

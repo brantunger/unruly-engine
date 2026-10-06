@@ -4391,4 +4391,53 @@ class ContractKitChecksTest {
         assertTrue(failure.getMessage().startsWith("unusableFactName() returned 'end', but run() didn't throw"),
                 failure.getMessage());
     }
+
+    @Test
+    @DisplayName("#1047: a language that stops an endless action with onCancel passes the timeout check")
+    void endlessActionStopped() {
+        assertDoesNotThrow(() -> runCheck(new ToyExpressionLanguageContractTest(), "endlessActionStopsAtTimeout"));
+    }
+
+    @Test
+    @DisplayName("#1047: a contract test whose endlessAction() returns null skips the timeout check")
+    void noEndlessActionSkipped() {
+        ExpressionLanguageContractTest test = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String endlessAction() {
+                return null;
+            }
+        };
+
+        TestAbortedException skipped = assertThrows(TestAbortedException.class,
+                () -> runCheck(test, "endlessActionStopsAtTimeout"));
+
+        assertEquals("Assumption failed: the language can't stop an action part-way", skipped.getMessage());
+    }
+
+    @Test
+    @DisplayName("#1047: the timeout check fails for an endless action that returns, or that fails the run for"
+            + " another reason")
+    void endlessActionNotStoppedByTheTimeout() {
+        ExpressionLanguageContractTest returning = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String endlessAction() {
+                return "put seen 1";
+            }
+        };
+        ExpressionLanguageContractTest failing = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected String endlessAction() {
+                return "put seen unknown";
+            }
+        };
+
+        AssertionFailedError returned = assertThrows(AssertionFailedError.class,
+                () -> runCheck(returning, "endlessActionStopsAtTimeout"));
+        AssertionFailedError failed = assertThrows(AssertionFailedError.class,
+                () -> runCheck(failing, "endlessActionStopsAtTimeout"));
+
+        assertTrue(returned.getMessage().startsWith("the endless action returned"), returned.getMessage());
+        assertTrue(failed.getMessage().startsWith("the run failed for another reason than its timeout: "),
+                failed.getMessage());
+    }
 }

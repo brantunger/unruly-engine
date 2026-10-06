@@ -388,8 +388,8 @@ Every guide is listed in the [documentation index](docs/README.md), and the API 
 > [!CAUTION]
 > **Rules are code.** A rule written in MVEL has the same access to the JVM as your own Java code: it can start
 > processes, read files, open sockets and use reflection. The engine has **no sandbox**, and a
-> [timeout](docs/stopping-runs.md#-what-a-timeout-doesnt-do) only stops a run between rules or when an expression
-> returns: MVEL rules can't be stopped inside an expression, so `while (true) {}` blocks the calling thread forever.
+> [timeout](docs/stopping-runs.md#-what-a-timeout-doesnt-do) stops a run between rules or when an expression returns,
+> or inside one if its language can: MVEL can't, so `while (true) {}` blocks the calling thread forever.
 
 - Load rules only from sources you trust as much as your application code, such as your repository or a table
   only administrators can change.

@@ -46,7 +46,7 @@ The engine logs every fact name it rejects at ERROR, so those lines come before 
 ends with:
 
 ```text
-native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard dateResource=false dateFactValue=rejected image=true jit=off
+native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,virtual dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
 `bean` and `map` are what the rules produced, `image=true` says the binary is running as a native image, and
@@ -57,6 +57,10 @@ class and no package ran its rule as it should.
 `hidden=prime,gold,standard` says the default output writer set two properties, and `FactProperties` read one, on
 classes that aren't public, through each class's own methods: the image has no metadata for the public types above
 them.
+
+`deadline=timeout,virtual` says a run whose action spins until an action it registered with
+[`onCancel`](languages/custom.md#-stopping-a-run) stops it failed with its 200 ms timeout, and that the engine ran
+that action on a virtual thread.
 
 `dateResource` and `dateFactValue` are diagnostics, and no result is held to them. `dateResource=false` says the
 image served no class file for `java.util.Date` as a resource; the check doesn't ask an image for one, which is why

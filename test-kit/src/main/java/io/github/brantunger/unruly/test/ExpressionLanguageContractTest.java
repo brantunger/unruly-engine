@@ -485,6 +485,20 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Returns an action that runs until its run passes its deadline, and stops then, such as {@code while (true) {}}
+     * in a language that registers an action with {@link EvaluationContext#onCancel(Runnable)} which stops its
+     * runtime, or that polls {@link EvaluationContext#isCancelled()}. {@code endlessActionStopsAtTimeout} runs it with
+     * a short run timeout, and checks that the run fails with the timeout well within 30 seconds, without its thread
+     * interrupted. An action that never stops leaves the thread that runs it going once the check has failed. By
+     * default, {@code null}.
+     *
+     * @return The action, or {@code null} if the language can't stop an action part-way, which skips the check
+     */
+    protected @Nullable String endlessAction() {
+        return null;
+    }
+
+    /**
      * Configures each engine the checks build, for a language that needs what the builder carries to compile its
      * expressions: declared facts, imports or options of its own. By default, nothing. It's called once for each
      * engine, after the kit has started an {@code allMatches} engine whose output is a {@link HashMap}, and added the
@@ -2176,6 +2190,39 @@ public abstract class ExpressionLanguageContractTest {
             Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "action", failing));
             assertNestedRunFailed(nest, failing, "action");
             assertSameOutput(Map.of(SEEN, 7), output, "the run around the run that failed inside its action");
+        });
+    }
+
+    /**
+     * Runs {@link #endlessAction()} with a run timeout of 200 milliseconds: a language whose runtime can be stopped
+     * only from outside the expression stops it with an action registered with
+     * {@link EvaluationContext#onCancel(Runnable)}, which the engine runs at the deadline. The run must fail with
+     * {@link RuleExecutionException} caused by the timeout, as one that passes its deadline does, and leave its thread
+     * not interrupted, as a deadline never interrupts it.
+     */
+    @Test
+    @DisplayName("an action that runs until it is stopped stops at the run's timeout, without interrupting the run's"
+            + " thread")
+    void endlessActionStopsAtTimeout() throws Exception {
+        String action = endlessAction();
+        assumeTrue(action != null, "the language can't stop an action part-way");
+        closing(builder(language()).runTimeout(Duration.ofMillis(200)).build(), engine -> {
+            engine.load(List.of(rule("endless", 1, alwaysTrue(), action)));
+            AtomicBoolean interrupted = new AtomicBoolean();
+
+            RuntimeException failure = onItsOwnThread(() -> {
+                try {
+                    return assertThrows(RuntimeException.class, () -> engine.run(new FactMap<>()),
+                            "the endless action returned");
+                } finally {
+                    interrupted.set(Thread.currentThread().isInterrupted());
+                }
+            });
+
+            assertInstanceOf(RuleExecutionException.class, failure, () -> describe(failure));
+            assertInstanceOf(TimeoutException.class, failure.getCause(), () -> "the run failed for another reason"
+                    + " than its timeout: " + describe(failure));
+            assertFalse(interrupted.get(), "the run's thread was left interrupted");
         });
     }
 

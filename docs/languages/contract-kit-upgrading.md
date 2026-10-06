@@ -10,6 +10,18 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.27
+
+In 2.28.0 `endlessActionStopsAtTimeout` was added and no check got stricter.
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `endlessActionStopsAtTimeout` | Returns an action from `endlessAction()` whose run doesn't fail with its 200 ms timeout within 30 seconds, or leaves its thread interrupted | The language can't stop a running expression at the deadline, or restores an interrupt after a deadline cancel |
+
+`endlessAction()` returns `null` by default, which skips the check, so a language written for 2.27 passes as it is,
+with one more aborted check. Return an action that runs until it is stopped once your language can stop one, with
+[`onCancel`](custom.md#-stopping-a-run) or by polling `isCancelled()`.
+
 ## 🔼 Upgrading from 2.26
 
 In 2.27.0 `factNamesReadHoldsTheFactsRead` was added and no check got stricter.

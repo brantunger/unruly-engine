@@ -74,6 +74,11 @@ class ToyExpressionLanguageContractTest extends ExpressionLanguageContractTest {
     }
 
     @Override
+    protected String endlessAction() {
+        return "spin";
+    }
+
+    @Override
     protected String syntaxError() {
         return "x ==";
     }
