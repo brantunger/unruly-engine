@@ -124,6 +124,16 @@ class InlineImportLimitsTest {
                 + name + "': it has 65 dot-separated parts, and an import may have at most 64");
     }
 
+    // #1048: no other text starts with a line break, so a count that skipped the first character passed.
+    @Test
+    @DisplayName("the position counts a line break the text starts with")
+    void positionAfterLeadingLineBreak() {
+        String name = "a.".repeat(64) + "a";
+
+        assertRejected(rule("true", "\nimport " + name + ".*; x = v0;"), 2, 8, "Can't import '" + name
+                + "': it has 65 dot-separated parts, and an import may have at most 64");
+    }
+
     // #722: the position was the string's, at line 1, column 13.
     @Test
     @DisplayName("the position is the import's, not that of the same import in a string before it")

@@ -83,6 +83,22 @@ class ConditionAssignmentRejectionTest {
                 line, column, description)), ex.issues());
     }
 
+    // #1048: no other condition starts with a line break, so a count that skipped the first character passed.
+    @ParameterizedTest(name = "{0} leading line break(s)")
+    @ValueSource(ints = {1, 2})
+    @DisplayName("a line break the condition starts with counts as a line")
+    void leadingLineBreaksCountAsLines(int breaks) {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .build();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(
+                List.of(rule("leading-break", "\n".repeat(breaks) + "claim.count += 1", "output.put('k', 1)"))));
+
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR,
+                breaks + 1, 13, "contains an assignment ('+=')")), ex.issues());
+        assertTrue(ex.getMessage().contains("('+=' at line " + (breaks + 1) + ", column 13)"), ex.getMessage());
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {
             "claim.amount += 5; true",
