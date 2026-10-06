@@ -1,7 +1,9 @@
 # Checks every Markdown page in the repository, and the Javadoc's links to them:
 # - a relative link whose file doesn't exist, or whose #anchor matches no heading of the page it points to: an inline
 #   link, with or without <> around its destination, spaces inside its parentheses or a title, a reference
-#   definition ([name]: target), and an HTML <a href> or <img src>, its value quoted or not;
+#   definition ([name]: target), and an HTML <a href> or <img src>, its value quoted or not, in either letter case and with
+#   spaces around = allowed; each tag is read attribute by attribute, so data-href, data-src, src on <a> and text
+#   inside another attribute's value are never taken for a link (a tag split over two lines isn't checked);
 # - a link to https://github.com/brantunger/unruly-engine/blob/main/<page>.md#<anchor>, from a page, a .java file or
 #   the Javadoc overview, whose page or anchor doesn't exist on this branch;
 # - a table row holding `||` outside code, which is two rows joined into one line.
@@ -17,6 +19,10 @@ from fences import fence_flags
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BLOB = 'https://github.com/brantunger/unruly-engine/blob/main/'
+# An <a> or <img> tag, whose attributes may hold a quoted '>', then each attribute of it, its value quoted or not.
+HTML_TAG = re.compile(r'''<(a|img)(\s(?:"[^"]*"|'[^']*'|[^"'>])*)>''', re.IGNORECASE)
+HTML_ATTRIBUTE = re.compile(r'''([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?''')
+HTML_LINK = {'a': 'href', 'img': 'src'}
 problems = 0
 
 
@@ -88,8 +94,9 @@ for page in pages:
         m = re.match(r'^\s{0,3}\[(?!\^)[^\]]+\]:\s*(?:<([^<>]+)>|(\S+))', line)  # not a footnote: [^1]: text
         if m:
             links.append(m.group(1) or m.group(2))
-        links += [a or b for a, b in
-                  re.findall(r'''<(?:a|img)\s[^>]*(?:href|src)=(?:["']([^"']+)["']|([^\s>]+))''', line)]
+        for tag in HTML_TAG.finditer(line):
+            links += [double or single or bare for name, double, single, bare in HTML_ATTRIBUTE.findall(tag.group(2))
+                      if name.lower() == HTML_LINK[tag.group(1).lower()]]
         for link in links:
             if link.startswith(('http:', 'https:', 'mailto:')):
                 continue

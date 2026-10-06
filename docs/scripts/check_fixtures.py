@@ -59,8 +59,13 @@ VERDICTS = {
     'link-titles-and-html': (
         [':3: no-such-page.md: no file docs/probe/no-such-page.md',
          ':5: no-such-page-2.md: no file docs/probe/no-such-page-2.md',
-         ':7: no-such-page-3.md: no file docs/probe/no-such-page-3.md'],
-        [': 17 words of prose']),
+         ':7: no-such-page-3.md: no file docs/probe/no-such-page-3.md',
+         ':17: no-such-real.png: no file docs/probe/no-such-real.png',
+         ':19: no-such-titled.md: no file docs/probe/no-such-titled.md',
+         ':23: no-such-spaced-eq.md: no file docs/probe/no-such-spaced-eq.md',
+         ':25: no-such-upper.md: no file docs/probe/no-such-upper.md',
+         ':27: no-such-after-gt.md: no file docs/probe/no-such-after-gt.md'],
+        [': 47 words of prose']),
     'links-to-headings': (
         [':7: repeated-h2.md#notes-2: no heading in docs/probe/repeated-h2.md has the anchor #notes-2'],
         [': 13 words of prose']),

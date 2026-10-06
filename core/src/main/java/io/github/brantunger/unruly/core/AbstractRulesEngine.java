@@ -1014,9 +1014,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code run()} and {@link #load(List)} throw {@link IllegalStateException} — as does a run that had read the rules
      * but had not yet begun to borrow a copy when this method closed the engine, unless another run is still using the
      * rules when it borrows: then it uses them, as a run that read rules a reload replaced does, and its rules may run
-     * after this method has returned. Otherwise it reads the rules again and finds a closed engine. A {@code load()}
-     * that found the engine open before this method closed it isn't stopped. If it fails, it throws what it would on an
-     * open engine, such as {@link RuleCompilationException}. If it succeeds,
+     * after this method has returned. Otherwise it reads the rules again and finds a closed engine. A run whose thread
+     * is interrupted, or whose deadline has passed, stops before reading them again, with a
+     * {@link RuleExecutionException}, as one stopped while waiting for a copy does. A {@code load()} that found the
+     * engine open before this method closed it isn't stopped. If it fails, it throws what it would on an open engine,
+     * such as {@link RuleCompilationException}. If it succeeds,
      * either it swapped its rules in first, and this method retires them like any others, or it finds the engine
      * closed, retires its rules rather than swapping them in, and throws {@link IllegalStateException}. Closing it
      * again does nothing, unless retiring a rule list failed part way, as it can when it runs out of stack, or a

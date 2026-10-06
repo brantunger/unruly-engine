@@ -1,7 +1,7 @@
 # 📑 Compiled copies
 
 Each run works on a compiled copy of the rules. This page says what a copy is, how many an engine keeps,
-how to limit them, how to make them when the rules load, and what a run waits for when they run out.
+how to limit them, how to make them at load, and what a run waits for when they run out.
 [Virtual threads](virtual-threads.md) covers what changes there.
 
 **Who it's for:** application developers sizing an engine for many concurrent runs.
@@ -28,10 +28,11 @@ run after `load()` does, unless the engine [makes copies at load](#making-copies
 finishes.
 
 A rule list that needs no copy at all is never limited, once the engine knows. When every language of the list returns
-`Session.none()`, nothing a copy holds changes while the rules run, so every run shares one set of sessions. The engine
-learns this from the list's first copy, so straight after a reload from rules that did need copies, the first such run
-may still wait, unless the engine [makes copies at load](#making-copies-at-load), when `load()` learns it. See
-[Thread safety for language authors](languages/custom.md#-thread-safety) for what a language must do to qualify.
+`Session.none()`, nothing a copy holds changes while the rules run, so every run shares one set of sessions.
+
+The engine learns this from the list's first copy, so straight after a reload from rules that did need copies, the
+first such run may still wait, unless the engine [makes copies at load](#making-copies-at-load), when `load()` learns
+it. See [Thread safety for language authors](languages/custom.md#-thread-safety) for what a language must do to qualify.
 
 In MVEL, a session compiles each expression again the first time that copy runs it, and MVEL generates accessor
 classes for that session alone. See [Compiled copies in MVEL](languages/mvel.md#-compiled-copies).
@@ -42,7 +43,7 @@ classes for that session alone. See [Compiled copies in MVEL](languages/mvel.md#
 | --- | --- |
 | Runs the limit applies to | At most the limit, for the whole engine, across reloads |
 | Runs the limit doesn't apply to | One for each such run at your busiest moment |
-| [Extra copies](glossary.md#extra-copy) | At most one for each nested or stalled run in progress; a nested run that finds a place free takes a kept copy |
+| [Extra copies](glossary.md#extra-copy) | At most one for each run in progress that stalled or started on a thread that holds or is getting a copy; the latter takes a kept copy if a place is free |
 | A rule list [a reload replaced](thread-safety.md#-reloading-rules-while-running) | The copies its runs the limit doesn't apply to still hold, and idle ones kept for its waiting runs, one each up to the limit. Under `maxCopies(n)`, at most `n`, besides extra copies |
 | [Copies made at load](#making-copies-at-load) | `n` idle copies from each `load()` until the next one, even above the default limit, which bounds only the copies runs hold; during a reload, the new rules' `n` and the old rules' kept copies, until the swap |
 
@@ -64,8 +65,7 @@ overlap, and without a limit the copies grow with them.
 
 So an engine limits **runs on virtual threads** to one copy for every two processors, and at least one. The number of
 processors is read once, by `build()`, so an engine's limit doesn't change while it runs. Runs on platform threads
-aren't limited: the pool they come from already bounds how many copies exist. Set your own limit, or turn the default
-off:
+aren't limited: their pool already bounds the copies. Set your own limit, or turn the default off:
 
 ```java
 // A limit on runs from every kind of thread, virtual and platform
@@ -87,17 +87,16 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 The limit belongs to the **engine**, not to one rule list: while `load()` swaps in a new list (see
 [Reloading rules while running](thread-safety.md#-reloading-rules-while-running)), runs still using the old list
 count against the same limit as runs on the new one, so a reload never raises it. Right after a reload, a run on
-the new rules may wait for runs on the old rules to finish, when together they already hold every copy. Several
-engines each have a limit of their own, so their limits add up.
+the new rules may wait for runs on the old rules to finish, when together they already hold every copy.
 
-`maxCopies(n)` therefore bounds the runs that make progress, not the copies that can exist at one instant: nested and
-stalled runs take an extra copy on top (below), and the list a reload replaced keeps idle copies for its runs still
-waiting.
+`maxCopies(n)` therefore bounds the runs that make progress, not the copies that exist: stalled runs, and runs started
+on a thread that holds or is getting a copy, take extra copies (below), and the list a reload replaced keeps idle
+copies for its runs still waiting.
 
 ### Making copies at load
 
 By default no copy exists until a run needs one, so the first runs after each `load()` make them. With
-`copiesAtLoad(n)`, which is off by default, `load()` makes `n` copies itself and runs borrow them ready:
+`copiesAtLoad(n)`, `load()` makes `n` copies itself and runs borrow them ready:
 
 ```java
 // 8 is the default limit on virtual threads with 16 processors: runs there use no more copies than that at once
@@ -122,9 +121,10 @@ What it doesn't change:
 - **The limit.** A limited run still waits for a place; it just finds a copy ready. `build()` throws
   `IllegalArgumentException` when `n` is more than `maxCopies(...)`. The default limit and `unlimitedCopies()` accept
   any `n`. Any run can borrow any idle copy, but with the default limit no more runs on virtual threads than the limit
-  hold one at the same time, so the copies above it are used only while runs on platform threads hold copies too.
-- **Copies made during a run.** A copy a run makes because none is idle, and the extra copy of a nested or stalled
-  run, are made as before, and not warmed up.
+  hold one at once, so the copies above it are used only while runs on platform threads hold copies too.
+
+- **Copies made during a run.** A copy a run makes because none is idle, and the extra copy of a stalled run, or of
+  one started on a thread that holds or is getting a copy, are made as before, and not warmed up.
 - **Rules that need no copy.** When every language returns `Session.none()`, `load()` makes the one shared set of
   sessions for any `n` above zero, and no more. `validate()` makes no copies.
 
@@ -139,11 +139,11 @@ flowchart TD
     A(["run()"]) -- "starts" --> C{"Do the rules<br/>need a copy?"}
     C -- "no, every language is stateless" --> S["One shared set of sessions,<br/>no waiting"]
     C -- "yes" --> D{"Does the limit apply<br/>to this thread?"}
-    D -- "no" --> V{"No limit at all, a virtual<br/>thread, not nested?"}
+    D -- "no" --> V{"No limit at all, a virtual<br/>thread, and no run on it<br/>holding or getting a copy?"}
     V -- "no" --> K["An idle copy, or a new one,<br/>kept for later runs"]
     V -- "yes" --> B{"Wait for a build slot,<br/>unless a copy is idle"}
     B -- "an idle copy, a slot,<br/>or it gives up" --> K
-    D -- "yes" --> N{"Is this run nested<br/>on this thread?"}
+    D -- "yes" --> N{"Is a run on this thread<br/>holding or getting a copy?"}
     N -- "yes, and a place is free" --> K
     N -- "yes, and none is free" --> X["An extra copy,<br/>closed when the run ends"]
     N -- "no" --> W{"Wait for a place"}
@@ -169,22 +169,22 @@ flowchart TD
 ```
 
 A run the limit doesn't apply to never waits for a copy. It takes an idle one or makes a new one, with one exception:
-on an engine built with `unlimitedCopies()`, a run on a virtual thread that isn't nested and finds no idle copy waits
-for a build slot before it makes one.
+on an engine built with `unlimitedCopies()`, a run on a virtual thread that finds no idle copy, while no run on its
+thread holds or is getting one, waits for a build slot before it makes one.
 
-Only an interrupt fails that wait, with a `RuleExecutionException`; a run that gives up waiting, at half its time
-left or after five seconds without a slot coming back, makes its copy anyway. See
-[Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot). The rest of this section is about runs the
-limit applies to.
+Only an interrupt fails that wait, with a `RuleExecutionException`; a run that gives up waiting makes its copy
+anyway. See [Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot). The rest of this section is
+about runs the limit applies to.
 
 While a run waits:
 
 - A run that starts while every copy is in use waits until one is free, so at most that many runs make progress at
   once. On a virtual thread, a waiting run doesn't hold a platform thread.
+
 - **Waiting isn't first-come-first-served**, and without a deadline it has no upper bound: as long as copies keep
   coming back, a run keeps waiting. Give runs a [timeout](stopping-runs.md#-quick-start) if latency matters.
 - Listeners don't see a wait that ends with a copy: the run borrows it before `beforeRun`, so a listener's timings
-  don't include the wait. Measure around `run()` instead.
+  don't include it. Measure around `run()` instead.
 
 When the wait is stopped:
 
@@ -195,8 +195,7 @@ When the wait is stopped:
 - If the run's deadline passes while it waits, `run()` throws a `RuleExecutionException` caused by a
   `TimeoutException`. Waiting counts towards the timeout.
 
-Listeners still hear of a stopped wait: the run calls `beforeRun`, then `onRunError`, though it held no copy and ran
-no rule. See
+Listeners still hear of a stopped wait: the run calls `beforeRun`, then `onRunError`, though it held no copy. See
 [What listeners see](stopping-runs.md#-what-listeners-see).
 
 ### Runs that don't wait
@@ -230,8 +229,8 @@ coming back restarts the five-second window. Giving up is logged at WARN once fo
 ends `If runs are meant to wait for each other, build the engine with a larger maxCopies(n), or with unlimitedCopies()
 if it runs on a thread pool.`
 
-A nested run finding no place free, and a stalled run, get an extra copy, closed when the run gives it back. A
-stalled run first uses its rule list's idle copy, if any, which
+A run started on a thread that holds or is getting a copy and finds no place free, and a stalled run, get an extra copy,
+closed when the run gives it back. A stalled run first uses its rule list's idle copy, if any, which
 [replaced rules](thread-safety.md#-reloading-rules-while-running) keep only for a waiting run.
 
 ## 🚧 Gotchas

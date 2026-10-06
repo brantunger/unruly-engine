@@ -1,7 +1,7 @@
 # 🚨 Error handling
 
-The engine throws its own exceptions for rule problems and standard JDK exceptions for misuse of the API. Starting
-from a symptom or a message? [Troubleshooting](troubleshooting.md) maps each one to its section.
+The engine throws its own exceptions for rule problems and standard JDK exceptions for API misuse. Starting from
+a symptom or a message? [Troubleshooting](troubleshooting.md) maps each one to its section.
 
 [← Documentation index](README.md)
 
@@ -65,7 +65,7 @@ reports it as the cause of a `RuleCompilationException`.
 ## 🔍 Caught when loading or only when running?
 
 `load()` compiles every expression, but MVEL's parser is lenient, so some mistakes in MVEL rules only
-surface when a rule is evaluated. Another language decides what it catches when compiling.
+surface at run time. Another language decides what it catches when compiling.
 
 | Mistake | Detected by |
 | --- | --- |
@@ -120,7 +120,7 @@ it. The listener column leaves out `beforeRun`, except where a run never gets it
 | A fatal error from `afterRun` | The error itself, although the run succeeded | Every listener gets `afterRun`; no `onRunError` | ERROR |
 | A fatal error from `onRunError` | That error, in place of what the run failed with, which it keeps in `getSuppressed()` | Every listener gets `onRunError` | ERROR |
 | A fatal error from closing copies, sessions, compilers or [`runScopedClosing`](languages/custom.md#-reading-facts) values as the run leaves; see [A fatal error while closing](#-a-fatal-error-while-closing) | The error itself, even when the run succeeded, in place of a run failure that isn't fatal; a fatal run failure wins | Nothing more: listeners already got `afterRun` or `onRunError`, if the run reached them | WARN, unless a nested run logged it; a language that failed to create a session was already logged at ERROR, and a stop while waiting at WARN |
-| A `runScopedClosing` value's `close()` throws anything but a fatal error | Nothing: the run's outcome stands | Nothing more | WARN, unless a nested run logged it |
+| A `runScopedClosing` value's `close()` throws anything but a fatal error as the run leaves | Nothing: the run's outcome stands | Nothing more | WARN, unless a nested run logged it |
 | The thread has too little stack left; see [Exceptions by method](exceptions-by-method.md) | `StackOverflowError`, before the run takes anything | Nothing | Not logged |
 | `run()` before `load()`, on a closed engine, with `null` facts, or the broken engine invariant in [Exceptions by method](exceptions-by-method.md) | `IllegalStateException` or `NullPointerException` | Nothing | Not logged |
 

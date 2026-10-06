@@ -277,9 +277,12 @@ public interface RulesEngine<O> extends AutoCloseable {
      * {@link #load(List)} throw {@link IllegalStateException} — as does a run that had read the rules but had not yet
      * begun to borrow a copy when this method closed the engine, unless another run is still using the rules when it
      * borrows: then it uses them, as a run that read rules a reload replaced does, and its rules may run after this
-     * method has returned. Otherwise it reads the rules again and finds a closed engine. A {@code load()} that found
-     * the engine open before this method closed it isn't stopped. If it fails, it throws what it would on an open
-     * engine, such as {@link RuleCompilationException}. If it succeeds, either it swapped its rules
+     * method has returned. Otherwise it reads the rules again and finds a closed engine. A run whose thread is
+     * interrupted, or whose deadline has passed, stops before reading them again, with a
+     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException RuleExecutionException}, as one stopped
+     * while waiting for a copy does. A {@code load()} that found the engine open before this method closed it isn't
+     * stopped. If it fails, it throws what it would on an open engine, such as {@link RuleCompilationException}. If it
+     * succeeds, either it swapped its rules
      * in first, and this method closes them like any others, or it finds the engine closed, closes its rules rather
      * than swapping them in, and throws {@link IllegalStateException}. A failure that stops this method closing rules
      * part way, as running out of stack in the engine's own steps can, is thrown, fatal or not, and the engine is

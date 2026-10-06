@@ -7,3 +7,21 @@
 <a href="no-such-page-3.md">z</a>
 
 [fine](tilde-fence-backtick-pair.md 'title') and <a href="tilde-fence-backtick-pair.md">fine</a>
+
+<img src="tilde-fence-backtick-pair.md" data-src="no-such-lazy.png">
+
+<a href="tilde-fence-backtick-pair.md" data-href="no-such-data-href.md">x</a>
+
+<a href="tilde-fence-backtick-pair.md" src="no-such-a-src.md">x</a>
+
+<img src="no-such-real.png" data-src="tilde-fence-backtick-pair.md">
+
+<a href="no-such-titled.md" title="see href=no-such-in-title.md">x</a>
+
+<a href="">x</a>
+
+<a href = "no-such-spaced-eq.md">x</a>
+
+<abbr href="no-such-abbr.md">x</abbr> and <A HREF="no-such-upper.md">x</A>
+
+<a title="a>b" href="no-such-after-gt.md">x</a>

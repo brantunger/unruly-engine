@@ -59,8 +59,8 @@ expression the first time it runs it. Without that pacing, a virtual thread that
 own, however many there were; see [What it costs, measured](#-what-it-costs-measured).
 
 The engine has one **build slot** for each processor, counted once by `build()`. Each engine has its own, and every
-rule list it loads shares them, across reloads too. A run on a virtual thread, not
-[nested](glossary.md#nested-run) in another run on it:
+rule list it loads shares them, across reloads too. A run on a virtual thread, while no run on its thread
+[holds or is getting a copy](compiled-copies.md#runs-that-dont-wait):
 
 1. takes an idle copy at once, if there is one, including one [made at load](compiled-copies.md#making-copies-at-load);
 2. otherwise waits for a slot, then looks for an idle copy again, and gives the slot back if it finds one;
@@ -75,8 +75,9 @@ run that gives up waiting (below) makes and runs its new copy without a slot, so
 pacing.
 
 The copies still grow to the most runs in progress at once, only more slowly;
-[What it costs, measured](#-what-it-costs-measured) has the numbers. Runs on platform threads, nested runs, and every
-run on an engine with the default limit or `maxCopies(n)` never wait for a slot.
+[What it costs, measured](#-what-it-costs-measured) has the numbers. Runs on platform threads, runs started while a run
+on their thread holds or is getting a copy, and every run on an engine with the default limit or `maxCopies(n)` never
+wait for a slot.
 
 | When | What happens |
 | --- | --- |
