@@ -325,22 +325,36 @@ jobs:
         run: python3 docs/scripts/check_fixtures.py
 
   # One result for the jobs above, for branch protection to require: a documentation-only pull request skips the
-  # build matrix, and a skipped matrix job doesn't report its per-OS checks. A skipped job counts as passed. The
-  # changes job isn't judged: when it fails, the build and native-image run anyway, and they decide.
+  # build matrix, and a skipped matrix job doesn't report its per-OS checks. The build and native-image pass when they
+  # succeeded, or were skipped because the changes job said the pull request is documentation only; docs-and-hygiene
+  # passes only when it succeeded. Any other result fails, such as that of a job cancelled before a runner took it.
+  # The changes job isn't judged: when it fails, the build and native-image run anyway, and they decide.
   ci-result:
     if: ${{ !cancelled() }}
     needs: [ changes, build, native-image, docs-and-hygiene ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Fail if a job failed
-        if: >-
-          contains(fromJSON('["failure", "cancelled"]'), needs.build.result)
-          || contains(fromJSON('["failure", "cancelled"]'), needs.native-image.result)
-          || contains(fromJSON('["failure", "cancelled"]'), needs.docs-and-hygiene.result)
+      - name: Fail unless every job passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          BUILD: ${{ needs.build.result }}
+          NATIVE_IMAGE: ${{ needs.native-image.result }}
+          DOCS_AND_HYGIENE: ${{ needs.docs-and-hygiene.result }}
         run: |
-          echo "::error::build: ${{ needs.build.result }}, native-image: ${{ needs.native-image.result }}, docs-and-hygiene: ${{ needs.docs-and-hygiene.result }}"
-          exit 1
+          echo "changes: '$CHANGES' (code: '$CODE'), build: '$BUILD', native-image: '$NATIVE_IMAGE'," \
+            "docs-and-hygiene: '$DOCS_AND_HYGIENE'"
+          passed() { [ "$1" = success ] || { [ "$1" = skipped ] && [ "$CODE" = false ]; }; }
+          failed=""
+          passed "$BUILD" || failed="$failed build"
+          passed "$NATIVE_IMAGE" || failed="$failed native-image"
+          [ "$DOCS_AND_HYGIENE" = success ] || failed="$failed docs-and-hygiene"
+          if [ -n "$failed" ]; then
+            echo "::error::Didn't pass:$failed. The build and native-image pass when they succeeded, or were skipped" \
+              "on a documentation-only pull request; docs-and-hygiene passes only when it succeeded."
+            exit 1
+          fi
 
   # Submits the resolved dependency graph so Dependabot alerts cover transitives,
   # not just the coordinates declared in build.gradle.kts.
