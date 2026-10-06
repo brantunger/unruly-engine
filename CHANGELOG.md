@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.28.0](https://github.com/brantunger/unruly-engine/compare/v2.27.0...v2.28.0) (2026-10-06)
+
+
+### Features
+
+* run a language's onCancel action at the run's deadline, so a runtime stopped only from outside needs no timer of its own ([#1087](https://github.com/brantunger/unruly-engine/issues/1087)) ([6e6d1e7](https://github.com/brantunger/unruly-engine/commit/6e6d1e73f42f6a0583bbbc28c8652c7cc0e628a1))
+
 ## [2.27.0](https://github.com/brantunger/unruly-engine/compare/v2.26.3...v2.27.0) (2026-10-06)
 
 
