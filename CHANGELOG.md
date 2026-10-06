@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.27.0](https://github.com/brantunger/unruly-engine/compare/v2.26.3...v2.27.0) (2026-10-06)
+
+
+### Features
+
+* let a language scope its fact-name checks to the rule lists and facts its own rules can see ([#1069](https://github.com/brantunger/unruly-engine/issues/1069)) ([d575c8a](https://github.com/brantunger/unruly-engine/commit/d575c8a90f79cc07d2f071c3b94894cd22eb513f))
+
 ## [2.26.3](https://github.com/brantunger/unruly-engine/compare/v2.26.2...v2.26.3) (2026-10-06)
 
 
