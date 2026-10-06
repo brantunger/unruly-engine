@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.26.3](https://github.com/brantunger/unruly-engine/compare/v2.26.2...v2.26.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* warm up MVEL when preparing it, so a first run deep in a stack has fewer classes to load ([#1065](https://github.com/brantunger/unruly-engine/issues/1065)) ([fd3dbec](https://github.com/brantunger/unruly-engine/commit/fd3dbecfc03280694c6e555f1d4ce38375260d40))
+
 ## [2.26.2](https://github.com/brantunger/unruly-engine/compare/v2.26.1...v2.26.2) (2026-10-06)
 
 
