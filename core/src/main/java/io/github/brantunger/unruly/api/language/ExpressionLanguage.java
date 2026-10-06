@@ -62,11 +62,13 @@ public interface ExpressionLanguage {
      * first uses it, once for the language's class, unless several rule lists first use it at the same time. No lock
      * is taken around these calls, so engines built, or rule lists first loaded or validated, on several threads at
      * once may call it at the same time. So it must be safe to call concurrently, and cheap once it has done its work,
-     * as initializing a class that is already initialized is. It should do nothing else: it creates no state an engine
-     * uses, and may be called on a language that never compiles anything. Anything it throws while an engine is built
-     * fails the build, unchanged; anything it throws when a rule list first uses the language fails the language for
-     * that rule list, as what {@link #newCompiler(CompileContext)} throws does, reported as the language failing to
-     * prepare, and the language's next use prepares it again. By default it does nothing.
+     * as initializing a class that is already initialized is. It should do nothing else, but for running its own
+     * library's public API once, such as evaluating a trivial expression, so that a first run deep in a stack has fewer
+     * classes to load: it creates no state an engine uses, and may be called on a language that never compiles
+     * anything. Anything it throws while an engine is built fails the build, unchanged; anything it throws when a rule
+     * list first uses the language fails the language for that rule list, as what {@link #newCompiler(CompileContext)}
+     * throws does, reported as the language failing to prepare, and the language's next use prepares it again. By
+     * default it does nothing.
      * </p>
      */
     default void prepare() {

@@ -14,6 +14,8 @@ module io.github.brantunger.unruly {
     requires java.logging;
 
     exports io.github.brantunger.unruly.mvel;
+    // To MVEL alone, which reads the value MvelExpressionLanguage.prepare() evaluates on by reflection.
+    exports io.github.brantunger.unruly.mvel.warmup to mvel2;
 
     provides io.github.brantunger.unruly.api.language.ExpressionLanguage
             with io.github.brantunger.unruly.mvel.MvelExpressionLanguage;

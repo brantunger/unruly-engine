@@ -104,7 +104,9 @@ reflection, so the image must register those classes.
 registers what MVEL itself needs with the JIT off: the no-argument constructor of
 `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer`, and `org.mvel2.asm.ClassWriter`, a class MVEL looks up
 when it starts. Without that entry, an image built with [strict metadata](#-strict-metadata) logs a `WARNING` with a
-stack trace there. `native-image` reads the file from the class path; you do nothing.
+stack trace there. It also registers `io.github.brantunger.unruly.mvel.warmup.WarmUpTarget`, the engine's own class that
+preparing MVEL reads a property of and calls a method on. `native-image` reads the file from the class path; you do
+nothing.
 
 **What your application registers.** Everything your rules reach, in your own
 `src/main/resources/META-INF/native-image/<group>/<artifact>/reflect-config.json`, which `native-image` also finds on
@@ -171,7 +173,7 @@ the option is experimental. These are CI's commands for its second image:
 ```bash
 packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
 packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
-packages=$packages,io.github.brantunger.unruly.mvel
+packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
 native-image --no-fallback -H:+ReportExceptionStackTraces \
     -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
     -cp 'native-smoke/build/install/native-smoke/lib/*' -o native-smoke/build/native/native-smoke-strict \
@@ -187,7 +189,7 @@ native-smoke/build/native/native-smoke-strict -Dmvel2.disable.jit=true
 How the list works on GraalVM for JDK 21, from GraalVM's source:
 
 - Each entry is a package or a class, matched exactly, not as a prefix. `io.github.brantunger` covers none of the
-  library's classes, so CI lists each of its five packages. The build's `checkStrictImagePackages` task, which
+  library's classes, so CI lists each of its six packages. The build's `checkStrictImagePackages` task, which
   `./gradlew build` runs, fails when that list misses a package of the `core` or `mvel` jars, or names another.
 - The list picks whose `Class.forName` and other reflection calls throw. A lookup through a class loader's
   `loadClass` throws for any name the image has no metadata for, whatever the list.
@@ -239,7 +241,7 @@ image.
 ## 🧪 What was tested
 
 CI's `native-image` job builds the native-smoke application with GraalVM Community Edition for JDK 21 (21.0.2) on
-Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's five
+Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's six
 packages. The application checks its own results and exits with 1 if one is wrong. It covers:
 
 - a first-match engine with a class and a package import, a record fact read by property and a bean output an

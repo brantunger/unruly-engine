@@ -70,21 +70,21 @@ checks again.
 The check takes about 160 KB on x64, so a first build's thread needs about 200 KB on Windows x64, more on macOS,
 where 256 KB can be too small.
 
-**A language initializes its own classes in [`prepare()`](languages/custom.md#preparing-the-languages-classes),** after
-the same check, made once per language class:
+**A language initializes its own classes in [`prepare()`](languages/custom.md#preparing-the-languages-classes), and
+may run its library once,** after the same check, made once per language class:
 
 | The language is | Prepared |
 | --- | --- |
 | Named with `language(...)`, `defaultLanguage(...)`, `option(...)` or `languageImports(...)` | At every `build()`, after the settings are checked |
 | Found by `ServiceLoader`, unnamed, even as the only language: the usual MVEL setup | Once, at the first `load()` or `validate()` that uses it, an empty list using the default |
 
-A language's first use too deep throws `StackOverflowError` from the check, unlogged, with the language untouched; the
-rules loaded before stay loaded; for what `prepare()` throws, see
+A first use too deep throws `StackOverflowError` from the check, unlogged, leaving the language untouched and earlier
+rules loaded; for what `prepare()` throws, see
 [its contract](languages/custom.md#preparing-the-languages-classes).
 
 > [!TIP]
-> To check the room at `build()` rather than at a deep first `load()`, name the language, such as
-> `.defaultLanguage("mvel")`, and build the JVM's first engine near the top of a stack. MVEL's first `load()` needs
+> To check the room at `build()`, not at a deep first `load()`, name the language
+> (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()` needs
 > more stack than its check: load once near the top too; see
 > [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
 

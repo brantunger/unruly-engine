@@ -234,10 +234,12 @@ See [Nested runs](../nested-runs.md#-a-first-build-or-load-deep-in-a-stack).
 public void prepare() {
     // Called at build(), on every build of an engine that names this language, or else before the first
     // newCompiler(); the first time for its class, after the engine has checked that the stack has room.
-    // Initialize classes and nothing else: create no state an engine uses, since the language may never compile
-    // anything, and stay cheap once done. A throw fails build() unchanged, or, at a first use, the rules in this
-    // language, as a failing newCompiler() does: "The 'my' expression language failed to prepare: ...". The next
-    // use prepares again. It runs on the thread of that build(), load() or validate(), and may run on several
+    // Initialize classes and nothing else, but for running your own library's public API once, such as evaluating a
+    // trivial expression, so a first run deep in a stack has fewer classes to load: create no state an engine uses,
+    // since the language may never compile anything, and stay cheap once done. A warm-up that may overflow should catch
+    // StackOverflowError and skip itself, as MVEL's does. A throw fails build() unchanged, or, at a first use, the
+    // rules in this language, as a failing newCompiler() does: "The 'my' expression language failed to prepare: ...".
+    // The next use prepares again. It runs on the thread of that build(), load() or validate(), and may run on several
     // threads at once.
     MethodHandles.Lookup lookup = MethodHandles.lookup();
     for (Class<?> type : List.of(MyParser.class, MyExpression.class)) {   // yours, and your libraries' classes

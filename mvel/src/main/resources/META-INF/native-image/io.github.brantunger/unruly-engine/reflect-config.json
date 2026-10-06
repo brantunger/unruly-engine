@@ -10,5 +10,20 @@
   },
   {
     "name": "org.mvel2.asm.ClassWriter"
+  },
+  {
+    "name": "io.github.brantunger.unruly.mvel.warmup.WarmUpTarget",
+    "allPublicFields": true,
+    "queryAllPublicMethods": true,
+    "methods": [
+      {
+        "name": "isReady",
+        "parameterTypes": []
+      },
+      {
+        "name": "check",
+        "parameterTypes": []
+      }
+    ]
   }
 ]
