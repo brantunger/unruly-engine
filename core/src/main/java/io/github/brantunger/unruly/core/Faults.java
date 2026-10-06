@@ -55,6 +55,20 @@ final class Faults {
         RUN_VALUES_CLOSED,
         /** A run that has closed its values and given back its copy, before it combines what they threw. */
         RUN_ENDING_COMBINED,
+        /** {@link RunScope#end()} waiting for another thread to give back the scope's turn, before it parks. */
+        RUN_SCOPE_END_WAITING,
+        /** {@link RunScope#end()} setting the interrupt status again once its wait was interrupted, before it has. */
+        RUN_SCOPE_END_INTERRUPTING,
+        /**
+         * A run's scope refusing a value whose init ended the run, once it has closed the value, before it builds the
+         * failure it throws.
+         */
+        RUN_VALUE_REFUSING,
+        /**
+         * {@link EngineEvaluationContext#endRun} keeping a failure on what it throws, before it has: what a value's
+         * {@code close()} threw, each time one did, and once every value is closed, what failed before.
+         */
+        TEST_RUN_FAILURE_KEPT,
         /** A compile that overflowed the stack, checking the room left to tell why, before it has. */
         OVERFLOW_ROOM_CHECKED,
         /**
@@ -66,7 +80,12 @@ final class Faults {
          * A run's scope making its map for the first value asked for, before it has, holding the scope's monitor.
          * Watched only, never failed (see {@link #reached(Step)}).
          */
-        RUN_SCOPE_MAP_MAKING(true);
+        RUN_SCOPE_MAP_MAKING(true),
+        /**
+         * {@link RunScope#end()} taking the values to hand back, once it has read them, before it marks the scope
+         * ended, holding the scope's monitor. Watched only, never failed (see {@link #reached(Step)}).
+         */
+        RUN_SCOPE_VALUES_TAKING(true);
 
         // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
         private final boolean watchOnly;

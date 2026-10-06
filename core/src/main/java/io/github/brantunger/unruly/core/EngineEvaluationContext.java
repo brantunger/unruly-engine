@@ -134,21 +134,46 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * Ends the run of a context the test kit created, as a run ends: closes the values kept with
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, each whatever the others
      * throw, and fails any later request for one (see {@link RunScope#end()}). Unlike a run, it throws what a
-     * {@code close()} threw: the first, with the others suppressed on it. Calling it again does nothing. Called from a
-     * {@code runScopedClosing} init, it closes the run's values made so far, and that init's own value is closed and
-     * refused too (see {@link RunScope#getClosing}). <b>Internal:</b> public only for the test kit.
+     * {@code close()} threw: the first, with the others suppressed on it. A second call does nothing, unless both waits
+     * failed (below): it then closes the values left open. Called from a {@code runScopedClosing} init, it closes the
+     * run's values made so far, and that init's own value is closed and refused too, unless both of this call's waits
+     * failed (see {@link RunScope#getClosing}). If waiting for an init on another thread fails, as it can when the
+     * stack or the heap runs out, it tries once more, as a run does, closes what that hands over, and throws what the
+     * wait threw. <b>Internal:</b> public only for the test kit.
      *
      * @param context A context the engine created: this record, or an {@link EngineActionContext}
      * @throws NullPointerException if {@code context} is {@code null}
-     * @throws Exception            the first thing a value's {@code close()} threw, as it is, with what the others
-     *                              threw suppressed on it: each once, and none it already carries or that carries it
-     *                              (see {@link Failures#keepAlso})
+     * @throws Exception            what waiting for an init on another thread threw, if it failed, or else the first
+     *                              thing a value's {@code close()} threw, as it is; every other {@code close()}
+     *                              failure, what waiting again threw, and the first failure to keep one of them are
+     *                              suppressed on it, as far as keeping them doesn't fail: each once, and none it
+     *                              already carries or that carries it (see {@link Failures#keepAlso})
+     * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError} that keeping
+     *                              what failed before on the first failure threw, once every value is closed, in
+     *                              place of the first failure, which it doesn't carry
      */
-    // Any Throwable: each value is closed whatever the one before threw, and what the first threw is thrown as it is.
+    // Any Throwable: each value is closed whatever the one before threw, even when keeping that fails, and what the
+    // first threw is thrown as it is, unless keeping the rest on it once every value is closed fails for the JVM.
     public static void endRun(EvaluationContext context) throws Exception {
         Objects.requireNonNull(context, "context must not be null");
-        List<AutoCloseable> values = runScopeOf(context).end();
+        RunScope scope = runScopeOf(context);
+        List<AutoCloseable> values = List.of();
         Throwable first = null;
+        // What waiting again threw, and the first failure to keep what a close() threw: held by assignment only, so
+        // the next value is still closed, and kept on the first last.
+        Throwable again = null;
+        Throwable lost = null;
+        try {
+            values = scope.end();
+        } catch (Throwable e) {
+            // It handed nothing over: once more, as a run does.
+            first = e;
+            try {
+                values = scope.end();
+            } catch (Throwable t) {
+                again = t;
+            }
+        }
         for (int i = values.size() - 1; i >= 0; i--) {
             try {
                 values.get(i).close();
@@ -156,10 +181,30 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
                 if (first == null) {
                     first = e;
                 } else {
-                    // Not the same one twice, nor one that would make a loop of causes and suppressed exceptions.
-                    Failures.keepAlso(first, e);
+                    try {
+                        Faults.at(Faults.Step.TEST_RUN_FAILURE_KEPT);
+                        // Not the same one twice, nor one that would make a loop of causes and suppressed exceptions.
+                        Failures.keepAlso(first, e);
+                    } catch (Throwable t) {
+                        if (lost == null) {
+                            lost = t;
+                        }
+                    }
                 }
             }
+        }
+        try {
+            Faults.at(Faults.Step.TEST_RUN_FAILURE_KEPT);
+            Failures.keepAlso(first, again);
+            Failures.keepAlso(first, lost);
+        } catch (StackOverflowError ignored) {
+            // Every value is closed: only what wasn't kept is lost, and the first is thrown as it is all the same.
+        } catch (VirtualMachineError fatal) {
+            // But the JVM failing, as running out of memory is, is thrown in its place, alone, as keeping the first on
+            // it would allocate too.
+            throw fatal;
+        } catch (Throwable ignored) {
+            // As for a StackOverflowError.
         }
         Failures.<RuntimeException>rethrowUnchecked(first);
     }

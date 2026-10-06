@@ -155,7 +155,8 @@ public sealed interface EvaluationContext
      * with this method once the run's values are being closed, or have been, such as from a value's {@code close()} or
      * through a context kept past its run, as that value would never be closed. This method can be called from another
      * thread while the run ends: the value is then either closed with the run's others, or refused with
-     * {@link IllegalStateException}, and never left open. The {@code init}s of closing values run one at a time: a call
+     * {@link IllegalStateException}, and never left open, unless the run's end fails twice, as it can when the stack
+     * or the heap runs out. The {@code init}s of closing values run one at a time: a call
      * on another thread while one runs waits for it, then gets the value made for its key, or, if that {@code init}
      * threw, makes its own. The wait has no limit and ignores interrupts, keeping the interrupt status; the run's end
      * waits the same way, and a waiting call is refused once the run begins to end. So an {@code init} that waits for

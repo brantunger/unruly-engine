@@ -280,16 +280,20 @@ public final class LanguageTestContexts {
     /**
      * Ends the run of a context, as the engine ends a run: closes the values the run keeps with
      * {@link EvaluationContext#runScopedClosing}, in the reverse of the order they were made, so a language's test can
-     * check that it releases what it opened for the run. Every value is closed, whatever the others throw, and from
-     * then on asking for one with {@code runScopedClosing}, through any context of the run, throws
-     * {@link IllegalStateException}, as it does once a run has ended. Calling it again does nothing. It first waits,
-     * with no limit, for a {@code runScopedClosing} init running on another thread.
+     * check that it releases what it opened for the run. Every value is closed, whatever the others throw, unless both
+     * waits below fail, and from then on asking for one with {@code runScopedClosing}, through any context of the run,
+     * throws {@link IllegalStateException}, as it does once a run has ended. It first waits, with no limit, for a
+     * {@code runScopedClosing} init running on another thread. If that wait fails, as it can when the stack or the
+     * heap runs out, it waits once more, as a run does, and closes what that hands over; if that fails too, it closes
+     * nothing, and the run hasn't ended. A second call does nothing, unless both waits failed: it then closes the
+     * values left open.
      *
      * <p>
      * Called from a {@code runScopedClosing} init that goes on to return a value, it closes the run's values, and
      * that value is closed too, and refused: {@code runScopedClosing} throws the same {@link IllegalStateException},
      * with what that {@code close()} threw suppressed on it, unless that is or carries a fatal {@link Error}, which
-     * it throws in its place, carrying the {@link IllegalStateException}. So a value is never left open.
+     * it throws in its place, carrying the {@link IllegalStateException}. So a value is never left open, unless both
+     * of {@code endRun}'s waits failed.
      * </p>
      *
      * <p>
@@ -299,9 +303,14 @@ public final class LanguageTestContexts {
      *
      * @param context A context of the run, created by this class, such as with {@link #evaluation(Map)}
      * @throws NullPointerException if {@code context} is {@code null}
-     * @throws Exception            the first {@link Throwable} a value's {@code close()} threw, as it is, with what
-     *                              the others threw suppressed on it, each once, leaving out any that it already
-     *                              carries or that carries it
+     * @throws Exception            what waiting for an init on another thread threw, if it failed, or else the
+     *                              first {@link Throwable} a value's {@code close()} threw, as it is; every other
+     *                              {@code close()} failure, what waiting again threw, and the first failure to keep
+     *                              one of them are suppressed on it, as far as keeping them doesn't fail: each once,
+     *                              and none it already carries or that carries it
+     * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError} that keeping
+     *                              what failed before on the first failure threw, once every value is closed, in
+     *                              place of the first failure, which it doesn't carry
      */
     public static void endRun(EvaluationContext context) throws Exception {
         EngineEvaluationContext.endRun(context);

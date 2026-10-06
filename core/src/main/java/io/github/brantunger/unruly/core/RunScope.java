@@ -31,8 +31,8 @@ import java.util.function.Supplier;
  * Closing inits run one at a time: a thread takes the scope's turn before one runs, and gives it back after. The turn
  * is re-entrant, so an init can ask for another closing key. A closing request on another thread, and {@link #end()},
  * wait for the turn, so a value asked for on another thread while the run ends, such as through a context a language
- * kept, is either handed back to be closed or refused, never left open. A value whose init ends the run itself, on its
- * own thread, is closed and refused.
+ * kept, is either handed back to be closed or refused, never left open, unless {@link #end()} fails and isn't called
+ * again (see {@link #end()}). A value whose init ends the run itself, on its own thread, is closed and refused.
  * </p>
  */
 // Nothing that keeps a value or gives the turn back enters a monitor or calls a method, either of which can overflow
@@ -264,19 +264,37 @@ final class RunScope {
                 + ") after the run ended, when its value would never be closed");
     }
 
-    // Closes a value whose init ended the run, and returns the failure to throw. Any Throwable: what close() threw is
-    // suppressed on it, but a fatal Error is thrown itself, carrying it. The turn has been given back by then.
+    // Closes a value whose init ended the run, and returns the failure to throw. It's closed first, so building the
+    // failure, which allocates and so can run out of stack or memory, never leaves it open. Any Throwable: what close()
+    // threw is suppressed on the failure, but a fatal Error is thrown itself, carrying it; and if building the failure
+    // fails, what that threw is thrown, unless close() threw a fatal Error, which is thrown alone, as keeping what
+    // building threw on it would allocate too. The turn has been given back by then.
+    @SuppressWarnings("PMD.PreserveStackTrace")
     private static IllegalStateException refused(String method, Object key, AutoCloseable value) {
-        IllegalStateException refused = endedFailure(method, key);
-        Throwable thrown = refused;
+        Throwable closing = null;
         try {
             value.close();
         } catch (Throwable t) {
-            // The refusal, carrying t, or the fatal Error in t, carrying the refusal but not t, which is or reaches it.
-            thrown = Failures.fatalFirst(refused, t);
+            closing = t;
         }
-        if (thrown instanceof Error fatal) {
-            throw fatal;
+        IllegalStateException refused;
+        try {
+            Faults.at(Faults.Step.RUN_VALUE_REFUSING);
+            refused = endedFailure(method, key);
+        } catch (Throwable t) {
+            // Only instanceof checks, which can't fail as building did: the fatal Error close() threw itself wins.
+            if (closing instanceof VirtualMachineError fatal && !(fatal instanceof StackOverflowError)) {
+                throw fatal;
+            }
+            throw t;
+        }
+        if (closing != null) {
+            // The refusal, carrying closing, or the fatal Error in it, carrying the refusal but not closing, which is
+            // or reaches it.
+            Throwable thrown = Failures.fatalFirst(refused, closing);
+            if (thrown instanceof Error fatal) {
+                throw fatal;
+            }
         }
         return refused;
     }
@@ -287,33 +305,45 @@ final class RunScope {
      * such as one running an init in {@link #getClosing}, it waits for it, and refuses a closing value to any other
      * thread meanwhile; that init's value is then handed back. The wait is uninterruptible: an interrupt meanwhile is
      * set again once it ends. Called on the thread that holds the turn, from an init, it doesn't wait. It allocates
-     * nothing, so it can end a run that has run out of memory. Nothing can be added to the list it returns.
+     * nothing, so it can end a run that has run out of memory. A call that throws, as waiting can when the stack or the
+     * heap runs out, hands nothing back, and leaves the values to the next call. Nothing can be added to the list it
+     * returns.
      *
      * @return The values to close, in the order they were made: the caller closes them last first, so a value made
-     *         from another is closed before it. Empty if none were kept, or this has been called before.
+     *         from another is closed before it. Empty if none were kept, or a call before this one has handed them
+     *         back.
      */
     // Any Throwable: the interrupt is set again however the wait ends, as a virtual thread's park can fail for memory.
+    // The values are taken only after that, so a call that fails, waiting or setting the interrupt again, leaves them
+    // for the next. Once ending is set and the turn is free, or this thread's, no other thread can take the turn, nor
+    // so make or keep a closing value; but another can end the scope too, so they're taken, and closing marked ended,
+    // in one section synchronized on the scope, and only one call hands them back.
     @SuppressWarnings({"PMD.CompareObjectsWithEquals", "PMD.LooseCoupling"})
     List<AutoCloseable> end() {
         Thread me = Thread.currentThread();
         boolean interrupted = false;
-        ClosingValues handedBack;
         try {
             for (;;) {
                 synchronized (this) {
                     ending = true;
                     if (owner == null || owner == me) {
-                        handedBack = closing;
-                        closing = ENDED;
                         break;
                     }
                 }
+                Faults.at(Faults.Step.RUN_SCOPE_END_WAITING);
                 interrupted |= pause();
             }
         } finally {
             if (interrupted) {
+                Faults.at(Faults.Step.RUN_SCOPE_END_INTERRUPTING);
                 me.interrupt();
             }
+        }
+        ClosingValues handedBack;
+        synchronized (this) {
+            handedBack = closing;
+            Faults.reached(Faults.Step.RUN_SCOPE_VALUES_TAKING);
+            closing = ENDED;
         }
         return handedBack == null || handedBack == ENDED ? List.of() : handedBack;
     }

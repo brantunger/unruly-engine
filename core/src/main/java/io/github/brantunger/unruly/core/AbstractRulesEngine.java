@@ -486,8 +486,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@code close()} threw can when it runs out of stack, is returned for the run to throw, and the copy is given back
      * whatever closing the values threw. The values are handed over first, so none can be made once they're handed
      * over: an init running on another thread finishes first, and its value is handed over with them (see
-     * {@link RunScope#end()}). Each step's failure is only stored where it's caught, which can't fail again; they
-     * are combined last.
+     * {@link RunScope#end()}). If handing them over fails, as waiting for that init can when the stack or the heap
+     * runs out, nothing is handed over, so it's tried once more, and only once: what that hands over is closed all the
+     * same, and what the first try threw is returned all the same. Each step's failure is only stored where it's
+     * caught, which can't fail again; they are combined last.
      *
      * @param rules The rule set the run borrowed its copy from
      * @param copy  The run's copy, or {@code null} if its facts were rejected and it holds none
@@ -504,17 +506,27 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The first fatal error the JVM threw, a VirtualMachineError but a StackOverflowError, while the run ended,
         // kept with instanceof checks and assignments only, for the last resort below.
         Throwable fatal = null;
+        Throwable endFailed = null;
         Throwable taking = null;
         List<AutoCloseable> values = List.of();
         try {
             RunScope scope = facts.evaluation().runScope();
-            values = scope.end();
+            try {
+                values = scope.end();
+            } catch (Throwable t) {
+                // It handed nothing over: once more, and what that throws is caught below, as it is the first time.
+                endFailed = t;
+                values = scope.end();
+            }
             Faults.at(Faults.Step.RUN_VALUES_CLOSING);
         } catch (Throwable t) {
             // The values handed over are closed all the same.
             taking = t;
         }
-        if (taking instanceof VirtualMachineError && !(taking instanceof StackOverflowError)) {
+        if (endFailed instanceof VirtualMachineError && !(endFailed instanceof StackOverflowError)) {
+            fatal = endFailed;
+        }
+        if (fatal == null && taking instanceof VirtualMachineError && !(taking instanceof StackOverflowError)) {
             fatal = taking;
         }
         Throwable closing;
@@ -539,7 +551,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         try {
             Faults.at(Faults.Step.RUN_ENDING_COMBINED);
-            Throwable ending = Failures.fatalFirst(Failures.fatalFirst(taking, closing), releasing);
+            Throwable ending = Failures.fatalFirst(
+                    Failures.fatalFirst(Failures.fatalFirst(endFailed, taking), closing), releasing);
             // The fatal error itself, not a throwable that carries it, as a run that fails with one throws it.
             Error carried = Failures.fatalError(ending);
             if (carried != null) {
