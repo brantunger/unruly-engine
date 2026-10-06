@@ -95,7 +95,7 @@ language. Extend it and supply expressions in your language, one method for each
 The checks supply facts named `x`, `y`, `applicant` and `nest`, so your language must not reserve them. If it does,
 every check that builds an engine fails before building it, with `reservedFactNames() reserves [<names>], which the
 contract kit's checks supply as facts: the kit can't check a language that reserves x, y, applicant or nest`, where
-`<names>` are those of the four it reserves, sorted. The kit's thirty-one checks:
+`<names>` are those of the four it reserves, sorted. The kit's checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |

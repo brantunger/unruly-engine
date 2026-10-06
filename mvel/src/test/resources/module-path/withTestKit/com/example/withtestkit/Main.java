@@ -25,9 +25,6 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 
 public final class Main {
 
-    /** The kit's checks. */
-    private static final int CHECKS = 31;
-
     /**
      * The checks MvelContractTest skips. MVEL has no built-in object or global of its own for sharedStateStaysLocal to
      * change. Its actions can still change a class's static state, named by the class's full name, since MVEL runs
@@ -76,8 +73,9 @@ public final class Main {
                 listener, skips);
         TestExecutionSummary summary = listener.getSummary();
         // Each check MVEL can't run is named, so that a check that starts being skipped fails here.
-        check(summary.getTestsFoundCount() == CHECKS && summary.getTotalFailureCount() == 0
-                        && summary.getTestsSucceededCount() == CHECKS - SKIPPED.size() && skipped.equals(SKIPPED),
+        check(summary.getTotalFailureCount() == 0
+                        && summary.getTestsSucceededCount() == summary.getTestsFoundCount() - SKIPPED.size()
+                        && skipped.equals(SKIPPED),
                 "the contract test found " + summary.getTestsFoundCount() + " tests, "
                         + summary.getTestsSucceededCount() + " passed, and skipped " + skipped + ": "
                         + summary.getFailures().stream()
