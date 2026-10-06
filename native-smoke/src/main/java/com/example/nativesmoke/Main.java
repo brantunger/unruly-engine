@@ -6,12 +6,26 @@ import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ActionResult;
+import io.github.brantunger.unruly.api.language.CancelRegistration;
+import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.api.language.Expression;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
+import io.github.brantunger.unruly.api.language.Session;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Runs MVEL rules the way an application would, so CI can build it into a GraalVM native image and run it. It goes
@@ -21,8 +35,9 @@ import java.util.Objects;
  * platforms, which an image managed only once the check stopped asking for the class file it serves to nobody. The
  * bean and map engines each run more than MVEL's JIT threshold of about 50 runs, so a native image meets whatever
  * MVEL does after it. It also writes and reads a class that isn't public through the engine's own reflection, as a
- * language other than MVEL would, where the image has no metadata for the public types above it. It prints one line
- * and exits with 1 if a result is wrong.
+ * language other than MVEL would, where the image has no metadata for the public types above it. And it stops a run
+ * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a virtual
+ * thread. It prints one line and exits with 1 if a result is wrong.
  */
 public final class Main {
 
@@ -42,6 +57,9 @@ public final class Main {
      * the way MVEL does; this application is what holds both platforms to the one answer.
      */
     private static final String FACT_NAME = "rejected,prime";
+
+    /** The name of the language whose action spins until its run passes its deadline, and of its rule. */
+    private static final String SPIN = "spin";
 
     /**
      * The fact the rules read.
@@ -190,10 +208,12 @@ public final class Main {
         String map = mapOutput();
         String factName = factNameOutcome();
         String hidden = hiddenOutcome();
+        String deadline = deadlineOutcome();
         boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName)
-                && "prime,gold,standard".equals(hidden);
+                && "prime,gold,standard".equals(hidden) && "timeout,virtual".equals(deadline);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
-                + " factName=" + factName + " hidden=" + hidden + " dateResource=" + dateResource()
+                + " factName=" + factName + " hidden=" + hidden + " deadline=" + deadline
+                + " dateResource=" + dateResource()
                 + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
                 + " jit=" + (Boolean.getBoolean("mvel2.disable.jit") ? "off" : "on"));
         if (!ok) {
@@ -300,6 +320,67 @@ public final class Main {
             return e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
         }
         return grade.getRate() + "," + grade.getLevel() + "," + FactProperties.read(new Rating(), "rate");
+    }
+
+    // A run whose action spins until an action it registered with onCancel stops it, as a runtime that can only be
+    // stopped from outside does: the run fails with its timeout, and the action ran on a virtual thread. The
+    // registration is closed in a finally, as try-with-resources would warn that the body never reads it.
+    @SuppressWarnings("PMD.UseTryWithResources")
+    private static String deadlineOutcome() {
+        AtomicReference<Thread> ranOn = new AtomicReference<>();
+        CompiledAction spin = (context, session) -> {
+            AtomicBoolean stop = new AtomicBoolean();
+            CancelRegistration deadline = context.onCancel(() -> {
+                ranOn.set(Thread.currentThread());
+                stop.set(true);
+            });
+            try {
+                while (!stop.get()) {
+                    Thread.onSpinWait();
+                }
+            } finally {
+                deadline.close();
+            }
+            return ActionResult.done();
+        };
+        ExpressionLanguage spinning = new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return SPIN;
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return (evaluation, session) -> true;
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return spin;
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return Session.none();
+                    }
+                };
+            }
+        };
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(spinning).defaultLanguage(SPIN).runTimeout(Duration.ofMillis(200)).build()) {
+            engine.load(List.of(Rule.builder().ruleName(SPIN).condition("true").action(SPIN).build()));
+            try {
+                engine.run(new FactMap<>());
+                return "returned";
+            } catch (RuleExecutionException e) {
+                Thread thread = ranOn.get();
+                return (e.getCause() instanceof TimeoutException ? "timeout" : "failed: " + e.getMessage()) + ","
+                        + (thread == null ? "not run" : thread.isVirtual() ? "virtual" : "platform");
+            }
+        }
     }
 
     // A diagnostic, never an assertion: it must not feed into ok or the exit code. It shows why the check has to ask

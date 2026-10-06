@@ -174,7 +174,7 @@ Languages differ in what rules can reach, whether a running rule can be stopped,
 | --- | --- | --- |
 | Rules that read like Java and can call any method | A language with full JVM access | MVEL, shipped in `unruly-engine` |
 | Rules written by people you don't fully trust | A language without JVM access, one that only reads facts | JsonLogic, CEL |
-| A timeout that stops a rule part-way | A language whose interpreter can be cancelled, so its adapter can stop it at the run's [deadline](../glossary.md#deadline) | JEXL's `cancellable(true)` interpreter, cancelled by the adapter at the deadline |
+| A timeout that stops a rule part-way | A language whose interpreter can be cancelled, so its adapter can stop it at the run's [deadline](../glossary.md#deadline) | JEXL's `cancellable(true)` interpreter, cancelled from the adapter's `onCancel` action |
 | A guarantee that every rule finishes | A language that isn't Turing-complete | CEL |
 | Misspelled properties caught by `load()` | A typed language, or MVEL's [strong typing](mvel.md#-strong-typing) | `.option("mvel", "strongTyping", "true")` |
 
@@ -225,7 +225,7 @@ getters, including platform ones with side effects, such as a `URL`'s `content`,
 its own; see [Reading a fact's properties](../facts.md#-reading-a-facts-properties).
 
 A [timeout](../stopping-runs.md#-what-a-timeout-doesnt-do) stops a run only between rules, or when an expression
-returns, unless the language honours `isCancelled()`, so a language that allows loops and ignores it can still block
+returns, unless the language stops expressions part-way, so one that allows loops and doesn't can still block
 `run()`. Read a language's documentation for what its rules can do, and whether they can be stopped part-way. The
 root README's [Security](../../README.md#-security) section covers the engine as a whole.
 

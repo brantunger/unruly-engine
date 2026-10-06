@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -59,6 +60,28 @@ class RunScopeTurnTest {
         public String toString() {
             return name;
         }
+    }
+
+    @Test
+    @DisplayName("#1047: a thread with as many closing inits running as the turn can count is refused another, which"
+            + " takes no turn")
+    void turnCountedToItsLimit() throws ReflectiveOperationException {
+        RunScope scope = new RunScope();
+        Field owner = RunScope.class.getDeclaredField("owner");
+        Field holds = RunScope.class.getDeclaredField("holds");
+        owner.setAccessible(true);
+        holds.setAccessible(true);
+        // As if this thread were MAX_HOLDS inits deep.
+        owner.set(scope, Thread.currentThread());
+        holds.setChar(scope, RunScope.MAX_HOLDS);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> scope.getClosing("key", () -> fail("init ran")));
+
+        assertEquals("runScopedClosing was refused for a key (java.lang.String): 65535 runScopedClosing inits are"
+                + " already running on its thread, the most there can be", thrown.getMessage());
+        assertEquals(RunScope.MAX_HOLDS, holds.getChar(scope));
+        assertSame(Thread.currentThread(), owner.get(scope));
     }
 
     @Test

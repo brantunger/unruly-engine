@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A tiny expression language for tests. It keeps its own variables and never writes to the map it reads facts from,
@@ -21,7 +22,9 @@ import java.util.Set;
  *     numbers, and fail the rule when either side isn't one.</li>
  *     <li>An action is statements separated by {@code ;}: {@code let NAME = OPERAND} declares a variable, and
  *     {@code put KEY OPERAND} puts a value into the output map, or, for a language that returns properties, into the
- *     action's {@link ActionResult}.</li>
+ *     action's {@link ActionResult}. {@code spin} runs until the run passes its deadline: it reads only a flag that an
+ *     action it registers with {@link EvaluationContext#onCancel(Runnable)} sets, as a runtime that can be stopped
+ *     only from outside does, so in a run without a deadline it never ends.</li>
  *     <li>An operand is an integer, a string in single quotes and without spaces, {@code true}, {@code false},
  *     {@code null}, the name of a variable or fact, or {@code fact.property}, which {@link FactProperties#read}
  *     reads from a record, a bean or a map.</li>
@@ -175,6 +178,8 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
                 String key = tokens.get(1);
                 String operand = tokens.get(2);
                 statements.add((context, locals, target) -> target.put(key, value(operand, context.facts(), locals)));
+            } else if (tokens.size() == 1 && "spin".equals(tokens.get(0))) {
+                statements.add((context, locals, target) -> spin(context));
             } else if (!tokens.isEmpty()) {
                 throw new IllegalArgumentException("syntax error in action statement '" + statement.trim() + "'");
             }
@@ -185,6 +190,18 @@ public final class ToyExpressionLanguage implements ExpressionLanguage {
             statements.forEach(statement -> statement.run(context, locals, target));
             return returnsProperties ? ActionResult.set(target) : ActionResult.done();
         };
+    }
+
+    private static void spin(ActionContext context) {
+        AtomicBoolean stop = new AtomicBoolean();
+        CancelRegistration deadline = context.onCancel(() -> stop.set(true));
+        try {
+            while (!stop.get()) {
+                Thread.onSpinWait();
+            }
+        } finally {
+            deadline.close();
+        }
     }
 
     @SuppressWarnings("unchecked")

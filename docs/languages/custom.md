@@ -54,7 +54,7 @@ sequenceDiagram
     Engine->>Comp: newSession(), when no idle copy is free
     Engine->>Comp: checkFactName(name), for each fact
     Engine->>Expr: evaluateWithDetail() or execute(), with the run's session
-    Engine->>Engine: after afterRun or onRunError, close the run's runScopedClosing values, newest first
+    Engine->>Engine: after afterRun or onRunError, close onCancel actions, then runScopedClosing values, newest first
     App->>Engine: load(newRules) or close()
     Engine->>Sess: close(), once no run uses the copy
     Engine->>Comp: close(), after its last session
@@ -430,7 +430,7 @@ Both contexts tell an expression where it stands:
 public CompiledAction compileAction(Expression expression) {
     return (context, session) -> {
         while (moreWork()) {
-            if (context.isCancelled()) {         // interrupted, or past the deadline
+            if (context.isCancelled()) {         // this thread is interrupted, or the deadline has passed
                 return ActionResult.done();
             }
             step(context.timeLeft());            // about 292 years when the run has no deadline
@@ -440,15 +440,23 @@ public CompiledAction compileAction(Expression expression) {
 }
 ```
 
-`isCancelled()` is `true` while the calling thread is interrupted, or once the deadline has passed.
-
-Returning then is enough: the engine checks again when the expression returns, and stops the run whatever it
-returned. Throwing once the run is cancelled stops it the same way, unless what it throws
+Returning then stops the run, whatever you return, and so does throwing, unless what you throw
 [fails the rule](../stopping-runs.md#-what-stops-a-run).
 
 Since 2.9.0, `timeLeft()` is the time left before the run's deadline, as the engine measures it, and
 `Duration.ZERO` once past: time your own calls with it. `deadline()` is a wall-clock `Instant` for showing, `null`
 without a timeout. None is required.
+
+Since 2.28.0, a runtime that can be stopped only from another thread, such as by setting a flag, needs no timer of its
+own: `onCancel(action)` runs `action` once when the run passes its deadline, unless you close the `CancelRegistration`
+it returns first. It never runs for an interrupt, nor in a run without a deadline. If the deadline has already passed,
+it runs on your thread before `onCancel` returns.
+
+Otherwise it runs while your expression does, on a new thread, virtual where it can be, without the run's
+thread-locals or context class loader: keep it thread-safe and short. What it throws, or one still running after a
+second, is logged at WARN, and it delays no other action. The run's end closes the registrations still open, after
+which `onCancel` throws `IllegalStateException`. One already started may still run, so give each expression a fresh
+flag, as below.
 
 A runtime that clears the interrupt status when it cancels, as JEXL's `cancellable(true)` does, hides the caller's
 interrupt from the engine, which sees an interrupt only in that status or as an `InterruptedException` causing, or
@@ -470,20 +478,17 @@ class CancellableContext extends MapContext implements JexlContext.CancellationH
     }
 }
 
-// scheduler: a ScheduledExecutorService your compiler owns; the JexlEngine is built with cancellable(true).
-// context: the EvaluationContext or ActionContext the engine passed. Pass a new CancellableContext each time: JEXL
-// leaves its flag set after any cancel.
+// The JexlEngine is built with cancellable(true). context: the EvaluationContext or ActionContext the engine passed.
+// Pass a new CancellableContext each time: JEXL leaves its flag set after any cancel, and an action that started as
+// the last expression ended may still set the last one's.
 Object execute(JexlScript script, CancellableContext jexlContext, EvaluationContext context) {
     AtomicBoolean forDeadline = new AtomicBoolean();
-    ScheduledFuture<?> timer = context.deadline() == null ? null : scheduler.schedule(() -> {
+    // Runs on a thread of its own at the deadline, or here at once if it has passed: then a fatal error it throws
+    // is thrown from onCancel, and anything else it throws is logged.
+    CancelRegistration deadline = context.onCancel(() -> {
         forDeadline.set(true);                           // record why, before cancelling
         jexlContext.getCancellation().set(true);
-    }, context.timeLeft().toNanos(), TimeUnit.NANOSECONDS);
-    // timeLeft() is timed as the engine times the run, so the timer fires once the run has passed its deadline,
-    // whatever the system clock does. Not Duration.between(Instant.now(), context.deadline()): that is off by any
-    // step of the system clock since the run started. Without a deadline, timeLeft() is
-    // Duration.ofNanos(Long.MAX_VALUE), about 292 years; the timer is skipped then, since a cancelled task can stay
-    // in a ScheduledThreadPoolExecutor's queue until its delay.
+    });
     try {
         return script.execute(jexlContext);
     } catch (JexlException.Cancel e) {
@@ -492,9 +497,7 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
         }
         throw e;
     } finally {
-        if (timer != null) {
-            timer.cancel(false);
-        }
+        deadline.close();                                // throws nothing; doesn't wait for an action that started
     }
 }
 ```
@@ -563,18 +566,11 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore it as [Stopping a run](#-stopping-a-run) shows, unless you cancelled it for the deadline |
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN. `runScoped` and `runScopedClosing` work there, with the limits in [Reading facts](#-reading-facts) | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **A closing init that waits for a worker** | The worker's `runScopedClosing` waits for that init to finish, so both threads hang for good: an interrupt doesn't free them, and the run never ends | Get the value before handing work off, and pass it to the worker |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
-| **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](contract-kit.md#-testing-with-the-contract-kit) fail it |
 
 ## ❓ Questions you might not think to ask
-
-### When is `newCompiler` called, and can I do expensive setup there?
-
-Once per `load()`, at the first rule in your language, never at `build()`, so per-list setup belongs there. See
-[Lifecycle at a glance](#-lifecycle-at-a-glance).
 
 ### Are sessions created for runs that never reach my rules?
 

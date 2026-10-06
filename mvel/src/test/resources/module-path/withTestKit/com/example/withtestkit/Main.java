@@ -31,10 +31,10 @@ public final class Main {
      * them without a sandbox, and that check doesn't cover it. MVEL reserves output, the name its actions bind the
      * output object to, so the engine rejects a fact by that name itself, and unreservedOutputReadAsFact has nothing to
      * check. MVEL's compiler can't tell which facts its rules read, so factNamesReadHoldsTheFactsRead has nothing to
-     * check either.
+     * check either. MVEL can't stop an action part-way, so it has no endless action for endlessActionStopsAtTimeout.
      */
-    private static final Set<String> SKIPPED = Set.of("factNamesReadHoldsTheFactsRead", "sharedStateStaysLocal",
-            "unreservedOutputReadAsFact");
+    private static final Set<String> SKIPPED = Set.of("endlessActionStopsAtTimeout", "factNamesReadHoldsTheFactsRead",
+            "sharedStateStaysLocal", "unreservedOutputReadAsFact");
 
     private Main() {
     }

@@ -130,13 +130,15 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `nestedRunInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null` | A run that a getter starts inside a condition, on the same thread, and the outer run each give their own output |
 | `nestedRunFailsInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still fires its rule |
 | `nestedRunFailsInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still gets the action's value |
+| `endlessActionStopsAtTimeout` | `alwaysTrue`, `endlessAction` | `endlessAction()` returns `null`, the default | With `runTimeout` of 200 ms, the run of a rule with that action, on a thread of its own, fails within 30 seconds with a `RuleExecutionException` caused by a `TimeoutException`, and leaves that thread not interrupted |
 
 When your compiler returns a set from `factNamesRead()`, `unusableFactNameRejected` and `unreservedOutputReadAsFact`
 add the name under test to it, so your `checkFactName` is still asked about it although no rule of theirs reads it.
 
-Only the thirteen `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
+Only the fourteen `@Nullable` hooks may return `null`: `assignment`, `declareVariable`, `reassignOutput`,
 `unusableFactName`, `missingFactProperty`, `copyThroughVariable`, `putFactProperty`, `propertyAssignment`,
-`conditionDeclaration`, `declareVariableThenFail`, `bothConditions`, `changeSharedState` and `sharedStateEquals`.
+`conditionDeclaration`, `declareVariableThenFail`, `bothConditions`, `changeSharedState`, `sharedStateEquals` and
+`endlessAction`.
 
 - `comparesWholeNumbersByValue()` skips its check by returning `false`, and `usableFactNames()` by returning an empty
   collection.
@@ -147,6 +149,11 @@ Only the thirteen `@Nullable` hooks may return `null`: `assignment`, `declareVar
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
 - `language()` is called for each check and, except in `unreservedOutputReadAsFact` and `concurrentPrepares`, for
   each engine a check builds, so return a new instance.
+
+`endlessAction()`, added in 2.28.0, returns an action that runs until its run passes its deadline, such as
+`while (true) {}`, in a language that stops it with [`onCancel`](custom.md#-stopping-a-run) or by polling
+`isCancelled()`. MVEL can't stop an action part-way, so its test leaves it `null`. An action that never stops keeps
+its thread busy after the check fails.
 
 `putVariable(key, variable)` and `variableEquals(variable, value)` default to `putFact` and `factEquals`. Override
 them if your variables have a namespace of their own, such as SpEL's `#y`: otherwise the variable checks read a fact

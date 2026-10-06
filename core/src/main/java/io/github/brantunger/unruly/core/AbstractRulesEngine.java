@@ -1201,7 +1201,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * deadline. Checked before each condition and before each action, and again when each returns
      * ({@link #stopIfCancelled}), which is as often as the engine gets control back: an expression that doesn't return
      * can only be stopped by a language that can stop inside one, through
-     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}.
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}, or, at the deadline, through
+     * an action it registered with
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)}.
      *
      * <p>
      * No listener is told about the rule, because nothing was started for it: the check runs before

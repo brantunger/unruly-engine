@@ -45,10 +45,11 @@ public sealed interface EvaluationContext
      * <p>
      * The engine checks this itself before each condition and each action, and again when each one returns, so a
      * language that evaluates an expression and returns needn't. A language whose expressions can stop part-way polls
-     * it, or maps it to its own cancellation, so a long-running expression stops too. Returning any value is enough:
-     * the engine stops the run as soon as the expression returns, whatever it returned. Throwing an exception once the
-     * run is cancelled stops the run the same way; an {@link Error}, or an exception with one anywhere in its cause
-     * chain, such as one wrapping what a fact's Java code threw, is still that rule's failure. A language that
+     * it, or maps it to its own cancellation, so a long-running expression stops too; one whose runtime can be stopped
+     * only from outside registers an action with {@link #onCancel(Runnable)} for the deadline. Returning any value is
+     * enough: the engine stops the run as soon as the expression returns, whatever it returned. Throwing an exception
+     * once the run is cancelled stops the run the same way; an {@link Error}, or an exception with one anywhere in its
+     * cause chain, such as one wrapping what a fact's Java code threw, is still that rule's failure. A language that
      * can't stop inside an expression runs it to its end, and the run stops when it returns.
      * </p>
      *
@@ -90,6 +91,52 @@ public sealed interface EvaluationContext
      */
     default Duration timeLeft() {
         return io.github.brantunger.unruly.core.EngineEvaluationContext.timeLeft(this);
+    }
+
+    /**
+     * Has {@code action} run once when the run passes its deadline, unless the registration returned is closed first.
+     * It is for a language whose runtime can be stopped part-way only from outside the expression, by setting a flag
+     * or cancelling the runtime, so it needs no timer of its own: the action does that, and the expression stops.
+     *
+     * <p>
+     * The action runs on a thread of its own, a virtual thread where one can be started, while the expression runs, so
+     * it must be thread-safe; if no thread can be started for it, as when the JVM is out of memory, that is logged at
+     * WARN and the action never runs. If the engine's cancel timer, the thread that waits for the deadline, can't be
+     * started, this method throws instead, and nothing is registered. The action's thread inherits none of the run's
+     * inheritable thread-locals, and has no context class loader. The action should be short, such as setting a flag
+     * that the runtime reads: one still running a second after it started is logged at WARN, though a slow action
+     * delays no other, of this run or any other. What it throws is logged at WARN and ignored. If the deadline has
+     * already passed, the action runs on this thread before this method returns, and a fatal {@link Error} it throws, a
+     * {@link VirtualMachineError} such as {@link OutOfMemoryError} but not a {@link StackOverflowError}, or an
+     * exception that carries one, is thrown from this method instead. A run without a deadline registers nothing: the
+     * registration returned does nothing when closed. Passing the deadline stops the run as {@link #isCancelled()}
+     * describes, and never interrupts its thread, so neither does the action unless it interrupts it itself. An
+     * interrupt never runs the action: {@link #isCancelled()} still answers for both.
+     * </p>
+     *
+     * <p>
+     * The deadline is the one {@link #deadline()} shows, measured as {@link #timeLeft()} measures it, so a nested run's
+     * is no later than the run it was started from. Every context of a run, the evaluation context and each action
+     * context, registers against the same deadline. The run closes the registrations still open when it ends, as it
+     * closes the values kept with {@link #runScopedClosing}, and none can be registered after that. Closing doesn't
+     * wait for an action that has started, so an action whose deadline passed just as its expression or its run
+     * ended may still run just after, even once the run has returned. A language that reuses its runtime therefore
+     * gives each expression a stop flag of its own, made fresh for it and registered and closed with it, or checks
+     * {@link #isCancelled()} before it acts on the flag, so a late action can't stop a later expression.
+     * </p>
+     *
+     * @param action What to run when the run passes its deadline
+     * @return The registration, whose {@link CancelRegistration#close()} stops the action from running if it hasn't
+     *         started
+     * @throws NullPointerException  if {@code action} is {@code null}
+     * @throws IllegalStateException if the run has ended, or its registrations are being closed
+     * @throws VirtualMachineError   the fatal error the action threw, or carried, when the deadline had already
+     *                               passed and the action ran on this thread; or the error, such as an
+     *                               {@link OutOfMemoryError}, with which starting the engine's cancel timer thread
+     *                               failed, in which case nothing is registered
+     */
+    default CancelRegistration onCancel(Runnable action) {
+        return io.github.brantunger.unruly.core.EngineEvaluationContext.onCancel(this, action);
     }
 
     /**

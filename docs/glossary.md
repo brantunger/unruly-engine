@@ -108,8 +108,8 @@ too, and under the default limit can be more than it. See
 
 ### Deadline
 
-The instant a run must stop, taken from its [timeout](#timeout) when `run()` is called. A [nested run](#nested-run)
-also stops at the outer run's. See [Nested runs](nested-runs.md).
+The instant a run must stop, taken from its [timeout](#timeout) when `run()` is called. A
+[nested run](nested-runs.md) also stops at the outer run's.
 
 ### Declared fact
 
@@ -341,7 +341,7 @@ case included, and [skips](#skipped-rule) the rest, including rules with no tags
 
 How long a run may take: `runTimeout(duration)` on the builder, or `RunOptions.withTimeoutOf(duration)` for one run. The
 engine never interrupts the thread: it checks before and after each condition and action, and while a run waits for a
-copy, so an expression already running isn't stopped unless its language checks `isCancelled()`. See
+copy, so a running expression stops only if its language polls `isCancelled()` or uses `onCancel`. See
 [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
 
 ### Unique-match engine

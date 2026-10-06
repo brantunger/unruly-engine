@@ -10,7 +10,9 @@ import java.util.concurrent.TimeoutException;
  * <p>
  * One predicate answers that for the engine, which checks it between rules, and for a language, which asks its
  * context with {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()} while an expression
- * runs. So a run stops for the same reasons wherever it is.
+ * runs. So a run stops for the same reasons wherever it is. A language that can stop its runtime only from outside
+ * registers an action with {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)}
+ * instead, which {@link CancelTimer} runs when the deadline passes; an interrupt never runs it.
  * </p>
  *
  * <p>
