@@ -55,6 +55,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🏁 [Run results and audits](run-results.md) | Application developers | What a run reports and why each rule did or didn't apply, the loaded rules, and what to record to audit a decision, checksums included |
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, facts, strong typing, compile errors, compiled copies, virtual threads and security |
 | 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, why a rule can start failing after about 50 runs, what compiles slowly, and what MVEL logs itself |
+| 🔤 [MVEL fact names](languages/mvel-fact-names.md) | Rule authors | Which fact names MVEL rejects, which facts it checks at all, where that check is only a best effort, and the name `output` |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, fact names and sessions for a language of your own |
 | 📦 [Packaging a language](languages/packaging.md) | Language authors | Declaring a language as a service on the class path and the module path, the exports applications need, and native images |

@@ -99,7 +99,7 @@ language, and each language adds its own.
 | --- | --- | --- |
 | `null` (only a custom `FactStore` can hold one) | ❌ rejected | `fact name must not be null` |
 | Blank: empty or only whitespace | ❌ rejected | `fact name must not be blank` |
-| A name a language [reserves](languages/custom.md#-fact-names), `output` by default | ❌ rejected | `'output' is reserved for the output object and cannot be used as a fact name` |
+| A name a language [reserves](languages/custom.md#-fact-names), `output` by default | ❌ rejected where reserved | `'output' is reserved for the output object and cannot be used as a fact name` |
 | `Output`, `OUTPUT` | ✅ allowed | The check is exact and case-sensitive |
 | Anything else | The rules' languages decide | Each language rejects the names it can't refer to |
 
@@ -115,9 +115,9 @@ language, and each language adds its own.
 
 A `Fact` needs a name: `new Fact<>(null, value)` throws `NullPointerException`.
 
-**In MVEL,** a name must be a Java identifier other than a reserved word such as `empty`, class names MVEL resolves,
-such as `Math` or imported classes, or the first part of the package of a class the rules use, such as `java`. See
-[Fact names MVEL rejects](languages/mvel.md#fact-names-mvel-rejects).
+**In MVEL,** a name its rules' text holds must be a Java identifier, not a keyword such as `empty`, a class name such
+as `Math`, or a used class's package root such as `java`; `output` is reserved only for lists with MVEL rules. See
+[MVEL fact names](languages/mvel-fact-names.md).
 
 ## 🚫 Null and missing facts
 

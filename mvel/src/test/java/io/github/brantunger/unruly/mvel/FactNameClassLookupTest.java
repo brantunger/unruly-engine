@@ -59,7 +59,8 @@ class FactNameClassLookupTest {
         Object output = withContextClassLoader(loader, () -> {
             RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                     .imports("java.util").build();
-            engine.load(List.of(rule("true")));
+            // Named in a string, which MVEL doesn't look up as a class: only the check of the fact's name could.
+            engine.load(List.of(rule("'line_1' != null")));
             return engine.run(new FactMap<>(new Fact<>("line_1", 1)));
         });
 
@@ -73,7 +74,7 @@ class FactNameClassLookupTest {
     void classNameRejectedOnAnyThread() throws InterruptedException {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports(IMPORTED_PACKAGE).build();
-        engine.load(List.of(rule("true")));
+        engine.load(List.of(rule(CLASS_NAME + " == 1")));
 
         Object result = runOnThread(classPathHidden(), engine, new FactMap<>(new Fact<>(CLASS_NAME, 1)));
 
@@ -102,7 +103,7 @@ class FactNameClassLookupTest {
         Object output = withContextClassLoader(null, () -> {
             RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                     .imports("java.util.Map.Entry", "java.util").build();
-            engine.load(List.of(rule("Objects.nonNull(Entry)")));
+            engine.load(List.of(rule("Objects.nonNull(Entry) && Objects.nonNull(Date)")));
             assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>("Date", 1))));
             return engine.run(new FactMap<>(new Fact<>("claim", 1)));
         });

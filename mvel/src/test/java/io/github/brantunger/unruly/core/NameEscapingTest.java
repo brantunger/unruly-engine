@@ -8,7 +8,10 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
+import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -61,30 +64,52 @@ class NameEscapingTest {
                 String.join("\n", logLines(failure)));
     }
 
+    /**
+     * A rule whose action names a fact in a comment: MVEL checks only the names its rules' text holds, so the rule
+     * has MVEL check the fact's name.
+     */
+    private static Rule naming(String factName) {
+        return Rule.builder().ruleName("r").condition("true").action("// " + factName + "\nx").build();
+    }
+
+    /**
+     * No rule can name a fact with a line break in it, so the engine never has MVEL check its name: MVEL's own check
+     * is called for that message. A declared fact whose type strong typing can't check still has MVEL quote the name,
+     * in the failure {@code load()} logs.
+     */
     @Test
     @DisplayName("a fact name with \\n or \\r\\n is logged on one line, with the line break escaped")
     void factNameWithLineBreak() {
-        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
-        for (String lineBreak : List.of("\n", "\r\n")) {
-            FactStore<Object> facts = new FactMap<>();
-            facts.setValue("a" + lineBreak + FORGED, 1);
+        try (ExpressionCompiler compiler = new MvelExpressionLanguage().newCompiler(LanguageTestContexts.compile())) {
+            for (String lineBreak : List.of("\n", "\r\n")) {
+                String name = "a" + lineBreak + FORGED;
+                String quoted = "'" + (lineBreak.equals("\n") ? "a\\n" : "a\\r\\n") + FORGED + "'";
 
-            Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(facts));
+                IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                        () -> compiler.checkFactName(name));
+                assertEquals(quoted + " is not a valid fact name: rules can only refer to a fact named with a Java "
+                        + "identifier", ex.getMessage());
 
-            String escaped = lineBreak.equals("\n") ? "a\\n" : "a\\r\\n";
-            assertEquals("'" + escaped + FORGED + "' is not a valid fact name: rules can only refer to a fact named "
-                    + "with a Java identifier", failure.thrown().getMessage());
-            assertTrue(logLines(failure).stream()
-                            .anyMatch(line -> line.endsWith("ERROR " + ENGINE_LOGGER + failure.thrown().getMessage())),
-                    String.join("\n", logLines(failure)));
-            assertNoForgedLine(failure);
+                RulesEngine<Map<String, Object>> typed = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                        HashMap::new).fact(name, HashMap.class).requireDeclaredFacts()
+                        .option("mvel", "strongTyping", "true").build();
+                Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> typed.load(List.of(
+                        Rule.builder().ruleName("r").condition("true").action("x").build())));
+
+                assertTrue(failure.thrown().getMessage().endsWith("fact " + quoted + " is declared as "
+                        + "java.util.HashMap, whose members MVEL can't check"), failure.thrown().getMessage());
+                String logged = "ERROR " + ENGINE_LOGGER + failure.thrown().getMessage();
+                assertTrue(logLines(failure).stream().anyMatch(line -> line.endsWith(logged)),
+                        String.join("\n", logLines(failure)));
+                assertNoForgedLine(failure);
+            }
         }
     }
 
     @Test
     @DisplayName("a 10,000-character fact name is shortened in the message")
     void longFactName() {
-        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
+        engine.load(List.of(naming("-".repeat(10_000))));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("-".repeat(10_000), 1);
 
@@ -139,7 +164,7 @@ class NameEscapingTest {
     @Test
     @DisplayName("a lone surrogate in a fact name is escaped, so the log can't show it as ? and differ from it")
     void loneSurrogateInFactName() {
-        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output").build()));
+        engine.load(List.of(naming("a" + (char) 0xd800)));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("a" + (char) 0xd800, 1);
 
@@ -162,8 +187,10 @@ class NameEscapingTest {
     @Test
     @DisplayName("a long fact name of control characters fits in the message whole, with no escape cut in half")
     void longFactNameOfControlCharacters() {
-        engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
-        String name = "-" + CONTROLS;
+        // A digit and control characters can each be part of an identifier, so a rule's text holds them as one name,
+        // but a digit can't start one.
+        String name = "1" + CONTROLS;
+        engine.load(List.of(naming(name)));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue(name, 1);
 
@@ -179,12 +206,11 @@ class NameEscapingTest {
     @Test
     @DisplayName("a long declared fact name of control characters fits in the message load() reports, whole")
     void longDeclaredFactNameOfControlCharacters() {
-        String name = "-" + CONTROLS;
+        String name = "1" + CONTROLS;
         RulesEngine<Map<String, Object>> declared = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .fact(name, Integer.class).build();
 
-        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> declared.load(List.of(
-                Rule.builder().ruleName("r").condition("true").action("x").build())));
+        Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> declared.load(List.of(naming(name))));
 
         String message = failure.thrown().getCause().getMessage();
         assertTrue(message.endsWith("' is not a valid fact name: rules can only refer to a fact named with a Java "
@@ -206,7 +232,7 @@ class NameEscapingTest {
         RulesEngine<Map<String, Object>> imported = TestSupport.withContextClassLoader(loader, () -> {
             RulesEngine<Map<String, Object>> built = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                     .imports(pkg).build();
-            built.load(List.of(Rule.builder().ruleName("r").condition("true").action("x").build()));
+            built.load(List.of(naming(name)));
             return built;
         });
         FactStore<Object> facts = new FactMap<>();

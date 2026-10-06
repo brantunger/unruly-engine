@@ -33,16 +33,30 @@ class FactNameValidationTest {
         return Rule.builder().ruleName("r").condition(condition).action("output.put('hit', true)").build();
     }
 
+    /**
+     * An engine whose rule names the fact in a string: MVEL checks only the names its rules' text holds, wherever they
+     * are, and a rule can't name a keyword such as {@code in} as a variable.
+     */
+    private static RulesEngine<Map<String, Object>> naming(String name) {
+        return engine("'" + name + "' != null");
+    }
+
     @ParameterizedTest(name = "\"{0}\"")
-    @ValueSource(strings = {"my-fact", "a.b", "has space", "1x"})
+    @ValueSource(strings = {"my-fact", "a.b", "1x"})
     void nonIdentifiersRejected(String name) {
-        RulesEngine<Map<String, Object>> engine = engine("true");
+        RulesEngine<Map<String, Object>> engine = engine(name + " == 5");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
 
         assertEquals("'" + name + "' is not a valid fact name: rules can only refer to a fact named with a Java "
                 + "identifier", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a name with a space in it is a fact's: no rule can name it, so MVEL doesn't check it")
+    void nameWithASpaceNotChecked() {
+        assertEquals(Map.of("hit", true), engine("true").run(new FactMap<>(new Fact<>("has space", 1))));
     }
 
     @Test
@@ -62,7 +76,7 @@ class FactNameValidationTest {
     void supplementaryLetterRejected() {
         // U+1D49C MATHEMATICAL SCRIPT CAPITAL A: a Java identifier, but MVEL can't read it in a rule's text.
         String name = "\uD835\uDC9C";
-        RulesEngine<Map<String, Object>> engine = engine("true");
+        RulesEngine<Map<String, Object>> engine = naming(name);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
@@ -75,7 +89,7 @@ class FactNameValidationTest {
     @ValueSource(strings = {"empty", "nil", "null", "true", "this", "isdef", "in", "with", "var", "def", "Math",
             "String"})
     void reservedNamesRejected(String name) {
-        RulesEngine<Map<String, Object>> engine = engine("true");
+        RulesEngine<Map<String, Object>> engine = naming(name);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> engine.run(new FactMap<>(new Fact<>(name, 5))));
@@ -91,7 +105,7 @@ class FactNameValidationTest {
 
         RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("java.util").build();
-        imported.load(List.of(rule("true")));
+        imported.load(List.of(rule("Date == 5")));
 
         assertThrows(IllegalArgumentException.class, () -> imported.run(new FactMap<>(new Fact<>("Date", 5))));
     }
@@ -101,7 +115,7 @@ class FactNameValidationTest {
     void ambiguousClassNameRejected() {
         RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .imports("java.util", "java.sql").build();
-        imported.load(List.of(rule("true")));
+        imported.load(List.of(rule("'Date' != null")));
 
         for (int i = 0; i < 2; i++) {
             IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,

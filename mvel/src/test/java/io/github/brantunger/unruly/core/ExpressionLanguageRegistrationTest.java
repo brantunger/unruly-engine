@@ -143,7 +143,8 @@ class ExpressionLanguageRegistrationTest {
     }
 
     @Test
-    @DisplayName("with an empty rule list, fact names are checked against the default language")
+    @DisplayName("with an empty rule list and MVEL as the default language, only output is rejected: no rule names a"
+            + " fact")
     void emptyRuleListChecksDefaultLanguage() {
         StatefulRulesEngine<Map<String, Object>> toy = engine(new ToyExpressionLanguage());
         toy.load(List.of());
@@ -151,8 +152,9 @@ class ExpressionLanguageRegistrationTest {
         mvel.load(List.of());
 
         assertNull(toy.run(new FactMap<>(new Fact<>("empty", 1))), "the toy language accepts 'empty'");
-        assertThrows(IllegalArgumentException.class, () -> mvel.run(new FactMap<>(new Fact<>("empty", 1))),
-                "MVEL reserves 'empty'");
+        assertNull(mvel.run(new FactMap<>(new Fact<>("empty", 1))), "no MVEL rule names 'empty'");
+        assertThrows(IllegalArgumentException.class, () -> mvel.run(new FactMap<>(new Fact<>("output", 1))),
+                "MVEL reserves 'output'");
     }
 
     @Test
@@ -267,7 +269,7 @@ class ExpressionLanguageRegistrationTest {
         assertEquals(Map.of("k", 1), engine.run(new FactMap<>(new Fact<>("empty", 1))),
                 "MVEL reserves 'empty', but no rule is MVEL");
 
-        engine.load(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "1")));
+        engine.load(List.of(rule("toy", "toy", "true", "put k 1"), rule("mvel", null, "true", "empty")));
 
         assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>("empty", 1))));
     }
@@ -277,7 +279,7 @@ class ExpressionLanguageRegistrationTest {
     void factNamesCheckedByEveryLanguageInUse() {
         StatefulRulesEngine<Map<String, Object>> engine = withMvel(new ToyExpressionLanguage());
         engine.load(List.of(
-                Rule.builder().ruleName("mvel").priority(2).condition("true").action("1").build(),
+                Rule.builder().ruleName("mvel").priority(2).condition("true").action("empty").build(),
                 Rule.builder().ruleName("toy").language("toy").priority(1).condition("true").action("put k 1")
                         .build()));
 

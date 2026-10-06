@@ -49,10 +49,10 @@ ends with:
 native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,virtual dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
-`bean` and `map` are what the rules produced, `image=true` says the binary is running as a native image, and
-`jit=off` that MVEL's JIT is off. `factName=rejected` means the image rejected a fact named after a class in an
-imported package, as the JVM does. `prime` beside it is the control: an engine that imports the application's own
-class and no package ran its rule as it should.
+`bean` and `map` are what the rules produced, `image=true` says the binary is running as a native image, and `jit=off`
+that MVEL's JIT is off. `factName=rejected` means the image rejected a fact named after a class in an imported package,
+as the JVM does; MVEL checks only names its rules' text holds, so the smoke's rule names `Date` in a comment. `prime`
+beside it is the control: an engine that imports the application's own class and no package ran its rule as it should.
 
 `hidden=prime,gold,standard` says the default output writer set two properties, and `FactProperties` read one, on
 classes that aren't public, through each class's own methods: the image has no metadata for the public types above
@@ -260,10 +260,12 @@ public interface, and one through a bridge setter over a public generic supercla
 public with `FactProperties.read`. Only the classes that aren't public are registered, not the public interface and
 superclass, so the strict image checks that the engine skips those.
 
-It also runs a fact named after a class in an imported package, the one path where the fact-name check resolves a
-class name: an image rejects such a name, as the JVM does. The application checks that outcome, so a change either
-way turns CI red. A fact named after a single imported class is matched against the simple names of the classes the
-engine already loaded, so it never reaches that lookup; that is from reading the code, and no image has run it.
+It also runs a fact named after a class in an imported package, the one path where the fact-name check resolves a class
+name: an image rejects such a name where a rule's text holds it, as the JVM does.
+
+The application checks that outcome, so a change either way turns CI red. A fact named after a single imported class is
+matched against the simple names of the classes the engine already loaded, so it never reaches that lookup; that is from
+reading the code, and no image has run it.
 
 Not tested: Oracle GraalVM, GraalVM for other JDK versions, Windows and macOS images, the module path, frameworks'
 own native support such as Spring Boot's, listeners, timeouts, the other builder options, a fact named after a

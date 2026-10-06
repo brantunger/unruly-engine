@@ -84,7 +84,7 @@ A language the engine doesn't have, even with no imports, fails `build()` with `
 language ...`, and so does an import over 1,000 characters, with `Can't import ...`.
 
 **Fact names** are checked by every language the loaded rules use: `run()` rejects a name one of them can't refer to,
-and `load()` rejects a [declared fact](../facts.md#-declaring-facts) with such a name. A language no loaded rule uses
+and `load()` a [declared fact](../facts.md#-declaring-facts) with one. A language no loaded rule uses
 isn't asked, and an empty rule list is checked against the default language. A language whose compiler
 [says which facts its rules read](custom.md#-fact-names) checks only those. The names a language
 [reserves](custom.md#-fact-names) are the exception: by default the engine rejects those of every language it has,
@@ -250,10 +250,11 @@ The default language: the one `defaultLanguage(...)` names, or else the engine's
 ### Does a language I gave the engine, but no loaded rule uses, check fact names?
 
 No. Only the languages the loaded rules use check them, or the default language when the rule list is empty. But by
-default the names it [reserves](custom.md#-fact-names), such as `output`, are rejected whatever rules are loaded:
+default the names it [reserves](custom.md#-fact-names) are rejected whatever rules are loaded:
 `build()` takes them from every language the engine has. Since 2.27.0, a language can reserve them only for rule
 lists using it, or empty ones if it's the default, and its compiler can say which facts its rules read, so it checks
-only those. See [Choosing a language per rule](#-choosing-a-language-per-rule).
+only those; MVEL does both. See [MVEL fact names](mvel-fact-names.md) and
+[Choosing a language per rule](#-choosing-a-language-per-rule).
 
 Take a Lua-style language that binds `self` and has the keyword `end`, beside MVEL rules that read a fact `end`, the
 end of a date range. By default, every rule list rejects a fact `self`, and a list with a rule in each language

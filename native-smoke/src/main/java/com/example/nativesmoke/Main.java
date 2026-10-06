@@ -416,16 +416,19 @@ public final class Main {
         }
     }
 
+    // MVEL checks only the fact names its rules' text holds, so the prime rule names Date in a comment: the fact-name
+    // check above then asks MVEL about a fact named Date, and the rule reads nothing by it.
     private static List<Rule> decisionRules() {
         return List.of(
                 Rule.builder().ruleName("prime").priority(2).condition("applicant.creditScore >= 750")
-                        .action("output.rate = 'prime'").build(),
+                        .action("// Date\noutput.rate = 'prime'").build(),
                 Rule.builder().ruleName("standard").priority(1).condition("applicant.creditScore < 750")
                         .action("output.rate = 'standard'").build());
     }
 
-    // An applicant, and a fact named after java.util.Date. The check above needs no rule to read it — having it in
-    // the store is enough — while the probe's rule reads it on purpose, to see what MVEL makes of the name.
+    // An applicant, and a fact named after java.util.Date. The check above needs no rule to read it, only one whose
+    // text names it, as decisionRules' comment does, while the probe's rule reads it on purpose, to see what MVEL makes
+    // of the name.
     private static FactStore<Object> datedApplicant() {
         FactStore<Object> facts = applicant(760, 50_000);
         facts.setValue("Date", "2026-01-01");

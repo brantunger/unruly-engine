@@ -8,7 +8,9 @@ import io.github.brantunger.unruly.api.language.Session;
 import org.mvel2.CompileException;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Compiles one rule list's MVEL expressions with the list's imports, and checks fact names against them.
@@ -19,6 +21,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     private final FactNames factNames;
     // Every expression compiled, for warmUp(). Only load()'s thread compiles and warms up, so a plain list will do.
     private final List<MvelExpression> compiled = new ArrayList<>();
+    // Every name the compiled expressions could read a fact by, for factNamesRead(), kept by load()'s thread too.
+    private final Set<String> namesRead = new HashSet<>();
 
     /**
      * Creates the compiler for one rule list.
@@ -54,6 +58,7 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
         try {
             MvelExpression expression = MvelExpression.compile(analysis);
             compiled.add(expression);
+            RuleText.addNames(source.text(), namesRead);
             return expression;
         } catch (CompileException e) {
             if (MvelCompileErrors.looped(e)) {
@@ -114,5 +119,22 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     @Override
     public void checkFactName(String name) {
         factNames.check(name);
+    }
+
+    /**
+     * Returns the names the compiled conditions and actions could read a fact by, as {@link RuleText#addNames} finds
+     * them in their text, which is a best effort both ways. It holds more names than they read, such as the words of
+     * a string literal, a comment or a class's name. It can also miss a name MVEL reads whole, such as {@code \a} in
+     * {@code 1-\a} or {@code a.b} in {@code a.b--}: a name that isn't an identifier, glued to a minus sign, or read by
+     * {@code isdef} up to a comment. So a fact no MVEL rule names, such as one named {@code in} that only another
+     * language's rules read, isn't checked by MVEL. The words among the names are only a best guess at the names a
+     * rule's author meant, such as {@code my-fact} in {@code my-fact == 1}, which MVEL reads as {@code my} minus
+     * {@code fact}.
+     *
+     * @return The names
+     */
+    @Override
+    public Set<String> factNamesRead() {
+        return Set.copyOf(namesRead);
     }
 }

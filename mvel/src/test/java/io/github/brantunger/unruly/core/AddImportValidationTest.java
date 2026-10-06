@@ -181,7 +181,7 @@ class AddImportValidationTest {
     void classImportShadowsFactName() {
         StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports("java.time.LocalDate"));
-        engine.load(List.of(rule("true", "output.put('k', 1)")));
+        engine.load(List.of(rule("LocalDate != null", "output.put('k', 1)")));
 
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("LocalDate", 1);
