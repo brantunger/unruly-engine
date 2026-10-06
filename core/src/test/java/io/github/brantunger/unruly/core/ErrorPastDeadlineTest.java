@@ -17,7 +17,6 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -50,14 +49,15 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("an exception wrapping an Error, past the deadline or on an interrupt, is the rule's failure")
 class ErrorPastDeadlineTest {
 
-    private static final Duration SHORT = Duration.ofMillis(200);
+    /** The runs' timeout: seconds for a run to reach its rule on a slow machine. The rule then waits it out. */
+    private static final Duration SHORT = Duration.ofSeconds(2);
 
     /**
      * A language whose expressions throw what their text names, either straight away, or once the run is cancelled:
-     * {@code cancelled} waits for the deadline to pass, so no test depends on how long anything takes, and
-     * {@code interrupt} interrupts the run's own thread, as an executor shutting down would. An action whose text is
-     * {@code nested} throws nothing itself: it calls the {@link Runnable} held in the fact of that name, which starts
-     * a run of its own.
+     * {@code cancelled} waits for the deadline to pass, so the one time a test depends on is the run reaching its
+     * rule before {@link #SHORT} runs out, and {@code interrupt} interrupts the run's own thread, as an executor
+     * shutting down would. An action whose text is {@code nested} throws nothing itself: it calls the
+     * {@link Runnable} held in the fact of that name, which starts a run of its own.
      */
     private static final class BreakingLanguage implements ExpressionLanguage {
 
@@ -187,15 +187,6 @@ class ErrorPastDeadlineTest {
         assertSame(failure, reported.onError(), "the rule's callback wasn't closed with the failure");
         assertTrue(reported.logs().contains("ERROR " + ENGINE_LOGGER + failure.getMessage()), reported.logs());
         assertFalse(reported.logs().contains("WARN"), reported.logs());
-    }
-
-    /**
-     * Clears the interrupt status the interrupt test leaves this thread with, so it can't reach the next test. The
-     * engine leaves it set on purpose, which that test asserts before this runs.
-     */
-    @AfterEach
-    void clearInterruptStatus() {
-        Thread.interrupted();
     }
 
     @Test

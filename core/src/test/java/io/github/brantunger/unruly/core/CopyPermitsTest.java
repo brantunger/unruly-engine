@@ -72,23 +72,23 @@ class CopyPermitsTest {
     @Test
     @DisplayName("a run keeps waiting while slots come back to runs ahead of it, and takes the next one")
     void keepsWaitingWhileSlotsComeBack() throws InterruptedException {
-        CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, Deadline.NONE));
-        Waiter first = waitFor(permits, 10_000, Deadline.NONE);
-        awaitParked(first.thread());
-        long secondStarted = System.nanoTime();
-        Waiter second = waitFor(permits, 1_000, Deadline.NONE);
-        awaitParked(second.thread());
+        // The count is read when the wait starts and again when each window ends. By the end of the first window it has
+        // moved, though no slot was free: one came back and a run ahead took it. So the run waits another window, and
+        // the next slot, given back as that window starts, is its own. The second read is the end of the first window
+        // however long that took, so no timing decides which window the slot comes back in.
+        Semaphore slots = new Semaphore(0);
+        AtomicLong reads = new AtomicLong();
+        LongSupplier returned = () -> {
+            long read = reads.incrementAndGet();
+            if (read == 2) {
+                slots.release();
+            }
+            return Math.min(1, read - 1);
+        };
 
-        // The slot goes to the run that waited first. The second's window ends with no slot for it, but it saw one
-        // come back, so it waits another window, and gets the slot when the first gives it back, halfway through that
-        // window: half a window of margin on either side.
-        permits.giveBackSlot();
-        assertEquals(true, first.result());
-        Thread.sleep(Math.max(0, 1_500 - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - secondStarted)));
-        permits.giveBackSlot();
+        assertTrue(CopyPermits.awaitSlot(slots, returned, 100, Deadline.NONE), "the run gave up after one window");
 
-        assertEquals(true, second.result());
+        assertEquals(2, reads.get(), "the run didn't take the slot in its second window");
     }
 
     @Test
@@ -109,13 +109,21 @@ class CopyPermitsTest {
     @Test
     @DisplayName("with a deadline, a run waits at most half the time it has left")
     void waitsHalfTheTimeLeft() throws InterruptedException {
-        CopyPermits permits = new CopyPermits(0, 1);
-        assertTrue(permits.awaitSlot(0, Deadline.NONE));
-        long start = System.nanoTime();
+        // The slots note how long the run asks to wait and give it nothing, so the test reads the wait the run asked
+        // for rather than timing when its thread woke. Half of a minute left is at most 30 seconds; the run has about
+        // ten seconds to start waiting before it asks for less than 25. The window is far longer than either.
+        AtomicLong asked = new AtomicLong(-1);
+        Semaphore slots = new Semaphore(0) {
+            @Override
+            public boolean tryAcquire(long timeout, TimeUnit unit) {
+                asked.set(unit.toMillis(timeout));
+                return false;
+            }
+        };
 
-        assertFalse(permits.awaitSlot(10_000, Deadline.from(Duration.ofMillis(600))));
-        long waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-        assertTrue(waited >= 250 && waited < 600, "waited " + waited + " ms, not about 300");
+        assertFalse(CopyPermits.awaitSlot(slots, () -> 0, 600_000, Deadline.from(Duration.ofSeconds(60))));
+        long waited = asked.get();
+        assertTrue(waited > 25_000 && waited <= 30_000, "asked to wait " + waited + " ms, not about 30,000");
     }
 
     @Test
