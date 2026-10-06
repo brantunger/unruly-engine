@@ -172,6 +172,23 @@ class FactPropertiesTest {
         }
     }
 
+    /**
+     * A bean whose getter waits, as one reading from a pool or a queue does, and is interrupted: it throws the
+     * {@link InterruptedException}, or an exception of its own caused by it.
+     */
+    public static final class Waiting {
+
+        private final Exception failure;
+
+        Waiting(Exception failure) {
+            this.failure = failure;
+        }
+
+        public int getSlot() {
+            throw undeclared(failure);
+        }
+    }
+
     /** A bean that counts the calls to its getters, as a lazy load or a remote call would be seen to run. */
     public static class Counted {
 
@@ -1260,6 +1277,66 @@ class FactPropertiesTest {
 
         assertSame(disk, wrapped.getCause());
         assertTrue(wrapped.getMessage().endsWith(" failed: disk gone"), wrapped.getMessage());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"getter", "getter in toData", "map containsKey", "map get", "has", "propertyNames",
+            "map entries", "collection size", "collection forEach"})
+    @DisplayName("an accessor that was interrupted leaves the thread interrupted, so catching the failure keeps it")
+    void anInterruptedAccessorKeepsTheInterrupt(String where) {
+        InterruptedException interrupt = new InterruptedException("sleep interrupted");
+        IllegalStateException wrapped;
+        boolean interrupted;
+
+        try {
+            wrapped = assertThrows(IllegalStateException.class, () -> {
+                switch (where) {
+                    case "getter" -> FactProperties.read(new Waiting(interrupt), "slot");
+                    case "getter in toData" -> FactProperties.toData(new Waiting(interrupt), 1);
+                    case "map containsKey" -> FactProperties.read(new FailingMap(interrupt, true), "score");
+                    case "map get" -> FactProperties.read(new FailingMap(interrupt, false), "score");
+                    case "has" -> FactProperties.has(new FailingMap(interrupt, true), "score");
+                    case "propertyNames" -> FactProperties.propertyNames(new FailingMap(interrupt, false));
+                    case "map entries" -> FactProperties.toData(new FailingMap(interrupt, false), 1);
+                    case "collection size" -> FactProperties.toData(new Carrier(new Cursor(interrupt, "size")), 2);
+                    default -> FactProperties.toData(new Carrier(new Cursor(interrupt, "forEach")), 2);
+                }
+            });
+        } finally {
+            // Cleared for the tests after this one, whatever happened.
+            interrupted = Thread.interrupted();
+        }
+
+        assertSame(interrupt, wrapped.getCause());
+        assertTrue(wrapped.getMessage().endsWith(" failed: sleep interrupted"), wrapped.getMessage());
+        assertTrue(interrupted, "the thread's interrupt status");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"read", "toData"})
+    @DisplayName("a getter whose failure was caused by an interrupt leaves the thread interrupted too")
+    void anInterruptAmongTheCausesKeepsTheInterrupt(String where) {
+        InterruptedException interrupt = new InterruptedException("sleep interrupted");
+        RuntimeException failure = new RuntimeException(interrupt);
+        IllegalStateException wrapped;
+        boolean interrupted;
+
+        try {
+            wrapped = assertThrows(IllegalStateException.class, () -> {
+                if ("read".equals(where)) {
+                    FactProperties.read(new Waiting(failure), "slot");
+                } else {
+                    FactProperties.toData(new Waiting(failure), 1);
+                }
+            });
+        } finally {
+            // Cleared for the tests after this one, whatever happened.
+            interrupted = Thread.interrupted();
+        }
+
+        assertSame(failure, wrapped.getCause());
+        assertSame(interrupt, wrapped.getCause().getCause());
+        assertTrue(interrupted, "the thread's interrupt status");
     }
 
     @Test

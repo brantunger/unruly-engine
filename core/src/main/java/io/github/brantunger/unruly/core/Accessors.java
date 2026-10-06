@@ -127,6 +127,16 @@ public final class Accessors {
      * earlier and that is thrown again here, keeps its message, so the rule's failure names this read.
      * </p>
      *
+     * <p>
+     * An accessor that was interrupted leaves the thread interrupted: when {@code cause}, one of its causes, or an
+     * exception suppressed on them, is an {@link InterruptedException}, the interrupt status is set again (see
+     * {@link Failures#keepInterruptStatus}), so code that catches the exception this returns, such as a rule's own
+     * {@code try}/{@code catch}, doesn't hide the interrupt from the engine or from the caller. A {@code cause} that is
+     * itself a {@link VirtualMachineError} is the exception: only its own message is read, so this can't fail again
+     * for running out of stack or memory, and an interrupt among its causes or suppressed exceptions, such as one a
+     * {@code try}-with-resources whose {@code close()} was interrupted added to it, doesn't set the status.
+     * </p>
+     *
      * @param what  What failed, such as {@code Reading 'price' on a com.example.Item failed}
      * @param cause What the accessor threw
      * @return The exception to throw, caused by {@code cause}
@@ -137,6 +147,8 @@ public final class Accessors {
             return loggedBelow(error) ? LoggedFailures.builtByEngine(new IllegalStateException(what, cause))
                     : new IllegalStateException(withMessage(what, messageOf(error)), cause);
         }
+        // A caller that catches the exception, as a rule's own try/catch can, would otherwise lose the interrupt.
+        Failures.keepInterruptStatus(cause);
         Error fatal = Failures.fatalError(cause);
         boolean nested = fatal != null
                 ? loggedBelow(fatal) && Failures.newsAbove(cause, fatal) == null

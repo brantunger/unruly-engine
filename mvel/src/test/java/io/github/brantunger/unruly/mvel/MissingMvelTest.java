@@ -106,6 +106,17 @@ class MissingMvelTest {
                             return t.toString();
                         }
                     }
+
+                    public static String newCompilerWithLanguageImports() {
+                        try {
+                            new MvelExpressionLanguage().newCompiler(new EngineCompileContext(Set.of(), Set.of(),
+                                    Main.class.getClassLoader(), Object.class, Map.of(), Map.of(), false, true,
+                                    List.of("lodash")));
+                            return "ok";
+                        } catch (Throwable t) {
+                            return t.toString();
+                        }
+                    }
                 }
                 """)));
         return app;
@@ -159,5 +170,13 @@ class MissingMvelTest {
     @DisplayName("every compiler created without an engine fails naming mvel2's class")
     void newCompiler() throws Exception {
         assertEquals(List.of(MISSING, MISSING), run("newCompiler", "newCompiler"));
+    }
+
+    @Test
+    @DisplayName("every compiler created without an engine from a context with language imports fails naming mvel2's"
+            + " class, not a class of this module that couldn't be initialized")
+    void newCompilerWithLanguageImports() throws Exception {
+        assertEquals(List.of(MISSING, MISSING),
+                run("newCompilerWithLanguageImports", "newCompilerWithLanguageImports"));
     }
 }
