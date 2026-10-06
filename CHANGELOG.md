@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.26.2](https://github.com/brantunger/unruly-engine/compare/v2.26.1...v2.26.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* keep the interrupt status when a fact read fails, and name mvel2 when it is missing ([#1060](https://github.com/brantunger/unruly-engine/issues/1060)) ([25ea846](https://github.com/brantunger/unruly-engine/commit/25ea84689cc08585f80cc7788cd0e2775bc50a7f))
+
 ## [2.26.1](https://github.com/brantunger/unruly-engine/compare/v2.26.0...v2.26.1) (2026-10-06)
 
 
