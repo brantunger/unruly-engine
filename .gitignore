@@ -58,5 +58,16 @@ out/
 # VS Code
 .vscode/
 
+# JVM crash logs and heap dumps
+hs_err_pid*
+replay_pid*
+*.hprof
+
+# Claude Code: per-user settings and local state (shared .claude/ files stay tracked)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+CLAUDE.local.md
+
 # graphify knowledge graph output
 graphify-out/
