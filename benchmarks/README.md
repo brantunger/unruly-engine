@@ -63,7 +63,11 @@ to that fixed cost disappears into `RunBenchmark.run`'s rules, so measure it her
 one set of sessions and holds no permit; with `copies=kept` each run borrows the one kept MVEL copy under
 `maxCopies(1)`, with the engine's permit, and gives both back.
 
-`RunBenchmark.Load` measures `load()`, which compiles the whole rule list — the cost every reload pays.
+`RunBenchmark.Load` measures a warm reload: `load()` of the whole rule list once the JVM has warmed up, after 100
+earlier loads. Each load fills an empty engine, so retiring the rules a reload replaces isn't counted. A JVM's first
+load costs several times more and isn't measured. Over three sweeps with `-f 3`, on one machine with JDK 21.0.7, its
+error bars were under 2% for MVEL at 100 and 1,000 rules, and 7% to 23% for the other four configurations, whose
+loads take about a millisecond or less.
 
 `EscapeBenchmark` measures the escaping every failure's message goes through, on 999 characters: plain text, a
 zero-width space or a control character throughout, and Hebrew with a right-to-left mark every twentieth character.
@@ -77,11 +81,11 @@ numbers — at 100 rules, MVEL is most of both the time and the allocation.
 
 For scale, what a run allocates with the cheapest language, including the fresh five-fact store the benchmark builds
 for each run and the result each noop action returns: with `language=noop`, `listener=none`, `policy=allMatches` and
-`facts=record`, a run allocated 2,560 bytes at 10 rules and 8,000 at 100, so about 2 KB per run plus 60 bytes per rule
-(a straight line through those two points).
+`facts=record`, a run allocated 3,960 bytes at 10 rules and 9,232 at 100, so about 3,400 bytes per run plus 59 bytes
+per rule (a straight line through those two points).
 
-Those are medians of five forks, which agreed to within 24 bytes, on one machine with JDK 21.0.7, measured with the
-fix for #502. 2.2.2, without it, allocated 3,464 and 17,096 bytes there.
+Those are medians of five forks on one machine with JDK 21.0.7. The forks agreed to within 240 bytes at 10 rules and
+80 at 100.
 
 ## 🚧 Reading the numbers
 
@@ -89,8 +93,8 @@ fix for #502. 2.2.2, without it, allocated 3,464 and 17,096 bytes there.
   machine, with nothing else running. Differences under about 15% are noise.
 - **Allocation is reproducible within a fork, but not across forks.** `gc.alloc.rate.norm` repeats to within a byte
   across the iterations of one JVM, and can differ between forks of the *same* build, because each JVM makes its own
-  inlining decisions and escape analysis follows them. In the 100-rule measurement above, 2.2.2's five forks settled
-  at 16,872 to 17,976 bytes per run. A single `-f 1` run therefore produces a number that looks exact and isn't
+  inlining decisions and escape analysis follows them. In the 10-rule measurement above, the five forks settled at
+  3,744 to 3,984 bytes per run. A single `-f 1` run therefore produces a number that looks exact and isn't
   comparable. **Use `-f 5` for any before-and-after claim**, measure the baseline from a worktree of the other commit
   with identical flags, and quote the error bar.
 - **The first run after `load()` is not measured here.** It builds the first compiled copy, which costs far more than
