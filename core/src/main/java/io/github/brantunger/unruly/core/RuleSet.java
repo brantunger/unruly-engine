@@ -290,59 +290,12 @@ final class RuleSet {
     }
 
     /**
-     * Creates a rule set with no copies yet, whose limited runs take the permits of the engine that loaded it and
-     * wait the default stall window.
-     *
-     * @param compiledRules The compiled rules, in the order they run
-     * @param compilers     The compilers of the languages the rules use, by language name, in the order they check
-     *                      fact names
-     * @param limit         How many copies runs may hold at once, and which runs that applies to
-     * @param permits       The engine's permits for {@code limit}, which its other rule sets share
-     */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
-            CopyPermits permits) {
-        this(compiledRules, compilers, limit, permits, STALL_WINDOW_MILLIS);
-    }
-
-    /**
-     * Creates a rule set whose runs give up waiting for a copy after {@code stallWindowMillis}, for tests that would
-     * otherwise wait the whole stall window. It is a deliberate test seam: the engine passes the default stall window
-     * unless a test set another with {@link AbstractRulesEngine#stallWindow(long)}, so keep it even if no test uses it
-     * today.
-     *
-     * @param compiledRules     The compiled rules, in the order they run
-     * @param compilers         The compilers of the languages the rules use, by language name
-     * @param limit             How many copies runs may hold at once, and which runs that applies to
-     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
-     */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
-            long stallWindowMillis) {
-        this(compiledRules, compilers, limit, new CopyPermits(limit.maxCopies()), stallWindowMillis);
-    }
-
-    /**
-     * Creates a rule set whose limited runs take the given permits and give up waiting after
-     * {@code stallWindowMillis}. The engine loads its rule lists with it, passing the default stall window unless a
-     * test set another with {@link AbstractRulesEngine#stallWindow(long)}. A test can also share permits between rule
-     * sets <em>and</em> change the stall window with it.
-     *
-     * @param compiledRules     The compiled rules, in the order they run
-     * @param compilers         The compilers of the languages the rules use, by language name
-     * @param limit             How many copies runs may hold at once, and which runs that applies to
-     * @param permits           The permits for {@code limit}, which other rule sets may share
-     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
-     */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
-            CopyPermits permits, long stallWindowMillis) {
-        this(compiledRules, compilers, limit, permits, stallWindowMillis, new ConcurrentLinkedQueue<>());
-    }
-
-    /**
-     * Creates a rule set whose idle copies wait in {@code idle}. It is a deliberate test seam too: it lets a test hand
+     * Creates a rule set whose idle copies wait in {@code idle}. It is a deliberate test seam: it lets a test hand
      * the rule set a queue that fails, as one that can't allocate room for a copy does, which nothing but a test needs.
      *
      * @param compiledRules     The compiled rules, in the order they run
-     * @param compilers         The compilers of the languages the rules use, by language name
+     * @param compilers         The compilers of the languages the rules use, by language name, in the order they
+     *                          check fact names
      * @param limit             How many copies runs may hold at once, and which runs that applies to
      * @param permits           The permits for {@code limit}, which other rule sets may share
      * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
@@ -359,7 +312,8 @@ final class RuleSet {
      * The engine loads its rule lists with it.
      *
      * @param compiledRules     The compiled rules, in the order they run
-     * @param compilers         The compilers of the languages the rules use, by language name
+     * @param compilers         The compilers of the languages the rules use, by language name, in the order they
+     *                          check fact names
      * @param namesRead         The names of the facts each compiler's rules read, by language name, for the compilers
      *                          that can tell; empty when none can
      * @param reservedFactNames The language that reserves each name, by name, of the languages the rules use that

@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
-import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -23,7 +22,6 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -499,9 +497,8 @@ class ScopedFactNamesTest {
      */
     private static AbstractRulesEngine<String> engineReading(RuleSet first, ExpressionLanguage kw) {
         Map<String, ExpressionLanguage> languages = Map.of("toy", plain("toy"), "kw", kw);
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(languages, "toy", List.of(), List.of(),
-                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false, Map.of());
+        EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(languages)
+                .withDefaultLanguage("toy").build();
         AtomicInteger reads = new AtomicInteger();
         return new AbstractRulesEngine<>(String::new, configuration) {
             @Override
@@ -523,8 +520,7 @@ class ScopedFactNamesTest {
     }
 
     private static RuleSet closed(Map<String, String> reserved) {
-        RuleSet rules = new RuleSet(List.of(), Map.of(), Map.of(), reserved, CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED), RuleSet.STALL_WINDOW_MILLIS);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of()).withReservedFactNames(reserved).build();
         rules.retire();
         return rules;
     }

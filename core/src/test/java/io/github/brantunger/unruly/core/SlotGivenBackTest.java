@@ -217,8 +217,8 @@ class SlotGivenBackTest {
         // needs a new copy would then wait as long as its deadline lets it and make its copy without one. The window
         // is far longer than the test, so the run that waits never gives up and makes a copy without a slot.
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler(new AtomicInteger())), CopyLimit.none(),
-                permits, TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", compiler(new AtomicInteger())))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         VirtualRun holder = startVirtualRun(rules);
         assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
         VirtualRun failing = startVirtualRun(rules);

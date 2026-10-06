@@ -344,7 +344,8 @@ class CloseEverySessionTest {
      */
     private static RuleSet ruleSet(RecordingCompiler compiler, CopyPermits permits, Queue<Map<String, Session>> idle) {
         // A stall window no test outlasts, so that a run waits for a copy however slow the machine is.
-        return new RuleSet(List.of(), Map.of(LANGUAGE, compiler), CopyLimit.of(1), permits, Long.MAX_VALUE, idle);
+        return TestRuleSets.ruleSet(List.of(), Map.of(LANGUAGE, compiler))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(Long.MAX_VALUE).withIdle(idle).build();
     }
 
     @Test

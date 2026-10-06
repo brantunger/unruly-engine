@@ -326,8 +326,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         language.failSessions = true;
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(), Map.of("counting", language.compiler()), CopyLimit.none(), permits,
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         // A virtual thread without a limit takes the only build slot to make its copy, fails to make it, and the
         // first give-back of the slot fails.
         Throwable failure = failVirtualBorrow(rules, Faults.Step.GIVING_BACK);
@@ -342,8 +342,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         language.failSessions = true;
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(), Map.of("counting", language.compiler()), CopyLimit.none(), permits,
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
 
         Throwable failure = failVirtualBorrow(rules, Faults.Step.SLOT_RELEASED);
 
@@ -395,8 +395,8 @@ class CleanupStepFailureTest {
     @DisplayName("#839 retire: a retire() that fails before it marks the rule set retired retires it when called again")
     void aRetireThatFailsBeforeMarkingCanBeCalledAgain() {
         Counting language = new Counting();
-        RuleSet rules = new RuleSet(List.of(), Map.of("counting", language.compiler()), CopyLimit.of(1),
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         StackOverflowError failure = new StackOverflowError("marking the rule set retired");
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, failure);
@@ -694,7 +694,8 @@ class CleanupStepFailureTest {
                 compilersClosed.incrementAndGet();
             }
         };
-        rules.set(new RuleSet(List.of(), Map.of("a", compiler), CopyLimit.of(1), TimeUnit.MINUTES.toMillis(5)));
+        rules.set(TestRuleSets.ruleSet(List.of(), Map.of("a", compiler))
+                .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build());
         rules.get().prepareCopies(1);
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the rule set retired"));
 
@@ -709,8 +710,8 @@ class CleanupStepFailureTest {
     @DisplayName("#839 retire: a retire() that fails once it has marked the rule set retired is finished by the next")
     void aRetireThatFailsAfterMarkingIsFinishedByTheNext() {
         Counting language = new Counting();
-        RuleSet rules = new RuleSet(List.of(), Map.of("counting", language.compiler()), CopyLimit.of(1),
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("counting the copies closed"));
 
@@ -820,8 +821,8 @@ class CleanupStepFailureTest {
     @DisplayName("#839 sessions: a retire() that fails taking the idle copies closes every copy it had taken")
     void aRetireThatFailsTakingItsCopiesClosesThoseItTook() {
         Counting language = new Counting();
-        RuleSet rules = new RuleSet(List.of(), Map.of("counting", language.compiler()), CopyLimit.of(3),
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withLimit(CopyLimit.of(3)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(3);
         // The second copy taken fails to be set aside, with the first set aside and the third still idle.
         Faults.inject(Faults.Step.COPY_TAKEN, 2, new StackOverflowError("setting a copy aside"));
@@ -840,8 +841,8 @@ class CleanupStepFailureTest {
             + " later call has closed them")
     void aRetireThatFailsClosingItsCopiesLeavesTheCompilersOpen() {
         Counting language = new Counting();
-        RuleSet rules = new RuleSet(List.of(), Map.of("counting", language.compiler()), CopyLimit.of(1),
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         // Closing the copies it took fails both times it's tried.
         Faults.inject(Thread.currentThread(), Faults.Step.COPIES_CLOSING, 1, 2,

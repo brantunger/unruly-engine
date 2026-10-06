@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
-import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -18,7 +17,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -208,18 +206,16 @@ class FactCheckBeforeCopyTest {
         // with a compiler of a list that was closed before the run could borrow from it. The closed list's language
         // records every name it's asked about, and the engine's own rejects 'a'.
         List<String> askedOfClosed = new CopyOnWriteArrayList<>();
-        RuleSet closedRules = new RuleSet(List.of(), Map.of("x", StubExpressionLanguage.named("x")
-                .checkFactName(askedOfClosed::add).newCompiler(null)), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet closedRules = TestRuleSets.ruleSet(List.of(), Map.of("x", StubExpressionLanguage.named("x")
+                .checkFactName(askedOfClosed::add).newCompiler(null))).build();
         closedRules.retire();
         IllegalArgumentException rejection = new IllegalArgumentException("'a' is not allowed");
         AtomicInteger reads = new AtomicInteger();
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(
-                Map.of("x", StubExpressionLanguage.named("x").checkFactName(name -> {
-                    throw rejection;
-                })),
-                null, List.of(), List.of(recording), CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class,
-                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false, Map.of());
+        EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(
+                        Map.of("x", StubExpressionLanguage.named("x").checkFactName(name -> {
+                            throw rejection;
+                        })))
+                .withListeners(List.of(recording)).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {
