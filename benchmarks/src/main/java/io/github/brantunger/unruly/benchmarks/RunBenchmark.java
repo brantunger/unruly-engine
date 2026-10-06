@@ -234,13 +234,18 @@ public class RunBenchmark {
         }
     }
 
-    /** Compiling a rule list, which every {@code load()} and every reload pays. */
+    /**
+     * Compiling a rule list once the JVM has warmed up, after 100 earlier loads. Each load fills an empty engine, so
+     * retiring the rules a reload replaces isn't counted. A load is still getting faster dozens of loads in, so fewer
+     * warm-up shots would measure the warming instead. A JVM's first load costs several times more, and isn't
+     * measured.
+     */
     @State(Scope.Benchmark)
     @BenchmarkMode(Mode.SingleShotTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
     @Fork(1)
-    @Warmup(iterations = 3)
-    @Measurement(iterations = 5)
+    @Warmup(iterations = 100)
+    @Measurement(iterations = 20)
     public static class Load {
 
         /** Creates the benchmark. JMH creates one for each combination of the parameters below. */
