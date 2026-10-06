@@ -334,9 +334,9 @@ Map<String, Object> data =
 ```
 
 Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first expression to ask makes the map, and the
-others share it, though asking on another thread while it's being made throws (see below). Key it with the compiler
-(`this`), not each expression. Nested and later runs make their own. The map misses a fact that Java code changes after
-it's made, and the engine drops it, unclosed, when the run returns: keep a resource with `runScopedClosing`.
+others share it. Key it with the compiler (`this`), not each expression. Nested and later runs make their own. The map
+misses a fact that Java code changes after it's made, and the engine drops it, unclosed, when the run returns: keep a
+resource with `runScopedClosing`.
 
 ```java
 // MyInterpreter stands for your runtime's AutoCloseable context; a nested run makes and closes its own
@@ -346,13 +346,16 @@ MyInterpreter interpreter = evaluation.runScopedClosing(MyInterpreter.class, MyI
 Since 2.20.0, `runScopedClosing(key, init)` closes the value however the run ends, before the copy is given back,
 newest first. A `close()` that throws is logged at WARN; a fatal error is then thrown, carrying a run failure that
 isn't fatal, but a fatal run failure wins. Using both methods on one key, or `runScopedClosing` once closing began,
-throws `IllegalStateException`. A value asked for on another thread as the run ends is closed with the others or
-refused.
+throws `IllegalStateException`.
 
-Either method may be called from another thread, such as a worker. Asking for a key whose init is running on the same
-thread, or with `runScoped` while it runs on another, throws `IllegalStateException`. Closing inits run one at a time: a
+Either method may be called from another thread. Asking for a key whose init is running on the same thread, or with
+`runScoped` while it runs on another, throws `IllegalStateException`. Closing inits run one at a time: a
 `runScopedClosing` request from another thread waits, uninterruptibly and keeping the interrupt status, then gets the
-value made for its key or makes its own. The run's end waits too, with no limit, then closes the values.
+value made for its key or makes its own.
+
+The run's end waits for a closing init still running, with no limit, then closes the values. If the wait runs out of
+stack or memory, it waits once more, closes the values and throws what the first wait threw; failing twice leaves them
+open.
 
 ## 📤 Actions and results
 
