@@ -57,3 +57,6 @@ out/
 
 # VS Code
 .vscode/
+
+# graphify knowledge graph output
+graphify-out/
