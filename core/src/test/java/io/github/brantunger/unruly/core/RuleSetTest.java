@@ -432,8 +432,9 @@ class RuleSetTest {
         // Named apart, and cleared, so that a test which left its thread interrupted is told that, rather than
         // that the copy to hold was never lent, and the tests after it aren't interrupted as well.
         assertFalse(Thread.interrupted(), "the test left this thread interrupted");
-        RuleSet probe = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1), 1);
+        RuleSet probe = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withStallWindow(1).build();
         Holder holder = holdOneCopy(probe);
 
         // With a deadline, so that this check ends even against a rule set that never gives up waiting: that is the
@@ -461,8 +462,8 @@ class RuleSetTest {
     @DisplayName("a copy in use is never lent twice, and one given back is reused instead of creating sessions again")
     void copiesLentOneAtATime() throws InterruptedException, TimeoutException {
         AtomicInteger sessions = new AtomicInteger();
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>()))).build();
 
         RuleSet.Copy first = rules.borrow(Deadline.NONE);
         try {
@@ -494,8 +495,9 @@ class RuleSetTest {
         // The default kind of limit: one copy, for runs on virtual threads only, and a run on one holds it. The window
         // is far longer than the borrow's deadline, so a run on a platform thread that waited for it at all would
         // fail the test.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                new CopyLimit(1, true), TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())))
+                .withLimit(new CopyLimit(1, true)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         Holder holder = holdOneCopy(rules, true);
         try {
             RuleSet.Copy copy = rules.borrow(deadline());
@@ -518,8 +520,9 @@ class RuleSetTest {
         AtomicInteger sessions = new AtomicInteger();
         // A window far longer than the test, so a run that waits for the copy held stops at its deadline, or when
         // it's interrupted, and never gives up to make an extra copy.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                CopyLimit.of(1), TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         Holder holder = holdOneCopy(rules);
         try {
             // Interrupted before it borrows, so its wait for the copy held ends at once, whatever the timing: a
@@ -575,9 +578,8 @@ class RuleSetTest {
     @DisplayName("a thread's count of runs is removed when its outermost run gives its copy back, so a pooled thread"
             + " keeps nothing")
     void theOutermostRunLeavesNoCountOnTheThread() throws Exception {
-        RuleSet rules = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>()))).build();
 
         RuleSet.Copy copy = rules.borrow(deadline());
         try {
@@ -611,7 +613,7 @@ class RuleSetTest {
         Map<String, ExpressionCompiler> compilers = new LinkedHashMap<>();
         compilers.put("b", compiler("b", sessions, created));
         compilers.put("a", compiler("a", sessions, created));
-        RuleSet rules = new RuleSet(List.of(RULE), compilers, CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), compilers).build();
 
         RuleSet.Copy copy = rules.borrow(Deadline.NONE);
         try {
@@ -630,8 +632,9 @@ class RuleSetTest {
         AtomicInteger sessions = new AtomicInteger();
         // A window far longer than the borrows' deadline, so a nested run that waited at all would fail the test
         // instead of reaching the extra copy the wait gives up on.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                CopyLimit.of(1), TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
 
         RuleSet.Copy outer = rules.borrow(deadline());
         try {
@@ -776,9 +779,9 @@ class RuleSetTest {
     @DisplayName("a rule list that needs no copies learns it from an extra copy when the shared permits are all held")
     void statelessListLearnsFromAnExtraCopy() throws Exception {
         CopyPermits permits = new CopyPermits(1);
-        RuleSet needsCopies = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1),
-                permits, 1);
+        RuleSet needsCopies = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(1).build();
         ExpressionCompiler stateless = new ExpressionCompiler() {
             @Override
             public CompiledCondition compileCondition(Expression expression) {
@@ -796,7 +799,8 @@ class RuleSetTest {
             }
         };
         // The rule list a reload loaded, sharing the engine's permits with the one it replaced.
-        RuleSet noCopies = new RuleSet(List.of(RULE), Map.of("n", stateless), CopyLimit.of(1), permits, 1);
+        RuleSet noCopies = TestRuleSets.ruleSet(List.of(RULE), Map.of("n", stateless))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(1).build();
         // Held on a thread of its own, so the runs below aren't nested ones: like any run after a reload, they wait
         // for the permit, a whole window, before giving up.
         Holder holder = holdOneCopy(needsCopies);
@@ -824,7 +828,8 @@ class RuleSetTest {
     @DisplayName("the first run of a rule list that needs no copies gives back the permit it took")
     void aStatelessFirstRunGivesItsPermitBack() throws InterruptedException, TimeoutException {
         CopyPermits permits = new CopyPermits(1);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("n", statelessCompiler()), CopyLimit.of(1), permits, 1);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("n", statelessCompiler()))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(1).build();
 
         RuleSet.Copy copy = rules.borrow(deadline());
         try {
@@ -843,8 +848,8 @@ class RuleSetTest {
         CopyPermits permits = new CopyPermits(1);
         // A window far longer than the test, so a first run that waited for the permit held would stop at its
         // deadline rather than give up and learn from an extra copy.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("n", statelessCompiler()), CopyLimit.of(1), permits,
-                TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("n", statelessCompiler()))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         // The engine's only permit, held as a run of the rules a reload replaced holds it.
         assertTrue(permits.available().tryAcquire());
@@ -873,8 +878,9 @@ class RuleSetTest {
     void overflowWarnedOnce() throws Exception {
         AtomicInteger sessions = new AtomicInteger();
         // A window of one millisecond, so the two runs that overflow don't wait the five seconds a real one does.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                CopyLimit.of(1), 1);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withStallWindow(1).build();
         RuleSet.Copy held = rules.borrow(deadline());
         AtomicReference<Throwable> failure = new AtomicReference<>();
 
@@ -915,8 +921,9 @@ class RuleSetTest {
         // that needs a copy would then wait out the whole window before making one. The window is far longer than
         // the borrows' deadlines, so a wait that ended any other way would fail the test.
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())),
-                CopyLimit.none(), permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
 
         VirtualRun holder = startVirtualRun(rules);
         assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
@@ -939,8 +946,8 @@ class RuleSetTest {
     @DisplayName("a rule set retired while runs hold copies closes each copy's sessions as its run gives it back")
     void aRetiredRuleSetClosesEachCopyAsItComesBack() throws InterruptedException {
         List<Integer> closed = new CopyOnWriteArrayList<>();
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", recordingCompiler(new AtomicInteger(), closed)),
-                CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                Map.of("a", recordingCompiler(new AtomicInteger(), closed))).build();
         // Two runs, because when only one holds a copy the rule set has no user left once it comes back, and closes
         // everything then in any case: a second run still in flight is what tells "closed when you gave it back"
         // from "closed when the slowest run still in flight finished".
@@ -964,8 +971,9 @@ class RuleSetTest {
         AtomicInteger made = new AtomicInteger();
         List<Integer> closed = new CopyOnWriteArrayList<>();
         // A window far longer than the test, so a run that waits never gives up and makes an extra copy.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.of(limit),
-                new CopyPermits(limit), TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
+                .withLimit(CopyLimit.of(limit)).withPermits(new CopyPermits(limit))
+                .withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         List<Holder> holders = new ArrayList<>();
         for (int i = 0; i < limit; i++) {
             holders.add(holdOneCopy(rules));
@@ -1003,8 +1011,10 @@ class RuleSetTest {
         HookedQueue idle = new HookedQueue(() -> { });
         CopyPermits permits = new CopyPermits(2);
         // A window far longer than the test, so the run that waits never gives up and makes an extra copy.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", compiler("a", made, new CopyOnWriteArrayList<>())),
-                CopyLimit.of(2), permits, TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", made, new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5))
+                .withIdle(idle).build();
         // One permit taken with no copy, so giving it back wakes the waiting run with no copy kept for it.
         assertTrue(permits.available().tryAcquire());
         Holder holder = holdOneCopy(rules);
@@ -1062,8 +1072,9 @@ class RuleSetTest {
                 hookFailure.set(e);
             }
         });
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.of(limit),
-                new CopyPermits(limit), TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
+                .withLimit(CopyLimit.of(limit)).withPermits(new CopyPermits(limit))
+                .withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         List<Holder> holders = new ArrayList<>();
         for (int i = 0; i < limit; i++) {
             holders.add(holdOneCopy(rules));
@@ -1169,8 +1180,9 @@ class RuleSetTest {
         CountDownLatch making = new CountDownLatch(1);
         CountDownLatch letGo = new CountDownLatch(1);
         // A short window, which the run waits out, as nothing is given back until it has begun its extra copy.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", heldCompiler(made, closed, limit + 1, making, letGo)),
-                CopyLimit.of(limit), new CopyPermits(limit), 100);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", heldCompiler(made, closed, limit + 1, making, letGo)))
+                .withLimit(CopyLimit.of(limit)).withPermits(new CopyPermits(limit)).withStallWindow(100).build();
         List<Holder> holders = new ArrayList<>();
         for (int i = 0; i < limit; i++) {
             holders.add(holdOneCopy(rules));
@@ -1210,11 +1222,11 @@ class RuleSetTest {
         // given back while the run waits, so the run gets a permit with no idle copy to take. The window is far
         // longer than the test, so the run never gives up.
         CopyPermits permits = new CopyPermits(2);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", heldCompiler(made, closed, 2, making, letGo)),
-                CopyLimit.of(2), permits, TimeUnit.MINUTES.toMillis(5));
-        RuleSet next = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(2),
-                permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", heldCompiler(made, closed, 2, making, letGo)))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
+        RuleSet next = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         Holder holder = holdOneCopy(rules);
         Holder other = holdOneCopy(next);
         AtomicReference<RuleSet.Kind> kind = new AtomicReference<>();
@@ -1249,9 +1261,10 @@ class RuleSetTest {
         });
         // A window far longer than the test, so the run waits for the copy held rather than giving up.
         CopyPermits permits = new CopyPermits(1);
-        RuleSet rules = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1),
-                permits, TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5))
+                .withIdle(idle).build();
         Holder holder = holdOneCopy(rules);
         // Only a run that has waited looks now: giving the held copy back adds it without looking.
         idle.pollFailure.set(failure);
@@ -1283,9 +1296,9 @@ class RuleSetTest {
         HookedQueue idle = new HookedQueue(() -> {
         });
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.none(),
-                permits, TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         VirtualRun holder = startVirtualRun(rules);
         assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
         VirtualRun failing = startVirtualRun(rules);
@@ -1309,8 +1322,8 @@ class RuleSetTest {
         // One build slot, held by the first run while its new copy runs, so the second run waits for it. The window is
         // far longer than the test, so the run that waits never gives up and makes a copy without a slot.
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.none(),
-                permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         VirtualRun holder = startVirtualRun(rules);
         assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
         VirtualRun waiter = startVirtualRun(rules);
@@ -1339,8 +1352,8 @@ class RuleSetTest {
         // platform threads take no slot, so giving their copies back wakes nobody. The window is far longer than the
         // test, so the run that waits never gives up.
         CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), CopyLimit.none(),
-                permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
+                .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         VirtualRun slotted = startVirtualRun(rules);
         assertEquals(RuleSet.Held.SLOT, slotted.copy().held(), "the virtual run took the only build slot");
         List<Holder> platform = new ArrayList<>();
@@ -1375,8 +1388,9 @@ class RuleSetTest {
         List<Integer> closed = new CopyOnWriteArrayList<>();
         // A limit of one for virtual threads, as the default limit is: a virtual run holds the permit, and two more
         // wait for it, while runs on platform threads take copies without one, so giving them back wakes nobody.
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), new CopyLimit(1, true),
-                new CopyPermits(1), TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
+                .withLimit(new CopyLimit(1, true)).withPermits(new CopyPermits(1))
+                .withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         VirtualRun permitted = startVirtualRun(rules);
         assertEquals(RuleSet.Held.PERMIT, permitted.copy().held(), "the virtual run took the only permit");
         List<Holder> platform = new ArrayList<>();
@@ -1425,11 +1439,11 @@ class RuleSetTest {
         // on a platform thread holds a copy of the old rules without a permit.
         CopyPermits permits = new CopyPermits(1);
         CopyLimit limit = new CopyLimit(1, true);
-        RuleSet newRules = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), limit, permits,
-                TimeUnit.MINUTES.toMillis(5));
-        RuleSet oldRules = new RuleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)), limit, permits,
-                100, idle);
+        RuleSet newRules = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(limit).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
+        RuleSet oldRules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
+                .withLimit(limit).withPermits(permits).withStallWindow(100).withIdle(idle).build();
         VirtualRun onNewRules = startVirtualRun(newRules);
         assertEquals(RuleSet.Held.PERMIT, onNewRules.copy().held(), "the run on the new rules took the only permit");
         Holder platform = holdOneCopy(oldRules);
@@ -1471,11 +1485,11 @@ class RuleSetTest {
         // Both rule sets share one permit, which a run on the other one holds until the run here has stalled, after
         // one short window whatever the timing, so nothing came back meanwhile. The copy at load is idle for it.
         CopyPermits permits = new CopyPermits(1);
-        RuleSet other = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(1),
-                permits, TimeUnit.MINUTES.toMillis(5));
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", recordingCompiler(made, closed)), CopyLimit.of(1),
-                permits, 100, idle);
+        RuleSet other = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", recordingCompiler(made, closed)))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(100).withIdle(idle).build();
         rules.prepareCopies(1);
         Holder onOther = holdOneCopy(other);
 
@@ -1676,8 +1690,7 @@ class RuleSetTest {
         CloseRecorder language = new CloseRecorder();
         InternalError compilerFailure = new InternalError("closing the compiler");
         language.compilerFailure = compilerFailure;
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler())).build();
         // Copies 1 and 2, idle in that order: the run takes copy 1, and 2 stays idle for retire() to close.
         rules.prepareCopies(2);
         KeepingRun run = startKeepingRun(rules, "run");
@@ -1710,8 +1723,7 @@ class RuleSetTest {
         CloseRecorder language = new CloseRecorder();
         InternalError compilerFailure = new InternalError("closing the compiler");
         language.compilerFailure = compilerFailure;
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler())).build();
         rules.prepareCopies(2);
         KeepingRun run = startKeepingRun(rules, "run");
         run.copy();
@@ -1737,11 +1749,11 @@ class RuleSetTest {
         // third run of these rules waits for the one held here. The window is far longer than the test, so the run
         // that waits never gives up.
         CopyPermits permits = new CopyPermits(2);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.of(2), permits,
-                TimeUnit.MINUTES.toMillis(5));
-        RuleSet next = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(2),
-                permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler()))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
+        RuleSet next = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         // Copies 1, 2 and 3, idle in that order: the first run takes copy 1, and 2 and 3 stay idle.
         rules.prepareCopies(3);
         KeepingRun holder = startKeepingRun(rules, "holder");
@@ -1786,8 +1798,7 @@ class RuleSetTest {
             + " run leaves")
     void retiringAgainClosesTheCompilersOnce() throws InterruptedException, TimeoutException {
         CloseRecorder language = new CloseRecorder();
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler())).build();
         rules.prepareCopies(2);
         KeepingRun run = startKeepingRun(rules, "run");
         run.copy();
@@ -1840,8 +1851,8 @@ class RuleSetTest {
         };
         HookedQueue idle = new HookedQueue(() -> {
         });
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED), TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler()))
+                .withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         // Copies 1 and 2, idle in that order: the run takes copy 1, and retire() takes copy 2.
         rules.prepareCopies(2);
         KeepingRun run = startKeepingRun(rules, "run");
@@ -1873,8 +1884,8 @@ class RuleSetTest {
         CloseRecorder language = new CloseRecorder();
         HookedQueue idle = new HookedQueue(() -> {
         });
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED), TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler()))
+                .withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         rules.prepareCopies(1);
         // The run takes the only idle copy once retire() has counted it, and before retire() takes it.
         AtomicReference<KeepingRun> run = new AtomicReference<>();
@@ -1943,11 +1954,12 @@ class RuleSetTest {
         // Two permits, one held by a run of another rule set sharing them, so the waiting run waits for the copy held
         // here. The window is far longer than the test, so the run never gives up by itself.
         CopyPermits permits = new CopyPermits(2);
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.of(2), permits,
-                TimeUnit.MINUTES.toMillis(5), idle);
-        RuleSet next = new RuleSet(List.of(RULE),
-                Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())), CopyLimit.of(2),
-                permits, TimeUnit.MINUTES.toMillis(5));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler()))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5))
+                .withIdle(idle).build();
+        RuleSet next = TestRuleSets.ruleSet(List.of(RULE),
+                        Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
+                .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         // Copies 1 and 2, idle in that order: the holder takes copy 1, and retire() takes copy 2.
         rules.prepareCopies(2);
         armed.set(true);
@@ -2013,8 +2025,8 @@ class RuleSetTest {
         StackOverflowError failure = new StackOverflowError("taking an idle copy");
         HookedQueue idle = new HookedQueue(() -> {
         });
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("a", language.compiler()), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED), TimeUnit.MINUTES.toMillis(5), idle);
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler()))
+                .withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         // Copies 1 and 2, idle in that order: the run takes copy 1, and retire() fails to take copy 2.
         rules.prepareCopies(2);
         KeepingRun run = startKeepingRun(rules, "run");
@@ -2038,8 +2050,7 @@ class RuleSetTest {
     void factChecksKeptWithRules() {
         ExpressionCompiler check = compiler("x", new AtomicInteger(), new CopyOnWriteArrayList<>());
 
-        RuleSet rules = new RuleSet(List.of(RULE), Map.of("x", check), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("x", check)).build();
 
         assertEquals(Map.of("x", check), rules.factChecks());
     }

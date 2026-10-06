@@ -30,7 +30,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -622,10 +621,9 @@ class PlainThrowableTest {
      * output is called, which is the one place in a run that nothing reports it but the run itself.
      */
     private static AbstractRulesEngine<String> engineWhoseRunsThrow(Throwable failure, RuleListener listener) {
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(
-                Map.of(StubExpressionLanguage.LANGUAGE_NAME, new StubExpressionLanguage()),
-                null, List.of(), List.of(listener), CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class,
-                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false, Map.of());
+        EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(
+                        Map.of(StubExpressionLanguage.LANGUAGE_NAME, new StubExpressionLanguage()))
+                .withListeners(List.of(listener)).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {

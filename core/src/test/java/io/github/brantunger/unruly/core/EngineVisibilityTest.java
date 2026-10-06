@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,8 +7,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Modifier;
-import java.time.Clock;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,16 +40,11 @@ class EngineVisibilityTest {
     void enginesEntryPoint() {
         assertTrue(Modifier.isFinal(Engines.class.getModifiers()));
         assertEquals(0, Engines.class.getConstructors().length);
-        EngineConfiguration<Object> unlimited = new EngineConfiguration<>(
-                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
-                null, List.of(), List.of(),
-                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false, Map.of());
-        EngineConfiguration<Object> limited = new EngineConfiguration<>(
-                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
-                null, List.of(), List.of(),
-                CopyLimit.of(2), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false, Map.of());
+        EngineConfiguration<Object> unlimited = TestConfigurations.engineConfiguration(
+                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage())).build();
+        EngineConfiguration<Object> limited = TestConfigurations.engineConfiguration(
+                        Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()))
+                .withCopyLimit(CopyLimit.of(2)).build();
 
         assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
         assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));

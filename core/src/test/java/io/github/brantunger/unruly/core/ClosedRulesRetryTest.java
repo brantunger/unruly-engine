@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
-import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
@@ -11,7 +10,6 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +61,7 @@ class ClosedRulesRetryTest {
      * when a reload, or a close of the engine, retired the rules it had just read.
      */
     private static RuleSet closedRules() {
-        RuleSet closedRules = new RuleSet(List.of(), Map.of(), CopyLimit.none(), new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet closedRules = TestRuleSets.ruleSet(List.of(), Map.of()).build();
         closedRules.retire();
         return closedRules;
     }
@@ -74,10 +72,9 @@ class ClosedRulesRetryTest {
      */
     private static AbstractRulesEngine<String> engineReading(int closedReads, AtomicInteger reads, Duration runTimeout,
                                                             List<RuleListener> listeners, Supplier<RuleSet> closed) {
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(
-                Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()),
-                null, List.of(), listeners, CopyLimit.none(), 0, runTimeout, Clock.systemUTC(), Object.class,
-                OutputWriter.beansAndMaps(), Map.of(), Map.of(), false, Map.of());
+        EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(
+                        Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()))
+                .withListeners(listeners).withRunTimeout(runTimeout).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {

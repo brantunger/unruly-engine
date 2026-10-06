@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
-import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
@@ -23,7 +22,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -422,13 +420,10 @@ class LanguageSessionsTest {
     @Test
     @DisplayName("a run that reads rules just as they're closed reads the rules again")
     void runRetriesAfterRulesClosed() {
-        RuleSet closedRules = new RuleSet(List.of(), Map.of(), CopyLimit.none(),
-                new CopyPermits(RuleSet.UNLIMITED));
+        RuleSet closedRules = TestRuleSets.ruleSet(List.of(), Map.of()).build();
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
-        EngineConfiguration<String> configuration = new EngineConfiguration<>(Map.of(), null, List.of(), List.of(),
-                CopyLimit.none(), 0, null, Clock.systemUTC(), Object.class, OutputWriter.beansAndMaps(), Map.of(),
-                Map.of(), false, Map.of());
+        EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(Map.of()).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
             RuleSet currentRules() {
