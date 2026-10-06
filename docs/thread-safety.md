@@ -39,9 +39,11 @@ anything afterwards.
 
 Interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression
 returns** — before each condition and each action, when each returns, and once an action's properties are set, so a
-run whose last condition or action returns past its deadline fails. Whether a running expression can be stopped
-depends on the language: MVEL can't stop one, so in MVEL a rule that loops for ever still blocks its thread; run
-rules you don't trust in a process of their own. See [Stopping a run](stopping-runs.md).
+run whose last condition or action returns past its deadline fails.
+
+Whether a running expression can be stopped depends on the language: MVEL can't stop one, so in MVEL a rule that
+loops for ever still blocks its thread; run rules you don't trust in a process of their own. See
+[Stopping a run](stopping-runs.md).
 
 ### What you must keep thread-safe
 
@@ -50,6 +52,7 @@ The engine protects its own state. These parts are yours:
 - **Facts:** a store can serve one run after another, and concurrent runs can share a store that nothing changes; a
   new store for each run is the simplest way to stay safe. Don't share mutable fact objects between concurrent runs.
   See [Reusing and sharing a store](facts.md#-reusing-and-sharing-a-store).
+
 - **The output supplier:** it must return a new object on every call. A shared instance would be changed by several
   runs at once.
 - **A custom `OutputWriter`:** one instance sets properties for every run, on many threads at once.
@@ -191,6 +194,7 @@ For the load itself:
   is swapped, the old rules stay in place, and the sessions and compilers the failed load created are closed.
 - A [fatal error while closing](error-handling.md#-a-fatal-error-while-closing) the replaced rules is thrown after the
   swap: the new rules serve. Otherwise, a failure that stopped retiring part way is logged at WARN and retried later.
+
 - When two threads call `load()` at once, both compile the list they were given, and the one that finishes last wins:
   the last to swap in its rules, after making any copies at load.
 - Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never

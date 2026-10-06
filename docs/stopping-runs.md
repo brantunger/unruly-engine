@@ -95,8 +95,8 @@ Each message starts with `run() passed its deadline of <instant>` or `run() was 
   at its deadline. But when no copy comes back for five seconds and the deadline is further away than that, it makes
   an extra copy and goes on instead; see [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 - **A wait for a build slot** happens only on an engine built with `unlimitedCopies()`, when a run on a virtual
-  thread, not nested in another run on it, finds no idle copy. The deadline never fails it: the run waits at most half
-  its time left, then makes its copy and goes on. Only an interrupt stops it; see
+  thread finds no idle copy while no run on its thread holds or is getting one. The deadline never fails it: the run
+  waits at most half its time left, then makes its copy and goes on. Only an interrupt stops it; see
   [Waiting for a build slot](virtual-threads.md#-waiting-for-a-build-slot).
 - **A second reading of the rules** happens when the list the run read was closed before it could borrow a copy of
   it, which a reload does to the list it replaces and `close()` does to the engine's last one. The run stops there

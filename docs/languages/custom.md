@@ -162,6 +162,7 @@ wrapped in your own exception. Keep caught exceptions as causes. A condition ret
 
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
 as MVEL's adapter does: added words get the nested failure [logged twice](../nested-runs.md#-what-is-logged).
+`FactProperties.read`'s own `IllegalStateException` around such a failure is safe to let through as it is.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the Java packages and classes from
 `imports(...)` with `classLoader()`, the `load()` or `validate()` thread's context class loader; `outputType()`, or
@@ -320,7 +321,7 @@ its getter throws; `propertyNames(fact)` lists the names `read` can reach. Neith
 `containsKey` or key iteration runs, so use them for `in`, `hasattr` or `Object.keys`.
 
 A language is expected to compare whole numbers of different types by value, so a condition written for `x` = 1
-matches a `Long`, a `Short` or a `BigDecimal` fact holding 1; a strongly typed language that doesn't can override
+matches a `Long` or a `BigDecimal` fact holding 1; a strongly typed language that doesn't can override
 `comparesWholeNumbersByValue()` in its [contract kit](contract-kit.md) test to return `false`.
 
 `FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
@@ -359,10 +360,9 @@ open.
 
 ## 📤 Actions and results
 
-An action that changes `output` in place returns `ActionResult.done()`. A language without side effects, such as CEL
-or JsonLogic, returns `ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. `set` copies the
-map; a `null` name throws `NullPointerException`, an empty one `IllegalArgumentException`, and `null` values are
-allowed.
+An action that changes `output` in place returns `ActionResult.done()`. A language without side effects returns
+`ActionResult.set(Map.of("approved", true, "interestRate", 4.5))` instead. `set` copies the map; a `null` name throws
+`NullPointerException`, an empty one `IllegalArgumentException`, and `null` values are allowed.
 
 The engine sets each property in map order after the action returns and passes its cancellation check, with its
 `OutputWriter`: by default `put` on a `Map` output, or the output's public setter, reached the same way

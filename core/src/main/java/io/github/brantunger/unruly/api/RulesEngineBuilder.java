@@ -576,8 +576,8 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * Like an engine before 2.0, its runs never wait for a copy, which suits a thread pool, whose size bounds the
-     * copies. On a virtual thread, a run that finds no idle copy, and isn't nested in another run on that
-     * thread, first waits for one of the engine's build slots, one for each processor, and holds it until the new
+     * copies. On a virtual thread, a run that finds no idle copy, while no run on that thread holds or is getting a
+     * copy, first waits for one of the engine's build slots, one for each processor, and holds it until the new
      * copy's first run ends, which is when a language such as MVEL compiles the expressions. The slots pace the new
      * copies without bounding them: the copies still grow with the runs in progress, so rules that wait — on I/O, a
      * database or another service — can make many. In a language such as MVEL, each copy recompiles every expression
