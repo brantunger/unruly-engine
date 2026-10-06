@@ -8,7 +8,6 @@ import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -123,15 +122,6 @@ class InterruptedRunTest {
                 configuration.apply(RulesEngineBuilder.allMatches(HashMap::new)).build();
         engine.load(rules);
         return engine;
-    }
-
-    /**
-     * Clears the interrupt status this test's own thread was left with, so it can't reach the next test. The engine
-     * leaves it set on purpose, which each test asserts before this runs.
-     */
-    @AfterEach
-    void clearInterruptStatus() {
-        Thread.interrupted();
     }
 
     @Test

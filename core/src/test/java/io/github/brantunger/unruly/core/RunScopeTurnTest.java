@@ -40,7 +40,6 @@ class RunScopeTurnTest {
     @AfterEach
     void clearFaults() {
         Faults.clear();
-        Thread.interrupted();
     }
 
     /** A value a language keeps for a run, known by its name. */
