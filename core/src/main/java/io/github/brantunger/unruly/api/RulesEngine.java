@@ -46,13 +46,18 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         rejects, such as a condition with an assignment; a language throws while creating its compiler, or
      *         returns {@code null} instead of a compiler or a compiled expression; a {@link LinkageError} such as a
      *         {@link NoClassDefFoundError} is thrown for a class a rule uses, which means the rule is misconfigured
-     *         rather than the JVM failing; or a {@link RulesEngineBuilder#fact(String, Class) declared fact} has a name
-     *         the rules' languages can't refer to. A {@code null} rule or a duplicate name is thrown at once. The
-     *         other problems are collected before the exception is thrown, and
-     *         {@link RuleCompilationException#failures() failures()} lists them: each broken rule, a language that
-     *         can't create its compiler (once, in place of the first rule that needed it; the rules written in it
-     *         aren't compiled and get no failure of their own), and each declared fact name the compilers that were
-     *         created reject. Once the rules compile, an engine built with
+     *         rather than the JVM failing; a compiler throws while telling which facts its rules read, or tells it
+     *         with a set holding {@code null} (see
+     *         {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#factNamesRead()}); or a
+     *         {@link RulesEngineBuilder#fact(String, Class) declared fact} has a name the rules' languages can't refer
+     *         to, or one that a language the rules use reserves only for the rule lists that use it (see
+     *         {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()}). A
+     *         {@code null} rule or a duplicate name is thrown at once. The other problems are collected before the
+     *         exception is thrown, and {@link RuleCompilationException#failures() failures()} lists them: each broken
+     *         rule, a language that can't create its compiler (once, in place of the first rule that needed it; the
+     *         rules written in it aren't compiled and get no failure of their own), and each declared fact name the
+     *         compilers that were created reject, or their languages reserve so. Once the rules compile, an engine
+     *         built with
      *         {@link RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)} makes its copies of them, and a language
      *         that throws while creating or warming up a session for one, or returns {@code null} instead of a
      *         session, fails the load with this exception, naming the language, on its own.
@@ -115,7 +120,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      * <p>
      * The problems come in the order {@code load()} finds them: a {@code null} entry or a duplicate name, in list
      * order; then each rule that doesn't compile, in priority order, with a language that can't create its compiler
-     * in place of the first rule that needed it; then each declared fact name the languages reject. Unlike
+     * in place of the first rule that needed it; then a compiler that fails to tell which facts its rules read; then
+     * each declared fact name the languages reject, or reserve only for the rule lists that use them. Unlike
      * {@code load()}, a {@code null} entry or a duplicate name doesn't stop the check: every other rule is still
      * compiled.
      * </p>
@@ -160,8 +166,13 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         {@code null}.
      * @throws IllegalArgumentException if a fact's name is {@code null}, blank, or one of the engine's languages
      *         reserves (see {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()},
-     *         {@code output} by default), or a name that the language of a loaded rule can't refer to (a rule list
-     *         without rules is checked against the engine's default language); if a
+     *         {@code output} by default; a language that reserves its names only for the rule lists that use it, as
+     *         {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()} says,
+     *         reserves them only when a loaded rule is written in it, or, when the loaded rule list has no rules, when
+     *         it's the engine's default language), or a name that the language of a loaded rule
+     *         can't refer to (a rule list without rules is checked against the engine's default language, and a
+     *         language whose compiler says which facts its rules read checks only those, as
+     *         {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#factNamesRead()} says); if a
      *         {@link RulesEngineBuilder#fact(String, Class) declared fact} has a non-null value that isn't an instance
      *         of its declared type or, for a primitive type, of its wrapper or of a wrapper whose primitive Java widens
      *         to it; or, with

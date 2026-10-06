@@ -10,7 +10,7 @@ import java.util.Set;
  * for that list. The engine enforces the rest of the rule contract itself, whatever the language: rule names are
  * unique, conditions and actions aren't blank, rules run in priority order, a condition evaluates to a
  * {@link Boolean}, no fact has a blank name or a name one of the engine's languages reserves (see
- * {@link #reservedFactNames()}), and failures are reported as
+ * {@link #reservedFactNames()} and {@link #reservesForEveryRuleList()}), and failures are reported as
  * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} or
  * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} and to listeners.
  * </p>
@@ -77,10 +77,11 @@ public interface ExpressionLanguage {
 
     /**
      * Returns the fact names this language reserves for itself, such as the name its actions see the output object
-     * by. A run's facts reach every rule, so the engine rejects a name that any of its languages reserves, whatever
-     * language the rules are written in: {@code build()} rejects a fact declared with one, and {@code run()} a fact
-     * supplied with one, before any language checks the name with
-     * {@link ExpressionCompiler#checkFactName(String)}.
+     * by. A run's facts reach every rule, so by default the engine rejects a name that any of its languages reserves,
+     * whatever language the rules are written in: {@code build()} rejects a fact declared with one, and {@code run()} a
+     * fact supplied with one, before any language checks the name with
+     * {@link ExpressionCompiler#checkFactName(String)}. A language whose {@link #reservesForEveryRuleList()} returns
+     * {@code false} has its names rejected only for a rule list that uses it, as that method describes.
      *
      * <p>
      * The engine calls it once, when it's built, for every language it has, those found with
@@ -100,5 +101,38 @@ public interface ExpressionLanguage {
      */
     default Set<String> reservedFactNames() {
         return Set.of(ActionContext.OUTPUT_NAME);
+    }
+
+    /**
+     * Tells whether the names {@link #reservedFactNames()} returns are reserved for every rule list the engine loads,
+     * or only for a rule list that uses this language. By default, {@code true}: no fact may have one of the names,
+     * whatever language the rules are written in, so a language that reserves a name fails the runs that supply a
+     * fact by that name to rules written in another, even while no rule is written in it.
+     *
+     * <p>
+     * A language that returns {@code false} has its names rejected only where a rule of its own could see the fact.
+     * {@code run()} rejects a fact supplied with one only when the rule list the run uses has a rule in the language,
+     * as it asks only those languages to {@link ExpressionCompiler#checkFactName(String) check a name}; and a fact
+     * declared with one is rejected when such a rule list is compiled, rather than by {@code build()}: {@code load()}
+     * throws a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} for it, and
+     * {@code validate()} returns one. A rule list without rules is the default language's. For such a rule list, the
+     * names are still rejected for every fact, whatever rules read it (see
+     * {@link ExpressionCompiler#factNamesRead()}), before any language checks the name, and with the same message. A
+     * run rejects them after the engine's own checks of its facts, that each value is of the type its fact was
+     * declared with and, with {@code requireDeclaredFacts()}, that it supplied every declared fact and nothing else;
+     * names reserved for every rule list are rejected before those checks.
+     * </p>
+     *
+     * <p>
+     * The engine calls it once, when it's built, for every language it has, as it calls {@link #reservedFactNames()},
+     * so it must not need {@link #prepare()} to have been called either: return a constant. Anything it throws fails
+     * the build, unchanged.
+     * </p>
+     *
+     * @return {@code true} if the names are reserved for every rule list, {@code false} if only for the rule lists
+     *         that use this language
+     */
+    default boolean reservesForEveryRuleList() {
+        return true;
     }
 }

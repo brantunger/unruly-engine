@@ -10,7 +10,9 @@
  *   {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#prepare()}, to initialize the language's
  *   classes before a first compile or run deep in a stack, and
  *   {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()}, the fact names it
- *   reserves: {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME} by default.</li>
+ *   reserves: {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME} by default, for every rule
+ *   list unless {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()} says
+ *   only for those that use the language.</li>
  *   <li>In the compiler, compile each {@link io.github.brantunger.unruly.api.language.Expression} into a
  *   {@link io.github.brantunger.unruly.api.language.CompiledCondition} or a
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction}, and throw
@@ -54,13 +56,17 @@
  * rules are evaluated in priority order; a condition must evaluate to a {@link Boolean}; no fact has a blank name or
  * a name one of the engine's languages reserves, which is
  * {@value io.github.brantunger.unruly.api.language.ActionContext#OUTPUT_NAME} by default (see
- * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()}); the facts a condition or
- * action sees are read-only; a run is stopped between expressions when its thread is interrupted or its deadline
- * passes; a failure while rules compile is reported as a
+ * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()}), for every rule list or,
+ * for a language that says so, for those with a rule in it (see
+ * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()}); the facts a
+ * condition or action sees are read-only; a run is stopped between expressions when its thread is interrupted or its
+ * deadline passes; a failure while rules compile is reported as a
  * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and a failure while they run as a
  * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, which the run's listeners see once the
  * run has started; and a fact name a language rejects fails the run with an
- * {@link java.lang.IllegalArgumentException}, or the load, for a declared fact.
+ * {@link java.lang.IllegalArgumentException}, or the load, for a declared fact, unless the language's compiler says
+ * none of its rules reads the fact (see
+ * {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#factNamesRead()}).
  * </p>
  *
  * <p>

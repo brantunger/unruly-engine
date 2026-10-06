@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -107,8 +108,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  holding {@code null}, or options or imports are given for a language the
      *                                  engine doesn't have, as
      *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
-     * @throws IllegalArgumentException if a fact is declared with a name one of the engine's languages reserves; if a
-     *                                  language's own import has more than 1,000 characters; if an import has
+     * @throws IllegalArgumentException if a fact is declared with a name one of the engine's languages reserves for
+     *                                  every rule list (see {@link ExpressionLanguage#reservesForEveryRuleList()}); if
+     *                                  a language's own import has more than 1,000 characters; if an import has
      *                                  more than 1,000 characters or more than 64 dot-separated parts, checked
      *                                  before it is looked up; if it is neither a loadable class nor a valid package
      *                                  name; or if it names a class that exists but can't be loaded, with the linkage
@@ -128,8 +130,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
                 configuration.defaultLanguage(), ImportResolver.contextClassLoader());
         // Every language the engine has, not only those it prepares now: a run's facts reach every rule, so a name
-        // any of them reserves is rejected whatever language the rules are written in.
-        Map<String, String> reservedFactNames = FactNames.reserved(languages.languages());
+        // any of them reserves is rejected whatever language the rules are written in. A language that reserves its
+        // names only for the rule lists that use it has them checked when such a rule list is loaded, and run.
+        Map<String, Set<String>> reservedByLanguage = FactNames.reservedByLanguage(languages.languages());
+        Set<String> reservedPerRuleList = FactNames.reservedPerRuleList(languages.languages());
+        Set<String> reservedForEveryRuleList = new HashSet<>(reservedByLanguage.keySet());
+        reservedForEveryRuleList.removeAll(reservedPerRuleList);
+        Map<String, String> reservedFactNames = FactNames.reserved(reservedByLanguage, reservedForEveryRuleList);
         for (String name : configuration.declaredFacts().keySet()) {
             String language = reservedFactNames.get(name);
             if (language != null) {
@@ -164,8 +171,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         this.factIntake = new FactIntake(log, declaredFacts, allFactsDeclared, reservedFactNames);
         this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
                 Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
-                declaredFacts, allFactsDeclared, Set.copyOf(reservedFactNames.keySet()),
-                configuration.languageImports());
+                declaredFacts, allFactsDeclared, Set.copyOf(reservedFactNames.keySet()), reservedByLanguage,
+                reservedPerRuleList, configuration.languageImports());
         this.ruleSets = new RuleSetLifecycle(log, compiler, configuration.copyLimit(), configuration.copiesAtLoad());
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
         // Last, so the settings are checked first: the classes engines use that have a static initializer, which a
@@ -335,8 +342,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * engine's own checks of them run before the run waits for a copy, so a run whose facts it rejects fails at once,
      * however many copies are in use, opening its scope without a copy. The languages check the names inside the
      * scope, once the run holds its copy, so a name no language can refer to reaches {@code onRunError} and a
-     * compiler is never closed while it checks one. A run that waits for a copy opens its scope when the wait ends; an
-     * interrupt while waiting opens and closes a scope of its own. Failing because no rules are loaded, or because the
+     * compiler is never closed while it checks one; so are the names a language reserves only for the rule lists that
+     * use it rejected there, as only the rule list the run borrowed from says which languages it uses. A run that
+     * waits for a copy opens its scope when the wait ends; an interrupt while waiting opens and closes a scope of its
+     * own. Failing because no rules are loaded, or because the
      * engine is closed, is misuse and reaches no listener. Failing because the run found the same rule list closed
      * time after time while it was borrowing a copy reaches none either: that means an engine invariant has broken
      * rather than that the call was wrong.
@@ -632,8 +641,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 if (rejected != null) {
                     throw rejected;
                 }
-                // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name.
-                factIntake.checkFactNames(facts.values(), rules.factChecks(), facts.runs());
+                // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name;
+                // and with the rule list the run borrowed from, whose languages reserve their names and check them,
+                // not the one it first read, which a reload may have replaced.
+                factIntake.checkFactNames(facts.values(), rules.factChecks(), rules.factNamesRead(),
+                        rules.reservedFactNames(), facts.runs());
                 // Every run that returns passes here, a nested one too, so the result carries the run's tags and
                 // start before afterRun or the caller sees it.
                 result = body.run(rules, copy, facts).withRun(run);
@@ -954,8 +966,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * <p>
      * Every rule is compiled before a failure is thrown, so one {@link RuleCompilationException} reports everything
      * that failed: each broken rule, in priority order; a language that can't create its compiler, once, in place of
-     * the first rule that needed it (the rules written in it aren't compiled, and get no failure of their own); and
-     * each declared fact name the languages reject, last. Its {@code failures()} has each. Its message counts them,
+     * the first rule that needed it (the rules written in it aren't compiled, and get no failure of their own); a
+     * compiler that fails to tell which facts its rules read; and each declared fact name the languages reject, or
+     * reserve only for the rule lists that use them, last. Its {@code failures()} has each. Its message counts them,
      * lists the first whole, and each next one while the list stays within
      * {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts the rest. A {@code null} rule or a duplicate
      * name is thrown at once, before anything is compiled.
@@ -963,7 +976,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * <p>
      * Every declared fact name is checked with the same languages a run checks names with, so a declared name no
-     * language can refer to fails here rather than every run. When rules failed, the compilers that were created
+     * language can refer to fails here rather than every run; a compiler that says which facts its rules read checks
+     * only those, and is asked only once every rule has compiled. When rules failed, the compilers that were created
      * still check the names; a language whose compiler couldn't be created doesn't, and when no compiler was created
      * the names aren't checked until the next {@code load()}.
      * </p>

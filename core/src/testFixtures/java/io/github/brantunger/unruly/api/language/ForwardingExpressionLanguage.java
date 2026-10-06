@@ -44,4 +44,9 @@ public class ForwardingExpressionLanguage implements ExpressionLanguage {
     public Set<String> reservedFactNames() {
         return language.reservedFactNames();
     }
+
+    @Override
+    public boolean reservesForEveryRuleList() {
+        return language.reservesForEveryRuleList();
+    }
 }

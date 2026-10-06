@@ -140,6 +140,12 @@ final class SessionWatch {
                 return language.reservedFactNames();
             }
 
+            // Forwarded, so the engine rejects those names for the same rule lists as it does unwrapped.
+            @Override
+            public boolean reservesForEveryRuleList() {
+                return language.reservesForEveryRuleList();
+            }
+
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
@@ -182,6 +188,12 @@ final class SessionWatch {
                     @Override
                     public void checkFactName(String name) {
                         compiler.checkFactName(name);
+                    }
+
+                    // Forwarded, so the engine asks the language about the same facts as it does unwrapped.
+                    @Override
+                    public @Nullable Set<String> factNamesRead() {
+                        return compiler.factNamesRead();
                     }
 
                     @Override

@@ -105,8 +105,8 @@ language, and each language adds its own.
 
 `run()` checks each fact's name, and throws `IllegalArgumentException` for the first one that breaks a rule:
 
-- All the engine's languages give their reserved names at `build()`; only those the loaded rules use, or the default
-  for an empty list, check the rest.
+- [By default](languages/custom.md#-fact-names), every language's reserved names are rejected; only the loaded rules'
+  languages, or the default for an empty list, check the rest.
 - The check comes after listeners get `beforeRun` and before any condition runs, so it reaches `onRunError`, and no
   output object is created.
 - **`FactMap`** already rejects a `null` name, a key that differs from the fact's own name
@@ -253,7 +253,8 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
   `IllegalArgumentException` naming the fact. A `null` value passes, because nothing about it contradicts the
   declaration. A run that leaves the fact out is unaffected. A primitive type [widens](#primitive-types-widen), and a
   `null` for one stays `null`. Declaring the same name twice keeps the last type. Declaring a blank name fails at
-  once, a [reserved](#-naming-rules) one at `build()`, and one the rules' languages can't refer to at `load()`.
+  once, a [reserved](#-naming-rules) one at `build()` or `load()`, and one the rules' languages can't refer to at
+  `load()`.
 - **Only the class is checked.** `fact("items", List.class)` accepts any `List`, whatever its elements are.
 - **`facts(map)`** declares several at once, as `fact()` does each one. If it rejects an entry, it declares none.
 - **`requireDeclaredFacts()`** says the declarations are the *whole* list: a run that supplies a fact nobody declared,

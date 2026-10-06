@@ -14,8 +14,8 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
  * Takes in a run's facts for an engine: collects their values, widening a boxed primitive to the primitive type its
  * fact was declared with, and checks them, first as the engine itself does and then with the languages of the rules in
  * use. It holds only the engine's declared facts, whether a run may supply only those, the facts among them declared
- * with a primitive type, the fact names the engine's languages reserve, and the engine's logger, all fixed when the
- * engine is built.
+ * with a primitive type, the fact names the engine's languages reserve for every rule list, and the engine's logger,
+ * all fixed when the engine is built.
  */
 final class FactIntake {
 
@@ -28,8 +28,8 @@ final class FactIntake {
     // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
     // engines, which then convert nothing.
     private final Map<String, Class<?>> primitiveFacts;
-    // The language that reserves each fact name the engine's languages reserve, by name, which no fact may have; and
-    // the names alone, which a run's names are looked up in.
+    // The language that reserves each fact name the engine's languages reserve for every rule list, by name, which no
+    // fact may have; and the names alone, which a run's names are looked up in.
     private final Map<String, String> reservedFactNames;
     private final Set<String> reserved;
 
@@ -43,8 +43,8 @@ final class FactIntake {
      * @param log              The engine's logger
      * @param declaredFacts     The declared type of each fact, by name
      * @param allFactsDeclared  Whether a run may supply only the declared facts
-     * @param reservedFactNames The language that reserves each fact name the engine's languages reserve, by name, as
-     *                          {@link FactNames#reserved} returns them
+     * @param reservedFactNames The language that reserves each fact name the engine's languages reserve for every rule
+     *                          list, by name, as {@link FactNames#reserved(Map, Set)} returns them
      */
     FactIntake(Logger log, Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
                Map<String, String> reservedFactNames) {
@@ -102,9 +102,10 @@ final class FactIntake {
     /**
      * Checks a run's facts as the engine itself does, before the run borrows a copy of the rules, and returns what the
      * check threw, for the run to fail with once its listeners have heard of it: every name is not {@code null}, not
-     * blank and not one the engine's languages reserve, every value is an instance of the type its fact was declared
-     * with or of its wrapper, and, when the engine requires declared facts, the run supplied every declared fact and
-     * nothing else. The languages check the names later, with {@link #checkFactNames}.
+     * blank and not one the engine's languages reserve for every rule list, every value is an instance of the type its
+     * fact was declared with or of its wrapper, and, when the engine requires declared facts, the run supplied every
+     * declared fact and nothing else. The languages check the names later, with {@link #checkFactNames}, which also
+     * rejects the names a language reserves only for the rule lists that use it.
      *
      * @param values The fact values by name
      * @return The {@link IllegalArgumentException} the check threw, or {@code null} if the facts passed
@@ -123,7 +124,8 @@ final class FactIntake {
     }
 
     /**
-     * Checks that a fact name is not {@code null}, not blank and not one the engine's languages reserve.
+     * Checks that a fact name is not {@code null}, not blank and not one the engine's languages reserve for every
+     * rule list.
      *
      * @param name The fact's name
      * @throws IllegalArgumentException if it is
@@ -146,18 +148,36 @@ final class FactIntake {
     }
 
     /**
-     * Checks every fact name of a run with the language of each loaded rule, once the engine's own checks have passed
-     * (see {@link #factRejection}).
+     * Checks every fact name of a run against the rule list the run uses, once the engine's own checks have passed
+     * (see {@link #factRejection}): first that no name is one that a language of the rule list reserves only for the
+     * rule lists that use it, then with the language of each loaded rule. An engine whose languages all reserve their
+     * names for every rule list, and whose compilers can't tell which facts their rules read, has both maps empty, and
+     * checks each name as it did before languages could say either.
      *
-     * @param values The fact values by name
-     * @param checks The compilers of the rule list the run uses, which check each name, by language name
-     * @param runs   What is in progress on the run's thread, which marks each check as a call-out
-     * @throws IllegalArgumentException if a language can't refer to a fact's name, or its check of the name throws
-     *                                  anything else
+     * @param values    The fact values by name
+     * @param checks    The compilers of the rule list the run uses, which check each name, by language name
+     * @param namesRead The names of the facts each compiler's rules read, by language name, for the compilers that can
+     *                  tell (see {@link ExpressionCompiler#factNamesRead()}); a compiler checks only those
+     * @param reserved  The language that reserves each name, by name, of the rule list's languages that reserve their
+     *                  names only for the rule lists that use them
+     * @param runs      What is in progress on the run's thread, which marks each check as a call-out
+     * @throws IllegalArgumentException if a name is reserved, a language can't refer to a fact's name, or its check of
+     *                                  the name throws anything else
      */
-    void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks, LoggedFailures.Runs runs) {
+    void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks,
+                        Map<String, Set<String>> namesRead, Map<String, String> reserved, LoggedFailures.Runs runs) {
+        // Every name first, as the names the engine's languages reserve for every rule list were, before any language
+        // checks one. Asked only when a language reserves one, so a run of any other engine allocates nothing here.
+        if (!reserved.isEmpty()) {
+            for (String name : values.keySet()) {
+                String language = reserved.get(name);
+                if (language != null) {
+                    throw rejectedFact(FactNames.reservedMessage(name, language, false));
+                }
+            }
+        }
         for (String name : values.keySet()) {
-            IllegalArgumentException rejected = factNameRejection(log, name, checks, true, runs);
+            IllegalArgumentException rejected = factNameRejection(log, name, checks, namesRead, true, runs);
             if (rejected != null) {
                 throw rejected;
             }
@@ -237,16 +257,28 @@ final class FactIntake {
      * again (see {@link LoggedFailures}). Each language's check is a call-out of the run, load or validation (see
      * {@link LoggedFailures#callOut()}).
      *
-     * @param log    The engine's logger
-     * @param name   The fact's name
-     * @param checks The compilers to check it with, by language name
-     * @param logged Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own message
-     * @param runs   What is in progress on this thread, which marks each check
+     * @param log       The engine's logger
+     * @param name      The fact's name
+     * @param checks    The compilers to check it with, by language name
+     * @param namesRead The names of the facts each compiler's rules read, by language name, for the compilers that
+     *                  can tell; such a compiler checks the name only if it's one of them
+     * @param logged    Whether to log the rejection at ERROR, escaped; {@code false} when the caller logs its own
+     *                  message
+     * @param runs      What is in progress on this thread, which marks each check
      * @return The exception a language rejected the name with, or {@code null} if every language accepts it
      */
     static IllegalArgumentException factNameRejection(Logger log, String name, Map<String, ExpressionCompiler> checks,
-                                                      boolean logged, LoggedFailures.Runs runs) {
+                                                      Map<String, Set<String>> namesRead, boolean logged,
+                                                      LoggedFailures.Runs runs) {
         for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
+            // Looked up only when a compiler said which facts its rules read, so a run of any other engine allocates
+            // nothing here.
+            if (!namesRead.isEmpty()) {
+                Set<String> read = namesRead.get(check.getKey());
+                if (read != null && !read.contains(name)) {
+                    continue;
+                }
+            }
             IllegalArgumentException rejected = factNameRejection(log, name, check.getKey(), check.getValue(), logged,
                     runs);
             if (rejected != null) {
@@ -258,7 +290,7 @@ final class FactIntake {
 
     /**
      * Checks a fact name with one language, as
-     * {@link #factNameRejection(Logger, String, Map, boolean, LoggedFailures.Runs)} describes.
+     * {@link #factNameRejection(Logger, String, Map, Map, boolean, LoggedFailures.Runs)} describes.
      *
      * @param log      The engine's logger
      * @param name     The fact's name

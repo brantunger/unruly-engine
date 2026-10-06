@@ -43,11 +43,12 @@ sequenceDiagram
     participant Sess as Session
     App->>Engine: language(lang), or build() finds it
     Engine->>Lang: name(), once
-    Engine->>Lang: reservedFactNames(), once per build, before the build prepares any language
+    Engine->>Lang: reservedFactNames() and reservesForEveryRuleList(), once per build, before it prepares any language
     Engine->>Lang: prepare(), on each build that names it
     App->>Engine: load(rules)
     Engine->>Lang: prepare(), if not yet prepared, then newCompiler(context), at the first rule in this language
     Engine->>Comp: compileCondition(), then compileAction(), for each rule in priority order
+    Engine->>Comp: factNamesRead(), if every rule compiled; then checkFactName(name) for each declared fact
     Engine->>Comp: newSession(), then warmUp(session), n times with copiesAtLoad(n)
     App->>Engine: run(facts), on any thread
     Engine->>Comp: newSession(), when no idle copy is free
@@ -62,11 +63,11 @@ sequenceDiagram
 | Method | When | Thread | Concurrent with itself? |
 | --- | --- | --- | --- |
 | `name()` | Once: in `language(...)`, or when `ServiceLoader` finds it | The building thread | Keep it constant |
-| `reservedFactNames()` | Once per `build()`, for every language, before any is prepared | The building thread | Keep it constant |
+| `reservedFactNames()`, `reservesForEveryRuleList()` | Once per `build()`, for every language, before any is prepared | The building thread | Keep it constant |
 | `prepare()` | Each `build()` naming it; else before its class's first `newCompiler` | The calling thread | Yes: concurrent builds and first uses |
 | `newCompiler` | During `load()` or `validate()`, at the first rule in your language; for an empty list, only if you're the default. Never at `build()` | The calling thread | Yes: concurrent `load()` calls, and engines sharing one instance |
 | `compileCondition`, `compileAction` | Each rule in priority order, condition first; the action only if the condition compiled | The `load()` or `validate()` thread | No |
-| `checkFactName` | Each declared fact, once every rule has compiled or failed; then each fact of each run | `load()` or `validate()`, then run threads | Yes |
+| `checkFactName` | Each declared fact, once every rule has compiled or failed; then each fact of each run; or only those `factNamesRead()` names | `load()` or `validate()`, then run threads | Yes |
 | `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled. Return `Session.none()` or a new session each time | The run's thread, or the `load()` thread | Yes |
 | `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it | The `load()` thread | No |
 | `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
@@ -94,8 +95,8 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 
 | Interface | You implement | It returns |
 | --- | --- | --- |
-| `ExpressionLanguage` | `name()`, `newCompiler(CompileContext)`, optionally `prepare()` and `reservedFactNames()` | A new compiler for each rule list |
-| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
+| `ExpressionLanguage` | `name()`, `newCompiler(CompileContext)`, optionally `prepare()`, `reservedFactNames()` and `reservesForEveryRuleList()` | A new compiler for each rule list |
+| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `factNamesRead()`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
@@ -201,8 +202,7 @@ return new CompiledCondition() {
 
 The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never `evaluate` itself. The default
 returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
-`evaluate` works unchanged. For a `Boolean` it returns the shared `ConditionResult.TRUE` or `FALSE`, so neither
-it nor `ConditionResult.of(value, null)` allocates.
+`evaluate` works unchanged.
 
 Since 2.3.0, `ConditionResult`s with equal values and details are equal, by the detail's own `equals`, so an array
 compares by identity. `toString()` prints the call that makes it, such as `ConditionResult.of(true, <detail>)`.
@@ -393,13 +393,24 @@ or the default language for an empty list. The engine rejects `null`, blank and 
 nothing: keep `checkFactName` cheap and thread-safe. The [contract kit](contract-kit.md) tests it both ways:
 `unusableFactName()` and `usableFactNames()`.
 
+Since 2.27.0, `factNamesRead()` may return the facts your compiler's rules read; only those reach its `checkFactName`,
+so your keyword can name another language's fact. The default, `null`, checks every fact.
+It's asked once every rule has compiled, never when one failed. Return extra names rather than miss one. Throwing
+(`The 'my' expression language failed to tell which facts its rules read: ...`), or a `null` name, fails the load.
+
 Override `reservedFactNames()` to return each name your expressions bind to something other than a fact, such as
 `output` to the output object, or reject it in `checkFactName`: otherwise a rule given such a fact reads whichever
 your language finds first. The default is `output` (`ActionContext.OUTPUT_NAME`). Each `build()` asks every language
-once, even an unused one, and rejects each name for every rule: a declared fact at `build()`, a run's fact at `run()`.
+once and, by default, rejects each name for every rule list, whatever `factNamesRead()` says: a declared fact at
+`build()`, a run's fact at `run()`.
 
-Return a constant, unchanged by `prepare()`, never `null` and holding no `null`, which fail `build()` with
-`IllegalStateException`. What `reservedFactNames()` throws, `build()` throws unchanged. An empty set reserves none.
+Since 2.27.0, `reservesForEveryRuleList()` returning `false` reserves them only for a rule list using your language,
+or an empty one if yours is the default. Its `load()` and `validate()` reject a declared fact with one,
+`'self' is reserved by the 'my' expression language and cannot be declared as a fact`, and its runs reject one after
+the engine's other fact checks.
+
+Return constants, unchanged by `prepare()`. `build()` fails with `IllegalStateException` on a `null` set or name, and
+rethrows what either method throws. An empty set reserves none.
 
 ## ⏳ Stopping a run
 
@@ -501,8 +512,8 @@ returns. Around any other blocking call, your runtime must restore it, as above,
 | `warmUp` | Called on the `load()` thread, one session at a time; see [Warming up a session](#warming-up-a-session) |
 | `checkFactName`, `newSession` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
-| A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()`. Only the kit's `sessionsClosed` and `concurrentRuns` check, among the sessions they get |
-| `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw. The kit's `sessionClosedWhileAnotherRuns` fails either; `sessionsClosed` and `sessionClosedOnAnotherThread` fail a throw |
+| A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()` |
+| `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw |
 | Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, which may fail, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), or restore it in a `finally`, as the kit's [nested-run checks](contract-kit.md#-testing-with-the-contract-kit) require |
 | Built-in objects and globals the runs share | An action's change there mustn't reach a later run: refuse it at load, fail it before it changes anything, or keep it to the run, as `sharedStateStaysLocal` checks |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
@@ -552,15 +563,11 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **A stateless session of your own** | `new MySession()` still gets copies and the copy limit | Return `Session.none()` |
-| **A missing property read as `false`** | The rule never fires, and nothing says why | Use `FactProperties.read`, and let its `IllegalArgumentException` reach the engine |
-| **`toData` on each fact** | Throws for a number, a string or a collection | Convert `evaluation.facts()` itself, with `depth + 1` |
 | **A runtime that clears the interrupt** | An interrupted rule is reported as the rule's failure, at ERROR, not as a stop | Restore it as [Stopping a run](#-stopping-a-run) shows, unless you cancelled it for the deadline |
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN. `runScoped` and `runScopedClosing` work there, with the limits in [Reading facts](#-reading-facts) | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **A closing init that waits for a worker** | The worker's `runScopedClosing` waits for that init to finish, so both threads hang for good: an interrupt doesn't free them, and the run never ends | Get the value before handing work off, and pass it to the worker |
 | **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
-| **A lambda that wraps a condition** | The wrapped condition's detail is dropped: `detail()` is `null` | Forward `evaluateWithDetail`; see [Explaining a condition's result](#explaining-a-conditions-result) |
-| **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](#-thread-safety) fail it |
+| **A `close()` that throws** | The engine logs it at WARN, so nothing but a fatal error reaches the application, and only once everything is closed | Don't throw; the kit's `compilerClosed` and [session checks](contract-kit.md#-testing-with-the-contract-kit) fail it |
 
 ## ❓ Questions you might not think to ask
 

@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Set;
@@ -46,6 +47,12 @@ final class CompilerCloseCounter {
                 return language.reservedFactNames();
             }
 
+            // Forwarded, so the engine rejects those names for the same rule lists as it does unwrapped.
+            @Override
+            public boolean reservesForEveryRuleList() {
+                return language.reservesForEveryRuleList();
+            }
+
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
                 ExpressionCompiler compiler = language.newCompiler(context);
@@ -78,6 +85,12 @@ final class CompilerCloseCounter {
                     @Override
                     public void checkFactName(String name) {
                         compiler.checkFactName(name);
+                    }
+
+                    // Forwarded, so the engine asks the language about the same facts as it does unwrapped.
+                    @Override
+                    public @Nullable Set<String> factNamesRead() {
+                        return compiler.factNamesRead();
                     }
 
                     // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception

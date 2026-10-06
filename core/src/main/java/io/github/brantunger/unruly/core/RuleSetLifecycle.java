@@ -185,7 +185,8 @@ final class RuleSetLifecycle {
         try {
             compilation.compile(ruleList);
             compilation.throwIfAnyFailed();
-            loaded = new RuleSet(compilation.compiledRules(), compilation.usedCompilers(), copyLimit, copyPermits,
+            loaded = new RuleSet(compilation.compiledRules(), compilation.usedCompilers(),
+                    compilation.factNamesRead(), compilation.reservedFactNames(), copyLimit, copyPermits,
                     stallWindowMillis);
         } catch (Throwable t) {
             // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.

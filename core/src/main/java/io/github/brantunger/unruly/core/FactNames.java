@@ -4,10 +4,12 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * Checks a fact's name, before any language is asked about it: the builder checks each declared fact's, the engine
@@ -101,8 +103,22 @@ final class FactNames {
      * @throws IllegalStateException if a language returns {@code null}, or a set holding {@code null}
      */
     static Map<String, String> reserved(Map<String, ExpressionLanguage> languages) {
-        Map<String, String> reserved = new HashMap<>();
+        Map<String, Set<String>> byLanguage = reservedByLanguage(languages);
+        return reserved(byLanguage, byLanguage.keySet());
+    }
+
+    /**
+     * Returns the fact names each of an engine's languages reserves, asking each language once, as
+     * {@link #reserved(Map)} does.
+     *
+     * @param languages The engine's languages, by name
+     * @return The names each language reserves, by language name, sorted by it; each set unmodifiable, so a later
+     *         change to the set a language returned changes nothing
+     * @throws IllegalStateException if a language returns {@code null}, or a set holding {@code null}
+     */
+    static Map<String, Set<String>> reservedByLanguage(Map<String, ExpressionLanguage> languages) {
         // Sorted by name, so the language a message names, when several reserve the same name, is always the same.
+        Map<String, Set<String>> byLanguage = new TreeMap<>();
         for (Map.Entry<String, ExpressionLanguage> language : new TreeMap<>(languages).entrySet()) {
             Set<String> names = language.getValue().reservedFactNames();
             if (names == null) {
@@ -114,7 +130,47 @@ final class FactNames {
                     throw new IllegalStateException("The '" + Failures.quote(language.getKey())
                             + "' expression language returned a null name from reservedFactNames()");
                 }
-                reserved.putIfAbsent(name, language.getKey());
+            }
+            byLanguage.put(language.getKey(), Set.copyOf(names));
+        }
+        return Collections.unmodifiableMap(byLanguage);
+    }
+
+    /**
+     * Returns the names of an engine's languages whose reserved names apply only to the rule lists that use them,
+     * asking each language once, when the engine is built (see
+     * {@link ExpressionLanguage#reservesForEveryRuleList()}).
+     *
+     * @param languages The engine's languages, by name
+     * @return The names of those languages; unmodifiable, and empty when every language reserves its names for every
+     *         rule list
+     */
+    static Set<String> reservedPerRuleList(Map<String, ExpressionLanguage> languages) {
+        Set<String> scoped = new TreeSet<>();
+        for (Map.Entry<String, ExpressionLanguage> language : new TreeMap<>(languages).entrySet()) {
+            if (!language.getValue().reservesForEveryRuleList()) {
+                scoped.add(language.getKey());
+            }
+        }
+        return scoped.isEmpty() ? Set.of() : Collections.unmodifiableSet(scoped);
+    }
+
+    /**
+     * Returns the fact names some of an engine's languages reserve, each with the language that reserves it.
+     *
+     * @param byLanguage The names each language reserves, by language name, as {@link #reservedByLanguage} returns
+     *                   them
+     * @param languages  The names of the languages whose names to return
+     * @return The language that reserves each name, by name, the first by name where several do; unmodifiable
+     */
+    static Map<String, String> reserved(Map<String, Set<String>> byLanguage, Set<String> languages) {
+        Map<String, String> reserved = new HashMap<>();
+        // byLanguage is sorted by name, so the first language by name is put first.
+        for (Map.Entry<String, Set<String>> language : byLanguage.entrySet()) {
+            if (languages.contains(language.getKey())) {
+                for (String name : language.getValue()) {
+                    reserved.putIfAbsent(name, language.getKey());
+                }
             }
         }
         return Map.copyOf(reserved);
