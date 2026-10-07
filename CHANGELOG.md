@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.1](https://github.com/brantunger/unruly-engine/compare/v2.29.0...v2.29.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* check a language's first runs for more stack room, and warm up MVEL's literal arguments, so a deep first run no longer fails its rule on a call of one method ([#1094](https://github.com/brantunger/unruly-engine/issues/1094)) ([9e0ebcd](https://github.com/brantunger/unruly-engine/commit/9e0ebcdbe52fb4d127e4538e7ca1accb6d0c78dd))
+
 ## [2.29.0](https://github.com/brantunger/unruly-engine/compare/v2.28.0...v2.29.0) (2026-10-06)
 
 
