@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.jspecify.annotations.Nullable;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.util.ParseTools;
 
@@ -24,14 +25,23 @@ final class RuleText {
      */
     static final String MVEL_WHITESPACE = "[\\x00-\\x20]";
 
-    // The characters besides MVEL's whitespace that end a word addWords adds, with and without the comma: MVEL reads
-    // a comma that starts a name as part of it, such as ,a in (,a) == 5. Then without the comma but with the
-    // operators * / + %, and the comment marks they make: MVEL lexes some names whole up to one, such as ,a in
-    // 1+,a == 6, and an author's word glued to one is kept whole, so it's still checked, such as my-fact in
-    // my-fact*2, which MVEL reads as my minus fact times 2. Not -, which would split my-fact itself.
-    private static final String WORD_ENDS = "()[]{},;'\"=<>!&|?:";
-    private static final String WORD_ENDS_BUT_COMMA = "()[]{};'\"=<>!&|?:";
-    private static final String WORD_ENDS_AND_OPERATORS = WORD_ENDS_BUT_COMMA + "*/+%";
+    // The characters a span of a word addWords adds may start after, a word being a run of characters between MVEL's
+    // whitespace: MVEL lexes a name whole from different ones in different places, such as ,a in (,a) == 5, \a in
+    // max(1+\a,2), a!b in isdef a!b/**/ and a.b in a.b--, so every span between any two of them is added. A span keeps
+    // the ends inside it, so an author's word glued to one is kept whole too, and still checked, such as my-fact in
+    // my-fact-1 and in my-fact*2, which MVEL reads as my minus fact (#1089). A span stops before any character that
+    // isn't part of an identifier, these and others such as # or a no-break space, as MVEL stops ,a there in ,a#b.
+    private static final String WORD_ENDS = "()[]{},;'\"=<>!&|?:*/+%-.";
+    // A span also starts just after isdef that starts a word or follows an end, as MVEL reads #a in isdef#a.
+    private static final String ISDEF = "isdef";
+
+    // A word's spans grow as the square of the characters in it that aren't part of an identifier, each after isdef
+    // counted twice, as a span may start both at it and just after it. So addNames gives up on a word with more of them
+    // than an import has parts, or more characters than an import may have: the longest qualified name a rule can name
+    // a class by inline fits in one word.
+    private static final int MAX_WORD_STOPS = Imports.MAX_IMPORT_PARTS;
+    private static final int MAX_WORD_LENGTH = Imports.MAX_IMPORT_LENGTH;
+    private static final char BACKSLASH = '\\';
 
     private RuleText() {
     }
@@ -84,19 +94,23 @@ final class RuleText {
      * each run of characters MVEL reads as part of an identifier, as {@link ParseTools#isIdentifierPart(int)} tells,
      * wherever it is, in a string literal or a comment too; the run with MVEL's whitespace trimmed from its ends, as
      * MVEL trims a name it reads, such as {@code a} for U+0001 then {@code a}, U+0001 being part of an identifier
-     * too; and each part of the run between MVEL's whitespace. Then adds the words {@link #addWords} finds: names a
-     * rule's author may have meant, and names MVEL lexes with other characters in them, such as {@code ,a}. MVEL
-     * reads a fact only by a name it lexed from the text, as it has no names it computes or interpolates, and reads
-     * {@code this} as no fact. A name added that MVEL reads as something else, or not at all, such as a word of a
-     * comment, only adds a name. A name MVEL reads whole can still be missed, such as one glued to a minus sign, as
-     * {@code \a} in {@code 1-\a} or {@code a.b} in {@code a.b--}, since {@link #addWords} doesn't split a word there,
-     * or one with punctuation in it, such as {@code a!b}, that {@code isdef} reads whole when a comment follows it.
-     * Scanned with loops rather than a stream, as a load calls it (#1012).
+     * too; and each part of the run between MVEL's whitespace. Then adds, for each word between MVEL's whitespace,
+     * what {@link #addWords} finds: names a rule's author may have meant, and names MVEL lexes with other characters
+     * in them, such as {@code ,a}. MVEL reads a fact only by a name it lexed from the text, as it has no names it
+     * computes or interpolates, and reads {@code this} as no fact. A name added that MVEL reads as something else, or
+     * not at all, such as a word of a comment, only adds a name. A name MVEL reads with MVEL's whitespace in it can
+     * still be missed, such as one {@code isdef} reads up to a comment on a later line. Gives up, with only some names
+     * added, on a word of more than 1,000 characters ({@link Imports#MAX_IMPORT_LENGTH}), or with more than 64
+     * characters that aren't part of an identifier ({@link Imports#MAX_IMPORT_PARTS}), each one just after
+     * {@code isdef} counted twice, as its spans grow as the square of those. Scanned with loops rather than a stream,
+     * as a load calls it (#1012).
      *
      * @param text  The expression's text
      * @param names The names to add to
+     * @return {@code null} if every name was added, or which limit a word went past, such as
+     *         {@code "a word of more than 1000 characters"}, if it gave up
      */
-    static void addNames(String text, Set<String> names) {
+    static @Nullable String addNames(String text, Set<String> names) {
         int index = 0;
         while (index < text.length()) {
             if (!ParseTools.isIdentifierPart(text.charAt(index))) {
@@ -119,45 +133,90 @@ final class RuleText {
             }
             index = end;
         }
-        addWords(text, "", names);
-        addWords(text, WORD_ENDS, names);
-        addWords(text, WORD_ENDS_BUT_COMMA, names);
-        addWords(text, WORD_ENDS_AND_OPERATORS, names);
-    }
-
-    /**
-     * Adds each word of an expression's text, which MVEL may read as several names but a rule's author may have
-     * written as a fact's, such as {@code my-fact} in {@code my-fact == 1}, which MVEL reads as {@code my} minus
-     * {@code fact}: so a fact named so is still checked, and rejected, rather than the rule reading other facts. MVEL
-     * also reads some such words as one name itself, such as {@code ,a} in {@code (,a) == 5}. A word is a run of
-     * characters between MVEL's whitespace and the given characters, and each of its parts between dots, such as
-     * {@code my-fact} in {@code my-fact.size}. Called with no characters, for words between whitespace alone, with
-     * {@link #WORD_ENDS}, with them but the comma, and with those and {@code * / + %}, which also end a word MVEL
-     * reads whole, such as {@code ,a} in {@code 1+,a == 6}. Only a guess at what was meant: {@code my-fact*2} adds
-     * the word, {@code my-fact-1} doesn't, as a minus sign doesn't end a word, and a name with a space in it is never
-     * one word.
-     *
-     * @param text  The expression's text
-     * @param ends  The characters besides MVEL's whitespace that end a word
-     * @param names The names to add to
-     */
-    private static void addWords(String text, String ends, Set<String> names) {
         int start = 0;
         for (int at = 0; at <= text.length(); at++) {
-            if (at == text.length() || isMvelWhitespace(text.charAt(at)) || ends.indexOf(text.charAt(at)) >= 0) {
-                String word = text.substring(start, at);
-                addName(word, names);
-                int part = 0;
-                for (int dot = word.indexOf('.'); dot >= 0; dot = word.indexOf('.', part)) {
-                    addName(word.substring(part, dot), names);
-                    part = dot + 1;
-                }
-                if (part > 0) {
-                    addName(word.substring(part), names);
+            if (at == text.length() || isMvelWhitespace(text.charAt(at))) {
+                String limit = addWords(text, start, at, names);
+                if (limit != null) {
+                    return limit;
                 }
                 start = at + 1;
             }
         }
+        return null;
+    }
+
+    /**
+     * Adds the names in one word of an expression's text, a run of characters between MVEL's whitespace, which MVEL
+     * may read as several names but a rule's author may have written as a fact's, such as {@code my-fact} in
+     * {@code my-fact == 1}, which MVEL reads as {@code my} minus {@code fact}: so a fact named so is still checked,
+     * and rejected, rather than the rule reading other facts. Adds every span of the word that starts at its start,
+     * just after one of its ends, or just after {@code isdef} that starts the word or follows an end and isn't followed
+     * by part of an identifier, and stops at its end or just before a character that isn't part of an identifier, as
+     * {@link ParseTools#isIdentifierPart(int)} tells, an end being one of
+     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}: so the word itself, each part between dots, and each
+     * name MVEL lexes whole, such as {@code ,a} in {@code (,a) == 5} and in {@code ,a#b}, {@code \a} in
+     * {@code max(1+\a,2)}, {@code a!b} in {@code isdef a!b} with a comment glued to it, {@code #a} in
+     * {@code isdef#a}, and {@code a.b} in {@code a.b--}; and for {@code my-fact-1}, {@code my}, {@code fact},
+     * {@code 1}, {@code my-fact}, {@code fact-1} and {@code my-fact-1}. Adds a backslash alone for each in the word,
+     * as MVEL reads {@code \\a} as the name {@code \} and then {@code \a} of it, and a high surrogate alone for each,
+     * as MVEL reads a letter beyond U+FFFF as its high surrogate and then its low one of it, even for a word with too
+     * many characters that aren't part of an identifier, which the compiler then forgets with every other name, but
+     * not for a word of more than 1,000 characters. Adds no span of a word of more than 1,000 characters, or with more
+     * than 64 that aren't part of an identifier, each one just after {@code isdef} counted twice.
+     *
+     * @param text  The expression's text
+     * @param start Where the word starts
+     * @param end   Where the word ends, just after its last character
+     * @param names The names to add to
+     * @return {@code null} if every name was added, or which limit the word went past
+     */
+    private static @Nullable String addWords(String text, int start, int end, Set<String> names) {
+        if (end - start > MAX_WORD_LENGTH) {
+            return "a word of more than " + MAX_WORD_LENGTH + " characters";
+        }
+        int stops = 0;
+        for (int at = start; at < end; at++) {
+            char c = text.charAt(at);
+            if (!ParseTools.isIdentifierPart(c)) {
+                // Twice after isdef, where a span may start both at it and just after it.
+                stops += followsIsdef(text, start, at) ? 2 : 1;
+                if (c == BACKSLASH || Character.isHighSurrogate(c)) {
+                    names.add(String.valueOf(c));
+                }
+            }
+        }
+        if (stops > MAX_WORD_STOPS) {
+            return "a word with more than " + MAX_WORD_STOPS + " characters that aren't part of an identifier, each"
+                    + " one just after isdef counted twice";
+        }
+        for (int from = start; from < end; from++) {
+            if (from == start || WORD_ENDS.indexOf(text.charAt(from - 1)) >= 0 || followsIsdef(text, start, from)) {
+                for (int to = from + 1; to <= end; to++) {
+                    if (to == end || !ParseTools.isIdentifierPart(text.charAt(to))) {
+                        names.add(text.substring(from, to));
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Tells whether a character of a word follows the keyword {@code isdef} that starts the word or follows an end, and
+     * isn't part of an identifier itself, so {@code isdef} is a keyword there: MVEL reads the name glued to it whole,
+     * such as {@code #a} in {@code isdef#a} and {@code \a} in {@code (isdef\a)}.
+     *
+     * @param text  The expression's text
+     * @param start Where the word starts
+     * @param at    Where the character is, after the word's start
+     * @return {@code true} if a name MVEL reads after {@code isdef} may start there
+     */
+    private static boolean followsIsdef(String text, int start, int at) {
+        int keyword = at - ISDEF.length();
+        return keyword >= start && text.startsWith(ISDEF, keyword)
+                && (keyword == start || WORD_ENDS.indexOf(text.charAt(keyword - 1)) >= 0)
+                && !ParseTools.isIdentifierPart(text.charAt(at));
     }
 
     private static void addName(String name, Set<String> names) {

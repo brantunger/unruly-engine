@@ -16,6 +16,8 @@ base {
 dependencies {
     api(project(":core"))
     implementation(libs.mvel2)
+    // The engine's logger, which MvelExpressionCompiler logs to as core does.
+    implementation(libs.slf4j.api)
 
     testImplementation(project(":test-kit"))
     // TestEngines, TestLogs and the test languages, shared with core's own tests.
