@@ -24,7 +24,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * and the classes nested in them, whole. It checks whole the configuration that counts the calls and throws when MVEL
  * went round in a loop, {@code Imports.SharedLookupConfiguration}, read by its name, and the two errors it throws. The
  * test fails too if a method or a class named here isn't there. {@link FirstUseClassInitializationTest} checks that
- * MVEL's first such steps link none.
+ * MVEL's first such steps link none. Every name MVEL looks up goes through {@link ExactNameClassLoader}, the JVM's
+ * first maybe deep in a stack, so this checks its class file whole too (#1103).
  */
 @DisplayName("MVEL's loop detection links no lambda when it walks the stack, nor when it stops a loop (#1099)")
 class LoopDetectionLambdaTest {
@@ -66,6 +67,21 @@ class LoopDetectionLambdaTest {
         }
 
         assertEquals(List.of(), linking, "nested classes that link a lambda or have an invokedynamic");
+    }
+
+    @Test
+    @DisplayName("ExactNameClassLoader, which every name MVEL looks up goes through, links no lambda or method "
+            + "reference, nor any other invokedynamic call site (#1103)")
+    void classLoaderLinksNoLambda() throws IOException, URISyntaxException {
+        String outer = ExactNameClassLoader.class.getName().replace('.', '/') + ".class";
+        Map<String, byte[]> classFiles = ClassFiles.of(ExactNameClassLoader.class);
+        List<String> linking = new ArrayList<>();
+        for (Map.Entry<String, byte[]> classFile : classFiles.entrySet()) {
+            linking.addAll(linking(classFile.getKey(), classFile.getValue()));
+        }
+
+        assertTrue(classFiles.containsKey(outer), "class not read: " + classFiles.keySet());
+        assertEquals(List.of(), linking, "classes that link a lambda or have an invokedynamic");
     }
 
     @Test

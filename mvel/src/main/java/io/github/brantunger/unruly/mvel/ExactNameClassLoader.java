@@ -391,13 +391,22 @@ final class ExactNameClassLoader extends ClassLoader {
     /**
      * Tells whether a name has only characters a class's binary name can have: a {@code .}, or one a Java identifier
      * may have, which {@code $} is. A name with any other, such as a quote, a parenthesis or a space, is a piece of a
-     * statement or a call that MVEL tries as a class, and no class compiled from Java has it.
+     * statement or a call that MVEL tries as a class, and no class compiled from Java has it. Read with a loop rather
+     * than a stream's {@code allMatch}, whose first use would link a lambda and load the JDK's stream classes: every
+     * name MVEL looks up comes here, and the JVM's first may be deep in a stack (#1103).
      *
      * @param name The name to look up
      * @return {@code false} if no class can have the name
      */
     static boolean isBinaryName(String name) {
-        return name.codePoints().allMatch(c -> c == '.' || Character.isJavaIdentifierPart(c));
+        int c;
+        for (int i = 0; i < name.length(); i += Character.charCount(c)) {
+            c = name.codePointAt(i);
+            if (c != '.' && !Character.isJavaIdentifierPart(c)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

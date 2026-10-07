@@ -8,6 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -51,6 +52,26 @@ class NonClassNameLockTest {
 
         assertThrows(ClassNotFoundException.class, () -> loader.loadClass(name));
         assertEquals(List.of(), parent.loadedClasses);
+    }
+
+    @Test
+    @DisplayName("a name's characters are read one code point at a time, as a stream of its code points reads them, "
+            + "lone surrogates included (#1103)")
+    void binaryNameReadByCodePoint() {
+        // U+1D465, a mathematical italic x, is a letter outside the Basic Multilingual Plane; U+1F600, an emoji, is
+        // outside it too, and no identifier may have it.
+        List<String> names = List.of("", ".", "java.util.Map$Entry", "a1.b2", "$", "\uD835\uDC65", "a\uD835\uDC65.b",
+                "\uD835", "\uDC65", "a\uD835", "\uD835a", "\uDC65a", "\uD83D\uDE00", "a b", "a-b", "a'b");
+        List<String> expected = new ArrayList<>();
+        List<String> read = new ArrayList<>();
+        for (String name : names) {
+            expected.add(name + " " + name.codePoints().allMatch(c -> c == '.' || Character.isJavaIdentifierPart(c)));
+            read.add(name + " " + ExactNameClassLoader.isBinaryName(name));
+        }
+
+        assertEquals(expected, read);
+        assertEquals(List.of(true, true, true, true, true, true, true, false, false, false, false, false, false, false,
+                false, false), read.stream().map(each -> each.endsWith("true")).toList());
     }
 
     @Test
