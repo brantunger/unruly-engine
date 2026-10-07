@@ -7,14 +7,13 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Supplier;
 
 /**
  * Reads the message, causes and stack trace of an exception the module didn't create, such as one a class's static
  * initializer or the application's class loader threw, without letting what those accessors throw escape. None of
  * them is final, and a failure to read one says nothing about the failure being reported, which is still reported as
- * it would be.
+ * it would be. Each accessor is called in a {@code try} of its own rather than through a lambda or method reference, so
+ * the JVM's first failure links no call site, which could overflow deep in a stack (#1093).
  * {@code core.Failures} keeps the engine's copy of these readers: the mvel package may not use that one.
  * mvel's {@code ExceptionReadsCopiesTest} checks {@link #messageOf}, {@link #rootCause} and {@link #causeChain}, and
  * the private readers they go through, against it.
@@ -39,7 +38,11 @@ final class ExceptionReads {
      *         what {@code getMessage()} threw, if it can't be read
      */
     static String messageOf(Throwable e) {
-        return read(e::getMessage, thrown -> "(message unavailable: " + thrown.getClass().getName() + ")");
+        try {
+            return e.getMessage();
+        } catch (Throwable thrown) {
+            return "(message unavailable: " + thrown.getClass().getName() + ")";
+        }
     }
 
     /**
@@ -77,7 +80,11 @@ final class ExceptionReads {
      * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
      */
     private static Throwable causeOf(Throwable e) {
-        return read(e::getCause, thrown -> null);
+        try {
+            return e.getCause();
+        } catch (Throwable thrown) {
+            return null;
+        }
     }
 
     /**
@@ -86,8 +93,15 @@ final class ExceptionReads {
      * @param e The exception
      * @return Its stack trace, which is empty if {@code getStackTrace()} throws or returns {@code null}
      */
+    // One that can't be read is taken for one that is null, so both are read as empty.
+    @SuppressWarnings("PMD.NullAssignment")
     static StackTraceElement[] stackTraceOf(Throwable e) {
-        StackTraceElement[] frames = read(e::getStackTrace, thrown -> null);
+        StackTraceElement[] frames;
+        try {
+            frames = e.getStackTrace();
+        } catch (Throwable thrown) {
+            frames = null;
+        }
         return frames == null ? new StackTraceElement[0] : frames;
     }
 
@@ -114,7 +128,12 @@ final class ExceptionReads {
      * @return {@code true} if the top frame is in the package, or {@code ifEmpty} if there is none
      */
     static boolean topFrameIn(Throwable e, String packagePrefix, boolean ifEmpty) {
-        StackTraceElement[] frames = read(e::getStackTrace, thrown -> null);
+        StackTraceElement[] frames;
+        try {
+            frames = e.getStackTrace();
+        } catch (Throwable thrown) {
+            return false;
+        }
         if (frames == null) {
             return false;
         }
@@ -122,21 +141,5 @@ final class ExceptionReads {
             return ifEmpty;
         }
         return frames[0] != null && frames[0].getClassName().startsWith(packagePrefix);
-    }
-
-    /**
-     * Calls one of an exception's accessors without letting anything it throws escape, a fatal {@link Error} too.
-     *
-     * @param accessor The accessor
-     * @param ifThrown What to return instead, from what the accessor threw
-     * @param <T>      What the accessor returns
-     * @return What the accessor returned, or what {@code ifThrown} makes of what it threw
-     */
-    private static <T> T read(Supplier<T> accessor, Function<Throwable, T> ifThrown) {
-        try {
-            return accessor.get();
-        } catch (Throwable thrown) {
-            return ifThrown.apply(thrown);
-        }
     }
 }

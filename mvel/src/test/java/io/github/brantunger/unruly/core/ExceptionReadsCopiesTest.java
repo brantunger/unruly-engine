@@ -16,10 +16,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@code mvel.ExceptionReads} keeps its own copy of the exception readers in {@code core.Failures}: {@code messageOf},
- * {@code causeChain} and {@code rootCause}, the {@code causeOf} that {@code causeChain} goes through, and the
- * {@code read} that both {@code messageOf} and {@code causeOf} go through. The {@code mvel} package may not depend on
- * {@code core}. In {@code core.Failures}, {@code read} is private, and is reached here only through {@code messageOf}
- * and {@code causeChain}; {@code messageOf}, {@code causeOf}, {@code rootCause}, {@code causeChain} and
+ * {@code causeChain} and {@code rootCause}, and the {@code causeOf} that {@code causeChain} goes through, each of which
+ * calls its accessor in a {@code try} of its own (#1093). The {@code mvel} package may not depend on {@code core}. In
+ * {@code core.Failures}, {@code messageOf}, {@code causeOf}, {@code rootCause}, {@code causeChain} and
  * {@code MAX_CAUSE_CHAIN_LENGTH} are package-private, so this test is in {@code core}'s package to reach them. The
  * copies read the same exceptions the same way, so a change to one that misses the other makes the engine and the MVEL
  * module describe one failure differently, or lets one of them throw what an accessor of an exception threw. Every

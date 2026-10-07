@@ -57,6 +57,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * so it can't pass because the runs were too slow for the JIT, and that none of the engine's or this module's was. With
  * the JIT off, the step initializes nothing.
  * </p>
+ *
+ * <p>
+ * #1093: linking a lambda or a method reference makes a class too, which the same lines show. The code that handles a
+ * failure, this module's {@link ExceptionReads} and the engine's, runs only when something fails, so a lambda in it
+ * was linked by the JVM's first failure, which could overflow deep in a stack. The scenario's first runs whose MVEL
+ * condition and action fail may link no lambda or method reference of the library's.
+ * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
         + "features and the JIT it leaves to their first use (#945, #1012, #1042, #1066)")
@@ -99,6 +106,16 @@ class FirstUseClassInitializationTest {
             "org/mvel2/optimizers/impl/refl/nodes/MethodAccessor",
             "org/mvel2/optimizers/impl/refl/nodes/VariableAccessor",
             "org/mvel2/util/Varargs");
+    // A class of the library's, as -Xlog:class+init names it when it initializes it, a class the JDK made for a lambda
+    // or a method reference included, as in "Initializing 'io/github/brantunger/unruly/mvel/ExceptionReads$$Lambda+0x
+    // ...'(no method)", and as -Xlog:class+load names it when it loads it; and the steps whose run is the JVM's first
+    // to fail in an MVEL condition or action, which must load, initialize or link none: a first failure deep in a
+    // stack could overflow doing so (#1066, #1093). The scenario's own are left out.
+    private static final String LIBRARY_INITIALIZED = INITIALIZING + "io/github/brantunger/unruly/";
+    private static final String LIBRARY_LOADED = "[class,load] io.github.brantunger.unruly.";
+    private static final String SCENARIO_LOADED = "[class,load] " + FirstUseScenario.class.getName();
+    private static final List<String> FAILING = List.of(FirstUseScenario.CONDITION_FAILS,
+            FirstUseScenario.ACTION_FAILS);
     // Set by Unreachable's static initializer, and read here, as reading a field of Unreachable would initialize it.
     private static final AtomicBoolean UNREACHABLE_INITIALIZED = new AtomicBoolean();
 
@@ -138,6 +155,31 @@ class FirstUseClassInitializationTest {
             + "property read, a method call and a literal argument with (#1042, #1066)")
     void evaluatingClassesLoadedWhenBuiltWithoutJit(@TempDir Path dir) throws IOException, InterruptedException {
         assertEquals(whenBuilt(BY_EVALUATING), whereInitialized(dir, BY_EVALUATING, "-Dmvel2.disable.jit=true"));
+    }
+
+    @Test
+    @DisplayName("the JVM's first runs whose MVEL condition or action fails load, initialize or link no class of the "
+            + "engine's or this module's, a lambda's or method reference's included (#1093)")
+    void firstFailuresLoadNothing(@TempDir Path dir) throws IOException, InterruptedException {
+        // With the steps of a load and a validate() that fail after the failing runs, so no class those use first hides
+        // one that a failing run would otherwise be the first to load.
+        List<String> lines = ChildJvm.run(dir, FirstUseScenario.class, "-D" + FirstUseScenario.FAILURES_FIRST + "=true",
+                "-Xlog:class+init=info:stdout", "-Xlog:class+load=info:stdout").lines().toList();
+        assertTrue(lines.contains(FirstUseScenario.BUILT) && lines.contains(FirstUseScenario.RAN),
+                "markers missing:\n" + String.join("\n", lines));
+        List<String> used = new ArrayList<>();
+        String step = "before the first step";
+        for (String line : lines) {
+            int at = Math.max(line.indexOf(LIBRARY_INITIALIZED), line.indexOf(LIBRARY_LOADED));
+            if (line.startsWith(FirstUseScenario.STEP)) {
+                step = line.substring(FirstUseScenario.STEP.length());
+            } else if (at >= 0 && !line.contains(SCENARIO) && !line.contains(SCENARIO_LOADED)
+                    && FAILING.contains(step)) {
+                used.add("\n" + step + ": " + line.substring(at));
+            }
+        }
+
+        assertEquals(List.of(), used, "loaded or initialized by the first failing runs");
     }
 
     @Test

@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 /**
  * Closes the sessions and compilers expression languages created for a rule list, and the values languages kept for a
@@ -23,9 +22,6 @@ final class Closing {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
     private static final String ITS_COMPILER = "its compiler";
-    // A run's values belong to no one language: the run's context is shared by all of them.
-    private static final Consumer<Throwable> RUN_VALUE_WARNING = e -> log.warn(
-            "A value a language kept for the run failed to close: {}", Failures.describe(e));
 
     private Closing() {
     }
@@ -58,7 +54,7 @@ final class Closing {
      * @return The fatal {@link Error} it threw, or {@code null} if it threw none
      */
     static Error compiler(String language, ExpressionCompiler compiler) {
-        return close(compiler, languageWarning(language, ITS_COMPILER));
+        return close(compiler, language, ITS_COMPILER);
     }
 
     /**
@@ -124,7 +120,7 @@ final class Closing {
     private static Throwable runValueFailed(Throwable thrown, Throwable failed) {
         try {
             Faults.at(Faults.Step.RUN_VALUE_FAILURE_LOGGED);
-            return Failures.fatalFirst(failed, failedToClose(thrown, RUN_VALUE_WARNING));
+            return Failures.fatalFirst(failed, failedToClose(thrown, null, null));
         } catch (Throwable logging) {
             Faults.at(Faults.Step.RUN_VALUE_FAILURE_LOGGED);
             // As failedToClose would have, before it failed: an interrupt that made close() fail is kept.
@@ -137,41 +133,46 @@ final class Closing {
     private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
         Error fatal = null;
         for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
-            fatal = Failures.first(fatal, close(resource.getValue(), languageWarning(resource.getKey(), what)));
+            fatal = Failures.first(fatal, close(resource.getValue(), resource.getKey(), what));
         }
         return fatal;
-    }
-
-    private static Consumer<Throwable> languageWarning(String language, String what) {
-        return e -> log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(language), what,
-                Failures.describe(e));
     }
 
     // Any Throwable: one that stopped the loop would leave the rest open, and callers that close more after this, such
     // as the compilers after the sessions, would never reach them. Every caller is inside a run, a load(), a
     // validate() or a close(), so what a run a close() starts logged is known.
-    private static Error close(AutoCloseable resource, Consumer<Throwable> warning) {
+    private static Error close(AutoCloseable resource, String language, String what) {
         try {
             LoggedFailures.callOut();
             resource.close();
             return null;
         } catch (Throwable e) {
-            return failedToClose(e, warning);
+            return failedToClose(e, language, what);
         }
     }
 
     /**
-     * Handles what a {@code close()} threw: keeps the thread's interrupt status, and logs it with {@code warning}
-     * unless it was logged already.
+     * Handles what a {@code close()} threw: keeps the thread's interrupt status, and logs it at WARN unless it was
+     * logged already. The warning is written out here rather than handed in as a lambda, so a failed borrow, which may
+     * be the JVM's first failure, closes what it made without linking a call site, which could overflow deep in a
+     * stack (#1093).
      *
-     * @param e       What the {@code close()} threw
-     * @param warning Logs it at WARN
+     * @param e        What the {@code close()} threw
+     * @param language The name of the language whose session or compiler it was, or {@code null} for a value a
+     *                 language kept for a run, which belongs to no one language: the run's context is shared by all
+     *                 of them
+     * @param what     What it was, such as {@code a session}, or {@code null} for a run's value
      * @return The fatal {@link Error} in it, or {@code null} if there is none
      */
-    private static Error failedToClose(Throwable e, Consumer<Throwable> warning) {
+    private static Error failedToClose(Throwable e, String language, String what) {
         Failures.keepInterruptStatus(e);
         if (!LoggedFailures.logged(e)) {
-            warning.accept(e);
+            if (language == null) {
+                log.warn("A value a language kept for the run failed to close: {}", Failures.describe(e));
+            } else {
+                log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(language), what,
+                        Failures.describe(e));
+            }
         }
         return Failures.fatalError(e);
     }

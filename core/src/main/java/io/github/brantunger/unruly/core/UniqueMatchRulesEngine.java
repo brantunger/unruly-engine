@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -52,9 +53,14 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
         if (matched.size() > ALLOWED_MATCHES) {
             // The list of names is cut like text copied from an exception: a table whose rows all match would
             // otherwise put every name in one log line. It's escaped after the cut, so the cut can't split an
-            // escape.
+            // escape. Read in a loop rather than with a stream and a lambda, so the JVM's first run that matches
+            // more than one rule links no call site, which could overflow deep in a stack (#1093).
+            List<String> names = new ArrayList<>(matched.size());
+            for (CompiledRule rule : matched) {
+                names.add(rule.rule().getRuleName());
+            }
             throw failedRun(matched.size() + " rules matched, but a unique-match engine allows one: "
-                    + Failures.quoteJoined(matched.stream().map(rule -> rule.rule().getRuleName())));
+                    + Failures.quoteJoined(names));
         }
         return super.fire(matches, ruleSet, copy, facts);
     }

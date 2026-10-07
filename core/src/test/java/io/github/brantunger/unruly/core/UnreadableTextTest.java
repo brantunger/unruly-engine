@@ -4,8 +4,12 @@ import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -242,26 +246,35 @@ class UnreadableTextTest {
     @Test
     @DisplayName("logStackTrace makes the log call")
     void logStackTraceLogs() {
-        boolean[] logged = {false};
+        List<String> logged = new ArrayList<>();
+        IllegalStateException thrown = new IllegalStateException("listener's");
 
-        ListenerNotifier.logStackTrace(() -> logged[0] = true);
+        ListenerNotifier.logStackTrace(logger((proxy, method, args) -> {
+            logged.add(method.getName() + " " + args[0] + " " + (args[1] == thrown));
+            return null;
+        }), "Listener threw exception in onError", thrown);
 
-        assertTrue(logged[0]);
+        assertEquals(List.of("debug Listener threw exception in onError true"), logged);
     }
 
     @Test
     @DisplayName("logStackTrace leaves the stack trace out when the log call throws")
     void logStackTraceLeftOut() {
-        assertDoesNotThrow(() -> ListenerNotifier.logStackTrace(() -> {
+        assertDoesNotThrow(() -> ListenerNotifier.logStackTrace(logger((proxy, method, args) -> {
             throw new NullPointerException("printing");
-        }));
+        }), "Listener threw exception in onError", new IllegalStateException("listener's")));
     }
 
     @Test
     @DisplayName("logStackTrace leaves the stack trace out when the log call throws a fatal error")
     void logStackTraceFatal() {
-        assertDoesNotThrow(() -> ListenerNotifier.logStackTrace(() -> {
+        assertDoesNotThrow(() -> ListenerNotifier.logStackTrace(logger((proxy, method, args) -> {
             throw new OutOfMemoryError("printing");
-        }));
+        }), "Listener threw exception in onError", new IllegalStateException("listener's")));
+    }
+
+    // A logger whose every call the handler makes.
+    private static Logger logger(InvocationHandler calls) {
+        return (Logger) Proxy.newProxyInstance(Logger.class.getClassLoader(), new Class<?>[]{Logger.class}, calls);
     }
 }

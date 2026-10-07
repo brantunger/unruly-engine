@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import io.github.brantunger.unruly.api.FactStore;
@@ -950,7 +951,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             enterRun(run, facts.deadline());
             try {
-                notifier.notifyRun(facts.runs(), "beforeRun", listener -> listener.beforeRun(run));
+                notifier.notifyRun(facts.runs(), "beforeRun", new BeforeRun(run));
             } catch (Error e) {
                 // The run stopped, though the error keeps the stop from reaching onRunError: its event says so.
                 tally.markStopped();
@@ -961,6 +962,25 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             return failure;
         } finally {
             leaveRun(facts.parent(), outerDeadline);
+        }
+    }
+
+    /**
+     * Calls {@link RuleListener#beforeRun} for a run that stopped before it got a copy, which may be the JVM's first
+     * failure. A class of its own rather than a lambda, so that run links no call site, and loaded when the JVM's first
+     * engine is built (see RunClasses), so it loads no class either, either of which could overflow deep in a stack
+     * (#1093).
+     */
+    static final class BeforeRun implements Consumer<RuleListener> {
+        private final RunContext run;
+
+        BeforeRun(RunContext run) {
+            this.run = run;
+        }
+
+        @Override
+        public void accept(RuleListener listener) {
+            listener.beforeRun(run);
         }
     }
 
@@ -1293,25 +1313,24 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * suppressed exception. The rule's open callback is closed with {@code onError}. When the run hasn't been
      * cancelled, the rule failed; an {@link Error} in what the expression threw makes that the answer even when it
      * has, because the code being run broke rather than gave up. Either way a fatal {@link Error} in what it threw
-     * is rethrown as for any failure.
+     * is rethrown as for any failure. The caller reports the rule's failure itself, rather than handing this a lambda
+     * that does, so the JVM's first failure links no call site, which could overflow deep in a stack (#1093).
      *
      * @param rule     The rule whose expression threw
      * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      * @param thrown   What the expression threw
-     * @param failed   Reports the rule's failure, when the run wasn't cancelled or {@code thrown} has an
-     *                 {@link Error} anywhere in its cause chain, or one suppressed on it at any depth (see
-     *                 {@link Failures#errorInChain})
-     * @return The exception to throw
+     * @return The exception to throw for a stopped run, or {@code null} if the caller reports the rule's failure: when
+     *         the run wasn't cancelled or {@code thrown} has an {@link Error} anywhere in its cause chain, or one
+     *         suppressed on it at any depth (see {@link Failures#errorInChain})
      */
-    private RuleExecutionException stoppedOrFailed(CompiledRule rule, Deadline deadline, Throwable thrown,
-                                                   Supplier<RuleExecutionException> failed) {
+    private RuleExecutionException stopped(CompiledRule rule, Deadline deadline, Throwable thrown) {
         // An interrupt the expression caught and wrapped, or left suppressed, is put back first, so it counts as one
         // here too, and an Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
         ReportedFailure stop = Failures.errorInChain(thrown) == null
                 ? cancellation(rule, DURING_RULE, deadline, thrown) : null;
         if (stop == null) {
-            return failed.get();
+            return null;
         }
         stop.addSuppressedByEngine(thrown);
         return notifier.closedWithStop(rule, stop);
@@ -1408,10 +1427,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             Failures.keepInterruptStatus(e);
             // Described before reportCalledCodeFailure() asks unlogged(), which records a fatal error it's told of
             // for the first time.
-            String msg = Failures.lineOr(() -> Failures.below(e).logged() != null || Failures.wrapsLoggedFatal(e)
-                    ? "Output factory threw: " + Failures.describe(e)
-                    : "Output factory threw " + Failures.describeWithClass(e),
-                    "Output factory threw " + e.getClass().getName());
+            String msg = outputFailureMessage(e);
             reportCalledCodeFailure(msg, e);
             throw new ReportedFailure(msg, e);
         }
@@ -1421,6 +1437,28 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             throw new ReportedFailure(msg, null);
         }
         return output;
+    }
+
+    /**
+     * Describes what the output factory threw, for {@link #createOutput}, or else says only its class if describing it
+     * throws, as it can when the JVM has no memory left, so a fatal {@link Error} is still rethrown. Written out
+     * rather than as a lambda, so the JVM's first failure links no call site, which could overflow deep in a stack
+     * (#1093).
+     *
+     * @param e What the factory threw
+     * @return The message
+     */
+    private static String outputFailureMessage(Throwable e) {
+        // Built beforehand, so building it can't fail where describing did.
+        String plain = "Output factory threw " + e.getClass().getName();
+        try {
+            Faults.at(Faults.Step.FAILURE_DESCRIBING);
+            return Failures.below(e).logged() != null || Failures.wrapsLoggedFatal(e)
+                    ? "Output factory threw: " + Failures.describe(e)
+                    : "Output factory threw " + Failures.describeWithClass(e);
+        } catch (Throwable unreadable) {
+            return plain;
+        }
     }
 
     /**
@@ -1481,8 +1519,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             condition = rule.compiledCondition().evaluateWithDetail(facts.evaluation(),
                     copy.sessions().get(rule.language()));
         } catch (Throwable t) {
-            throw stoppedOrFailed(rule, facts.deadline(), t,
-                    () -> expressionFailure(rule, ExpressionKind.CONDITION, t));
+            RuleExecutionException stop = stopped(rule, facts.deadline(), t);
+            throw stop != null ? stop : expressionFailure(rule, ExpressionKind.CONDITION, t);
         }
         // Unboxing a null here would surface as an internal NPE naming MVEL's own
         // signature, which tells the caller nothing about their rule. So would reading a null result.
@@ -1563,7 +1601,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             facts.runs().callOut();
             result = rule.compiledAction().execute(context, copy.sessions().get(rule.language()));
         } catch (Throwable t) {
-            throw stoppedOrFailed(rule, facts.deadline(), t, () -> expressionFailure(rule, ExpressionKind.ACTION, t));
+            RuleExecutionException stop = stopped(rule, facts.deadline(), t);
+            throw stop != null ? stop : expressionFailure(rule, ExpressionKind.ACTION, t);
         }
         String wrongResult = result != null ? null : "Action for rule '" + rule.displayName()
                 + "' returned no result. An action returns ActionResult.done() or ActionResult.set(...).";
@@ -1586,10 +1625,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Sets one property an action returned on the output object. A failure fails the rule, or stops a cancelled run,
-     * as a failing action does (see {@link #stoppedOrFailed}).
+     * as a failing action does (see {@link #stopped}).
      *
      * @throws RuleExecutionException if the property can't be set, or the run was cancelled while it was being set
      */
+    // The cause of an InvocationTargetException is what the writer threw, which the failure or the stop carries, as
+    // it carries the exception itself when it has none.
+    @SuppressWarnings("PMD.PreserveStackTrace")
     private void setProperty(CompiledRule rule, O output, String property, Object value, RunFacts facts) {
         try {
             // A call-out of its own, as the action that returned the property is.
@@ -1599,9 +1641,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
             Throwable cause = Failures.causeOf(e);
             Throwable thrown = cause != null ? cause : e;
-            throw stoppedOrFailed(rule, facts.deadline(), thrown, () -> propertyFailure(rule, property, thrown));
+            RuleExecutionException stop = stopped(rule, facts.deadline(), thrown);
+            throw stop != null ? stop : propertyFailure(rule, property, thrown);
         } catch (Throwable e) {
-            throw stoppedOrFailed(rule, facts.deadline(), e, () -> propertyFailure(rule, property, e));
+            RuleExecutionException stop = stopped(rule, facts.deadline(), e);
+            throw stop != null ? stop : propertyFailure(rule, property, e);
         }
     }
 
