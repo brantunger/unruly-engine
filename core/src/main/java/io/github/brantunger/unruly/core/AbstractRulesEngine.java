@@ -372,6 +372,16 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Objects.requireNonNull(facts, "facts must not be null");
         // Misuse, before the run is numbered or recorded: it reaches no listener and no recording either.
         RuleSet rules = currentRules();
+        // A first run of a language needs more room than run() checked for, as its rules' first calls may make the JDK
+        // generate classes: checked before the run counts, borrows or sets anything, as there (see StackHeadroom). A
+        // run that finds the rules it read closed, and borrows from a list a reload put in their place, isn't checked
+        // again for that list, as by then it has counted itself and set its deadline: accepted, for that one run, in
+        // the narrow window of a reload, which still records the languages it ran for that list.
+        boolean firstRun = rules.firstRun();
+        if (firstRun) {
+            Faults.at(Faults.Step.FIRST_RUN_ROOM_CHECKING);
+            StackHeadroom.checkFirstRun();
+        }
         long runId = runIds.incrementAndGet();
         RunContext parent = currentRun.get();
         long parentRunId = parent == null ? 0 : parent.runId();
@@ -379,6 +389,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // deadline too.
         RunEvent event = FlightRecorderEvents.startRun();
         RunTally tally = new RunTally();
+        if (firstRun) {
+            tally.recordLanguages();
+        }
         String outcome = RunEvent.FAILED;
         // Published before the facts are read, so a run started from a fact's getValue(), from a language's
         // newSession() while the copy is made or from a session's close() while it's given back stops no later than
@@ -423,6 +436,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                 + " https://github.com/brantunger/unruly-engine/issues");
                     }
                     RuleSet again = currentRules();
+                    if (!firstRun && again.firstRun()) {
+                        firstRun = true;
+                        tally.recordLanguages();
+                    }
                     read = again == rules ? read + 1 : 1;
                     rules = again;
                     copy = borrow(rules, runFacts);
@@ -447,6 +464,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 throw t;
             }
             Failures.rethrowUnchecked(endRun(rules, copy, runFacts));
+            // A run that ran an action of a language has made that language's first calls, so later runs of it need
+            // no more room than run() checks for.
+            List<String> ranLanguages = tally.firedLanguages();
+            if (!ranLanguages.isEmpty()) {
+                rules.ran(ranLanguages);
+            }
             outcome = RunEvent.COMPLETED;
             return result;
         } catch (RuntimeException e) {
@@ -1484,7 +1507,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String outcome = RuleEvent.FAILED;
         try {
             O output = executeAction(rule, copy, outputResult, facts);
-            facts.tally().countFired();
+            facts.tally().countFired(rule.language());
             outcome = RuleEvent.FIRED;
             return output;
         } catch (RuleExecutionException e) {

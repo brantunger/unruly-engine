@@ -11,7 +11,8 @@ package io.github.brantunger.unruly.core;
  *
  * <p>
  * It is best effort: it makes room for the engine's own steps, not for a language's {@code newSession()} or
- * {@code close()}, or a listener, called while a step is under way, which can use any amount of stack.
+ * {@code close()}, or a listener, called while a step is under way, which can use any amount of stack; nor for a
+ * rule's expressions, but for the more a language's first runs may need (see {@link #FIRST_RUN_FRAMES}).
  * </p>
  *
  * <p>
@@ -49,6 +50,23 @@ final class StackHeadroom {
     static final int FRAMES = 160;
 
     /**
+     * How many frames {@link #checkFirstRun()} recurses: room for a run whose rule list uses a language that hasn't
+     * finished a run in this JVM yet (see {@link RuleSet#firstRun()}). A rule's first call of a method makes the JDK
+     * build the method's reflective accessor, which for a signature of a shape no call has had yet generates classes,
+     * and the language may load classes of its own for it. Once the JIT's last tier has compiled the recursion every
+     * check shares, its frames are a third of the size, and {@link #check()} lets such a run through where the rule
+     * then overflows (#1066). Sized from a sweep with the check compiled, on JDK 21, 25 and 26 on x64, each depth in
+     * a new JVM, of a first run of a rule, in the language #1066 measured, that calls one method: with this check at
+     * {@link #FRAMES}, the argument shapes measured needed up to 104 frames more. Measured again with this check and
+     * that language's {@code prepare()} also calling a method with a literal argument, 181 depths for each shape on
+     * each JDK: no such run failed its rule, for a call of one method of any shape measured, one with a constructor
+     * call among its arguments or one with another call among them, and none overflowed in the engine's own steps; a
+     * call with three calls nested in its arguments still failed its rule at 11 to 14 of the 181 depths, in the JDK's
+     * reflective accessor. No reserve covers every shape.
+     */
+    static final int FIRST_RUN_FRAMES = 270;
+
+    /**
      * How many frames {@link #checkGiveBack()} recurses: room for giving back a permit or a build slot, which takes
      * about six frames below the caller's, in the JDK's semaphore and the wake-up of a waiting thread, each at most a
      * few hundred bytes interpreted, twice over when this is compiled. With it, a give-back that fails does so before
@@ -75,15 +93,17 @@ final class StackHeadroom {
      * on its own: it prepares the language alone, without the engine's classes the measured build initialized too.
      * The reserve was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after them
      * that, when the engine prepares the language, at {@code build()} or a first load, initializes no class with a
-     * static initializer that it hasn't, as MVEL's evaluation of a property read and a method call does: that may
-     * still overflow, and the MVEL language's {@code prepare()} catches the overflow and skips the warm-up. A bare
-     * {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes the reflective call needs.
+     * static initializer that it hasn't, as MVEL's evaluation of a property read and two method calls, one with a
+     * literal argument, does: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow
+     * and skips the warm-up. A bare {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes
+     * the reflective call needs.
      */
     static final int INITIALIZING_FRAMES = 960;
 
     // Written by a check that finds them different, so the recursion has an effect the JIT can't drop. Each is the
     // same every time, so the checks of other threads only read it.
     private static long sink;
+    private static long firstRunSink;
     private static long giveBackSink;
     // Written by each check that makes room for initializing classes, the engine's or a language's, for the same
     // reason, and read by nothing.
@@ -102,6 +122,18 @@ final class StackHeadroom {
         long sum = descend(FRAMES, 1, 2, 3, 4);
         if (sink != sum) {
             sink = sum;
+        }
+    }
+
+    /**
+     * Recurses {@link #FIRST_RUN_FRAMES} frames.
+     *
+     * @throws StackOverflowError if the stack can't hold them
+     */
+    static void checkFirstRun() {
+        long sum = descend(FIRST_RUN_FRAMES, 1, 2, 3, 4);
+        if (firstRunSink != sum) {
+            firstRunSink = sum;
         }
     }
 

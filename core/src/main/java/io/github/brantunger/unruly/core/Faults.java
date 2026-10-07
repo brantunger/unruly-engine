@@ -71,6 +71,8 @@ final class Faults {
         TEST_RUN_FAILURE_KEPT,
         /** A compile that overflowed the stack, checking the room left to tell why, before it has. */
         OVERFLOW_ROOM_CHECKED,
+        /** A run whose rules need the room for a language's first run, before it checks that room. */
+        FIRST_RUN_ROOM_CHECKING,
         /** Registering a cancel action that has to start the cancel timer, before it starts the timer's thread. */
         CANCEL_TIMER_STARTING,
         /**

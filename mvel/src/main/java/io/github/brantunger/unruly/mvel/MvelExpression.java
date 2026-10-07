@@ -259,10 +259,11 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     /**
-     * Compiles and runs a property read and a method call on a {@link WarmUpTarget}, once each, as a run runs an
-     * expression, for {@link MvelExpressionLanguage#prepare()}: a JVM's first read and first call load classes MVEL
-     * evaluates them with. With MVEL's own class loader as the thread's context class loader, as the static initializer
-     * sets MVEL's optimizer up, so the expressions MVEL compiles here, and drops, hold no caller's class loader.
+     * Compiles and runs a property read, a method call and a method call with a literal argument on a
+     * {@link WarmUpTarget}, once each, as a run runs an expression, for {@link MvelExpressionLanguage#prepare()}: a
+     * JVM's first read, first call and first literal argument load classes MVEL evaluates them with. With MVEL's own
+     * class loader as the thread's context class loader, as the static initializer sets MVEL's optimizer up, so the
+     * expressions MVEL compiles here, and drops, hold no caller's class loader.
      *
      * <p>
      * Each expression is compiled with {@code v} declared as a {@link WarmUpTarget}. MVEL types a name it has no type
@@ -289,7 +290,8 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         Map<String, Object> variables = Map.of("v", new WarmUpTarget());
         withClassLoader(loader, () -> {
             warmUpEvaluate("v.ready", variables);
-            return warmUpEvaluate("v.check()", variables);
+            warmUpEvaluate("v.check()", variables);
+            return warmUpEvaluate("v.accepts('a')", variables);
         });
     }
 

@@ -83,6 +83,7 @@ final class TestRuleSets {
         if (idle != null) {
             return new RuleSet(rules, compilers, limit, givenPermits, stallWindowMillis, idle);
         }
-        return new RuleSet(rules, compilers, Map.of(), reservedFactNames, limit, givenPermits, stallWindowMillis);
+        return new RuleSet(rules, compilers, Map.of(), reservedFactNames, Map.of(), limit, givenPermits,
+                stallWindowMillis);
     }
 }

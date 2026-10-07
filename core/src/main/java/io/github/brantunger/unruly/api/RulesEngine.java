@@ -184,6 +184,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         engine's rules again, many times in a row, which means an engine invariant has broken rather than that
      *         the call was wrong (a reload in between starts the count again, so reloads alone never cause this)
      * @throws NullPointerException if {@code facts} is {@code null}
+     * @throws StackOverflowError    if the thread has too little stack left for the run's own steps, checked before
+     *                               the run takes anything; more is checked for, after {@code facts} and the engine's
+     *                               state are, while a language class the rules use hasn't finished a run in the JVM,
+     *                               nested runs included, as a rule's first calls may make the JDK generate classes.
+     *                               It's thrown unchanged, leaving the engine as it was
      * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, wherever it
      *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
      *                               language checking a name, creating a session or closing one, or a listener), is
@@ -236,6 +241,7 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         engine's rules again, many times in a row, which means an engine invariant has broken rather than that
      *         the call was wrong (a reload in between starts the count again, so reloads alone never cause this)
      * @throws NullPointerException if {@code facts} is {@code null}
+     * @throws StackOverflowError    as {@link #run(FactStore)} throws it
      */
     default RunResult<O> runWithResult(FactStore<?> facts) {
         return runWithResult(facts, RunOptions.defaults());
@@ -265,6 +271,7 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         engine's rules again, many times in a row, which means an engine invariant has broken rather than that
      *         the call was wrong (a reload in between starts the count again, so reloads alone never cause this)
      * @throws NullPointerException if an argument is {@code null}
+     * @throws StackOverflowError    as {@link #run(FactStore)} throws it
      */
     RunResult<O> runWithResult(FactStore<?> facts, RunOptions options);
 
