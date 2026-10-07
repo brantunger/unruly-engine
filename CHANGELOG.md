@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.2](https://github.com/brantunger/unruly-engine/compare/v2.29.1...v2.29.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* handle a failure without lambdas or method references, and load its classes at build, so a first failure deep in a stack still reaches onError and onRunError ([#1096](https://github.com/brantunger/unruly-engine/issues/1096)) ([ef1331b](https://github.com/brantunger/unruly-engine/commit/ef1331bfcc352e70880ee57641fe815304b7b1da))
+
 ## [2.29.1](https://github.com/brantunger/unruly-engine/compare/v2.29.0...v2.29.1) (2026-10-07)
 
 
