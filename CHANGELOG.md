@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.4](https://github.com/brantunger/unruly-engine/compare/v2.29.3...v2.29.4) (2026-10-07)
+
+
+### Bug Fixes
+
+* walk the stack for MVEL's loop detection without lambdas or stream operations, and load its classes at build, so the JVM's first such walk deep in a stack costs no more than later ones and can't leave Stream.limit broken for the rest of the JVM ([#1104](https://github.com/brantunger/unruly-engine/issues/1104)) ([684a7c5](https://github.com/brantunger/unruly-engine/commit/684a7c5448e9e4f3bc4b06faf072f093f4f3a4fd))
+
 ## [2.29.3](https://github.com/brantunger/unruly-engine/compare/v2.29.2...v2.29.3) (2026-10-07)
 
 
