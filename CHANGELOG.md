@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.5](https://github.com/brantunger/unruly-engine/compare/v2.29.4...v2.29.5) (2026-10-07)
+
+
+### Bug Fixes
+
+* check the fact names MVEL reads across a word's punctuation, such as my-fact in my-fact-1 and a.b in a.b--, and check every fact when a word is too long to scan ([#1106](https://github.com/brantunger/unruly-engine/issues/1106)) ([3058207](https://github.com/brantunger/unruly-engine/commit/30582070336fa245fc43cf24e2f50ada14e438d8))
+
 ## [2.29.4](https://github.com/brantunger/unruly-engine/compare/v2.29.3...v2.29.4) (2026-10-07)
 
 
