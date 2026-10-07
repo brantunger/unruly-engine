@@ -303,6 +303,77 @@ class OutputWriterWideningTest {
         }
     }
 
+    /**
+     * A setter for each primitive type and each wrapper, declared out of the order a failure lists them in, so a
+     * failure lists all sixteen: their order pins where each comes before each other.
+     */
+    public static final class Sixteen {
+
+        public void setR(Long r) {
+            // Never called: no value the test writes is accepted.
+        }
+
+        public void setR(boolean r) {
+            // As above.
+        }
+
+        public void setR(Character r) {
+            // As above.
+        }
+
+        public void setR(double r) {
+            // As above.
+        }
+
+        public void setR(Short r) {
+            // As above.
+        }
+
+        public void setR(byte r) {
+            // As above.
+        }
+
+        public void setR(Float r) {
+            // As above.
+        }
+
+        public void setR(long r) {
+            // As above.
+        }
+
+        public void setR(Boolean r) {
+            // As above.
+        }
+
+        public void setR(char r) {
+            // As above.
+        }
+
+        public void setR(Integer r) {
+            // As above.
+        }
+
+        public void setR(float r) {
+            // As above.
+        }
+
+        public void setR(Byte r) {
+            // As above.
+        }
+
+        public void setR(short r) {
+            // As above.
+        }
+
+        public void setR(Double r) {
+            // As above.
+        }
+
+        public void setR(int r) {
+            // As above.
+        }
+    }
+
     /** The output with a single setter, for each primitive type. */
     private static final Map<Class<?>, Supplier<Object>> OUTPUTS = Map.of(byte.class, ByteR::new,
             short.class, ShortR::new, char.class, CharR::new, int.class, IntR::new, long.class, LongR::new,
@@ -521,6 +592,20 @@ class OutputWriterWideningTest {
                 forLong.getMessage());
         assertEquals(Several.class.getName() + " has no public method setR that accepts a java.lang.Double" + exist,
                 forDouble.getMessage());
+    }
+
+    @Test
+    @DisplayName("#1097 a failure lists a setter for each primitive and each wrapper, the primitives first in Java's"
+            + " widening order, then the wrappers by name")
+    void sixteenSettersInOrder() {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> set(new Sixteen(), BigDecimal.ONE));
+
+        assertEquals(Sixteen.class.getName() + " has no public method setR that accepts a java.math.BigDecimal"
+                + " (setR(byte), setR(short), setR(char), setR(int), setR(long), setR(float), setR(double),"
+                + " setR(boolean), setR(java.lang.Boolean), setR(java.lang.Byte), setR(java.lang.Character),"
+                + " setR(java.lang.Double), setR(java.lang.Float), setR(java.lang.Integer), setR(java.lang.Long),"
+                + " setR(java.lang.Short) exist" + NOTE, thrown.getMessage());
     }
 
     @Test

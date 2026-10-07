@@ -64,6 +64,11 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     /** The one instance, which keeps no state of its own. */
     static final BeansAndMapsWriter INSTANCE = new BeansAndMapsWriter();
 
+    // The wrappers of the primitive types other than void, in the order of their names, as a failure's message lists
+    // the setters that take them (see primitiveSetters).
+    private static final List<Class<?>> WRAPPERS_BY_NAME = List.of(Boolean.class, Byte.class, Character.class,
+            Double.class, Float.class, Integer.class, Long.class, Short.class);
+
     // The public instance methods with one parameter whose names start with "set", by name, for each output class,
     // each resolved to a method the engine can call, with the types of value it accepts. Those are worked out before
     // resolving, as a bridge method may resolve to an interface's, which isn't one: a bridge that the compiler adds for
@@ -249,10 +254,28 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
                 }
             }
         }
-        List<Class<?>> sorted = new ArrayList<>(types);
-        sorted.sort(Comparator.comparing((Class<?> type) -> !type.isPrimitive())
-                .thenComparingInt(Widening::order)
-                .thenComparing(Class::getTypeName));
+        // Placed by hand rather than sorted with a Comparator built from lambdas and method references: this runs only
+        // when a write fails, and the JVM links a lambda or a method reference the first time its call site runs, which
+        // makes a class and takes more stack than the engine's checks make room for, so the JVM's first such failure,
+        // maybe deep in a stack, could overflow here, and the rule's failure would lose its reason (#1097). Each
+        // primitive goes to its own place in Widening.order(), whose last is boolean's.
+        Class<?>[] primitives = new Class<?>[Widening.order(boolean.class) + 1];
+        for (Class<?> type : types) {
+            if (type.isPrimitive()) {
+                primitives[Widening.order(type)] = type;
+            }
+        }
+        List<Class<?>> sorted = new ArrayList<>(types.size());
+        for (Class<?> primitive : primitives) {
+            if (primitive != null) {
+                sorted.add(primitive);
+            }
+        }
+        for (Class<?> wrapper : WRAPPERS_BY_NAME) {
+            if (types.contains(wrapper)) {
+                sorted.add(wrapper);
+            }
+        }
         List<String> existing = new ArrayList<>(sorted.size());
         for (Class<?> type : sorted) {
             existing.add(name + "(" + type.getTypeName() + ")");

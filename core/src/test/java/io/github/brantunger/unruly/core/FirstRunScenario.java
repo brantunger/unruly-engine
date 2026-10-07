@@ -17,7 +17,9 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
+import io.github.brantunger.unruly.api.language.ForwardingExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ForwardingExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 
@@ -32,6 +34,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
@@ -50,10 +54,13 @@ import java.util.function.Supplier;
  * read-only facts; a language that calls {@link FactProperties#toData}; a fatal error from a nested run; a nested
  * run that passes its deadline; an action that throws an exception, and one that throws an {@link Error}; a setter
  * that throws; a listener that throws; an action that throws an exception with a suppressed exception; a listener
- * that throws an {@link OutOfMemoryError}; and a unique-match engine whose two rules match. The steps whose runs fail
- * are listed in {@link #FAILING}, and {@link #FAILURES_FIRST} takes them before the steps that could hide what they
- * load first. Last, it closes
- * an engine, the JVM's first {@code close()}.
+ * that throws an {@link OutOfMemoryError}; and a unique-match engine whose two rules match. Then, #1097, a load of one
+ * rule that fails to compile and one of two; a write of a {@code Long} that no setter accepts; a run that waits for
+ * the only copy, which a run on another thread holds; a run on a virtual thread that finds no idle copy, and takes a
+ * build slot; and a borrow that fails as the last user of rules a load replaced, whose retiring failed part way. The
+ * steps whose runs, loads, writes or borrows fail, or whose runs wait, are listed in {@link #FAILING}, and
+ * {@link #FAILURES_FIRST} takes them before the steps that could hide what they load first. Last, it closes an engine,
+ * the JVM's first {@code close()}.
  */
 final class FirstRunScenario {
 
@@ -71,6 +78,13 @@ final class FirstRunScenario {
     static final String LISTENER_FATAL = "a listener that throws an OutOfMemoryError";
     static final String DEADLINE = "a nested run that passes its deadline";
     static final String UNIQUE = "a unique-match engine, two rules match";
+    static final String LOAD_FAILS = "a load of one rule that fails to compile";
+    static final String LOAD_FAILS_TWICE = "a load of two rules that fail to compile";
+    static final String WRITE_REFUSED = "a write of a Long that no setter accepts, to setCount(int)";
+    static final String PERMIT_WAIT = "a run that waits for the only copy, which another thread's run holds";
+    static final String SLOT_WAIT = "a run on a virtual thread that finds no idle copy, and takes a build slot";
+    static final String RETIRED_BORROW_FAILS = "a failed borrow, the last user of rules a load replaced, whose "
+            + "retiring failed";
     /**
      * The system property that, set to {@code true}, has the scenario take the steps that load rules that fail to
      * compile, validate them, and load and run a rule with a validity window after the failing runs rather than before
@@ -80,12 +94,15 @@ final class FirstRunScenario {
     static final String FAILURES_FIRST = "unruly.scenario.failuresFirst";
     /**
      * The steps whose runs fail, or whose listener fails, each the JVM's first of its kind, which the engine handles in
-     * code that runs only when something fails.
+     * code that runs only when something fails; and, #1097, the steps whose load fails, whose write fails, whose run
+     * waits for a copy or looks for a build slot, and whose borrow fails, each the JVM's first, which the engine
+     * handles in code that runs only when something fails or waits.
      */
     static final List<String> FAILING = List.of("a condition that fails", "a fatal error from a nested run",
             DEADLINE, "a fact of the wrong type, and a declared fact left out, with requireDeclaredFacts()",
             "a fact with a name a language reserves: output, and ctx", ACTION_THROWS, ACTION_ERRS, SETTER_THROWS,
-            LISTENER_THROWS, ACTION_SUPPRESSES, LISTENER_FATAL, UNIQUE);
+            LISTENER_THROWS, ACTION_SUPPRESSES, LISTENER_FATAL, UNIQUE, LOAD_FAILS, LOAD_FAILS_TWICE, WRITE_REFUSED,
+            PERMIT_WAIT, SLOT_WAIT, RETIRED_BORROW_FAILS);
 
     private FirstRunScenario() {
     }
@@ -235,6 +252,113 @@ final class FirstRunScenario {
         }
     }
 
+    /**
+     * Holds a copy of an engine's rules in its rule's action, on a thread of its own, until it's let go, or, once it's
+     * given a thread to wait for, until that thread waits, so a run on that thread has to wait for the copy. The
+     * rule's action calls {@link #hold()}, which holds only on the holder's own thread.
+     */
+    private static final class Holder {
+        private final CountDownLatch inside = new CountDownLatch(1);
+        private volatile Thread thread;
+        private volatile Thread waiter;
+        private volatile boolean released;
+
+        void hold() {
+            if (Thread.currentThread() != thread) {
+                return;
+            }
+            inside.countDown();
+            // Spins rather than waits, so the only thread waiting while the copy is held is the waiter.
+            while (!released && (waiter == null || waiter.getState() != Thread.State.TIMED_WAITING)) {
+                Thread.onSpinWait();
+            }
+        }
+
+        // Starts a run of the engine on a thread of its own, and returns once the run holds its copy.
+        void start(RulesEngine<?> engine) {
+            // Named, as an unnamed thread's number has the JDK initialize a class of its own.
+            thread = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    engine.run(new FactMap<>());
+                }
+            }, "holder");
+            thread.start();
+            await(inside);
+        }
+
+        // Lets the run give its copy back once the thread given waits, as a run waiting for the copy does.
+        void releaseWhenWaiting(Thread waiting) {
+            waiter = waiting;
+        }
+
+        // Lets the run give its copy back now, if it hasn't, and waits for it to end.
+        void release() {
+            released = true;
+            join(thread);
+        }
+    }
+
+    /**
+     * Makes the sessions of an engine's copies: on the thread it's told to refuse on, a session that refuses once that
+     * thread has waited in it until it's let go; otherwise one that keeps state, as with {@link Session#none()} no
+     * run takes a copy.
+     */
+    private static final class Sessions {
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch go = new CountDownLatch(1);
+        private volatile Thread refusing;
+
+        Session newSession() {
+            if (Thread.currentThread() != refusing) {
+                return new Session() {
+                };
+            }
+            entered.countDown();
+            await(go);
+            throw new IllegalStateException("refused by the scenario");
+        }
+    }
+
+    /** Forwards to a language, and counts the compilers of its that the engine closes. */
+    private static final class CountingCloses extends ForwardingExpressionLanguage {
+        private final AtomicInteger closed = new AtomicInteger();
+
+        CountingCloses(ExpressionLanguage language) {
+            super(language);
+        }
+
+        @Override
+        public ExpressionCompiler newCompiler(CompileContext context) {
+            return new ForwardingExpressionCompiler(super.newCompiler(context)) {
+                @Override
+                public void close() {
+                    closed.incrementAndGet();
+                    super.close();
+                }
+            };
+        }
+    }
+
+    /** Runs an engine on a thread of its own, and records what the run threw. */
+    private static final class Borrower implements Runnable {
+        private final RulesEngine<?> engine;
+        private volatile Throwable thrown;
+
+        Borrower(RulesEngine<?> engine) {
+            this.engine = engine;
+        }
+
+        @Override
+        public void run() {
+            try {
+                engine.run(new FactMap<>());
+            } catch (RuntimeException | Error e) {
+                thrown = e;
+            }
+        }
+    }
+
     public static void main(String[] args) {
         // What an application gives the first builder, created before it, so a class it initializes isn't the engine's.
         // Not a lambda: the first build is then the JVM's first use of the JDK's classes that link one, and the test
@@ -343,6 +467,32 @@ final class FirstRunScenario {
                         return Set.of("ctx");
                     }
                 }).build();
+        // #1097: an engine whose action sets a Long where only setCount(int) is, and those whose runs wait for a
+        // copy, find no idle copy on a virtual thread, and fail to borrow once the rules they use are retired.
+        RulesEngine<Output> writesLong = RulesEngineBuilder.firstMatch(beans)
+                .language(new StubExpressionLanguage().action((context, session) -> ActionResult.set(
+                        Map.of("count", 1L)))).build();
+        Holder limitedHolder = new Holder();
+        RulesEngine<Map<String, Object>> limited = RulesEngineBuilder.firstMatch(maps).maxCopies(1)
+                .language(holding(limitedHolder, new Sessions())).build();
+        Holder unlimitedHolder = new Holder();
+        RulesEngine<Map<String, Object>> unlimited = RulesEngineBuilder.firstMatch(maps).unlimitedCopies()
+                .language(holding(unlimitedHolder, new Sessions())).build();
+        Holder retiringHolder = new Holder();
+        Sessions refusingSessions = new Sessions();
+        CountingCloses retiringLanguage = new CountingCloses(holding(retiringHolder, refusingSessions));
+        RulesEngine<Map<String, Object>> retiring = RulesEngineBuilder.firstMatch(maps)
+                .language(retiringLanguage).build();
+        // A virtual thread of the application's, started and joined, as the JDK initializes classes of its own for the
+        // first, which a run on one would otherwise be the first to.
+        Thread application = Thread.ofVirtual().unstarted(new Runnable() {
+            @Override
+            public void run() {
+                // Nothing to do: being run is what counts.
+            }
+        });
+        application.start();
+        join(application);
         mark(BUILT);
 
         // Each step is marked, so a class one initializes can be told by the step it came after. Every step runs, even
@@ -371,6 +521,9 @@ final class FirstRunScenario {
         suppressing.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
         unique.load(List.of(Rule.builder().ruleName("one").condition("true").action("put k 1").build(),
                 Rule.builder().ruleName("two").condition("true").action("put k 2").build()));
+        for (RulesEngine<?> stub : List.of(writesLong, limited, unlimited, retiring)) {
+            stub.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
+        }
         if (!failuresFirst) {
             loadWindowed(windowed);
         }
@@ -415,6 +568,11 @@ final class FirstRunScenario {
         asExpected &= throwsOnRun(fatalListened, new FactMap<>(), OutOfMemoryError.class);
         mark(STEP + UNIQUE);
         asExpected &= throwsOnRun(unique, new FactMap<>(), RuleExecutionException.class);
+        asExpected &= failsToLoadRules(broken);
+        mark(STEP + WRITE_REFUSED);
+        asExpected &= throwsOnRun(writesLong, new FactMap<>(), RuleExecutionException.class);
+        asExpected &= waitsForCopies(limited, limitedHolder, unlimited, unlimitedHolder);
+        asExpected &= failsToBorrowRetired(retiring, retiringHolder, refusingSessions, retiringLanguage);
         if (failuresFirst) {
             asExpected &= failsToLoad(broken);
             loadWindowed(windowed);
@@ -427,7 +585,7 @@ final class FirstRunScenario {
         }
         for (RulesEngine<?> engine : List.of(map, bean, declared, failing, toData, fatal, outer, strict, writing, slow,
                 overrun, windowed, reserving, throwing, erring, refusing, listened, suppressing, fatalListened,
-                unique)) {
+                unique, writesLong, limited, unlimited, retiring)) {
             engine.close();
         }
     }
@@ -444,6 +602,93 @@ final class FirstRunScenario {
                 .build())).isEmpty();
         return asExpected && !broken.validate(List.of(Rule.builder().ruleName("syntax").condition("a b c d")
                 .action("put k 1").build())).isEmpty();
+    }
+
+    // #1097: loads of rules that fail to compile, one rule and then two, each in a step of its own.
+    private static boolean failsToLoadRules(RulesEngine<Map<String, Object>> broken) {
+        mark(STEP + LOAD_FAILS);
+        boolean asExpected = throwsOnLoad(broken, List.of(Rule.builder().ruleName("assigns").condition("a = 1")
+                .action("put k 1").build()));
+        mark(STEP + LOAD_FAILS_TWICE);
+        return asExpected && throwsOnLoad(broken, List.of(
+                Rule.builder().ruleName("first").condition("a b c d").action("put k 1").build(),
+                Rule.builder().ruleName("second").condition("a = 1").action("put k 1").build()));
+    }
+
+    // #1097: a run that waits for a permit while another thread's run holds the only copy, until it waits; and a run
+    // on a virtual thread that finds no idle copy, as another thread's run holds it, and so looks for a build slot.
+    // That run is the JVM's first to look for a slot, and takes one at once: the JVM's first to look can't be one that
+    // waits, as every run on a virtual thread that finds no idle copy looks for a slot first, so the runs holding every
+    // slot, which a run that waits needs, would have looked before it.
+    private static boolean waitsForCopies(RulesEngine<Map<String, Object>> limited, Holder limitedHolder,
+                                          RulesEngine<Map<String, Object>> unlimited, Holder unlimitedHolder) {
+        mark(STEP + "a run on another thread that holds the only copy");
+        limitedHolder.start(limited);
+        limitedHolder.releaseWhenWaiting(Thread.currentThread());
+        mark(STEP + PERMIT_WAIT);
+        boolean asExpected = limited.run(new FactMap<>()).isEmpty();
+        mark(STEP + "the other thread's run ends, and another holds the only copy of an engine without a limit");
+        limitedHolder.release();
+        unlimitedHolder.start(unlimited);
+        Borrower virtual = new Borrower(unlimited);
+        Thread thread = Thread.ofVirtual().unstarted(virtual);
+        mark(STEP + SLOT_WAIT);
+        thread.start();
+        join(thread);
+        mark(STEP + "the other thread's run ends");
+        unlimitedHolder.release();
+        return asExpected && virtual.thrown == null;
+    }
+
+    // #1097: a borrow that makes a new copy waits in the language's session while a load replaces the rules, whose
+    // retiring fails before it counts its part done, as one that runs out of stack can. The borrow, the last user of
+    // those rules, counts its part as it fails, as it would anyway; what the fault changes is that no retire() has
+    // counted a part before it, so the failing borrow is the JVM's first to do so. The replaced rules' compiler is then
+    // still open, as only one of the two parts it waits for was counted: had the fault not been thrown, retire() would
+    // have counted its part first, and the borrow would have closed the compiler, so the step checks that it's open.
+    private static boolean failsToBorrowRetired(RulesEngine<Map<String, Object>> retiring, Holder holder,
+                                                Sessions sessions, CountingCloses language) {
+        mark(STEP + "a borrow that waits in a new session while a load replaces the rules, whose retiring fails");
+        holder.start(retiring);
+        Borrower borrower = new Borrower(retiring);
+        Thread thread = new Thread(borrower, "borrower");
+        sessions.refusing = thread;
+        thread.start();
+        await(sessions.entered);
+        Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("thrown by the scenario"));
+        retiring.load(List.of(Rule.builder().ruleName("replaces").condition("x").action("x").build()));
+        Faults.clear();
+        holder.release();
+        mark(STEP + RETIRED_BORROW_FAILS);
+        sessions.go.countDown();
+        join(thread);
+        return borrower.thrown instanceof RuntimeException && language.closed.get() == 0;
+    }
+
+    // A language whose rules hold the holder's copy on its thread, with the sessions given.
+    private static StubExpressionLanguage holding(Holder holder, Sessions sessions) {
+        return new StubExpressionLanguage().action((context, session) -> {
+            holder.hold();
+            return ActionResult.done();
+        }).newSession(sessions::newSession);
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void join(Thread thread) {
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 
     private static void loadWindowed(RulesEngine<Map<String, Object>> windowed) {
@@ -475,8 +720,12 @@ final class FirstRunScenario {
     }
 
     private static boolean throwsOnLoad(RulesEngine<?> engine, Rule rule) {
+        return throwsOnLoad(engine, List.of(rule));
+    }
+
+    private static boolean throwsOnLoad(RulesEngine<?> engine, List<Rule> rules) {
         try {
-            engine.load(List.of(rule));
+            engine.load(rules);
             return false;
         } catch (RuleCompilationException expected) {
             return true;

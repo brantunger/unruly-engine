@@ -38,7 +38,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * application's; the hidden classes the JDK makes for method handles when they are first needed, which have no name to
  * initialize ahead of time; and those that {@code prepare()} leaves to a first use, which the test says rather than
  * checks covered (#1012). A rule's first inline list, {@code new} and {@code soundslike} each initialize one class of
- * MVEL's: {@code CollectionParser}, {@code NewObjectNode} and {@code Soundex}. Its first read of a property through its
+ * MVEL's: {@code CollectionParser}, {@code NewObjectNode} and {@code Soundex}. #1097: a first load that fails for an
+ * import with too many parts initializes MVEL's {@code ImportNode}, and one for a package import too far into the
+ * text for MVEL to read, the JDK's {@code Formatter}, its {@code FormatSpecifier} and {@code Locale.Category}, which
+ * MVEL's own message uses. Its first read of a property through its
  * getter initializes none, as {@code prepare()} initializes {@code GetterAccessor}, whose empty array every call of a
  * method without arguments reads. With the engine logging, as an application's SLF4J provider may, the first message it
  * logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple. The test checks that each
@@ -62,7 +65,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * #1093: linking a lambda or a method reference makes a class too, which the same lines show. The code that handles a
  * failure, this module's {@link ExceptionReads} and the engine's, runs only when something fails, so a lambda in it
  * was linked by the JVM's first failure, which could overflow deep in a stack. The scenario's first runs whose MVEL
- * condition and action fail may link no lambda or method reference of the library's.
+ * condition and action fail may link no lambda or method reference of the library's. #1097: nor may its first load
+ * that fails to compile, its first nested in a run's action, or its first {@code validate()} that fails, as
+ * {@code MvelCompileErrors} describes the error only then; and in those steps and the failing runs, a class the JDK
+ * makes for a lambda or a method reference of anyone's, the JDK's own included, counts as well, and so does a class of
+ * the JDK's regular expressions, which the first compile error reads MVEL's message with.
  * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
@@ -85,6 +92,15 @@ class FirstUseClassInitializationTest {
             FirstUseScenario.INLINE_LIST + ": org/mvel2/util/CollectionParser",
             FirstUseScenario.NEW_OBJECT + ": org/mvel2/ast/NewObjectNode",
             FirstUseScenario.SOUNDSLIKE + ": org/mvel2/util/Soundex");
+    // What a load that fails for an import initializes, which prepare() leaves to it, as it does MVEL's features
+    // (#1097): MVEL's ImportNode, which reads an import, for one with too many parts; and the JDK's Formatter, which
+    // MVEL's own code formats its message with, for a package import too far into the text for MVEL to read. Each only
+    // in its own step, so no other step may initialize them.
+    private static final List<String> BY_FAILED_IMPORTS = List.of(
+            FirstUseScenario.IMPORT_TOO_LARGE + ": org/mvel2/ast/ImportNode",
+            FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter",
+            FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Locale$Category",
+            FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter$FormatSpecifier");
     // What the first message logged initializes, with slf4j-simple, which building an engine leaves to it.
     private static final List<String> BY_LOGGING = List.of(
             FirstUseScenario.FAILING_NESTED_LOAD + ": org/slf4j/event/Level",
@@ -115,23 +131,36 @@ class FirstUseClassInitializationTest {
     private static final String LIBRARY_LOADED = "[class,load] io.github.brantunger.unruly.";
     private static final String SCENARIO_LOADED = "[class,load] " + FirstUseScenario.class.getName();
     private static final List<String> FAILING = List.of(FirstUseScenario.CONDITION_FAILS,
-            FirstUseScenario.ACTION_FAILS);
+            FirstUseScenario.ACTION_FAILS, FirstUseScenario.CONDITION_ASSIGNS, FirstUseScenario.LOAD_FAILS,
+            FirstUseScenario.CLASS_CALLED, FirstUseScenario.IMPORT_TOO_LARGE, FirstUseScenario.PACKAGE_IMPORT_UNREAD,
+            FirstUseScenario.FAILING_NESTED_LOAD, FirstUseScenario.VALIDATE_FAILS);
+    // What -Xlog:class+load begins a class's name with, any class's, and the part of a name the JDK gives the hidden
+    // class it makes for a lambda or a method reference, which in a failing step is flagged whoever's it is, the JDK's
+    // own included (#1097).
+    private static final String LOADED = "[class,load] ";
+    private static final String LAMBDA = "$$Lambda";
+    // A class of the JDK's regular expressions, as -Xlog:class+load names it, which a failing step may not load either:
+    // the first compile error reads MVEL's message with them, so prepare() reads one first (#1097).
+    private static final String REGEX_LOADED = LOADED + "java.util.regex.";
     // Set by Unreachable's static initializer, and read here, as reading a field of Unreachable would initialize it.
     private static final AtomicBoolean UNREACHABLE_INITIALIZED = new AtomicBoolean();
 
     @Test
     @DisplayName("with MVEL's JIT on, MVEL's first steps initialize no class with a static initializer but those of "
-            + "the features prepare() leaves to them, and its first compile with ASM ASM's")
+            + "the features and the failed imports prepare() leaves to them, and its first compile with ASM ASM's")
     void initializedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
-        assertInitialized(BY_FEATURES, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false"));
+        List<String> expected = new ArrayList<>(BY_FEATURES);
+        expected.addAll(BY_FAILED_IMPORTS);
+        assertInitialized(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false"));
     }
 
     @Test
     @DisplayName("with MVEL's JIT off, MVEL's first steps initialize no class with a static initializer but those of "
-            + "the features prepare() leaves to them")
+            + "the features and the failed imports prepare() leaves to them")
     void initializedWhenBuiltWithoutJit(@TempDir Path dir) throws IOException, InterruptedException {
-        assertEquals(BY_FEATURES, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=true"),
-                "initialized by first steps");
+        List<String> expected = new ArrayList<>(BY_FEATURES);
+        expected.addAll(BY_FAILED_IMPORTS);
+        assertEquals(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=true"), "initialized by first steps");
     }
 
     @Test
@@ -140,6 +169,7 @@ class FirstUseClassInitializationTest {
     void initializedWhenBuiltWithLogging(@TempDir Path dir) throws IOException, InterruptedException {
         List<String> expected = new ArrayList<>(BY_FEATURES);
         expected.addAll(BY_LOGGING);
+        expected.addAll(BY_FAILED_IMPORTS);
         assertInitialized(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false", LOGGING));
     }
 
@@ -158,8 +188,9 @@ class FirstUseClassInitializationTest {
     }
 
     @Test
-    @DisplayName("the JVM's first runs whose MVEL condition or action fails load, initialize or link no class of the "
-            + "engine's or this module's, a lambda's or method reference's included (#1093)")
+    @DisplayName("the JVM's first runs whose MVEL condition or action fails, and its first loads and validate() that "
+            + "fail, load, initialize or link no class of the engine's or this module's, a lambda's or method "
+            + "reference's included, nor any lambda, nor a class of the JDK's regular expressions (#1093, #1097)")
     void firstFailuresLoadNothing(@TempDir Path dir) throws IOException, InterruptedException {
         // With the steps of a load and a validate() that fail after the failing runs, so no class those use first hides
         // one that a failing run would otherwise be the first to load.
@@ -171,6 +202,12 @@ class FirstUseClassInitializationTest {
         String step = "before the first step";
         for (String line : lines) {
             int at = Math.max(line.indexOf(LIBRARY_INITIALIZED), line.indexOf(LIBRARY_LOADED));
+            if (at < 0 && line.contains(LAMBDA)) {
+                at = Math.max(line.indexOf(INITIALIZING), line.indexOf(LOADED));
+            }
+            if (at < 0) {
+                at = line.indexOf(REGEX_LOADED);
+            }
             if (line.startsWith(FirstUseScenario.STEP)) {
                 step = line.substring(FirstUseScenario.STEP.length());
             } else if (at >= 0 && !line.contains(SCENARIO) && !line.contains(SCENARIO_LOADED)

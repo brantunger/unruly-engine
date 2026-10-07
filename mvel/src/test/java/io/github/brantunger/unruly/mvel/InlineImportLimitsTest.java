@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -235,6 +236,27 @@ class InlineImportLimitsTest {
                 8, description)), ex.issues());
         assertEquals("Action for rule 'r' failed to compile at line 1, column 8: " + description, ex.getMessage());
         assertEquals(999, ex.getCause().getMessage().length());
+    }
+
+    // MVEL's import is always in code as the scan reads it; were it ever not, the first match anywhere is the place,
+    // which is still in the text. Only a direct call reaches that.
+    @Test
+    @DisplayName("with no import of the name in code, the position is that of the first in the text")
+    void positionOfFirstImportWhenNoneInCode() {
+        InvalidExpressionException e = MvelCompileErrors.importTooLarge("x = 1; // import p\n/* import p */",
+                new Imports.ImportTooLarge("p", "'"));
+
+        assertEquals(1, e.issues().get(0).line(), "line");
+        assertEquals(18, e.issues().get(0).column(), "column");
+    }
+
+    // MVEL never passes a name that isn't in the text; were it to, the scan fails as a stream's orElseThrow() did.
+    @Test
+    @DisplayName("with no import of the name in the text, the scan throws NoSuchElementException")
+    void noImportOfTheNameThrows() {
+        Imports.ImportTooLarge rejected = new Imports.ImportTooLarge("p", "'");
+
+        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importTooLarge("x = 1", rejected));
     }
 
     @Test

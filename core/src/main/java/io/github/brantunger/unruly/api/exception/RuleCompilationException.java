@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.api.exception;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Exception thrown when a rule fails to compile, or when several do.
@@ -112,12 +111,20 @@ public class RuleCompilationException extends UnrulyException {
 
     /**
      * Copies a list after checking that neither it nor any element is {@code null}; a method, because a constructor
-     * that delegates with {@code this(...)} can't check its arguments before the call.
+     * that delegates with {@code this(...)} can't check its arguments before the call. It throws as
+     * {@code Objects.requireNonNull} would, but without a lambda for the message: every failed load creates this
+     * exception, and the JVM links a lambda the first time its call site runs, which makes a class and takes more
+     * stack than the engine's checks make room for, so the JVM's first failed load, maybe deep in a stack, could
+     * overflow here and throw a {@link StackOverflowError} in place of this exception (#1097).
      */
     private static <T> List<T> checked(List<T> list, String name) {
-        Objects.requireNonNull(list, () -> name + " must not be null");
+        if (list == null) {
+            throw new NullPointerException(name + " must not be null");
+        }
         for (T element : list) {
-            Objects.requireNonNull(element, () -> name + " must not contain null");
+            if (element == null) {
+                throw new NullPointerException(name + " must not contain null");
+            }
         }
         return List.copyOf(list);
     }

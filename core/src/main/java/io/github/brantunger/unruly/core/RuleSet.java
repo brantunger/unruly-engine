@@ -1134,9 +1134,19 @@ final class RuleSet {
 
     // Marks one of the two parts done that the compilers wait for, retire()'s closing or the last run leaving, and
     // closes the compilers still open if both are. Marking a part again changes nothing, and closes only the
-    // compilers a call that failed part way left open. Returns the first fatal Error from closing them.
+    // compilers a call that failed part way left open. Returns the first fatal Error from closing them. A loop of
+    // compare-and-set rather than accumulateAndGet with a lambda: a failed borrow that is the last user of a retired
+    // rule set comes here, and the JVM links a lambda the first time its call site runs, which makes a class and takes
+    // more stack than the engine's checks make room for, so where no retire() got this far first, as when it failed
+    // part way, the JVM's first such borrow, maybe deep in a stack, could overflow here, and throw that in place of
+    // its failure (#1097).
     private Error partDone(int part) {
-        return partsDone.accumulateAndGet(part, (done, more) -> done | more) == BOTH_PARTS ? closeCompilers() : null;
+        int done;
+        do {
+            done = partsDone.get();
+            Faults.reached(Faults.Step.PARTS_DONE_READ);
+        } while (!partsDone.compareAndSet(done, done | part));
+        return (done | part) == BOTH_PARTS ? closeCompilers() : null;
     }
 
     // Closes the compilers still open, each taken from the queue as it's closed, so none is closed twice.
