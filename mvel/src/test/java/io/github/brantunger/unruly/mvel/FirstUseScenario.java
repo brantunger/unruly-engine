@@ -15,16 +15,17 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds three
- * engines that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language
- * so the build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a
- * {@link #STEP} line: a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of an
- * inline list, of {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a
- * {@code validate()} that fails, a load that fails, not nested, loads of rules that call a method that throws, a run
- * whose condition calls it and one whose action does, and last, {@value #JIT_RUNS} more runs of the rule that reads a
- * property, enough for MVEL's JIT, if it's on, to compile the property's accessor: MVEL compiles one once more than 50
- * runs have used it within 100 ms. It prints {@link #RAN} if each ended as it should, or else {@link #UNEXPECTED} and
- * the steps that didn't.
+ * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds three engines
+ * that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language so the
+ * build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a {@link #STEP} line:
+ * a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of an inline list, of
+ * {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a {@code validate()} that fails, a
+ * load that fails, not nested, a load and a run that each ask for the class loader many times, a load in which MVEL
+ * goes round in a loop, a load and a run of a rule it goes round in a loop running, a load of a chain MVEL looks up as
+ * a nested class with too many parts, loads of rules that call a method that throws, a run whose condition calls it and
+ * one whose action does, and last, {@value #JIT_RUNS} more runs of the rule that reads a property, enough for MVEL's
+ * JIT, if it's on, to compile the property's accessor: MVEL compiles one once more than 50 runs have used it within 100
+ * ms. It prints {@link #RAN} if each ended as it should, or else {@link #UNEXPECTED} and the steps that didn't.
  */
 final class FirstUseScenario {
 
@@ -53,6 +54,30 @@ final class FirstUseScenario {
     static final String IMPORT_TOO_LARGE = "a load that fails, an import with too many parts";
     /** The step whose load is the first to fail for a package import too far into the text for MVEL to read (#1097). */
     static final String PACKAGE_IMPORT_UNREAD = "a load that fails, a package import MVEL can't read";
+    /**
+     * The step whose load is the first whose MVEL analysis asks for the class loader more times than
+     * {@code CallSites.UNCOUNTED_CALLS}, which walks the stack (#1099).
+     */
+    static final String MANY_CALLS_LOAD = "a load whose analysis asks for the class loader many times";
+    /**
+     * The step whose run is the first to ask for the class loader more times than {@code CallSites.UNCOUNTED_CALLS},
+     * in a copy's first run, which walks the stack (#1099).
+     */
+    static final String MANY_CALLS_RUN = "a load and a run that asks for the class loader many times";
+    /** The step whose load is the first to fail as MVEL's analysis goes round in a loop (#1099). */
+    static final String ANALYSIS_LOOP = "a load that fails, MVEL's analysis goes round in a loop";
+    /**
+     * The step that loads the rule MVEL goes round in a loop running, whose load reads the generic type of a class's
+     * class, which no step before it reads (#1099).
+     */
+    static final String RUN_LOOP_LOAD = "a load of a rule MVEL goes round in a loop running";
+    /** The step whose run is the first to fail as MVEL goes round in a loop (#1099). */
+    static final String RUN_LOOP = "a run that fails, MVEL goes round in a loop";
+    /**
+     * The step whose load is the first in which MVEL's lookup of a nested class asks for a name with a {@code $} and
+     * too many parts, which walks the stack (#1099).
+     */
+    static final String NESTED_NAME_TOO_LARGE = "a load of a chain MVEL looks up as a nested class with too many parts";
     /** The step whose validate() is the first to find a rule that fails to compile. */
     static final String VALIDATE_FAILS = "a validate() that fails";
     /** The step whose run is the first whose MVEL condition fails. */
@@ -78,6 +103,18 @@ final class FirstUseScenario {
     private static final String TOO_MANY_PARTS = "import " + "a.".repeat(64) + "a.*; x = 1";
     private static final String IMPORT_TOO_FAR = " ".repeat(32_768 - "import java.util".length())
             + "import java.util.*; output.put('k', new ArrayList().size())";
+    // The rules that ask for the class loader many times (#1099), built here for the same reason. A chain in 12 levels
+    // of brackets, which MVEL's analysis asks more than 100 times for; a chain of 70 parts passed as an argument, which
+    // a copy's first run asks more than 100 times for; a call with a letter glued to it, and one after a class named
+    // with its package and a no-break space, which MVEL goes round in a loop over, in its analysis and as it runs; and
+    // a chain of 90 parts, which MVEL's lookup of a nested class asks for with a '$' and 90 parts. CallSitesTest
+    // checks that the first two ask more than CallSites.UNCOUNTED_CALLS times.
+    static final String WRAPPED_CHAIN = "(".repeat(12) + "m" + ".a".repeat(12) + ")".repeat(12) + " == m";
+    static final String CHAIN_ARGUMENT = "s.equals(m" + ".a".repeat(70) + ")";
+    private static final String ANALYSIS_LOOPS = "java.lang.Math.abs(1)x";
+    private static final String RUN_LOOPS = "java.lang.String.class\u00a0(2)";
+    private static final String LONG_CHAIN = "a" + ".a".repeat(89) + " == 1";
+    private static final String LOOP_MESSAGE = "went round in a loop";
 
     private FirstUseScenario() {
     }
@@ -202,6 +239,7 @@ final class FirstUseScenario {
                                     NestedLoad nestedLoad, List<String> unexpected, boolean failuresFirst) {
         if (failuresFirst) {
             failsToCompile(engine, imported, unexpected);
+            walksTheStack(engine, unexpected);
         }
         mark(STEP + FAILING_NESTED_LOAD);
         engine.load(List.of(Rule.builder().ruleName("loads").condition("true").action("nested.load();").build()));
@@ -217,6 +255,7 @@ final class FirstUseScenario {
         }
         if (!failuresFirst) {
             failsToCompile(engine, imported, unexpected);
+            walksTheStack(engine, unexpected);
         }
     }
 
@@ -231,6 +270,45 @@ final class FirstUseScenario {
         failsToLoadRule(imported, CLASS_CALLED, rule("called", "true", "x = ArrayList(y)"), unexpected);
         failsToLoadRule(engine, IMPORT_TOO_LARGE, rule("imports", "true", TOO_MANY_PARTS), unexpected);
         failsToLoadRule(engine, PACKAGE_IMPORT_UNREAD, rule("far", "true", IMPORT_TOO_FAR), unexpected);
+    }
+
+    // Loads and runs of rules that walk the stack, each in a step of its own (#1099): MVEL's loop detection walks it
+    // once an analysis pass or a run has asked for the class loader more than CallSites.UNCOUNTED_CALLS times, and
+    // the rule list's class loader for a name with a '$' and too many parts. The valid load and run that ask many
+    // times come first, so they are the first to walk the stack each way, then the loops, which are stopped once they
+    // have asked too many times from one place, and last the long chain, the first lookup of such a name.
+    private static void walksTheStack(RulesEngine<Map<String, Object>> engine, List<String> unexpected) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("a", m);
+        mark(STEP + MANY_CALLS_LOAD);
+        engine.load(List.of(rule("wrapped", WRAPPED_CHAIN, "1")));
+        mark(STEP + MANY_CALLS_RUN);
+        engine.load(List.of(rule("argument", CHAIN_ARGUMENT, "output.put('k', 1);")));
+        if (!Map.of("k", 1).equals(engine.run(new FactMap<>(new Fact<>("s", m), new Fact<>("m", m))))) {
+            unexpected.add(MANY_CALLS_RUN);
+        }
+        mark(STEP + ANALYSIS_LOOP);
+        try {
+            engine.load(List.of(rule("loops", "true", ANALYSIS_LOOPS)));
+            unexpected.add(ANALYSIS_LOOP);
+        } catch (RuleCompilationException expected) {
+            if (!expected.getMessage().contains(LOOP_MESSAGE)) {
+                unexpected.add(ANALYSIS_LOOP);
+            }
+        }
+        mark(STEP + RUN_LOOP_LOAD);
+        engine.load(List.of(rule("spins", "true", RUN_LOOPS)));
+        mark(STEP + RUN_LOOP);
+        try {
+            engine.run(new FactMap<>());
+            unexpected.add(RUN_LOOP);
+        } catch (RuleExecutionException expected) {
+            if (!expected.getMessage().contains(LOOP_MESSAGE)) {
+                unexpected.add(RUN_LOOP);
+            }
+        }
+        mark(STEP + NESTED_NAME_TOO_LARGE);
+        engine.load(List.of(rule("chain", LONG_CHAIN, "1")));
     }
 
     // Loads the rule in a step of its own, and records the step unless the load failed as it should.

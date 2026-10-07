@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -121,6 +122,32 @@ class CallSitesTest {
         assertNotNull(Imports.runLoop(copy.configuration()));
         assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(copy.configuration()),
                 MvelAnalysis.classLoaderCallsPerSite(text.length()));
+    }
+
+    @Test
+    @DisplayName("the scenario's load and run that ask many times ask more often than the calls left uncounted, so "
+            + "they walk the stack (#1099)")
+    void scenarioWalksTheStack() {
+        // FirstUseScenario checks that the JVM's first walks of each kind load and link nothing, which only holds if
+        // its rules do walk the stack: MVEL's analysis of the one, and a copy's first run of the other.
+        String wrapped = FirstUseScenario.WRAPPED_CHAIN;
+        ParserConfiguration analysis = analysisConfiguration(wrapped);
+        MVEL.analysisCompile(wrapped, new ParserContext(analysis));
+        assertTrue(Imports.classLoaderCalls(analysis) > CallSites.UNCOUNTED_CALLS,
+                () -> "the analysis asked " + Imports.classLoaderCalls(analysis) + " times");
+
+        String argument = FirstUseScenario.CHAIN_ARGUMENT;
+        MvelExpression.Copy copy = MvelExpression.newCopy(argument, IMPORTS,
+                MvelExpression.classLoaderCallsPerRun(argument.length()));
+        Map<String, Object> m = new HashMap<>();
+        m.put("a", m);
+        Map<String, Object> facts = new HashMap<>();
+        facts.put("s", m);
+        facts.put("m", m);
+        Imports.startRun(copy.configuration());
+        assertEquals(Boolean.TRUE, MVEL.executeExpression(copy.expression(), facts));
+        assertTrue(Imports.classLoaderCalls(copy.configuration()) > CallSites.UNCOUNTED_CALLS,
+                () -> "the run asked " + Imports.classLoaderCalls(copy.configuration()) + " times");
     }
 
     @Test

@@ -153,10 +153,15 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // This module's classes without a static initializer that a load that fails would otherwise be the first to
         // load: a condition that assigns, a class called like a method, an import with too many parts, and the place
         // of either in the text. A class's first load deep in a stack can overflow as initializing one can (#1066,
-        // #1097).
+        // #1097). And those that MVEL's first loop, in its analysis or in a run, and its first lookup of a name with a
+        // '$' and too many parts would be the first to initialize (#1099).
         initialize(MethodHandles.lookup(), List.of(ConditionAssignments.Write.class, MvelCompileErrors.Position.class,
-                Imports.ClassCalledLikeMethod.class, Imports.ImportTooLarge.class));
+                Imports.ClassCalledLikeMethod.class, Imports.ImportTooLarge.class, Imports.AnalysisLoop.class,
+                Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class));
         MvelCompileErrors.warmUp();
+        // A pass or run that asks for the class loader more than CallSites.UNCOUNTED_CALLS times walks the stack, which
+        // first initializes the JDK's classes that walk one, so this walks it once each way (#1099).
+        CallSites.warmUp();
         // A rule's first use of one of the JDK's classes by its name, such as new java.util.ArrayList(), looks its
         // class file up first (see FactNames.mayBeClass), which on JDK 25 initializes the JDK's class that finds the
         // files of its own modules, so this looks one up. Through this module's own class loader, which needs no
