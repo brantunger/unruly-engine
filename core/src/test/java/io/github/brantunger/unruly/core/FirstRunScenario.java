@@ -47,8 +47,13 @@ import java.util.function.Supplier;
  * paths: a map output, and a bean output with a setter that takes a primitive and one that takes a {@code String}; a
  * fact declared with a primitive type, a fact of the wrong type for its declaration and a declared fact missing from
  * an engine that requires them all; every listener callback; a condition that fails; an action that writes to its
- * read-only facts; a language that calls {@link FactProperties#toData}; a fatal error from a nested run; and a nested
- * run that passes its deadline. Last, it closes an engine, the JVM's first {@code close()}.
+ * read-only facts; a language that calls {@link FactProperties#toData}; a fatal error from a nested run; a nested
+ * run that passes its deadline; an action that throws an exception, and one that throws an {@link Error}; a setter
+ * that throws; a listener that throws; an action that throws an exception with a suppressed exception; a listener
+ * that throws an {@link OutOfMemoryError}; and a unique-match engine whose two rules match. The steps whose runs fail
+ * are listed in {@link #FAILING}, and {@link #FAILURES_FIRST} takes them before the steps that could hide what they
+ * load first. Last, it closes
+ * an engine, the JVM's first {@code close()}.
  */
 final class FirstRunScenario {
 
@@ -58,6 +63,29 @@ final class FirstRunScenario {
     static final String RAN = "SCENARIO ran";
     /** What the line that comes before each step of the runs begins with; the step's description follows. */
     static final String STEP = "SCENARIO step: ";
+    static final String ACTION_THROWS = "an action that throws a RuntimeException";
+    static final String ACTION_ERRS = "an action that throws an Error";
+    static final String SETTER_THROWS = "a setter that throws";
+    static final String LISTENER_THROWS = "a listener that throws";
+    static final String ACTION_SUPPRESSES = "an action that throws an exception with a suppressed exception";
+    static final String LISTENER_FATAL = "a listener that throws an OutOfMemoryError";
+    static final String DEADLINE = "a nested run that passes its deadline";
+    static final String UNIQUE = "a unique-match engine, two rules match";
+    /**
+     * The system property that, set to {@code true}, has the scenario take the steps that load rules that fail to
+     * compile, validate them, and load and run a rule with a validity window after the failing runs rather than before
+     * them, so none of the classes those use first is loaded before the failing runs, where it would hide that a
+     * failing run would otherwise be the first to load it.
+     */
+    static final String FAILURES_FIRST = "unruly.scenario.failuresFirst";
+    /**
+     * The steps whose runs fail, or whose listener fails, each the JVM's first of its kind, which the engine handles in
+     * code that runs only when something fails.
+     */
+    static final List<String> FAILING = List.of("a condition that fails", "a fatal error from a nested run",
+            DEADLINE, "a fact of the wrong type, and a declared fact left out, with requireDeclaredFacts()",
+            "a fact with a name a language reserves: output, and ctx", ACTION_THROWS, ACTION_ERRS, SETTER_THROWS,
+            LISTENER_THROWS, ACTION_SUPPRESSES, LISTENER_FATAL, UNIQUE);
 
     private FirstRunScenario() {
     }
@@ -81,6 +109,18 @@ final class FirstRunScenario {
 
         public void setName(String name) {
             this.name = name;
+        }
+    }
+
+    /** An output object whose setter throws, so writing what an action returns fails the rule. */
+    public static final class Refusing {
+
+        public int getCount() {
+            return 0;
+        }
+
+        public void setCount(int count) {
+            throw new IllegalStateException("refused by the scenario");
         }
     }
 
@@ -133,6 +173,22 @@ final class FirstRunScenario {
             mark(BUILT);
             engine.load(rules);
             mark(LOADED);
+        }
+    }
+
+    /** Throws an {@link OutOfMemoryError} from a callback, which the run rethrows once every listener has had it. */
+    private static final class FatalListener implements RuleListener {
+        @Override
+        public void beforeExecute(Rule rule, Object output) {
+            throw new OutOfMemoryError("thrown by the scenario's listener");
+        }
+    }
+
+    /** Throws from a callback, so the run logs what a listener threw, and goes on. */
+    private static final class ThrowingListener implements RuleListener {
+        @Override
+        public void beforeExecute(Rule rule, Object output) {
+            throw new IllegalStateException("thrown by the scenario's listener");
         }
     }
 
@@ -218,6 +274,17 @@ final class FirstRunScenario {
         StubExpressionLanguage fatalLanguage = new StubExpressionLanguage().action((context, session) -> {
             throw new OutOfMemoryError("thrown by the scenario");
         });
+        StubExpressionLanguage throwingLanguage = new StubExpressionLanguage().action((context, session) -> {
+            throw new IllegalStateException("thrown by the scenario");
+        });
+        StubExpressionLanguage erringLanguage = new StubExpressionLanguage().action((context, session) -> {
+            throw new Error("thrown by the scenario");
+        });
+        StubExpressionLanguage suppressingLanguage = new StubExpressionLanguage().action((context, session) -> {
+            IllegalStateException thrown = new IllegalStateException("thrown by the scenario");
+            thrown.addSuppressed(new IllegalArgumentException("suppressed by the scenario"));
+            throw thrown;
+        });
         StubExpressionLanguage writingLanguage = new StubExpressionLanguage().action((context, session) -> {
             try {
                 context.facts().put("x", 1);
@@ -237,6 +304,20 @@ final class FirstRunScenario {
                 .listener(listener).build();
         RulesEngine<Map<String, Object>> toData = RulesEngineBuilder.firstMatch(maps).language(toDataLanguage)
                 .build();
+        RulesEngine<Map<String, Object>> throwing = RulesEngineBuilder.firstMatch(maps).language(throwingLanguage)
+                .listener(listener).build();
+        RulesEngine<Map<String, Object>> erring = RulesEngineBuilder.firstMatch(maps).language(erringLanguage)
+                .listener(listener).build();
+        RulesEngine<Refusing> refusing = RulesEngineBuilder.firstMatch(Refusing::new)
+                .language(new ToyExpressionLanguage("toy", true)).listener(listener).build();
+        RulesEngine<Map<String, Object>> listened = RulesEngineBuilder.firstMatch(maps).language(toy)
+                .listener(new ThrowingListener()).build();
+        RulesEngine<Map<String, Object>> suppressing = RulesEngineBuilder.firstMatch(maps)
+                .language(suppressingLanguage).listener(listener).build();
+        RulesEngine<Map<String, Object>> fatalListened = RulesEngineBuilder.firstMatch(maps).language(toy)
+                .listener(new FatalListener()).build();
+        RulesEngine<Map<String, Object>> unique = RulesEngineBuilder.uniqueMatch(maps).language(toy)
+                .listener(listener).build();
         RulesEngine<Map<String, Object>> fatal = RulesEngineBuilder.firstMatch(maps).language(fatalLanguage).build();
         RulesEngine<Map<String, Object>> outer = RulesEngineBuilder.firstMatch(maps)
                 .language(new StubExpressionLanguage().action((context, session) -> {
@@ -266,16 +347,8 @@ final class FirstRunScenario {
 
         // Each step is marked, so a class one initializes can be told by the step it came after. Every step runs, even
         // after one that didn't end as it should.
-        mark(STEP + "a load that fails to compile, with an exception and with an invalid expression");
-        boolean asExpected = throwsOnLoad(broken, Rule.builder().ruleName("syntax").condition("a b c d")
-                .action("put k 1").build())
-                && throwsOnLoad(broken, Rule.builder().ruleName("assigns").condition("a = 1").action("put k 1")
-                .build());
-        mark(STEP + "validate(), of a valid rule list and of one that fails");
-        asExpected &= broken.validate(List.of(Rule.builder().ruleName("valid").condition("true").action("put k 1")
-                .build())).isEmpty();
-        asExpected &= !broken.validate(List.of(Rule.builder().ruleName("syntax").condition("a b c d")
-                .action("put k 1").build())).isEmpty();
+        boolean failuresFirst = Boolean.getBoolean(FAILURES_FIRST);
+        boolean asExpected = failuresFirst || failsToLoad(broken);
         mark(STEP + "a fact name the builder rejects, blank, and one build() rejects, output");
         asExpected &= rejectsName(" ") && buildRejectsName(maps, toy, "output");
         mark(STEP + "loads that succeed");
@@ -285,16 +358,22 @@ final class FirstRunScenario {
                 .build()));
         failing.load(List.of(Rule.builder().ruleName("broken").condition("missing.value > 1").action("put k 1")
                 .build()));
-        for (RulesEngine<?> stub : List.of(toData, fatal, outer, writing, overrun)) {
+        for (RulesEngine<?> stub : List.of(toData, fatal, outer, writing, overrun, throwing, erring)) {
             stub.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
         }
         slow.load(List.of(Rule.builder().ruleName("first").priority(2).condition("x").action("x").build(),
                 Rule.builder().ruleName("second").priority(1).condition("x").action("x").build()));
         reserving.load(List.of(Rule.builder().ruleName("reserves").condition("true").action("put k 1").build()));
-        mark(STEP + "a rule with a validity window, loaded");
-        // An instant from its parts: parsing one is what the application does, and initializes the JDK's formatter.
-        windowed.load(List.of(Rule.builder().ruleName("dated").condition("true").action("put k 1")
-                .validFrom(Instant.ofEpochSecond(0)).validTo(Instant.ofEpochSecond(32_503_680_000L, 5)).build()));
+        refusing.load(List.of(Rule.builder().ruleName("refused").condition("true").action("put count 1").build()));
+        for (RulesEngine<?> listenedTo : List.of(listened, fatalListened)) {
+            listenedTo.load(List.of(Rule.builder().ruleName("matches").condition("true").action("put k 1").build()));
+        }
+        suppressing.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
+        unique.load(List.of(Rule.builder().ruleName("one").condition("true").action("put k 1").build(),
+                Rule.builder().ruleName("two").condition("true").action("put k 2").build()));
+        if (!failuresFirst) {
+            loadWindowed(windowed);
+        }
         mark(LOADED);
 
         mark(STEP + "a bean output, with setters taking an int and a String");
@@ -310,26 +389,73 @@ final class FirstRunScenario {
         asExpected &= throwsOnRun(outer, new FactMap<>(), OutOfMemoryError.class);
         mark(STEP + "an action that writes to its read-only facts");
         asExpected &= Map.of("rejected", true).equals(writing.run(new FactMap<>()));
-        mark(STEP + "a nested run that passes its deadline");
+        mark(STEP + DEADLINE);
         asExpected &= throwsOnRun(overrun, new FactMap<>(), RuleExecutionException.class);
         mark(STEP + "a fact declared with a primitive type, loaded and widened");
         asExpected &= loadsAndRunsDeclared(declared);
         mark(STEP + "a fact of the wrong type, and a declared fact left out, with requireDeclaredFacts()");
         asExpected &= rejectsFacts(strict);
-        mark(STEP + "a rule within its validity window");
-        asExpected &= Map.of("k", 1).equals(windowed.run(new FactMap<>()));
+        if (!failuresFirst) {
+            asExpected &= runsWindowed(windowed);
+        }
         mark(STEP + "a fact with a name a language reserves: output, and ctx");
-        asExpected &= throwsOnRun(windowed, new FactMap<>(new Fact<>("output", 1)), IllegalArgumentException.class)
+        asExpected &= throwsOnRun(map, new FactMap<>(new Fact<>("output", 1)), IllegalArgumentException.class)
                 && throwsOnRun(reserving, new FactMap<>(new Fact<>("ctx", 1)), IllegalArgumentException.class);
+        mark(STEP + ACTION_THROWS);
+        asExpected &= throwsOnRun(throwing, new FactMap<>(), RuleExecutionException.class);
+        mark(STEP + ACTION_ERRS);
+        asExpected &= throwsOnRun(erring, new FactMap<>(), RuleExecutionException.class);
+        mark(STEP + SETTER_THROWS);
+        asExpected &= throwsOnRun(refusing, new FactMap<>(), RuleExecutionException.class);
+        mark(STEP + LISTENER_THROWS);
+        asExpected &= Map.of("k", 1).equals(listened.run(new FactMap<>()));
+        mark(STEP + ACTION_SUPPRESSES);
+        asExpected &= throwsOnRun(suppressing, new FactMap<>(), RuleExecutionException.class);
+        mark(STEP + LISTENER_FATAL);
+        asExpected &= throwsOnRun(fatalListened, new FactMap<>(), OutOfMemoryError.class);
+        mark(STEP + UNIQUE);
+        asExpected &= throwsOnRun(unique, new FactMap<>(), RuleExecutionException.class);
+        if (failuresFirst) {
+            asExpected &= failsToLoad(broken);
+            loadWindowed(windowed);
+            asExpected &= runsWindowed(windowed);
+        }
         mark(STEP + "close(), the JVM's first");
         broken.close();
         if (asExpected) {
             mark(RAN);
         }
         for (RulesEngine<?> engine : List.of(map, bean, declared, failing, toData, fatal, outer, strict, writing, slow,
-                overrun, windowed, reserving)) {
+                overrun, windowed, reserving, throwing, erring, refusing, listened, suppressing, fatalListened,
+                unique)) {
             engine.close();
         }
+    }
+
+    // Loads rules that fail to compile, and validates a valid rule list and one that fails, in steps of their own.
+    private static boolean failsToLoad(RulesEngine<Map<String, Object>> broken) {
+        mark(STEP + "a load that fails to compile, with an exception and with an invalid expression");
+        boolean asExpected = throwsOnLoad(broken, Rule.builder().ruleName("syntax").condition("a b c d")
+                .action("put k 1").build())
+                && throwsOnLoad(broken, Rule.builder().ruleName("assigns").condition("a = 1").action("put k 1")
+                .build());
+        mark(STEP + "validate(), of a valid rule list and of one that fails");
+        asExpected &= broken.validate(List.of(Rule.builder().ruleName("valid").condition("true").action("put k 1")
+                .build())).isEmpty();
+        return asExpected && !broken.validate(List.of(Rule.builder().ruleName("syntax").condition("a b c d")
+                .action("put k 1").build())).isEmpty();
+    }
+
+    private static void loadWindowed(RulesEngine<Map<String, Object>> windowed) {
+        mark(STEP + "a rule with a validity window, loaded");
+        // An instant from its parts: parsing one is what the application does, and initializes the JDK's formatter.
+        windowed.load(List.of(Rule.builder().ruleName("dated").condition("true").action("put k 1")
+                .validFrom(Instant.ofEpochSecond(0)).validTo(Instant.ofEpochSecond(32_503_680_000L, 5)).build()));
+    }
+
+    private static boolean runsWindowed(RulesEngine<Map<String, Object>> windowed) {
+        mark(STEP + "a rule within its validity window");
+        return Map.of("k", 1).equals(windowed.run(new FactMap<>()));
     }
 
     // Loaded only after the bean run: loading rules for a fact declared with a primitive type uses the class that

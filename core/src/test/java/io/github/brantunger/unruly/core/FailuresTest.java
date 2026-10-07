@@ -271,15 +271,6 @@ class FailuresTest {
     }
 
     @Test
-    @DisplayName("a line about a fatal Error that can't be built is the plain one, so the Error is still rethrown")
-    void lineThatCantBeBuiltIsPlain() {
-        assertEquals("full", Failures.lineOr(() -> "full", "plain"));
-        assertEquals("plain", Failures.lineOr(() -> {
-            throw new OutOfMemoryError("no memory left to describe it");
-        }, "plain"));
-    }
-
-    @Test
     @DisplayName("#850: of two throwables from a clean-up, a fatal Error is chosen over one that isn't, and else the"
             + " first, which carries the other")
     void fatalFirstPrefersAFatalError() {

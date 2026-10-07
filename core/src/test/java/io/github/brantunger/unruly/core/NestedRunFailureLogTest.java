@@ -1128,6 +1128,32 @@ class NestedRunFailureLogTest {
         assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
     }
 
+    @Test
+    @DisplayName("#1093: when what a listener wrapped its own run()'s fatal Error in can't be described, as when the "
+            + "JVM has no memory left, the line says only that the listener threw it, and the Error is still rethrown")
+    void onRunErrorWrappedNestedFatalUndescribed() {
+        Runnable nested = wrapping(running(throwingOom()));
+        RulesEngine<Map<String, Object>> engine = engine("outer-rule", doing(() -> {
+            throw new IllegalStateException("outer rule failed");
+        }), HashMap::new, new RuleListener() {
+            @Override
+            public void onRunError(RunContext run, RuntimeException error) {
+                nested.run();
+            }
+        });
+        Faults.inject(Faults.Step.FAILURE_DESCRIBING, 1, new OutOfMemoryError("describing"));
+        Outcome<Throwable> outcome;
+        try {
+            outcome = failed(() -> engine.run(new FactMap<>()));
+        } finally {
+            Faults.clear();
+        }
+
+        assertSame(oom, outcome.thrown());
+        assertEquals(List.of("Failed to execute action for rule 'outer-rule': outer rule failed", INNER_FATAL,
+                "A listener threw java.lang.OutOfMemoryError in onRunError"), outcome.lines("ERROR"), outcome.logs());
+    }
+
     /**
      * The rule's wrapper is logged once; and the failure a listener is told of is the run's own, although the fatal
      * {@link Error} in it was logged by a run nested in the rule's action, so what the listener wraps around that adds

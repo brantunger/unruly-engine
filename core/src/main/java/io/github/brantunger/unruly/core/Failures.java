@@ -16,11 +16,6 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
@@ -59,6 +54,15 @@ public final class Failures {
         0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
         0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
     };
+
+    // What a Reach looks for (see Reach#matches): a fatal error, any error, an interrupt, the stop of a run past a
+    // deadline or interrupted, or the very instance given. Written as numbers that pick plain code rather than as
+    // lambdas, so the first failure in the JVM links no call site, which could overflow deep in a stack (#1093).
+    private static final int FATAL = 0;
+    private static final int ANY_ERROR = 1;
+    private static final int INTERRUPT = 2;
+    private static final int STOP = 3;
+    private static final int SAME = 4;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
@@ -132,7 +136,7 @@ public final class Failures {
      */
     private static Error fatalErrorIn(List<Throwable> chain) {
         Error fatal = fatalIn(chain);
-        return fatal != null ? fatal : (Error) suppressedMatching(chain, Failures::isFatal);
+        return fatal != null ? fatal : (Error) suppressedMatching(chain, FATAL, null);
     }
 
     /** Finds the first fatal {@link Error} in a cause chain itself, or {@code null} if there is none. */
@@ -150,12 +154,13 @@ public final class Failures {
      * {@link Reach} reads them. A suppressed exception the engine itself added to a failure it reported isn't read
      * (see {@link ReportedFailure#addSuppressedByEngine}). A chain with no suppressed exceptions allocates nothing.
      *
-     * @param chain A cause chain, none of whose links matches, which counts as read
-     * @param match What to look for
+     * @param chain  A cause chain, none of whose links matches, which counts as read
+     * @param match  What to look for, as {@link Reach#matches} tells it
+     * @param target The deadline or the instance it looks for, if it looks for one, or else {@code null}
      * @return The first exception found, or {@code null} if there is none, or if it's past the
      *         {@value #MAX_EXCEPTIONS_READ} exceptions read
      */
-    private static Throwable suppressedMatching(List<Throwable> chain, Predicate<Throwable> match) {
+    private static Throwable suppressedMatching(List<Throwable> chain, int match, Object target) {
         Throwable[][] suppressed = null;
         for (int i = 0; i < chain.size(); i++) {
             Throwable[] ofLink = chain.get(i).getSuppressed();
@@ -166,7 +171,7 @@ public final class Failures {
                 suppressed[i] = ofLink;
             }
         }
-        return suppressed == null ? null : new Reach(false, match).beside(suppressed, chain);
+        return suppressed == null ? null : new Reach(false, match, target).beside(suppressed, chain);
     }
 
     /**
@@ -185,19 +190,22 @@ public final class Failures {
      * {@code getSuppressed()} returned for each link of the chain it starts beside, for as long as it walks; and,
      * deeper, one more such copy at a time, only while it reads it.
      */
-    private static final class Reach {
+    static final class Reach {
         private final Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         // The exceptions read and still to go into, a list for each that was gone into, the next on top.
         private final Deque<Deeper> deeper = new ArrayDeque<>();
         // Whether a suppressed exception the engine added to a failure it reported is read too.
         private final boolean engineAddedToo;
-        private final Predicate<Throwable> match;
+        // What it looks for, as matches() tells it, and the deadline or the instance it looks for, if any.
+        private final int match;
+        private final Object target;
         private Throwable found;
         private boolean stopped;
 
-        Reach(boolean engineAddedToo, Predicate<Throwable> match) {
+        Reach(boolean engineAddedToo, int match, Object target) {
             this.engineAddedToo = engineAddedToo;
             this.match = match;
+            this.target = target;
         }
 
         /**
@@ -236,7 +244,7 @@ public final class Failures {
             if (!seen.add(t)) {
                 return false;
             }
-            if (match.test(t)) {
+            if (matches(t)) {
                 found = t;
                 stopped = true;
                 return false;
@@ -281,6 +289,25 @@ public final class Failures {
             return result;
         }
 
+        /**
+         * Tells whether an exception is what the walk looks for: with {@link #FATAL}, a fatal {@link Error} (see
+         * {@link #isFatal}); with {@link #ANY_ERROR}, any error; with {@link #INTERRUPT}, an
+         * {@link InterruptedException}; with {@link #STOP}, the stop of a run past the deadline the walk was given,
+         * or interrupted if it was given none (see {@link ReportedFailure#isStopFor}); and with {@link #SAME}, the
+         * very instance it was given.
+         */
+        // The very same instance: an equal one is another failure.
+        @SuppressWarnings("PMD.CompareObjectsWithEquals")
+        private boolean matches(Throwable t) {
+            return switch (match) {
+                case FATAL -> isFatal(t);
+                case ANY_ERROR -> t instanceof Error;
+                case INTERRUPT -> t instanceof InterruptedException;
+                case STOP -> t instanceof ReportedFailure reported && reported.isStopFor((Deadline) target);
+                default -> t == target;
+            };
+        }
+
         private static boolean addedByEngine(Throwable owner, Throwable suppressed) {
             return owner instanceof ReportedFailure failure && failure.suppressedByEngine(suppressed);
         }
@@ -309,7 +336,7 @@ public final class Failures {
     }
 
     /** Exceptions a {@link Reach} has read and goes into in turn, and how many it has gone into. */
-    private static final class Deeper {
+    static final class Deeper {
         private final List<Throwable> exceptions;
         private int index;
 
@@ -352,7 +379,7 @@ public final class Failures {
     static Error errorInChain(Throwable thrown) {
         List<Throwable> chain = causeChain(thrown);
         Error error = below(chain).error();
-        return error != null ? error : (Error) suppressedMatching(chain, Error.class::isInstance);
+        return error != null ? error : (Error) suppressedMatching(chain, ANY_ERROR, null);
     }
 
     static void throwIfPresent(Error fatal) {
@@ -459,10 +486,8 @@ public final class Failures {
      * @param target What to look for
      * @return {@code true} if {@code target} was found
      */
-    // The very same instance: an equal one is another failure.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     private static boolean reaches(Throwable from, Throwable target) {
-        return new Reach(true, t -> t == target).from(from) != null;
+        return new Reach(true, SAME, target).from(from) != null;
     }
 
     /**
@@ -718,21 +743,6 @@ public final class Failures {
         return fatal != null && LoggedFailures.loggedAt(fatal) != null && newsAbove(thrown, fatal) != null;
     }
 
-    /**
-     * Builds a line to log about a fatal {@link Error}, or a plain one if building it throws, as it can when the JVM
-     * has no memory left, so the code that logs it still rethrows the error it caught.
-     *
-     * @param line  Builds the line
-     * @param plain The plain line, built beforehand, which reads nothing a language, a listener or a rule wrote
-     * @return The line, or the plain one
-     */
-    static String lineOr(Supplier<String> line, String plain) {
-        try {
-            return line.get();
-        } catch (Throwable e) {
-            return plain;
-        }
-    }
 
     /**
      * Returns the text of a nested failure for the note {@link #describe} adds after an exception's own message: the
@@ -818,11 +828,20 @@ public final class Failures {
         if (rootMessage == null) {
             return " (caused by " + shorten(root.getClass().getName()) + ")";
         }
-        boolean hidden = !chain.stream().allMatch(t -> readableMessage(t) != null)
-                && (shown == null || !shown.contains(rootMessage));
+        boolean hidden = !allReadable(chain) && (shown == null || !shown.contains(rootMessage));
         return hidden
                 ? " (caused by " + shorten(root.getClass().getName()) + ": " + shortenBeforeEscape(rootMessage) + ")"
                 : "";
+    }
+
+    /** Tells whether every exception in a cause chain has a message that can be read (see {@link #readableMessage}). */
+    private static boolean allReadable(List<Throwable> chain) {
+        for (Throwable t : chain) {
+            if (readableMessage(t) == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -858,7 +877,7 @@ public final class Failures {
      *         already have that note
      */
     static String describeWithClass(Throwable e) {
-        String readable = read(e::toString, thrown -> null);
+        String readable = readableText(e);
         String text = clip(readable != null ? readable : textOf(e));
         String note = causeNote(causeChain(e), shownOf(readable));
         return text.contains(note) ? text : text + note;
@@ -868,16 +887,25 @@ public final class Failures {
      * Reads an exception's message without letting a failure to read it escape. The engine reads the message of what
      * rules, listeners and languages throw to describe it, and a {@code getMessage()} of their own can throw, such as
      * one built from a field that is {@code null}; a failure the engine was handling would then end as that one.
-     * Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the message unavailable (see
-     * {@link #read}). {@code mvel.ExceptionReads} keeps a copy for the {@code mvel} package, which may not use this
-     * class, and mvel's {@code ExceptionReadsCopiesTest} checks it against this one.
+     * Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the message unavailable: what an
+     * accessor of an exception the engine didn't create throws says nothing about the failure the engine is handling,
+     * which is still handled as it would be, its own fatal errors included. The accessors {@link #readableMessage},
+     * {@link #messageOr}, {@link #textOf}, {@link #readableText}, {@link #causeOf} and {@link #issuesOf} read the same
+     * way, each in a {@code try} of its own rather than through a lambda or method reference, so the JVM's first
+     * failure links no call site, which could overflow deep in a stack (#1093). {@code mvel.ExceptionReads} keeps a
+     * copy for the {@code mvel} package, which may not use this class, and mvel's {@code ExceptionReadsCopiesTest}
+     * checks it against this one.
      *
      * @param e The exception
      * @return Its message, or {@code null} if it has none, or {@code (message unavailable: ...)}, naming the class of
      *         what {@code getMessage()} threw, if it can't be read
      */
     static String messageOf(Throwable e) {
-        return read(e::getMessage, unavailable(""));
+        try {
+            return e.getMessage();
+        } catch (Throwable thrown) {
+            return unavailable("", thrown);
+        }
     }
 
     /**
@@ -888,7 +916,11 @@ public final class Failures {
      * @return Its message, or {@code null} if it has none or it can't be read
      */
     static String readableMessage(Throwable e) {
-        return read(e::getMessage, thrown -> null);
+        try {
+            return e.getMessage();
+        } catch (Throwable thrown) {
+            return null;
+        }
     }
 
     /**
@@ -900,10 +932,12 @@ public final class Failures {
      *         {@code (message unavailable: ...)} if the message can't be read
      */
     static String messageOr(Throwable e, String ifNone) {
-        return read(() -> {
+        try {
             String message = e.getMessage();
             return message != null ? message : ifNone;
-        }, unavailable(ifNone + " "));
+        } catch (Throwable thrown) {
+            return unavailable(ifNone + " ", thrown);
+        }
     }
 
     /**
@@ -914,7 +948,25 @@ public final class Failures {
      * @return Its {@code toString()}, or its class name followed by {@code (message unavailable: ...)} if that throws
      */
     static String textOf(Throwable e) {
-        return read(e::toString, unavailable(e.getClass().getName() + " "));
+        try {
+            return e.toString();
+        } catch (Throwable thrown) {
+            return unavailable(e.getClass().getName() + " ", thrown);
+        }
+    }
+
+    /**
+     * Reads an exception's {@link Throwable#toString()} as {@link #readableMessage} reads its message.
+     *
+     * @param e The exception
+     * @return Its {@code toString()}, or {@code null} if that throws
+     */
+    private static @Nullable String readableText(Throwable e) {
+        try {
+            return e.toString();
+        } catch (Throwable thrown) {
+            return null;
+        }
     }
 
     /**
@@ -922,30 +974,11 @@ public final class Failures {
      * one's own message could be what throws.
      *
      * @param prefix What goes before the note
-     * @return What turns what the accessor threw into {@code prefix} and the note
+     * @param thrown What reading the text threw
+     * @return {@code prefix} and the note
      */
-    private static Function<Throwable, String> unavailable(String prefix) {
-        return thrown -> prefix + "(message unavailable: " + thrown.getClass().getName() + ")";
-    }
-
-    /**
-     * Calls one of the accessors of an exception the engine didn't create, none of which is final, without letting
-     * anything it throws escape, a fatal {@link Error} too: what an accessor throws says nothing about the failure the
-     * engine is handling, which is still handled as it would be, its own fatal errors included.
-     * {@code mvel.ExceptionReads} keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one
-     * through {@link #messageOf} and {@link #causeChain}.
-     *
-     * @param accessor The accessor
-     * @param ifThrown What to return instead, from what the accessor threw
-     * @param <T>      What the accessor returns
-     * @return What the accessor returned, or what {@code ifThrown} makes of what it threw
-     */
-    private static <T> T read(Supplier<T> accessor, Function<Throwable, T> ifThrown) {
-        try {
-            return accessor.get();
-        } catch (Throwable thrown) {
-            return ifThrown.apply(thrown);
-        }
+    private static String unavailable(String prefix, Throwable thrown) {
+        return prefix + "(message unavailable: " + thrown.getClass().getName() + ")";
     }
 
     /**
@@ -957,7 +990,11 @@ public final class Failures {
      * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
      */
     static Throwable causeOf(Throwable e) {
-        return read(e::getCause, thrown -> null);
+        try {
+            return e.getCause();
+        } catch (Throwable thrown) {
+            return null;
+        }
     }
 
     /**
@@ -969,7 +1006,11 @@ public final class Failures {
      * @return A copy of its issues, or no issues if they can't be read
      */
     static List<InvalidExpressionException.Issue> issuesOf(InvalidExpressionException e) {
-        return read(() -> List.copyOf(e.issues()), thrown -> List.of());
+        try {
+            return List.copyOf(e.issues());
+        } catch (Throwable thrown) {
+            return List.of();
+        }
     }
 
     /**
@@ -1124,8 +1165,7 @@ public final class Failures {
         if (innermost != null && innermost.isStopFor(deadline)) {
             return true;
         }
-        return suppressedMatching(chain,
-                t -> t instanceof ReportedFailure reported && reported.isStopFor(deadline)) != null;
+        return suppressedMatching(chain, STOP, deadline) != null;
     }
 
     /**
@@ -1335,7 +1375,7 @@ public final class Failures {
             return false;
         }
         String message = readableMessage(link);
-        return message != null && !message.equals(read(cause::toString, thrown -> null))
+        return message != null && !message.equals(readableText(cause))
                 && !message.equals(readableMessage(cause)) && !message.equals(loggedText(nested))
                 && !message.equals(readableMessage(nested));
     }
@@ -1374,7 +1414,7 @@ public final class Failures {
         while (fatalAt < chain.size() - 1 && chain.get(fatalAt) != fatal) {
             fatalAt++;
         }
-        if (chain.get(fatalAt) != fatal && suppressedMatching(chain, t -> t == fatal) != null) {
+        if (chain.get(fatalAt) != fatal && suppressedMatching(chain, SAME, fatal) != null) {
             // Suppressed on a link, so below every link.
             List<Throwable> links = new ArrayList<>(chain);
             links.add(fatal);
@@ -1418,8 +1458,13 @@ public final class Failures {
      *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
      */
     public static String quoteAll(Collection<? extends @Nullable String> names) {
-        return clip(names.stream().map(name -> name == null ? "null" : shorten(name))
-                .collect(Collectors.joining(", ", "[", "]")));
+        StringBuilder list = new StringBuilder("[");
+        String separator = "";
+        for (String name : names) {
+            list.append(separator).append(name == null ? "null" : shorten(name));
+            separator = ", ";
+        }
+        return clip(list.append(']').toString());
     }
 
     /**
@@ -1431,8 +1476,14 @@ public final class Failures {
      * @return The list, its names shortened to {@value #MAX_NAME_LENGTH} characters and it to
      *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
      */
-    static String quoteJoined(Stream<String> names) {
-        return clip(names.map(name -> "'" + shorten(name) + "'").collect(Collectors.joining(", ")));
+    static String quoteJoined(Collection<String> names) {
+        StringBuilder list = new StringBuilder();
+        String separator = "";
+        for (String name : names) {
+            list.append(separator).append('\'').append(shorten(name)).append('\'');
+            separator = ", ";
+        }
+        return clip(list.toString());
     }
 
     /**
@@ -1545,7 +1596,7 @@ public final class Failures {
                 return;
             }
         }
-        if (suppressedMatching(chain, InterruptedException.class::isInstance) != null) {
+        if (suppressedMatching(chain, INTERRUPT, null) != null) {
             Thread.currentThread().interrupt();
         }
     }

@@ -88,6 +88,11 @@ final class Faults {
          */
         CANCEL_ACTION_FALLING_BACK,
         /**
+         * Describing what the output factory threw, or what a listener wrapped a fatal error in, before it has: a step
+         * that can fail when the JVM has no memory left, which then leaves a plain message, built beforehand.
+         */
+        FAILURE_DESCRIBING,
+        /**
          * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
          * failed (see {@link #reached(Step)}).
          */

@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.ChildJvm;
 import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
@@ -44,6 +45,17 @@ import static org.junit.jupiter.api.Assertions.*;
  * SLF4J's {@code Level} and {@code FormattingTuple}, which building an engine leaves to it, and a test shows that with
  * slf4j-simple, and that it initializes nothing else (#1012).
  * </p>
+ *
+ * <p>
+ * #1093: linking a lambda or a method reference makes a class too, which the same lines show, ending in
+ * {@code (no method)}, such as {@code io/github/brantunger/unruly/core/Failures$$Lambda+0x...}. The engine's code that
+ * handles a failure runs only when something fails, so a lambda in it was linked by the JVM's first failure, which
+ * could overflow deep in a stack and keep a listener from its closing callback. The scenario's failing runs, which come
+ * after runs that pass, may link no lambda or method reference of the engine's, and nothing may link one of
+ * {@link Failures}' or {@link ListenerNotifier}'s at all. Nor may those runs load or initialize any other class of
+ * the library's, with a static initializer or without, which the lines of {@code -Xlog:class+load} show too: a
+ * class's first load deep in a stack can overflow as well (#1066), so building the first engine loads them.
+ * </p>
  */
 @DisplayName("building an engine initializes the classes with static initializers engines use, before anything else "
         + "(#911, #945)")
@@ -58,6 +70,17 @@ class FirstRunClassInitializationTest {
     private static final Pattern LAMBDA_FORM = Pattern.compile(Pattern.quote(INITIALIZING)
             + "java/lang/invoke/LambdaForm\\$[A-Za-z]+\\+0x");
 
+    // A class of the library's, as -Xlog:class+init names it when it initializes it and -Xlog:class+load when it loads
+    // it, and the part of a name the JDK gives the hidden class it makes for a lambda or a method reference, as in
+    // "Initializing 'io/github/brantunger/unruly/core/Failures$$Lambda+0x...'(no method)".
+    private static final String LIBRARY_INITIALIZED = INITIALIZING + "io/github/brantunger/unruly/";
+    private static final String LIBRARY_LOADED = "[class,load] io.github.brantunger.unruly.";
+    private static final String SCENARIO_LOADED = "[class,load] " + FirstRunScenario.class.getName();
+    private static final String LAMBDA = "$$Lambda";
+    private static final String FAILURE_CODE = INITIALIZING + Failures.class.getName().replace('.', '/') + LAMBDA;
+    private static final String NOTIFIER_CODE = INITIALIZING + ListenerNotifier.class.getName().replace('.', '/')
+            + LAMBDA;
+
     private static final String RUN_CLASSES = INITIALIZING + RunClasses.class.getName().replace('.', '/') + "'";
 
     // The engine's, so the test fails if building an engine stops initializing one, rather than passing because no
@@ -71,7 +94,11 @@ class FirstRunClassInitializationTest {
                     FlightRecorderEvents.class, RunEvent.class, RuleEvent.class, Cancellation.class,
                     Cancellation.Reason.class, Deadline.class, RuleSet.Kind.class, RuleSet.Held.class, Closing.class,
                     Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
-                    ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class)
+                    ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
+                    RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
+                    LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
+                    AbstractRulesEngine.BeforeRun.class, Failures.Below.class, Failures.Reach.class,
+                    Failures.Deeper.class, ListenerNotifier.ListenerFatal.class, IsoInstant.class)
                     .map(Class::getName),
             Stream.of(RuleSet.class.getName() + "$Source", RuleSet.class.getName() + "$Warning",
                     "io.github.brantunger.unruly.api.language.NoSession",
@@ -87,7 +114,8 @@ class FirstRunClassInitializationTest {
             "java.lang.invoke.ClassSpecializer$Factory$1Var", "java.lang.ClassValue$RemovalToken",
             "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
             "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
-            "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError");
+            "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError",
+            "java.lang.invoke.WrongMethodTypeException");
 
     @Test
     @DisplayName("the scenario's first loads and runs initialize no class with a static initializer but the JDK's "
@@ -145,6 +173,20 @@ class FirstRunClassInitializationTest {
     }
 
     @Test
+    @DisplayName("the JVM's first failing runs load, initialize or link no class of the library's, a lambda's or "
+            + "method reference's included, and nothing links one of Failures' or ListenerNotifier's (#1093)")
+    void firstFailuresLoadNothing(@TempDir Path dir) throws IOException, InterruptedException {
+        // With the steps that load rules that fail to compile, or that have a validity window, after the failing runs,
+        // so no class those use first hides one that a failing run would otherwise be the first to load.
+        List<String> lines = scenario(dir, "-D" + FirstRunScenario.FAILURES_FIRST + "=true",
+                "-Xlog:class+load=info:stdout");
+
+        assertEquals(List.of(), firstUsedByFailures(lines.subList(lines.indexOf(FirstRunScenario.BUILT),
+                lines.size())), "loaded or initialized by the first failing runs, or linked by Failures or "
+                + "ListenerNotifier");
+    }
+
+    @Test
     @DisplayName("in a native image, which names no class, building the first engine initializes the engine's")
     void initializedWhenBuiltInImage(@TempDir Path dir) throws IOException, InterruptedException {
         List<String> lines = scenario(dir, "-Dorg.graalvm.nativeimage.imagecode=runtime");
@@ -193,6 +235,27 @@ class FirstRunClassInitializationTest {
             int name = line.indexOf(INITIALIZING) + INITIALIZING.length();
             return line.substring(1, line.indexOf(INITIALIZING)) + line.substring(name, line.indexOf('\'', name));
         }).toList();
+    }
+
+    // Each of the library's classes, a class the JDK made for one of its lambdas or method references included, that
+    // the lines show loaded or initialized, with or without a static initializer, in one of the scenario's failing
+    // steps, and each class the JDK made for a lambda or method reference of Failures' or ListenerNotifier's in any
+    // step, with the step. The scenario's own are left out, and so are those its first loads and its runs that pass
+    // use, which the failing steps come after.
+    private static List<String> firstUsedByFailures(List<String> lines) {
+        List<String> used = new ArrayList<>();
+        String step = "before the first step";
+        for (String line : lines) {
+            int at = Math.max(line.indexOf(LIBRARY_INITIALIZED), line.indexOf(LIBRARY_LOADED));
+            if (line.startsWith(FirstRunScenario.STEP)) {
+                step = line.substring(FirstRunScenario.STEP.length());
+            } else if (at >= 0 && !line.contains(SCENARIO) && !line.contains(SCENARIO_LOADED)
+                    && (FirstRunScenario.FAILING.contains(step) || line.startsWith(FAILURE_CODE, at)
+                    || line.startsWith(NOTIFIER_CODE, at))) {
+                used.add("\n" + step + ": " + line.substring(at));
+            }
+        }
+        return used;
     }
 
     private static List<String> notInitializedBy(List<String> lines, List<String> classNames) {

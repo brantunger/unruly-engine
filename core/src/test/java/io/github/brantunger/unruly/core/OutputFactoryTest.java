@@ -83,6 +83,25 @@ class OutputFactoryTest {
     }
 
     @Test
+    @DisplayName("#1093: a factory failure that can't be described, as when the JVM has no memory left, says only the "
+            + "class of what the factory threw")
+    void throwingFactoryUndescribed() {
+        IllegalStateException boom = new IllegalStateException("no connection");
+        RulesEngine<Map<String, Object>> engine = engineWith(ENGINES.get(0), () -> {
+            throw boom;
+        }, "true");
+        Faults.inject(Faults.Step.FAILURE_DESCRIBING, 1, new OutOfMemoryError("describing"));
+        try {
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
+
+            assertEquals("Output factory threw java.lang.IllegalStateException", ex.getMessage());
+            assertSame(boom, ex.getCause());
+        } finally {
+            Faults.clear();
+        }
+    }
+
+    @Test
     @DisplayName("a factory that returns null is reported as a factory failure")
     void nullReturningFactoryRejected() {
         for (var constructor : ENGINES) {

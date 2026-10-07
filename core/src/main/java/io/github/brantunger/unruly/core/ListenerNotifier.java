@@ -97,7 +97,43 @@ final class ListenerNotifier {
                 tally.markInterrupted();
             }
         }
-        notifyRun(runs, "onRunError", listener -> listener.onRunError(run, error), error, failing);
+        notifyRun(runs, "onRunError", new OnRunError(run, error), error, failing);
+    }
+
+    /**
+     * Calls {@link RuleListener#onRunError}. A class of its own rather than a lambda, as is {@link OnError}, so the
+     * JVM's first failure links no call site, and loaded when the JVM's first engine is built (see RunClasses), so it
+     * loads no class either, either of which could overflow deep in a stack (#1093).
+     */
+    static final class OnRunError implements Consumer<RuleListener> {
+        private final RunContext run;
+        private final RuntimeException error;
+
+        OnRunError(RunContext run, RuntimeException error) {
+            this.run = run;
+            this.error = error;
+        }
+
+        @Override
+        public void accept(RuleListener listener) {
+            listener.onRunError(run, error);
+        }
+    }
+
+    /** Calls {@link RuleListener#onError}, as {@link OnRunError} calls {@code onRunError}. */
+    static final class OnError implements Consumer<RuleListener> {
+        private final CompiledRule rule;
+        private final RuleExecutionException error;
+
+        OnError(CompiledRule rule, RuleExecutionException error) {
+            this.rule = rule;
+            this.error = error;
+        }
+
+        @Override
+        public void accept(RuleListener listener) {
+            listener.onError(rule.rule(), error);
+        }
     }
 
     /**
@@ -150,8 +186,8 @@ final class ListenerNotifier {
      */
     RuleExecutionException closedWithStop(CompiledRule rule, ReportedFailure stop) {
         // Only a rule's condition, action or output writer stops a run here, inside run(), so a run is in progress.
-        ListenerFatal thrown = listenerFatal(LoggedFailures.inProgress(), "onError",
-                listener -> listener.onError(rule.rule(), stop), null, stop);
+        ListenerFatal thrown = listenerFatal(LoggedFailures.inProgress(), "onError", new OnError(rule, stop), null,
+                stop);
         if (thrown != null) {
             Error fatal = logWrappedFromOnError(thrown, rule);
             stop.addSuppressedByEngine(fatal);
@@ -237,7 +273,15 @@ final class ListenerNotifier {
      */
     private static String listenerFatalMessage(ListenerFatal thrown, String callback, boolean wrapped) {
         String plain = "A listener threw " + thrown.fatal().getClass().getName() + " in " + callback;
-        return wrapped ? Failures.lineOr(() -> plain + ": " + Failures.describe(thrown.thrown()), plain) : plain;
+        if (!wrapped) {
+            return plain;
+        }
+        try {
+            Faults.at(Faults.Step.FAILURE_DESCRIBING);
+            return plain + ": " + Failures.describe(thrown.thrown());
+        } catch (Throwable e) {
+            return plain;
+        }
     }
 
     /**
@@ -249,7 +293,7 @@ final class ListenerNotifier {
      * @param ofTold {@code true} if it's the very fatal error of the exception the callback told listeners of, which
      *               is the run's own, whatever run logged it
      */
-    private record ListenerFatal(Error fatal, Throwable thrown, boolean ofTold) {
+    record ListenerFatal(Error fatal, Throwable thrown, boolean ofTold) {
 
         // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
         // which can fail for good when first called deep in the stack (#996). equals compares the components last
@@ -376,21 +420,23 @@ final class ListenerNotifier {
             log.warn("Listener threw exception in {}: {}", callback,
                     hasNested ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
         }
-        logStackTrace(() -> log.debug("Listener threw exception in {}", callback, thrown));
+        logStackTrace(log, "Listener threw exception in " + callback, thrown);
     }
 
     /**
-     * Makes a log call that hands the logging backend a throwable the engine didn't create, to print its stack trace.
-     * Printing it calls the {@code toString()} of the throwable, of each of its causes and of each suppressed
+     * Logs a message at DEBUG with a throwable the engine didn't create, for the logging backend to print its stack
+     * trace. Printing it calls the {@code toString()} of the throwable, of each of its causes and of each suppressed
      * exception, and one of a listener's own can throw; the stack trace is then left out, whatever was thrown, a fatal
      * {@link Error} too, rather than let that end the failure handling the call is part of (see
      * {@link Failures#messageOf}).
      *
-     * @param logCall The log call
+     * @param log     The logger
+     * @param message The message
+     * @param thrown  The throwable whose stack trace is logged
      */
-    static void logStackTrace(Runnable logCall) {
+    static void logStackTrace(Logger log, String message, Throwable thrown) {
         try {
-            logCall.run();
+            log.debug(message, thrown);
         } catch (Throwable ignored) {
             // Only the stack trace is lost; the line before it has said what failed.
         }
@@ -422,7 +468,7 @@ final class ListenerNotifier {
                 log.warn("Listener threw exception in onError, kept on the failure: {}",
                         Failures.describeWithClass(fromListener));
             }
-            logStackTrace(() -> log.debug("Listener threw exception in onError", fromListener));
+            logStackTrace(log, "Listener threw exception in onError", fromListener);
         }
     }
 
@@ -435,7 +481,7 @@ final class ListenerNotifier {
      * {@link Failures#describe}); a fatal error wrapped so is still rethrown. So is what a listener's {@code onError}
      * wrapped such an error in (see {@link #logWrappedFromOnError}).
      * An interrupt in {@code cause} has set the thread's interrupt status again already: every caller with a cause is
-     * reached through {@link AbstractRulesEngine#stoppedOrFailed}, which sets it first. Returns the exception for the
+     * reached through {@link AbstractRulesEngine#stopped}, which sets it first. Returns the exception for the
      * caller to throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
@@ -473,8 +519,8 @@ final class ListenerNotifier {
         }
         // Only a rule's condition, action or output writer, or a listener before one, fails a rule, inside run(), so a
         // run is in progress.
-        ListenerFatal thrown = listenerFatal(LoggedFailures.inProgress(), "onError",
-                listener -> listener.onError(rule.rule(), error), error, error);
+        ListenerFatal thrown = listenerFatal(LoggedFailures.inProgress(), "onError", new OnError(rule, error), error,
+                error);
         return thrown == null ? null : logWrappedFromOnError(thrown, rule);
     }
 }

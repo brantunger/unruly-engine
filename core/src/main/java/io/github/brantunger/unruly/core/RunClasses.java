@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
@@ -27,7 +28,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * engine's own steps, not for initializing classes. A {@link StackOverflowError} thrown inside a class's static
  * initializer leaves the class unusable for the life of the JVM: every later use of it, by any engine, throws
  * {@link NoClassDefFoundError}. Initializing them here, once {@link StackHeadroom#checkInitializing()} has made room
- * for it, leaves those calls nothing to initialize. In a native image, the classes it can only name are left to the
+ * for it, leaves those calls nothing to initialize. So are the few of the engine's classes without one that a rule's
+ * or a run's first failure would otherwise be the first to load, as a class's first load deep in a stack can overflow
+ * too (#1066, #1093). In a native image, the classes it can only name are left to the
  * image, which can't look a name up that it has no metadata for. A language's own classes are its to initialize, in
  * {@link ExpressionLanguage#prepare()}, which {@link #prepare(Collection)} calls with room made for it in the same way.
  *
@@ -37,10 +40,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@code FirstRunClassInitializationTest} checks the lists against the first builds, loads and runs of the engines its
  * scenario builds in a new JVM: map and bean outputs, declared facts, a fact of the wrong type and a missing one, a
  * rejected fact name, every listener callback, a failing condition, a write to read-only facts, nested runs that throw
- * a fatal error or pass their deadline, a failing load, a rule with a validity window, {@code validate()} and
- * {@code close()}. It fails if those initialize any class with a static initializer, the engine's, the JDK's or a
- * library's, other than the hidden classes the JDK makes for method handles, and if the first build initializes one
- * before this class does, other than the application's own. A path the scenario doesn't take may still initialize one,
+ * a fatal error or pass their deadline, an action that throws an exception or an error, a setter and a listener that
+ * throw, a failing load, a rule with a validity window, {@code validate()} and {@code close()}. It fails if those
+ * initialize any class with a static initializer, the engine's, the JDK's or a library's, other than the hidden classes
+ * the JDK makes for method handles, and if the first build initializes one before this class does, other than the
+ * application's own. A path the scenario doesn't take may still initialize one,
  * and so does the first message the engine logs, with a provider that logs: with slf4j-simple, it initializes SLF4J's
  * {@code Level} and {@code FormattingTuple}, which aren't initialized here. This class has no static initializer of its
  * own, which an engine built deep in a stack could break, as the lists are built only once the room is checked. What a
@@ -203,7 +207,9 @@ final class RunClasses {
     // engine's logger, which starts SLF4J and its provider if the application hasn't. FlightRecorderEvents initializes
     // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
     // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
-    // may not be there.
+    // may not be there. The last twelve have no static initializer: they are what a rule's or a run's first failure
+    // would otherwise be the first to load, which can overflow deep in a stack as initializing a class can (#1066,
+    // #1093), so they are loaded here.
     private static List<Class<?>> engineClasses() {
         return List.of(AbstractRulesEngine.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
@@ -214,22 +220,26 @@ final class RunClasses {
                 RuleSet.Kind.class, RuleSet.Held.class, RuleSet.Source.class, RuleSet.Warning.class, Closing.class,
                 Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
                 ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
-                CancelTimer.class);
+                CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
+                LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
+                AbstractRulesEngine.BeforeRun.class, Failures.Below.class, Failures.Reach.class, Failures.Deeper.class,
+                ListenerNotifier.ListenerFatal.class, IsoInstant.class);
     }
 
     // Initialized by name, as this package can't name them: the JDK's that a load or a run may be the first to use.
-    // Those are the streams' that describe a failure (Failures builds some messages with streams), ClassValue's, which
-    // caches an output's setters and a fact's properties, and those of the method handles that call them and convert a
-    // widened value, which differ between JDK releases: 21's, then 25's and later ones'. Then the method handle a
-    // load's first method reference to a compiler's method makes. None is the JDK's string concatenation's: the engine
-    // is compiled to build its strings without it (#965). A class that isn't there, as in a JDK release that has none
-    // of the name, is skipped, and in a native image none is named. The method handles' hidden classes, which the JDK
-    // makes when they are first needed, can't be named. Last, ExceptionInInitializerError, which no load or run uses,
+    // Those are the streams' that a load uses, to sort its rules, to read their tags for its checksum and to say which
+    // rules failed to compile (a failure's description uses none, #1093), ClassValue's, which caches an output's
+    // setters and a fact's properties, and those of the method handles that call them and convert a widened value,
+    // which differ between JDK releases: 21's, then 25's and later ones'. Then the method handle a load's first method
+    // reference to a compiler's method makes. None is the JDK's string concatenation's: the engine is compiled to build
+    // its strings without it (#965). A class that isn't there, as in a JDK release that has none of the name, is
+    // skipped, and in a native image none is named. The method handles' hidden classes, which the JDK makes when they
+    // are first needed, can't be named. Last, ExceptionInInitializerError, which no load or run uses,
     // but which HotSpot creates to record that a class's static initializer failed: a load whose first initialization
     // of a hidden class overflowed deep in a stack overflowed in its static initializer too, which left it unusable for
     // the life of the JVM, so that every class's static initializer that throws, anywhere in the JVM, was reported as
     // NoClassDefFoundError: Could not initialize class java.lang.ExceptionInInitializerError, without its cause
-    // (#1010).
+    // (#1010). And WrongMethodTypeException, which an output's setter that throws is the first to load (#1093).
     private static List<String> namedClasses() {
         return List.of("java.util.stream.MatchOps$MatchKind", "java.util.stream.Collectors",
                 "java.util.stream.Collector$Characteristics", "java.lang.ClassValue$ClassValueMap",
@@ -238,7 +248,8 @@ final class RunClasses {
                 "sun.invoke.util.ValueConversions$1", "java.lang.invoke.ClassSpecializer$Factory$1Var",
                 "java.lang.ClassValue$RemovalToken", "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
                 "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
-                "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError");
+                "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError",
+                "java.lang.invoke.WrongMethodTypeException");
     }
 
     /**

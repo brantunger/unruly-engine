@@ -15,14 +15,15 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds two engines
- * that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language so
- * the build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a {@link #STEP}
- * line: a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of an inline list, of
- * {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a {@code validate()} that fails,
- * a run whose condition calls a method that throws, and last, {@value #JIT_RUNS} more runs of the rule that reads a
- * property, enough for MVEL's JIT, if it's on, to compile the property's accessor: MVEL compiles one once more than
- * 50 runs have used it within 100 ms. It prints {@link #RAN} if each ended as it should, or else {@link #UNEXPECTED}
+ * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds three
+ * engines that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language
+ * so the build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a
+ * {@link #STEP} line: a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of an
+ * inline list, of {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a
+ * {@code validate()} that fails, loads of rules that call a method that throws, a run whose condition calls it and one
+ * whose action does, and last, {@value #JIT_RUNS} more runs of the rule that reads a property, enough for MVEL's JIT,
+ * if it's on, to compile the property's accessor: MVEL compiles one once more than 50 runs have used it within
+ * 100 ms. It prints {@link #RAN} if each ended as it should, or else {@link #UNEXPECTED}
  * and the steps that didn't.
  */
 final class FirstUseScenario {
@@ -42,6 +43,17 @@ final class FirstUseScenario {
     static final String SOUNDSLIKE = "a load and a run of soundslike";
     /** The step whose failing load is the first to log a message, if the engine logs. */
     static final String FAILING_NESTED_LOAD = "a load that fails, nested in a run's action";
+    /** The step whose run is the first whose MVEL condition fails. */
+    static final String CONDITION_FAILS = "a run whose condition fails";
+    /** The step whose run is the first whose MVEL action fails. */
+    static final String ACTION_FAILS = "a run whose action fails";
+    /**
+     * The system property that, set to {@code true}, has the scenario take the steps of a load and a
+     * {@code validate()} that fail after the runs whose condition and action fail rather than before them, so none
+     * of the classes those use first is loaded before the failing runs, where it would hide that a failing run would
+     * otherwise be the first to load it.
+     */
+    static final String FAILURES_FIRST = "unruly.scenario.failuresFirst";
     /** The last step's description: the runs that MVEL's JIT, if it's on, compiles the property's accessor in. */
     static final String JIT = "runs of the rule that reads a property, enough for MVEL's JIT";
     /** How many runs the last step makes: many more than the 51 that MVEL's JIT compiles an accessor after. */
@@ -81,7 +93,7 @@ final class FirstUseScenario {
         }
     }
 
-    /** A fact whose method a condition calls, which throws. */
+    /** A fact whose method a condition or an action calls, which throws. */
     public static final class Failing {
         /**
          * Throws.
@@ -101,6 +113,9 @@ final class FirstUseScenario {
         RulesEngine<Map<String, Object>> reads = RulesEngineBuilder.firstMatch(maps)
                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME).build();
         RulesEngine<Map<String, Object>> nested = RulesEngineBuilder.firstMatch(maps).build();
+        // The engine whose rule's action fails.
+        RulesEngine<Map<String, Object>> acts = RulesEngineBuilder.firstMatch(maps)
+                .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME).build();
         NestedLoad nestedLoad = new NestedLoad(nested);
         mark(BUILT);
 
@@ -127,6 +142,38 @@ final class FirstUseScenario {
         mark(STEP + SOUNDSLIKE);
         loadAndRun(engine, rule("sound", "'robert' soundslike 'rupert'", "output.put('k', 1);"), unexpected);
 
+        boolean failuresFirst = Boolean.getBoolean(FAILURES_FIRST);
+        if (!failuresFirst) {
+            failsToLoad(engine, nestedLoad, unexpected);
+        }
+
+        // Loaded in a step of their own, so the steps that fail do nothing else.
+        mark(STEP + "loads of rules that call a method that throws");
+        engine.load(List.of(Rule.builder().ruleName("calls").condition("failing.now()").action("1").build()));
+        acts.load(List.of(Rule.builder().ruleName("acts").condition("true").action("failing.now();").build()));
+        mark(STEP + CONDITION_FAILS);
+        failsToRun(engine, unexpected, CONDITION_FAILS);
+        mark(STEP + ACTION_FAILS);
+        failsToRun(acts, unexpected, ACTION_FAILS);
+        if (failuresFirst) {
+            failsToLoad(engine, nestedLoad, unexpected);
+        }
+
+        // Last, so the property's accessor is the one its first run made, and only the JIT is left to initialize.
+        mark(STEP + JIT);
+        for (int i = 0; i < JIT_RUNS; i++) {
+            reads.run(applicant);
+        }
+        mark(unexpected.isEmpty() ? RAN : UNEXPECTED + unexpected);
+        engine.close();
+        reads.close();
+        nested.close();
+        acts.close();
+    }
+
+    // A load that fails, nested in a run's action, and a validate() that fails, in steps of their own.
+    private static void failsToLoad(RulesEngine<Map<String, Object>> engine, NestedLoad nestedLoad,
+                                    List<String> unexpected) {
         mark(STEP + FAILING_NESTED_LOAD);
         engine.load(List.of(Rule.builder().ruleName("loads").condition("true").action("nested.load();").build()));
         engine.run(new FactMap<>(new Fact<>("nested", nestedLoad)));
@@ -139,25 +186,16 @@ final class FirstUseScenario {
                 .isEmpty()) {
             unexpected.add("a validate() that fails");
         }
+    }
 
-        mark(STEP + "a run whose condition fails");
-        engine.load(List.of(Rule.builder().ruleName("calls").condition("failing.now()").action("1").build()));
+    // Runs the engine with a fact whose method throws, and records the step unless the run failed as it should.
+    private static void failsToRun(RulesEngine<Map<String, Object>> engine, List<String> unexpected, String step) {
         try {
             engine.run(new FactMap<>(new Fact<>("failing", new Failing())));
-            unexpected.add("a run whose condition fails");
+            unexpected.add(step);
         } catch (RuleExecutionException expected) {
             // As it should.
         }
-
-        // Last, so the property's accessor is the one its first run made, and only the JIT is left to initialize.
-        mark(STEP + JIT);
-        for (int i = 0; i < JIT_RUNS; i++) {
-            reads.run(applicant);
-        }
-        mark(unexpected.isEmpty() ? RAN : UNEXPECTED + unexpected);
-        engine.close();
-        reads.close();
-        nested.close();
     }
 
     private static Rule rule(String name, String condition, String action) {
