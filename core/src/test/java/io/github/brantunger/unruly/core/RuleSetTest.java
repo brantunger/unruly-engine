@@ -964,6 +964,28 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("#1097 the last run leaving while retire() counts its part done: both parts are counted, and the "
+            + "compilers closed once, after the copy")
+    void partsDoneTogetherCloseTheCompilersOnce() throws InterruptedException, TimeoutException {
+        AtomicInteger made = new AtomicInteger();
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed))).build();
+        RuleSet.Copy copy = rules.borrow(deadline());
+        AtomicReference<Error> leaving = new AtomicReference<>();
+        // retire() has read that no part is done when the run leaves, the last to, and counts the idle copies'
+        // part, so retire()'s compare-and-set fails, and it reads the parts again.
+        Faults.watch(Faults.Step.PARTS_DONE_READ, () -> leaving.set(rules.release(copy)));
+        try {
+            assertNull(rules.retire(), "no fatal error retiring");
+        } finally {
+            Faults.clear();
+        }
+
+        assertNull(leaving.get(), "no fatal error leaving");
+        assertEquals(List.of(1, 0), closed, "the copy closed, then the compilers, once");
+    }
+
+    @Test
     @DisplayName("runs waiting for a permit when the rule set is retired take the copies given back, so they make none,"
             + " and each copy is closed once, before the compilers, when the last run leaves")
     void waitingRunsShareTheCopiesOfARetiredRuleSet() throws InterruptedException {

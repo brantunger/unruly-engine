@@ -7,7 +7,6 @@ import org.mvel2.compiler.CompiledExpression;
 import org.mvel2.compiler.ExpressionCompiler;
 
 import java.nio.CharBuffer;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -216,8 +215,15 @@ final class MvelAnalysis extends ExpressionCompiler {
             return null;
         }
         String[] parts = name.replace("[]", "").split("\\.");
-        return Arrays.stream(parts).noneMatch(JAVA_KEYWORDS::contains)
-                && !TYPE_WORDS.contains(parts[parts.length - 1]) ? name : null;
+        // A loop rather than a stream and a method reference: this runs only when compiling fails, and the JVM's
+        // first such failure, maybe deep in a stack, would link the method reference and first use the JDK's stream
+        // classes there, either of which can overflow (#1097).
+        for (String part : parts) {
+            if (JAVA_KEYWORDS.contains(part)) {
+                return null;
+            }
+        }
+        return TYPE_WORDS.contains(parts[parts.length - 1]) ? null : name;
     }
 
     private static Set<String> typeWords() {

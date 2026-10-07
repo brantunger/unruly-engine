@@ -525,9 +525,17 @@ final class RuleListCompiler {
     }
 
     private static RuleCompilationException combined(List<RuleCompilationException> failures) {
-        String what = failures.stream().allMatch(failure -> failure.getRuleName() != null)
-                ? " rules failed to compile: "
-                : " failures while loading the rules: ";
+        // A loop rather than a stream and a lambda: only a load with two or more failures comes here, and the JVM
+        // links a lambda the first time its call site runs, which makes a class and takes more stack than the engine's
+        // checks make room for, so the JVM's first such load, maybe deep in a stack, could overflow here, and throw
+        // that in place of its failures (#1097).
+        String what = " rules failed to compile: ";
+        for (RuleCompilationException failure : failures) {
+            if (failure.getRuleName() == null) {
+                what = " failures while loading the rules: ";
+                break;
+            }
+        }
         // Bounded, as a rule table loaded after a breaking change can fail thousands of rules at once. Whole failures
         // are left out, not characters, so this doesn't go through Failures.truncate: each message is built from
         // parts shortened and escaped one at a time, so a single message isn't capped at MAX_DESCRIPTION_LENGTH, and

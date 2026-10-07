@@ -26,10 +26,15 @@ final class CopyPermits {
     // How many permits have been given back, so a run that is waiting can tell an engine that is busy from one whose
     // copies are never coming back.
     private final AtomicLong givenBack = new AtomicLong();
+    // The count read as the awaitPermit seam reads one; made once, here, rather than as a method reference on each
+    // wait (see Returned).
+    private final Returned permitsReturned;
     // Fair, so a run that is waiting isn't overtaken for ever by runs arriving later.
     private final Semaphore slots;
     // How many slots have been given back, for the same reason as givenBack.
     private final AtomicLong slotsGivenBack = new AtomicLong();
+    // The same for the slots.
+    private final Returned slotsReturned;
 
     /**
      * Creates the permits for a limit, and one build slot for each processor, counted once, here.
@@ -50,6 +55,8 @@ final class CopyPermits {
     CopyPermits(int limit, int slots) {
         this.semaphore = new Semaphore(limit);
         this.slots = new Semaphore(slots, true);
+        this.permitsReturned = new Returned(givenBack);
+        this.slotsReturned = new Returned(slotsGivenBack);
     }
 
     /**
@@ -94,7 +101,7 @@ final class CopyPermits {
      * @throws TimeoutException     if the deadline comes before a permit does
      */
     boolean awaitPermit(long window, Deadline deadline) throws InterruptedException, TimeoutException {
-        return awaitPermit(semaphore, givenBack::get, window, deadline);
+        return awaitPermit(semaphore, permitsReturned, window, deadline);
     }
 
     /**
@@ -166,7 +173,7 @@ final class CopyPermits {
      * @throws InterruptedException if the thread is interrupted while it waits
      */
     boolean awaitSlot(long window, Deadline deadline) throws InterruptedException {
-        return awaitSlot(slots, slotsGivenBack::get, window, deadline);
+        return awaitSlot(slots, slotsReturned, window, deadline);
     }
 
     /**
@@ -217,5 +224,27 @@ final class CopyPermits {
         slotsGivenBack.incrementAndGet();
         slots.release();
         Faults.at(Faults.Step.SLOT_RELEASED);
+    }
+
+    /**
+     * A count of permits or slots given back, read as a {@link LongSupplier}. A class of its own rather than a method
+     * reference, such as {@code givenBack::get}: the JVM links a method reference the first time its call site runs,
+     * which makes a class and takes more stack than the engine's checks make room for, and only a run that has to wait
+     * for a permit, or looks for a build slot, runs these, so the JVM's first such run, maybe deep in a stack, could
+     * overflow there, and the run would throw a {@link StackOverflowError} in place of waiting or taking a slot
+     * (#1097). Loaded when the JVM's first engine is built (see RunClasses).
+     */
+    static final class Returned implements LongSupplier {
+
+        private final AtomicLong count;
+
+        Returned(AtomicLong count) {
+            this.count = count;
+        }
+
+        @Override
+        public long getAsLong() {
+            return count.get();
+        }
     }
 }

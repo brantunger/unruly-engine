@@ -150,6 +150,13 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
                 MvelExpression.class, MVEL.class, ParseTools.class, OperatorNode.class, Operator.class,
                 AtomicReference.class, CallSites.class, MathProcessor.class, DataConversion.class,
                 PropertyHandlerFactory.class, GetterAccessor.class, CalledCodeFailures.class, MvelCompileErrors.class));
+        // This module's classes without a static initializer that a load that fails would otherwise be the first to
+        // load: a condition that assigns, a class called like a method, an import with too many parts, and the place
+        // of either in the text. A class's first load deep in a stack can overflow as initializing one can (#1066,
+        // #1097).
+        initialize(MethodHandles.lookup(), List.of(ConditionAssignments.Write.class, MvelCompileErrors.Position.class,
+                Imports.ClassCalledLikeMethod.class, Imports.ImportTooLarge.class));
+        MvelCompileErrors.warmUp();
         // A rule's first use of one of the JDK's classes by its name, such as new java.util.ArrayList(), looks its
         // class file up first (see FactNames.mayBeClass), which on JDK 25 initializes the JDK's class that finds the
         // files of its own modules, so this looks one up. Through this module's own class loader, which needs no

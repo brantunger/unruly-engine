@@ -7,13 +7,10 @@ import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.BitSet;
 import java.util.List;
-import java.util.regex.MatchResult;
+import java.util.NoSuchElementException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 /**
  * How an MVEL compile error reads: turns what compiling an expression threw, or what the compiler found in a
@@ -75,12 +72,28 @@ final class MvelCompileErrors {
     }
 
     /**
-     * A place in an expression's text, as MVEL's own compile errors give one.
+     * Reads a message as MVEL writes one for a compile error, with the regular expressions this class reads MVEL's
+     * position and description with, so the JDK's classes their first match uses, such as {@code Matcher} and its
+     * {@code IntHashSet}, are loaded now: the JVM's first compile error, maybe deep in a stack, would otherwise be the
+     * first to load them, which can overflow, and the error would be reported as the overflow (#1097). Called by
+     * {@link MvelExpressionLanguage#prepare()}.
+     */
+    static void warmUp() {
+        String message = ERROR_START + UNKNOWN_CLASS + ": Zzz[]" + NEAR + "x ....}]\n[Line: 1, Column: 1]";
+        POSITION.matcher(message).find();
+        ERROR.matcher(message).find();
+        UNKNOWN_ARRAY_TYPE.matcher(UNKNOWN_CLASS + ": Zzz[]").matches();
+    }
+
+    /**
+     * A place in an expression's text, as MVEL's own compile errors give one. Not private, so
+     * {@link MvelExpressionLanguage#prepare()} can load it: a failed load's first use of it, maybe deep in a stack,
+     * could overflow loading it (#1097).
      *
      * @param line   The line, counting from 1
      * @param column The column, counting from 1
      */
-    private record Position(int line, int column) {
+    record Position(int line, int column) {
 
         // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
         // which can fail for good when first called deep in the stack (#996). equals compares the components last
@@ -153,11 +166,12 @@ final class MvelCompileErrors {
     static InvalidExpressionException importTooLarge(String text, Imports.ImportTooLarge e) {
         // Where the scan reads code: a literal or a comment is skipped whole, as the check for assignments in a
         // condition skips it. A comment that doesn't end takes the index to the end of the text, and a literal that
-        // doesn't end, past it.
-        BitSet code = new BitSet(text.length());
+        // doesn't end, past it. An array rather than a BitSet, whose first use, here in a failing load, would
+        // initialize it, maybe deep in a stack (#1097).
+        boolean[] code = new boolean[text.length()];
         int index = 0;
         while (index < text.length()) {
-            code.set(index);
+            code[index] = true;
             index = switch (text.charAt(index)) {
                 case '\'', '"' -> ConditionAssignments.endOfLiteral(text, index);
                 case '/' -> ConditionAssignments.endOfSlash(text, index);
@@ -168,11 +182,25 @@ final class MvelCompileErrors {
         // import is in code as MVEL reads it. The scan reads comments and literals as MVEL does (#747), so it finds
         // MVEL's import in code. The first match in the text is the answer only if that ever failed, and is still a
         // place in the text, so the position is always within it.
-        List<MatchResult> imports = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")")
-                .matcher(text).results().toList();
-        // The first in code, and only if there is none, the first of all: the stream reads the second part lazily.
-        int at = Stream.concat(imports.stream().filter(found -> code.get(found.start())), imports.stream())
-                .findFirst().orElseThrow().start(1);
+        Matcher imports = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")")
+                .matcher(text);
+        // The first in code, and only if there is none, the first of all. A loop rather than a stream and a lambda:
+        // this runs only when a load fails, and the JVM's first such load, maybe deep in a stack, would link the
+        // lambda and first use the JDK's stream classes there, either of which can overflow (#1012, #1097).
+        int at = -1;
+        while (at < 0 && imports.find()) {
+            if (code[imports.start()]) {
+                at = imports.start(1);
+            }
+        }
+        if (at < 0) {
+            // With no import of the name in the text at all, which MVEL never passes, the scan fails as a stream's
+            // findFirst().orElseThrow() did.
+            if (!imports.reset().find()) {
+                throw new NoSuchElementException("No value present");
+            }
+            at = imports.start(1);
+        }
         Position position = positionOf(text, at);
         String description = e.describedWithin(roomAfter(messageStart(position.line(), position.column())));
         return at(position.line(), position.column(), description, e);
@@ -189,7 +217,13 @@ final class MvelCompileErrors {
      * @return {@code true} if an imported class was called like a method
      */
     static boolean calledLikeMethod(RuntimeException e) {
-        return ExceptionReads.causeChain(e).stream().anyMatch(Imports.ClassCalledLikeMethod.class::isInstance);
+        // A loop rather than a stream and a method reference, as in looped() (#1097).
+        for (Throwable link : ExceptionReads.causeChain(e)) {
+            if (link instanceof Imports.ClassCalledLikeMethod) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -312,7 +346,15 @@ final class MvelCompileErrors {
      * @return {@code true} if MVEL's analysis went round in a loop
      */
     static boolean looped(CompileException e) {
-        return ExceptionReads.causeChain(e).stream().anyMatch(Imports.AnalysisLoop.class::isInstance);
+        // A loop rather than a stream and a method reference: every compile error comes here first, and the JVM's
+        // first, maybe deep in a stack, would link the method reference and first use the JDK's stream classes there,
+        // either of which can overflow, and the compile error would be reported as the overflow (#1097).
+        for (Throwable link : ExceptionReads.causeChain(e)) {
+            if (link instanceof Imports.AnalysisLoop) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -464,7 +506,7 @@ final class MvelCompileErrors {
         Throwable root = chain.get(chain.size() - 1);
         if (!errors.isEmpty()) {
             description = oneLine(errors, room);
-        } else if (chain.stream().anyMatch(MvelCompileErrors::packageImportUnread)) {
+        } else if (packageImportUnread(chain)) {
             description = PACKAGE_IMPORT_TOO_FAR;
         } else if (nullPointerInMvel(root)) {
             description = BADLY_FORMED;
@@ -575,9 +617,36 @@ final class MvelCompileErrors {
      * @return {@code true} if it's a {@link StringIndexOutOfBoundsException} thrown reading a package import's name
      */
     private static boolean packageImportUnread(Throwable link) {
-        return link instanceof StringIndexOutOfBoundsException && Arrays.stream(ExceptionReads.stackTraceOf(link))
-                .anyMatch(frame -> IMPORT_NODE_CLASS.equals(frame.getClassName())
-                        && PACKAGE_IMPORT_METHOD.equals(frame.getMethodName()));
+        if (!(link instanceof StringIndexOutOfBoundsException)) {
+            return false;
+        }
+        // A loop rather than a stream and a lambda, as in packageImportUnread(List) (#1097).
+        for (StackTraceElement frame : ExceptionReads.stackTraceOf(link)) {
+            if (IMPORT_NODE_CLASS.equals(frame.getClassName())
+                    && PACKAGE_IMPORT_METHOD.equals(frame.getMethodName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Tells whether any exception in a compile error's cause chain is MVEL failing to read a package import's name
+     * (see {@link #packageImportUnread(Throwable)}).
+     *
+     * @param chain What MVEL threw, and its causes
+     * @return {@code true} if one of them is
+     */
+    private static boolean packageImportUnread(List<Throwable> chain) {
+        // A loop rather than a stream and a method reference: this runs only when a load fails, and the JVM's first
+        // such load, maybe deep in a stack, would link the method reference and first use the JDK's stream classes
+        // there, either of which can overflow, and the compile error would be reported as the overflow (#1097).
+        for (Throwable link : chain) {
+            if (packageImportUnread(link)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

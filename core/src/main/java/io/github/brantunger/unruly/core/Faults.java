@@ -121,7 +121,13 @@ final class Faults {
          * The cancel timer about to wait for the next action due, holding the timer's lock. Watched only, never failed
          * (see {@link #reached(Step)}).
          */
-        CANCEL_TIMER_WAITING(true);
+        CANCEL_TIMER_WAITING(true),
+        /**
+         * A rule set marking a part done that its compilers wait for, once it has read the parts done, before it
+         * records its own, so a test can record another meanwhile. Watched only, never failed (see
+         * {@link #reached(Step)}).
+         */
+        PARTS_DONE_READ(true);
 
         // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
         private final boolean watchOnly;

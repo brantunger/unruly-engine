@@ -6,11 +6,13 @@ import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
+import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 
 import java.lang.invoke.MethodHandles;
@@ -41,7 +43,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * scenario builds in a new JVM: map and bean outputs, declared facts, a fact of the wrong type and a missing one, a
  * rejected fact name, every listener callback, a failing condition, a write to read-only facts, nested runs that throw
  * a fatal error or pass their deadline, an action that throws an exception or an error, a setter and a listener that
- * throw, a failing load, a rule with a validity window, {@code validate()} and {@code close()}. It fails if those
+ * throw, a failing load, a load with two failures, a write no setter accepts, a run that waits for a copy, one on a
+ * virtual thread that looks for a build slot, a failed borrow of rules a load replaced, a rule with a validity window,
+ * {@code validate()} and {@code close()}. It fails if those
  * initialize any class with a static initializer, the engine's, the JDK's or a library's, other than the hidden classes
  * the JDK makes for method handles, and if the first build initializes one before this class does, other than the
  * application's own. A path the scenario doesn't take may still initialize one,
@@ -207,9 +211,10 @@ final class RunClasses {
     // engine's logger, which starts SLF4J and its provider if the application hasn't. FlightRecorderEvents initializes
     // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
     // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
-    // may not be there. The last twelve have no static initializer: they are what a rule's or a run's first failure
-    // would otherwise be the first to load, which can overflow deep in a stack as initializing a class can (#1066,
-    // #1093), so they are loaded here.
+    // may not be there. The twelve before the last five have no static initializer: they are what a rule's or a run's
+    // first failure would otherwise be the first to load, which can overflow deep in a stack as initializing a class
+    // can (#1066, #1093), so they are loaded here. So are the last five, which the JVM's first wait for a copy and its
+    // first failed load, in any language, would otherwise be the first to load or initialize (#1097).
     private static List<Class<?>> engineClasses() {
         return List.of(AbstractRulesEngine.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
@@ -223,13 +228,17 @@ final class RunClasses {
                 CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
                 LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
                 AbstractRulesEngine.BeforeRun.class, Failures.Below.class, Failures.Reach.class, Failures.Deeper.class,
-                ListenerNotifier.ListenerFatal.class, IsoInstant.class);
+                ListenerNotifier.ListenerFatal.class, IsoInstant.class, CopyPermits.Returned.class,
+                RuleCompilationException.class, InvalidExpressionException.class,
+                InvalidExpressionException.Issue.class, MessageText.class);
     }
 
     // Initialized by name, as this package can't name them: the JDK's that a load or a run may be the first to use.
-    // Those are the streams' that a load uses, to sort its rules, to read their tags for its checksum and to say which
-    // rules failed to compile (a failure's description uses none, #1093), ClassValue's, which caches an output's
-    // setters and a fact's properties, and those of the method handles that call them and convert a widened value,
+    // Those are the streams' that a load uses, to sort its rules and to read their tags for its checksum (a failure's
+    // description uses none, #1093, nor does saying which rules failed to compile, #1097), and MatchOps' kinds, which a
+    // language's first load may be the first to use, as MVEL's does to check a name it looks up as a class's
+    // (ExactNameClassLoader.isBinaryName and inNestedLookup), ClassValue's, which caches an output's setters and a
+    // fact's properties, and those of the method handles that call them and convert a widened value,
     // which differ between JDK releases: 21's, then 25's and later ones'. Then the method handle a load's first method
     // reference to a compiler's method makes. None is the JDK's string concatenation's: the engine is compiled to build
     // its strings without it (#965). A class that isn't there, as in a JDK release that has none of the name, is
