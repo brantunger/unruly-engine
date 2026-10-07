@@ -41,13 +41,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * MVEL's: {@code CollectionParser}, {@code NewObjectNode} and {@code Soundex}. #1097: a first load that fails for an
  * import with too many parts initializes MVEL's {@code ImportNode}, and one for a package import too far into the
  * text for MVEL to read, the JDK's {@code Formatter}, its {@code FormatSpecifier} and {@code Locale.Category}, which
- * MVEL's own message uses. Its first read of a property through its
- * getter initializes none, as {@code prepare()} initializes {@code GetterAccessor}, whose empty array every call of a
- * method without arguments reads. With the engine logging, as an application's SLF4J provider may, the first message it
- * logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple. The test checks that each
- * step initializes exactly those, so it fails if one stops reaching its class, and if a step initializes any other. It
- * is checked with MVEL's JIT on, as it is by default, and off, as in a native image, which sets MVEL's optimizer up
- * with other classes, and with the engine logging.
+ * MVEL's own message uses. #1099: the load of a rule MVEL goes round in a loop running, the JDK's classes that read a
+ * generic type, which MVEL's analysis reads for {@code java.lang.String.class}, and which differ between JDK releases,
+ * so the test says rather than checks which. Its first read of a property through
+ * its getter initializes none, as {@code prepare()} initializes {@code GetterAccessor}, whose empty array every call of
+ * a method without arguments reads. With the engine logging, as an application's SLF4J provider may, the first message
+ * it logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple. The test checks that
+ * each step initializes exactly those, so it fails if one stops reaching its class, and if a step initializes any
+ * other. It is checked with MVEL's JIT on, as it is by default, and off, as in a native image, which sets MVEL's
+ * optimizer up with other classes, and with the engine logging.
  * </p>
  *
  * <p>
@@ -70,6 +72,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code MvelCompileErrors} describes the error only then; and in those steps and the failing runs, a class the JDK
  * makes for a lambda or a method reference of anyone's, the JDK's own included, counts as well, and so does a class of
  * the JDK's regular expressions, which the first compile error reads MVEL's message with.
+ * </p>
+ *
+ * <p>
+ * #1099: nor may MVEL's first loop, in its analysis or in a run, nor its first load and first run that ask for the
+ * class loader so many times that its loop detection walks the stack, though they succeed, nor its first lookup of a
+ * name with a {@code $} and too many parts, which walks it too. Building the engine walks it once each way, so with
+ * the failures last, none of them initializes the JDK's classes that walk it either, and the walks read the stack with
+ * loops, so none of those steps, nor any failing one, may load a class of the JDK's streams.
  * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
@@ -101,6 +111,13 @@ class FirstUseClassInitializationTest {
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Locale$Category",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter$FormatSpecifier");
+    // What the load of a rule MVEL goes round in a loop running may initialize, which prepare() leaves to it (#1099):
+    // the JDK's classes that read a generic type. MVEL's analysis reads the generic return type of a method for
+    // java.lang.String.class, a Class<?> (PropertyVerifier.getReturnType, Method.getGenericReturnType), as it does
+    // for any rule that reads a class's class, a first use on a normal load that predates #1099. Which of them it
+    // initializes differs between JDK releases, 5 on 21, 6 on 25 and 9 on 26, so they are left out by their package,
+    // in that step alone, and the run that goes round in a loop, in the step after it, may initialize none.
+    private static final String GENERICS_READ = FirstUseScenario.RUN_LOOP_LOAD + ": sun/reflect/generics/";
     // What the first message logged initializes, with slf4j-simple, which building an engine leaves to it.
     private static final List<String> BY_LOGGING = List.of(
             FirstUseScenario.FAILING_NESTED_LOAD + ": org/slf4j/event/Level",
@@ -133,7 +150,12 @@ class FirstUseClassInitializationTest {
     private static final List<String> FAILING = List.of(FirstUseScenario.CONDITION_FAILS,
             FirstUseScenario.ACTION_FAILS, FirstUseScenario.CONDITION_ASSIGNS, FirstUseScenario.LOAD_FAILS,
             FirstUseScenario.CLASS_CALLED, FirstUseScenario.IMPORT_TOO_LARGE, FirstUseScenario.PACKAGE_IMPORT_UNREAD,
-            FirstUseScenario.FAILING_NESTED_LOAD, FirstUseScenario.VALIDATE_FAILS);
+            FirstUseScenario.FAILING_NESTED_LOAD, FirstUseScenario.VALIDATE_FAILS, FirstUseScenario.ANALYSIS_LOOP,
+            FirstUseScenario.RUN_LOOP, FirstUseScenario.NESTED_NAME_TOO_LARGE);
+    // The steps whose load or run is the JVM's first to ask for the class loader so many times that MVEL's loop
+    // detection walks the stack, which succeed, and must load, initialize or link no more than a failing one (#1099).
+    private static final List<String> WALKING = List.of(FirstUseScenario.MANY_CALLS_LOAD,
+            FirstUseScenario.MANY_CALLS_RUN);
     // What -Xlog:class+load begins a class's name with, any class's, and the part of a name the JDK gives the hidden
     // class it makes for a lambda or a method reference, which in a failing step is flagged whoever's it is, the JDK's
     // own included (#1097).
@@ -142,6 +164,10 @@ class FirstUseClassInitializationTest {
     // A class of the JDK's regular expressions, as -Xlog:class+load names it, which a failing step may not load either:
     // the first compile error reads MVEL's message with them, so prepare() reads one first (#1097).
     private static final String REGEX_LOADED = LOADED + "java.util.regex.";
+    // A class of the JDK's streams, as -Xlog:class+load names it, which a failing or walking step may not load either:
+    // the walks read the stack with loops, not a stream's limit, count or anyMatch, whose first use loads classes
+    // without a static initializer or a lambda, such as ReduceOps$CountingSink, deep in a stack (#1099).
+    private static final String STREAM_LOADED = LOADED + "java.util.stream.";
     // Set by Unreachable's static initializer, and read here, as reading a field of Unreachable would initialize it.
     private static final AtomicBoolean UNREACHABLE_INITIALIZED = new AtomicBoolean();
 
@@ -190,7 +216,8 @@ class FirstUseClassInitializationTest {
     @Test
     @DisplayName("the JVM's first runs whose MVEL condition or action fails, and its first loads and validate() that "
             + "fail, load, initialize or link no class of the engine's or this module's, a lambda's or method "
-            + "reference's included, nor any lambda, nor a class of the JDK's regular expressions (#1093, #1097)")
+            + "reference's included, nor any lambda, nor a class of the JDK's regular expressions or streams, nor do "
+            + "its first loops and walks of the stack (#1093, #1097, #1099)")
     void firstFailuresLoadNothing(@TempDir Path dir) throws IOException, InterruptedException {
         // With the steps of a load and a validate() that fail after the failing runs, so no class those use first hides
         // one that a failing run would otherwise be the first to load.
@@ -206,12 +233,12 @@ class FirstUseClassInitializationTest {
                 at = Math.max(line.indexOf(INITIALIZING), line.indexOf(LOADED));
             }
             if (at < 0) {
-                at = line.indexOf(REGEX_LOADED);
+                at = Math.max(line.indexOf(REGEX_LOADED), line.indexOf(STREAM_LOADED));
             }
             if (line.startsWith(FirstUseScenario.STEP)) {
                 step = line.substring(FirstUseScenario.STEP.length());
             } else if (at >= 0 && !line.contains(SCENARIO) && !line.contains(SCENARIO_LOADED)
-                    && FAILING.contains(step)) {
+                    && (FAILING.contains(step) || WALKING.contains(step))) {
                 used.add("\n" + step + ": " + line.substring(at));
             }
         }
@@ -292,7 +319,10 @@ class FirstUseClassInitializationTest {
             } else if (at >= 0 && !line.contains(NO_INITIALIZER) && !line.contains(SCENARIO)
                     && !LAMBDA_FORM.matcher(line).find()) {
                 int name = at + INITIALIZING.length();
-                initialized.add(step + ": " + line.substring(name, line.indexOf('\'', name)));
+                String entry = step + ": " + line.substring(name, line.indexOf('\'', name));
+                if (!entry.startsWith(GENERICS_READ)) {
+                    initialized.add(entry);
+                }
             }
         }
         return initialized;

@@ -4,6 +4,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -77,6 +78,13 @@ final class CallSites {
     // What tells the site of the call under way.
     private static final LongSupplier WHOLE_STACK = CallSites::hashOfStack;
     private static final LongSupplier TOP_AND_DEPTH = CallSites::hashOfTopAndDepth;
+    // What the walks read the stack with: classes of their own, not lambdas or method references, which the JVM links
+    // the first time each runs, and linking one makes a class. The first walk may be deep in a stack, where that could
+    // overflow (#1099). Created here, so preparing MVEL, which initializes this class, loads them.
+    private static final Function<Stream<StackWalker.StackFrame>, Long> WHOLE_STACK_HASH =
+            new FramesHash(Long.MAX_VALUE);
+    private static final Function<Stream<StackWalker.StackFrame>, Long> TOP_HASH = new FramesHash(RUN_FRAMES);
+    private static final Function<Stream<StackWalker.StackFrame>, Long> DEPTH = new FrameCount();
 
     // Whether the whole stack tells a site, as in MVEL's analysis, or its top frames and its depth, as in a run.
     private final boolean wholeStack;
@@ -169,7 +177,14 @@ final class CallSites {
         if (!exact && callsMade < nextWalk) {
             return false;
         }
-        long[] siteCalls = callsBySite.computeIfAbsent(site.getAsLong(), key -> new long[1]);
+        // Not computeIfAbsent with a lambda, which the first walk would link (#1099). The count belongs to one pass
+        // or one run, which one thread makes at a time.
+        Long walked = site.getAsLong();
+        long[] siteCalls = callsBySite.get(walked);
+        if (siteCalls == null) {
+            siteCalls = new long[1];
+            callsBySite.put(walked, siteCalls);
+        }
         if (exact) {
             siteCalls[0]++;
         } else {
@@ -219,27 +234,25 @@ final class CallSites {
         return 1 + Math.floorMod(gapState, 2L * SAMPLED_EVERY - 1);
     }
 
+    /**
+     * Walks the stack once each way a site is told, by the whole stack and by its top and its depth, so the JDK's
+     * classes that walk it are loaded, and those that have a static initializer initialized, before a first pass or run
+     * walks it, maybe deep in a stack (#1099). Only {@link MvelExpressionLanguage#prepare()} calls this.
+     */
+    static void warmUp() {
+        hashOfStack();
+        hashOfTopAndDepth();
+    }
+
     // A hash of every frame of the stack.
     private static long hashOfStack() {
-        return WALKER.walk(frames -> {
-            long hash = 0;
-            for (Iterator<StackWalker.StackFrame> each = frames.iterator(); each.hasNext(); ) {
-                hash = hash * PRIME + frame(each.next());
-            }
-            return hash;
-        });
+        return WALKER.walk(WHOLE_STACK_HASH);
     }
 
     // A hash of the RUN_FRAMES frames at the top of the stack, and how many frames it has.
     private static long hashOfTopAndDepth() {
-        long top = WALKER.walk(frames -> {
-            long hash = 0;
-            for (Iterator<StackWalker.StackFrame> each = frames.limit(RUN_FRAMES).iterator(); each.hasNext(); ) {
-                hash = hash * PRIME + frame(each.next());
-            }
-            return hash;
-        });
-        return top * PRIME + COUNTER.walk(Stream::count);
+        long top = WALKER.walk(TOP_HASH);
+        return top * PRIME + COUNTER.walk(DEPTH);
     }
 
     // A frame's class name and the index in its method's code of the call it is making. The method's name isn't read:
@@ -247,5 +260,45 @@ final class CallSites {
     // sites count as one.
     private static long frame(StackWalker.StackFrame frame) {
         return frame.getClassName().hashCode() * 31L + frame.getByteCodeIndex();
+    }
+
+    /**
+     * A hash of the frames at the top of the stack, up to a number of them, read with a loop rather than a stream's
+     * {@code limit}, whose first use would link the JDK's own lambdas (#1099).
+     */
+    private static final class FramesHash implements Function<Stream<StackWalker.StackFrame>, Long> {
+
+        // How many frames are read: Long.MAX_VALUE for every one.
+        private final long frames;
+
+        FramesHash(long frames) {
+            this.frames = frames;
+        }
+
+        @Override
+        public Long apply(Stream<StackWalker.StackFrame> stack) {
+            long hash = 0;
+            Iterator<StackWalker.StackFrame> each = stack.iterator();
+            for (long read = 0; read < frames && each.hasNext(); read++) {
+                hash = hash * PRIME + frame(each.next());
+            }
+            return hash;
+        }
+    }
+
+    /**
+     * How many frames the stack has, counted with a loop rather than a stream's {@code count}, whose first use would
+     * load the JDK's classes that reduce a stream (#1099).
+     */
+    private static final class FrameCount implements Function<Stream<StackWalker.StackFrame>, Long> {
+
+        @Override
+        public Long apply(Stream<StackWalker.StackFrame> stack) {
+            long count = 0;
+            for (Iterator<StackWalker.StackFrame> each = stack.iterator(); each.hasNext(); each.next()) {
+                count++;
+            }
+            return count;
+        }
     }
 }

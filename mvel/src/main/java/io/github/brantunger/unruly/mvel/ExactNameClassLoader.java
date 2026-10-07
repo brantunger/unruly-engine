@@ -3,8 +3,11 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.language.MessageText;
 import org.mvel2.MVEL;
 
+import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * The class loader MVEL compiles rules with. It asks the application's class loader for every class, unless the name
@@ -150,6 +153,10 @@ final class ExactNameClassLoader extends ClassLoader {
     // MVEL's lookup of a nested class, which turns the dots of a name into $ one at a time, and the class it is in.
     private static final String NESTED_LOOKUP_CLASS = ExceptionReads.MVEL_PACKAGE + "util.ParseTools";
     private static final String NESTED_LOOKUP_METHOD = "findInnerClass";
+    // What reads the stack for that lookup: a class of its own, not a lambda, which the JVM links the first time it
+    // runs, and linking one makes a class. The first refused name with a '$' may be looked up deep in a stack, where
+    // that could overflow (#1099). Created here, so preparing MVEL, which initializes this class, loads it.
+    private static final Function<Stream<StackWalker.StackFrame>, Boolean> NESTED_LOOKUP = new NestedLookup();
 
     // What a native image built with strict reachability metadata throws for a name it has no metadata for.
     private static final String MISSING_REGISTRATION = "org.graalvm.nativeimage.MissingReflectionRegistrationError";
@@ -400,9 +407,7 @@ final class ExactNameClassLoader extends ClassLoader {
      * @return {@code true} if {@code ParseTools.findInnerClass} is on the calling thread's stack
      */
     private static boolean inNestedLookup() {
-        return StackWalker.getInstance().walk(frames -> frames.anyMatch(frame
-                -> NESTED_LOOKUP_CLASS.equals(frame.getClassName())
-                && NESTED_LOOKUP_METHOD.equals(frame.getMethodName())));
+        return StackWalker.getInstance().walk(NESTED_LOOKUP);
     }
 
     /**
@@ -456,6 +461,25 @@ final class ExactNameClassLoader extends ClassLoader {
 
         NameTooLarge(String message) {
             super(message);
+        }
+    }
+
+    /**
+     * Tells whether {@code ParseTools.findInnerClass} is among the frames of a stack, read with a loop rather than a
+     * stream's {@code anyMatch}, whose first use would link the JDK's own lambdas (#1099).
+     */
+    private static final class NestedLookup implements Function<Stream<StackWalker.StackFrame>, Boolean> {
+
+        @Override
+        public Boolean apply(Stream<StackWalker.StackFrame> frames) {
+            for (Iterator<StackWalker.StackFrame> each = frames.iterator(); each.hasNext(); ) {
+                StackWalker.StackFrame frame = each.next();
+                if (NESTED_LOOKUP_CLASS.equals(frame.getClassName())
+                        && NESTED_LOOKUP_METHOD.equals(frame.getMethodName())) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }
