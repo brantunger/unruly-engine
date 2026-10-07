@@ -12,6 +12,8 @@ module io.github.brantunger.unruly {
     requires mvel2;
     // MVEL logs through java.util.logging; the engine filters one of its records (see MvelWarningFilter).
     requires java.logging;
+    // The engine's logger, which MvelExpressionCompiler logs to as core does.
+    requires org.slf4j;
 
     exports io.github.brantunger.unruly.mvel;
     // To MVEL alone, which reads the value MvelExpressionLanguage.prepare() evaluates on by reflection.

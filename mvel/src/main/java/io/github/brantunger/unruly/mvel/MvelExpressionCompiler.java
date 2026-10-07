@@ -4,12 +4,16 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
+import org.jspecify.annotations.Nullable;
 import org.mvel2.CompileException;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -17,12 +21,19 @@ import java.util.Set;
  */
 final class MvelExpressionCompiler implements ExpressionCompiler {
 
+    // The name of the engine's logger, as its documentation gives it: core's AbstractRulesEngine.LOGGER_NAME is
+    // package-private, and the core module doesn't export its package. The logger is got only when a scan gives up, so
+    // MVEL's first load initializes no class of SLF4J's for it.
+    static final String LOGGER_NAME = "io.github.brantunger.unruly.engine";
+
     private final Imports imports;
     private final FactNames factNames;
     // Every expression compiled, for warmUp(). Only load()'s thread compiles and warms up, so a plain list will do.
     private final List<MvelExpression> compiled = new ArrayList<>();
     // Every name the compiled expressions could read a fact by, for factNamesRead(), kept by load()'s thread too.
     private final Set<String> namesRead = new HashSet<>();
+    // Whether namesRead holds every name, false once an expression had a word too long to scan (see RuleText.addNames).
+    private boolean namesKnown = true;
 
     /**
      * Creates the compiler for one rule list.
@@ -55,11 +66,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     private MvelExpression compile(Expression source) {
         MvelAnalysis analysis = new MvelAnalysis(source.text(), imports);
+        MvelExpression expression;
         try {
-            MvelExpression expression = MvelExpression.compile(analysis);
-            compiled.add(expression);
-            RuleText.addNames(source.text(), namesRead);
-            return expression;
+            expression = MvelExpression.compile(analysis);
         } catch (CompileException e) {
             if (MvelCompileErrors.looped(e)) {
                 throw MvelCompileErrors.analysisLoop(e);
@@ -92,6 +101,31 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             }
             throw MvelCompileErrors.plainRejection(e);
         }
+        compiled.add(expression);
+        // Outside the try, which covers only MVEL's compile, so nothing the scan throws, such as an SLF4J provider
+        // failing in its logging, reaches the arms that classify MVEL's failures.
+        if (namesKnown) {
+            namesAdded(source);
+        }
+        return expression;
+    }
+
+    /**
+     * Adds the names an expression compiled could read a fact by to {@link #namesRead}, or, if it has a word too long
+     * to scan, forgets them all, so {@link #factNamesRead()} says MVEL can't tell, and logs at DEBUG which rule and
+     * which limit, once for the rule list, as no later expression is scanned.
+     *
+     * @param source The expression
+     */
+    private void namesAdded(Expression source) {
+        String limit = RuleText.addNames(source.text(), namesRead);
+        if (limit != null) {
+            namesKnown = false;
+            namesRead.clear();
+            LoggerFactory.getLogger(LOGGER_NAME).debug("MVEL checks every fact for this rule list: the {} of rule '{}'"
+                    + " has {}, too long to scan for the names it reads", source.kind().name().toLowerCase(Locale.ROOT),
+                    MessageText.escape(source.ruleName()), limit);
+        }
     }
 
     /**
@@ -123,18 +157,31 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     /**
      * Returns the names the compiled conditions and actions could read a fact by, as {@link RuleText#addNames} finds
-     * them in their text, which is a best effort both ways. It holds more names than they read, such as the words of
-     * a string literal, a comment or a class's name. It can also miss a name MVEL reads whole, such as {@code \a} in
-     * {@code 1-\a} or {@code a.b} in {@code a.b--}: a name that isn't an identifier, glued to a minus sign, or read by
-     * {@code isdef} up to a comment. So a fact no MVEL rule names, such as one named {@code in} that only another
-     * language's rules read, isn't checked by MVEL. The words among the names are only a best guess at the names a
+     * them in their text: each identifier, and for each word between MVEL's whitespace, every span of it that starts
+     * at the word's start, just after one of the ends {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}, or just
+     * after {@code isdef} glued to the name that follows it, and stops at the word's end or just before a character
+     * that isn't part of an identifier, and each backslash and high surrogate alone. So {@code \a} in {@code 1-\a},
+     * {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in {@code isdef#a} and {@code ,a}
+     * in {@code ,a#b} are among them. It holds more names than they read, such as the words of a string literal, a
+     * comment or a class's name, and spans MVEL reads as several names, which are only a best guess at the names a
      * rule's author meant, such as {@code my-fact} in {@code my-fact == 1}, which MVEL reads as {@code my} minus
-     * {@code fact}.
+     * {@code fact}. So a fact no MVEL rule names, such as one named {@code in} that only another language's rules
+     * read, isn't checked by MVEL. It can still miss a name MVEL reads with whitespace in it, such as one
+     * {@code isdef} reads up to a comment on a later line (#1089).
      *
-     * @return The names
+     * <p>
+     * Returns {@code null}, so MVEL checks every fact, once a condition or action has a word of more than 1,000
+     * characters, or with more than 64 characters that aren't part of an identifier, each one just after
+     * {@code isdef} counted twice, the most characters and parts an import may have, as a word's spans grow as the
+     * square of those.
+     * </p>
+     *
+     * @return The names, or {@code null} if a word was too long to scan
      */
+    // null says MVEL can't tell which facts its rules read, as ExpressionCompiler.factNamesRead() allows.
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     @Override
-    public Set<String> factNamesRead() {
-        return Set.copyOf(namesRead);
+    public @Nullable Set<String> factNamesRead() {
+        return namesKnown ? Set.copyOf(namesRead) : null;
     }
 }

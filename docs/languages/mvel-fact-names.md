@@ -25,9 +25,10 @@ while MVEL is the [default language](../glossary.md#default-language). Then, in 
 1. **`output` is rejected**, whatever the rules read: it's the output object's name. See
    [The name output](#-the-name-output).
 2. **MVEL checks the names its rules' text holds.** A fact whose name the text of the list's MVEL conditions and
-   actions holds, as a name or a word, must be one MVEL can read as that fact; see
+   actions holds, as a name or in a word, must be one MVEL can read as that fact; see
    [Fact names MVEL rejects](#-fact-names-mvel-rejects). Any other fact isn't checked by MVEL; see
-   [Which fact names MVEL checks](#-which-fact-names-mvel-checks).
+   [Which fact names MVEL checks](#-which-fact-names-mvel-checks). A word too long to scan makes MVEL check every
+   fact ([When MVEL checks every fact](#when-mvel-checks-every-fact)).
 
 ```mermaid
 flowchart TD
@@ -35,13 +36,15 @@ flowchart TD
     B -- "no" --> C["MVEL doesn't check it"]
     B -- "yes" --> D{"Named output?"}
     D -- "yes" --> E["run() throws IllegalArgumentException"]
-    D -- "no" --> F{"Does the MVEL rules' text hold the name?"}
+    D -- "no" --> S{"Was every word of the MVEL rules' text short enough to scan?"}
+    S -- "yes" --> F{"Does the MVEL rules' text hold the name?"}
+    S -- "no" --> G
     F -- "no" --> C
     F -- "yes" --> G{"A name MVEL can read as that fact?"}
     G -- "yes" --> H["Accepted"]
     G -- "no" --> E
     class A step
-    class B,D,F,G decision
+    class B,D,S,F,G decision
     class C,H ok
     class E fail
     classDef step     fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
@@ -59,8 +62,9 @@ every declared fact's name with it, whatever the text holds: their failures can 
 `Declared fact 'empty' can't be used`.
 
 > [!NOTE]
-> Up to 2.27.0, MVEL checked every fact's name, whatever its rules' text held, and reserved `output` for every rule
-> list, so a declared `output` failed `build()`.
+> Up to 2.28.0, MVEL checked every fact's name, whatever its rules' text held, and reserved `output` for every rule
+> list, so a declared `output` failed `build()`. From 2.29.0 to 2.29.3, its scan missed some names MVEL reads whole,
+> so a run accepted a fact it now rejects, such as `my-fact` with `my-fact-1 == 0`, or `a.b` with `a.b--`.
 
 ## 🚫 Fact names MVEL rejects
 
@@ -119,39 +123,69 @@ As `load()` or `validate()` compiles each condition and action, MVEL scans its t
 fact by. Strings and comments are scanned too. The names are:
 
 - each identifier, such as `applicant` and `creditScore` in `applicant.creditScore`;
-- each word, split four ways: at whitespace alone; at whitespace, brackets, commas, quotes and operators such as `==`,
-  `&&` and `?`; the same without the comma; and those with `* / + %` too;
-- each part of a word between dots.
+- each span of a word, as below;
+- each backslash alone, and the first half alone of each character Java stores as two `char`s, as MVEL can read
+  either as a name.
 
-MVEL then checks only the facts named in that set. So:
+A **word** is a run of text between MVEL's whitespace, which is every character up to U+0020: a space or a line break
+ends a word, and a no-break space doesn't. A character is **part of an identifier** if it's a letter, a digit, `_`, `$`,
+or another character Java allows in an identifier. A span of a word starts at any of these places:
+
+- the word's start;
+- just after one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .`;
+- just after an `isdef` that starts the word or follows one of those characters, when the next character isn't part
+  of an identifier, as in `isdef#a`.
+
+From each start, a span ends at the word's end, and another just before each later character that isn't part of an
+identifier, so a span can hold such characters. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and
+`my-fact-1`. A fact `my-fact` is then checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact`
+minus 1. In the same way, `a.b--` gives `a.b`, `(,a) == 5` gives `,a`, and `isdef#a` gives `#a`.
+
+MVEL then checks only the facts named in that set. So, unless
+[MVEL checks every fact](#when-mvel-checks-every-fact):
 
 - another language's rules in the same list can read a fact `in`, when no MVEL rule's text holds `in`;
-- a name no rule's text can hold, one with a space or a line break such as `first name`, is never rejected by MVEL;
+- a name with a space or a line break, such as `first name`, is never rejected by MVEL, as no span or identifier
+  holds one;
 - an empty rule list, with MVEL as the default language, checks no name against MVEL's rules; `output` is still
   rejected.
 
+### When MVEL checks every fact
+
+A word's spans grow as the square of its characters that aren't part of an identifier. So the scan gives up on a word
+of more than 1,000 characters, or with more than 64 such characters, each one just after `isdef` counted twice: the
+most characters and dot-separated parts an import may have. A word at both limits gives up to 2,145 names, scanned in
+about 0.4 ms.
+
+Once one condition or action gives up, MVEL can't tell which facts the rule list reads, so it checks every fact, as
+it did up to 2.28.0: each run's facts and each declared fact. A fact such as `in` or `Math`, which no MVEL rule names,
+is then rejected for that rule list. Such a word is most often a long string literal without spaces, such as Base64
+data. To keep the narrower check, pass that value as a fact instead.
+
+`load()` and `validate()` log this once each time they compile such a rule list, at DEBUG on the engine's logger
+`io.github.brantunger.unruly.engine`, naming the first such condition or action and its rule:
+
+```text
+MVEL checks every fact for this rule list: the condition of rule 'm' has a word of more than 1000 characters, too long to scan for the names it reads
+```
+
+For the other limit, the line says
+`a word with more than 64 characters that aren't part of an identifier, each one just after isdef counted twice`. See
+[Logging setup](../listeners-and-logging.md#-logging-setup).
+
 ### A best effort both ways
 
-The scan finds extra names, such as the words of a comment. That's harmless: a fact by such a name is checked, as
-every fact was up to 2.27.0.
+The scan finds extra names, such as the words of a comment, and spans MVEL reads as several names, such as `my-fact`
+in `my-fact-1`. That's harmless: a fact by such a name is checked, as every fact was up to 2.28.0.
 
-It also misses some names MVEL reads. A fact by such a name isn't checked, so a rule can read it, or read other facts
-in its place:
-
-- **A name glued to a minus sign.** A word isn't split at `-`, as that would split `my-fact` itself. With facts `my`
-  and `fact` present, `my-fact-1 == 0` computes `my` minus `fact` minus 1, and a fact `my-fact` isn't rejected.
-  `my-fact == 1`, `(my-fact)`, `my-fact*2` and `my-fact.equals(1)` still reject it. `a.b--` reads a fact named `a.b`,
-  unchecked.
-
-- **Some names with punctuation in them that `isdef` reads up to a comment**, such as `a!b` in `isdef a!b/**/`.
-
-- **Some odd names**, such as a fact named `\` alone, which MVEL reads from `\\a`; one named with the first half alone
-  of a character Java stores as two `char`s, such as U+D835, read from U+1D465 (a mathematical italic x); or `\a`
-  between an operator and a comma, as in `java.lang.Math.max(1+\a,2)`.
+It can miss a name with MVEL's whitespace inside it, as no word holds one. A line break is such a character, and
+`isdef` reads a name up to a comment, even one on a later line. The condition `isdef ,a//c`, a line break, then
+`/**/` reads a fact named by that whole text, from `,a` to `/**/`. Unless
+[MVEL checks every fact](#when-mvel-checks-every-fact), a fact by such a name isn't checked, so the rule reads it.
 
 > [!WARNING]
 > This departs from the [`factNamesRead()` contract](custom.md#-fact-names), which asks a language for more names,
-> never fewer. Don't rely on MVEL to reject a fact named like those above. A follow-up issue tracks these gaps.
+> never fewer. Don't rely on MVEL to reject a fact whose name holds a line break or another character up to U+0020.
 
 ## 📤 The name output
 

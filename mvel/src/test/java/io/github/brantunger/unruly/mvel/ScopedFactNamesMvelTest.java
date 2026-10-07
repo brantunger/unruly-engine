@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.TestLogs;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
@@ -13,7 +14,9 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.core.EngineLogs;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -268,20 +271,21 @@ class ScopedFactNamesMvelTest {
     }
 
     /**
-     * The known gap of the words MVEL takes a fact's name from, which are only its best guess at what a rule's author
-     * meant: a word glued to a minus sign, such as {@code my-fact-1}, isn't split there, as that would split
-     * {@code my-fact} too, so a fact named {@code my-fact} isn't checked, and MVEL reads {@code my} minus {@code fact}
-     * minus 1 from facts by those names.
+     * A word glued to a minus sign, such as {@code my-fact-1}, adds each span of it between minus signs, so a fact
+     * named {@code my-fact} is still checked, and rejected, rather than MVEL reading {@code my} minus {@code fact}
+     * minus 1 from facts by those names (#1089).
      */
     @Test
-    @DisplayName("best effort: a fact named my-fact isn't checked where the rule glues it to a minus, as my-fact-1")
-    void wordGluedToAMinusNotChecked() {
+    @DisplayName("a fact named my-fact is still rejected where the rule glues it to a minus, as my-fact-1 (#1089)")
+    void wordGluedToAMinusStillChecked() {
         try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
                 HashMap::new).language(new MvelExpressionLanguage()).build()) {
             engine.load(List.of(Rule.builder().ruleName("m").condition("my-fact-1 == 0").action("output.put('r', 1)")
                     .build()));
-            assertEquals(Map.of("r", 1), engine.run(new FactMap<>(new Fact<>("my-fact", 1), new Fact<>("my", 3),
-                    new Fact<>("fact", 2))));
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(new FactMap<>(
+                    new Fact<>("my-fact", 1), new Fact<>("my", 3), new Fact<>("fact", 2))));
+            assertEquals("'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java"
+                    + " identifier", ex.getMessage());
         }
     }
 
@@ -312,6 +316,112 @@ class ScopedFactNamesMvelTest {
                     () -> engine.run(new FactMap<>(new Fact<>(fact, 5))));
             assertTrue(ex.getMessage().endsWith("' is not a valid fact name: rules can only refer to a fact named with"
                     + " a Java identifier"), ex.getMessage());
+        }
+    }
+
+    static Stream<Arguments> wordsAtTheLimits() {
+        String ends = "a" + ",a".repeat(Imports.MAX_IMPORT_PARTS - 2);
+        String chars = "a".repeat(Imports.MAX_IMPORT_LENGTH - 2);
+        // The # just after isdef counts twice: with the quotes, the commas make the word's count the limit.
+        String isdef = "isdef#a" + ",a".repeat(Imports.MAX_IMPORT_PARTS - 4);
+        return Stream.of(
+                Arguments.of(Imports.MAX_IMPORT_PARTS + " ends", "'" + ends + "' != null", true),
+                Arguments.of(Imports.MAX_IMPORT_PARTS + 1 + " ends", "'" + ends + ",a' != null", false),
+                Arguments.of(Imports.MAX_IMPORT_PARTS + " ends, one after isdef", "'" + isdef + "' != null", true),
+                Arguments.of(Imports.MAX_IMPORT_PARTS + 1 + " ends, one after isdef", "'" + isdef + ",a' != null",
+                        false),
+                Arguments.of(Imports.MAX_IMPORT_LENGTH + " characters", "'" + chars + "' != null", true),
+                Arguments.of(Imports.MAX_IMPORT_LENGTH + 1 + " characters", "'" + chars + "a' != null", false));
+    }
+
+    /**
+     * A word's spans grow as the square of its ends, so a word with more ends than an import has parts, one just after
+     * isdef counted twice, or more characters than an import may have, isn't scanned: MVEL then can't tell which facts
+     * its rules read, and checks every fact, so a fact named with a keyword no rule names is rejected, though it's read
+     * at the limit (#1089).
+     */
+    @ParameterizedTest(name = "a word with {0}")
+    @MethodSource("wordsAtTheLimits")
+    void wordPastTheLimitsChecksEveryFact(String word, String condition, boolean scoped) {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            engine.load(List.of(Rule.builder().ruleName("m").condition(condition).action("output.put('r', 1)")
+                    .build()));
+            assertEquals(scoped ? Map.of("r", 1) : "'in' cannot be used as a fact name: MVEL reads it as a keyword or"
+                    + " class name, so rules would never see the fact", run(engine, "in"));
+        }
+    }
+
+    /**
+     * The load says at DEBUG why MVEL checks every fact, naming the rule and the limit its word went past, once for the
+     * rule list: the action, past the limits too, compiles after the condition gave up, so it isn't scanned (#1089).
+     */
+    @Test
+    @DisplayName("a word past the limits is logged at DEBUG once for the rule list, naming the rule and the limit")
+    void wordPastTheLimitsLogged() {
+        String word = "'" + "a".repeat(Imports.MAX_IMPORT_LENGTH) + "'";
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            String logs = TestLogs.logsOf(() -> engine.load(List.of(Rule.builder().ruleName("m\n")
+                    .condition(word + " != null").action("output.put('r', " + word + ")").build())));
+
+            String line = "DEBUG " + EngineLogs.ENGINE_LOGGER + "MVEL checks every fact for this rule list: the"
+                    + " condition of rule 'm\\n' has a word of more than " + Imports.MAX_IMPORT_LENGTH
+                    + " characters, too long to scan for the names it reads";
+            assertTrue(logs.contains(line), logs);
+            assertEquals(logs.indexOf("MVEL checks every fact"), logs.lastIndexOf("MVEL checks every fact"), logs);
+        }
+    }
+
+    static Stream<Arguments> readWholeBetweenEnds() {
+        String put = "output.put('r', 1)";
+        return Stream.of(
+                Arguments.of("glued to a minus sign", "true", "a.b--\n; " + put, "a.b", "a.b"),
+                Arguments.of("read by isdef up to a comment", "isdef a!b/**/", put, "a!b", "a!b"),
+                Arguments.of("a backslash read from two", "\\\\a == 5", put, "\\", "\\"),
+                Arguments.of("a high surrogate read alone", "\ud835\udc65", put, "\ud835", "\\ud835"),
+                Arguments.of("an operator on its left and a comma on its right", "java.lang.Math.max(1+\\a,2) == 6",
+                        put, "\\a", "\\a"));
+    }
+
+    static Stream<Arguments> readWholeAfterIsdefOrBeforeAStop() {
+        String put = "output.put('r', 1)";
+        String x = Character.toString(0x1D465);
+        return Stream.of(
+                Arguments.of("glued to isdef", "isdef#a", put, "#a"),
+                Arguments.of("glued to isdef", "isdef,,a", put, ",,a"),
+                Arguments.of("glued to isdef", "isdef.a/**/", put, ".a"),
+                Arguments.of("glued to isdef", "(isdef\\a)", put, "\\a"),
+                Arguments.of("glued to isdef", "isdef¬a", put, "¬a"),
+                Arguments.of("glued to isdef", "isdef" + x + "/**/", put, x),
+                Arguments.of("before a character not part of an identifier", ",a#b", put, ",a"),
+                Arguments.of("before a character not part of an identifier", ",a^b", put, ",a"),
+                Arguments.of("before a character not part of an identifier", ",a\\", put, ",a"),
+                Arguments.of("before a character not part of an identifier", ",a`", put, ",a"),
+                Arguments.of("before a character not part of an identifier", ",a ", put, ",a"),
+                Arguments.of("before a character not part of an identifier", ",a" + x, put, ",a"))
+                .map(arguments -> Arguments.of(arguments.get()[0], arguments.get()[1], arguments.get()[2],
+                        arguments.get()[3], MessageText.escape((String) arguments.get()[3])));
+    }
+
+    /**
+     * The five kinds of text MVEL reads a fact by a whole name in that no word of the text was (#1089), and the two
+     * the scan missed after: a name glued to {@code isdef}, and one that ends at a character neither an end nor part
+     * of an identifier. Each name is now among the spans of a word, or a backslash or a high surrogate alone, so it's
+     * checked, and the run rejected before any rule runs, rather than the rule reading the fact, or failing on it. The
+     * message quotes the name as the engine does, with a surrogate escaped.
+     */
+    @ParameterizedTest(name = "{0}: {1} | {2}, fact {3}")
+    @MethodSource({"readWholeBetweenEnds", "readWholeAfterIsdefOrBeforeAStop"})
+    void nameReadWholeBetweenEndsChecked(String kind, String condition, String action, String fact,
+                                         String quoted) {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            engine.load(List.of(Rule.builder().ruleName("m").condition(condition).action(action).build()));
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                    () -> engine.run(new FactMap<>(new Fact<>(fact, 5))));
+            assertEquals("'" + quoted + "' is not a valid fact name: rules can only refer to a fact named with a Java"
+                    + " identifier", ex.getMessage());
         }
     }
 }

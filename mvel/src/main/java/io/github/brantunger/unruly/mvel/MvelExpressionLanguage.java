@@ -39,10 +39,16 @@ import java.util.concurrent.atomic.AtomicReference;
  *     {@code in}, and isn't a class name MVEL resolves instead, such as {@code Math} or an imported class, nor the
  *     first part of the name of a class the rule list's expressions name with its package, such as {@code java} for
  *     {@code java.lang.Integer.MAX_VALUE}, or find through an import. MVEL checks a fact's name only where the text of
- *     the rule list's MVEL expressions holds it, as a name or as a word, such as {@code my-fact} in
- *     {@code my-fact == 1}. That is a best effort: a name glued to a minus sign, as in {@code my-fact-1}, which MVEL
- *     reads as {@code my} minus {@code fact} minus 1, isn't checked, nor are some names MVEL reads whole that aren't
- *     identifiers, such as {@code \a} in {@code 1-\a}.</li>
+ *     the rule list's MVEL expressions holds it: as a name, or as a span of a word, a run of text between MVEL's
+ *     whitespace (U+0000 to U+0020), that starts at the word's start, just after one of its ends, or just after
+ *     {@code isdef} glued to the name that follows it, and stops at the word's end or just before a character that
+ *     isn't part of an identifier, an end being one of {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}, such
+ *     as {@code my-fact} in {@code my-fact == 1} or {@code my-fact-1}, which MVEL reads as {@code my} minus
+ *     {@code fact}, {@code \a} in {@code 1-\a}, {@code #a} in {@code isdef#a} or {@code ,a} in {@code ,a#b}; or as a
+ *     backslash or a high surrogate alone. That is a best effort: a name MVEL reads with whitespace in it, such as one
+ *     {@code isdef} reads up to a comment on a later line, isn't checked. MVEL checks every fact for a rule list with
+ *     a word of more than 1,000 characters, or with more than 64 characters that aren't part of an identifier,
+ *     each one just after {@code isdef} counted twice.</li>
  *     <li>MVEL caches accessors in a compiled expression without synchronization, so each session, which one run
  *     uses at a time, runs its own compiled copy of each expression.</li>
  *     <li>MVEL's imports are Java packages and classes, given with

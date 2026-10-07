@@ -142,8 +142,9 @@ of that feature fails, and after the JIT's, every other accessor's first compile
 
 ## 🪵 MVEL's own logging
 
-MVEL logs through `java.util.logging` (JUL), not SLF4J, under loggers named `org.mvel2` and below. With the JDK's
-default JUL configuration, a record goes to standard error, whatever the application's SLF4J provider does.
+The MVEL library logs through `java.util.logging` (JUL), not SLF4J, under loggers named `org.mvel2` and below. With
+the JDK's default JUL configuration, a record goes to standard error, whatever the application's SLF4J provider does.
+The engine's MVEL module logs through SLF4J.
 
 One of those loggers can carry a fact value. When a method call or an indexed read fails inside MVEL, most often
 because MVEL can't convert a fact to the method's parameter type, its

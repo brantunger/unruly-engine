@@ -129,9 +129,11 @@ class ModulePathTest {
         }
     }
 
+    // All the library's logging goes through SLF4J: core's, and MVEL's when its fact-name scan gives up (#1089). The
+    // test kit logs nothing, so it doesn't require it.
     @Test
-    @DisplayName("only the core module requires SLF4J, as only its classes log with it")
-    void onlyCoreRequiresSlf4j() {
+    @DisplayName("the core and MVEL modules require SLF4J, as only their classes log, and the test kit doesn't")
+    void coreAndMvelRequireSlf4j() {
         ModuleFinder finder = ModuleFinder.of(MODULE_PATH.toArray(Path[]::new));
 
         for (String module : List.of("io.github.brantunger.unruly.core", "io.github.brantunger.unruly",
@@ -140,7 +142,7 @@ class ModulePathTest {
                     .map(ModuleDescriptor.Requires::name)
                     .toList();
 
-            assertEquals(module.endsWith(".core"), requires.contains("org.slf4j"), module + " requires " + requires);
+            assertEquals(!module.endsWith(".test"), requires.contains("org.slf4j"), module + " requires " + requires);
         }
     }
 

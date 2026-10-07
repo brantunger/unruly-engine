@@ -279,7 +279,7 @@ also walks the stack for its trace.
 
 The engine depends only on the **SLF4J 2.x API**. Without a provider on the classpath, SLF4J prints
 `No SLF4J providers were found` and discards every message. Spring Boot already includes Logback; other
-applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. MVEL logs through
+applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. `org.mvel2` logs through
 `java.util.logging`; see [MVEL's own logging](languages/mvel-gotchas.md#-mvels-own-logging).
 
 | Logger | Level | Messages |
@@ -300,6 +300,7 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. MVE
 | `io.github.brantunger.unruly.engine` | `WARN` | An action a language registered with [`onCancel`](stopping-runs.md#-what-a-timeout-doesnt-do), or the `unruly-cancel-timer` thread, failing: `An action a language registered for the run's deadline failed: <class>: <message>` or `... couldn't be started: <class>: <message>`; once, `... has run for over 1000 ms, and is still running: it should only tell the runtime to stop, ...`; `The cancel timer failed, and another has been started for the actions still pending: <class>: <message>`, `... failed, and the actions still pending wait for the next one registered to start another: ...` or `... failed with no action pending: ...`. `<class>: <message>` reads as in the `Listener threw exception` row |
 | `io.github.brantunger.unruly.engine` | `DEBUG` | The stack trace of an exception a listener threw |
 | `io.github.brantunger.unruly.engine` | `DEBUG` | `The engine records no Flight Recorder events here, because they can't be loaded: <error>`, once, where the event classes can't be loaded, such as a native image without Flight Recorder |
+| `io.github.brantunger.unruly.engine` | `DEBUG` | [`MVEL checks every fact ...`](languages/mvel-fact-names.md#when-mvel-checks-every-fact) |
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
 | `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` (JUL) | `WARNING` | A failed method call, often with a fact value unescaped; dropped during the engine's MVEL rules |
 
@@ -318,10 +319,9 @@ the engine logger's level to handle logging yourself.
 > JUL loggers, whose failed-call `WARNING` the engine drops while a rule runs; see
 > [MVEL's own logging](languages/mvel-gotchas.md#-mvels-own-logging).
 
-The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. In 1.x it
-was `io.github.brantunger.unruly.core.AbstractRulesEngine`. The parent logger **`io.github.brantunger.unruly`** covers
-the engine and `LoggingRuleListener`: Logback, Log4j 2 and Spring Boot apply a logger's level to every logger under
-its name, and a more specific setting still takes precedence, as the `LoggingRuleListener` line below shows.
+The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. The parent
+logger **`io.github.brantunger.unruly`** covers the engine and `LoggingRuleListener`: Logback, Log4j 2 and Spring
+Boot apply a logger's level to every logger under its name, and a more specific setting still takes precedence.
 
 **Logback** (`logback.xml`):
 

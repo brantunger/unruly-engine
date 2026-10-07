@@ -174,8 +174,8 @@ application whose rules all name other languages can depend on `unruly-engine-co
 
 `unruly-engine` is still the module `io.github.brantunger.unruly`, and `unruly-engine-core` is the module
 `io.github.brantunger.unruly.core`. They export only the API packages, not `io.github.brantunger.unruly.core`, which
-only the test kit can read. `unruly-engine-core` requires SLF4J, and `unruly-engine` requires MVEL. 1.x declared no
-module, only an `Automatic-Module-Name`, which requires nothing.
+only the test kit can read. Both require SLF4J; `unruly-engine` requires MVEL too. 1.x declared no module, only an
+`Automatic-Module-Name`, which requires nothing.
 
 So a Gradle application on the module path now fails to start, as Gradle puts MVEL's unnamed jar on the class
 path, where nothing satisfies the engine's `requires mvel2`:
