@@ -53,7 +53,7 @@ Every example below was checked against the engine. For the full language, see t
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
 An action changes `output` in place, by calling a method, such as `output.setInterestRate(4.5)` or `output.put(...)`,
-or assigning a property. An assignment such as `output.approved = true` isn't always the same as calling the
+or assigning a property. An assignment isn't always the same as calling the
 setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
 each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
 
@@ -64,7 +64,7 @@ So does setting a property the output has no setter or public field for, such as
 that isn't a `Map`: `output.approved = true` fails with `could not access property (approved) in: java.lang.Boolean`,
 which names the value's type, not the output's.
 
-Inside a `def` function, `output = ...` doesn't fail: it creates a function-local variable, and the function's
+Inside a `def` function, `output = ...` doesn't fail: it creates a function-local variable, and its
 later `output.put(...)` calls change the discarded object.
 
 Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates a variable local to the action:
@@ -271,8 +271,10 @@ argument 50 brackets deep.
 
 **A call after a package-qualified class and a non-ASCII space**, such as `java.lang.String.class`, then U+00A0, then
 `(2)`, passes `load()`; a run reaching it fails the rule within milliseconds, even past the deadline, with
-`MVEL went round in a loop while running the expression, ...`. `def` recursion past 10,000 deep, importing a package,
-on a huge stack, is misreported as a loop.
+`MVEL went round in a loop while running the expression, ...`.
+[Deep in a stack](mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack), both loops can run to 10,000 + 20 ×
+length + length² / 4 calls in all. `def` recursion past 10,000 deep, importing a package, on a huge stack, is
+misreported as a loop.
 
 **On JDK 21, package-qualified calls nested hundreds deep are slow**, needing a large stack: 450 deep in a
 `foreach` took 7 s to load and run (3 s unchecked); 1,000 deep in a condition, 26 s (5 s). JDK 26: 4 s and 10 s.
@@ -291,7 +293,7 @@ Why MVEL needs [compiled copies](../compiled-copies.md), and their cost.
 MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact name
 to a different class, as with several implementations of an interface, or a `Map` in one run and a record in another,
 MVEL replaces that accessor without synchronization. Two threads sharing the expression could fail intermittently
-with a `RuleExecutionException` caused by a `ClassCastException`. So concurrent runs never share a compiled expression:
+with a `RuleExecutionException` caused by a `ClassCastException`. So concurrent runs never share one:
 each copy holds its own in its session.
 
 A copy is built lazily:
@@ -348,9 +350,8 @@ stays above it:
 - An argument's code, such as `code.value` in `output.put('a', code.value)`, when the optimizer compiled the
   argument but not the call around it, which can happen while it compiles and then last.
 
-An exception whose `getMessage()` throws is lost until one evaluation of the expression succeeds: MVEL reads the
-message as it wraps the exception, so what `getMessage()` threw becomes the cause. Later failures read
-`(message unavailable: …)`.
+An exception whose `getMessage()` throws is lost until one evaluation of the expression succeeds, as MVEL reads the
+message while wrapping it; see [Calling Java code](mvel-gotchas.md#-calling-java-code).
 
 ## 🧵 Virtual threads
 
@@ -369,7 +370,7 @@ So on JDK 21 to 23:
 
 - use JDK 24 or later, where a virtual thread waiting on a monitor releases its carrier (JEP 491). It
   still keeps its carrier while the JVM looks up a class, which MVEL does whenever it compiles an
-  expression, including each time a run makes a new compiled copy (see
+  expression, including for each new compiled copy (see
   [Making copies at load](../compiled-copies.md#making-copies-at-load));
 - otherwise run MVEL rules on platform threads, or keep all your engines' copies together below
   `jdk.virtualThreadScheduler.parallelism`, by default the number of processors.

@@ -48,6 +48,16 @@ import java.util.stream.Stream;
  * turn on counting every call, which only a very long chain has done, near its end, and then ask from more than
  * {@value #MAX_SITES} sites after that, before the pass or run ends.
  * </p>
+ *
+ * <p>
+ * A walk takes more room on the stack than the engine's checks of the room make sure of, the same whatever the stack's
+ * depth, and with too little it overflows in the JDK's code that walks it, usually as the walk starts, sometimes as it
+ * fetches more frames (#1102); nothing is counted until the walk returns. Deep in a stack, where a walk of the stack
+ * has no room, the walk is skipped and its calls count at no site: the walks after it
+ * come where they would have, and the next that has room counts only the calls since the one skipped. So a valid
+ * expression's calls are never counted as more than they were, and where no walk has room, no site passes the bound:
+ * only the limit in all stops a loop then, with the loop's own error, after far more calls than the bound allows.
+ * </p>
  */
 final class CallSites {
 
@@ -156,11 +166,15 @@ final class CallSites {
 
     /**
      * Counts a call for the class loader, from the site a function tells, which is asked only for a call that is
-     * walked. Only for tests, which give each call's site: {@link #counted()} reads it from the stack.
+     * walked. Only for tests, which give each call's site: {@link #counted()} reads it from the stack. If the function
+     * throws {@link StackOverflowError}, as a walk of the stack with no room does, or an {@link InternalError} with one
+     * in its cause chain, as such a walk may on JDK 25 and 26, the walk is skipped: the calls it would have counted
+     * count at no site, and the next walk comes where it would have (#1102). Any other {@link InternalError} is thrown
+     * as it is.
      *
      * @param site Tells the call's site
      * @return {@code true} if the call's site has now made more calls than it may, counted at every call, or more sites
-     *         were walked than this count may keep
+     *         were walked than this count may keep; {@code false} for a walk that was skipped
      */
     boolean countedAt(LongSupplier site) {
         callsMade++;
@@ -177,21 +191,42 @@ final class CallSites {
         if (!exact && callsMade < nextWalk) {
             return false;
         }
+        // The calls this walk counts, and the next walk, set before the stack is walked, so a walk with no room counts
+        // the calls since the last walk at no site, and the next walk counts none of them.
+        long walkedCalls = 1;
+        if (!exact) {
+            walkedCalls = callsMade - lastWalk;
+            lastWalk = callsMade;
+            nextWalk = callsMade + nextGap();
+        }
+        Long walked;
+        try {
+            walked = site.getAsLong();
+        } catch (StackOverflowError noRoom) {
+            // A walk takes more room than is left, the same whatever the stack's depth, and overflows in the JDK's
+            // code that walks it, usually as the walk starts, sometimes as it fetches more frames (#1102); nothing is
+            // counted until the walk returns. Its calls count at no site: the limit in all still stops a loop, as
+            // getClassLoader() counts it down before each call is counted here.
+            return false;
+        } catch (InternalError wrapped) {
+            // On JDK 25 and 26, and 24 by its source, the JDK creates the frames it reads reflectively, usually as the
+            // walk starts, sometimes as it fetches more, and wraps an overflow there in an InternalError, as the cause
+            // of its cause. Anything else is thrown as it is.
+            for (Throwable link : ExceptionReads.causeChain(wrapped)) {
+                if (link instanceof StackOverflowError) {
+                    return false;
+                }
+            }
+            throw wrapped;
+        }
         // Not computeIfAbsent with a lambda, which the first walk would link (#1099). The count belongs to one pass
         // or one run, which one thread makes at a time.
-        Long walked = site.getAsLong();
         long[] siteCalls = callsBySite.get(walked);
         if (siteCalls == null) {
             siteCalls = new long[1];
             callsBySite.put(walked, siteCalls);
         }
-        if (exact) {
-            siteCalls[0]++;
-        } else {
-            siteCalls[0] += callsMade - lastWalk;
-            lastWalk = callsMade;
-            nextWalk = callsMade + nextGap();
-        }
+        siteCalls[0] += walkedCalls;
         if (callsBySite.size() > maxSites) {
             return true;
         }

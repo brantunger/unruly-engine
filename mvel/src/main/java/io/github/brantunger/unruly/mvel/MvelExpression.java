@@ -34,7 +34,8 @@ import java.util.function.Supplier;
  * So each run may ask the copy's parser configuration for its class loader, as MVEL does on every round of that loop,
  * from the same place, only as many times from one place as {@link MvelAnalysis#classLoaderCallsPerSite} allows the
  * expression, and as many in all as {@link #classLoaderCallsPerRun} allows, and the rule fails with an
- * {@link Imports.RunLoop} once it has asked more.
+ * {@link Imports.RunLoop} once it has asked more. Deep in a stack, where a walk of the stack has no room, its calls
+ * count at no place (see {@link CallSites}), and only the limit in all stops the run (#1102).
  * </p>
  *
  * <p>
@@ -174,7 +175,8 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * keeping more memory each round until the run ends, so the limit for one place ends such a run after at most
      * {@value CallSites#UNCOUNTED_CALLS} calls, plus the limit for one place, plus one gap between two walks of the
      * stack, fewer than twice {@value CallSites#SAMPLED_EVERY} calls, plus the limit and one more, as the calls are
-     * then counted one by one (see {@link CallSites}).
+     * then counted one by one (see {@link CallSites}). Deep in a stack, where a walk of the stack has no room, its
+     * calls count at no place, and only the limit in all ends such a run (#1102), after many more rounds.
      * </p>
      *
      * @param length The expression's length
