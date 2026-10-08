@@ -99,19 +99,20 @@ same value built in two steps of 8 took 5 ms.
 
 ## 🪜 A first load or run deep in a stack
 
-An engine whose builder names MVEL prepares it at `build()`: it initializes the MVEL classes a first load or run uses,
-then evaluates a property read, a method call and a call with a literal `String` argument once each, so that the
-JVM's first run has fewer classes to load and needs less stack; see
+An engine whose builder names MVEL prepares it at `build()`: it initializes the classes with a static initializer
+that its MVEL module uses directly, then evaluates a property read, a method call and one with a literal `String`
+argument once each, so the JVM's first run has fewer classes to load and needs less stack; see
 [A first build or load deep in a stack](../nested-runs.md#-a-first-build-or-load-deep-in-a-stack).
 Some first steps still need more stack than the engine checks for.
 
-**MVEL's first `load()` in the JVM** loads its compiler's classes, which takes more stack than the load's own check.
-Called too deep, it fails with a `StackOverflowError`, or with a `RuleCompilationException` such as
+**MVEL's first `load()` in the JVM** loads its compiler's classes; its first `null` comparison, or
+call MVEL can't resolve, as most are without `strongTyping`, loads more, each needing more stack than its check. Too
+deep, it throws `StackOverflowError` or a `RuleCompilationException` such as
 `The 'mvel' expression language failed to create a compiler: java.lang.StackOverflowError` or
 `Condition for rule 'r' failed to compile: the stack ran out: ...`, as in [Compile time](#-compile-time).
 
-A retry at the same depth fails the same way, until one call with more room succeeds anywhere in the JVM; nothing is
-left broken. Load once near the top of a stack first, with any MVEL engine, and later loads don't pay it.
+A retry at the same depth fails the same way, until one with more room succeeds anywhere; nothing is left broken.
+Load and run your rules, or same-shaped ones, near the top first: trivial ones aren't enough.
 
 **If those three evaluations overflow**, they're skipped, and the JVM's first run loads the classes they load instead:
 deep in a stack, a run at that depth can fail its rule, with a `StackOverflowError` in the cause chain, until one with
@@ -126,11 +127,11 @@ rule's action returns normally, runs of rule lists with an MVEL rule check for
 **That larger check** removed every failure of a deep first run, for the shapes measured on x64 with JDK 21, 25 and
 26 and the check JIT-compiled: a rule calling one method, also with a `new` or one call among its arguments. Deeper
 nesting, such as calls three levels deep, can still overflow and fail its rule, with a `StackOverflowError` in
-the cause chain: each level needs more. Run each rule once near the top of a stack first.
+the cause chain: each level needs more.
 
 **A rule's first inline list or map, `new` or `soundslike`** initializes an MVEL class of its own that `prepare()`
-doesn't, so, like the JIT's first compile below, it can overflow deep in a stack. The
-engine's tests record which classes these initialize rather than cover them.
+doesn't, so, like the JIT's first compile below, it can overflow deep in a stack, as can an assignment's first run.
+The engine's tests record which classes the others initialize rather than cover them.
 
 **MVEL's JIT isn't prepared.** It compiles an accessor with ASM once more than 50 runs have used it within 100 ms, and
 its first compile initializes ASM's classes and some of the JDK's. MVEL marks the accessor compiled before it compiles
