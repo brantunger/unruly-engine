@@ -23,14 +23,19 @@ import static org.junit.jupiter.api.Assertions.*;
  * instead. So {@link MvelExpressionLanguage#prepare()}, which the engine calls when it builds an engine with MVEL,
  * initializes them, then evaluates a property read, a method call and a method call with a literal argument once each
  * through MVEL's public API, which loads classes MVEL evaluates them with ahead of a first run, so a first run deep in
- * a stack has fewer to load (#1042, #1066);
- * when the engine prepares MVEL, at {@code build()} or a first load, those evaluations initialize no class with a
- * static initializer that it hasn't, which the test says rather than checks. A bare {@code prepare()} call in an
- * otherwise empty JVM may also initialize JDK classes the reflective call needs. The test runs
- * {@link FirstUseScenario} in a new JVM, as this JVM's other tests have initialized them already, and reads the
- * {@code Initializing '...'} lines that {@code -Xlog:class+init} prints, which end in {@code (no method)} for a class
- * without a static initializer. With MVEL's JIT on and off, it checks that the classes without a static initializer
- * that MVEL's first run used to load for its read, its call and its literal argument are initialized before any step.
+ * a stack has fewer to load (#1042, #1066), and compiles a comparison with {@code null}, a call of a method MVEL can't
+ * find on the type it gives the value and an assignment, and runs all but the call, which loads the classes MVEL's
+ * first compile of each and an assignment's first run load, ahead of a first load or run (#1103); when the engine
+ * prepares MVEL, at {@code build()} or a first load, that warm-up initializes no class with a static initializer that
+ * it hasn't, which the test says rather than checks. A bare {@code prepare()} call in an otherwise empty JVM may also
+ * initialize JDK classes the reflective call needs. The test runs {@link FirstUseScenario} in a new JVM, as this JVM's
+ * other tests have initialized them already, and reads the {@code Initializing '...'} lines that
+ * {@code -Xlog:class+init} prints, which end in {@code (no method)} for a class without a static initializer, and, for
+ * a class the JVM loads and never initializes, the lines {@code -Xlog:class+load} prints. With MVEL's JIT on and off,
+ * it checks that the classes without a static initializer that MVEL's first run used to load for its read, its call and
+ * its literal argument are initialized before any step, and that those its first compile of a comparison with
+ * {@code null}, of a call MVEL can't find and of an assignment, and an assignment's first run, used to load are loaded
+ * or initialized before any step, as the scenario's first steps would otherwise be the first to load them.
  *
  * <p>
  * Once the engines are built, MVEL's first steps may initialize no class with a static initializer at all, this
@@ -83,7 +88,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
-        + "features and the JIT it leaves to their first use (#945, #1012, #1042, #1066)")
+        + "features and the JIT it leaves to their first use (#945, #1012, #1042, #1066, #1103)")
 class FirstUseClassInitializationTest {
 
     private static final String INITIALIZING = "Initializing '";
@@ -139,6 +144,20 @@ class FirstUseClassInitializationTest {
             "org/mvel2/optimizers/impl/refl/nodes/MethodAccessor",
             "org/mvel2/optimizers/impl/refl/nodes/VariableAccessor",
             "org/mvel2/util/Varargs");
+    // Classes without a static initializer that a JVM's first compile of a null literal and a comparison, of a call
+    // of a method MVEL can't find on the type it gives the value, and of an assignment, and the first run of an
+    // assignment, load or initialize, which a first load or run deep in a stack did until prepare() compiled one of
+    // each and ran all but the call (#1103), with MVEL's JIT on and off. NullType, which a null literal is compiled to,
+    // is loaded and never initialized, so it counts where it is loaded; the others where they are initialized.
+    private static final List<String> BY_COMPILING = List.of(
+            "org/mvel2/ast/BooleanNode",
+            "org/mvel2/ast/BinaryOperation",
+            "org/mvel2/util/StringAppender",
+            "org/mvel2/ast/AssignmentNode",
+            "org/mvel2/util/ArrayTools",
+            "org/mvel2/compiler/CompiledAccExpression",
+            "org/mvel2/UnresolveablePropertyException");
+    private static final List<String> LOADED_BY_COMPILING = List.of("org/mvel2/util/NullType");
     // A class of the library's, as -Xlog:class+init names it when it initializes it, a class the JDK made for a lambda
     // or a method reference included, as in "Initializing 'io/github/brantunger/unruly/mvel/ExceptionReads$$Lambda+0x
     // ...'(no method)", and as -Xlog:class+load names it when it loads it; and the steps whose run is the JVM's first
@@ -214,6 +233,24 @@ class FirstUseClassInitializationTest {
     }
 
     @Test
+    @DisplayName("with MVEL's JIT on, building an engine with MVEL loads these classes a first compile of a "
+            + "comparison with null, of a call MVEL can't find and of an assignment, and an assignment's first run, "
+            + "use (#1103)")
+    void compilingClassesLoadedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
+        assertEquals(whenBuilt(BY_COMPILING, LOADED_BY_COMPILING),
+                whereFirst(dir, BY_COMPILING, LOADED_BY_COMPILING, "-Dmvel2.disable.jit=false"));
+    }
+
+    @Test
+    @DisplayName("with MVEL's JIT off, building an engine with MVEL loads these classes a first compile of a "
+            + "comparison with null, of a call MVEL can't find and of an assignment, and an assignment's first run, "
+            + "use (#1103)")
+    void compilingClassesLoadedWhenBuiltWithoutJit(@TempDir Path dir) throws IOException, InterruptedException {
+        assertEquals(whenBuilt(BY_COMPILING, LOADED_BY_COMPILING),
+                whereFirst(dir, BY_COMPILING, LOADED_BY_COMPILING, "-Dmvel2.disable.jit=true"));
+    }
+
+    @Test
     @DisplayName("the JVM's first runs whose MVEL condition or action fails, and its first loads and validate() that "
             + "fail, load, initialize or link no class of the engine's or this module's, a lambda's or method "
             + "reference's included, nor any lambda, nor a class of the JDK's regular expressions or streams, nor do "
@@ -272,31 +309,53 @@ class FirstUseClassInitializationTest {
         return classes.stream().map(name -> name + ": " + WHEN_BUILT).toList();
     }
 
+    private static List<String> whenBuilt(List<String> initialized, List<String> loaded) {
+        List<String> classes = new ArrayList<>(initialized);
+        classes.addAll(loaded);
+        return whenBuilt(classes);
+    }
+
     // Each class, with or without a static initializer, as its name and where it was first initialized: before the
     // engines were built, in which step, or never.
     private static List<String> whereInitialized(Path dir, List<String> classes, String... options)
             throws IOException, InterruptedException {
+        return whereFirst(dir, classes, List.of(), options);
+    }
+
+    // As whereInitialized for the classes initialized, then each of the classes loaded as its name and where it was
+    // first loaded, for a class the JVM loads and never initializes.
+    private static List<String> whereFirst(Path dir, List<String> initialized, List<String> loaded, String... options)
+            throws IOException, InterruptedException {
         List<String> command = new ArrayList<>(List.of(options));
         command.add("-Xlog:class+init=info:stdout");
+        if (!loaded.isEmpty()) {
+            command.add("-Xlog:class+load=info:stdout");
+        }
         List<String> lines = ChildJvm.run(dir, FirstUseScenario.class, command.toArray(String[]::new)).lines()
                 .toList();
         assertTrue(lines.contains(FirstUseScenario.BUILT) && lines.contains(FirstUseScenario.RAN),
                 "markers missing:\n" + String.join("\n", lines));
         List<String> where = new ArrayList<>();
-        for (String name : classes) {
-            String step = WHEN_BUILT;
-            String found = "never";
-            for (String line : lines) {
-                if (line.startsWith(FirstUseScenario.STEP)) {
-                    step = line.substring(FirstUseScenario.STEP.length());
-                } else if (line.contains(INITIALIZING + name + "'")) {
-                    found = step;
-                    break;
-                }
-            }
-            where.add(name + ": " + found);
+        for (String name : initialized) {
+            where.add(name + ": " + firstStep(lines, INITIALIZING + name + "'"));
+        }
+        for (String name : loaded) {
+            where.add(name + ": " + firstStep(lines, LOADED + name.replace('/', '.') + " "));
         }
         return where;
+    }
+
+    // The step of the first line that holds the text: before the engines were built, which step, or never.
+    private static String firstStep(List<String> lines, String text) {
+        String step = WHEN_BUILT;
+        for (String line : lines) {
+            if (line.startsWith(FirstUseScenario.STEP)) {
+                step = line.substring(FirstUseScenario.STEP.length());
+            } else if (line.contains(text)) {
+                return step;
+            }
+        }
+        return "never";
     }
 
     // Each class with a static initializer that the scenario's steps initialized, but the scenario's own and the JDK's

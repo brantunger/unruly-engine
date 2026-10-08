@@ -93,10 +93,11 @@ final class StackHeadroom {
      * on its own: it prepares the language alone, without the engine's classes the measured build initialized too.
      * The reserve was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after them
      * that, when the engine prepares the language, at {@code build()} or a first load, initializes no class with a
-     * static initializer that it hasn't, as MVEL's evaluation of a property read and two method calls, one with a
-     * literal argument, does: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow
-     * and skips the warm-up. A bare {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes
-     * the reflective call needs.
+     * static initializer that it hasn't, as MVEL's evaluation of a property read, two method calls, one with a literal
+     * argument, a comparison with {@code null} and an assignment, and its compile of a call of a method the value
+     * doesn't have, does: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow and
+     * skips the warm-up. A bare {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes the
+     * reflective call needs.
      */
     static final int INITIALIZING_FRAMES = 960;
 

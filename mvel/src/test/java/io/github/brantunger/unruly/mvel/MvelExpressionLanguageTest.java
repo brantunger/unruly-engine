@@ -87,6 +87,16 @@ class MvelExpressionLanguageTest {
     }
 
     @Test
+    @DisplayName("prepare() succeeds, and its warm-up compiles and runs its expressions again, the call of a method "
+            + "its value doesn't have compiled only, without failing (#1103)")
+    void prepareSucceeds() {
+        assertDoesNotThrow(() -> new MvelExpressionLanguage().prepare());
+        // Not through warmedUp, which would hide an overflow, and with MVEL's own class loader, as the engine's.
+        assertDoesNotThrow(() -> MvelExpression.warmUp());
+        assertDoesNotThrow(() -> MvelExpression.warmUp());
+    }
+
+    @Test
     @DisplayName("prepare's warm-up looks up no class by a name made from its variable, which a native image built "
             + "with strict metadata fails for (#1042)")
     void warmUpLooksUpNoNameMadeFromItsVariable() {
