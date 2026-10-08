@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.6](https://github.com/brantunger/unruly-engine/compare/v2.29.5...v2.29.6) (2026-10-08)
+
+
+### Bug Fixes
+
+* read a class name's characters with a loop, not a stream lambda, so the JVM's first class lookup through the engine's MVEL class loader links no lambda and loads no stream classes deep in a stack ([#1108](https://github.com/brantunger/unruly-engine/issues/1108)) ([fc6781b](https://github.com/brantunger/unruly-engine/commit/fc6781b781554c0050c198874d25989b22bf7a85))
+
 ## [2.29.5](https://github.com/brantunger/unruly-engine/compare/v2.29.4...v2.29.5) (2026-10-07)
 
 
