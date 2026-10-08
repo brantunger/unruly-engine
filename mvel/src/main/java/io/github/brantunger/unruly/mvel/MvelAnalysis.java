@@ -80,7 +80,9 @@ final class MvelAnalysis extends ExpressionCompiler {
      * named with its package with something glued to it, and never checks for an interrupt (#840). On every round it
      * asks the parser configuration for its class loader, from the same place, so the pass is stopped once it has
      * asked from one place more times than {@link #classLoaderCallsPerSite} allows for the expression, or more times
-     * in all than {@link #classLoaderCallLimit} allows, and the expression is rejected.
+     * in all than {@link #classLoaderCallLimit} allows, and the expression is rejected. Deep in a stack, where a walk
+     * of the stack has no room, its calls count at no place (see {@link CallSites}), and only the limit in all stops
+     * the pass (#1102).
      * </p>
      *
      * @return What MVEL compiled, which is only checked
@@ -127,7 +129,8 @@ final class MvelAnalysis extends ExpressionCompiler {
      * twice as many times as the levels and the chain's parts multiplied, about an eighth of the length squared:
      * 20,300 times for {@code m.a.a...} with 100 {@code .a} in 100 levels of parentheses, 401 characters. The loop
      * that never ends asks from one place, and {@link #classLoaderCallsPerSite} stops it far sooner: this limit only
-     * stops a loop that asks from places that change.
+     * stops a loop that asks from places that change, or one deep in a stack, where a walk of the stack has no room
+     * and its calls count at no place (see {@link CallSites}, #1102).
      *
      * @param length The expression's length
      * @return How many times MVEL may ask

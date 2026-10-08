@@ -248,10 +248,12 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * (#857), from the same place each round. Once a call passes either limit, it and every call after it throws
          * the same {@link AnalysisLoop}, or {@link RunLoop} as the expression runs: MVEL catches every
          * {@link Exception} where it asks in those loops, and some {@link Throwable}s elsewhere, so it is thrown again
-         * until it gets out. The calls made while a name is looked up among the imports (see {@link #hasImport}) don't
-         * count, and never throw: they are made once for each imported package and each name, not on each round of the
-         * loop, and MVEL's lookup would catch what was thrown and remember a class's name, for every expression of the
-         * rule list, as a name that isn't one.
+         * until it gets out. The limit in all is counted down before a call is counted by its place, so deep in a
+         * stack, where a walk of the stack has no room and the call counts at no place (#1102), it still stops a loop,
+         * with the same error. The calls made while a name is looked up among the imports (see {@link #hasImport})
+         * don't count, and never throw: they are made once for each imported package and each name, not on each round
+         * of the loop, and MVEL's lookup would catch what was thrown and remember a class's name, for every expression
+         * of the rule list, as a name that isn't one.
          *
          * @return The class loader
          * @throws AnalysisLoop if MVEL's analysis asked more times than a limit allows

@@ -1,8 +1,10 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.ChildJvm;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -12,8 +14,11 @@ import org.mvel2.ParserContext;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -402,5 +407,127 @@ class CallSitesTest {
             last = walk;
         }
         assertTrue(longest > CallSites.SAMPLED_EVERY, "the longest gap is " + longest);
+    }
+
+    /** Tells no site: it throws what a walk of the stack with no room for it throws. */
+    private static long noRoom() {
+        throw new StackOverflowError();
+    }
+
+    @Test
+    @DisplayName("#1102: a walk of the stack with no room counts its calls at no place, and nothing is thrown")
+    void walksWithNoRoomCountNothing() {
+        CallSites count = new CallSites(false, 10);
+        for (int call = 0; call < 50_000; call++) {
+            assertFalse(count.countedAt(CallSitesTest::noRoom));
+        }
+        assertEquals(50_000, count.calls());
+        assertEquals(0, count.sites());
+    }
+
+    @Test
+    @DisplayName("#1102: a walk of the stack with no room on JDK 25 and later, an InternalError caused by an overflow, "
+            + "counts its calls at no place; any other InternalError is thrown")
+    void wrappedOverflowCountsNothing() {
+        CallSites count = new CallSites(false, 10);
+        for (int call = 0; call < 50_000; call++) {
+            assertFalse(count.countedAt(() -> {
+                // As the JDK throws it when creating a frame reflectively overflows.
+                throw new InternalError(new InvocationTargetException(new StackOverflowError()));
+            }));
+        }
+        assertEquals(0, count.sites());
+
+        InternalError other = new InternalError("not an overflow");
+        CallSites walking = new CallSites(false, 10);
+        // The first walk is after the first 100 calls and before the 200th, the same for every count, so a count that
+        // kept every InternalError fails here rather than going on for ever.
+        assertSame(other, assertThrows(InternalError.class, () -> {
+            for (int call = 0; call < 200; call++) {
+                walking.countedAt(() -> {
+                    throw other;
+                });
+            }
+        }));
+    }
+
+    /**
+     * The calls whose stack a count walked, each from a place of its own, when the first {@code skipped} walks have no
+     * room: then the call is recorded, and what a walk with no room throws is thrown.
+     */
+    private static List<Long> walkedWithFirstSkipped(int skipped) {
+        // Each site's count is one gap, which the limit allows, so only a count that took in the calls since a walk
+        // with no room could pass it.
+        CallSites count = new CallSites(false, LONGEST_GAP);
+        List<Long> walked = new ArrayList<>();
+        for (int call = 0; call < 10_000; call++) {
+            assertFalse(count.countedAt(() -> {
+                walked.add(count.calls());
+                return walked.size() <= skipped ? noRoom() : count.calls();
+            }));
+        }
+        return walked;
+    }
+
+    @Test
+    @DisplayName("#1102: after walks of the stack with no room, the next walk counts only the calls since the last, "
+            + "and the walks come where they would have")
+    void walkAfterNoRoomCountsOnlyItsCalls() {
+        List<Long> walked = walkedWithFirstSkipped(0);
+        // Counted at the fourth walk's place, the calls since the first 100 would pass the limit, and every call would
+        // be walked from then on.
+        assertTrue(walked.get(3) - CallSites.UNCOUNTED_CALLS > LONGEST_GAP, () -> "the fourth walk is at "
+                + walked.get(3));
+        assertEquals(walked, walkedWithFirstSkipped(3));
+    }
+
+    @Test
+    @DisplayName("#1102: once every call is counted, a call whose walk of the stack has no room counts at no place")
+    void exactCountSkipsCallsWithNoRoom() {
+        CallSites count = new CallSites(false, 10);
+        // The first walk counts the calls since the first 100 at one place, more than the limit, so every call is
+        // counted from then on. The next 1,000 have no room.
+        long[] lastWithNoRoom = {Long.MAX_VALUE};
+        long calls = 0;
+        while (!count.countedAt(() -> {
+            if (lastWithNoRoom[0] == Long.MAX_VALUE) {
+                lastWithNoRoom[0] = count.calls() + 1_000;
+                return 7;
+            }
+            return count.calls() <= lastWithNoRoom[0] ? noRoom() : 7;
+        })) {
+            calls++;
+            assertTrue(calls < 100_000, "never stopped");
+        }
+        // The calls with no room count nowhere: the limit is the next 10, and one more passes it.
+        assertEquals(lastWithNoRoom[0] + 11, count.calls());
+    }
+
+    @ParameterizedTest(name = "in a run: {0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("#1102: deep in a stack, where a walk of the stack has no room, a loop is stopped by the limit in "
+            + "all, with its own error")
+    void loopWithNoRoomStoppedByTheLimitInAll(boolean run, @TempDir Path dir)
+            throws IOException, InterruptedException {
+        // In a new JVM, with the shadow zone ChildJvm gives it, and the scenario's recursion kept interpreted, so it
+        // reaches the same depth each time it looks for the end of the stack.
+        List<String> lines = ChildJvm.run(dir, DeepLoopLimitScenario.class, "-XX:CompileCommand=quiet",
+                "-D" + DeepLoopLimitScenario.RUN + "=" + run,
+                "-XX:CompileCommand=exclude," + DeepLoopLimitScenario.class.getName() + "::descend").lines().toList();
+        String output = String.join("\n", lines);
+        String stopped = lines.stream().filter(line -> line.startsWith(DeepLoopLimitScenario.STOPS))
+                .map(line -> line.substring(DeepLoopLimitScenario.STOPS.length())).findFirst().orElse("[]");
+        List<Long> stops = stopped.equals("[]") ? List.of()
+                : Stream.of(stopped.substring(1, stopped.length() - 1).split(", ")).map(Long::valueOf).toList();
+
+        // A loop at a depth where no walk had room was stopped by the limit in all, which none was before #1102, as a
+        // walk with no room overflowed out of the calls; and the last by the limit for one place, each with its own
+        // error. Which depths leave no room for a walk differs by platform, so any of them may be the one. The last
+        // may have had no room for its first walks: the JIT compiles the methods that ask as they go, and their frames
+        // get smaller.
+        assertTrue(stops.contains(DeepLoopLimitScenario.CALLS), () -> "stops:\n" + output);
+        assertTrue(stops.get(stops.size() - 1) < DeepLoopLimitScenario.CALLS, () -> "stops:\n" + output);
+        assertTrue(lines.contains(DeepLoopLimitScenario.THROWN + "[" + (run ? "RunLoop" : "AnalysisLoop") + "]"),
+                () -> "what the loops threw:\n" + output);
     }
 }
