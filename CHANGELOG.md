@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.7](https://github.com/brantunger/unruly-engine/compare/v2.29.6...v2.29.7) (2026-10-08)
+
+
+### Bug Fixes
+
+* skip a stack walk of MVEL's loop detection that has no room, so deep in a stack the walk can't fail a valid long rule, and a loop is still stopped, by the limit in all, with its own message ([#1111](https://github.com/brantunger/unruly-engine/issues/1111)) ([5884e94](https://github.com/brantunger/unruly-engine/commit/5884e9490d8295074d52d88ca68dd3b1490c56af))
+
 ## [2.29.6](https://github.com/brantunger/unruly-engine/compare/v2.29.5...v2.29.6) (2026-10-08)
 
 
