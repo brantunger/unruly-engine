@@ -484,11 +484,19 @@ final class FirstRunScenario {
         RulesEngine<Map<String, Object>> retiring = RulesEngineBuilder.firstMatch(maps)
                 .language(retiringLanguage).build();
         // A virtual thread of the application's, started and joined, as the JDK initializes classes of its own for the
-        // first, which a run on one would otherwise be the first to.
+        // first, which a run on one would otherwise be the first to. It ends only once this thread waits for it, so
+        // the join always waits, whichever thread runs first: on JDK 25 and 26 the first wait in a CountDownLatch or a
+        // lock initializes the JDK's AbstractQueuedSynchronizer$Node and LockSupport, and a step's wait would otherwise
+        // be the first to initialize Node, when the thread had ended before the join; LockSupport is initialized before
+        // then either way, by the virtual thread's carrier thread when this thread doesn't.
+        Thread joining = Thread.currentThread();
         Thread application = Thread.ofVirtual().unstarted(new Runnable() {
             @Override
             public void run() {
-                // Nothing to do: being run is what counts.
+                // Spins rather than waits, so the only thread waiting is the joining one.
+                while (joining.getState() != Thread.State.WAITING) {
+                    Thread.onSpinWait();
+                }
             }
         });
         application.start();
