@@ -36,8 +36,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * bean and map engines each run more than MVEL's JIT threshold of about 50 runs, so a native image meets whatever
  * MVEL does after it. It also writes and reads a class that isn't public through the engine's own reflection, as a
  * language other than MVEL would, where the image has no metadata for the public types above it. And it stops a run
- * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a virtual
- * thread. It prints one line and exits with 1 if a result is wrong.
+ * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a pooled
+ * platform thread. It prints one line and exits with 1 if a result is wrong.
  */
 public final class Main {
 
@@ -210,7 +210,7 @@ public final class Main {
         String hidden = hiddenOutcome();
         String deadline = deadlineOutcome();
         boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName)
-                && "prime,gold,standard".equals(hidden) && "timeout,virtual".equals(deadline);
+                && "prime,gold,standard".equals(hidden) && "timeout,platform".equals(deadline);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
                 + " factName=" + factName + " hidden=" + hidden + " deadline=" + deadline
                 + " dateResource=" + dateResource()
@@ -323,7 +323,7 @@ public final class Main {
     }
 
     // A run whose action spins until an action it registered with onCancel stops it, as a runtime that can only be
-    // stopped from outside does: the run fails with its timeout, and the action ran on a virtual thread. The
+    // stopped from outside does: the run fails with its timeout, and the action ran on a platform thread. The
     // registration is closed in a finally, as try-with-resources would warn that the body never reads it.
     @SuppressWarnings("PMD.UseTryWithResources")
     private static String deadlineOutcome() {

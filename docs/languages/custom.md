@@ -416,8 +416,8 @@ rethrows what either method throws. An empty set reserves none.
 ## ⏳ Stopping a run
 
 A run can be interrupted, or given a [timeout](../stopping-runs.md), which a
-[nested run](../nested-runs.md#-what-counts-as-nested) inherits. The engine checks between rules, so what your language
-can do decides whether a running rule can be stopped:
+[nested run](../nested-runs.md#-what-counts-as-nested) inherits. The engine checks between rules, so your language
+decides whether a running rule can be stopped:
 
 | Language | Can it stop inside an expression? |
 | --- | --- |
@@ -450,12 +450,12 @@ without a timeout. None is required.
 
 Since 2.28.0, a runtime that can be stopped only from another thread, such as by setting a flag, needs no timer of its
 own: `onCancel(action)` runs `action` once when the run passes its deadline, unless you close the `CancelRegistration`
-it returns first. It never runs for an interrupt, nor in a run without a deadline. If the deadline has already passed,
+it returns first. It never runs for an interrupt, nor without a deadline. If the deadline has already passed,
 it runs on your thread before `onCancel` returns.
 
-Otherwise it runs while your expression does, on a new thread, virtual where it can be, without the run's
+Otherwise it runs while your expression does, on a [reused](#-thread-safety) platform thread without the run's
 thread-locals or context class loader: keep it thread-safe and short. What it throws, or one still running after a
-second, is logged at WARN, and it delays no other action. The run's end closes the registrations still open, after
+second, is logged at WARN; it delays no other action. The run's end closes the registrations still open, after
 which `onCancel` throws `IllegalStateException`. One already started may still run, so give each expression a fresh
 flag, as below.
 
@@ -484,7 +484,7 @@ class CancellableContext extends MapContext implements JexlContext.CancellationH
 // the last expression ended may still set the last one's.
 Object execute(JexlScript script, CancellableContext jexlContext, EvaluationContext context) {
     AtomicBoolean forDeadline = new AtomicBoolean();
-    // Runs on a thread of its own at the deadline, or here at once if it has passed: then a fatal error it throws
+    // Runs on a pooled thread at the deadline, or here at once if it has passed: then a fatal error it throws
     // is thrown from onCancel, and anything else it throws is logged.
     CancelRegistration deadline = context.onCancel(() -> {
         forDeadline.set(true);                           // record why, before cancelling
@@ -518,7 +518,7 @@ returns. Around any other blocking call, your runtime must restore it, as above,
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()` |
 | `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw |
-| Per-thread state, such as a `ThreadLocal` | An expression may start a [nested run](../nested-runs.md#-what-counts-as-nested) on its thread, which may fail, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), or restore it in a `finally`, as the kit's [nested-run checks](contract-kit.md#-testing-with-the-contract-kit) require |
+| Per-thread state, such as a `ThreadLocal` | A [nested run](../nested-runs.md#-what-counts-as-nested) on an expression's thread may fail, so keep a run's state in its `Session` or [`runScoped`](#-reading-facts), or restore it in a `finally`, as the kit's [nested-run checks](contract-kit.md#-testing-with-the-contract-kit) require. An `onCancel` action must restore it, and MDC entries, too: later actions reuse its thread |
 | Built-in objects and globals the runs share | An action's change there mustn't reach a later run: refuse it at load, fail it before it changes anything, or keep it to the run, as `sharedStateStaysLocal` checks |
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 

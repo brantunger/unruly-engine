@@ -149,10 +149,18 @@ every engine in the JVM, or at once on the registering thread if the deadline ha
 a run registers one before its deadline and exits once none is pending, so it never starts if no language calls
 `onCancel`.
 
-The timer starts each action on a short-lived thread of its own, `unruly-cancel-action`, virtual where it can be, and
-logs at WARN an action that fails, can't be started or runs past a second. A run's end closes its actions that haven't
-started. An engine's `close()` doesn't, so the actions of a run still going then still run at its deadline. Only a
-deadline runs an action: never an interrupt, and never in a run without a deadline.
+The timer hands each action to a pool of daemon platform threads, all named `unruly-cancel-action` and shared by every
+engine in the JVM. The pool keeps no thread for long: one with no action to run for a second ends. Only when the pool
+can't start a thread does an action get a virtual thread of its own. Platform threads don't wait for the virtual-thread
+scheduler, so an action still runs while virtual-thread runs keep every carrier busy.
+
+A pooled thread runs one action after another, so a `ThreadLocal` or MDC entry an action leaves is still there for the
+next; see [Thread safety](languages/custom.md#-thread-safety). The timer logs at WARN an action that fails, can't be
+started, or a second after it was handed over is still running or hasn't started because no thread was free.
+
+A run's end closes its actions that haven't started. An engine's `close()` doesn't, so the actions of a run still going
+then still run at its deadline. Only a deadline runs an action: never an interrupt, and never in a run without a
+deadline.
 
 ## 👂 What listeners see
 

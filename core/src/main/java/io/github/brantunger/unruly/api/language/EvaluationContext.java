@@ -99,19 +99,22 @@ public sealed interface EvaluationContext
      * or cancelling the runtime, so it needs no timer of its own: the action does that, and the expression stops.
      *
      * <p>
-     * The action runs on a thread of its own, a virtual thread where one can be started, while the expression runs, so
-     * it must be thread-safe; if no thread can be started for it, as when the JVM is out of memory, that is logged at
-     * WARN and the action never runs. If the engine's cancel timer, the thread that waits for the deadline, can't be
-     * started, this method throws instead, and nothing is registered. The action's thread inherits none of the run's
-     * inheritable thread-locals, and has no context class loader. The action should be short, such as setting a flag
-     * that the runtime reads: one still running a second after it started is logged at WARN, though a slow action
-     * delays no other, of this run or any other. What it throws is logged at WARN and ignored. If the deadline has
-     * already passed, the action runs on this thread before this method returns, and a fatal {@link Error} it throws, a
-     * {@link VirtualMachineError} such as {@link OutOfMemoryError} but not a {@link StackOverflowError}, or an
-     * exception that carries one, is thrown from this method instead. A run without a deadline registers nothing: the
-     * registration returned does nothing when closed. Passing the deadline stops the run as {@link #isCancelled()}
-     * describes, and never interrupts its thread, so neither does the action unless it interrupts it itself. An
-     * interrupt never runs the action: {@link #isCancelled()} still answers for both.
+     * The action runs while the expression runs, on a pooled daemon platform thread, or on a virtual thread of its own
+     * when the pool can't start one, so it must be thread-safe; if no thread can be started for it, as when the JVM is
+     * out of memory, that is logged at WARN and the action never runs. If the engine's cancel timer, the thread that
+     * waits for the deadline, can't be started, this method throws instead, and nothing is registered. The action's
+     * thread inherits none of the run's inheritable thread-locals, and has no context class loader. A pooled thread
+     * runs later actions, of any run or engine, and after each resets only its context class loader and interrupt
+     * status, so the action must remove any {@link ThreadLocal} value or MDC entry it sets, or the next action on that
+     * thread sees it. The action should be short, such as setting a flag that the runtime reads: one still running, or
+     * not yet started because no thread was free, a second after the timer handed it over is logged at WARN, though a
+     * slow action delays no other, of this run or any other. What it throws is logged at WARN and ignored. If the
+     * deadline has already passed, the action runs on this thread before this method returns, and a fatal
+     * {@link Error} it throws, a {@link VirtualMachineError} such as {@link OutOfMemoryError} but not a
+     * {@link StackOverflowError}, or an exception that carries one, is thrown from this method instead. A run without a
+     * deadline registers nothing: the registration returned does nothing when closed. Passing the deadline stops the
+     * run as {@link #isCancelled()} describes, and never interrupts its thread, so neither does the action unless it
+     * interrupts it itself. An interrupt never runs the action: {@link #isCancelled()} still answers for both.
      * </p>
      *
      * <p>
