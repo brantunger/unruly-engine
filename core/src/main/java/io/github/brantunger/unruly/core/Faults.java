@@ -80,11 +80,14 @@ final class Faults {
          * timer failed, before it has.
          */
         CANCEL_FAILURE_LOGGED,
-        /** The cancel timer starting an action whose deadline has passed, before it makes the action's thread. */
+        /**
+         * The pool of the cancel timer's actions making a thread for an action whose deadline has passed, as none of
+         * its threads is idle, before it makes it, on the timer's thread.
+         */
         CANCEL_ACTION_STARTING,
         /**
-         * The cancel timer starting an action on a platform thread, as it couldn't start it on a virtual one, before it
-         * starts the thread.
+         * The cancel timer starting an action on a virtual thread, as its pool couldn't take it, before it starts the
+         * thread.
          */
         CANCEL_ACTION_FALLING_BACK,
         /**

@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.ChildJvm;
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -21,8 +23,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -62,6 +67,7 @@ class CancelCallbackTest {
     @AfterEach
     void timerIdle() throws InterruptedException {
         Faults.clear();
+        CancelTimer.slowAfter(CancelTimer.SLOW_NANOS);
         // Each test closes what it registered, so the timer is gone before the next test starts.
         assertTimerExits();
     }
@@ -127,8 +133,8 @@ class CancelCallbackTest {
     }
 
     @Test
-    @DisplayName("the action runs once the deadline passes, on a virtual thread of its own, and doesn't interrupt the"
-            + " thread that registered it")
+    @DisplayName("#1117: the action runs once the deadline passes, on a pooled daemon platform thread, and doesn't"
+            + " interrupt the thread that registered it")
     void runsAtTheDeadline() {
         CountDownLatch ran = new CountDownLatch(1);
         AtomicInteger runs = new AtomicInteger();
@@ -146,9 +152,21 @@ class CancelCallbackTest {
 
         assertTrue(System.nanoTime() - start >= TimeUnit.MILLISECONDS.toNanos(200), "ran before the deadline");
         assertEquals(1, runs.get());
-        assertTrue(ranOn.get().isVirtual(), ranOn.get()::toString);
+        assertFalse(ranOn.get().isVirtual(), ranOn.get()::toString);
+        assertTrue(ranOn.get().isDaemon(), ranOn.get()::toString);
         assertEquals(CancelTimer.ACTION_THREAD_NAME, ranOn.get().getName());
         assertFalse(Thread.currentThread().isInterrupted());
+    }
+
+    @Test
+    @DisplayName("#1117: the action of a run on a virtual thread that never blocks runs at the deadline, though the run"
+            + " holds the only carrier")
+    void runsWhileVirtualCarriersAreBusy(@TempDir Path dir) throws IOException, InterruptedException {
+        // One carrier, in the scenario's JVM only, so the spinning run holds every carrier there is.
+        String output = ChildJvm.run(dir, BusyCarriersScenario.class, "-Djdk.virtualThreadScheduler.parallelism=1",
+                "-Djdk.virtualThreadScheduler.maxPoolSize=1");
+
+        assertTrue(output.contains(BusyCarriersScenario.STOPPED), output);
     }
 
     @Test
@@ -267,8 +285,10 @@ class CancelCallbackTest {
     }
 
     @Test
-    @DisplayName("closing the registration while its action runs, or after, does nothing")
-    void closedWhileAndAfterItRuns() {
+    @DisplayName("closing the registration while its action runs, or after, does nothing, and leaves nothing pending")
+    void closedWhileAndAfterItRuns() throws InterruptedException {
+        // So only its return can take it off the list: one kept pending until it's slow would still be there.
+        CancelTimer.slowAfter(TimeUnit.HOURS.toNanos(1));
         AtomicReference<CancelRegistration> self = new AtomicReference<>();
         CountDownLatch registered = new CountDownLatch(1);
         CountDownLatch ran = new CountDownLatch(1);
@@ -285,6 +305,7 @@ class CancelCallbackTest {
         self.get().close();
 
         assertEquals(1, runs.get());
+        TestSupport.await(() -> CancelTimer.pendingCount() == 0, 10, "nothing is pending once the action returned");
     }
 
     @Test
@@ -382,7 +403,8 @@ class CancelCallbackTest {
     }
 
     @Test
-    @DisplayName("a fatal error an action throws at the deadline is logged at WARN and ends only its own thread")
+    @DisplayName("#1117: a fatal error an action throws at the deadline is logged at WARN, and its pooled thread lives"
+            + " on, idle in the pool, for the next action")
     void fatalErrorAtTheDeadlineLogged() throws InterruptedException {
         AtomicReference<Thread> ranOn = new AtomicReference<>();
         String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
@@ -394,10 +416,10 @@ class CancelCallbackTest {
         }));
 
         assertTrue(logs.contains(expected), logs);
-        ranOn.get().join(TimeUnit.SECONDS.toMillis(10));
-        assertFalse(ranOn.get().isAlive());
-        // The timer goes on.
-        awaitFence(Duration.ofMillis(50));
+        // Back in the pool, waiting for its next action, within the second it waits for one before it ends.
+        Thread thread = ranOn.get();
+        TestSupport.await(() -> thread.getState() == Thread.State.TIMED_WAITING, 10, "its thread waits in the pool");
+        assertTrue(thread.isAlive());
     }
 
     @Test

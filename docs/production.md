@@ -68,9 +68,11 @@ guides before the first request reaches it.
 - [ ] A [timeout](glossary.md#timeout) stops a run only between expressions, and in MVEL never inside one; see
       [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
 - [ ] Thread-dump checks and leak detectors expect the daemon `unruly-cancel-timer` thread when a language stops
-      expressions with `onCancel`, and look for its short-lived `unruly-cancel-action` threads only in a virtual-thread
-      dump (`jcmd <pid> Thread.dump_to_file <file>`), since `jstack` and `ThreadMXBean` list one only when it fell
-      back to a platform thread; see [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
+      expressions with `onCancel`, and its pooled daemon `unruly-cancel-action` threads, which `jstack` and
+      `ThreadMXBean` list while an action runs and for a second after. Only an action that fell back to a
+      virtual thread, when the pool couldn't start one, needs a virtual-thread dump
+      (`jcmd <pid> Thread.dump_to_file <file>`); see
+      [What a timeout doesn't do](stopping-runs.md#-what-a-timeout-doesnt-do).
 - [ ] On virtual threads, or with rules that wait on I/O, you chose the [copy limit](glossary.md#copy-limit) with
       `maxCopies(...)`, or `unlimitedCopies()` only for a thread pool or with memory for a copy per run in progress;
       see [Limiting the copies](compiled-copies.md#-limiting-the-copies).

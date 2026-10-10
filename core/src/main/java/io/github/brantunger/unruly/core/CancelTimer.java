@@ -5,6 +5,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -14,24 +17,30 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>
  * The timer is a daemon platform thread, named {@value #THREAD_NAME}, that starts when an action is registered and
- * none is pending, and exits as soon as none is: a JVM whose languages never register one never starts it, and nothing
- * runs while none is pending. The thread is started, and decides to exit, in sections synchronized on one lock, as
- * registering is, so a registration either finds the thread there to wait for it or starts another. If it ever fails,
- * it gives up its place all the same, logs why at WARN, and starts another at once for the actions still pending, if
- * it had started or logged one since it started; otherwise the next registration starts another, so an error that
- * recurs at once can't start timer after timer.
+ * none is pending, and exits as soon as none is: a JVM whose languages never register one never starts it, nor any
+ * thread to run one, and the threads the actions ran on end once they have had none to run for a second. The thread
+ * is started, and decides to exit, in sections synchronized on one lock, as registering is, so a registration either
+ * finds the thread there to wait for it or starts another. If it ever fails, it gives up its place all the same, logs
+ * why at WARN, and starts another at once for the actions still pending, if it had started or logged one since it
+ * started; otherwise the next registration starts another, so an error that recurs at once can't start timer after
+ * timer.
  * </p>
  *
  * <p>
- * The timer never runs a language's code itself: it starts each action on a virtual thread of its own, named
- * {@value #ACTION_THREAD_NAME}, or on a daemon platform thread if no virtual thread can be started, so an action that
- * is slow, or blocks, delays no other action, of any engine. Neither the timer nor an action's thread inherits the
- * inheritable thread-locals of the run that started it, nor any context class loader, so what one run set, such as a
- * logging context, never reaches another run's actions. What an action throws is logged at WARN. An action still
- * running a second after it was started is logged at WARN once, while it runs, as an action should only tell the
- * runtime to stop: the timer keeps it pending until it returns or that second is up. A fatal {@link Error} it throws
- * is logged too, and ends only its own thread; one thrown by an action that runs on the thread that registered it, its
- * deadline having passed, is thrown there.
+ * The timer never runs a language's code itself: it hands each action to a pool of daemon platform threads, named
+ * {@value #ACTION_THREAD_NAME}, shared by every engine, which starts a thread when none is free and ends one that has
+ * had no action to run for a second. So an action that is slow, or blocks, delays no other action, of any engine, and
+ * an action runs however busy the carriers of virtual threads are, as one on a virtual thread doesn't while runs that
+ * never block hold every carrier. Only if the pool can't take it, as when no thread can be made, is the action started
+ * on a virtual thread of its own. Neither the timer nor an action's thread inherits the inheritable thread-locals of
+ * the run that started it, nor any context class loader, and a pooled thread's context class loader and interrupt
+ * status are cleared after each action. But a pooled thread then runs the actions of other runs and engines, so an
+ * action must not leave thread-locals behind, such as a logging context: the next action on its thread would see
+ * them. What an action throws is logged at WARN, and its thread goes on to run others, even after a fatal
+ * {@link Error}; one thrown by an action that runs on the thread that registered it, its deadline having passed, is
+ * thrown there. An action still pending a second after it was handed to a thread is logged at WARN once: while it
+ * runs, as an action should only tell the runtime to stop, or as not started, if no thread was free to run it by then.
+ * The timer keeps it pending until it returns or that second is up.
  * </p>
  *
  * <p>
@@ -64,6 +73,11 @@ final class CancelTimer {
     private static final String FAILED = "An action a language registered for the run's deadline failed: {}";
     private static final String NOT_STARTED = "An action a language registered for the run's deadline couldn't be"
             + " started: {}";
+    private static final String STILL_RUNNING = "An action a language registered for the run's deadline has run for"
+            + " over {} ms, and is still running: it should only tell the runtime to stop, such as by setting a flag"
+            + " the runtime reads";
+    private static final String NO_THREAD_FREE = "An action a language registered for the run's deadline hasn't"
+            + " started after {} ms: no thread was free";
 
     // How long an action may run before it's logged as slow: SLOW_NANOS, but in a test. Read when it's started.
     private static volatile long slowNanos = SLOW_NANOS;
@@ -94,9 +108,9 @@ final class CancelTimer {
 
     /** An action a run registered, and where it is in the timer's list. */
     static final class Registration implements CancelRegistration {
-        // Its states, in order, set holding LOCK: made, not yet handed to the timer; waiting for its deadline; started,
-        // and pending until it returns or is found slow; started, and pending no more; closed before it started. The
-        // last three never go back to the first two, so a read without the lock that sees one of them is right.
+        // Its states, in order, set holding LOCK: made, not yet handed to the timer; waiting for its deadline; handed
+        // to a thread, and pending until it returns or is found slow; handed, and pending no more; closed before that.
+        // The last three never go back to the first two, so a read without the lock that sees one of them is right.
         static final int MADE = 0;
         static final int PENDING = 1;
         static final int RUNNING = 2;
@@ -107,7 +121,10 @@ final class CancelTimer {
         // Its deadline's nanoTime() value (see Deadline#passesAt()).
         private final long nanos;
         private volatile int state;
-        // The nanoTime() value at which it's logged as slow if it's still running, once it's RUNNING. Guarded by LOCK.
+        // Whether its thread has begun to run it, once it's RUNNING: set on that thread, read by the timer once it's
+        // found slow, to tell an action that runs from one no thread was free to run.
+        private volatile boolean began;
+        // The nanoTime() value at which it's logged as slow if it hasn't returned, once it's RUNNING. Guarded by LOCK.
         private long slowAt;
         // Where it is in pending while it is pending or running.
         private int index;
@@ -174,7 +191,7 @@ final class CancelTimer {
         }
     }
 
-    /** An action whose deadline has passed, run on a thread of its own. */
+    /** An action whose deadline has passed, run on a pooled thread, or a virtual thread of its own. */
     private static final class Started implements Runnable {
         private final Registration registration;
 
@@ -182,10 +199,12 @@ final class CancelTimer {
             this.registration = registration;
         }
 
-        // Any Throwable: whatever the action threw is logged, and the thread then ends as it would have; nothing is
-        // left on it to stop, and an uncaught error would only be printed a second time.
+        // Any Throwable: whatever the action threw is logged, and the thread then goes on as it would have, to the next
+        // action if it's pooled; nothing is left on it to stop, and an uncaught error would only be printed a second
+        // time.
         @Override
         public void run() {
+            registration.began = true;
             try {
                 Throwable failed = CancelTimer.run(registration.action);
                 if (failed != null) {
@@ -312,28 +331,73 @@ final class CancelTimer {
         }
     }
 
-    // Starts an action whose deadline has passed on a virtual thread of its own, or a daemon platform thread if that
-    // fails, so the timer runs no language code; neither inherits anything of the timer's. Any Throwable: an action
-    // that can't be started either way, as when the JVM is out of memory, is logged and dropped, and the timer goes on.
-    // What each thread runs is made inside its try, so running out of memory making it is a failure to start too.
+    // Starts an action whose deadline has passed on a pooled daemon platform thread, which runs however busy the
+    // carriers of virtual threads are, or on a virtual thread of its own if the pool can't take it, so the timer runs
+    // no language code; neither inherits anything of the timer's. Any Throwable: an action that can't be started
+    // either way, as when the JVM is out of memory, is logged and dropped, and the timer goes on. What each thread runs
+    // is made inside its try, so running out of memory making it is a failure to start too.
     private static void start(Registration registration) {
         try {
-            Faults.at(Faults.Step.CANCEL_ACTION_STARTING);
-            Thread virtual = Thread.ofVirtual().name(ACTION_THREAD_NAME).inheritInheritableThreadLocals(false)
-                    .unstarted(new Started(registration));
-            virtual.setContextClassLoader(null);
-            virtual.start();
+            ActionPool.ACTIONS.execute(new PooledAction(registration));
         } catch (Throwable e) {
             try {
                 Faults.at(Faults.Step.CANCEL_ACTION_FALLING_BACK);
-                Thread platform = Thread.ofPlatform().name(ACTION_THREAD_NAME).daemon(true)
-                        .priority(Thread.NORM_PRIORITY).inheritInheritableThreadLocals(false)
+                Thread virtual = Thread.ofVirtual().name(ACTION_THREAD_NAME).inheritInheritableThreadLocals(false)
                         .unstarted(new Started(registration));
-                platform.setContextClassLoader(null);
-                platform.start();
+                virtual.setContextClassLoader(null);
+                virtual.start();
             } catch (Throwable again) {
                 returned(registration);
                 warn(NOT_STARTED, again);
+            }
+        }
+    }
+
+    /**
+     * The actions' pool, made the first time an action is started, so at run time even in a native image: daemon
+     * platform threads, one made whenever none is free, each ended once it has had no action to run for a second.
+     */
+    private static final class ActionPool {
+        static final ThreadPoolExecutor ACTIONS = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 1, TimeUnit.SECONDS,
+                new SynchronousQueue<>(), new ActionThreads());
+
+        private ActionPool() {
+        }
+    }
+
+    /**
+     * Makes the pool's threads: daemon platform threads that inherit nothing of the thread that makes them. It runs on
+     * the timer's thread, in the pool's {@code execute()}, which throws what it throws.
+     */
+    private static final class ActionThreads implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable task) {
+            Faults.at(Faults.Step.CANCEL_ACTION_STARTING);
+            Thread pooled = Thread.ofPlatform().name(ACTION_THREAD_NAME).daemon(true).priority(Thread.NORM_PRIORITY)
+                    .inheritInheritableThreadLocals(false).unstarted(task);
+            pooled.setContextClassLoader(null);
+            return pooled;
+        }
+    }
+
+    /**
+     * An action run on a pooled thread, which then clears the thread's context class loader, which the action may have
+     * set, and its interrupt status, for the next action; the action's thread-locals are its own to leave none behind.
+     */
+    private static final class PooledAction implements Runnable {
+        private final Started started;
+
+        PooledAction(Registration registration) {
+            started = new Started(registration);
+        }
+
+        @Override
+        public void run() {
+            try {
+                started.run();
+            } finally {
+                Thread.currentThread().setContextClassLoader(null);
+                Thread.interrupted();
             }
         }
     }
@@ -389,7 +453,7 @@ final class CancelTimer {
         }
     }
 
-    // The timer thread: starts each action once its deadline passes, logs one still running once it's slow, and exits
+    // The timer thread: starts each action once its deadline passes, logs one not returned once it's slow, and exits
     // once none is pending.
     // Only this thread clears thread, and only as it exits, so while it runs thread is this one. Any Throwable: a timer
     // that dies is logged and replaced, or left for the next registration to replace, and the thread then ends.
@@ -431,12 +495,13 @@ final class CancelTimer {
 
     // The registrations are the runs' to close; waitingFor is read by the threads that register and close them while
     // this one waits. Returns once it has given up its place, none being pending. Each time it wakes, it looks at every
-    // pending action once, holding LOCK, and marks all those due; once it has let go of LOCK, it starts them, in the
-    // order it found them, then logs the slow ones.
+    // pending action once, holding LOCK, and marks all those due, and takes off the list those found slow; once it has
+    // let go of LOCK, it starts the due ones, in the order it found them, then logs the slow ones.
     @SuppressWarnings({"PMD.NullAssignment", "PMD.CloseResource", "PMD.UnusedAssignment"})
     private static void serveUntilIdle() {
         for (;;) {
-            Registration[] due;
+            // One array for both: the actions found due, from the front, and those found slow, from the back.
+            Registration[] dueAndSlow;
             int starts;
             int slows;
             long slowFor;
@@ -447,7 +512,7 @@ final class CancelTimer {
                         thread = null;
                         return;
                     }
-                    due = null;
+                    dueAndSlow = null;
                     starts = 0;
                     slows = 0;
                     long now = System.nanoTime();
@@ -466,24 +531,25 @@ final class CancelTimer {
                             }
                             continue;
                         }
-                        if (due == null) {
+                        if (dueAndSlow == null) {
                             // Made before any is marked, so running out of memory here marks none: the timer dies with
-                            // every action as it was. No more than the i + 1 not yet looked at can be due.
-                            due = new Registration[i + 1];
+                            // every action as it was. No more than the i + 1 not yet looked at can be due or slow.
+                            dueAndSlow = new Registration[i + 1];
                         }
                         if (it.state == Registration.PENDING) {
                             // Pending still, until it returns or is found slow.
                             it.slowAt = now + slowFor;
                             it.state = Registration.RUNNING;
-                            due[starts] = it;
+                            dueAndSlow[starts] = it;
                             starts++;
                         } else {
                             remove(it);
                             it.state = Registration.STARTED;
                             slows++;
+                            dueAndSlow[dueAndSlow.length - slows] = it;
                         }
                     }
-                    if (due != null) {
+                    if (dueAndSlow != null) {
                         progressed = true;
                         break;
                     }
@@ -499,13 +565,13 @@ final class CancelTimer {
             }
             // The actions first: a slow one's WARN can wait, and logging can be slow.
             for (int i = 0; i < starts; i++) {
-                start(due[i]);
+                start(dueAndSlow[i]);
                 Faults.reached(Faults.Step.CANCEL_ACTION_HANDED_OFF);
             }
-            for (int i = 0; i < slows; i++) {
-                warn("An action a language registered for the run's deadline has run for over {} ms, and is still"
-                        + " running: it should only tell the runtime to stop, such as by setting a flag the runtime"
-                        + " reads", TimeUnit.NANOSECONDS.toMillis(slowFor));
+            // Each as running, or as not started if its thread hasn't begun to run it.
+            for (int i = 1; i <= slows; i++) {
+                warn(dueAndSlow[dueAndSlow.length - i].began ? STILL_RUNNING : NO_THREAD_FREE,
+                        TimeUnit.NANOSECONDS.toMillis(slowFor));
             }
         }
     }

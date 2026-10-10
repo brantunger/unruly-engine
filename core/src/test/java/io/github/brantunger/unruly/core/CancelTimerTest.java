@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.ChildJvm;
 import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.language.CancelRegistration;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
@@ -8,14 +9,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * started; an action registered or closed just after the timer started another, or while it waits for a later one; a
  * slow action; a timer thread interrupted while it waits, and one that dies. #1131: every action due when the timer
  * wakes found in one scan, and started in the order it found them, not that of their deadlines, with the slow ones
- * logged in the same wake.
+ * logged in the same wake. #1117: an action the pool of action threads can't make a thread for started on a virtual
+ * thread, and one no carrier is free to run there by its slow time logged as not started.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("#1047: the cancel timer runs each pending action at its deadline, those due in different wakes in their"
@@ -81,9 +86,12 @@ class CancelTimerTest {
             + " order of their deadlines, due in different wakes")
     void manyInDeadlineOrder() throws InterruptedException {
         int actions = 12;
-        // Each action's thread id, which the timer's thread hands out in the order it starts them, whatever order the
-        // threads then run in.
-        Map<Long, Integer> startedAs = new ConcurrentSkipListMap<>();
+        // The registrations, by deadline. The timer marks each started before it hands it to a thread, so one that
+        // runs before a registration with an earlier deadline is marked was started out of order, whatever order the
+        // threads then run in, and however few threads the pool runs them on. That shows the order across wakes, not
+        // the order the timer starts those due in one wake, which the pool's reused threads no longer tell apart.
+        CancelTimer.Registration[] registrations = new CancelTimer.Registration[actions];
+        List<String> outOfOrder = new CopyOnWriteArrayList<>();
         CountDownLatch all = new CountDownLatch(actions);
         // The timer is held once it has started an action of its own until all are registered, so none is started
         // before a later one with an earlier deadline is registered, however slowly the machine registers them.
@@ -104,10 +112,15 @@ class CancelTimerTest {
             long first = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(100);
             for (int i = actions - 1; i >= 0; i--) {
                 int at = i;
-                CancelTimer.schedule(new CancelTimer.Registration(() -> {
-                    startedAs.put(Thread.currentThread().threadId(), at);
+                registrations[i] = new CancelTimer.Registration(() -> {
+                    for (int earlier = 0; earlier < at; earlier++) {
+                        if (!registrations[earlier].finished()) {
+                            outOfOrder.add(at + " ran before " + earlier + " was started");
+                        }
+                    }
                     all.countDown();
-                }, first + TimeUnit.MILLISECONDS.toNanos(20L * i), CancelTimer.Registration.MADE));
+                }, first + TimeUnit.MILLISECONDS.toNanos(20L * i), CancelTimer.Registration.MADE);
+                CancelTimer.schedule(registrations[i]);
             }
 
             registered.countDown();
@@ -117,11 +130,7 @@ class CancelTimerTest {
             keeper.close();
         }
 
-        List<Integer> expected = new ArrayList<>();
-        for (int i = 0; i < actions; i++) {
-            expected.add(i);
-        }
-        assertEquals(expected, List.copyOf(startedAs.values()));
+        assertEquals(List.of(), outOfOrder);
     }
 
     @Test
@@ -182,6 +191,7 @@ class CancelTimerTest {
         CountDownLatch registered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch ran = new CountDownLatch(1);
+        CountDownLatch began = new CountDownLatch(1);
         // How many are pending once the due one has started: the keeper and it, the slow one gone.
         AtomicInteger pendingAtStart = new AtomicInteger(-1);
         String slow = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's deadline"
@@ -195,9 +205,14 @@ class CancelTimerTest {
                     holding.countDown();
                     await(registered);
                 });
-                // Slow as soon as it has started, and held until the end.
-                scheduled(Duration.ZERO, blocks);
+                // Slow as soon as it has started, and held until the end; begun before the timer looks again, so it's
+                // logged as running, however slowly its thread starts.
+                scheduled(Duration.ZERO, () -> {
+                    began.countDown();
+                    blocks.run();
+                });
                 await(holding);
+                await(began);
                 // So the one due next isn't slow too, and the slow one's WARN gives the time read in that wake.
                 CancelTimer.slowAfter(TimeUnit.HOURS.toNanos(1));
                 CancelTimer.schedule(new CancelTimer.Registration(() -> {
@@ -288,50 +303,58 @@ class CancelTimerTest {
     }
 
     @Test
-    @DisplayName("an action that can't be started on a virtual thread runs on a daemon platform thread that inherits"
-            + " nothing")
-    void actionFallsBackToAPlatformThread() {
+    @DisplayName("#1117: an action the pool can't take runs on a virtual thread of its own that inherits nothing")
+    void actionFallsBackToAVirtualThread() throws InterruptedException {
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
-        Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
-                new OutOfMemoryError("no virtual threads"));
         AtomicReference<Thread> ranOn = new AtomicReference<>();
         AtomicReference<ClassLoader> loader = new AtomicReference<>(getClass().getClassLoader());
         CountDownLatch ran = new CountDownLatch(1);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            awaitNoActionThreads();
+            Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+                    new OutOfMemoryError("unable to create native thread"));
 
-        scheduled(Duration.ofMillis(50), () -> {
-            ranOn.set(Thread.currentThread());
-            loader.set(Thread.currentThread().getContextClassLoader());
-            ran.countDown();
-        });
+            scheduled(Duration.ofMillis(50), () -> {
+                ranOn.set(Thread.currentThread());
+                loader.set(Thread.currentThread().getContextClassLoader());
+                ran.countDown();
+            });
 
-        await(ran);
-        assertFalse(ranOn.get().isVirtual());
-        assertTrue(ranOn.get().isDaemon());
+            await(ran);
+        } finally {
+            keeper.close();
+        }
+        assertTrue(ranOn.get().isVirtual(), ranOn.get()::toString);
         assertEquals(CancelTimer.ACTION_THREAD_NAME, ranOn.get().getName());
         assertNull(loader.get());
-        keeper.close();
     }
 
     @Test
-    @DisplayName("an action that can't be started on a virtual thread nor a platform one is logged at WARN and"
-            + " dropped, and the timer goes on")
+    @DisplayName("an action that can't be started on a pooled thread nor a virtual one is logged at WARN and dropped,"
+            + " and the timer goes on")
     void actionFailsToStart() throws InterruptedException {
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
-        Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
-                new OutOfMemoryError("no virtual threads"));
-        Faults.injectThen(Faults.Step.CANCEL_ACTION_FALLING_BACK, new OutOfMemoryError("no threads"));
         AtomicBoolean ran = new AtomicBoolean();
         String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
                 + " deadline couldn't be started: java.lang.OutOfMemoryError: no threads";
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            awaitNoActionThreads();
+            Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+                    new OutOfMemoryError("unable to create native thread"));
+            Faults.injectThen(Faults.Step.CANCEL_ACTION_FALLING_BACK, new OutOfMemoryError("no threads"));
 
-        String logs = LogsUntil.logsUntil(expected, () -> scheduled(Duration.ofMillis(50), () -> ran.set(true)));
+            String logs = LogsUntil.logsUntil(expected, () -> scheduled(Duration.ofMillis(50), () -> ran.set(true)));
 
-        assertTrue(logs.contains(expected), logs);
-        CountDownLatch next = new CountDownLatch(1);
-        scheduled(Duration.ofMillis(50), next::countDown);
-        await(next);
+            assertTrue(logs.contains(expected), logs);
+            CountDownLatch next = new CountDownLatch(1);
+            scheduled(Duration.ofMillis(50), next::countDown);
+            await(next);
+        } finally {
+            keeper.close();
+        }
         assertFalse(ran.get());
-        keeper.close();
     }
 
     @Test
@@ -339,24 +362,106 @@ class CancelTimerTest {
             + " returns until told")
     void slowActionLoggedWhileItRuns() throws InterruptedException {
         CancelTimer.slowAfter(0);
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        CountDownLatch began = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch returned = new CountDownLatch(1);
         String slow = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's deadline"
                 + " has run for over 0 ms, and is still running: it should only tell the runtime to stop, such as by"
                 + " setting a flag the runtime reads";
+        // Let go whatever happens, so a failure here leaves no timer, nor action, held for the next test.
+        try {
+            // The timer looks again only once the action has begun, however slowly its thread starts, so it's found
+            // running.
+            Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(began));
 
-        // Blocks until the WARN has been logged, which shows it was logged while the action ran.
-        String logs = LogsUntil.logsUntil(slow, () -> scheduled(Duration.ofMillis(50), () -> {
-            await(release);
-            returned.countDown();
-        }), () -> {
+            // Blocks until the WARN has been logged, which shows it was logged while the action ran.
+            String logs = LogsUntil.logsUntil(slow, () -> scheduled(Duration.ofMillis(50), () -> {
+                began.countDown();
+                await(release);
+                returned.countDown();
+            }), () -> {
+                release.countDown();
+                await(returned);
+                keeper.close();
+                awaitTimerExit();
+            });
+
+            assertEquals(1, logs.lines().filter(line -> line.contains("is still running")).count(), logs);
+            assertEquals(List.of(), logs.lines().filter(line -> line.contains("hasn't started")).toList(), logs);
+            assertEquals(TimeUnit.SECONDS.toNanos(1), CancelTimer.SLOW_NANOS);
+        } finally {
+            began.countDown();
             release.countDown();
-            await(returned);
-            awaitTimerExit();
-        });
+            keeper.close();
+        }
+    }
 
-        assertEquals(1, logs.lines().filter(line -> line.contains("is still running")).count(), logs);
-        assertEquals(TimeUnit.SECONDS.toNanos(1), CancelTimer.SLOW_NANOS);
+    @Test
+    @DisplayName("#1117: an action that no carrier is free to run, on the virtual thread it falls back to, is logged at"
+            + " WARN as not started once it's slow, before it runs")
+    void slowNotStartedLoggedAsNotStarted(@TempDir Path dir) throws IOException, InterruptedException {
+        // One carrier, in the scenario's JVM only, so the spinning thread holds every carrier there is.
+        String output = ChildJvm.run(dir, SlowNotStartedScenario.class, "-Djdk.virtualThreadScheduler.parallelism=1",
+                "-Djdk.virtualThreadScheduler.maxPoolSize=1", "-Dorg.slf4j.simpleLogger.defaultLogLevel=warn");
+
+        assertTrue(output.contains("WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the"
+                + " run's deadline hasn't started after 200 ms: no thread was free"), output);
+        assertTrue(output.contains(SlowNotStartedScenario.NOT_RUN), output);
+        assertFalse(output.contains("is still running"), output);
+    }
+
+    // Pins what happens today, which #1136 may change: the timer marks every action a scan finds due before it starts
+    // any, so one that dies part way through leaves the rest marked and never started, and the timer that replaces it
+    // drops them once they're slow, logging each as not started.
+    @Test
+    @DisplayName("#1117: the actions a timer that dies part way through a wake never started are logged at WARN as not"
+            + " started once they're slow, and never run")
+    void timerDeathMidBatchLoggedAsNotStarted() throws InterruptedException {
+        CancelTimer.slowAfter(0);
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        Thread dying = CancelTimer.runningThread();
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch registered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean neverStartedRan = new AtomicBoolean();
+        String waiting = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's deadline"
+                + " hasn't started after 0 ms: no thread was free";
+        // Let go whatever happens, so a failure here leaves no timer, nor action, held for the next test.
+        try {
+            // The timer is held once it has started an action of its own until both are registered, so it wakes once
+            // to find both due, and marks both started. It looks at them from the last registered down, so it starts
+            // that one first, then dies, and never starts the one registered before it, which the timer that replaces
+            // it at once finds slow, with no thread ever given it.
+            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                holding.countDown();
+                await(registered);
+            });
+            scheduled(Duration.ZERO, CancelTimerTest::nothing);
+            await(holding);
+            // Until its action has returned, it's pending: removing it from the list once the others are registered
+            // would move the last one registered into its place, and the timer would start the other first.
+            TestSupport.await(() -> CancelTimer.pendingCount() == 1, 10, "the held action has returned");
+            long passed = System.nanoTime() - 1;
+            CancelTimer.schedule(new CancelTimer.Registration(() -> neverStartedRan.set(true), passed,
+                    CancelTimer.Registration.MADE));
+            CancelTimer.schedule(new CancelTimer.Registration(() -> await(release), passed,
+                    CancelTimer.Registration.MADE));
+            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                throw new AssertionError("the timer dies");
+            });
+
+            String logs = LogsUntil.logsUntil(waiting, registered::countDown);
+
+            assertTrue(logs.contains(waiting), logs);
+            dying.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(dying.isAlive());
+            assertFalse(neverStartedRan.get(), "the action the timer never started ran");
+        } finally {
+            registered.countDown();
+            release.countDown();
+            keeper.close();
+        }
     }
 
     @Test
@@ -529,6 +634,15 @@ class CancelTimerTest {
 
     private static void nothing() {
         // An action that does nothing.
+    }
+
+    // Waits for the actions' pool to end its idle threads, as it does a second after their last action, so it has to
+    // make a thread for the next action, and the fault set for that step fails it. Its threads are the platform
+    // threads with the actions' name.
+    private static void awaitNoActionThreads() throws InterruptedException {
+        TestSupport.await(() -> Thread.getAllStackTraces().keySet().stream().noneMatch(
+                thread -> !thread.isVirtual() && CancelTimer.ACTION_THREAD_NAME.equals(thread.getName())), 10,
+                "the pool has no thread");
     }
 
     private static void awaitNothingPending() {
