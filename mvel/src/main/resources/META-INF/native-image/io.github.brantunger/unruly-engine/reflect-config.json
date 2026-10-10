@@ -15,6 +15,7 @@
     "name": "io.github.brantunger.unruly.mvel.warmup.WarmUpTarget",
     "allPublicFields": true,
     "queryAllPublicMethods": true,
+    "queryAllDeclaredMethods": true,
     "methods": [
       {
         "name": "isReady",

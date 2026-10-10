@@ -18,7 +18,9 @@ import java.util.function.Supplier;
  * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds three engines
  * that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language so the
  * build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a {@link #STEP} line:
- * a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of an inline list, of
+ * a load of a condition that compares with {@code null}, a load of an action that calls a method MVEL can't find on
+ * the output's type, a load and a run of an action that assigns, a load, a run, a load and a run of a rule that reads
+ * a fact's property, loads and runs of an inline list, of
  * {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a {@code validate()} that fails, a
  * load that fails, not nested, a load and a run that each ask for the class loader many times, a load in which MVEL
  * goes round in a loop, a load and a run of a rule it goes round in a loop running, a load of a chain MVEL looks up as
@@ -34,6 +36,17 @@ final class FirstUseScenario {
     static final String UNEXPECTED = "SCENARIO unexpected: ";
     /** What the line that comes before each step begins with; the step's description follows. */
     static final String STEP = "SCENARIO step: ";
+    /** The step whose load is the first to compile a {@code null} literal and a comparison (#1103). */
+    static final String NULL_COMPARISON = "a load of a condition that compares with null";
+    /**
+     * The step whose load is the first to compile a call of a method MVEL can't find on the type it gives the value,
+     * {@code Object} for the output, as no output type is declared (#1103).
+     */
+    static final String UNFOUND_CALL = "a load of an action that calls a method MVEL can't find on the output's type";
+    /** The step whose load is the first to compile an assignment (#1103). */
+    static final String ASSIGNMENT_LOAD = "a load of an action that assigns";
+    /** The step whose run is the first to run an assignment (#1103). */
+    static final String ASSIGNMENT_RUN = "a first run of an action that assigns";
     /** The step whose run is the first to read a property through its getter. */
     static final String PROPERTY_RUN = "a first run of the rule that reads a property";
     /** The step that loads and runs the first inline list. */
@@ -180,6 +193,18 @@ final class FirstUseScenario {
         mark(BUILT);
 
         List<String> unexpected = new ArrayList<>();
+        // First, so no other step compiles a null literal, a comparison, a call MVEL can't find or an assignment before
+        // them (#1103).
+        mark(STEP + NULL_COMPARISON);
+        engine.load(List.of(rule("null", "t != null", "1")));
+        mark(STEP + UNFOUND_CALL);
+        engine.load(List.of(rule("put", "true", "output.put('r', 1);")));
+        mark(STEP + ASSIGNMENT_LOAD);
+        engine.load(List.of(rule("assigns", "true", "x = 1;")));
+        mark(STEP + ASSIGNMENT_RUN);
+        if (!engine.run(new FactMap<>()).isEmpty()) {
+            unexpected.add(ASSIGNMENT_RUN);
+        }
         mark(STEP + "a load");
         engine.load(List.of(Rule.builder().ruleName("doubles").condition("x > 1 && name == 'a'")
                 .action("output.put('k', x * 2);").build()));

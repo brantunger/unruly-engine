@@ -2,11 +2,13 @@ package io.github.brantunger.unruly.mvel.warmup;
 
 /**
  * The value {@link io.github.brantunger.unruly.mvel.MvelExpressionLanguage#prepare()} evaluates a property read, a
- * method call and a call with a literal argument on, once each, through MVEL's public API: a JVM's first property
- * read, first method call and first literal argument load classes MVEL evaluates them with, which a first run deep in
- * a stack would otherwise load. Public, as MVEL calls a method by reflection only on a public class; in a package the
- * module exports only to MVEL, so it adds nothing to the API. The mvel jar's {@code reflect-config.json} registers it
- * for a native image. Not for applications to use.
+ * method call, a call with a literal argument and a comparison with {@code null} on, once each, through MVEL's public
+ * API, and compiles a call of a method it doesn't have against: a JVM's first property read, first method call and
+ * first literal argument load classes MVEL evaluates them with, which a first run deep in a stack would otherwise load,
+ * and its first compile of a {@code null} literal and a comparison, and of a call of a method MVEL can't find on the
+ * type it gives the value, load classes a first load deep in a stack would otherwise load. Public, as MVEL calls a
+ * method by reflection only on a public class; in a package the module exports only to MVEL, so it adds nothing to the
+ * API. The mvel jar's {@code reflect-config.json} registers it for a native image. Not for applications to use.
  */
 public final class WarmUpTarget {
 

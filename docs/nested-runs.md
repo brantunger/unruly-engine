@@ -85,7 +85,7 @@ rules loaded; for what `prepare()` throws, see
 
 > [!TIP]
 > To check the room at `build()`, not at a deep first `load()`, name the language
-> (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()` needs
+> (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()` can need
 > more stack than its check: load your rules once near the top too; see
 > [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
 

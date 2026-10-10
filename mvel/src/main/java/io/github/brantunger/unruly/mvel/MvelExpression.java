@@ -14,6 +14,7 @@ import org.mvel2.ParserContext;
 import org.mvel2.optimizers.OptimizerFactory;
 
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -261,21 +262,26 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     /**
-     * Compiles and runs a property read, a method call and a method call with a literal argument on a
-     * {@link WarmUpTarget}, once each, as a run runs an expression, for {@link MvelExpressionLanguage#prepare()}: a
-     * JVM's first read, first call and first literal argument load classes MVEL evaluates them with. With MVEL's own
-     * class loader as the thread's context class loader, as the static initializer sets MVEL's optimizer up, so the
-     * expressions MVEL compiles here, and drops, hold no caller's class loader.
+     * Compiles and runs a property read, a method call, a method call with a literal argument and a comparison with
+     * {@code null} on a {@link WarmUpTarget}, and an assignment, once each, as a run runs an expression, and compiles
+     * a call of a method {@link WarmUpTarget} doesn't have, for {@link MvelExpressionLanguage#prepare()}: a JVM's first
+     * read, first call and first literal argument load classes MVEL evaluates them with, and its first compile of a
+     * {@code null} literal and a comparison, of a call of a method MVEL can't find on the type it gives the value, and
+     * of an assignment, and an assignment's first run, load classes MVEL compiles and runs them with (#1103). The call
+     * is compiled only, as running it would fail for the missing method. With MVEL's own class loader as the thread's
+     * context class loader, as the static initializer sets MVEL's optimizer up, so the expressions MVEL compiles here,
+     * and drops, hold no caller's class loader.
      *
      * <p>
-     * Each expression is compiled with {@code v} declared as a {@link WarmUpTarget}. MVEL types a name it has no type
-     * for as {@code Object}, and looks names made from a property read through it up as classes: for {@code v.ready},
-     * {@code v.ready}, {@code v$ready}, {@code v} and {@code java.lang.Object$ready}. A native image built with strict
-     * metadata throws for each such name it is asked through a class loader's {@code loadClass}, which fails
-     * {@code prepare()}. A rule's expressions make those lookups too, but through the rule list's
-     * {@link ExactNameClassLoader}, which refuses a name with no class file before asking its parent when that is one
-     * of the JDK's class loaders, as an image's application class loader is, and otherwise passes it on to the parent,
-     * which reports it as a {@link ClassNotFoundException}; here MVEL would ask the context class loader itself.
+     * Each expression is compiled with {@code v} declared as a {@link WarmUpTarget}; MVEL doesn't look the assignment's
+     * {@code x} up. MVEL types a name it has no type for as {@code Object}, and looks names made from a property read
+     * through it up as classes: for {@code v.ready}, {@code v.ready}, {@code v$ready}, {@code v} and
+     * {@code java.lang.Object$ready}. A native image built with strict metadata throws for each such name it is asked
+     * through a class loader's {@code loadClass}, which fails {@code prepare()}. A rule's expressions make those
+     * lookups too, but through the rule list's {@link ExactNameClassLoader}, which refuses a name with no class file
+     * before asking its parent when that is one of the JDK's class loaders, as an image's application class loader is,
+     * and otherwise passes it on to the parent, which reports it as a {@link ClassNotFoundException}; here MVEL would
+     * ask the context class loader itself.
      * </p>
      */
     static void warmUp() {
@@ -289,19 +295,29 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * @param loader The class loader to set while MVEL compiles and runs the expressions
      */
     static void warmUp(ClassLoader loader) {
-        Map<String, Object> variables = Map.of("v", new WarmUpTarget());
+        // Mutable, as the assignment writes x into it.
+        Map<String, Object> variables = new HashMap<>(Map.of("v", new WarmUpTarget()));
         withClassLoader(loader, () -> {
             warmUpEvaluate("v.ready", variables);
             warmUpEvaluate("v.check()", variables);
-            return warmUpEvaluate("v.accepts('a')", variables);
+            warmUpEvaluate("v.accepts('a')", variables);
+            warmUpEvaluate("v != null", variables);
+            // Compiled only: WarmUpTarget has no put, so a run would fail.
+            warmUpCompile("v.put('r', 1)");
+            return warmUpEvaluate("x = 1", variables);
         });
     }
 
     // Compiles an expression of the warm-up, with v's type declared, in a context of its own, and runs it once.
     private static Object warmUpEvaluate(String source, Map<String, Object> variables) {
+        return MVEL.executeExpression(warmUpCompile(source), (Object) null, variables);
+    }
+
+    // Compiles an expression of the warm-up, with v's type declared, in a context of its own, without running it.
+    private static Serializable warmUpCompile(String source) {
         ParserContext context = new ParserContext();
         context.addInput("v", WarmUpTarget.class);
-        return MVEL.executeExpression(MVEL.compileExpression(source, context), (Object) null, variables);
+        return MVEL.compileExpression(source, context);
     }
 
     /**
