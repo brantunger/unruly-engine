@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.8](https://github.com/brantunger/unruly-engine/compare/v2.29.7...v2.29.8) (2026-10-10)
+
+
+### Bug Fixes
+
+* warm up a null comparison, a call MVEL can't resolve and an assignment when MVEL is prepared, so a JVM's first load or run of such a rule deep in a stack doesn't load MVEL's classes there and run out of stack ([#1140](https://github.com/brantunger/unruly-engine/issues/1140)) ([350ae5d](https://github.com/brantunger/unruly-engine/commit/350ae5dc101bcaec2ef8a98b3ceb9fcccc2311d3))
+
 ## [2.29.7](https://github.com/brantunger/unruly-engine/compare/v2.29.6...v2.29.7) (2026-10-08)
 
 
