@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.10](https://github.com/brantunger/unruly-engine/compare/v2.29.9...v2.29.10) (2026-10-10)
+
+
+### Bug Fixes
+
+* have the cancel timer start every onCancel action one scan finds due once it lets go of its lock, not one per scan, so 20,000 deadlines falling due together start within 6 to 28 ms at p99, not 214 to 445 ms ([#1148](https://github.com/brantunger/unruly-engine/issues/1148)) ([35b94e4](https://github.com/brantunger/unruly-engine/commit/35b94e4bfe7a426bd5948119106300fd7a1f6e16))
+
 ## [2.29.9](https://github.com/brantunger/unruly-engine/compare/v2.29.8...v2.29.9) (2026-10-10)
 
 
