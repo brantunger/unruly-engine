@@ -281,14 +281,14 @@ final class RuleListCompiler {
          * {@code null}, fails the rule list, and its answer is left out, as if it couldn't tell.
          *
          * @param checks The compilers, by language name
-         * @return The names of the facts each compiler's rules read, copied, by language name, for the compilers that
-         *         can tell; empty when none can
+         * @return The names of the facts each compiler's rules read, copied once, by language name, for the compilers
+         *         that can tell, a set {@link Set#copyOf} would return as is being kept so; empty when none can
          */
         private Map<String, Set<String>> askNamesRead(Map<String, ExpressionCompiler> checks) {
             Map<String, Set<String>> read = new HashMap<>();
             for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
                 String named = "The '" + Failures.quote(check.getKey()) + "' expression language";
-                Set<String> names = new HashSet<>();
+                Set<String> names = Set.of();
                 boolean tells;
                 boolean holdsNull = false;
                 try {
@@ -300,7 +300,10 @@ final class RuleListCompiler {
                     if (tells) {
                         for (String name : returned) {
                             holdsNull |= name == null;
-                            names.add(name);
+                        }
+                        // One copy: Set.copyOf returns a set Set.of or Set.copyOf made as is, as nothing can change it.
+                        if (!holdsNull) {
+                            names = Set.copyOf(returned);
                         }
                     }
                 } catch (Throwable e) {
@@ -311,7 +314,7 @@ final class RuleListCompiler {
                 if (holdsNull) {
                     failed(compilationFailure(named + " returned a null name from factNamesRead()", null, null));
                 } else if (tells) {
-                    read.put(check.getKey(), Set.copyOf(names));
+                    read.put(check.getKey(), names);
                 }
             }
             return read.isEmpty() ? Map.of() : Map.copyOf(read);

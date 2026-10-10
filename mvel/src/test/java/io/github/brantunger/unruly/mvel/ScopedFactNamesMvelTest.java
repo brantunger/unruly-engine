@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -423,5 +424,44 @@ class ScopedFactNamesMvelTest {
             assertEquals("'" + quoted + "' is not a valid fact name: rules can only refer to a fact named with a Java"
                     + " identifier", ex.getMessage());
         }
+    }
+
+    /**
+     * A span with an end inside it, such as {@code &!false} in {@code true&&!false}, is a name MVEL never reads, so it
+     * isn't among the names the rules read, and a fact by it isn't checked: no rule reads it (#1129).
+     */
+    @Test
+    @DisplayName("a fact named by a span with an end inside it, which MVEL never reads, isn't checked (#1129)")
+    void spanWithAnEndInsideNotChecked() {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            engine.load(List.of(Rule.builder().ruleName("m").condition("true&&!false").action("output.put('r', 1)")
+                    .build()));
+            assertEquals(Map.of("r", 1), run(engine, "&!false"));
+            assertEquals("'&' is not a valid fact name: rules can only refer to a fact named with a Java identifier",
+                    run(engine, "&"));
+        }
+    }
+
+    /**
+     * The compiler keeps one set of the names its expressions read: factNamesRead() makes it unmodifiable once and
+     * returns that set, so the engine keeps it without a copy of its own; an expression compiled after adds to a new
+     * set, leaving the one returned as it was (#1129).
+     */
+    @Test
+    @DisplayName("the compiler returns the same unmodifiable set of names each time, and a later compile a new one")
+    void namesReadKeptOnce() {
+        MvelExpressionCompiler compiler = new MvelExpressionCompiler(new Imports(Set.of(), Set.of(),
+                ScopedFactNamesMvelTest.class.getClassLoader()));
+        compiler.compileCondition(new Expression("m", ExpressionKind.CONDITION, "a == 1"));
+
+        Set<String> read = compiler.factNamesRead();
+        assertSame(read, compiler.factNamesRead());
+        assertEquals(Set.of("a", "==", "1", "="), read);
+        assertThrows(UnsupportedOperationException.class, () -> read.add("b"));
+
+        compiler.compileCondition(new Expression("m", ExpressionKind.CONDITION, "b == 2"));
+        assertEquals(Set.of("a", "==", "1", "="), read);
+        assertEquals(Set.of("a", "b", "==", "1", "2", "="), compiler.factNamesRead());
     }
 }

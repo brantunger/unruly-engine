@@ -192,8 +192,7 @@ class RuleTextNamesTest {
                 "x", "==", "&&", "a.b('s')", "b('s')", "f(x)", "{}")),
                 "the names found before #1089 are kept: " + names);
         assertEquals(Set.of("my-fact", "my", "fact", "1", "a.b", "a", "b", "s", "//", "c", "def", "f", "x", "==", "&&",
-                "a.b('s')", "b('s')", "f(x)", "{}", "a.b(", "a.b('s", "a.b('s'", "b(", "b('s", "b('s'", "'s", "'s'",
-                "'s')", "s'", "s')", ")", "f(x", "x)", "{", "}", "=", "&", "/"), names);
+                "a.b('s')", "b('s')", "f(x)", "{}", "'s", ")", "{", "}", "=", "&", "/"), names);
     }
 
     @Test
@@ -203,7 +202,56 @@ class RuleTextNamesTest {
 
         assertTrue(names.containsAll(Set.of("a", "(,a)", ",a", "==", "5", "x,y", "x", "y")),
                 "the names found before #1089 are kept: " + names);
-        assertEquals(Set.of("a", "(,a)", ",a", "==", "5", "x,y", "x", "y", "(", "(,a", ",a)", "a)", "="), names);
+        assertEquals(Set.of("a", "(,a)", ",a", "==", "5", "x,y", "x", "y", "(", "="), names);
+    }
+
+    @Test
+    @DisplayName("a span with an end inside it but - and . is left out, so a dense word adds about as many spans as it"
+            + " has ends (#1129)")
+    void spansWithAnEndInsideLeftOut() {
+        List<String> parts = new ArrayList<>();
+        Set<String> expected = new HashSet<>();
+        for (int part = 1; part <= 31; part++) {
+            parts.add("a" + part);
+            expected.add("a" + part);
+            if (part > 1) {
+                expected.add("&a" + part);
+            }
+        }
+        String word = String.join("&&", parts);
+        expected.add(word);
+
+        assertEquals(expected, names(word), "60 ends, under the limit, add 62 names, not the square of them");
+        assertEquals(Set.of("x", "x]=", "=", "=1", "1", "x]==1"), names("x]==1"),
+                "x] is left out, and x]= kept, as the second = of == is one no = follows");
+        assertEquals(Set.of("a.b", "a", "b", "c", "a.b(c)", "b(c)"), names("a.b(c)"),
+                "a.b(c is left out, and the word and its parts between dots kept, as 2.29.4 found them");
+    }
+
+    @Test
+    @DisplayName("a span with an end inside it is kept before ++, -- or an assignment, as MVEL reads the name there"
+            + " (#1129)")
+    void spansBeforeAnAssignmentKept() {
+        for (String text : List.of("my]--", "my] -- ", "my]++", "my]=1", "my]+=1", "my]>>>=1", "my]<<=1")) {
+            assertTrue(names(text).contains("my]"), text + ": " + names(text));
+        }
+        for (String text : List.of("my]==1", "my]>=1", "my]<1", "my]-1", "my])")) {
+            assertFalse(names(text).contains("my]"), text + ": " + names(text));
+        }
+        assertTrue(names("(,a)=1").contains("(,a)"), names("(,a)=1").toString());
+    }
+
+    @Test
+    @DisplayName("every span is kept that isdef may read, glued to it or in the word after it and whitespace (#1129)")
+    void spansIsdefReadsKept() {
+        for (String text : List.of("isdef a!b,c", "isdef \n a!b,c", "(isdef a!b,c", "x isdef a!b,c", "isdef#a!b,c")) {
+            assertTrue(names(text).contains(text.endsWith("#a!b,c") ? "#a!b,c" : "a!b,c"),
+                    text + ": " + names(text));
+            assertTrue(names(text).contains(text.endsWith("#a!b,c") ? "#a!b" : "a!b"), text + ": " + names(text));
+        }
+        for (String text : List.of("a!b,c", " a!b,c", "x a!b,c", "xisdef a!b,c", "isdefa a!b,c")) {
+            assertFalse(names(text).contains("a!b"), text + ": " + names(text));
+        }
     }
 
     @Test
