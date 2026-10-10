@@ -113,8 +113,9 @@ final class Faults {
          */
         CANCEL_TIMER_EXITED(true),
         /**
-         * The cancel timer having started an action whose deadline has passed, before it looks for the next, outside
-         * the timer's lock. Watched only, never failed (see {@link #reached(Step)}).
+         * The cancel timer having started an action whose deadline has passed, before it starts the next one found due
+         * when it woke, or looks again, outside the timer's lock. Watched only, never failed (see
+         * {@link #reached(Step)}).
          */
         CANCEL_ACTION_HANDED_OFF(true),
         /**
