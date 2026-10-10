@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.11](https://github.com/brantunger/unruly-engine/compare/v2.29.10...v2.29.11) (2026-10-10)
+
+
+### Bug Fixes
+
+* run each onCancel action on a pooled daemon platform thread, not a new virtual one, so a run on a virtual thread that holds the only carrier stops at its 200 ms timeout after 198 ms rather than never ([#1150](https://github.com/brantunger/unruly-engine/issues/1150)) ([d3cd65b](https://github.com/brantunger/unruly-engine/commit/d3cd65b335d40185931879d9acafb7f3acde1d40))
+
 ## [2.29.10](https://github.com/brantunger/unruly-engine/compare/v2.29.9...v2.29.10) (2026-10-10)
 
 
