@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.brantunger.unruly.TestSupport.await;
@@ -25,13 +26,16 @@ import static io.github.brantunger.unruly.core.EngineLogs.capture;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * #1047: the cancel timer's own steps: the actions it keeps pending started in the order of their deadlines, however
- * many and in whatever order they're registered; a timer, or an action, that can't be started; an action registered
- * or closed just after the timer started another, or while it waits for a later one; a slow action; a timer thread
- * interrupted while it waits, and one that dies.
+ * #1047: the cancel timer's own steps: the actions it keeps pending, due in different wakes, started in the order of
+ * their deadlines, however many and in whatever order they're registered; a timer, or an action, that can't be
+ * started; an action registered or closed just after the timer started another, or while it waits for a later one; a
+ * slow action; a timer thread interrupted while it waits, and one that dies. #1131: every action due when the timer
+ * wakes found in one scan, and started in the order it found them, not that of their deadlines, with the slow ones
+ * logged in the same wake.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
-@DisplayName("#1047: the cancel timer runs each pending action at its deadline, in their order")
+@DisplayName("#1047: the cancel timer runs each pending action at its deadline, those due in different wakes in their"
+        + " order")
 class CancelTimerTest {
 
     @AfterEach
@@ -74,8 +78,8 @@ class CancelTimerTest {
 
     @Test
     @DisplayName("actions registered latest deadline first, more than the timer's first list holds, are started in the"
-            + " order of their deadlines")
-    void manyInDeadlineOrder() {
+            + " order of their deadlines, due in different wakes")
+    void manyInDeadlineOrder() throws InterruptedException {
         int actions = 12;
         // Each action's thread id, which the timer's thread hands out in the order it starts them, whatever order the
         // threads then run in.
@@ -91,6 +95,11 @@ class CancelTimerTest {
             CountDownLatch held = new CountDownLatch(1);
             scheduled(Duration.ZERO, held::countDown);
             await(held);
+            // Until its action has returned, it's pending: removing it from the list once the others are registered
+            // would move the last one registered into its place. The actions are registered latest deadline
+            // first, and the timer looks at the pending ones from the last registered down, so a wake late enough to
+            // find several due still starts them in the order of their deadlines.
+            TestSupport.await(() -> CancelTimer.pendingCount() == 1, 10, "the held action has returned");
             // Every deadline from one clock reading, so their order is the order of i, however long registering takes.
             long first = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(100);
             for (int i = actions - 1; i >= 0; i--) {
@@ -113,6 +122,101 @@ class CancelTimerTest {
             expected.add(i);
         }
         assertEquals(expected, List.copyOf(startedAs.values()));
+    }
+
+    @Test
+    @DisplayName("#1131: every action due when the timer wakes is marked in one scan, before the first is started,"
+            + " however many others are pending")
+    void dueTogetherFoundInOneScan() {
+        int actions = 50;
+        List<CancelTimer.Registration> due = new ArrayList<>();
+        List<CancelRegistration> later = new ArrayList<>();
+        CountDownLatch all = new CountDownLatch(actions);
+        // How many of the due actions are marked started once the timer has started the first of them.
+        AtomicInteger markedAtFirst = new AtomicInteger(-1);
+        // The timer is held once it has started an action of its own until all are registered, so it wakes once to
+        // find them all due, however slowly the machine registers them. Let go whatever happens, so a failure here
+        // leaves no timer held for the next test.
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        Thread timer = CancelTimer.runningThread();
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch registered = new CountDownLatch(1);
+        try {
+            Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                holding.countDown();
+                await(registered);
+            });
+            scheduled(Duration.ZERO, CancelTimerTest::nothing);
+            // Its watch is used up once it holds, so the next can be set.
+            await(holding);
+            long passed = System.nanoTime() - 1;
+            // Each due one before one that isn't, so the scan passes over those too.
+            for (int i = 0; i < actions; i++) {
+                CancelTimer.Registration registration = new CancelTimer.Registration(all::countDown, passed,
+                        CancelTimer.Registration.MADE);
+                CancelTimer.schedule(registration);
+                due.add(registration);
+                later.add(scheduled(Duration.ofHours(1), () -> fail("ran early")));
+            }
+            Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF,
+                    () -> markedAtFirst.set((int) due.stream().filter(CancelTimer.Registration::finished).count()));
+
+            registered.countDown();
+            await(all);
+        } finally {
+            registered.countDown();
+            later.forEach(CancelRegistration::close);
+            keeper.close();
+        }
+
+        assertEquals(actions, markedAtFirst.get(), "the due actions marked when the first was started");
+    }
+
+    @Test
+    @DisplayName("#1131: a wake that finds one action slow and another due starts the one and logs the other")
+    void startsAndLogsSlowInOneWake() throws InterruptedException {
+        CancelTimer.slowAfter(0);
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        Thread timer = CancelTimer.runningThread();
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch registered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch ran = new CountDownLatch(1);
+        // How many are pending once the due one has started: the keeper and it, the slow one gone.
+        AtomicInteger pendingAtStart = new AtomicInteger(-1);
+        String slow = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's deadline"
+                + " has run for over 3600000 ms, and is still running: it should only tell the runtime to stop, such"
+                + " as by setting a flag the runtime reads";
+        Runnable blocks = () -> await(release);
+        // Let go whatever happens, so a failure here leaves no timer, nor action, held for the next test.
+        try {
+            String logs = LogsUntil.logsUntil(slow, () -> {
+                Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                    holding.countDown();
+                    await(registered);
+                });
+                // Slow as soon as it has started, and held until the end.
+                scheduled(Duration.ZERO, blocks);
+                await(holding);
+                // So the one due next isn't slow too, and the slow one's WARN gives the time read in that wake.
+                CancelTimer.slowAfter(TimeUnit.HOURS.toNanos(1));
+                CancelTimer.schedule(new CancelTimer.Registration(() -> {
+                    ran.countDown();
+                    blocks.run();
+                }, System.nanoTime() - 1, CancelTimer.Registration.MADE));
+                Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF,
+                        () -> pendingAtStart.set(CancelTimer.pendingCount()));
+                registered.countDown();
+                await(ran);
+            });
+
+            assertEquals(1, logs.lines().filter(line -> line.contains("is still running")).count(), logs);
+            assertEquals(2, pendingAtStart.get());
+        } finally {
+            registered.countDown();
+            release.countDown();
+            keeper.close();
+        }
     }
 
     @Test
@@ -323,9 +427,12 @@ class CancelTimerTest {
             String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and another has been"
                     + " started for the actions still pending: java.lang.AssertionError: the timer dies";
 
-            // Both registered before the timer dies, once it has started the first, however slow the machine.
+            // Both registered before the timer dies, once it has started the first, however slow the machine. The
+            // second only once the first has run, so the scan that found the first is over: a wake late enough to find
+            // both due would start both at once, and the timer would die before it had started the other.
             String logs = LogsUntil.logsUntil(expected, () -> {
                 scheduled(Duration.ofMillis(50), first::countDown);
+                await(first);
                 scheduled(Duration.ofMillis(150), second::countDown);
                 registered.countDown();
             });

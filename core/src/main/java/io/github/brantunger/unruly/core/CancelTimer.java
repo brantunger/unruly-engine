@@ -35,12 +35,13 @@ import java.util.concurrent.TimeUnit;
  * </p>
  *
  * <p>
- * The pending actions are kept unordered, and the timer finds the next one due by comparing each one's due time with
- * one {@link System#nanoTime()} reading, never one with another (see {@link Deadline}). That is a scan of every
- * pending action each time the timer wakes, and there is one pending for each run that registered an action and
- * hasn't ended, and for each action running less than a second, so few; registering and closing one are a store each.
- * The timer sleeps until the next one is due, and is woken when one due sooner is registered, or the one it waits for
- * is closed.
+ * The pending actions are kept unordered, and the timer finds those due, and the next one due, by comparing each one's
+ * due time with one {@link System#nanoTime()} reading, never one with another (see {@link Deadline}). That is one scan
+ * of every pending action each time the timer wakes, and there is one pending for each run that registered an action
+ * and hasn't ended, and for each action running less than a second; registering and closing one are a store each. All
+ * the actions a scan finds due are started once it ends, in the order it found them, not that of their deadlines, so
+ * many falling due at once cost one scan, not one each. The timer sleeps until the next one is due, and is woken when
+ * one due sooner is registered, or the one it waits for is closed.
  * </p>
  */
 final class CancelTimer {
@@ -429,62 +430,82 @@ final class CancelTimer {
     }
 
     // The registrations are the runs' to close; waitingFor is read by the threads that register and close them while
-    // this one waits. Returns once it has given up its place, none being pending.
+    // this one waits. Returns once it has given up its place, none being pending. Each time it wakes, it looks at every
+    // pending action once, holding LOCK, and marks all those due; once it has let go of LOCK, it starts them, in the
+    // order it found them, then logs the slow ones.
     @SuppressWarnings({"PMD.NullAssignment", "PMD.CloseResource", "PMD.UnusedAssignment"})
     private static void serveUntilIdle() {
         for (;;) {
-            Registration due = null;
-            boolean slow = false;
-            long slowFor = 0;
+            Registration[] due;
+            int starts;
+            int slows;
+            long slowFor;
             synchronized (LOCK) {
-                while (due == null) {
+                for (;;) {
                     if (count == 0) {
                         // In the section that saw none pending, so a registration after it starts another timer.
                         thread = null;
                         return;
                     }
+                    due = null;
+                    starts = 0;
+                    slows = 0;
                     long now = System.nanoTime();
-                    Registration next = pending[0];
-                    long left = next.dueAt() - now;
-                    for (int i = 1; i < count; i++) {
-                        long itsLeft = pending[i].dueAt() - now;
-                        if (itsLeft < left) {
-                            next = pending[i];
-                            left = itsLeft;
+                    slowFor = slowNanos;
+                    Registration next = null;
+                    long left = 0;
+                    // Downwards, so the last one, which remove() moves into the place of one found slow, has been
+                    // looked at already.
+                    for (int i = count - 1; i >= 0; i--) {
+                        Registration it = pending[i];
+                        long itsLeft = it.dueAt() - now;
+                        if (itsLeft > 0) {
+                            if (next == null || itsLeft < left) {
+                                next = it;
+                                left = itsLeft;
+                            }
+                            continue;
+                        }
+                        if (due == null) {
+                            // Made before any is marked, so running out of memory here marks none: the timer dies with
+                            // every action as it was. No more than the i + 1 not yet looked at can be due.
+                            due = new Registration[i + 1];
+                        }
+                        if (it.state == Registration.PENDING) {
+                            // Pending still, until it returns or is found slow.
+                            it.slowAt = now + slowFor;
+                            it.state = Registration.RUNNING;
+                            due[starts] = it;
+                            starts++;
+                        } else {
+                            remove(it);
+                            it.state = Registration.STARTED;
+                            slows++;
                         }
                     }
-                    if (left > 0) {
-                        waitingFor = next;
-                        Faults.reached(Faults.Step.CANCEL_TIMER_WAITING);
-                        try {
-                            TimeUnit.NANOSECONDS.timedWait(LOCK, left);
-                        } catch (InterruptedException ignored) {
-                            // Nothing of the engine's interrupts this thread: it looks again.
-                        }
-                        waitingFor = null;
-                    } else if (next.state == Registration.PENDING) {
-                        // Pending still, until it returns or is found slow.
-                        next.slowAt = now + slowNanos;
-                        next.state = Registration.RUNNING;
+                    if (due != null) {
                         progressed = true;
-                        due = next;
-                    } else {
-                        remove(next);
-                        next.state = Registration.STARTED;
-                        progressed = true;
-                        slow = true;
-                        slowFor = slowNanos;
-                        due = next;
+                        break;
                     }
+                    waitingFor = next;
+                    Faults.reached(Faults.Step.CANCEL_TIMER_WAITING);
+                    try {
+                        TimeUnit.NANOSECONDS.timedWait(LOCK, left);
+                    } catch (InterruptedException ignored) {
+                        // Nothing of the engine's interrupts this thread: it looks again.
+                    }
+                    waitingFor = null;
                 }
             }
-            if (slow) {
+            // The actions first: a slow one's WARN can wait, and logging can be slow.
+            for (int i = 0; i < starts; i++) {
+                start(due[i]);
+                Faults.reached(Faults.Step.CANCEL_ACTION_HANDED_OFF);
+            }
+            for (int i = 0; i < slows; i++) {
                 warn("An action a language registered for the run's deadline has run for over {} ms, and is still"
                         + " running: it should only tell the runtime to stop, such as by setting a flag the runtime"
                         + " reads", TimeUnit.NANOSECONDS.toMillis(slowFor));
-            } else {
-                start(due);
-                Faults.reached(Faults.Step.CANCEL_ACTION_HANDED_OFF);
             }
         }
     }
