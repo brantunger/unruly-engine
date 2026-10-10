@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.9](https://github.com/brantunger/unruly-engine/compare/v2.29.8...v2.29.9) (2026-10-10)
+
+
+### Bug Fixes
+
+* leave out of MVEL's fact-name scan the spans MVEL can never read as one name, and keep one copy of the names, so a loaded engine of 500 dense rules retains 4.4 MB, not 20.8 MB, and holds 9,042 names, not 117,634 ([#1145](https://github.com/brantunger/unruly-engine/issues/1145)) ([5321966](https://github.com/brantunger/unruly-engine/commit/5321966a743b36834bae97034168b037d0e295c5))
+
 ## [2.29.8](https://github.com/brantunger/unruly-engine/compare/v2.29.7...v2.29.8) (2026-10-10)
 
 
