@@ -476,6 +476,21 @@ class ScopedFactNamesTest {
         }
     }
 
+    /**
+     * An unmodifiable set a compiler returns, such as {@code Set.of}'s, is kept as is: {@code Set.copyOf} returns it,
+     * as nothing can change it, so a loaded rule list holds no second copy of the names (#1129).
+     */
+    @Test
+    @DisplayName("the engine keeps an unmodifiable set of the names a compiler says its rules read without copying it")
+    void unmodifiableNamesReadKeptAsIs() {
+        Set<String> read = Set.of("x", "y");
+        try (RulesEngine<Map<String, Object>> engine = engine(answering(() -> read))) {
+            engine.load(List.of(rule("k", 1, "kw", "true", "put k 1")));
+
+            assertSame(read, ((AbstractRulesEngine<?>) engine).currentRules().factNamesRead().get("kw"));
+        }
+    }
+
     /** A kw language whose compiler's {@code factNamesRead()} answers with what {@code answer} gives. */
     private static ExpressionLanguage answering(Supplier<Set<String>> answer) {
         return new ForwardingExpressionLanguage(new ToyExpressionLanguage("kw")) {

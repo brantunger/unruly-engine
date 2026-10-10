@@ -30,8 +30,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     private final FactNames factNames;
     // Every expression compiled, for warmUp(). Only load()'s thread compiles and warms up, so a plain list will do.
     private final List<MvelExpression> compiled = new ArrayList<>();
-    // Every name the compiled expressions could read a fact by, for factNamesRead(), kept by load()'s thread too.
-    private final Set<String> namesRead = new HashSet<>();
+    // Every name the compiled expressions could read a fact by, for factNamesRead(), kept by load()'s thread too: a
+    // HashSet while they compile, then the unmodifiable set factNamesRead() returns, so a loaded rule list keeps one.
+    private Set<String> namesRead = new HashSet<>();
     // Whether namesRead holds every name, false once an expression had a word too long to scan (see RuleText.addNames).
     private boolean namesKnown = true;
 
@@ -118,6 +119,10 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * @param source The expression
      */
     private void namesAdded(Expression source) {
+        // An expression compiled after factNamesRead() adds to a new copy, as the engine keeps the set it returned.
+        if (!(namesRead instanceof HashSet)) {
+            namesRead = new HashSet<>(namesRead);
+        }
         String limit = RuleText.addNames(source.text(), namesRead);
         if (limit != null) {
             namesKnown = false;
@@ -157,23 +162,33 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
 
     /**
      * Returns the names the compiled conditions and actions could read a fact by, as {@link RuleText#addNames} finds
-     * them in their text: each identifier, and for each word between MVEL's whitespace, every span of it that starts
-     * at the word's start, just after one of the ends {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}, or just
-     * after {@code isdef} glued to the name that follows it, and stops at the word's end or just before a character
-     * that isn't part of an identifier, and each backslash and high surrogate alone. So {@code \a} in {@code 1-\a},
-     * {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in {@code isdef#a} and {@code ,a}
-     * in {@code ,a#b} are among them. It holds more names than they read, such as the words of a string literal, a
-     * comment or a class's name, and spans MVEL reads as several names, which are only a best guess at the names a
-     * rule's author meant, such as {@code my-fact} in {@code my-fact == 1}, which MVEL reads as {@code my} minus
-     * {@code fact}. So a fact no MVEL rule names, such as one named {@code in} that only another language's rules
-     * read, isn't checked by MVEL. It can still miss a name MVEL reads with whitespace in it, such as one
-     * {@code isdef} reads up to a comment on a later line (#1089).
+     * them in their text: each identifier, the words 2.29.4 found, and for each word between MVEL's whitespace, every
+     * span of it that starts at the word's start, just after one of the ends
+     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}, or just after {@code isdef} glued to the name that
+     * follows it, and stops at the word's end or just before a character that isn't part of an identifier, and each
+     * backslash and high surrogate alone. A span that holds one of those ends but {@code -} and {@code .} after its
+     * first character is left out, unless {@code isdef} may read it or it stands before {@code ++}, {@code --} or an
+     * assignment operator not followed by {@code =}, as no other name MVEL lexes holds one. So {@code \a} in
+     * {@code 1-\a}, {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in {@code isdef#a},
+     * {@code ,a} in {@code ,a#b} and {@code my]} in {@code my]--} are among them, and {@code (,a} in
+     * {@code (,a) == 5} isn't. It holds more
+     * names than they read, such as the words of a string literal, a comment or a class's name, and spans MVEL reads
+     * as several names, which are only a best guess at the names a rule's author meant, such as {@code my-fact} in
+     * {@code my-fact == 1}, which MVEL reads as {@code my} minus {@code fact}. So a fact no MVEL rule names, such as
+     * one named {@code in} that only another language's rules read, isn't checked by MVEL. It can still miss a name
+     * MVEL reads with whitespace in it, such as one {@code isdef} reads up to a comment on a later line (#1089).
      *
      * <p>
      * Returns {@code null}, so MVEL checks every fact, once a condition or action has a word of more than 1,000
      * characters, or with more than 64 characters that aren't part of an identifier, each one just after
-     * {@code isdef} counted twice, the most characters and parts an import may have, as a word's spans grow as the
-     * square of those.
+     * {@code isdef} counted twice, the most characters and parts an import may have: in a word with many minus signs,
+     * dots, {@code ++}, {@code --} or assignments, or with several {@code isdef}s, the spans can grow as the square of
+     * the characters that aren't part of an identifier.
+     * </p>
+     *
+     * <p>
+     * The set is unmodifiable, and the same one each call until another expression compiles, so the engine's copy of
+     * it is this set, not another.
      * </p>
      *
      * @return The names, or {@code null} if a word was too long to scan
@@ -182,6 +197,13 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     @Override
     public @Nullable Set<String> factNamesRead() {
-        return namesKnown ? Set.copyOf(namesRead) : null;
+        if (!namesKnown) {
+            return null;
+        }
+        // Made unmodifiable once, in one pass, as the names are distinct already, and the HashSet let go of.
+        if (namesRead instanceof HashSet) {
+            namesRead = Set.of(namesRead.toArray(new String[0]));
+        }
+        return namesRead;
     }
 }

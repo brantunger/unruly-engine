@@ -63,8 +63,9 @@ every declared fact's name with it, whatever the text holds: their failures can 
 
 > [!NOTE]
 > Up to 2.28.0, MVEL checked every fact's name, whatever its rules' text held, and reserved `output` for every rule
-> list, so a declared `output` failed `build()`. From 2.29.0 to 2.29.3, its scan missed some names MVEL reads whole,
-> so a run accepted a fact it now rejects, such as `my-fact` with `my-fact-1 == 0`, or `a.b` with `a.b--`.
+> list, so a declared `output` failed `build()`. From 2.29.0 to 2.29.4, its scan missed some names MVEL reads whole,
+> so a run accepted a fact it now rejects, such as `my-fact` with `my-fact-1 == 0`, or `a.b` with `a.b--`. From 2.29.5
+> to 2.29.7, it also rejected some names no rule can read, such as `&!false` with `true&&!false`, which it now accepts.
 
 ## 🚫 Fact names MVEL rejects
 
@@ -123,13 +124,19 @@ As `load()` or `validate()` compiles each condition and action, MVEL scans its t
 fact by. Strings and comments are scanned too. The names are:
 
 - each identifier, such as `applicant` and `creditScore` in `applicant.creditScore`;
-- each span of a word, as below;
+- each piece and each span of a word, as below;
 - each backslash alone, and the first half alone of each character Java stores as two `char`s, as MVEL can read
   either as a name.
 
 A **word** is a run of text between MVEL's whitespace, which is every character up to U+0020: a space or a line break
 ends a word, and a no-break space doesn't. A character is **part of an identifier** if it's a letter, a digit, `_`, `$`,
-or another character Java allows in an identifier. A span of a word starts at any of these places:
+or another character Java allows in an identifier.
+
+The **pieces** of a word are the ones 2.29.4 found: the whole word, and its parts between any of
+`( ) [ ] { } , ; ' " = < > ! & | ? :`, split once with the comma, once without it, and once without it but with
+`* / + %`; then each piece's parts between dots. So `a.b('s') == 1` gives `a.b('s')`, and `(,a) == 5` gives `(,a)`.
+
+A span of a word starts at any of these places:
 
 - the word's start;
 - just after one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .`;
@@ -137,25 +144,34 @@ or another character Java allows in an identifier. A span of a word starts at an
   of an identifier, as in `isdef#a`.
 
 From each start, a span ends at the word's end, and another just before each later character that isn't part of an
-identifier, so a span can hold such characters. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and
-`my-fact-1`. A fact `my-fact` is then checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact`
-minus 1. In the same way, `a.b--` gives `a.b`, `(,a) == 5` gives `,a`, and `isdef#a` gives `#a`.
+identifier. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and `my-fact-1`. A fact `my-fact` is then
+checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact` minus 1. In the same way, `a.b--` gives
+`a.b`, and `isdef#a` gives `#a`.
+
+A span that holds one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + %` after its first character is left out, unless
+MVEL may still read it whole:
+
+- it stands before `++`, `--` or an assignment operator not followed by `=`, with only MVEL's whitespace between:
+  `my]--` gives `my]`;
+- `isdef` reads it, glued to `isdef` or as the next word.
+
+So `(,a) == 5` gives `,a`, and the piece `(,a)`, but not `(,a` or `,a)`.
 
 MVEL then checks only the facts named in that set. So, unless
 [MVEL checks every fact](#when-mvel-checks-every-fact):
 
 - another language's rules in the same list can read a fact `in`, when no MVEL rule's text holds `in`;
-- a name with a space or a line break, such as `first name`, is never rejected by MVEL, as no span or identifier
-  holds one;
+- a name with a space or a line break, such as `first name`, is never rejected by MVEL, as no piece, span or
+  identifier holds one;
 - an empty rule list, with MVEL as the default language, checks no name against MVEL's rules; `output` is still
   rejected.
 
 ### When MVEL checks every fact
 
-A word's spans grow as the square of its characters that aren't part of an identifier. So the scan gives up on a word
-of more than 1,000 characters, or with more than 64 such characters, each one just after `isdef` counted twice: the
-most characters and dot-separated parts an import may have. A word at both limits gives up to 2,145 names, scanned in
-about 0.4 ms.
+In a word with many minus signs, dots, `++`, `--` or assignments, or with several `isdef`s, the spans can grow as the
+square of the characters that aren't part of an identifier. So the scan gives up on any word of more than 1,000
+characters, or with more than 64 such characters, each one just after `isdef` counted twice: the most characters and
+dot-separated parts an import may have. A word at both limits gives up to 2,145 names, scanned in about 0.4 ms.
 
 Once one condition or action gives up, MVEL can't tell which facts the rule list reads, so it checks every fact, as
 it did up to 2.28.0: each run's facts and each declared fact. A fact such as `in` or `Math`, which no MVEL rule names,
@@ -176,7 +192,9 @@ For the other limit, the line says
 ### A best effort both ways
 
 The scan finds extra names, such as the words of a comment, and spans MVEL reads as several names, such as `my-fact`
-in `my-fact-1`. That's harmless: a fact by such a name is checked, as every fact was up to 2.28.0.
+in `my-fact-1`. That's harmless: a fact by such a name is checked, as every fact was up to 2.28.0. It leaves out the
+spans MVEL can't read as one name, such as `&!false` in `true&&!false`, so a fact by such a name is accepted, as from
+2.29.0 to 2.29.4.
 
 It can miss a name with MVEL's whitespace inside it, as no word holds one. A line break is such a character, and
 `isdef` reads a name up to a comment, even one on a later line. The condition `isdef ,a//c`, a line break, then
