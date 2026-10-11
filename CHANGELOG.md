@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.12](https://github.com/brantunger/unruly-engine/compare/v2.29.11...v2.29.12) (2026-10-11)
+
+
+### Bug Fixes
+
+* initialize up front the JDK classes a deep first BigDecimal literal, generic type read or annotated JDK call could leave unusable for the JVM's life; on JDK 25+ this also initializes the common ForkJoinPool, so its properties set later are ignored ([#1156](https://github.com/brantunger/unruly-engine/issues/1156)) ([e270c54](https://github.com/brantunger/unruly-engine/commit/e270c54fdbb7b938bbd5f7826f46da1de41dac55))
+
 ## [2.29.11](https://github.com/brantunger/unruly-engine/compare/v2.29.10...v2.29.11) (2026-10-10)
 
 
