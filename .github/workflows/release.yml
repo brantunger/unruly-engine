@@ -1,9 +1,17 @@
 name: Release
 
-# Two jobs, one workflow, on purpose. A tag or Release created with GITHUB_TOKEN does
-# not trigger `on: push: tags` or `on: release` workflows — GitHub suppresses that to
-# prevent recursion. Chaining the publish to release-please via `needs` avoids needing
-# a PAT just to get the publish to fire.
+# Two jobs, one workflow, on purpose. release-please runs with a fine-grained PAT, RELEASE_PLEASE_TOKEN (see
+# docs/contributing/release-token.md), so the release PR it opens gets a normal CI run and the PR title check: a PR
+# opened with GITHUB_TOKEN gets a CI run that waits for an approval nobody gives, and no pull_request_target run.
+# The PAT also means the tag and the Release it creates *do* trigger `on: push: tags` and `on: release` workflows,
+# which GitHub suppresses only for GITHUB_TOKEN. None exist today (ci.yml runs on pull requests and pushes to main,
+# pr-title.yml on pull_request_target, pages.yml only when called or dispatched), so a workflow added with either
+# trigger must expect to fire on every release. The push of the release PR's branch starts nothing either: ci.yml's
+# push trigger is main only.
+# The publish is still chained to release-please via `needs` rather than triggered by the Release: it reads the
+# job's outputs directly, runs in the same `release` concurrency group, and keeps the run's identity, which the
+# provenance attestation records, on refs/heads/main (RELEASING.md explains why). The steps after release-please
+# use github.token, so the PAT is used for release-please alone.
 
 on:
   push:
@@ -29,25 +37,39 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # These are github.token's permissions, not the PAT's: release-please doesn't use github.token, so the job
+    # needs only what the migration-guides step below does with it, which is to read and edit the Release.
     permissions:
       contents: write
-      pull-requests: write
-      issues: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
+      # There's no fallback to GITHUB_TOKEN: a release PR opened with it would be back to an unapproved CI run and
+      # no title check. This step is what guarantees that, by failing with a message that says what to do before
+      # release-please can run without the secret. The secrets context can't be read in a step `if:`, so the value
+      # comes in through the environment, and it's only tested, never printed.
+      - name: Require the release-please token
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
+            echo "::error::The RELEASE_PLEASE_TOKEN repository secret is missing or empty. Create the fine-grained token docs/contributing/release-token.md describes, store it with 'gh secret set RELEASE_PLEASE_TOKEN', then re-run this job."
+            exit 1
+          fi
+
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
-          # A release PR opened with GITHUB_TOKEN gets a CI run that waits for a maintainer's
-          # approval, and no PR title check (pull_request_target) at all. Swap for a fine-grained
-          # PAT (contents+PRs write) if the title check becomes required on main.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # A fine-grained PAT of the maintainer's, limited to this repository: Contents and Pull requests read and
+          # write, and the mandatory Metadata read; docs/contributing/release-token.md says how to create and rotate
+          # it. An expired or revoked token fails this step, so no release PR is opened or updated and no release is
+          # cut until the secret is replaced and the job re-run.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          # Always `main`, by the guard above.
+          # Always `main`, by the job's `if:` above.
           target-branch: ${{ github.ref_name }}
 
       # The notes release-please writes are the changelog entry and nothing else, so the migration guides are linked
