@@ -90,7 +90,8 @@ MVEL reads these as something else before the facts, so they're rejected too:
 | Built-in class names | The 22 in [Classes and imports](mvel.md#-classes-and-imports), such as `Math`, `String` and `Thread` |
 | Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
 | Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")` |
-| Package roots | `java` once a rule uses `java.lang.Integer.MAX_VALUE`. Here MVEL would read the fact in the class's place; see below |
+| Package roots | `java` once `load()` or `validate()`, compiling a rule, looks up a class whose package starts with `java`, as for `java.lang.Integer.MAX_VALUE == 7`. Here MVEL would read the fact in the class's place; see below |
+| Classes with no package | `Foo` once `load()` or `validate()`, compiling a rule, looks up a class `Foo` in the default package, as for `Foo.LIMIT == 7`. Here too MVEL would read the fact in the class's place; see below |
 
 ```text
 'Math' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would never see the fact
@@ -102,9 +103,10 @@ MVEL reads these as something else before the facts, so they're rejected too:
 - A class in an imported package that can't be loaded isn't read as a class name, so the fact keeps it, as in
   MVEL's own lookup; a [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
 
-**Package roots** are per rule list: the first part of each class its rules use, named with its package
-outside strings and comments (`new java.util.ArrayList()`), from a package import (`acme` for `Order` with
-`imports("acme.orders")`), nested in an imported class (`Map.Entry`) or a rule's `import`.
+**Package roots** are per rule list: the first part of each class `load()` or `validate()` looks up as it compiles
+a rule. That's a class found through a package import (`acme` for `Order` with `imports("acme.orders")`), nested in an
+imported class (`Map.Entry`) or named in a rule's `import`. It's also each class named with its package outside
+strings and comments (`new java.util.ArrayList()`), which compiling a rule looks up too.
 
 A root that comes from an import, and so isn't written in the rule, is rejected only where a rule's text also
 holds the name, even in a comment. That's `acme` for `Order` with `imports("acme.orders")`, or `java` for `Map.Entry`
@@ -116,6 +118,15 @@ import. The message says why, even for a class name:
 
 ```text
 'java' cannot be used as a fact name: the rules use a class whose package starts with 'java', and MVEL would read the fact in the class's place
+```
+
+**A class with no package**, one in the default package, has no package root, so its own name counts instead, per rule
+list. A fact `Foo` is rejected once `load()` or `validate()`, compiling a rule, looks up the class `Foo`, as for
+`Foo.LIMIT == 7` or `new Foo().v == 7`. A nested class `Foo$Inner` counts as `Foo`. Where no import names the class,
+the message names it:
+
+```text
+'Foo' cannot be used as a fact name: the rules use the class 'Foo', and MVEL would read the fact in the class's place
 ```
 
 ## 🔍 Which fact names MVEL checks

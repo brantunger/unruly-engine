@@ -115,9 +115,9 @@ language, and each language adds its own.
 
 A `Fact` needs a name: `new Fact<>(null, value)` throws `NullPointerException`.
 
-**In MVEL,** a name its rules' text holds must be a Java identifier, not a keyword such as `empty`, a class name such
-as `Math`, or a used class's package root such as `java`; `output` is reserved only for lists with MVEL rules. See
-[MVEL fact names](languages/mvel-fact-names.md).
+**In MVEL,** a name its rules' text holds must be a Java identifier, not a keyword (`empty`), a class name (`Math`), or
+a used class's package root (`java`) or package-less name (`Foo`); `output` is reserved only for lists with MVEL
+rules. See [MVEL fact names](languages/mvel-fact-names.md).
 
 ## 🚫 Null and missing facts
 

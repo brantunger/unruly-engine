@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
  *     <li>the first part of the name of a class the rule list's expressions use, such as {@code java} for
  *     {@code java.lang.Integer.MAX_VALUE}, as MVEL would read the fact in the class's place (see
  *     {@link ClassNameRoots})</li>
+ *     <li>the name of a class with no package the rule list's expressions use, or of the class one they use is nested
+ *     in, as MVEL would read the fact in the class's place (see {@link ClassNameRoots})</li>
  * </ul>
  */
 final class FactNames {
@@ -95,7 +97,8 @@ final class FactNames {
      * Creates a check for the imports a rule list was compiled with.
      *
      * @param ruleImports The packages and classes the engine imports, their class loader, and the first parts of the
-     *                    names of the classes found while the rule list compiled
+     *                    names of the classes found while the rule list compiled, and the names of those with no
+     *                    package
      */
     FactNames(Imports ruleImports) {
         this(ruleImports, new SplittableRandom());
@@ -106,7 +109,8 @@ final class FactNames {
      * {@code evictions}, so a test can seed it.
      *
      * @param ruleImports The packages and classes the engine imports, their class loader, and the first parts of the
-     *                    names of the classes found while the rule list compiled
+     *                    names of the classes found while the rule list compiled, and the names of those with no
+     *                    package
      * @param evictions   Picks the name to evict when the cache is full; used only under a lock
      */
     FactNames(Imports ruleImports, SplittableRandom evictions) {
@@ -138,6 +142,12 @@ final class FactNames {
             throw new IllegalArgumentException(quotedWithClass("'", name, "' cannot be used as a fact name: the rules "
                     + "use a class whose package starts with '", name, "', and MVEL would read the fact in the "
                     + "class's place"));
+        }
+        if (classNameRoots.containsWithoutPackage(name)) {
+            // Likewise for a class with no package, whose whole name the fact has. Checked after the first parts, so
+            // a name that is both gets the first part's reason.
+            throw new IllegalArgumentException(quotedWithClass("'", name, "' cannot be used as a fact name: the rules "
+                    + "use the class '", name, "', and MVEL would read the fact in the class's place"));
         }
         if (RESERVED.contains(name) || importedClassNames.contains(name) || isPackageClass(name)) {
             throw rejected(name, "' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules "

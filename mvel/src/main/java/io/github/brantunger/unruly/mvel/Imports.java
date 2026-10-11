@@ -16,7 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * The imports a rule list is compiled with: whole packages ({@code java.util}) and single classes
  * ({@code java.time.LocalDate}), the class loader their classes are looked up with, and the names every compilation of
- * the rule list has found not to be classes, and the first parts of the names of the classes its compilations found.
+ * the rule list has found not to be classes, and the first parts of the names of the classes its compilations found,
+ * and the names of those with no package.
  *
  * @param packages       Package names, imported with all their classes
  * @param classes        Classes imported one by one
@@ -27,8 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * @param inputs         The type of each name an expression may refer to, for compiling with strong typing, or an
  *                       empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
  * @param classNameRoots The first part of the name of each class {@code classLoader} found while the rule list's
- *                       expressions compiled, such as {@code java} for {@code java.lang.Integer}, which
- *                       {@link FactNames} rejects as a fact's name
+ *                       expressions compiled, such as {@code java} for {@code java.lang.Integer}, and the name of
+ *                       each such class with no package, which {@link FactNames} rejects as a fact's name
  */
 record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
                Map<String, Class<?>> inputs, ClassNameRoots classNameRoots) {
