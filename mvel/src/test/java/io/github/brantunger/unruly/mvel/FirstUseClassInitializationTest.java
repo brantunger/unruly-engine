@@ -56,8 +56,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * that take them come before any other step that could. With the engine logging, as an application's SLF4J provider
  * may, the first message it logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple.
  * The test checks that each step initializes exactly those, so it fails if one stops reaching its class, and if a step
- * initializes any other. It is checked with MVEL's JIT on, as it is by default, and off, as in a native image, which
- * sets MVEL's optimizer up with other classes, and with the engine logging.
+ * initializes any other. It is checked with MVEL's JIT on, made MVEL's default again once the engines are built, as an
+ * application may; with it off, as in a native image, which sets MVEL's optimizer up with other classes; with MVEL's
+ * reflective optimizer the default, as the engine makes it (#1161); and with the engine logging.
  * </p>
  *
  * <p>
@@ -68,7 +69,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * class's static initializer, of ASM's or the JDK's, that class stays unusable for the JVM's life, and every other
  * accessor's first compile fails one run the same way. The test checks that one of ASM's classes was initialized there,
  * so it can't pass because the runs were too slow for the JIT, and that none of the engine's or this module's was. With
- * the JIT off, the step initializes nothing.
+ * the JIT off, or the engine's reflective optimizer the default, the step initializes nothing.
  * </p>
  *
  * <p>
@@ -97,6 +98,9 @@ class FirstUseClassInitializationTest {
     private static final String INITIALIZING = "Initializing '";
     // The engine logging as an application's SLF4J provider may: this test's logs at INFO and above.
     private static final String LOGGING = "-Dorg.slf4j.simpleLogger.defaultLogLevel=info";
+    // MVEL's JIT made MVEL's default again once the engines are built, as an application may, in place of the
+    // reflective optimizer the engine makes the default (#1161).
+    private static final String JIT_ON = "-D" + FirstUseScenario.JIT_ON + "=true";
     // What -Xlog:class+init adds to the line of a class with no static initializer, no <clinit> method.
     private static final String NO_INITIALIZER = "(no method)";
     private static final String SCENARIO = INITIALIZING + FirstUseScenario.class.getName().replace('.', '/');
@@ -192,7 +196,7 @@ class FirstUseClassInitializationTest {
     void initializedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
         List<String> expected = new ArrayList<>(BY_FEATURES);
         expected.addAll(BY_FAILED_IMPORTS);
-        assertInitialized(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false"));
+        assertInitialized(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false", JIT_ON));
     }
 
     @Test
@@ -205,20 +209,31 @@ class FirstUseClassInitializationTest {
     }
 
     @Test
+    @DisplayName("with MVEL's reflective optimizer the default, as the engine makes it, MVEL's first steps initialize "
+            + "no class with a static initializer but those of the features and the failed imports prepare() leaves "
+            + "to them, and the runs MVEL's JIT would compile in no class of ASM's (#1161)")
+    void initializedWhenBuiltWithEngineOptimizer(@TempDir Path dir) throws IOException, InterruptedException {
+        List<String> expected = new ArrayList<>(BY_FEATURES);
+        expected.addAll(BY_FAILED_IMPORTS);
+        assertEquals(expected, initializedByFirstSteps(dir), "initialized by first steps");
+    }
+
+    @Test
     @DisplayName("with the engine logging, the first message it logs initializes SLF4J's Level and FormattingTuple, "
             + "and MVEL's first steps nothing else but as with it off")
     void initializedWhenBuiltWithLogging(@TempDir Path dir) throws IOException, InterruptedException {
         List<String> expected = new ArrayList<>(BY_FEATURES);
         expected.addAll(BY_LOGGING);
         expected.addAll(BY_FAILED_IMPORTS);
-        assertInitialized(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false", LOGGING));
+        assertInitialized(expected, initializedByFirstSteps(dir, "-Dmvel2.disable.jit=false", JIT_ON, LOGGING));
     }
 
     @Test
     @DisplayName("with MVEL's JIT on, building an engine with MVEL initializes these classes a first run evaluates a "
             + "property read, a method call and a literal argument with (#1042, #1066)")
     void evaluatingClassesLoadedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
-        assertEquals(whenBuilt(BY_EVALUATING), whereInitialized(dir, BY_EVALUATING, "-Dmvel2.disable.jit=false"));
+        assertEquals(whenBuilt(BY_EVALUATING), whereInitialized(dir, BY_EVALUATING, "-Dmvel2.disable.jit=false",
+                JIT_ON));
     }
 
     @Test
@@ -234,7 +249,7 @@ class FirstUseClassInitializationTest {
             + "use (#1103)")
     void compilingClassesLoadedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
         assertEquals(whenBuilt(BY_COMPILING, LOADED_BY_COMPILING),
-                whereFirst(dir, BY_COMPILING, LOADED_BY_COMPILING, "-Dmvel2.disable.jit=false"));
+                whereFirst(dir, BY_COMPILING, LOADED_BY_COMPILING, "-Dmvel2.disable.jit=false", JIT_ON));
     }
 
     @Test

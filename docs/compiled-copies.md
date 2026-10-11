@@ -58,8 +58,8 @@ reload releases them, and the next runs build copies again.
 
 ## 🔧 Limiting the copies
 
-A copy isn't free: in MVEL each expression is compiled again the first time that copy runs it, and the copy generates
-accessor classes of its own. A thread pool bounds the number of copies, because runs can't overlap more than its
+A copy isn't free: in MVEL each expression is compiled again the first time that copy runs it, and the copy builds
+accessors of its own. A thread pool bounds the number of copies, because runs can't overlap more than its
 threads. Virtual threads don't bound anything: when each request runs on its own virtual thread, thousands of runs
 overlap, and without a limit the copies grow with them.
 

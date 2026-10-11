@@ -9,7 +9,7 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.optimizers.OptimizerFactory;
-import org.mvel2.optimizers.dynamic.DynamicOptimizer;
+import org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -39,15 +39,15 @@ public class MvelOptimizerTest {
     }
 
     @Test
-    @DisplayName("loading and running the engine leaves MVEL's global optimizer setting alone")
-    void mvelOptimizerUntouched() {
+    @DisplayName("loading and running the engine leaves MVEL's reflective optimizer its default (#1161, #1122)")
+    void mvelOptimizerReflective() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .build();
         engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
         engine.run(new FactMap<>());
 
-        // MVEL's own default: the JIT, as the build doesn't set mvel2.disable.jit.
-        assertInstanceOf(DynamicOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
+        // Not MVEL's own default, the JIT, though the build doesn't set mvel2.disable.jit.
+        assertInstanceOf(ReflectiveAccessorOptimizer.class, OptimizerFactory.getDefaultAccessorCompiler());
     }
 
     /**
@@ -58,6 +58,16 @@ public class MvelOptimizerTest {
     @Test
     @DisplayName("polymorphic facts do not fail when run concurrently")
     void polymorphicFactsUnderConcurrency() throws InterruptedException {
+        // MVEL's JIT, which the engine replaces as MVEL's default, as an application may make it the default (#1161).
+        MvelJit.on();
+        try {
+            polymorphicRuns();
+        } finally {
+            MvelJit.off();
+        }
+    }
+
+    private static void polymorphicRuns() throws InterruptedException {
         int threads = 8;
         AtomicInteger calls = new AtomicInteger();
         List<Throwable> failures = new ArrayList<>();

@@ -8,10 +8,10 @@ import org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer;
 import java.util.Map;
 
 /**
- * Run by {@link ClassNameRootFactTest}, in its own JVM and in a JVM started with {@code -Dmvel2.disable.jit=true},
- * which MVEL reads once, when it first loads: for each rule of {@link ClassNameRootFactTest#RULES}, runs it with a fact
- * named {@code java} after some runs without it, and prints {@link #DONE} if that run is rejected with the package's
- * reason and every run without the fact puts 1 in the output.
+ * Run by {@link ClassNameRootFactTest}, in the test's JVM with MVEL's JIT made the default again, as an application
+ * may, and in a new JVM with the engine's default, MVEL's reflective optimizer: for each rule of
+ * {@link ClassNameRootFactTest#RULES}, runs it with a fact named {@code java} after some runs without it, and prints
+ * {@link #DONE} if that run is rejected with the package's reason and every run without the fact puts 1 in the output.
  */
 final class ClassNameRootRunScenario {
 
@@ -26,10 +26,6 @@ final class ClassNameRootRunScenario {
     }
 
     public static void main(String[] args) {
-        if (!(OptimizerFactory.getDefaultAccessorCompiler() instanceof ReflectiveAccessorOptimizer)) {
-            System.out.println("MVEL's optimizer is " + OptimizerFactory.getDefaultAccessorCompiler());
-            return;
-        }
         for (String[] rule : ClassNameRootFactTest.RULES) {
             for (int cleanRunsFirst : CLEAN_RUNS_FIRST) {
                 String failure = failure(rule[1], rule[2], cleanRunsFirst);
@@ -38,6 +34,11 @@ final class ClassNameRootRunScenario {
                     return;
                 }
             }
+        }
+        // The engine made MVEL's reflective optimizer the default as it built the first engine, and it stays so.
+        if (!(OptimizerFactory.getDefaultAccessorCompiler() instanceof ReflectiveAccessorOptimizer)) {
+            System.out.println("MVEL's optimizer is " + OptimizerFactory.getDefaultAccessorCompiler());
+            return;
         }
         System.out.println(DONE);
     }

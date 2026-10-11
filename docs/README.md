@@ -23,7 +23,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 4. [Thread safety at a glance](thread-safety.md#-at-a-glance), [Compiled copies](compiled-copies.md) and, if your
    runs come from virtual threads, [Virtual threads](virtual-threads.md).
 5. [Logging setup](listeners-and-logging.md#-logging-setup) and [Spring Boot](spring-boot.md).
-6. [Native image](native-image.md), if you build one with GraalVM: MVEL's JIT and the reflection to register.
+6. [Native image](native-image.md), if you build one with GraalVM: MVEL's JIT, which stays off, and the reflection to
+   register.
 7. [Troubleshooting](troubleshooting.md): from a symptom or a message to the section that explains it.
 
 ## 🔨 Writing an expression language
@@ -64,7 +65,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🔼 [Upgrading the contract test kit from 2.13 or earlier](languages/contract-kit-upgrading-older.md) | Language authors | The same, for the kits up to 2.14.0 |
 | 🔬 [Testing beyond the contract kit](languages/beyond-the-contract-kit.md) | Language authors | What the kit's checks leave untested, how each check runs, configuring the checks for your language, testing a compiler without an engine with `LanguageTestContexts`, and a named module with Maven |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
-| 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: turning MVEL's JIT off, registering reflection, the errors a missing registration gives, strict metadata, Flight Recorder, and what was tested |
+| 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: keeping MVEL's JIT off, registering reflection, the errors a missing registration gives, strict metadata, Flight Recorder, and what was tested |
 | 🌱 [Spring Boot](spring-boot.md) | Application developers | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | Application developers | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
 | 🚨 [Error handling](error-handling.md) | Application developers | Exception types, what's caught when rules load and what only at run time, and what happens on each failure |

@@ -62,10 +62,22 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
 
     static {
         // MVEL's optimizer, as it sets up, makes a JVM-wide class loader whose parent is the thread's context class
-        // loader at that moment, and keeps it for the life of the JVM. Set up here, before any compilation sets the
-        // rule list's class loader as the context class loader, with MVEL's own class loader as the context class
-        // loader, it holds neither a rule list's nor the one the first thread to load rules happens to have.
-        withClassLoader(mvelClassLoader(), OptimizerFactory::getDefaultAccessorCompiler);
+        // loader at that moment, and keeps it until an application makes MVEL's JIT the default again, which makes a
+        // new one whose parent is that caller's context class loader. Set up here, before any compilation sets the rule
+        // list's class loader as the context class loader, with MVEL's own class loader as the context class loader, it
+        // holds neither a rule list's nor the one the first thread to load rules happens to have. Then MVEL's
+        // reflective optimizer becomes its default, for the whole JVM, before the engine compiles anything: the code
+        // MVEL's JIT generates once an expression has run about 50 times in 100 ms fails every later run of a call of
+        // an interface's static method, such as List.of(1, 2) (#1161), and one run of a call given a class name, a 10B
+        // or a 10I literal as an Object argument (#1122). An application that makes the JIT the default again has to do
+        // it once the engine has loaded its first rules, as this overrides an earlier call. MVEL clears a thread's own
+        // optimizer after each use, so only a thread that an application gave one with
+        // OptimizerFactory.setThreadAccessorOptimizer, or that ran an MVEL compiled set expression, before the engine
+        // loaded keeps it for what MVEL optimizes that way, such as an inline list or new.
+        withClassLoader(mvelClassLoader(), () -> {
+            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.SAFE_REFLECTIVE);
+            return OptimizerFactory.getDefaultAccessorCompiler();
+        });
     }
 
     private final String source;

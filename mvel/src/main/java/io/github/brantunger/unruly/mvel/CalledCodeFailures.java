@@ -12,7 +12,8 @@ import java.lang.reflect.InvocationTargetException;
  * reflection, which wraps what the code threw in an {@link InvocationTargetException}, and MVEL wraps that in its own
  * exceptions: a {@code PropertyAccessException} or a {@code CompileException} the first times the expression runs, then
  * a {@link RuntimeException} such as {@code "cannot invoke method"}, once or more. The JIT's accessor calls the code
- * directly, so nothing wraps what it throws, and with {@code -Dmvel2.disable.jit=true} the reflective accessor stays.
+ * directly, so nothing wraps what it throws, and with MVEL's reflective optimizer, the engine's default, the
+ * reflective accessor stays.
  * Unwrapping gives a rule's failure the same cause at any of those stages: the exception the rule's own code threw.
  * </p>
  *
@@ -35,7 +36,7 @@ import java.lang.reflect.InvocationTargetException;
  * marks what the code threw. What a {@link java.util.Map}'s own {@code get} threw, until one evaluation of the
  * expression succeeds, JIT on or off, and once more on the run where the JIT compiles it. What a {@code toString()}
  * converting a method argument threw, such as {@code b}'s in {@code 'abc'.concat(b)}, until the JIT compiles the
- * expression, and always with {@code -Dmvel2.disable.jit=true}; other {@code toString()} calls, such as string
+ * expression, and always with MVEL's reflective optimizer; other {@code toString()} calls, such as string
  * concatenation, {@code String.valueOf(b)} or {@code b.toString()} itself, aren't wrapped. And what an argument threw
  * once MVEL's JIT compiled the argument but not the call it's passed to, as happens when a run fails while the JIT
  * compiles that call: MVEL's reflective accessor then wraps what the argument threw directly, as it wraps its own

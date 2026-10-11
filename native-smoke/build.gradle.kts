@@ -9,6 +9,8 @@ plugins {
 
 dependencies {
     implementation(project(":mvel"))
+    // For the status line, which reports MVEL's default optimizer.
+    implementation(libs.mvel2)
     runtimeOnly(libs.slf4j.simple)
 }
 

@@ -5,14 +5,14 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.MVEL;
 import org.mvel2.asm.ClassWriter;
 import org.mvel2.asm.Opcodes;
 import org.mvel2.compiler.Accessor;
-import org.mvel2.optimizers.OptimizerFactory;
 import org.mvel2.optimizers.impl.asm.ASMAccessorOptimizer;
 
 import java.io.IOException;
@@ -45,13 +45,17 @@ class JitClassLinkageTest {
     /** The most runs {@link #runsPastJit} makes while it waits for MVEL's JIT to compile an accessor. */
     private static final int MAX_RUNS = 10_000;
 
-    /**
-     * MVEL keeps a JVM-wide class loader made from the context class loader of the thread that first sets up its
-     * optimizer. Set up here, it's the class path's, as for every other test, and not one of the loaders below.
-     */
-    @BeforeAll
-    static void initializeMvel() {
-        OptimizerFactory.getDefaultAccessorCompiler();
+    // MVEL's JIT, which the engine replaces as MVEL's default, is the default for these tests, as an application may
+    // make it (#1161). Set up so, its JVM-wide class loader's parent is the class path's, and not one of the loaders
+    // below.
+    @BeforeEach
+    void jitOn() {
+        MvelJit.on();
+    }
+
+    @AfterEach
+    void jitOff() {
+        MvelJit.off();
     }
 
     /** Looks {@code name} up as the JVM does when it links a class defined in a child of {@code exactName}. */

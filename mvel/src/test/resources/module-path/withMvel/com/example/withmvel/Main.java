@@ -12,7 +12,11 @@ import java.util.List;
 
 public final class Main {
 
-    /** MVEL's JIT replaces its reflective accessors after about 50 runs, which is when a missing export shows. */
+    /**
+     * Well past the 50 or so runs after which MVEL's JIT, were it MVEL's default, would replace its reflective
+     * accessors with classes outside the mvel2 module, which the export to mvel2 alone doesn't reach. The engine makes
+     * MVEL's reflective optimizer the default, so every run reads the classes from mvel2.
+     */
     private static final int RUNS = 1_000;
 
     private Main() {
