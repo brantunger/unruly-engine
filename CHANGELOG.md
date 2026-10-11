@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.15](https://github.com/brantunger/unruly-engine/compare/v2.29.14...v2.29.15) (2026-10-11)
+
+
+### Bug Fixes
+
+* make MVEL's reflective optimizer the default, so a call of an interface's static method and a class name, 10B or 10I passed as an Object argument no longer fail once MVEL's JIT compiles them ([#1168](https://github.com/brantunger/unruly-engine/issues/1168)) ([900c270](https://github.com/brantunger/unruly-engine/commit/900c270c02e713ce5206bd3e3eee333c98b0581d))
+
 ## [2.29.14](https://github.com/brantunger/unruly-engine/compare/v2.29.13...v2.29.14) (2026-10-11)
 
 
