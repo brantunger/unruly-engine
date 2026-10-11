@@ -105,7 +105,7 @@ import java.util.stream.Stream;
  * <p>
  * The name of each class the application's class loader loads through this one, by a name looked up with this loader
  * itself, is given to the rule list's {@link ClassNameRoots}, which records its first part while an expression
- * compiles: a fact can't then have that name (see {@link FactNames}).
+ * compiles, or its name if it has no package: a fact can't then have that name (see {@link FactNames}).
  * </p>
  */
 final class ExactNameClassLoader extends ClassLoader {
@@ -184,7 +184,7 @@ final class ExactNameClassLoader extends ClassLoader {
     private final int mostClasses;
 
     // Told the name of each class the application's class loader loads through this one, and records the first part
-    // of it while an expression compiles.
+    // of it, or the name of one with no package, while an expression compiles.
     private final ClassNameRoots roots;
 
     /**
@@ -202,7 +202,8 @@ final class ExactNameClassLoader extends ClassLoader {
      * of each class it loads.
      *
      * @param parent The application's class loader
-     * @param roots  Records the first part of the name of each class loaded while an expression compiles
+     * @param roots  Records the first part of the name of each class loaded while an expression compiles, or the
+     *               name of one with no package
      */
     ExactNameClassLoader(ClassLoader parent, ClassNameRoots roots) {
         this(parent, MAX_CACHED_CLASSES, Imports.isJdkLoader(parent), roots);

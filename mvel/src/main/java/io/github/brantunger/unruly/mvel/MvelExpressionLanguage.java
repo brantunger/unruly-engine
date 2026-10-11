@@ -40,9 +40,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *     <li>A fact name must be a Java identifier that isn't one of MVEL's reserved words, such as {@code empty} or
  *     {@code in}, and isn't a class name MVEL resolves instead, such as {@code Math} or an imported class, nor the
  *     first part of the name of a class the rule list's expressions name with its package, such as {@code java} for
- *     {@code java.lang.Integer.MAX_VALUE}, or find through an import. MVEL checks a fact's name only where the text of
- *     the rule list's MVEL expressions holds it: as a name, or as a span of a word, a run of text between MVEL's
- *     whitespace (U+0000 to U+0020), that starts at the word's start, just after one of its ends, or just after
+ *     {@code java.lang.Integer.MAX_VALUE}, or find through an import, nor the name of a class with no package the
+ *     rule list's expressions use, or of the class one they use is nested in. MVEL checks a fact's name only where the
+ *     text of the rule list's MVEL expressions holds it: as a name, or as a span of a word, a run of text between
+ *     MVEL's whitespace (U+0000 to U+0020), that starts at the word's start, just after one of its ends, or just after
  *     {@code isdef} glued to the name that follows it, and stops at the word's end or just before a character that
  *     isn't part of an identifier, an end being one of {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}, such
  *     as {@code my-fact} in {@code my-fact == 1} or {@code my-fact-1}, which MVEL reads as {@code my} minus

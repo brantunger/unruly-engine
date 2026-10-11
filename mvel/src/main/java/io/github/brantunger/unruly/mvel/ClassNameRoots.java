@@ -12,7 +12,10 @@ import java.util.function.Supplier;
 /**
  * The first part of the name of each class a rule list's expressions use, such as {@code java} for
  * {@code java.lang.Integer}, which {@link FactNames} rejects as a fact's name: MVEL would read a fact of that name in
- * the class's place.
+ * the class's place. And the name of each class with no package they use, such as {@code Limits}, which
+ * {@link FactNames} rejects as a fact's name for the same reason; a class nested in one, such as {@code Limits$Tier},
+ * counts as the class it is nested in, {@code Limits}. The two are kept apart, so each is rejected with its own
+ * reason.
  *
  * <p>
  * Only a class the rule list's {@link ExactNameClassLoader} loads while {@link #recordWhile} compiles an expression
@@ -33,29 +36,33 @@ import java.util.function.Supplier;
  * MVEL initializes a class it finds, and the thread's context class loader is the rule list's meanwhile (see
  * {@link MvelExpression}), so a static initializer that looks classes up through it, such as
  * {@code java.sql.DriverManager}'s, which loads the JDBC drivers, adds their first parts, such as {@code org} or
- * {@code com}. Only the first load that initializes the class does, so a rule list may reject such a name and a later
- * load of the same rules accept it.
+ * {@code com}, or the names of those with no package. Only the first load that initializes the class does, so a rule
+ * list may reject such a name and a later load of the same rules accept it.
  * </p>
  *
  * <p>
  * The engine compiles a rule list's expressions on the thread that loads it, before any run or check of a fact's name
  * uses the rule list. So what is recorded is told by how many compilations are under way, not by the thread, and once
- * each expression has compiled, what was recorded is published as a set that doesn't change, which {@link #contains}
- * reads.
+ * each expression has compiled, what was recorded is published as two sets that don't change: the first parts, which
+ * {@link #contains} reads, and the names of the classes with no package, which {@link #containsWithoutPackage} reads.
  * </p>
  */
 final class ClassNameRoots {
 
     private final Set<String> found = ConcurrentHashMap.newKeySet();
+    // The names of the classes with no package found, apart from the first parts above.
+    private final Set<String> foundWithoutPackage = ConcurrentHashMap.newKeySet();
     // How many compilations are under way: one at a time in the engine, but compiling two at once records both.
     private final AtomicInteger compiling = new AtomicInteger();
     // Copies and publishes together, so the copy published last, whichever compilation ends last, holds every name.
     private final Object publishLock = new Object();
     private volatile Set<String> published = Set.of();
+    private volatile Set<String> publishedWithoutPackage = Set.of();
 
     /**
      * Compiles an expression, recording the first part of the name of each class the rule list's class loader loads
-     * meanwhile, then publishes what was recorded, whether the compilation returned or threw.
+     * meanwhile, or the name of one with no package, then publishes what was recorded, whether the compilation
+     * returned or threw.
      *
      * @param compile The compilation
      * @param <T>     What the compilation returns
@@ -69,6 +76,7 @@ final class ClassNameRoots {
             compiling.decrementAndGet();
             synchronized (publishLock) {
                 published = Set.copyOf(found);
+                publishedWithoutPackage = Set.copyOf(foundWithoutPackage);
             }
         }
     }
@@ -237,14 +245,20 @@ final class ClassNameRoots {
     }
 
     /**
-     * Records the first part of a class's name, if an expression is compiling and the name has a package.
+     * Records the first part of a class's name, if an expression is compiling and the name has a package, or, if the
+     * name has none, the name up to its first {@code $}: that of the class itself, or of the class it is nested in.
      *
      * @param className The binary name of a class the rule list's class loader loaded
      */
     void loaded(String className) {
-        int dot = className.indexOf('.');
-        if (compiling.get() > 0 && dot > 0) {
-            found.add(className.substring(0, dot));
+        if (compiling.get() > 0) {
+            int dot = className.indexOf('.');
+            if (dot > 0) {
+                found.add(className.substring(0, dot));
+            } else {
+                int dollar = className.indexOf('$');
+                foundWithoutPackage.add(dollar < 0 ? className : className.substring(0, dollar));
+            }
         }
     }
 
@@ -256,5 +270,16 @@ final class ClassNameRoots {
      */
     boolean contains(String name) {
         return published.contains(name);
+    }
+
+    /**
+     * Tells whether a name is that of a class with no package found while the rule list's expressions compiled, or of
+     * the class one found is nested in.
+     *
+     * @param name The name
+     * @return {@code true} if it is
+     */
+    boolean containsWithoutPackage(String name) {
+        return publishedWithoutPackage.contains(name);
     }
 }

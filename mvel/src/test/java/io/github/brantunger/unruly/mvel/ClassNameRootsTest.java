@@ -58,20 +58,56 @@ class ClassNameRootsTest {
     }
 
     @Test
-    @DisplayName("a class with no package adds nothing")
-    void noPackageAddsNothing() {
-        ClassNameRoots roots = new ClassNameRoots();
+    @DisplayName("a class with no package adds its name apart from the first parts, and a nested one its outer name")
+    void noPackageRecordedApart() {
         ClassLoader noPackage = new ClassLoader(null) {
             @Override
             public Class<?> loadClass(String name) {
                 return String.class;
             }
         };
-        ExactNameClassLoader loader = new ExactNameClassLoader(noPackage, roots);
+        Imports imports = new Imports(Set.of(), Set.of(), noPackage);
+        ClassNameRoots roots = imports.classNameRoots();
+        FactNames names = new FactNames(imports);
 
-        roots.recordWhile(() -> load(loader, "Order"));
+        roots.recordWhile(() -> load(imports.classLoader(), "Order"));
+        roots.recordWhile(() -> load(imports.classLoader(), "Invoice$Line"));
 
         assertFalse(roots.contains("Order"));
+        assertFalse(roots.contains("Invoice"));
+        for (String name : List.of("Order", "Invoice")) {
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> names.check(name));
+            assertEquals("'" + name + "' cannot be used as a fact name: the rules use the class '" + name + "', and "
+                    + "MVEL would read the fact in the class's place", ex.getMessage());
+        }
+        names.check("Invoice$Line");
+    }
+
+    @Test
+    @DisplayName("a class with no package the expression uses is rejected as a fact's name, once the compile is done")
+    void noPackageCompileRecords() {
+        Imports imports = imports();
+        FactNames names = new FactNames(imports);
+        names.check("Unpackaged");
+
+        MvelExpression.compile("amount < Unpackaged.LIMIT", imports);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> names.check("Unpackaged"));
+        assertEquals("'Unpackaged' cannot be used as a fact name: the rules use the class 'Unpackaged', and MVEL "
+                + "would read the fact in the class's place", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("a lookup of a class with no package after the compile adds nothing")
+    void noPackageLaterLookupAddsNothing() {
+        Imports imports = imports();
+        MvelExpression.compile("amount > 1", imports);
+
+        load(imports.classLoader(), "Unpackaged");
+        // Publishes what was recorded again.
+        MvelExpression.compile("amount > 2", imports);
+
+        new FactNames(imports).check("Unpackaged");
     }
 
     @Test

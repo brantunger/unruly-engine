@@ -239,6 +239,18 @@ class ClassNameRootFactTest {
     }
 
     @Test
+    @DisplayName("a declared fact is a problem validate() reports")
+    void declaredFactRejectedByValidate() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .fact("java", Object.class).build();
+
+        List<RuleCompilationException> problems = engine.validate(List.of(rule(FIELD, "output.put('r', 1)")));
+
+        assertEquals(List.of("Declared fact 'java' can't be used: " + rejection("java")),
+                problems.stream().map(RuleCompilationException::getMessage).toList());
+    }
+
+    @Test
     @DisplayName("with requireDeclaredFacts(), declaring the fact fails the load")
     void requiredDeclaredFactRejectedAtLoad() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
