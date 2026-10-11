@@ -63,6 +63,34 @@ class MvelExpressionLanguageTest {
     }
 
     @Test
+    @DisplayName("prepare's warm-up is skipped when it throws an InternalError around an overflow, as the JDK wraps one"
+            + " (#1141)")
+    void warmUpInternalErrorAroundOverflowSkipped() {
+        assertFalse(MvelExpressionLanguage.warmedUp(() -> {
+            throw new InternalError(new InvocationTargetException(new StackOverflowError()));
+        }));
+        InternalError fatal = new InternalError("no overflow");
+        assertSame(fatal, assertThrows(InternalError.class, () -> MvelExpressionLanguage.warmedUp(() -> {
+            throw fatal;
+        })));
+    }
+
+    @Test
+    @DisplayName("prepare's warm-up throws what a class an overflow left unusable throws, so prepare() fails (#1116)")
+    void warmUpDeadClassThrown() {
+        NoClassDefFoundError dead = new NoClassDefFoundError("Could not initialize class com.acme.Dead");
+        dead.initCause(new StackOverflowError());
+        IllegalStateException failure = new IllegalStateException(dead);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> MvelExpressionLanguage.warmedUp(() -> {
+            throw failure;
+        })));
+        assertSame(dead, assertThrows(NoClassDefFoundError.class, () -> MvelExpressionLanguage.warmedUp(() -> {
+            throw dead;
+        })));
+    }
+
+    @Test
     @DisplayName("prepare's warm-up throws anything else as it is, so prepare() fails (#1042)")
     void warmUpOtherFailureThrown() {
         IllegalStateException failure = new IllegalStateException("no access", new IllegalAccessException());

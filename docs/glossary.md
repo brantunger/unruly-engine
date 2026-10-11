@@ -156,10 +156,10 @@ request is the simplest. See [Reusing and sharing a store](facts.md#-reusing-and
 
 ### Fatal error
 
-A `VirtualMachineError` other than `StackOverflowError`, such as `OutOfMemoryError`, in the cause chain or suppressed
-there. The engine logs it, then a [message your code wraps it in](nested-runs.md#-what-is-logged) once logged, and
-rethrows it from `load()`, `validate()`, `run()` or `close()`; every other `Error` from a rule is that rule's
-failure. One past the first 10,000 exceptions searched can be missed
+A `VirtualMachineError` like `OutOfMemoryError` in the cause chain or suppressed there, bar a `StackOverflowError`
+or an `InternalError` caused by one before any `LinkageError`. The engine logs it, then a
+[message your code wraps it in](nested-runs.md#-what-is-logged) once logged, and rethrows it; other `Error`s from a
+rule are its failure. One past the first 10,000 exceptions searched can be missed
 ([#896](https://github.com/brantunger/unruly-engine/issues/896)). See [Exceptions by method](exceptions-by-method.md).
 
 ### First-match engine

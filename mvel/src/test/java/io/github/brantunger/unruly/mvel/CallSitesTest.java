@@ -451,6 +451,24 @@ class CallSitesTest {
         }));
     }
 
+    @Test
+    @DisplayName("#1116: an InternalError around a class an overflow left unusable, whose NoClassDefFoundError has the"
+            + " overflow as its cause, isn't a walk with no room, and is thrown")
+    void wrappedDeadClassThrown() {
+        NoClassDefFoundError dead = new NoClassDefFoundError("Could not initialize class java.util.Dead");
+        dead.initCause(new StackOverflowError());
+        InternalError wrapped = new InternalError(dead);
+        CallSites walking = new CallSites(false, 10);
+        // The first walk is after the first 100 calls and before the 200th, as in wrappedOverflowCountsNothing.
+        assertSame(wrapped, assertThrows(InternalError.class, () -> {
+            for (int call = 0; call < 200; call++) {
+                walking.countedAt(() -> {
+                    throw wrapped;
+                });
+            }
+        }));
+    }
+
     /**
      * The calls whose stack a count walked, each from a place of its own, when the first {@code skipped} walks have no
      * room: then the call is recorded, and what a walk with no room throws is thrown.

@@ -1805,8 +1805,9 @@ public abstract class ExpressionLanguageContractTest {
      * passes: the default returns what {@code evaluate} does. So does one that throws from both for a fact, as a
      * language that compares whole numbers by type may; one that throws from only one of them fails. What either
      * throws counts as the engine counts it: an exception or an {@link Error} fails the rule, such as a
-     * {@link StackOverflowError} or an {@link AssertionError}, but a fatal one, another {@link VirtualMachineError},
-     * thrown or carried as a cause or a suppressed exception, is thrown on, and fails the check by itself.
+     * {@link StackOverflowError} or an {@link AssertionError}, but a fatal one, another {@link VirtualMachineError}
+     * other than an {@link InternalError} that wraps an overflow, thrown or carried as a cause or a suppressed
+     * exception, is thrown on, and fails the check by itself.
      *
      * <p>
      * Each fact is evaluated as a run of its own, which {@link LanguageTestContexts#endRun} ends before the next, as

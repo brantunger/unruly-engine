@@ -116,6 +116,23 @@ class InitializerFailureTest {
         }
     }
 
+    /**
+     * Throws what JDK 25 and 26 throw for a class an overflow in its static initializer left unusable: a
+     * {@link NoClassDefFoundError} with the overflow as its cause. An {@link Error} isn't wrapped in an
+     * {@link ExceptionInInitializerError}, so the first use of the class throws it as it is.
+     */
+    public static class DeadClassInit {
+        public static int x = 1;
+
+        static {
+            if (x == 1) {
+                NoClassDefFoundError dead = new NoClassDefFoundError("Could not initialize class java.util.Dead");
+                dead.initCause(new StackOverflowError());
+                throw dead;
+            }
+        }
+    }
+
     public static class ErrorInit {
         public static int x = 1;
 
@@ -436,6 +453,16 @@ class InitializerFailureTest {
     @DisplayName("an error thrown by the initializer keeps MVEL's description, which is its message")
     void errorUnchanged() throws InterruptedException {
         assertEquals(PREFIX + "assert in init", loadFailure(ErrorInit.class).getMessage());
+    }
+
+    @Test
+    @DisplayName("a class an overflow left unusable, whose NoClassDefFoundError has the overflow as its cause, fails to"
+            + " compile with MVEL's message, as on JDK 21, not as an overflow (#1116)")
+    void deadClassIsNoOverflow() throws InterruptedException {
+        RuleCompilationException thrown = loadFailure(DeadClassInit.class);
+
+        assertEquals(PREFIX + "Could not initialize class java.util.Dead", thrown.getMessage());
+        assertInstanceOf(InvalidExpressionException.class, thrown.getCause());
     }
 
     @Test

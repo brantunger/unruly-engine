@@ -805,6 +805,97 @@ class RunScopedClosingTest {
     }
 
     @Test
+    @DisplayName("#1141: when combining what ending the run threw fails, an InternalError around an overflow a value"
+            + " threw isn't fatal, and what combining threw is thrown")
+    void combiningTheEndingFailsPassesOverAnInternalErrorAroundAnOverflow() {
+        InternalError overflow = new InternalError(new StackOverflowError());
+        StackOverflowError injected = new StackOverflowError("injected");
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("a", () -> new Value("a", overflow)))) {
+            Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, injected);
+
+            assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertEquals(List.of("afterRun", "a closed"), events);
+        }
+    }
+
+    @Test
+    @DisplayName("#1141: when combining what ending the run threw fails, an InternalError around an overflow taking"
+            + " the run's values isn't fatal, and what combining threw is thrown")
+    void combiningTheEndingFailsPassesOverAnInternalErrorAroundAnOverflowTakingTheValues() {
+        InternalError taking = new InternalError(new StackOverflowError());
+        StackOverflowError combining = new StackOverflowError("combining");
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("a", () -> new Value("a")))) {
+            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, taking);
+            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+
+            assertSame(combining, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertEquals(List.of("afterRun", "a closed"), events);
+
+            InternalError fatal = new InternalError("taking failed");
+            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, fatal);
+            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, new StackOverflowError("combining"));
+            assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())),
+                    "an InternalError with no overflow is still fatal");
+        }
+    }
+
+    @Test
+    @DisplayName("#1141: when handling a value's failure fails with an InternalError and combining what ending the run"
+            + " threw fails too, the InternalError is thrown only if it isn't around an overflow")
+    void combiningTheEndingFailsAfterHandlingFailsWithAnInternalError() {
+        InternalError overflow = new InternalError(new StackOverflowError());
+        InternalError fatal = new InternalError("handling failed");
+        StackOverflowError combining = new StackOverflowError("combining");
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("a", () -> new Value("a", new IllegalStateException("a"))))) {
+            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, overflow);
+            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            assertSame(combining, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+
+            Faults.clear();
+            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, fatal);
+            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+        }
+    }
+
+    @Test
+    @DisplayName("#1141: when handling several values' failures fails, an InternalError around an overflow one of"
+            + " them threw isn't the fatal error kept")
+    void internalErrorAroundAnOverflowNotKeptAsFatalWhenHandlingFails() {
+        InternalError overflow = new InternalError(new StackOverflowError());
+        StackOverflowError handling = new StackOverflowError("handling");
+        try (RulesEngine<Map<String, Object>> engine = engine(context -> {
+            context.runScopedClosing("a", () -> new Value("a", overflow));
+            context.runScopedClosing("b", () -> new Value("b", new IllegalStateException("b failed to close")));
+        })) {
+            // Logging, and keeping what that threw, fails for every value.
+            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+
+            Throwable thrown = EngineLogs.thrownBy(() -> engine.run(new FactMap<>()));
+
+            assertNotSame(overflow, thrown);
+            assertNull(Failures.fatalError(thrown), thrown::toString);
+            // What close() threw first, b's, is the one held, not replaced by a's as a fatal error would be.
+            assertTrue(Arrays.stream(thrown.getSuppressed()).anyMatch(e -> "b failed to close".equals(e.getMessage())),
+                    () -> Arrays.toString(thrown.getSuppressed()));
+            assertEquals(List.of("afterRun", "b closed", "a closed"), events);
+        }
+        InternalError fatal = new InternalError("a failed to close");
+        try (RulesEngine<Map<String, Object>> engine = engine(context -> {
+            context.runScopedClosing("a", () -> new Value("a", fatal));
+            context.runScopedClosing("b", () -> new Value("b", new IllegalStateException("b failed to close")));
+        })) {
+            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+
+            assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())),
+                    "an InternalError with no overflow is still the fatal error kept");
+        }
+    }
+
+    @Test
     @DisplayName("#850: an Error taking a run's values to close is thrown once they're closed, unless a fatal Error"
             + " closing one comes after it")
     void errorTakingTheValuesIsThrown() {

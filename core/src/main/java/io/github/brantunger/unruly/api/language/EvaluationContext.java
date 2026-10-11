@@ -111,8 +111,9 @@ public sealed interface EvaluationContext
      * slow action delays no other, of this run or any other. What it throws is logged at WARN and ignored. If the
      * deadline has already passed, the action runs on this thread before this method returns, and a fatal
      * {@link Error} it throws, a {@link VirtualMachineError} such as {@link OutOfMemoryError} but not a
-     * {@link StackOverflowError}, or an exception that carries one, is thrown from this method instead. A run without a
-     * deadline registers nothing: the registration returned does nothing when closed. Passing the deadline stops the
+     * {@link StackOverflowError} nor an {@link InternalError} that wraps one, or an exception that carries one, is
+     * thrown from this method instead. A run without a deadline registers nothing: the registration returned does
+     * nothing when closed. Passing the deadline stops the
      * run as {@link #isCancelled()} describes, and never interrupts its thread, so neither does the action unless it
      * interrupts it itself. An interrupt never runs the action: {@link #isCancelled()} still answers for both.
      * </p>

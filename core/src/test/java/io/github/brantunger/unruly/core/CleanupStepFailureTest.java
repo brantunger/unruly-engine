@@ -286,6 +286,45 @@ class CleanupStepFailureTest {
     }
 
     @Test
+    @DisplayName("#1141: a run whose permit fails to go back with an InternalError throws it, around an overflow or"
+            + " not, and still leaves the rules")
+    void aRunWhosePermitFailsToGoBackWithAnInternalErrorThrowsIt() throws InterruptedException {
+        for (InternalError giving : List.of(new InternalError(new StackOverflowError()),
+                new InternalError("giving back the permit"))) {
+            Counting language = new Counting();
+            AbstractRulesEngine<Object> engine = engine(language);
+            Faults.inject(Faults.Step.GIVING_BACK, 1, giving);
+
+            assertSame(giving, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+
+            assertEquals(1, freePermits(engine), "the permit is back, once");
+            engine.close();
+            Faults.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("#1141: when giving back a run's permit fails with an InternalError around an overflow and combining"
+            + " what ending the run threw fails too, what combining threw is thrown; a plain InternalError is fatal,"
+            + " and thrown")
+    void permitFailureWithAnInternalErrorWhenCombiningFails() throws InterruptedException {
+        StackOverflowError combining = new StackOverflowError("combining");
+        InternalError fatal = new InternalError("giving back the permit");
+        for (InternalError giving : List.of(new InternalError(new StackOverflowError()), fatal)) {
+            Counting language = new Counting();
+            AbstractRulesEngine<Object> engine = engine(language);
+            Faults.inject(Faults.Step.GIVING_BACK, 1, giving);
+            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+
+            assertSame(giving == fatal ? fatal : combining, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+
+            assertEquals(1, freePermits(engine), "the permit is back, once");
+            engine.close();
+            Faults.clear();
+        }
+    }
+
+    @Test
     @DisplayName("#839 permit and rule-list count: a run whose permit fails to go back as it gives back its copy"
             + " still leaves the rules, so close() closes them, and gives the permit back itself")
     void aRunWhosePermitFailsToGoBackStillLeavesTheRulesAndGivesItBack() throws InterruptedException {

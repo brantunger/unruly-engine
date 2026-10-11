@@ -109,20 +109,20 @@ Some first steps still need more stack than the engine checks for.
 
 **A JVM's first `load()` of a feature those expressions lack** can load classes, needing more stack than its check. Too
 deep, it throws `StackOverflowError` or a `RuleCompilationException` such as
-`The 'mvel' expression language failed to create a compiler: java.lang.StackOverflowError` or
-`Condition for rule 'r' failed to compile: the stack ran out: ...`, as in [Compile time](#-compile-time).
+`... failed to create a compiler: the stack overflowed: ...` or
+`Condition for rule 'r' failed to compile: the stack ran out: ...`.
 
 A retry at the same depth fails the same way, until one with more room succeeds anywhere, unless a static initializer
 overflowed (see below). Load and run your rules, or same-shaped ones, near the top first: trivial ones aren't enough.
 
-**If those expressions overflow**, they're skipped, and the JVM's first load or run loads their classes instead:
-deep in a stack, a load at that depth can fail as above, and a run its rule, with a `StackOverflowError` in the cause
-chain, until one with more room succeeds. The next `build()` of an engine whose builder names MVEL tries them again;
-unnamed MVEL, prepared once, never does.
+**If those expressions overflow**, they're skipped, and the JVM's first load or run loads their classes: deep, a load
+can fail as above, and a run its rule, reading `the stack overflowed`, until one with more room succeeds. A class an
+earlier overflow left unusable fails `prepare()` instead. The next `build()` of an engine whose builder names MVEL tries
+them again; unnamed MVEL, prepared once, never does.
 
 **MVEL's loop detection** walks the stack from an analysis's or run's 114th call for the class loader, as in a
-chain of 57 parts or more, two calls a part. A walk with no room is skipped, and the next comes when due, so the walk
-can't fail the rule; a loop stops [after more calls](mvel.md#-errors-when-rules-load).
+chain of 57 parts or more, two calls a part. A walk with no room is skipped, the next coming when due; one meeting an
+unusable class throws a fatal `InternalError`; a loop stops [after more calls](mvel.md#-errors-when-rules-load).
 
 **The JVM's first call of a method**, a getter a rule reads included, makes the JDK build the method's reflective
 accessor, which generates classes for a signature of a shape no call has had yet. So until a run that fired an MVEL
@@ -131,8 +131,8 @@ rule's action returns normally, runs of rule lists with an MVEL rule check for
 
 **That larger check** removed every failure of a deep first run, for the shapes measured on x64 with JDK 21, 25 and
 26 and the check JIT-compiled: a rule calling one method, also with a `new` or one call among its arguments. Deeper
-nesting, such as calls three levels deep, can still overflow and fail its rule, with a `StackOverflowError` in
-the cause chain: each level needs more.
+nesting, such as calls three levels deep, can still overflow and fail its rule with
+`the stack overflowed`: each level needs more.
 
 **A rule's first inline list or map, `new` or `soundslike`** initializes an MVEL class `prepare()` doesn't, so, like
 the JIT's first compile below, it can overflow deep in a stack. The engine's tests record which classes

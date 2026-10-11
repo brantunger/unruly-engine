@@ -379,8 +379,8 @@ it.
 ## 🔗 A missing class is reported like any other failure
 
 **What changed:** 1.x rethrew every `Error` except `StackOverflowError` and `AssertionError` unchanged, so a
-`LinkageError` escaped `run()` and `load()` raw, with no rule name. Now only a `VirtualMachineError` other than
-`StackOverflowError` — `OutOfMemoryError`, `InternalError`, `UnknownError` — escapes.
+`LinkageError` escaped `run()` and `load()` raw, with no rule name. Now only a [fatal error](glossary.md#fatal-error),
+such as `OutOfMemoryError` or `UnknownError`, escapes.
 
 Every other `Error` is reported like an exception, naming the rule and keeping the error in its cause chain. That
 covers every `LinkageError`: `NoClassDefFoundError`, `IllegalAccessError`, `IncompatibleClassChangeError`,

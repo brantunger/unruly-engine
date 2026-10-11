@@ -89,10 +89,11 @@ final class KitFailures {
 
     /**
      * Finds the fatal error in what a language threw, as the engine finds the one it rethrows: a
-     * {@link VirtualMachineError} other than a {@link StackOverflowError} that is the throwable itself or one of its
-     * causes, or failing that one suppressed on any of them, or among the causes and suppressed exceptions of those, at
-     * any depth, as a {@code try}-with-resources whose {@code close()} hits an {@link OutOfMemoryError} while its body
-     * throws leaves it. The kit keeps a copy of the engine's search, reading in the engine's order: the first
+     * {@link VirtualMachineError} other than a {@link StackOverflowError}, and other than an {@link InternalError} that
+     * wraps one (see {@link #isOverflow}), that is the throwable itself or one of its causes, or failing that one
+     * suppressed on any of them, or among the causes and suppressed exceptions of those, at any depth, as a
+     * {@code try}-with-resources whose {@code close()} hits an {@link OutOfMemoryError} while its body throws leaves
+     * it. The kit keeps a copy of the engine's search, reading in the engine's order: the first
      * {@value #MAX_CAUSE_CHAIN_LENGTH} links of the cause chain, then the direct suppressed exceptions of each link,
      * from the top, before what any of them leads to, depth first. A {@code getCause()} that throws ends that chain.
      * Each exception is read once, and at most {@value #MAX_EXCEPTIONS_READ} are, so a fatal error past that many is
@@ -109,7 +110,33 @@ final class KitFailures {
 
     /** Whether one throwable, not what it carries, is an error the engine rethrows. */
     private static boolean isFatalItself(Throwable thrown) {
-        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError);
+        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError)
+                && !(thrown instanceof InternalError && isOverflow(thrown));
+    }
+
+    /**
+     * Tells whether a throwable is an overflow, as the engine tells it: walking its cause chain from the top, a
+     * {@link StackOverflowError} comes before any {@link LinkageError}, such as the {@link NoClassDefFoundError} of a
+     * class an overflow left unusable. So an {@link InternalError} the JDK wraps an overflow in, deep in a stack, isn't
+     * fatal. The kit keeps a copy of the engine's reader: up to {@value #MAX_CAUSE_CHAIN_LENGTH} links, a
+     * {@code getCause()} that throws ending the chain. The kit's {@code KitOverflowCopyTest} checks it against the
+     * engine's.
+     *
+     * @param thrown The throwable
+     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
+     */
+    static boolean isOverflow(Throwable thrown) {
+        Throwable link = thrown;
+        for (int read = 0; link != null && read < MAX_CAUSE_CHAIN_LENGTH; read++) {
+            if (link instanceof LinkageError) {
+                return false;
+            }
+            if (link instanceof StackOverflowError) {
+                return true;
+            }
+            link = causeOf(link);
+        }
+        return false;
     }
 
     /** Reads an exception's cause, or {@code null} when {@code getCause()} throws, as the engine reads it. */

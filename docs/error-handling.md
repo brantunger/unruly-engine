@@ -95,9 +95,9 @@ A run stops once its thread is interrupted or it passes its timeout, at the poin
 
 What `run()` throws, which [listener](listeners-and-logging.md) callbacks each failure reaches, and how the engine logs
 it. The listener column leaves out `beforeRun`, except where a run never gets it. "Names the rule" means
-`getRuleName()` returns the rule's name; "no rule" means it returns `null`. A
-[fatal error](glossary.md#fatal-error) is a `VirtualMachineError` other than `StackOverflowError`, such as
-`OutOfMemoryError`.
+`getRuleName()` returns the rule's name; "no rule" means it returns `null`.
+[Fatal errors](glossary.md#fatal-error), `VirtualMachineError`s like `OutOfMemoryError`, exclude overflows,
+`InternalError`-wrapped or not.
 
 | Failure | `run()` throws | Listeners get | Logged |
 | --- | --- | --- | --- |

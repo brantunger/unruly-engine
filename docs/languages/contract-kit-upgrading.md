@@ -100,10 +100,10 @@ A repeated run that fails in `ok` reads `<what failed> failed the first run, and
 rule ok, which runs before rule r: a failed run must leave its copy usable: `. The condition checks fail in `r` before
 any action runs, missing a session broken for actions only.
 
-In 2.20.3 one check got stricter and none was added. The kit now finds a fatal error, any `VirtualMachineError`
-but `StackOverflowError`, where the engine finds it: thrown, or carried as a cause or a suppressed exception at any
-depth. It also reads the suppressed exceptions the engine added itself, which the engine skips, so it can find one
-the engine doesn't.
+In 2.20.3 one check got stricter and none was added. The kit now finds a
+[fatal error](../glossary.md#fatal-error) where the engine finds it: thrown, or carried as a cause or a suppressed
+exception at any depth. It also reads the suppressed exceptions the engine added itself, which the engine skips, so
+it can find one the engine doesn't.
 
 | Check | Now fails a language that | The defect |
 | --- | --- | --- |

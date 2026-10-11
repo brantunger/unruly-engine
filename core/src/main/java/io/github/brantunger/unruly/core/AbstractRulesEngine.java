@@ -323,8 +323,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param facts   The run's facts and the views built over them
      * @return The output object the action shaped, with the rule that fired
      * @throws RuleExecutionException if the output factory throws or returns {@code null}, the action fails, or the
-     *                                run was cancelled before the rule. A {@link VirtualMachineError} other than
-     *                                {@link StackOverflowError} from the output factory is rethrown unchanged, as
+     *                                run was cancelled before the rule. A fatal {@link Error} (see
+     *                                {@link Failures#fatalError}) from the output factory is rethrown unchanged, as
      *                                {@link #createOutput(RunFacts)} describes.
      */
     RunResult<O> fire(Matches matches, RuleSet ruleSet, RuleSet.Copy copy, RunFacts facts) {
@@ -531,13 +531,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *         the values or the rules threw, or else the first other throwable that escaped them, as logging one can,
      *         either carrying the rest as suppressed exceptions (see {@link Failures#fatalFirst}). Nothing else a
      *         {@code close()} throws is returned: it was logged. If combining them fails, as it can when it runs out
-     *         of memory, the first {@link VirtualMachineError} other than a {@link StackOverflowError} met is
-     *         returned alone, or else what combining threw.
+     *         of memory, the first {@link VirtualMachineError} other than a {@link StackOverflowError}, or an
+     *         {@link InternalError} that wraps one (see {@link Failures#isOverflow}), met is returned alone, or else
+     *         what combining threw.
      */
     // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
     private static Throwable endRun(RuleSet rules, RuleSet.Copy copy, RunFacts facts) {
-        // The first fatal error the JVM threw, a VirtualMachineError but a StackOverflowError, while the run ended,
-        // kept with instanceof checks and assignments only, for the last resort below.
+        // The first fatal error the JVM threw, a VirtualMachineError but a StackOverflowError or an InternalError that
+        // wraps one (see Failures.isOverflow, which allocates nothing), while the run ended, kept with instanceof
+        // checks and assignments only, for the last resort below.
         Throwable fatal = null;
         Throwable endFailed = null;
         Throwable taking = null;
@@ -556,10 +558,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // The values handed over are closed all the same.
             taking = t;
         }
-        if (endFailed instanceof VirtualMachineError && !(endFailed instanceof StackOverflowError)) {
+        if (endFailed instanceof VirtualMachineError && !(endFailed instanceof StackOverflowError)
+                && !(endFailed instanceof InternalError && Failures.isOverflow(endFailed))) {
             fatal = endFailed;
         }
-        if (fatal == null && taking instanceof VirtualMachineError && !(taking instanceof StackOverflowError)) {
+        if (fatal == null && taking instanceof VirtualMachineError && !(taking instanceof StackOverflowError)
+                && !(taking instanceof InternalError && Failures.isOverflow(taking))) {
             fatal = taking;
         }
         Throwable closing;
@@ -568,7 +572,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Throwable t) {
             closing = t;
         }
-        if (fatal == null && closing instanceof VirtualMachineError && !(closing instanceof StackOverflowError)) {
+        if (fatal == null && closing instanceof VirtualMachineError && !(closing instanceof StackOverflowError)
+                && !(closing instanceof InternalError && Failures.isOverflow(closing))) {
             fatal = closing;
         }
         Throwable releasing = null;
@@ -579,7 +584,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Throwable t) {
             releasing = t;
         }
-        if (fatal == null && releasing instanceof VirtualMachineError && !(releasing instanceof StackOverflowError)) {
+        if (fatal == null && releasing instanceof VirtualMachineError && !(releasing instanceof StackOverflowError)
+                && !(releasing instanceof InternalError && Failures.isOverflow(releasing))) {
             fatal = releasing;
         }
         try {
@@ -1291,7 +1297,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Reports a condition or action that threw as its rule's failure.
+     * Reports a condition or action that threw as its rule's failure. An overflow (see {@link Failures#isOverflow}),
+     * bare or wrapped, as in an {@link InternalError} the JDK wraps one in, says the stack overflowed, unless what it
+     * threw holds a nested {@code run()}'s or {@code load()}'s failure, which is described as {@link Failures#describe}
+     * describes it, naming that run's or load's rule.
      *
      * @param rule   The rule whose expression threw
      * @param kind   Whether the condition or the action threw
@@ -1300,8 +1309,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException expressionFailure(CompiledRule rule, ExpressionKind kind, Throwable thrown) {
         String what = kind == ExpressionKind.CONDITION ? "Failed to evaluate condition" : "Failed to execute action";
-        return notifier.failure(rule, kind, what + " for rule '" + rule.displayName() + "': "
-                + Failures.describe(thrown), thrown);
+        String why = Failures.below(thrown).logged() != null ? Failures.describe(thrown)
+                : Failures.describeCallOut(thrown, false);
+        return notifier.failure(rule, kind, what + " for rule '" + rule.displayName() + "': " + why, thrown);
     }
 
     /**
@@ -1405,7 +1415,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param facts The run's facts, and what the run carries with them
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
-     *                                other than {@link StackOverflowError} is logged, then rethrown unchanged, also
+     *                                other than {@link StackOverflowError}, and other than an {@link InternalError}
+     *                                that wraps one (see {@link Failures#isOverflow}), is logged, then rethrown
+     *                                unchanged, also
      *                                when it is the cause of what the factory throws or suppressed on it; any other
      *                                {@link Error}, and a {@link Throwable} that is neither an exception nor an error,
      *                                is wrapped like an exception. A failure of a {@code run()} the factory started

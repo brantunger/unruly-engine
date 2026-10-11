@@ -331,7 +331,7 @@ final class FactIntake {
         }
         Failures.keepInterruptStatus(failure);
         String msg = "The '" + Failures.quote(language) + "' expression language failed to check fact name '"
-                + Failures.quote(name) + "': " + Failures.describe(failure);
+                + Failures.quote(name) + "': " + Failures.describeCallOut(failure, true);
         Error fatal = Failures.fatalError(failure);
         boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(failure);
         if (logs) {

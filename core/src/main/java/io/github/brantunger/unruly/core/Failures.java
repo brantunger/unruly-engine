@@ -72,7 +72,8 @@ public final class Failures {
     /**
      * Tells whether {@code thrown} is an {@link Error} the engine must not absorb, because the JVM itself is failing
      * and no message about a rule would help: a {@link VirtualMachineError} other than {@link StackOverflowError},
-     * such as {@link OutOfMemoryError}, {@link InternalError} or {@link UnknownError}.
+     * such as {@link OutOfMemoryError}, {@link InternalError} or {@link UnknownError}, but not an
+     * {@link InternalError} that is an overflow (see {@link #isOverflow}).
      *
      * <p>
      * Every other error comes from the code being run, so it's handled like an exception and reported with the name of
@@ -81,6 +82,9 @@ public final class Failures {
      * <ul>
      *     <li>{@link StackOverflowError} (runaway recursion), which is itself a {@code VirtualMachineError} and so is
      *     excluded here on purpose;</li>
+     *     <li>an {@link InternalError} with a {@link StackOverflowError} in its cause chain and no
+     *     {@link LinkageError} before it, as the JDK wraps an overflow it hits defining a hidden class deep in a stack
+     *     (#1141): the code being run ran out of stack, which more room fixes;</li>
      *     <li>{@link AssertionError} ({@code assert} in a rule, a listener or a language);</li>
      *     <li>every {@link LinkageError} — {@link NoClassDefFoundError}, {@link IllegalAccessError},
      *     {@link IncompatibleClassChangeError}, {@link ExceptionInInitializerError}, {@link VerifyError} and the rest —
@@ -94,8 +98,10 @@ public final class Failures {
      * @return {@code true} if {@code thrown} must be rethrown unchanged
      */
     private static boolean isFatal(Throwable thrown) {
-        // StackOverflowError is a VirtualMachineError, so excluding it needs its own check.
-        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError);
+        // StackOverflowError is a VirtualMachineError, so excluding it needs its own check. Only an InternalError has
+        // its chain read, with nothing allocated for it.
+        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError)
+                && !(thrown instanceof InternalError && isOverflow(thrown));
     }
 
     /**
@@ -700,6 +706,30 @@ public final class Failures {
                 : alreadyLogged("caused by ", noteText(logged)));
     }
 
+    /**
+     * Describes what a language threw from a call other than compiling an expression, such as {@code prepare},
+     * {@code newCompiler}, {@code factNamesRead}, {@code checkFactName}, {@code warmUp} or {@code newSession}, or
+     * from a condition or an action a run evaluates, as {@link #describe} does, unless it's an overflow (see
+     * {@link #isOverflow}): its class alone would say nothing of why. Compiling an expression says why in words of its
+     * own (see {@code RuleListCompiler.overflowReason()}).
+     *
+     * @param e        What the language threw
+     * @param loadTime {@code true} for a call made about the rules, {@code newCompiler}, {@code factNamesRead},
+     *                 {@code checkFactName} or {@code warmUp}, whose overflow may come from rule text too long or too
+     *                 deeply nested for the language; {@code false} for {@code newSession}, which a run makes for its
+     *                 copy, {@code prepare}, which reads no rule text, and a condition or an action that a run
+     *                 evaluates
+     * @return {@code the stack overflowed}, followed for a load-time call by
+     *         {@code : the rule text may be too long or too deeply nested for the language}, or else the description
+     */
+    static String describeCallOut(Throwable e, boolean loadTime) {
+        if (!isOverflow(e)) {
+            return describe(e);
+        }
+        return loadTime ? "the stack overflowed: the rule text may be too long or too deeply nested for the language"
+                : "the stack overflowed";
+    }
+
     /** Says what failed below a description: {@code a nested run() failed: } or {@code a nested load() failed: }. */
     private static String nested(boolean byLoad) {
         return "a nested " + (byLoad ? "load()" : "run()") + " failed: ";
@@ -790,14 +820,15 @@ public final class Failures {
     /**
      * Names the root cause when a description would otherwise hide it: its class when it has no message, and its class
      * and message when an exception above it has none, unless the part of the first exception's text that the
-     * description shows already has it: the first message for {@link #describe}, its {@code toString()} for
-     * {@link #describeWithClass}. That part is the text's first {@value #MAX_DESCRIPTION_LENGTH} characters as
-     * {@link #clip} keeps them (see {@link #shownOf}), searched raw, without the note of what was left out: a root
-     * cause's message found only past the cut isn't shown, and searching all of a long text took time that grew with
-     * the square of its length. A message that can't be read (see {@link #messageOf})
-     * hides the root cause as a missing one does, and a root cause whose message can't be read is named with the note
-     * that it's unavailable. Only a text that can be read can already show the root cause's message: two notes that
-     * messages are unavailable read the same whatever the messages were.
+     * description shows already has it, the class's name for a root cause with no message, as
+     * {@code new RuntimeException(cause)}'s message has it, and the message otherwise: the first message for
+     * {@link #describe}, its {@code toString()} for {@link #describeWithClass}. That part is the text's first
+     * {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #clip} keeps them (see {@link #shownOf}), searched raw,
+     * without the note of what was left out: a root cause's message found only past the cut isn't shown, and searching
+     * all of a long text took time that grew with the square of its length. A message that can't be read (see
+     * {@link #messageOf}) hides the root cause as a missing one does, and a root cause whose message can't be read is
+     * named with the note that it's unavailable. Only a text that can be read can already show the root cause's
+     * message: two notes that messages are unavailable read the same whatever the messages were.
      *
      * @param chain An exception and its causes
      * @param shown The part of the first exception's text the description shows, as {@link #shownOf} returns it, or
@@ -826,7 +857,9 @@ public final class Failures {
         Throwable root = chain.get(chain.size() - 1);
         String rootMessage = messageOf(root);
         if (rootMessage == null) {
-            return " (caused by " + shorten(root.getClass().getName()) + ")";
+            // A text that shows the class already, as new RuntimeException(cause)'s message does, needs no note.
+            String rootClass = root.getClass().getName();
+            return shown != null && shown.contains(rootClass) ? "" : " (caused by " + shorten(rootClass) + ")";
         }
         boolean hidden = !allReadable(chain) && (shown == null || !shown.contains(rootMessage));
         return hidden
@@ -1611,6 +1644,37 @@ public final class Failures {
     static Throwable rootCause(Throwable e) {
         List<Throwable> chain = causeChain(e);
         return chain.get(chain.size() - 1);
+    }
+
+    /**
+     * Tells whether {@code e} is a {@link StackOverflowError}, or what was thrown in place of one: walking its cause
+     * chain (see {@link #causeChain}) from the top, a {@link StackOverflowError} comes before any {@link LinkageError}.
+     * A {@link NoClassDefFoundError} or an {@link ExceptionInInitializerError} above the overflow says a class was left
+     * unusable, by an overflow in its static initializer, maybe in an earlier load, and no change to the rule or the
+     * stack's depth helps, so that isn't an overflow, as JDK 25 and 26 make one with the overflow as its cause (#1116).
+     * An {@link InternalError} around one, as the JDK wraps an overflow it hits defining a hidden class, is (#1141).
+     * The chain is read link by link, with nothing allocated, so the engine's last-resort checks, which run when
+     * handling a failure has itself failed, as allocating can, can ask it too: up to {@value #MAX_CAUSE_CHAIN_LENGTH}
+     * links, which may repeat in a chain that loops back on itself, so it answers as {@link #causeChain}'s links read
+     * in order would. {@code mvel.ExceptionReads} keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks
+     * against this one, and so does the test kit's {@code KitFailures}, which the kit's {@code KitOverflowCopyTest}
+     * checks.
+     *
+     * @param e The exception
+     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
+     */
+    static boolean isOverflow(Throwable e) {
+        Throwable link = e;
+        for (int read = 0; link != null && read < MAX_CAUSE_CHAIN_LENGTH; read++) {
+            if (link instanceof LinkageError) {
+                return false;
+            }
+            if (link instanceof StackOverflowError) {
+                return true;
+            }
+            link = causeOf(link);
+        }
+        return false;
     }
 
     /**

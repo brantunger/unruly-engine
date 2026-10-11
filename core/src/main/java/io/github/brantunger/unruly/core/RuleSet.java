@@ -653,7 +653,7 @@ final class RuleSet {
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = "The '" + Failures.quote(language) + "' expression language failed to warm up a session: "
-                    + Failures.describe(e);
+                    + Failures.describeCallOut(e, true);
             AbstractRulesEngine.reportCalledCodeFailure(msg, e);
             throw new ReportedFailure(msg, e);
         }
@@ -1255,7 +1255,7 @@ final class RuleSet {
             session = compiler.newSession();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            String msg = failed + "failed to create a session: " + Failures.describe(e);
+            String msg = failed + "failed to create a session: " + Failures.describeCallOut(e, false);
             AbstractRulesEngine.reportCalledCodeFailure(msg, e);
             throw new ReportedFailure(msg, e);
         }

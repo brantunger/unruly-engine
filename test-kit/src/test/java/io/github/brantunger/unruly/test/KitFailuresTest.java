@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -203,6 +204,28 @@ class KitFailuresTest {
 
         assertNull(rethrown(top));
         assertFalse(KitFailures.isFatal(top));
+    }
+
+    @Test
+    @DisplayName("#1141: an InternalError around an overflow, as the JDK wraps one, isn't fatal, as the engine reads"
+            + " it, but one around a class an overflow left unusable, or with no overflow, is")
+    void internalErrorAroundOverflowNotFatal() {
+        InternalError overflow = new InternalError(new InvocationTargetException(new StackOverflowError()));
+        IllegalStateException carried = new IllegalStateException("carried", overflow);
+        carried.addSuppressed(new InternalError(new StackOverflowError()));
+        NoClassDefFoundError dead = new NoClassDefFoundError("Could not initialize class X");
+        dead.initCause(new StackOverflowError());
+        InternalError aroundDead = new InternalError(dead);
+        InternalError crash = new InternalError("crashed", new IllegalStateException("no overflow"));
+
+        assertNull(rethrown(overflow));
+        assertNull(rethrown(carried));
+        assertFalse(KitFailures.isFatal(carried));
+        assertSame(aroundDead, rethrown(aroundDead));
+        assertSame(crash, rethrown(crash));
+        InternalError looped = new InternalError("looped");
+        looped.initCause(new IllegalStateException("back", looped));
+        assertSame(looped, rethrown(looped));
     }
 
     @Test

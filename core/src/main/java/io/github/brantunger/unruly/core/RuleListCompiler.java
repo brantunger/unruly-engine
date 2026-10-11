@@ -308,7 +308,7 @@ final class RuleListCompiler {
                     }
                 } catch (Throwable e) {
                     failed(compilationFailure(named + " failed to tell which facts its rules read: "
-                            + Failures.describe(e), e, null));
+                            + Failures.describeCallOut(e, true), e, null));
                     continue;
                 }
                 if (holdsNull) {
@@ -449,8 +449,13 @@ final class RuleListCompiler {
             IllegalArgumentException rejected = FactIntake.factNameRejection(log, name, checks, namesRead, false,
                     runs);
             if (rejected != null) {
-                failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: "
-                        + Failures.describe(rejected), rejected, null));
+                // An overflow's rejection says the stack overflowed, as run() reports it, with no note naming its
+                // class again.
+                String reason = Failures.isOverflow(rejected)
+                        ? Failures.clip(Failures.messageOr(rejected, rejected.getClass().getName()))
+                        : Failures.describe(rejected);
+                failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: " + reason,
+                        rejected, null));
             }
         }
         return failures;
@@ -578,6 +583,8 @@ final class RuleListCompiler {
         boolean firstUse = RunClasses.firstUse(language);
         ExpressionCompiler compiler;
         String failedTo = "prepare";
+        // prepare() reads no rule text, so an overflow there says nothing of it.
+        boolean preparing = true;
         try {
             // prepare() and newCompiler() are each a call-out to the language, so each is marked (see LoggedFailures).
             if (firstUse) {
@@ -585,11 +592,12 @@ final class RuleListCompiler {
                 RunClasses.prepare(language);
             }
             failedTo = "create a compiler";
+            preparing = false;
             LoggedFailures.callOut();
             compiler = language.newCompiler(context);
         } catch (Throwable e) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to " + failedTo
-                    + ": " + Failures.describe(e), e, null);
+                    + ": " + Failures.describeCallOut(e, !preparing), e, null);
         }
         if (compiler == null) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language returned no compiler",
@@ -626,9 +634,11 @@ final class RuleListCompiler {
      * Compiles one condition or action. An expression the language rejects is reported with the language's reason and
      * issues, or with none if its exception can't give them (see {@link Failures#issuesOf}); anything else the
      * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A
-     * {@link StackOverflowError}, also as the root of what the language threw, is reported by its cause, which the room
-     * left on the stack where it was caught tells (see {@link #overflowReason()}). A fatal {@link Error}, also one the
-     * language wraps in its own exception, is logged like any failure and then rethrown.
+     * {@link StackOverflowError}, also in the cause chain of what the language threw with no {@link LinkageError}
+     * before it (see {@link Failures#isOverflow}), is reported by its cause, which the room left on the stack where it
+     * was caught tells (see {@link #overflowReason()}); a class an overflow left unusable is described as any other
+     * failure is. A fatal {@link Error}, also one the language wraps in its own exception, is logged like any failure
+     * and then rethrown.
      *
      * @param source      The expression to compile
      * @param compilation Compiles it with the rule's language
@@ -651,8 +661,8 @@ final class RuleListCompiler {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack; so does any
             // expression compiled with too little stack left, such as by a load called deep in a stack or on a thread
             // with a small one (#1013).
-            String reason = Failures.rootCause(e) instanceof StackOverflowError ? overflowReason()
-                    : Failures.describe(e);
+            // A class an overflow left unusable isn't one: no change to the rule or the depth helps (#1116).
+            String reason = Failures.isOverflow(e) ? overflowReason() : Failures.describe(e);
             throw compilationFailure(expression + " failed to compile: " + reason, e, source.ruleName(), source.kind(),
                     List.of());
         }
