@@ -53,9 +53,8 @@ flowchart LR
 2. [release-please](https://github.com/googleapis/release-please) opens a PR titled
    **chore(main): release X.Y.Z**. It bumps `gradle.properties`, the README install snippets,
    `.release-please-manifest.json` and `CHANGELOG.md`, and updates the PR as further commits land.
-3. Review the version and changelog, then **squash-merge the release PR**. It's opened with `GITHUB_TOKEN`, so the
-   title check skips it and its CI run waits for approval (`action_required`). Approving is optional: `publish`
-   builds and checks the tag in full. Left unapproved, the run fails with no jobs at the merge.
+3. Review the version and changelog, then **squash-merge the release PR** once CI and the title check pass; the
+   [release-please token](docs/contributing/release-token.md) gives it both.
 4. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job in
    the same workflow run. The job checks out the tag, finds the highest released version for the `Latest` mark and
    [`/latest/`](#-the-javadoc-site), and runs the full `build` (including Checkstyle, PMD, the coverage gate and the
@@ -65,15 +64,18 @@ flowchart LR
    Portal, attaches the jars and adds the Javadoc to the `gh-pages` branch. A second job, `pages`, deploys that
    branch to [GitHub Pages](#-the-javadoc-site).
 
+> [!WARNING]
+> Never approve or re-run a merged release PR's CI. On 2026-10-11 that cancelled `main`'s CI run on the release
+> commit: "Canceling since a higher priority waiting request for ci-refs/heads/main exists".
+
 The Release notes are the changelog entry, with links to [Migrating to 2.0](docs/migrating-to-2.md) and
 [Migrating a language or an engine](docs/migrating-to-2-implementers.md) appended by the `release-please` job. The
 links are pinned to the tag, so each release's notes keep pointing at the guides as that release left them. The
 step that appends them was added after 2.0.0, so that release's links were added by hand, in the shape it writes.
 
-Central Portal validation is synchronous, so a green `publish` job means the release was accepted. Propagation to
-`repo1.maven.org` can take up to a further 30–60 minutes; for 2.0.0 it took about 4 minutes. The workflow doesn't
-wait for it, so the release queue isn't held up; see
-[Checking a release by hand](#-checking-a-release-by-hand) to confirm the sync.
+Central Portal validation is synchronous, so a green `publish` job means the release was accepted. The workflow
+doesn't wait for the sync to `repo1.maven.org`, which can take up to 30–60 minutes; see
+[Checking a release by hand](#-checking-a-release-by-hand) to confirm it.
 
 ## 🚦 Forcing a release
 
@@ -91,6 +93,10 @@ bumps ship in that release without their own changelog entries.
 
 The secrets are stored on the `maven-central` environment, not at repository level, so the publish job is the only
 thing that can read them.
+
+> [!IMPORTANT]
+> Create [`RELEASE_PLEASE_TOKEN`](docs/contributing/release-token.md), the `release-please` job's repository secret,
+> before merging a `release.yml` that reads it.
 
 | Secret | What it is |
 | --- | --- |
@@ -236,8 +242,7 @@ names the Gradle project instead of the artifact, so `unruly-engine`'s SBOM list
 recognise that entry; the module's own SBOM has the right one,
 `pkg:maven/io.github.brantunger/unruly-engine-core@<version>?project_path=%3Acore`.
 
-The SBOMs are attached right after the attestation and before the upload to Central, because they can't be rebuilt
-the same: a re-run of the job builds, attests and attaches new ones in their place.
+They're attached before the upload to Central, so a re-run of the job can still replace them with new attested ones.
 
 ## ☕ The Javadoc site
 

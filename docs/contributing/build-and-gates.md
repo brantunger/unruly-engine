@@ -194,8 +194,8 @@ What the jobs leave behind:
 - **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests and the release
   workflow's `publish` job only read them. The configuration cache isn't saved: that needs an encryption key.
 
-No branch protection requires a check; maintainers merge when CI and the title check are green, except
-[release PRs](../../RELEASING.md#-the-normal-flow).
+No branch protection requires a check; maintainers merge when CI and the title check are green, release PRs
+included.
 
 ## 🔢 Running the tests on another JDK
 

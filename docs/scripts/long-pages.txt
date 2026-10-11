@@ -7,7 +7,7 @@
 # --write-baseline, which rewrites the list with every git-tracked page except CHANGELOG.md that is over 2,500, at
 # its current count; then check that the diff only lowers numbers or removes lines.
 CONTRIBUTING.md 2737
-RELEASING.md 2651
+RELEASING.md 2646
 docs/compiled-copies.md 2658
 docs/contributing/build-and-gates.md 2633
 docs/engines-and-runs.md 3574
