@@ -46,12 +46,11 @@ type instead: `output.setX(n)` with a `long` calls `setX(long)`.
 | --- | --- | --- |
 | 🧱 **A public field beside its setter** | `output.rate = -5` writes the public field `rate` and never calls `setRate`, so the setter's checks don't run | `output.setRate(-5)`, or make the field private |
 | 🎲 **Overloaded setters** | With `setX(int)`, `setX(long)` and `setX(double)`, `output.x = n` calls the first one that can take the value, and which is first can change each time the JVM starts, so the same rule may store `n`, round it, or fail with `cannot coerce Long to Integer` | `output.setX(n)`, which picks the overload that matches the value's type |
-| 0️⃣ **`null` for a primitive** | With `n` null, even when declared `fact("n", int.class)`, `output.x = n` stores `0` through an `int` setter. Into a public `int` field it stores `0` on the first run; later runs fail the rule with `unable to access field` (root cause a `NullPointerException` from MVEL's conversion) until MVEL's JIT compiles the assignment, which stores `0` again, or for good with `-Dmvel2.disable.jit=true`. `output.setX(n)` fails the rule: the cause is a `PropertyAccessException` (`unable to resolve method`) or, with strong typing, a `CompileException` whose root cause is a `NullPointerException`. MVEL's JUL `WARNING` for it is dropped while the engine runs the rule; see [MVEL's own logging](#-mvels-own-logging) | Test it first: `if (n != null) { output.setX(n) }`, or give the field a setter |
-| 💥 **A public field of another type than the value** | A `long`, `float` or `double` field, even given its own box, or another field given another type, such as `int` given `Long` or `BigDecimal` given `Integer`: once MVEL's JIT compiles an assignment such as `output.big = n`, it can fail with a `VerifyError` (`Bad type on operand stack`, and MVEL prints `**** COMPILER BUG!` to standard output), an `IllegalArgumentException` or a `ClassCastException`, for one run or every later one, depending on the field's type and the values assigned. An `Object` field, or another field given its own type, is safe | A setter. `-Dmvel2.disable.jit=true` avoids this row, but makes the `null` row worse for a public primitive field |
+| 0️⃣ **`null` for a primitive** | With `n` null, even when declared `fact("n", int.class)`, `output.x = n` stores `0` through an `int` setter. Into a public `int` field it stores `0` on the first run; later runs fail the rule with `unable to access field` (root cause a `NullPointerException` from MVEL's conversion). `output.setX(n)` fails the rule: the cause is a `PropertyAccessException` (`unable to resolve method`) or, with strong typing, a `CompileException` whose root cause is a `NullPointerException`. MVEL's JUL `WARNING` for it is dropped while the engine runs the rule; see [MVEL's own logging](#-mvels-own-logging) | Test it first: `if (n != null) { output.setX(n) }`, or give the field a setter |
+| 💥 **A public field of another type than the value** | With MVEL's JIT, a `long`, `float` or `double` field, even given its own box, or another field given another type, such as `int` given `Long` or `BigDecimal` given `Integer`: once the JIT compiles an assignment such as `output.big = n`, it can fail with a `VerifyError` (`Bad type on operand stack`, and MVEL prints `**** COMPILER BUG!` to standard output), an `IllegalArgumentException` or a `ClassCastException`, for one run or every later one, depending on the field's type and the values assigned. An `Object` field, or another field given its own type, is safe | A setter |
 
-The last two depend on MVEL's JIT optimizer, which compiles an accessor once it has run about 50 times in quick
-succession, and can compile it again later, such as in each compiled copy. See
-[The dynamic optimizer and class loaders](mvel.md#the-dynamic-optimizer-and-class-loaders).
+MVEL's JIT, if made the default again, compiles an accessor once it has run about 50 times quickly, and can again,
+such as in each compiled copy. See [MVEL's optimizer](mvel.md#mvels-optimizer).
 
 ## ☕ Calling Java code
 
@@ -60,13 +59,13 @@ MVEL reaches a fact's methods and getters through reflection, which fails in som
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path. So does `color.label` on an enum constant with a body that overrides `getLabel()`, such as `RED { ... }`: the constant's class is a non-public subclass | Make the record public, or have it implement a public interface that declares `score()`. For the enum constant, call the getter: `color.getLabel()` |
+| 🧭 **A static field by its full class name, then a member** | `java.time.DayOfWeek.MONDAY.getValue()` fails every run with `unresolvable property or identifier: java`, even with the class imported | `(java.time.DayOfWeek.MONDAY).getValue()`, or import the class and write `DayOfWeek.MONDAY.getValue()` |
 | 🫥 **An exception whose `getMessage()` throws** | When a method or getter a rule calls throws such an exception, MVEL loses it: the rule fails with what `getMessage()` threw as the cause, such as `Failed to execute action for rule 'r': nope`, and the original exception and its causes are gone. This lasts until one evaluation of the expression succeeds in that [compiled copy](../glossary.md#compiled-copy); later failures keep the original, with a `(message unavailable: ...)` note | Give the exception a `getMessage()` that doesn't throw |
 
 ## 🔥 A rule failing for ever after about 50 quick runs
 
-A rule works in tests and production's first minutes, then fails on every run, once MVEL's JIT optimizer takes
-over its accessors; see
-[The dynamic optimizer and class loaders](mvel.md#the-dynamic-optimizer-and-class-loaders). It has two shapes:
+With MVEL's JIT, a rule works in tests and production's first minutes, then fails on every run, once the JIT takes
+over its accessors; see [MVEL's optimizer](mvel.md#mvels-optimizer). It has two shapes:
 
 - On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
   isn't reachable from the `load()` thread's context class loader; see
@@ -138,10 +137,10 @@ nesting, such as calls three levels deep, can still overflow and fail its rule w
 the JIT's first compile below, it can overflow deep in a stack. The engine's tests record which classes
 the others initialize rather than cover them.
 
-**MVEL's JIT isn't prepared.** It compiles an accessor with ASM once more than 50 runs have used it within 100 ms, and
-its first compile initializes ASM's classes and some of the JDK's. MVEL marks the accessor compiled before it compiles
-it, so a compile that overflows deep in a stack fails that run and isn't tried again: the accessor stays on MVEL's
-slower reflective path, still correct.
+**MVEL's JIT, if re-enabled, isn't prepared.** It compiles an accessor with ASM once more than 50 runs have used it
+within 100 ms, and its first compile initializes ASM's classes and some of the JDK's. MVEL marks the accessor compiled
+before it compiles it, so a compile that overflows deep in a stack fails that run and isn't tried again: the accessor
+stays on MVEL's reflective path, still correct.
 
 An overflow in a class's static initializer, MVEL's, ASM's or the JDK's, leaves that class unusable for the JVM's life,
 in your code too: every later use fails, and after the JIT's, every other accessor's first compile fails one run the

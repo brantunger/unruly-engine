@@ -7,6 +7,8 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,6 +52,18 @@ class NoPackageClassFactTest {
     /** What a fact named {@code Unpackaged} holds in the class's place: each value is 7 through it. */
     static final Map<String, Object> CLASS_LIKE = Map.of("LIMIT", 7, "v", 7, "Inner", Map.of("LIMIT", 7));
 
+    // MVEL's JIT, which the engine replaces as MVEL's default, is the default for these tests, as an application may
+    // make it (#1161), so the runs about its threshold reach an accessor it compiled.
+    @BeforeEach
+    void jitOn() {
+        MvelJit.on();
+    }
+
+    @AfterEach
+    void jitOff() {
+        MvelJit.off();
+    }
+
     static String rejection(String name) {
         return "'" + name + "' cannot be used as a fact name: the rules use the class '" + name + "', and MVEL would "
                 + "read the fact in the class's place";
@@ -91,9 +105,10 @@ class NoPackageClassFactTest {
     }
 
     @Test
-    @DisplayName("a run with the fact is rejected, and every run without it reads the class, with MVEL's JIT off")
-    void rejectedAtAnyRunWithTheJitOff(@TempDir Path dir) throws IOException, InterruptedException {
-        String output = ChildJvm.run(dir, NoPackageClassRunScenario.class, "-Dmvel2.disable.jit=true");
+    @DisplayName("a run with the fact is rejected, and every run without it reads the class, with the engine's "
+            + "default, MVEL's reflective optimizer")
+    void rejectedAtAnyRunWithTheEnginesDefault(@TempDir Path dir) throws IOException, InterruptedException {
+        String output = ChildJvm.run(dir, NoPackageClassRunScenario.class);
 
         assertTrue(output.contains(NoPackageClassRunScenario.DONE), output);
     }

@@ -34,7 +34,7 @@ like.
 | 👂 **Observable** | Lifecycle listeners with guaranteed before/after pairing, a ready-made SLF4J logging listener, and [Flight Recorder events](docs/listeners-and-logging.md#-flight-recorder-events) for slow runs by default, and for every run and rule on request. |
 | 🧩 **Pluggable languages** | Rules are written in MVEL, or in other expression languages you give the engine, chosen per rule, even within one rule list. |
 | 🪶 **Lightweight** | Three runtime dependencies: MVEL 2.5, the SLF4J API, and JSpecify's annotations, which mark what can be `null` for [Kotlin](docs/kotlin.md), IDEs and nullness checkers. Without MVEL, `unruly-engine-core` needs only the last two. |
-| 🧊 **Native image** | Runs in a GraalVM [native image](docs/native-image.md), with MVEL's JIT turned off and the classes your rules use registered for reflection. CI builds and runs one on every pull request. |
+| 🧊 **Native image** | Runs in a GraalVM [native image](docs/native-image.md), with MVEL's JIT off and the classes your rules use registered for reflection. CI builds and runs one on every pull request. |
 
 ## 📦 Installation
 
@@ -151,12 +151,11 @@ module com.example.app {
 - **Without the export**, a rule that uses one of your classes fails on its first run, for example with
   `RuleExecutionException: ... [Error: could not access field: com.example.app.model.Applicant.creditScore]`. JDK
   types and `Map` facts need no export.
-- **Don't export or open the package only `to mvel2`.** Rules then work for about 50 runs, until MVEL's JIT
-  optimizer generates accessor classes. Those classes aren't in the `mvel2` module, so from then on every run fails
-  with `IllegalAccessError: ... module com.example.app does not export com.example.app.model to unnamed module`. If
-  you need the qualified export, start the JVM with `-Dmvel2.disable.jit=true`, which keeps MVEL on its slower
-  reflective accessors. Exporting only `to io.github.brantunger.unruly` doesn't work either: MVEL reads the classes,
-  not the engine.
+- **Don't export or open the package only `to mvel2` if you make MVEL's JIT the default again.** Rules then work for
+  about 50 runs, until the JIT generates accessor classes. Those classes aren't in the `mvel2` module, so from then on
+  every run fails with `IllegalAccessError: ... module com.example.app does not export com.example.app.model to unnamed
+  module`. MVEL's reflective optimizer, the engine's default, works with the qualified export. Exporting only
+  `to io.github.brantunger.unruly` doesn't work either: MVEL reads the classes, not the engine.
 
 </details>
 

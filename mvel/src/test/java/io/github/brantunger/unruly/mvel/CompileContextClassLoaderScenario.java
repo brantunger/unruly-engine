@@ -16,9 +16,10 @@ import java.util.Map;
  * Run as its own JVM by {@link CompileContextClassLoaderTest}, so that the first rule list it loads is the first thing
  * in the JVM to use MVEL, with a class loader of the application's own, as a plug-in's, as the thread's context class
  * loader. MVEL's optimizer, as it sets up, makes a JVM-wide class loader whose parent is the thread's context class
- * loader at that moment, and keeps it for the life of the JVM. MVEL sets it up while it compiles an inline list, as in
- * the rule's condition, which would make it the rule list's class loader if the optimizer weren't set up before, and
- * the plug-in's if it were set up with the thread's. It prints what that parent is once a rule list has loaded and run.
+ * loader at that moment, and keeps it until MVEL's JIT is made the default again, which makes a new one whose parent is
+ * that caller's context class loader. MVEL sets it up while it compiles an inline list, as in the rule's condition,
+ * which would make it the rule list's class loader if the optimizer weren't set up before, and the plug-in's if it were
+ * set up with the thread's. It prints what that parent is once a rule list has loaded and run.
  */
 final class CompileContextClassLoaderScenario {
 

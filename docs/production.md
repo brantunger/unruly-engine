@@ -37,7 +37,7 @@ guides before the first request reaches it.
       [Should I build an engine for each request?](engines-and-runs.md#should-i-build-an-engine-for-each-request).
 - [ ] On the module path, the packages of your fact and output types are exported without a `to` clause; see
       [Installation](../README.md#-installation).
-- [ ] In a GraalVM native image, the executable runs with `-Dmvel2.disable.jit=true`, and every rule has run in the
+- [ ] In a GraalVM native image, nothing makes MVEL's JIT the default again, and every rule has run in the
       image against facts that fire it, so no class or method it uses is missing; see [Native image](native-image.md).
 
 ## 🧯 When things fail

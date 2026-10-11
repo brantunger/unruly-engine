@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import org.mvel2.optimizers.OptimizerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -134,6 +135,12 @@ final class FirstUseScenario {
      * otherwise be the first to load it.
      */
     static final String FAILURES_FIRST = "unruly.scenario.failuresFirst";
+    /**
+     * The system property that, set to {@code true}, has the scenario make MVEL's JIT MVEL's default again once the
+     * engines are built, as an application may, in place of the reflective optimizer the engine makes the default
+     * (#1161).
+     */
+    static final String JIT_ON = "unruly.scenario.jitOn";
     /** The last step's description: the runs that MVEL's JIT, if it's on, compiles the property's accessor in. */
     static final String JIT = "runs of the rule that reads a property, enough for MVEL's JIT";
     /** How many runs the last step makes: many more than the 51 that MVEL's JIT compiles an accessor after. */
@@ -252,6 +259,9 @@ final class FirstUseScenario {
                 .defaultLanguage(ToyExpressionLanguage.LANGUAGE_NAME).build();
         NestedLoad nestedLoad = new NestedLoad(nested);
         List<Integer> items = List.of(1);
+        if (Boolean.getBoolean(JIT_ON)) {
+            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.DYNAMIC);
+        }
         mark(BUILT);
 
         List<String> unexpected = new ArrayList<>();

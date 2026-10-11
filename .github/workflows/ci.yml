@@ -193,7 +193,8 @@ jobs:
 
   # Builds the native-smoke application into a GraalVM native image and runs it (docs/native-image.md), with only the
   # reflection metadata the mvel jar ships and the application's own, and without Flight Recorder support, which is
-  # native-image's default. MVEL generates classes at run time unless its JIT is off, which a native image can't do.
+  # native-image's default. The engine makes MVEL's reflective optimizer the default, so MVEL generates no classes at
+  # run time, which a native image can't do.
   # Then builds and runs it again with strict reachability metadata, which GraalVM says will become the default.
   native-image:
     needs: changes
@@ -239,7 +240,7 @@ jobs:
 
       # The application checks its own results and exits with 1 if one is wrong.
       - name: Run it
-        run: native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
+        run: native-smoke/build/native/native-smoke
 
       # In this mode a lookup the image has no metadata for throws MissingReflectionRegistrationError, where the default
       # mode throws ClassNotFoundException, so library code that looks a name up and handles only the latter fails the
@@ -260,7 +261,7 @@ jobs:
             com.example.nativesmoke.Main
 
       - name: Run it with strict metadata
-        run: native-smoke/build/native/native-smoke-strict -Dmvel2.disable.jit=true
+        run: native-smoke/build/native/native-smoke-strict
 
   # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint, without
   # Gradle. A failed step fails the job, and so ci-result, except the style check, which only warns

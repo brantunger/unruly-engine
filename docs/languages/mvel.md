@@ -301,53 +301,55 @@ A copy is built lazily:
 - A session compiles an expression again the **first time that copy runs it**, so a copy pays only for the rules it
   reaches.
 - The first session to run an expression takes the form `load()` compiled.
-- As it runs, MVEL generates accessor classes for that session alone.
+- As it runs, MVEL builds accessors for that session alone.
 
 A copy made at load, with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load), is
 different: `load()` compiles every condition and action into it, reached or not, and the first such copy takes the forms
-`load()` compiled. Its accessor classes are still generated as it runs.
+`load()` compiled. Its accessors are still built as it runs.
 
 An [extra copy](../glossary.md#extra-copy) pays that price and throws it away when the run ends. A rule that
 keeps making them, by starting a run of the same engine on another thread under a full
-[copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and regenerates accessors each time, churning
-CPU and metaspace.
+[copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and rebuilds accessors each time, churning
+CPU and memory.
 
-A session's expressions belong to one run at a time, so any MVEL optimizer is safe. The engine leaves MVEL's JIT
-optimizer on unless you pass `-Dmvel2.disable.jit=true`.
+A session's expressions belong to one run at a time, so any MVEL optimizer is safe.
+
+### MVEL's optimizer
+
+MVEL's JIT, its default optimizer, switches an expression from reflection to a class it generates with ASM once
+it has run about 50 times within 100 ms. The engine makes the reflective optimizer MVEL's default for the whole JVM,
+other MVEL users included, before it compiles a rule, whatever `-Dmvel2.disable.jit` says; MVEL used before then gets
+MVEL's own. Benchmarked, that cost runs of 10 to 100 rules up to 13%; at 1,000 rules the JIT was 1.4 times slower
+once warm.
+
+To make the JIT the default again, after your first `load()` of MVEL rules, call
+`OptimizerFactory.setDefaultOptimizer(OptimizerFactory.DYNAMIC)` (`org.mvel2.optimizers`). Its failures return:
+
+- A call of an interface's static method, such as `List.of(1, 2)`, fails every run after 50 or more quick ones:
+  `must be InterfaceMethodref constant`.
+- A class name, `10B` or `10I` as an `Object` argument, such as `output.put('r', String)`, fails one run:
+  `Operand stack underflow`.
+- The [public-field rows](mvel-gotchas.md#-assignment-gotchas), the
+  [50-run shapes](mvel-gotchas.md#-a-rule-failing-for-ever-after-about-50-quick-runs), the loaders below, and a
+  [native image](../native-image.md#-mvels-jit-stays-off).
+
+MVEL clears a thread's own optimizer after each use; only one set before the engine's first `load()`, by
+`OptimizerFactory.setThreadAccessorOptimizer` or an MVEL compiled set expression, stays, for an inline list or `new`.
 
 ### The dynamic optimizer and class loaders
 
-MVEL's dynamic optimizer registers an accessor the first time an expression runs, in a static list of up to
-1,500, dropping the oldest as newer ones arrive. Dropping one frees nothing while the engine holding that
-expression is alive: the expression still refers to the accessor.
-
-Class loaders stay reachable through the optimizer in two ways. The optimizer's own class loader, held for the JVM's
-life, has as parent the context class loader of whatever set MVEL up first; the engine uses MVEL's class loader.
-A rule list's loader is held while its accessors are in the list. Neither closing nor dropping the engine
-releases them.
-
-An application that discards class loaders, on a WAR redeploy, a plugin or tenant reload, or a test harness
-isolating each case, keeps one per cycle, with its classes and metaspace.
-
-`-Dmvel2.disable.jit=true` switches the dynamic optimizer off, and the loaders are collected. MVEL reads it once, as
-its optimizer factory initializes, so it belongs on the JVM's command line, and costs reflective accessors instead of
-JIT ones JVM-wide, other MVEL users included.
-A GraalVM native image needs it too, or its first condition fails; see
-[MVEL's JIT must be off](../native-image.md#-mvels-jit-must-be-off).
-
-The same optimizer is why a class the `load()` thread's context class loader can't reach fails a rule only after about
-50 runs in quick succession: until the optimizer steps in, MVEL reads the fact reflectively and the rule works. A
-steady trickle never reaches that burst, so tests pass and production fails. See
-[Class loaders](../thread-safety.md#-class-loaders).
+With the JIT the default, MVEL holds two class loaders: the JIT's own, for the JVM's life, whose parent is the
+context class loader of the thread that made it the default, and a rule list's, while a static list of up to 1,500
+accessors holds one of its accessors. Closing the engine releases neither, so an application discarding
+class loaders, on a redeploy, keeps one per cycle. The reflective optimizer holds none.
 
 When a rule's Java code throws, the failure's `getCause()` is what it threw, except where MVEL's exception
 stays above it:
 
-- Your own `Map`'s `get()` for `order.id`: until one evaluation of the expression succeeds, JIT on or off, and
-  once more as the optimizer compiles it.
-- A `toString()` converting an argument: until the optimizer compiles the expression, and always with
-  `-Dmvel2.disable.jit=true`.
-- An argument's code, such as `code.value` in `output.put('a', code.value)`, when the optimizer compiled the
+- Your own `Map`'s `get()` for `order.id`: until one evaluation of the expression succeeds, and with the JIT once
+  more as it compiles it.
+- A `toString()` converting an argument, unless the JIT compiled the expression.
+- With the JIT, an argument's code, such as `code.value` in `output.put('a', code.value)`, when it compiled the
   argument but not the call around it, which can happen while it compiles and then last.
 
 An exception whose `getMessage()` throws is lost until one evaluation of the expression succeeds, as MVEL reads the

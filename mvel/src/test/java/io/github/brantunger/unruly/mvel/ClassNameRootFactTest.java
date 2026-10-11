@@ -7,6 +7,8 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -64,6 +66,18 @@ class ClassNameRootFactTest {
 
     /** What a fact named java holds in the class's place: {@code java.lang.Integer.MAX_VALUE} is 0 through it. */
     static final Map<String, Object> PACKAGE_LIKE = Map.of("lang", Map.of("Integer", Map.of("MAX_VALUE", 0)));
+
+    // MVEL's JIT, which the engine replaces as MVEL's default, is the default for these tests, as an application may
+    // make it (#1161), so the runs about its threshold reach an accessor it compiled.
+    @BeforeEach
+    void jitOn() {
+        MvelJit.on();
+    }
+
+    @AfterEach
+    void jitOff() {
+        MvelJit.off();
+    }
 
     static String rejection(String name) {
         return "'" + name + "' cannot be used as a fact name: the rules use a class whose package starts with '"
@@ -320,9 +334,10 @@ class ClassNameRootFactTest {
     }
 
     @Test
-    @DisplayName("a run with the fact is rejected, and every run without it reads the class, with MVEL's JIT off")
-    void rejectedAtAnyRunWithTheJitOff(@TempDir Path dir) throws IOException, InterruptedException {
-        String output = ChildJvm.run(dir, ClassNameRootRunScenario.class, "-Dmvel2.disable.jit=true");
+    @DisplayName("a run with the fact is rejected, and every run without it reads the class, with the engine's "
+            + "default, MVEL's reflective optimizer")
+    void rejectedAtAnyRunWithTheEnginesDefault(@TempDir Path dir) throws IOException, InterruptedException {
+        String output = ChildJvm.run(dir, ClassNameRootRunScenario.class);
 
         assertTrue(output.contains(ClassNameRootRunScenario.DONE), output);
     }

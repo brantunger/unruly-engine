@@ -48,7 +48,7 @@ module com.example.app {
 }
 ```
 
-A language that reflects on facts itself needs its own access, as MVEL needs an export with no `to` clause; see the
+A language that reflects on facts itself needs its own access, as MVEL needs an export, at least `to mvel2`; see the
 root README's [Installation](../../README.md#-installation). A test module that `requires` the contract kit opens its
 package `to org.junit.platform.commons`.
 

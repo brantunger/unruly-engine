@@ -17,6 +17,8 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
 import io.github.brantunger.unruly.api.language.Session;
+import org.mvel2.optimizers.OptimizerFactory;
+import org.mvel2.optimizers.dynamic.DynamicOptimizer;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -33,8 +35,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * to, a map output, and a JDK static method. It also pins down what the engine does with a fact named after a class
  * in an imported package, the one class name the fact-name check resolves for itself: the name is rejected on both
  * platforms, which an image managed only once the check stopped asking for the class file it serves to nobody. The
- * bean and map engines each run more than MVEL's JIT threshold of about 50 runs, so a native image meets whatever
- * MVEL does after it. It also writes and reads a class that isn't public through the engine's own reflection, as a
+ * bean and map engines each run well past the 50 or so runs after which MVEL's JIT would compile an accessor, were it
+ * MVEL's default; the engine makes MVEL's reflective optimizer the default, so the image and the JVM both keep calling
+ * through reflection. It also writes and reads a class that isn't public through the engine's own reflection, as a
  * language other than MVEL would, where the image has no metadata for the public types above it. And it stops a run
  * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a pooled
  * platform thread. It prints one line and exits with 1 if a result is wrong.
@@ -43,7 +46,7 @@ public final class Main {
 
     /**
      * How many times the bean and map engines run, well past the number of runs after which MVEL's JIT optimizer
-     * steps in.
+     * would step in, were it MVEL's default.
      */
     private static final int RUNS = 200;
 
@@ -215,24 +218,30 @@ public final class Main {
                 + " factName=" + factName + " hidden=" + hidden + " deadline=" + deadline
                 + " dateResource=" + dateResource()
                 + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
-                + " jit=" + (Boolean.getBoolean("mvel2.disable.jit") ? "off" : "on"));
+                + " jit=" + (jitDefault() ? "on" : "off"));
         if (!ok) {
             System.exit(1);
         }
     }
 
     // Which of the two runs of this binary the status line came from: CI runs the image, and the start script
-    // :native-smoke:installDist writes runs the same code on the JVM once something launches it. Give that one
-    // -Dmvel2.disable.jit=true in JAVA_OPTS, because a -D on the script's own command line reaches main as a program
-    // argument and the run keeps jit=on. GraalVM sets this property only in an image, so no run has to be told which
-    // it is. A diagnostic, and nothing is held to it: both platforms are held to one expectation.
+    // :native-smoke:installDist writes runs the same code on the JVM once something launches it. GraalVM sets this
+    // property only in an image, so no run has to be told which it is. A diagnostic, and nothing is held to it: both
+    // platforms are held to one expectation.
     private static boolean nativeImage() {
         return System.getProperty("org.graalvm.nativeimage.imagecode") != null;
     }
 
+    // Whether MVEL's JIT is MVEL's default optimizer once the engines have run: off on both platforms, as the engine
+    // makes MVEL's reflective optimizer the default, whatever mvel2.disable.jit says. A diagnostic, like nativeImage().
+    private static boolean jitDefault() {
+        return OptimizerFactory.getDefaultAccessorCompiler() instanceof DynamicOptimizer;
+    }
+
     // The java.util import is here, and not only on the fact-name engines below, because those run once each: this is
-    // the only engine that resolves a package import past MVEL's JIT threshold, and the only one that works the
-    // check's cache of names that aren't classes over many runs.
+    // the only engine that resolves a package import over many runs, past the 50 or so after which MVEL's JIT would
+    // compile it, were it MVEL's default, and the only one that works the check's cache of names that aren't classes
+    // over many runs.
     private static String beanOutput() {
         try (RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
                 .imports(Applicant.class.getName(), "java.util").build()) {

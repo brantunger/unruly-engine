@@ -124,19 +124,19 @@ one measurement before.
 ## 📌 Class loading pins carriers
 
 **Known issue on JDK 24 and later.** A virtual thread still keeps its carrier while the JVM loads a class. MVEL loads
-classes while it compiles, and generates accessor classes during a copy's first runs, so a run that makes a new
-compiled copy can pin its carrier for as long as that takes. Since
+classes while it compiles, and with its JIT generates accessor classes during a copy's first runs, so a run that
+makes a new compiled copy can pin its carrier for as long as that takes. Since
 [#387](https://github.com/brantunger/unruly-engine/pull/387), MVEL's class lookups no longer wait on each other, which
 shortens the waiting without removing the pinning.
 
 [`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load) moves that compiling, and the classes it loads, into
-`load()` for the copies it makes. It doesn't move the accessor classes, which MVEL still generates during each copy's
-first runs, or the compiling of a copy a run makes itself.
+`load()` for the copies it makes. It doesn't move the accessor classes, which MVEL's JIT still generates during each
+copy's first runs, or the compiling of a copy a run makes itself.
 
-Measured on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000 runs of 21 MVEL rules, and
-`copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned events fell by about a third, from
-1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput didn't change, at about
-690,000–745,000 runs a second. On JDK 21 there were no pins either way.
+Measured with MVEL's JIT, then its default, on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000
+runs of 21 MVEL rules, and `copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned events
+fell by about a third, from 1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput didn't
+change, at about 690,000–745,000 runs a second. On JDK 21 there were no pins either way.
 
 Without a limit, that pinning is what made the copies pile up before build slots: the run loading a class keeps its
 carrier, but on JDK 24 and later the runs waiting for that class give theirs up, so more virtual threads start and

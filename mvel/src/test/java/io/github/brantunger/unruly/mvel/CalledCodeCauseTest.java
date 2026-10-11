@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.ChildJvm;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
@@ -9,17 +8,17 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.file.Path;
 import java.util.AbstractMap;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -37,9 +36,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * A rule's failure has the exception its Java code threw as its cause, whether MVEL called that code through
- * reflection, as it does the first times an expression runs and always with {@code -Dmvel2.disable.jit=true}, or
- * through the accessor its JIT compiled (#580). MVEL's own errors and an exception chain the rule's code built keep
- * their shape.
+ * reflection, as it does the first times an expression runs, or through the accessor its JIT compiled (#580), with the
+ * JIT MVEL's default again, as an application may make it. MVEL's own errors and an exception chain the rule's code
+ * built keep their shape. {@link ReflectiveOptimizerTest} checks the cause with MVEL's reflective optimizer, the
+ * engine's default, at every run.
  */
 // Public, as are the fact classes: MVEL's reflective accessors need to reach their methods.
 @DisplayName("a rule's failure has what its Java code threw as its cause, before and after MVEL's JIT")
@@ -51,6 +51,18 @@ public class CalledCodeCauseTest {
             "org.mvel2.optimizers.impl.refl.nodes.ConstructorAccessor");
     /** How many runs that succeed MVEL's JIT gets to compile an expression. It takes about 50 within 100 ms. */
     static final int RUNS_FOR_THE_JIT = 5_000;
+
+    // MVEL's JIT, which the engine replaces as MVEL's default, is the default for these tests, as an application may
+    // make it (#1161).
+    @BeforeEach
+    void jitOn() {
+        MvelJit.on();
+    }
+
+    @AfterEach
+    void jitOff() {
+        MvelJit.off();
+    }
 
     /** How MVEL called the rule's code, going by the code's stack. */
     enum Stage {
@@ -402,14 +414,6 @@ public class CalledCodeCauseTest {
                 () -> logsOf(() -> engine.run(facts(rejected))));
 
         assertSame(rejected, thrown.getCause());
-    }
-
-    @Test
-    @DisplayName("with MVEL's JIT turned off, at every run")
-    void withTheJitOff(@TempDir Path dir) throws IOException, InterruptedException {
-        String output = ChildJvm.run(dir, NoJitScenario.class, "-Dmvel2.disable.jit=true");
-
-        assertTrue(output.contains(NoJitScenario.DONE), output);
     }
 
     @Nested

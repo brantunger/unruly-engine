@@ -274,16 +274,16 @@ running thread's context class loader. Spring Boot's and other loaders find it a
 While MVEL compiles, the context class loader is the engine's wrapper of the loader `load()` captured, so a static
 initializer of a class a rule names in full sees the wrapper, which refuses a run-time class if that is a JDK loader.
 
-In MVEL, setting the context class loader around `run()` instead leaves the rule failing, and closing the engine
-doesn't release the loader `load()` captured: MVEL's dynamic optimizer holds it. That, and the flag that frees it,
-are in [The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
+With MVEL's JIT made the default again, setting the context class loader around `run()` instead leaves the rule
+failing, and closing the engine doesn't release the loader `load()` captured: the JIT holds it; see
+[The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
 
 ## 🚧 Gotchas
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
 | **`close()` doesn't drain** | Runs in progress finish, but nothing waits for them | Stop the work reaching the engine, then close; see [Draining before you close](#draining-before-you-close) |
-| **The context class loader set around `run()`** | In MVEL, the rule works for about 50 runs in quick succession and then fails for ever, with a fact or output class not found | Set it around `load()`; see [Class loaders](#-class-loaders) |
+| **The context class loader set around `run()`** | With MVEL's JIT made the default again, the rule works for about 50 quick runs and then fails for ever, with a fact or output class not found | Set it around `load()`; see [Class loaders](#-class-loaders) |
 | **A reload reaches nested runs** | After a `load()`, a run started from an action or a listener uses the new rules, which the outer run's checksum doesn't describe | Reload between requests, or record each run's `ruleSetChecksum()` |
 
 ## ❓ Questions you might not think to ask

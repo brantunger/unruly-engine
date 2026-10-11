@@ -5,7 +5,8 @@ public class LoanDecision {
     private boolean approved;
     private double interestRate;
 
-    // The package is exported, so javac's missing-explicit-ctor lint wants the constructor spelled out.
+    // Spelled out, as javac's missing-explicit-ctor lint would want if the package were exported to every module,
+    // not only to mvel2.
     public LoanDecision() {
     }
 

@@ -170,7 +170,7 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `IllegalArgumentException` | `' is reserved for the output object`, `' is reserved by`, `must not be blank` | A blank or [reserved](facts.md#-naming-rules) fact name |
 | `IllegalArgumentException` | `' is not a valid fact name`, `' cannot be used as a fact name` | In MVEL, the name isn't an identifier, is a keyword or class name, or starts the name of a class the rules use; see [Fact names MVEL rejects](languages/mvel-fact-names.md#-fact-names-mvel-rejects) |
 | `IllegalArgumentException` | `was declared as`, `wasn't declared`, `was declared, but the run didn't supply it` | A fact doesn't match its declaration; see [Declaring facts](facts.md#-declaring-facts) |
-| `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, or a class that isn't imported; see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
+| `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, a class that isn't imported, or a member of a [static field named in full](languages/mvel-gotchas.md#-calling-java-code); see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
 | `RuleExecutionException` | `could not resolve class` | In MVEL, `new X()` for a class that isn't imported, or imported from a package that doesn't exist; see [Classes and imports](languages/mvel.md#-classes-and-imports) |
 | `RuleExecutionException` | `could not access: ` | In MVEL, a misspelled property, a private field without a getter, or a `Map` without the key; see [Facts in MVEL](languages/mvel.md#-facts-in-mvel) for a property and [Reading a fact's properties](facts.md#-reading-a-facts-properties) for a `Map` |
 | `RuleExecutionException` | `could not access field` | In MVEL, the fact's class isn't public, or its package isn't exported on the module path; see [Calling Java code](languages/mvel-gotchas.md#-calling-java-code) and [Installation](../README.md#-installation) |
@@ -182,9 +182,9 @@ compiles fails `load()` with a `RuleCompilationException` naming the rule; see t
 | `RuleExecutionException` | `rules matched, but a unique-match engine allows one` | Two rows of the decision table overlap; see [Unique match: one rule or none](engines-and-runs.md#unique-match-one-rule-or-none) |
 | `RuleExecutionException` | `run() was interrupted` | The thread was interrupted, and its interrupt status stays set: clear it with `Thread.interrupted()`; see [Why does every run on my pooled thread fail](stopping-runs.md#why-does-every-run-on-my-pooled-thread-fail-after-i-caught-an-interrupted-run) |
 | `RuleExecutionException` | `run() passed its deadline` | The run passed its timeout; see [Stopping a run](stopping-runs.md) |
-| `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT is on: start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](native-image.md#-mvels-jit-must-be-off) |
+| `RuleExecutionException` | `No classes have been predefined during the image build` (the cause is an `UnsupportedFeatureError`), or `unable to instantiate accessor compiler` with `DynamicOptimizer` in its cause | In a native image, MVEL's JIT was made the default again; see [MVEL's JIT stays off](native-image.md#-mvels-jit-stays-off) |
 | `RuleExecutionException` | `MissingReflectionRegistrationError` as the cause | In a native image, a class or method the rule uses isn't registered for reflection; see [Registering your classes](native-image.md#-registering-your-classes) |
-| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, [after about 50 runs](languages/mvel-gotchas.md#-a-rule-failing-for-ever-after-about-50-quick-runs) in quick succession | That class isn't reachable from the `load()` thread's context class loader; see [Class loaders](thread-safety.md#-class-loaders) |
+| `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, with MVEL's JIT, [after about 50 runs](languages/mvel-gotchas.md#-a-rule-failing-for-ever-after-about-50-quick-runs) | That class isn't reachable from the `load()` thread's context class loader; see [Class loaders](thread-safety.md#-class-loaders) |
 | `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](exceptions-by-method.md). On the module path, see [Installation](../README.md#-installation) |
 
 A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
@@ -197,8 +197,8 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 ### Packaging and logging
 
 - **The application fails to start with `FindException: Module mvel2 not found`**, or a rule fails on its first run
-  with `could not access field`, or after about 50 runs with `IllegalAccessError`: the module path needs MVEL's module
-  name and an export without a `to` clause; see [Installation](../README.md#-installation).
+  with `could not access field`: the module path needs MVEL's module name and an export; see
+  [Installation](../README.md#-installation).
 
 - **No log output:** there's no SLF4J provider on the class path; see
   [Logging setup](listeners-and-logging.md#-logging-setup).
@@ -212,8 +212,8 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 - **Every run on one pool thread fails at its first rule:** its interrupt status is still set; see
   [Gotchas](stopping-runs.md#-gotchas).
 
-- **Metaspace or the class-loader count climbs across redeploys, plugin or tenant reloads:** MVEL's dynamic
-  optimizer holds the old loaders; see
+- **Metaspace or the class-loader count climbs across redeploys, plugin or tenant reloads:** MVEL's JIT, made the
+  default again, holds the old loaders; see
   [MVEL's dynamic optimizer](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
 
 ### With facts the tests never used

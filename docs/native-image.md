@@ -1,6 +1,6 @@
 # 🧊 Native image
 
-How to build an application that runs MVEL rules into a GraalVM native image: the one setting it needs, the
+How to build an application that runs MVEL rules into a GraalVM native image: the setting to leave alone, the
 reflection it must register, and what the errors mean when something is missing.
 
 **Who it's for:** application developers building a native executable with GraalVM's `native-image`.
@@ -12,7 +12,7 @@ the errors an image gives when one is missing.
 [← Documentation index](README.md)
 
 - [Quick start](#-quick-start)
-- [MVEL's JIT must be off](#-mvels-jit-must-be-off)
+- [MVEL's JIT stays off](#-mvels-jit-stays-off)
 - [Registering your classes](#-registering-your-classes)
 - [Gotchas](#-gotchas)
 - [Errors and what they mean](#-errors-and-what-they-mean)
@@ -27,7 +27,7 @@ the errors an image gives when one is missing.
 
 The engine and MVEL work in a native image when two things are true:
 
-1. MVEL runs with its JIT off: the executable is started with `-Dmvel2.disable.jit=true`.
+1. MVEL runs with its JIT off, as the engine sets it.
 2. The image registers, for reflection, every class and method your rules read, write or call.
 
 The [native-smoke](../native-smoke/src/main/java/com/example/nativesmoke/Main.java) application in this repository
@@ -39,7 +39,7 @@ does both, and CI builds and runs it on every pull request. These are CI's comma
 mkdir -p native-smoke/build/native
 native-image --no-fallback -H:+ReportExceptionStackTraces -cp 'native-smoke/build/install/native-smoke/lib/*' \
     -o native-smoke/build/native/native-smoke com.example.nativesmoke.Main
-native-smoke/build/native/native-smoke -Dmvel2.disable.jit=true
+native-smoke/build/native/native-smoke
 ```
 
 The engine logs every fact name it rejects at ERROR, so those lines come before the status line a correct image
@@ -67,37 +67,25 @@ image served no class file for `java.util.Date` as a resource; the check doesn't
 the name is rejected all the same. `dateFactValue=rejected` says a rule reading `Date` never ran, because the check
 rejected the fact first. The same code on the JVM prints `dateResource=true` and `image=false`, and every other
 value the same; run it with
-`java -Dmvel2.disable.jit=true -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main`.
+`java -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main`.
 
 Nothing else is needed to build and run an image: no `native-image` option beyond the usual ones, no metadata for
 `unruly-engine-core`, and no change to how you build engines or load rules. `native-image` finds MVEL through its
 `META-INF/services` file, as the JVM does. An image built to fail on a class it has no metadata for works too, given
 the package list [Strict metadata](#-strict-metadata) describes.
 
-## ⚡ MVEL's JIT must be off
+## ⚡ MVEL's JIT stays off
 
 MVEL's JIT optimizer generates classes while rules run. A native image can't load a class that wasn't in it when it
-was built, so with the JIT on the first condition fails. With it off, MVEL uses its reflective accessors, which work
-in an image as long as their targets are [registered](#-registering-your-classes).
+was built, so with the JIT on the first condition fails. The engine makes MVEL's reflective optimizer the default
+before it compiles a rule, so no flag is needed unless MVEL runs earlier; see
+[MVEL's optimizer](languages/mvel.md#mvels-optimizer). Reflective accessors work in an image as long as their targets
+are [registered](#-registering-your-classes).
 
 > [!IMPORTANT]
-> Start every native executable that runs MVEL rules with `-Dmvel2.disable.jit=true`. The engine doesn't set it for
-> you: the property is MVEL's, for the whole process, and the engine never changes MVEL's global settings.
-
-To make it part of the application instead of its command line, set the property first thing in `main`, before the
-application builds an engine or uses MVEL in any other way:
-
-```java
-public static void main(String[] args) {
-    System.setProperty("mvel2.disable.jit", "true"); // before anything touches MVEL
-    // build engines and load rules after this
-}
-```
-
-MVEL reads the property once, when its `OptimizerFactory` class initializes, and ignores later changes. Passing the
-property on the command line is what CI tests; setting it in `main` isn't tested. Passing it to `native-image` as a
-build argument isn't tested either, so don't rely on it. [Compiled copies](languages/mvel.md#-compiled-copies) covers
-the JIT on the JVM.
+> In an image, don't make the JIT MVEL's default again with `OptimizerFactory.setDefaultOptimizer`. If anything runs
+> MVEL before your first engine loads MVEL rules, such as your own `MVEL.eval` or another library, start the
+> executable with `-Dmvel2.disable.jit=true`: until the engine sets MVEL up, MVEL's own default, the JIT, applies.
 
 ## 🪞 Registering your classes
 
@@ -131,11 +119,11 @@ Rules reading a bean's getters, a `Map` fact or a public field weren't tested.
 ### Finding what to register
 
 GraalVM's tracing agent records the reflection an application uses while it runs on the JVM. Run it with GraalVM's
-`java`, with the JIT off, and with facts that make every rule's condition and action run:
+`java`, with facts that make every rule's condition and action run:
 
 ```bash
 java -agentlib:native-image-agent=config-output-dir=native-smoke/build/agent-config \
-    -Dmvel2.disable.jit=true -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main
+    -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main
 ```
 
 The agent overwrites the files in its output directory, so point it at a scratch directory, not at your
@@ -162,8 +150,8 @@ is a `load()` that fails instead.
 
 | The cause contains | Why | Fix |
 | --- | --- | --- |
-| `UnsupportedFeatureError: No classes have been predefined during the image build to load from bytecodes at runtime` | MVEL's JIT is on and tried to generate a class | Start the executable with `-Dmvel2.disable.jit=true`; see [MVEL's JIT must be off](#-mvels-jit-must-be-off) |
-| `unable to instantiate accessor compiler`, caused by `NoSuchMethodException: org.mvel2.optimizers.dynamic.DynamicOptimizer.<init>()` | MVEL's JIT is on, and its optimizer isn't registered | The same: turn the JIT off. Registering the optimizer only leads to the error above |
+| `UnsupportedFeatureError: No classes have been predefined during the image build to load from bytecodes at runtime` | MVEL's JIT was made the default again and tried to generate a class | Leave the engine's reflective default; see [MVEL's JIT stays off](#-mvels-jit-stays-off) |
+| `unable to instantiate accessor compiler`, caused by `NoSuchMethodException: org.mvel2.optimizers.dynamic.DynamicOptimizer.<init>()` | MVEL's JIT was made the default again, and its optimizer isn't registered | The same. Registering the optimizer only leads to the error above |
 | `MissingReflectionRegistrationError: The program tried to reflectively invoke method ...` | A method the rule calls isn't registered | Add it to your `reflect-config.json`; see [Registering your classes](#-registering-your-classes) |
 | `RuleCompilationException` from `load()`: `The program tried to reflectively access class applicant.creditScore`, a name made from the rule's text | The image was built with strict metadata for all code, MVEL's included | List packages instead; see [Strict metadata](#-strict-metadata) |
 
@@ -182,7 +170,7 @@ native-image --no-fallback -H:+ReportExceptionStackTraces \
     -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
     -cp 'native-smoke/build/install/native-smoke/lib/*' -o native-smoke/build/native/native-smoke-strict \
     com.example.nativesmoke.Main
-native-smoke/build/native/native-smoke-strict -Dmvel2.disable.jit=true
+native-smoke/build/native/native-smoke-strict
 ```
 
 > [!WARNING]
