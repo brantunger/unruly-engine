@@ -165,15 +165,15 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     /**
      * Returns the names the compiled conditions and actions could read a fact by, as {@link RuleText#addNames} finds
      * them in their text: each identifier, the words 2.29.4 found, and for each word between MVEL's whitespace, every
-     * span of it that starts at the word's start, just after one of the ends
-     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}, or just after {@code isdef} glued to the name that
-     * follows it, and stops at the word's end or just before a character that isn't part of an identifier, and each
-     * backslash and high surrogate alone. A span that holds one of those ends but {@code -} and {@code .} after its
-     * first character is left out, unless {@code isdef} may read it or it stands before {@code ++}, {@code --} or an
-     * assignment operator not followed by {@code =}, as no other name MVEL lexes holds one. So {@code \a} in
-     * {@code 1-\a}, {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in {@code isdef#a},
-     * {@code ,a} in {@code ,a#b} and {@code my]} in {@code my]--} are among them, and {@code (,a} in
-     * {@code (,a) == 5} isn't. It holds more
+     * span of it that starts at the word's start, just after a character that isn't part of an identifier, or just
+     * after {@code isdef} glued to the name that follows it, and stops at the word's end or just before a character
+     * that isn't part of an identifier, and each backslash and high surrogate alone. A span that holds one of
+     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ ~}, U+00AB, U+00BB or U+00AC after its first character
+     * is left out, unless {@code isdef} may read it or it stands before {@code ++}, {@code --} or an assignment
+     * operator not followed by {@code =}, as no other name MVEL lexes holds one. So {@code \a} in {@code 1-\a},
+     * {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in {@code isdef#a},
+     * {@code ,a} in {@code ,a#b}, {@code b.c} in {@code a^b.c} and {@code my]} in {@code my]--} and in
+     * {@code x^my]+=1} are among them, and {@code (,a} in {@code (,a) == 5} isn't. It holds more
      * names than they read, such as the words of a string literal, a comment or a class's name, and spans MVEL reads
      * as several names, which are only a best guess at the names a rule's author meant, such as {@code my-fact} in
      * {@code my-fact == 1}, which MVEL reads as {@code my} minus {@code fact}. So a fact no MVEL rule names, such as
@@ -184,8 +184,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * Returns {@code null}, so MVEL checks every fact, once a condition or action has a word of more than 1,000
      * characters, or with more than 64 characters that aren't part of an identifier, each one just after
      * {@code isdef} counted twice, the most characters and parts an import may have: in a word with many minus signs,
-     * dots, {@code ++}, {@code --} or assignments, or with several {@code isdef}s, the spans can grow as the square of
-     * the characters that aren't part of an identifier.
+     * dots, backslashes, no-break spaces or other characters that aren't part of an identifier and aren't in that
+     * list, or with many {@code ++}, {@code --} or assignments, or with several {@code isdef}s, the spans can grow
+     * as the square of the characters that aren't part of an identifier.
      * </p>
      *
      * <p>

@@ -62,10 +62,11 @@ every declared fact's name with it, whatever the text holds: their failures can 
 `Declared fact 'empty' can't be used`.
 
 > [!NOTE]
-> Up to 2.28.0, MVEL checked every fact's name, whatever its rules' text held, and reserved `output` for every rule
-> list, so a declared `output` failed `build()`. From 2.29.0 to 2.29.4, its scan missed some names MVEL reads whole,
-> so a run accepted a fact it now rejects, such as `my-fact` with `my-fact-1 == 0`, or `a.b` with `a.b--`. From 2.29.5
-> to 2.29.7, it also rejected some names no rule can read, such as `&!false` with `true&&!false`, which it now accepts.
+> Up to 2.28.0, MVEL checked every fact's name and reserved `output` for every rule list, so a declared `output`
+> failed `build()`. Then its scan missed names MVEL reads whole, accepting facts it now rejects: up to 2.29.4,
+> `my-fact` with `my-fact-1 == 0`; up to 2.29.15, `my]` with `x^my]+=1`; up to 2.29.4 and from 2.29.9 to 2.29.15,
+> `my]` with `my]«=1`. It also rejected unreadable names, which it now accepts: from 2.29.5 to 2.29.8,
+> `&!false` with `true&&!false`; from 2.29.5 to 2.29.15, `,a#b` with `1-,a#b`.
 
 ## 🚫 Fact names MVEL rejects
 
@@ -150,20 +151,20 @@ The **pieces** of a word are the ones 2.29.4 found: the whole word, and its part
 A span of a word starts at any of these places:
 
 - the word's start;
-- just after one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .`;
-- just after an `isdef` that starts the word or follows one of those characters, when the next character isn't part
-  of an identifier, as in `isdef#a`.
+- just after any character that isn't part of an identifier, such as `-`, `.`, `^` or `#`;
+- just after an `isdef` that starts the word or follows such a character, when the character after `isdef` isn't part
+  of an identifier either, as in `isdef#a`.
 
 From each start, a span ends at the word's end, and another just before each later character that isn't part of an
 identifier. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and `my-fact-1`. A fact `my-fact` is then
 checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact` minus 1. In the same way, `a.b--` gives
-`a.b`, and `isdef#a` gives `#a`.
+`a.b`, `x^my]+=1` gives `my]`, and `isdef#a` gives `#a`.
 
-A span that holds one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + %` after its first character is left out, unless
-MVEL may still read it whole:
+A span that holds one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ « » ¬ ~` after its first character is left
+out, unless MVEL may still read it whole:
 
 - it stands before `++`, `--` or an assignment operator not followed by `=`, with only MVEL's whitespace between:
-  `my]--` gives `my]`;
+  `my]--` gives `my]`. The assignment operators include MVEL's shifts `«=`, `»=` and `¬=`;
 - `isdef` reads it, glued to `isdef` or as the next word.
 
 So `(,a) == 5` gives `,a`, and the piece `(,a)`, but not `(,a` or `,a)`.
@@ -179,10 +180,13 @@ MVEL then checks only the facts named in that set. So, unless
 
 ### When MVEL checks every fact
 
-In a word with many minus signs, dots, `++`, `--` or assignments, or with several `isdef`s, the spans can grow as the
-square of the characters that aren't part of an identifier. So the scan gives up on any word of more than 1,000
-characters, or with more than 64 such characters, each one just after `isdef` counted twice: the most characters and
-dot-separated parts an import may have. A word at both limits gives up to 2,145 names, scanned in about 0.4 ms.
+In a word with many characters that aren't part of an identifier and that a span may hold inside it, such as minus
+signs, dots, backslashes or no-break spaces, or with many `++`, `--` or assignments, or with several `isdef`s, the
+spans can grow as the square of the characters that aren't part of an identifier.
+
+So the scan gives up on any word of more than 1,000 characters, or with more than 64 such characters, each one just
+after `isdef` counted twice: the most characters and dot-separated parts an import may have. A word at both limits
+gives up to 2,209 names; one with 64 minus signs gives 2,145, scanned in about 0.4 ms.
 
 Once one condition or action gives up, MVEL can't tell which facts the rule list reads, so it checks every fact, as
 it did up to 2.28.0: each run's facts and each declared fact. A fact such as `in` or `Math`, which no MVEL rule names,
@@ -204,8 +208,8 @@ For the other limit, the line says
 
 The scan finds extra names, such as the words of a comment, and spans MVEL reads as several names, such as `my-fact`
 in `my-fact-1`. That's harmless: a fact by such a name is checked, as every fact was up to 2.28.0. It leaves out the
-spans MVEL can't read as one name, such as `&!false` in `true&&!false`, so a fact by such a name is accepted, as from
-2.29.0 to 2.29.4.
+spans MVEL can't read as one name, such as `&!false` in `true&&!false` or `,a#b` in `1-,a#b`, so a fact by such a
+name is accepted, as from 2.29.0 to 2.29.4.
 
 It can miss a name with MVEL's whitespace inside it, as no word holds one. A line break is such a character, and
 `isdef` reads a name up to a comment, even one on a later line. The condition `isdef ,a//c`, a line break, then

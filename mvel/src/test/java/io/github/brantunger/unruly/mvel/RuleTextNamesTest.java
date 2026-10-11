@@ -152,7 +152,7 @@ class RuleTextNamesTest {
                 if (!ParseTools.isIdentifierPart(word.charAt(at))) {
                     int keyword = at - "isdef".length();
                     boolean afterIsdef = keyword >= 0 && word.startsWith("isdef", keyword) && (keyword == 0
-                            || "()[]{},;'\"=<>!&|?:*/+%-.".indexOf(word.charAt(keyword - 1)) >= 0);
+                            || !ParseTools.isIdentifierPart(word.charAt(keyword - 1)));
                     stops += afterIsdef ? 2 : 1;
                 }
             }
@@ -229,6 +229,42 @@ class RuleTextNamesTest {
     }
 
     @Test
+    @DisplayName("a span starts after any character that isn't part of an identifier, as after ^ and # (#1119, #1143)")
+    void spansStartAfterEveryStop() {
+        for (String text : List.of("x^my]+=1", "x#my]+=1", "x^my]++", "x\u00abmy]+=1", "x~my]--")) {
+            assertTrue(names(text).contains("my]"), text + ": " + names(text));
+        }
+        for (String text : List.of("a^b.c", "a#b.c", "a\u00abb.c", "a\u00acb.c", "a\u00a0+\u00a0b.c", "a`b.c")) {
+            assertTrue(names(text).contains("b.c"), text + ": " + names(text));
+        }
+        assertTrue(names("a^`b").contains("`b"), names("a^`b").toString());
+        assertTrue(names("x#isdef#a").contains("#a"), names("x#isdef#a").toString());
+        assertTrue(names("x^isdef a!b,c").contains("a!b"), names("x^isdef a!b,c").toString());
+    }
+
+    @Test
+    @DisplayName("a span with # ^ ~ or MVEL's other operator characters inside it is left out, so a dense word of them"
+            + " adds about as many spans as it has of them (#1143)")
+    void spansWithAnOperatorInsideLeftOut() {
+        for (String operator : List.of("#", "^", "~", "\u00ab", "\u00bb", "\u00ac")) {
+            List<String> parts = new ArrayList<>();
+            Set<String> expected = new HashSet<>();
+            for (int part = 1; part <= 31; part++) {
+                parts.add("a" + part);
+                expected.add("a" + part);
+                if (part > 1) {
+                    expected.add(operator + "a" + part);
+                }
+            }
+            String word = String.join(operator + operator, parts);
+            expected.add(word);
+
+            assertEquals(expected, names(word), operator + ": 60 of them, under the limit, add 62 names, not the"
+                    + " square of them");
+        }
+    }
+
+    @Test
     @DisplayName("a span with an end inside it is kept before ++, -- or an assignment, as MVEL reads the name there"
             + " (#1129)")
     void spansBeforeAnAssignmentKept() {
@@ -239,6 +275,15 @@ class RuleTextNamesTest {
             assertFalse(names(text).contains("my]"), text + ": " + names(text));
         }
         assertTrue(names("(,a)=1").contains("(,a)"), names("(,a)=1").toString());
+    }
+
+    @Test
+    @DisplayName("a span with an end inside it is kept before MVEL's short forms of <<=, >>= and >>>= too (#1143)")
+    void spansBeforeAShortShiftAssignmentKept() {
+        for (String text : List.of("my]\u00ab=1", "my]\u00bb=1", "my]\u00ac=1", "x^my]\u00ab=1")) {
+            assertTrue(names(text).contains("my]"), text + ": " + names(text));
+        }
+        assertFalse(names("my]\u00ab==1").contains("my]"), names("my]\u00ab==1").toString());
     }
 
     @Test
