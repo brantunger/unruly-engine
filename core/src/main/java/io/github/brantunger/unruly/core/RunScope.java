@@ -299,8 +299,10 @@ final class RunScope {
             Faults.at(Faults.Step.RUN_VALUE_REFUSING);
             refused = endedFailure(method, key);
         } catch (Throwable t) {
-            // Only instanceof checks, which can't fail as building did: the fatal Error close() threw itself wins.
-            if (closing instanceof VirtualMachineError fatal && !(fatal instanceof StackOverflowError)) {
+            // Only instanceof checks, which can't fail as building did, and Failures.isOverflow, which allocates
+            // nothing: the fatal Error close() threw itself wins, but not an InternalError that wraps an overflow.
+            if (closing instanceof VirtualMachineError fatal && !(fatal instanceof StackOverflowError)
+                    && !(fatal instanceof InternalError && Failures.isOverflow(fatal))) {
                 throw fatal;
             }
             throw t;

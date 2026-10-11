@@ -15,8 +15,8 @@ import java.util.Set;
  * it would be. Each accessor is called in a {@code try} of its own rather than through a lambda or method reference, so
  * the JVM's first failure links no call site, which could overflow deep in a stack (#1093).
  * {@code core.Failures} keeps the engine's copy of these readers: the mvel package may not use that one.
- * mvel's {@code ExceptionReadsCopiesTest} checks {@link #messageOf}, {@link #rootCause} and {@link #causeChain}, and
- * the private readers they go through, against it.
+ * mvel's {@code ExceptionReadsCopiesTest} checks {@link #messageOf}, {@link #rootCause}, {@link #causeChain} and
+ * {@link #isOverflow}, and the private readers they go through, against it.
  */
 final class ExceptionReads {
 
@@ -54,6 +54,33 @@ final class ExceptionReads {
     static Throwable rootCause(Throwable e) {
         List<Throwable> chain = causeChain(e);
         return chain.get(chain.size() - 1);
+    }
+
+    /**
+     * Tells whether {@code e} is a {@link StackOverflowError}, or what was thrown in place of one: walking its cause
+     * chain from the top, a {@link StackOverflowError} comes before any {@link LinkageError}. A
+     * {@link NoClassDefFoundError} or an {@link ExceptionInInitializerError} above the overflow says a class was left
+     * unusable, by an overflow in its static initializer, maybe in an earlier load, which no change to the rule or the
+     * stack's depth helps, as JDK 25 and 26 make one with the overflow as its cause (#1116). An {@link InternalError}
+     * around one, as the JDK wraps an overflow it hits defining a hidden class, is (#1141). The chain is read link by
+     * link, with nothing allocated: up to {@value #MAX_CAUSE_CHAIN_LENGTH} links, which may repeat in a chain that
+     * loops back on itself, so it answers as {@link #causeChain}'s links read in order would.
+     *
+     * @param e The exception
+     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
+     */
+    static boolean isOverflow(Throwable e) {
+        Throwable link = e;
+        for (int read = 0; link != null && read < MAX_CAUSE_CHAIN_LENGTH; read++) {
+            if (link instanceof LinkageError) {
+                return false;
+            }
+            if (link instanceof StackOverflowError) {
+                return true;
+            }
+            link = causeOf(link);
+        }
+        return false;
     }
 
     /**

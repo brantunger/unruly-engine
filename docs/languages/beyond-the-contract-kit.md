@@ -163,8 +163,8 @@ that returned the wrong value would pass every other check, and a condition that
 language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
 
 In the `evaluateAgreesWithDetail` row of [the checks table](contract-kit.md#-testing-with-the-contract-kit), "both
-throw" means an exception or a non-fatal `Error` from each. A fatal one, any `VirtualMachineError`
-but `StackOverflowError`, is thrown on, even as a cause or suppressed. Anything else a `close()` throws passes:
+throw" means an exception or a non-fatal `Error` from each. A [fatal](../glossary.md#fatal-error) one is thrown
+on, even as a cause or suppressed. Anything else a `close()` throws passes:
 `compilerClosed` and the three session checks own that.
 
 `evaluateAgreesWithDetail` tries four number types: an `evaluate` that compares by type and an `evaluateWithDetail`
@@ -251,7 +251,7 @@ assertSame(evaluation.runScoped("key", Object::new), action.runScoped("key", Obj
 No engine runs in these tests, so nothing closes a context's `runScopedClosing` values for you. Since 2.20.0,
 `endRun(context)` closes them as a run's end would, newest first, but rethrows the first failure, so your test sees
 a `close()` that throws. Each other failure is in its `getSuppressed()` once, unless it already carries the first or
-the first carries it. If the last keep fails, a `VirtualMachineError` other than `StackOverflowError` replaces the
+the first carries it. If the last keep throws a [fatal error](../glossary.md#fatal-error) itself, it replaces the
 first; others are dropped. Once a wait below succeeds, it also closes the run's open `onCancel` registrations.
 
 Like a run's end, `endRun` first waits, with no limit, for a `runScopedClosing` init running on another thread. If the

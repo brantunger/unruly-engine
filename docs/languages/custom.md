@@ -237,11 +237,13 @@ public void prepare() {
     // Initialize classes and nothing else, but for running your own library's public API once, such as evaluating a
     // trivial expression, so a first run deep in a stack has fewer classes to load: create no state an engine uses,
     // since the language may never compile anything, and stay cheap once done. A warm-up that may overflow should catch
-    // StackOverflowError and skip itself, as MVEL's does. A throw fails build() unchanged, or, at a first use, the
-    // rules in this language, as a failing newCompiler() does: "The 'my' expression language failed to prepare: ...".
-    // The next use prepares again. It runs on the thread of that build(), load() or validate(), and may run on several
-    // threads at once. Until a run that fired an action of this language class's rules returns normally, the engine
-    // checks runs for more room, for the classes a first call may generate; that covers some first calls, not all.
+    // StackOverflowError and skip itself, as MVEL's does, but throw when a LinkageError comes first in the cause chain,
+    // such as a NoClassDefFoundError for a class an earlier overflow left unusable. A throw fails build() unchanged,
+    // or, at a first use, the rules in this language, as a failing newCompiler() does: "The 'my' expression language
+    // failed to prepare: ...". The next use prepares again. It runs on the thread of that build(), load() or
+    // validate(), and may run on several threads at once. Until a run that fired an action of this language class's
+    // rules returns normally, the engine checks runs for more room, for the classes a first call may generate; that
+    // covers some first calls, not all.
     MethodHandles.Lookup lookup = MethodHandles.lookup();
     for (Class<?> type : List.of(MyParser.class, MyExpression.class)) {   // yours, and your libraries' classes
         try {
@@ -262,7 +264,7 @@ compiles the same way but logs only a fatal error. Every row but the session one
 | --- | --- | --- |
 | `InvalidExpressionException(message, issues)` | `Condition for rule 'prime-rate' ` + your message, with your issues; your exception as the cause | Per rule, with every other broken rule |
 | Any other exception | `Condition for rule 'prime-rate' failed to compile: ` + its description; no issues; your exception as the cause | Per rule |
-| A `StackOverflowError` as the root cause of anything but an `InvalidExpressionException` | `... failed to compile: the expression is too long or too deeply nested to compile`, or, low on stack, `the stack ran out: it was compiled too deep in the stack, or on a thread whose stack is too small` | Per rule |
+| A `StackOverflowError` ahead of any `LinkageError` in anything but an `InvalidExpressionException`'s cause chain | `... failed to compile: the expression is too long or too deeply nested to compile`, or, low on stack, `the stack ran out: ...`; elsewhere, `...: the stack overflowed` | Per rule, or as that call's row |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; its rules aren't compiled |
 | An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
@@ -272,7 +274,7 @@ compiles the same way but logs only a fatal error. Every row but the session one
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine shortens and escapes your message, and a
 warning's issue, as [Reading exception messages](../exception-messages.md) describes. Any other exception with no
-message shows its class name, and any root cause's in `(caused by ...)`.
+message shows its class name, and any root cause's in `(caused by ...)` unless already named.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
 Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`; its cut never

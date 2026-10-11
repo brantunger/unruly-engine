@@ -144,6 +144,27 @@ class LanguagePrepareTest {
         }
     }
 
+    /** The only language found, whose prepare() throws an overflow a language wrapped. */
+    public static final class FoundOverflowing extends Found {
+        static final AtomicInteger PREPARED = new AtomicInteger();
+
+        /** Creates it. */
+        public FoundOverflowing() {
+            super("found-overflowing");
+        }
+
+        @Override
+        AtomicInteger prepared() {
+            return PREPARED;
+        }
+
+        @Override
+        public void prepare() {
+            super.prepare();
+            throw new IllegalStateException(new StackOverflowError());
+        }
+    }
+
     /** A language found that the builder gives an option. */
     public static final class FoundWithOption extends Found {
         static final AtomicInteger PREPARED = new AtomicInteger();
@@ -250,6 +271,24 @@ class LanguagePrepareTest {
                     failure.getMessage());
             assertSame(thrown, failure.getCause(), "cause");
             assertEquals(2, FoundThrowing.PREPARED.get(), "prepared");
+            engine.close();
+        }
+    }
+
+    @Test
+    @DisplayName("an overflow prepare() throws at a first use says the stack overflowed, and nothing of the rule text"
+            + " (#1135)")
+    void overflowAtFirstUseFailsLoad() throws IOException {
+        try (URLClassLoader loader = listing(FoundOverflowing.class)) {
+            RulesEngine<Map<String, Object>> engine = withContextClassLoader(loader,
+                    () -> RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build());
+
+            RuleCompilationException failure = assertThrows(RuleCompilationException.class,
+                    () -> engine.load(List.of(rule("first", null))));
+
+            assertEquals("The 'found-overflowing' expression language failed to prepare: the stack overflowed",
+                    failure.getMessage());
+            assertInstanceOf(StackOverflowError.class, failure.getCause().getCause(), "cause");
             engine.close();
         }
     }

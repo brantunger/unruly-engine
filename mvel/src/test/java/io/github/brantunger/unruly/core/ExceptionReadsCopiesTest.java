@@ -7,8 +7,10 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -16,20 +18,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@code mvel.ExceptionReads} keeps its own copy of the exception readers in {@code core.Failures}: {@code messageOf},
- * {@code causeChain} and {@code rootCause}, and the {@code causeOf} that {@code causeChain} goes through, each of which
- * calls its accessor in a {@code try} of its own (#1093). The {@code mvel} package may not depend on {@code core}. In
- * {@code core.Failures}, {@code messageOf}, {@code causeOf}, {@code rootCause}, {@code causeChain} and
- * {@code MAX_CAUSE_CHAIN_LENGTH} are package-private, so this test is in {@code core}'s package to reach them. The
- * copies read the same exceptions the same way, so a change to one that misses the other makes the engine and the MVEL
- * module describe one failure differently, or lets one of them throw what an accessor of an exception threw. Every
- * case here runs on both.
+ * {@code causeChain}, {@code rootCause} and {@code isOverflow}, and the {@code causeOf} that {@code causeChain} and
+ * {@code isOverflow} go through, each of which calls its accessor in a {@code try} of its own (#1093). The {@code mvel}
+ * package may not depend on {@code core}. In {@code core.Failures}, {@code messageOf}, {@code causeOf},
+ * {@code rootCause}, {@code causeChain}, {@code isOverflow} and {@code MAX_CAUSE_CHAIN_LENGTH} are package-private, so
+ * this test is in {@code core}'s package to reach them. The copies read the same exceptions the same way, so a change
+ * to one that misses the other makes the engine and the MVEL module describe one failure differently, or lets one of
+ * them throw what an accessor of an exception threw. Every case here runs on both.
  */
 @DisplayName("the engine's exception readers and the copies in ExceptionReads read identically")
 class ExceptionReadsCopiesTest {
 
     /** The readers one copy has. */
     private record Readers(Function<Throwable, String> messageOf, Function<Throwable, Throwable> rootCause,
-                           Function<Throwable, List<Throwable>> causeChain) {
+                           Function<Throwable, List<Throwable>> causeChain, Predicate<Throwable> isOverflow) {
     }
 
     /** One copy of the readers, and the class it's kept in. */
@@ -41,9 +43,11 @@ class ExceptionReadsCopiesTest {
     }
 
     private static final List<Copy> COPIES = List.of(
-            new Copy("core.Failures", new Readers(Failures::messageOf, Failures::rootCause, Failures::causeChain)),
+            new Copy("core.Failures", new Readers(Failures::messageOf, Failures::rootCause, Failures::causeChain,
+                    Failures::isOverflow)),
             new Copy("mvel.ExceptionReads", new Readers(ExceptionReadsCopies::messageOf,
-                    ExceptionReadsCopies::rootCause, ExceptionReadsCopies::causeChain)));
+                    ExceptionReadsCopies::rootCause, ExceptionReadsCopies::causeChain,
+                    ExceptionReadsCopies::isOverflow)));
 
     /**
      * The kinds of throwable an accessor may throw: an unchecked exception, a checked one, the one fatal {@link Error}
@@ -109,7 +113,10 @@ class ExceptionReadsCopiesTest {
         }
     }
 
-    /** An exception whose {@code getCause()} returns a new exception every time, one link further down. */
+    /**
+     * An exception whose {@code getCause()} returns a new exception every time, one link further down, and an overflow
+     * past the links either copy reads.
+     */
     private static final class Endless extends RuntimeException {
         private static final long serialVersionUID = 1L;
 
@@ -122,7 +129,8 @@ class ExceptionReadsCopiesTest {
 
         @Override
         public synchronized Throwable getCause() {
-            return new Endless(depth + 1);
+            // An overflow past the links either copy reads, so a reader that went on would find it.
+            return depth < 150 ? new Endless(depth + 1) : new StackOverflowError("past the links read");
         }
     }
 
@@ -251,5 +259,66 @@ class ExceptionReadsCopiesTest {
         }
         Endless root = (Endless) readers.rootCause().apply(new Endless(0));
         assertEquals(Failures.MAX_CAUSE_CHAIN_LENGTH - 1, root.depth, name);
+    }
+
+    /** A throwable whose cause is {@code cause}. */
+    private static <T extends Throwable> T causedBy(T thrown, Throwable cause) {
+        thrown.initCause(cause);
+        return thrown;
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("copies")
+    @DisplayName("an overflow is told by the first StackOverflowError or LinkageError in the cause chain"
+            + " (#1116, #1141)")
+    void overflowsAreToldAlike(String name, Readers readers) {
+        assertTrue(readers.isOverflow().test(new StackOverflowError()), name + ": a bare overflow");
+        assertTrue(readers.isOverflow().test(new IllegalStateException(new StackOverflowError())),
+                name + ": an overflow wrapped");
+        assertTrue(readers.isOverflow().test(
+                new InternalError(new InvocationTargetException(new StackOverflowError()))),
+                name + ": an InternalError around an overflow, as the JDK wraps one");
+        assertFalse(readers.isOverflow().test(
+                causedBy(new NoClassDefFoundError("Could not initialize class X"), new StackOverflowError())),
+                name + ": a class an overflow left unusable");
+        assertFalse(readers.isOverflow().test(
+                new IllegalStateException(new ExceptionInInitializerError(new StackOverflowError()))),
+                name + ": an initializer that overflowed");
+        assertTrue(readers.isOverflow().test(
+                causedBy(new StackOverflowError(), new NoClassDefFoundError("after"))),
+                name + ": an overflow before a LinkageError");
+        assertFalse(readers.isOverflow().test(new IllegalStateException(new InternalError("no overflow"))),
+                name + ": no overflow");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("copies")
+    @DisplayName("an overflow is told the same in a cause chain that loops back on itself, or never ends")
+    void overflowsInOddChainsAreToldAlike(String name, Readers readers) {
+        // First, so a reader that reads past the links it may fails here rather than going round the loop below.
+        assertFalse(readers.isOverflow().test(new Endless(0)), name + ": an overflow past the links read");
+
+        IllegalStateException first = new IllegalStateException("first");
+        IllegalArgumentException second = new IllegalArgumentException("second");
+        first.initCause(second);
+        second.initCause(first);
+        assertFalse(readers.isOverflow().test(first), name + ": a loop with no overflow");
+
+        IllegalStateException top = new IllegalStateException("top");
+        IllegalArgumentException middle = new IllegalArgumentException("middle");
+        StackOverflowError bottom = new StackOverflowError("bottom");
+        top.initCause(middle);
+        middle.initCause(bottom);
+        bottom.initCause(middle);
+        assertTrue(readers.isOverflow().test(top), name + ": a loop through an overflow");
+    }
+
+    @ParameterizedTest(name = "{0}, {2}")
+    @MethodSource("copiesAndThrown")
+    @DisplayName("an overflow past a getCause() that throws isn't read, a fatal Error too")
+    void overflowsPastUnreadableCausesAreToldAlike(String name, Readers readers, String thrownClass,
+                                                    Supplier<Throwable> thrown) {
+        assertFalse(readers.isOverflow().test(new IllegalStateException("outer", new CauseThrows(thrown.get()))),
+                name + " read past a getCause() that threw " + thrownClass);
     }
 }

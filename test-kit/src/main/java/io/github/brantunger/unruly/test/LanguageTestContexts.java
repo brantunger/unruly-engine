@@ -310,9 +310,10 @@ public final class LanguageTestContexts {
      *                              {@code close()} failure, what waiting again threw, and the first failure to keep
      *                              one of them are suppressed on it, as far as keeping them doesn't fail: each once,
      *                              and none it already carries or that carries it
-     * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError} that keeping
-     *                              what failed before on the first failure threw, once every value is closed, in
-     *                              place of the first failure, which it doesn't carry
+     * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError}, and other than
+     *                              an {@link InternalError} that wraps one with no {@link LinkageError} between them,
+     *                              that keeping what failed before on the first failure threw, once every value is
+     *                              closed, in place of the first failure, which it doesn't carry
      */
     public static void endRun(EvaluationContext context) throws Exception {
         EngineEvaluationContext.endRun(context);

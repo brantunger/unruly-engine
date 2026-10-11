@@ -73,9 +73,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               checked before the language is prepared, so nothing is left unusable, and the
      *                               rules loaded before, if any, stay loaded. The room is about 160 KB on x64 while
      *                               the check is interpreted, as in a JVM that has run few rules
-     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
-     *                               compiling or making copies, also as the cause of another exception or one
-     *                               suppressed on it, is logged and then rethrown unchanged. So is one a language
+     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, and other
+     *                               than an {@link InternalError} that wraps one with no {@link LinkageError} between
+     *                               them, as the JDK wraps an overflow deep in a stack, thrown while compiling or
+     *                               making copies, also as the cause of another exception or one suppressed on it, is
+     *                               logged and then rethrown unchanged. So is one a language
      *                               throws while closing a session or a compiler, once everything being closed has been
      *                               closed: the first, if there are several. When a load that failed closes what it
      *                               made, that error is thrown in place of the load's own failure, unless the load
@@ -133,9 +135,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @throws StackOverflowError    as {@link #load(List)} throws it: if the thread has too little stack left for the
      *                               validation's own steps, checked before it compiles anything; also if the list is
      *                               the first to use a language the engine wasn't built to use
-     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError} thrown while
-     *                               compiling, also as the cause of another exception or one suppressed on it, is
-     *                               logged and then rethrown unchanged. So is one a language throws while closing a
+     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, and other
+     *                               than an {@link InternalError} that wraps one with no {@link LinkageError} between
+     *                               them, as the JDK wraps an overflow deep in a stack, thrown while compiling, also
+     *                               as the cause of another exception or one suppressed on it, is logged and then
+     *                               rethrown unchanged. So is one a language throws while closing a
      *                               compiler, once every compiler created has been closed: the first, if there are
      *                               several, unless compiling threw a fatal error, which came first and is thrown
      *                               instead. The error thrown carries the others as suppressed exceptions. Either way
@@ -189,8 +193,10 @@ public interface RulesEngine<O> extends AutoCloseable {
      *                               state are, while a language class the rules use hasn't finished a run in the JVM,
      *                               nested runs included, as a rule's first calls may make the JDK generate classes.
      *                               It's thrown unchanged, leaving the engine as it was
-     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, wherever it
-     *                               arises (a rule or Java code it calls, the output supplier, an output writer, a
+     * @throws Error                 a {@link VirtualMachineError} other than {@link StackOverflowError}, and other than
+     *                               an {@link InternalError} that wraps one with no {@link LinkageError} between them,
+     *                               as the JDK wraps an overflow deep in a stack, wherever it arises (a rule or Java
+     *                               code it calls, the output supplier, an output writer, a
      *                               language checking a name, creating a session or closing one, or a listener), is
      *                               rethrown unchanged, also when it arrives as the cause of another exception, or
      *                               suppressed on it, as a {@code try}-with-resources whose {@code close()} fails while

@@ -122,6 +122,30 @@ class RunScopeEndFailureTest {
     }
 
     @Test
+    @DisplayName("#1141: an InternalError around an overflow from the close() of a value whose init ended the run isn't"
+            + " fatal: what building the refusal threw is thrown over it")
+    void failureBuildingTheRefusalWinsOverAnInternalErrorAroundAnOverflow() {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        StackOverflowError building = new StackOverflowError("building the refusal");
+        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
+
+        assertSame(building, assertThrows(StackOverflowError.class, () -> context.runScopedClosing("key", () -> {
+            endRun(context);
+            return new Value("key", new InternalError(new StackOverflowError()));
+        })));
+        assertEquals(List.of("key closed"), closed);
+
+        EvaluationContext again = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        InternalError fatal = new InternalError("close failed");
+        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, new StackOverflowError("building the refusal"));
+
+        assertSame(fatal, assertThrows(InternalError.class, () -> again.runScopedClosing("key", () -> {
+            endRun(again);
+            return new Value("key", fatal);
+        })), "an InternalError with no overflow is still fatal");
+    }
+
+    @Test
     @DisplayName("#1052 item 2: when ending a run fails with StackOverflowError as it waits for another thread's"
             + " closing init, the run ends it again, closes every value, and throws what the first call threw")
     void runEndsItsScopeAgainWhenEndingFailsForStack() throws Exception {
@@ -139,6 +163,33 @@ class RunScopeEndFailureTest {
 
         assertSame(waiting, runEndingWhileAnotherThreadHoldsTheTurn(waiting, null));
         assertEquals(List.of("held closed", "kept closed"), closed);
+    }
+
+    @Test
+    @DisplayName("#1141: when ending a run fails with an InternalError as it waits for another thread's closing init,"
+            + " the run ends it again, closes every value, and throws the error, around an overflow or not")
+    void runEndsItsScopeAgainWhenEndingFailsWithAnInternalError() throws Exception {
+        for (InternalError waiting : List.of(new InternalError(new StackOverflowError()),
+                new InternalError("waiting"))) {
+            closed.clear();
+
+            assertSame(waiting, runEndingWhileAnotherThreadHoldsTheTurn(waiting, null));
+            assertEquals(List.of("held closed", "kept closed"), closed);
+        }
+    }
+
+    @Test
+    @DisplayName("#1141: when ending a run fails with an InternalError around an overflow and combining what ending the"
+            + " run threw fails too, what combining threw is thrown; a plain InternalError is fatal, and thrown")
+    void endingFailureWithAnInternalErrorWhenCombiningFails() throws Exception {
+        StackOverflowError combining = new StackOverflowError("combining");
+        assertSame(combining, runEndingWhileAnotherThreadHoldsTheTurn(new InternalError(new StackOverflowError()),
+                Faults.Step.RUN_ENDING_COMBINED, combining));
+
+        closed.clear();
+        InternalError fatal = new InternalError("waiting");
+        assertSame(fatal, runEndingWhileAnotherThreadHoldsTheTurn(fatal, Faults.Step.RUN_ENDING_COMBINED,
+                new StackOverflowError("combining")));
     }
 
     @Test
@@ -161,6 +212,15 @@ class RunScopeEndFailureTest {
      * threw.
      */
     private Throwable runEndingWhileAnotherThreadHoldsTheTurn(Error first, Error second) throws Exception {
+        return runEndingWhileAnotherThreadHoldsTheTurn(first, Faults.Step.RUN_SCOPE_END_WAITING, second);
+    }
+
+    /**
+     * Runs the engine as {@link #runEndingWhileAnotherThreadHoldsTheTurn(Error, Error)} does, with {@code thenStep}
+     * failing with {@code second}, if it isn't {@code null}, once the step where {@code end()} waits has failed.
+     */
+    private Throwable runEndingWhileAnotherThreadHoldsTheTurn(Error first, Faults.Step thenStep, Error second)
+            throws Exception {
         CountDownLatch inInit = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Thread> holder = new AtomicReference<>();
@@ -191,7 +251,7 @@ class RunScopeEndFailureTest {
             run.setDaemon(true);
             Faults.inject(run, Faults.Step.RUN_SCOPE_END_WAITING, 1, first);
             if (second != null) {
-                Faults.injectThen(Faults.Step.RUN_SCOPE_END_WAITING, second);
+                Faults.injectThen(thenStep, second);
             }
             run.start();
             try {
@@ -385,6 +445,27 @@ class RunScopeEndFailureTest {
         assertSame(keeping, assertThrows(OutOfMemoryError.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("b closed", "a closed"), closed);
         assertEquals(0, keeping.getSuppressed().length);
+    }
+
+    @Test
+    @DisplayName("#1141: when keeping what failed before on what it throws fails with an InternalError around an"
+            + " overflow, the test kit still throws the first close() failure as it is")
+    void testKitThrowsTheFirstFailureWhenKeepingTheRestFailsWithAnInternalErrorAroundAnOverflow() {
+        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        IOException failure = new IOException("a failed to close");
+        context.runScopedClosing("a", () -> new Value("a", failure));
+        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new InternalError(new StackOverflowError()));
+
+        assertSame(failure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
+        assertEquals(List.of("a closed"), closed);
+
+        EvaluationContext again = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        again.runScopedClosing("b", () -> new Value("b", new IOException("b failed to close")));
+        InternalError fatal = new InternalError("keeping the rest");
+        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, fatal);
+
+        assertSame(fatal, assertThrows(InternalError.class, () -> EngineEvaluationContext.endRun(again)),
+                "an InternalError with no overflow is still fatal");
     }
 
     @Test

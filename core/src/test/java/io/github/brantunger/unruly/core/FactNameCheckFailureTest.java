@@ -10,6 +10,7 @@ import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -119,6 +120,20 @@ class FactNameCheckFailureTest {
         assertEquals("Declared fact 'a' can't be used: The 'x' expression language failed to check fact name 'a': "
                 + "checker broke on a", ex.getMessage());
         assertSame(broken, ex.getCause().getCause());
+    }
+
+    @Test
+    @DisplayName("a declared name the language rejects with a cause that isn't an overflow fails load(), naming the"
+            + " cause the message hides")
+    void declaredNameRejectedWithACause() {
+        IllegalArgumentException rejection = new IllegalArgumentException("bad", new IOException());
+
+        RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class,
+                () -> load(name -> {
+                    throw rejection;
+                }, builder -> builder.fact("a", Integer.class)));
+
+        assertEquals("Declared fact 'a' can't be used: bad (caused by java.io.IOException)", ex.getMessage());
     }
 
     @Test

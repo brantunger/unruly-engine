@@ -252,12 +252,15 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
 
     /**
      * Runs the warm-up of {@link #prepare()}, and tells whether it finished. One that overflowed is skipped: a
-     * {@link StackOverflowError} it throws, or one anywhere in the cause chain of what it throws, as MVEL wraps one
-     * thrown in a method it calls. When the engine prepares MVEL, at {@code build()} or a first load, its evaluations
-     * and its compile initialize no class with a static initializer that it hasn't, so an overflow in them leaves
-     * nothing unusable, and the JVM's first load or run loads the classes they load instead, as it would without them.
-     * A bare {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes the reflective call
-     * needs. Anything else it throws is thrown as it is, so {@code prepare()} fails.
+     * {@link StackOverflowError} it throws, or one in the cause chain of what it throws with no {@link LinkageError}
+     * before it (see {@link ExceptionReads#isOverflow}), as MVEL wraps one thrown in a method it calls, and as the JDK
+     * wraps one in an {@link InternalError}. A class an overflow left unusable, whose {@link NoClassDefFoundError} JDK
+     * 25 and 26 give the overflow as its cause, isn't skipped, so {@code prepare()} fails (#1116). When the engine
+     * prepares MVEL, at {@code build()} or a first load, its evaluations and its compile initialize no class with a
+     * static initializer that it hasn't, so an overflow in them leaves nothing unusable, and the JVM's first load or
+     * run loads the classes they load instead, as it would without them. A bare {@code prepare()} call in an otherwise
+     * empty JVM may also initialize JDK classes the reflective call needs. Anything else it throws is thrown as it is,
+     * so {@code prepare()} fails.
      *
      * @param warmUp The warm-up
      * @return {@code true} if it finished, {@code false} if it overflowed
@@ -268,14 +271,18 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
             return true;
         } catch (StackOverflowError e) {
             return false;
+        } catch (InternalError e) {
+            // An overflow the JDK wrapped, read with nothing allocated, or else fatal, as below.
+            if (ExceptionReads.isOverflow(e)) {
+                return false;
+            }
+            throw e;
         } catch (VirtualMachineError e) {
             // Fatal: as it is, with nothing allocated for it.
             throw e;
         } catch (Throwable e) {
-            for (Throwable link : ExceptionReads.causeChain(e)) {
-                if (link instanceof StackOverflowError) {
-                    return false;
-                }
+            if (ExceptionReads.isOverflow(e)) {
+                return false;
             }
             throw e;
         }

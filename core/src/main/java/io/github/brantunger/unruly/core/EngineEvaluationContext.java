@@ -181,9 +181,10 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      *                              failure, what waiting again threw, and the first failure to keep one of them are
      *                              suppressed on it, as far as keeping them doesn't fail: each once, and none it
      *                              already carries or that carries it (see {@link Failures#keepAlso})
-     * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError} that keeping
-     *                              what failed before on the first failure threw, once every value is closed, in
-     *                              place of the first failure, which it doesn't carry
+     * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError}, and other than
+     *                              an {@link InternalError} that wraps one (see {@link Failures#isOverflow}), that
+     *                              keeping what failed before on the first failure threw, once every value is closed,
+     *                              in place of the first failure, which it doesn't carry
      */
     // Any Throwable: each value is closed whatever the one before threw, even when keeping that fails, and what the
     // first threw is thrown as it is, unless keeping the rest on it once every value is closed fails for the JVM.
@@ -232,6 +233,12 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
             Failures.keepAlso(first, lost);
         } catch (StackOverflowError ignored) {
             // Every value is closed: only what wasn't kept is lost, and the first is thrown as it is all the same.
+        } catch (InternalError internal) {
+            // As for a StackOverflowError when it wraps one, as the JDK does (see Failures.isOverflow, which allocates
+            // nothing), and else as for any other VirtualMachineError.
+            if (!Failures.isOverflow(internal)) {
+                throw internal;
+            }
         } catch (VirtualMachineError fatal) {
             // But the JVM failing, as running out of memory is, is thrown in its place, alone, as keeping the first on
             // it would allocate too.

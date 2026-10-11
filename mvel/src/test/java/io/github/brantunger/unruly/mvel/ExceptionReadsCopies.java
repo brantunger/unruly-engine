@@ -40,4 +40,14 @@ public final class ExceptionReadsCopies {
     public static List<Throwable> causeChain(Throwable e) {
         return ExceptionReads.causeChain(e);
     }
+
+    /**
+     * Tells whether {@code e} is an overflow as {@link ExceptionReads#isOverflow} does.
+     *
+     * @param e The exception
+     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
+     */
+    public static boolean isOverflow(Throwable e) {
+        return ExceptionReads.isOverflow(e);
+    }
 }

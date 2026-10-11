@@ -75,8 +75,10 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
                 throw MvelCompileErrors.analysisLoop(e);
             }
             // The engine reports an overflow by its cause: an expression too long for MVEL's recursive parser, or a
-            // compile called too deep in the stack or on a thread with a small one.
-            if (ExceptionReads.rootCause(e) instanceof StackOverflowError) {
+            // compile called too deep in the stack or on a thread with a small one. A class an overflow left unusable
+            // isn't one, and is reported as MVEL's compile error, as on JDK 21, whose NoClassDefFoundError has no
+            // cause (#1116).
+            if (ExceptionReads.isOverflow(e)) {
                 throw e;
             }
             throw MvelCompileErrors.compileError(e, analysis.rejectedType());
